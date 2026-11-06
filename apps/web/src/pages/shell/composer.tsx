@@ -1,14 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import type {
-  ComposerMention,
-  ComposerMentionBinding,
-  ComposerMentionRange,
-  SlashActionId,
-} from "@rakazo/core";
+import type { ComposerMention, ComposerMentionRange, SlashActionId } from "@rakazo/core";
 import {
-  bindComposerMention,
-  clampMentionHighlightIndex,
   composerMentionQuery,
   composerMentionsForPrompt,
   composerSelectedMentions,
@@ -17,18 +10,15 @@ import {
   replyAttachment,
   resolveComposerMentionEdit,
   resolveMentionPickerKey,
-  SLASH_ACTIONS,
   serializeComposerPrompt,
-  truncateSlashDescription,
   updateComposerMentionBindings,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, CSSProperties, DragEvent, RefObject } from "react";
+import { Box, Plus } from "lucide-react";
+import type { ClipboardEvent, ComponentProps, RefObject } from "react";
 import {
   memo,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -36,11 +26,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  HoldToTalkControls,
-  HoldToTalkStrip,
-  useHoldToTalk,
-} from "../../components/composer/HoldToTalk";
+import { HoldToTalkStrip, useHoldToTalk } from "../../components/composer/HoldToTalk";
 import { recordMessageSent } from "../../components/GitHubStarPrompt";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
@@ -62,19 +48,22 @@ import {
 } from "../../lib/composer-draft";
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
-import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
+import { isFilePaste } from "../../lib/pending-attachments";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
 import { ComposerError } from "./composer-error";
+import { ComposerChip, ComposerMentionHighlights } from "./composer-mentions";
 import {
-  ComposerChip,
-  ComposerMentionHighlights,
-  MentionOptionIcon,
-  slashActionLabel,
-} from "./composer-mentions";
+  ComposerActions,
+  MentionPicker,
+  PendingAttachmentChips,
+  SlashPicker,
+} from "./composer-parts";
 import { isApplePlatform, isEditableTarget, primaryModifier } from "./shell-shortcuts";
+import { useComposerFileDrop } from "./use-composer-file-drop";
 import { useComposerLayout } from "./use-composer-layout";
+import { useComposerTriggers } from "./use-composer-triggers";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body-lg";
@@ -197,15 +186,40 @@ const ComposerBody = memo(function Composer({
     updateDraft(current ? `${current} ${text}` : text);
     return true;
   }
-  const [mentionQuery, setMentionQuery] = useState<string | null>(
-    () =>
-      composerMentionQuery(draft, draft.length, draft.length, mentionTargets, mentionBindings)
-        ?.query ?? null,
-  );
-  const [mentionHighlightKey, setMentionHighlightKey] = useState<string | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
-    const slashMatch = /^\/([^\n]*)$/.exec(draft);
-    return slashMatch ? (slashMatch[1] ?? "") : null;
+  const pendingCaret = useRef<ComposerMentionRange | null>(null);
+  const completedSelection = useRef<number | null>(null);
+  const {
+    knownMentions,
+    setMentionQuery,
+    setMentionHighlightKey,
+    setSlashQuery,
+    selectedSkill,
+    setSelectedSkill,
+    updatePickers,
+    insertMention,
+    insertSkill,
+    runSlashAction,
+    removeSkill,
+    mentionListboxId,
+    mentionOptions,
+    activeMentionIndex,
+    mentionPickerOpen,
+    activeMentionOptionId,
+    slashSkillOptions,
+    slashActionOptions,
+    showSlashPicker,
+  } = useComposerTriggers({
+    draft,
+    mentionBindings,
+    selectedMentions,
+    mentionTargets,
+    agentSkills,
+    getField: () => textareaRef.current,
+    pendingCaret,
+    markEdited,
+    commitComposition,
+    onSlashOpen,
+    onSlashAction,
   });
   const onCall = useCallSession() !== null;
   const talk = useHoldToTalk({
@@ -227,7 +241,7 @@ const ComposerBody = memo(function Composer({
       setDictationSendDue(editRevision.current);
     },
   });
-  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
+
   const editRevision = useRef(0);
   useEffect(
     () =>
@@ -336,8 +350,6 @@ const ComposerBody = memo(function Composer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [textareaRef]);
-  const pendingCaret = useRef<ComposerMentionRange | null>(null);
-  const completedSelection = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
     const selection = pendingCaret.current;
@@ -373,39 +385,10 @@ const ComposerBody = memo(function Composer({
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
-  const mentionListboxId = useId();
-  const dragDepth = useRef(0);
-  const [draggingFiles, setDraggingFiles] = useState(false);
-  const [fileDragActive, setFileDragActive] = useState(false);
-  useEffect(() => {
-    // The transparent padding passes ordinary clicks through, but remains a file drop target.
-    let depth = 0;
-    const enter = (event: globalThis.DragEvent) => {
-      if (!isFileDrag(event.dataTransfer)) return;
-      depth += 1;
-      setFileDragActive(true);
-    };
-    const finish = () => {
-      depth = 0;
-      dragDepth.current = 0;
-      setFileDragActive(false);
-      setDraggingFiles(false);
-    };
-    const leave = () => {
-      depth = Math.max(0, depth - 1);
-      if (depth === 0) finish();
-    };
-    window.addEventListener("dragenter", enter);
-    window.addEventListener("dragleave", leave);
-    window.addEventListener("drop", finish);
-    window.addEventListener("dragend", finish);
-    return () => {
-      window.removeEventListener("dragenter", enter);
-      window.removeEventListener("dragleave", leave);
-      window.removeEventListener("drop", finish);
-      window.removeEventListener("dragend", finish);
-    };
-  }, []);
+  const { draggingFiles, fileDragActive, dropHandlers } = useComposerFileDrop({
+    disabled,
+    onDropFiles: pickAttachments,
+  });
   const canSend =
     draft.trim().length > 0 || selectedSkill !== null || pendingAttachments.length > 0;
 
@@ -430,8 +413,6 @@ const ComposerBody = memo(function Composer({
     if (!files?.length) return;
     if (onAttachmentPick(files)) markEdited();
   }
-
-  const knownMentions = [...(mentionTargets ?? []), ...selectedMentions];
 
   function updateDraft(
     nativeValue: string,
@@ -464,108 +445,6 @@ const ComposerBody = memo(function Composer({
     commitComposition({ text: value, bindings: edit.bindings });
     updatePickers(value, caret, end, edit.bindings);
   }
-
-  function updatePickers(
-    value: string,
-    caret: number,
-    end: number,
-    bindings: ComposerMentionBinding[],
-  ) {
-    setMentionQuery(
-      composerMentionQuery(value, caret, end, knownMentions, bindings)?.query ?? null,
-    );
-    // `/` only at the start of the draft so forced skills expand (`Use skill:` / `/Name` prefix).
-    const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
-    const nextSlash = slashMatch ? (slashMatch[1] ?? "") : null;
-    if (nextSlash !== null && slashQuery === null) onSlashOpen?.();
-    setSlashQuery(nextSlash);
-  }
-
-  function insertMention(mention: ComposerMention) {
-    const field = textareaRef.current;
-    if (!field) return;
-    const query = composerMentionQuery(
-      draft,
-      field.selectionStart,
-      field.selectionEnd,
-      knownMentions,
-      mentionBindings,
-    );
-    if (!query || query.query !== mentionQuery) return;
-    markEdited();
-    const completion = bindComposerMention(draft, query, mention, mentionBindings);
-    commitComposition({ text: completion.text, bindings: completion.bindings });
-    setMentionQuery(null);
-    setMentionHighlightKey(null);
-    // Restore after React has committed the new controlled value.
-    pendingCaret.current = { start: completion.caret, end: completion.caret };
-  }
-
-  function insertSkill(skill: AgentSkillCatalogEntry) {
-    markEdited();
-    setSelectedSkill(skill);
-    commitComposition({ text: "", bindings: [] });
-    setSlashQuery(null);
-  }
-
-  function runSlashAction(action: SlashActionId) {
-    markEdited();
-    commitComposition({ text: "", bindings: [] });
-    setSlashQuery(null);
-    onSlashAction?.(action);
-  }
-
-  function removeSkill() {
-    markEdited();
-    setSelectedSkill(null);
-  }
-
-  const mentionOptions = useMemo(() => {
-    if (mentionQuery === null || !mentionTargets?.length) return [];
-    const query = mentionQuery.trim().toLowerCase();
-    return mentionTargets
-      .filter((target) => !query || target.name.toLowerCase().startsWith(query))
-      .slice(0, 10);
-  }, [mentionQuery, mentionTargets]);
-
-  useEffect(() => {
-    setMentionHighlightKey(null);
-  }, [mentionQuery]);
-
-  const activeMentionIndex = clampMentionHighlightIndex(
-    mentionOptions.findIndex((mention) => mentionChipKey(mention) === mentionHighlightKey),
-    mentionOptions.length,
-  );
-  const mentionPickerOpen = mentionOptions.length > 0;
-  const activeMentionOptionId = mentionPickerOpen
-    ? `${mentionListboxId}-option-${activeMentionIndex}`
-    : undefined;
-
-  const slashSkillOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
-    const skills = agentSkills ?? [];
-    return skills
-      .filter((skill) => {
-        if (!query) return true;
-        return (
-          skill.name.toLowerCase().includes(query) ||
-          skill.description.toLowerCase().includes(query)
-        );
-      })
-      .slice(0, 8);
-  }, [agentSkills, slashQuery]);
-
-  const slashActionOptions = useMemo(() => {
-    if (slashQuery === null) return [];
-    const query = slashQuery.trim().toLowerCase();
-    return SLASH_ACTIONS.filter((action) => !query || action.label.toLowerCase().includes(query));
-  }, [slashQuery]);
-
-  const showSlashPicker =
-    slashQuery !== null &&
-    mentionQuery === null &&
-    (slashSkillOptions.length > 0 || slashActionOptions.length > 0);
 
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
@@ -647,52 +526,6 @@ const ComposerBody = memo(function Composer({
     setSelectedSkill(selectedSkill);
   }
 
-  function handleDragEnter(event: DragEvent<HTMLFieldSetElement>) {
-    const dataTransfer = event.dataTransfer;
-    if (!isFileDrag(dataTransfer)) return;
-    event.preventDefault();
-    if (disabled) {
-      dragDepth.current = 0;
-      setDraggingFiles(false);
-      return;
-    }
-    dragDepth.current += 1;
-    setDraggingFiles(true);
-  }
-
-  function handleDragOver(event: DragEvent<HTMLFieldSetElement>) {
-    const dataTransfer = event.dataTransfer;
-    if (!isFileDrag(dataTransfer)) return;
-    event.preventDefault();
-    dataTransfer.dropEffect = disabled ? "none" : "copy";
-    if (disabled) {
-      dragDepth.current = 0;
-      setDraggingFiles(false);
-      return;
-    }
-    setDraggingFiles(true);
-  }
-
-  function handleDragLeave(event: DragEvent<HTMLFieldSetElement>) {
-    if (!isFileDrag(event.dataTransfer)) return;
-    if (disabled) {
-      dragDepth.current = 0;
-      setDraggingFiles(false);
-      return;
-    }
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setDraggingFiles(false);
-  }
-
-  function handleDrop(event: DragEvent<HTMLFieldSetElement>) {
-    const dataTransfer = event.dataTransfer;
-    if (!isFileDrag(dataTransfer)) return;
-    event.preventDefault();
-    dragDepth.current = 0;
-    setDraggingFiles(false);
-    if (!disabled) pickAttachments(dataTransfer.files);
-  }
-
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const clipboardData = event.clipboardData;
     // Only intercept real FileList pastes; leave text-only / empty-files native.
@@ -754,23 +587,11 @@ const ComposerBody = memo(function Composer({
     }
   }, [replyTarget, replyName, t]);
 
-  // The same chat-user colors your bubbles in this chat wear (set the same way in the transcript).
-  const sendStyle = sendColors
-    ? ({
-        "--chat-user": sendColors.background,
-        "--chat-user-foreground": sendColors.foreground,
-      } as CSSProperties)
-    : undefined;
-  // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
-  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <fieldset
       aria-label={t`Message composer`}
       data-dragging={draggingFiles ? "files" : undefined}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dropHandlers}
       className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
@@ -811,123 +632,29 @@ const ComposerBody = memo(function Composer({
           {attachmentNotice}
         </div>
       ) : null}
-      {pendingAttachments.length ? (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {pendingAttachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-body-sm text-foreground/75"
-            >
-              {attachment.previewUrl ? (
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.file.name}
-                  className="h-8 w-8 rounded object-cover"
-                />
-              ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
-              )}
-              <span className="max-w-[180px] truncate" dir="auto">
-                {attachment.file.name}
-              </span>
-              <button
-                type="button"
-                aria-label={t`Remove ${attachment.file.name}`}
-                onClick={() => {
-                  markEdited();
-                  onRemoveAttachment(attachment);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={13} strokeWidth={2} />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <PendingAttachmentChips
+        attachments={pendingAttachments}
+        onRemove={(attachment) => {
+          markEdited();
+          onRemoveAttachment(attachment);
+        }}
+      />
       {mentionPickerOpen ? (
-        <div
-          id={mentionListboxId}
-          role="listbox"
-          aria-label={t`Mentions`}
-          data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
-        >
-          {mentionOptions.map((mention, index) => {
-            const optionId = `${mentionListboxId}-option-${index}`;
-            const highlighted = index === activeMentionIndex;
-            return (
-              <button
-                id={optionId}
-                key={mentionChipKey(mention)}
-                type="button"
-                role="option"
-                aria-selected={highlighted}
-                aria-label={t`@${mention.name}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => insertMention(mention)}
-                // Opening the list under a stationary pointer must not steal the keyboard highlight.
-                onMouseMove={() => setMentionHighlightKey(mentionChipKey(mention))}
-                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
-                  highlighted ? "bg-accent" : ""
-                }`}
-              >
-                <MentionOptionIcon mention={mention} />
-                <span className="min-w-0">
-                  <span dir="auto" className="block text-body text-foreground">
-                    @{mention.name}
-                  </span>
-                  {mention.subtitle ? (
-                    <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
-                      {mention.subtitle}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <MentionPicker
+          listboxId={mentionListboxId}
+          options={mentionOptions}
+          activeIndex={activeMentionIndex}
+          onPick={insertMention}
+          onHighlight={(mention) => setMentionHighlightKey(mentionChipKey(mention))}
+        />
       ) : null}
       {showSlashPicker ? (
-        <div
-          data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
-        >
-          {slashSkillOptions.map((skill) => (
-            <button
-              key={skill.id}
-              type="button"
-              aria-label={t`Skill ${skill.name}`}
-              onClick={() => insertSkill(skill)}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
-            >
-              <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
-              <span className="min-w-0">
-                <span dir="auto" className="block text-body text-foreground">
-                  {skill.name}
-                </span>
-                <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
-                  {truncateSlashDescription(skill.description)}
-                </span>
-              </span>
-            </button>
-          ))}
-          {slashActionOptions.map((action) => {
-            const label = slashActionLabel(action.id);
-            return (
-              <button
-                key={action.id}
-                type="button"
-                aria-label={label}
-                onClick={() => runSlashAction(action.id)}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
-              >
-                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
-                <span className="text-body text-foreground">{label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SlashPicker
+          skills={slashSkillOptions}
+          actions={slashActionOptions}
+          onSkill={insertSkill}
+          onAction={runSlashAction}
+        />
       ) : null}
       <div
         ref={composerBarRef}
@@ -1111,58 +838,19 @@ const ComposerBody = memo(function Composer({
             />
           </div>
         </div>
-        <div
-          ref={composerActionsRef}
-          className={`col-start-3 flex shrink-0 items-center gap-2 justify-self-end ${
-            expanded ? "row-start-2" : ""
-          }`}
-        >
-          {talk.recording?.locked ? (
-            <HoldToTalkControls talk={talk} />
-          ) : running ? (
-            <>
-              {phoneCallsEnabled && draft.trim().length === 0 ? (
-                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
-              ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={() => void send()}
-                style={sendStyle}
-                className={sendClassName}
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t`Stop`}
-                disabled={sending}
-                onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <Square size={11} strokeWidth={0} fill="currentColor" />
-              </Button>
-            </>
-          ) : (
-            <>
-              {phoneCallsEnabled && draft.trim().length === 0 ? (
-                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
-              ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={() => void send()}
-                style={sendStyle}
-                className={sendClassName}
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-            </>
-          )}
-        </div>
+        <ComposerActions
+          actionsRef={composerActionsRef}
+          expanded={expanded}
+          talk={talk}
+          running={running}
+          showTalk={Boolean(phoneCallsEnabled) && draft.trim().length === 0}
+          talkDisabled={disabled || onCall}
+          sendDisabled={sending || !canSend || disabled}
+          stopDisabled={sending}
+          sendColors={sendColors}
+          onSend={() => void send()}
+          onStop={() => void onStop()}
+        />
       </div>
     </fieldset>
   );
