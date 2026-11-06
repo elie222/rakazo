@@ -103,8 +103,16 @@ export function VoiceSettingsOverlay({
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
-  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey };
+  const connection = useRef({
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, apiKey, sttApiKey };
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -276,7 +284,8 @@ export function VoiceSettingsOverlay({
       for (const field of CONNECTION_FIELDS) {
         if (connection.current[field] === sent[field]) edited.current.delete(field);
       }
-      // A transcription key typed meanwhile stays pinned to the address it was typed for.
+      // A key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
       await refresh(selected.id, { keepForm: true });
       setNotice(t`Connected ${selected.name}.`);
@@ -448,7 +457,11 @@ export function VoiceSettingsOverlay({
                     type="password"
                     autoComplete="new-password"
                     value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
+                    onChange={(event) => {
+                      // The key belongs to this address, so a refresh must not swap it.
+                      edited.current.add("baseUrl");
+                      setApiKey(event.target.value);
+                    }}
                     placeholder={
                       selfHosted
                         ? t`Optional`

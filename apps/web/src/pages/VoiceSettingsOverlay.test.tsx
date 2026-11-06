@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const voice = vi.hoisted(() => ({
   catalog: vi.fn(),
@@ -1145,3 +1145,136 @@ it.each(["account", "space"] as const)(
     }
   },
 );
+
+describe("the API key stays with the server URL it was typed for", () => {
+  const saved = {
+    ...fish,
+    provider: "openai-compatible",
+    voiceId: "",
+    endpoint: "https://speech-a.example/v1",
+    ttsModel: "saved-speech",
+    sttModel: "",
+  };
+  const moved = { ...saved, endpoint: "https://speech-b.example/v1" };
+  const type = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const reconnect = async (container: HTMLElement) => {
+    const button = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Reconnect",
+    );
+    if (!button) throw new Error("Missing reconnect button");
+    await act(async () => {
+      button.click();
+    });
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    voice.catalog
+      .mockReset()
+      .mockResolvedValue([
+        { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      ]);
+    voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+    voice.voices.mockReset().mockResolvedValue([]);
+    voice.connect.mockReset().mockResolvedValue(saved);
+  });
+
+  it("keeps it with its address when a reconnect's refresh finds another one", async () => {
+    voice.credentials
+      .mockReset()
+      .mockResolvedValueOnce([saved])
+      // Another device saves server B before the refresh that follows this connect.
+      .mockResolvedValue([moved]);
+    let releaseConnect: () => void = () => undefined;
+    voice.connect.mockImplementationOnce(
+      () => new Promise((resolve) => (releaseConnect = () => resolve(saved))),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(
+          withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+        );
+      });
+      await vi.waitFor(() =>
+        expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint),
+      );
+      await reconnect(container);
+      await type(labelledInput(container, "API key"), "key-for-server-a");
+      await act(async () => {
+        releaseConnect();
+      });
+      await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+      expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
+      expect(labelledInput(container, "API key").value).toBe("key-for-server-a");
+
+      await reconnect(container);
+      expect(voice.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({ baseUrl: saved.endpoint, apiKey: "key-for-server-a" }),
+      );
+      // Saved with its address, the key no longer pins it: the form shows the saved server.
+      await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(3));
+      expect(labelledInput(container, "API key").value).toBe("");
+      expect(labelledInput(container, "Server URL").value).toBe(moved.endpoint);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps it with its address when the background read on open finds another one", async () => {
+    const client = new QueryClient();
+    voice.credentials.mockReset().mockResolvedValueOnce([saved]);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const render = async () => {
+      await act(async () => {
+        root.render(
+          withQueries(
+            <VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />,
+            client,
+          ),
+        );
+      });
+    };
+    try {
+      await render();
+      await vi.waitFor(() =>
+        expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint),
+      );
+      await act(async () => root.render(null));
+      // The revisit opens from the cache; its background read finds server B.
+      let releaseRead: () => void = () => undefined;
+      voice.credentials.mockImplementationOnce(
+        () => new Promise((resolve) => (releaseRead = () => resolve([moved]))),
+      );
+      await render();
+      expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
+      await type(labelledInput(container, "API key"), "key-for-server-a");
+      await act(async () => {
+        releaseRead();
+      });
+      await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+      expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
+
+      await reconnect(container);
+      expect(voice.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({ baseUrl: saved.endpoint, apiKey: "key-for-server-a" }),
+      );
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+});

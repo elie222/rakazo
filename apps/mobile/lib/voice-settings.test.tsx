@@ -498,6 +498,60 @@ it("keeps edits typed while a reconnect runs and shows the saved values for the 
   expect(field("Speech model").value).toBe("newer-tts");
 });
 
+it("keeps an API key typed during a reconnect with the server URL it was typed for", async () => {
+  state.load.mockResolvedValue(false);
+  activeProvider = "openai-compatible";
+  const saved = {
+    id: "self-hosted",
+    provider: "openai-compatible",
+    voiceId: "voice",
+    endpoint: "https://speech-a.example/v1",
+    sttEndpoint: "",
+  };
+  let releaseConnect!: () => void;
+  const connectHeld = new Promise<void>((resolve) => {
+    releaseConnect = resolve;
+  });
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog")
+      return [{ id: "openai-compatible", name: "Self-hosted", transcribe: true }];
+    if (proc === "voice/credentials") return [saved];
+    if (proc === "voice/connect") {
+      await connectHeld;
+      // Another device saves server B before the refresh that follows this connect.
+      saved.endpoint = "https://speech-b.example/v1";
+      return { ok: true };
+    }
+    return original(proc, args);
+  });
+  await render();
+  const field = (label: string) =>
+    container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await vi.waitFor(() => expect(field("Server URL").value).toBe("https://speech-a.example/v1"));
+  await click("Reconnect");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      field("API key"),
+      "key-for-server-a",
+    );
+    field("API key").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => releaseConnect());
+  await vi.waitFor(() =>
+    expect(state.rpc.mock.calls.filter(([proc]) => proc === "voice/credentials").length).toBe(2),
+  );
+  expect(field("Server URL").value).toBe("https://speech-a.example/v1");
+  expect(field("API key").value).toBe("key-for-server-a");
+
+  await click("Reconnect");
+  const connects = state.rpc.mock.calls.filter(([proc]) => proc === "voice/connect");
+  expect(connects.at(-1)?.[1]).toMatchObject({
+    baseUrl: "https://speech-a.example/v1",
+    apiKey: "key-for-server-a",
+  });
+});
+
 it("keeps a typed transcription key with its address when a voice is chosen", async () => {
   state.load.mockResolvedValue(false);
   activeProvider = "openai-compatible";

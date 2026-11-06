@@ -107,8 +107,16 @@ export default function VoiceSettings() {
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
-  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey };
+  const connection = useRef({
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, apiKey, sttApiKey };
   // Fields typed into since the last load; an opening refresh keeps them only while their
   // provider stays selected.
   const edited = useRef(new Set<VoiceField>());
@@ -385,7 +393,8 @@ export default function VoiceSettings() {
       for (const field of CONNECTION_FIELDS) {
         if (connection.current[field] === sent[field]) edited.current.delete(field);
       }
-      // A transcription key typed meanwhile stays pinned to the address it was typed for.
+      // A key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
       await load(selected.id, { keepForm: true });
     } catch (err) {
@@ -582,7 +591,8 @@ export default function VoiceSettings() {
                 autoCorrect={false}
                 importantForAutofill="no"
                 value={apiKey}
-                onChangeText={setApiKey}
+                // The key belongs to this address, so a refresh must not swap it.
+                onChangeText={edit("baseUrl", setApiKey)}
                 placeholder={
                   selfHosted
                     ? t("Optional")
