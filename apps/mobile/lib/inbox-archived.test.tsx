@@ -86,6 +86,9 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },

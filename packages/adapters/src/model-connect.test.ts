@@ -10,8 +10,8 @@ import {
   modelCredentialDto,
   storedOpenAiCompatibleProbeKey,
 } from "./model-connect.js";
+import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
-import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
 const connectAsOwner = (

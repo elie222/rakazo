@@ -17,6 +17,9 @@ vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (create: () => unknown) => create() }));
 vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",

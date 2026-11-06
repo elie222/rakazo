@@ -3,13 +3,21 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
 import { rpc } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { useThreadSnapshot } from "./thread-history";
 import type { ThreadListScroll } from "./thread-list-scroll";
 import { useThreadPaging } from "./thread-paging";
 
-vi.mock("./api", () => ({ rpc: vi.fn(), prependMobileMessagePage: vi.fn() }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  rpc: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  prependMobileMessagePage: vi.fn(),
+}));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 vi.mock("./response-streaming", () => ({

@@ -24,6 +24,8 @@ jobs:
       actions: read
       contents: read
       pull-requests: write
+    outputs:
+      numbers: ${{ steps.pr.outputs.numbers }}
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_PREVIEW_TOKEN }}
       GH_TOKEN: ${{ github.token }}
@@ -78,3 +80,176 @@ jobs:
           for PR in $PRS; do
             PR=$PR bash infra/preview/deploy.sh
           done
+
+  # Shows the change on the pull request without its author taking screenshots. The agent only
+  # gets browser tools: no files, shell or web access, so the pull request and the preview it
+  # browses, which anyone may write, cannot reach the login in its environment. The browser runs
+  # as a separate user that cannot read the runner's files or processes either.
+  screenshots:
+    name: Screenshot the change
+    needs: deploy
+    if: needs.deploy.outputs.numbers != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Gather the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBERS: ${{ needs.deploy.outputs.numbers }}
+          APP_PREFIX: ${{ vars.FLY_PREVIEW_APP_PREFIX }}
+        run: |
+          set -euo pipefail
+          pr=${NUMBERS%% *}
+          [[ $pr =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+          dir="$RUNNER_TEMP/pr-screenshots"
+          mkdir -p "$dir"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$pr/files?per_page=100" --jq '.[].filename' > "$dir/files.txt"
+          # Only changes the web app can show; the agent decides the rest.
+          if ! grep -E '^(apps/web/(src/|public/|index\.html$)|packages/(ui-web|ui-tokens|chat-ui|page-kit)/)' "$dir/files.txt" |
+            grep -Evq '(\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?)$'; then
+            echo "No web UI changes; skipping."
+            exit 0
+          fi
+          preview_url="https://${APP_PREFIX:-rakazo-pr}-$pr.fly.dev"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" |
+            jq --arg url "$preview_url" --rawfile files "$dir/files.txt" \
+              '{title, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url}' \
+              > "$dir/pr.json"
+          gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
+          head -c 120000 "$dir/full.diff" > "$dir/pr.diff"
+          delimiter="PROMPT_$(openssl rand -hex 16)"
+          {
+            echo "prompt<<$delimiter"
+            cat .github/prompts/pr-screenshots.md
+            printf '\n<pull_request>\n'
+            cat "$dir/pr.json"
+            printf '</pull_request>\n\n<diff>\n'
+            cat "$dir/pr.diff"
+            printf '\n</diff>\n'
+            echo "$delimiter"
+            echo "pr=$pr"
+            echo "preview_url=$preview_url"
+          } >> "$GITHUB_OUTPUT"
+      - name: Prepare an isolated browser
+        if: steps.pr.outputs.pr
+        env:
+          PREVIEW_URL: ${{ steps.pr.outputs.preview_url }}
+        run: |
+          set -euo pipefail
+          node=$(command -v node)
+          npm=$(command -v npm)
+          sudo useradd --create-home --shell /usr/sbin/nologin pr-screenshots
+          sudo env PATH="$(dirname "$node"):/usr/bin:/bin" "$npm" install --no-save --no-fund --prefix /opt/pr-screenshots-mcp @playwright/mcp@0.0.84
+          sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers \
+            "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install --with-deps chromium
+          sudo install -d -o pr-screenshots -g pr-screenshots -m 755 /srv/pr-screenshots
+          jq -n --arg node "$node" --arg origin "$PREVIEW_URL" '{mcpServers: {playwright: {
+            command: "sudo",
+            args: ["-n", "-u", "pr-screenshots", "env", "-i", "-C", "/srv/pr-screenshots",
+              "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/home/pr-screenshots",
+              "PLAYWRIGHT_BROWSERS_PATH=/opt/pr-screenshots-browsers",
+              $node, "/opt/pr-screenshots-mcp/node_modules/@playwright/mcp/cli.js",
+              "--headless", "--isolated", "--browser", "chromium", "--viewport-size", "1440x900",
+              "--output-dir", "/srv/pr-screenshots", "--allowed-origins", $origin]}}}' \
+            > "$RUNNER_TEMP/pr-screenshots-mcp.json"
+      - id: claude
+        if: steps.pr.outputs.pr
+        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Fork authors lack write access; the agent has only browser tools and a read-only token.
+          allowed_non_write_users: "*"
+          prompt: ${{ steps.pr.outputs.prompt }}
+          claude_args: >-
+            --model claude-sonnet-5-5
+            --max-turns 60
+            --mcp-config ${{ runner.temp }}/pr-screenshots-mcp.json
+            --allowedTools mcp__playwright__browser_navigate,mcp__playwright__browser_navigate_back,mcp__playwright__browser_snapshot,mcp__playwright__browser_click,mcp__playwright__browser_type,mcp__playwright__browser_fill_form,mcp__playwright__browser_press_key,mcp__playwright__browser_select_option,mcp__playwright__browser_hover,mcp__playwright__browser_wait_for,mcp__playwright__browser_resize,mcp__playwright__browser_handle_dialog,mcp__playwright__browser_take_screenshot
+            --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
+            --json-schema '{"type":"object","additionalProperties":false,"required":["screenshots"],"properties":{"screenshots":{"type":"array","maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["file","caption"],"properties":{"file":{"type":"string"},"caption":{"type":"string"}}}}}}'
+      - name: Collect screenshots
+        if: steps.claude.outputs.structured_output != ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shots"
+          sudo find /srv/pr-screenshots -maxdepth 1 -type f -name '*.png' -size -5242881c -exec cp -t "$RUNNER_TEMP/shots" {} +
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.claude.outputs.structured_output != ''
+        with:
+          name: pr-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # Trusted half: checks the agent's files and captions, then rewrites only its own section of
+  # the description. Never runs anything the agent produced.
+  publish-screenshots:
+    name: Add screenshots to the pull request
+    needs: screenshots
+    if: needs.screenshots.outputs.result != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        # An empty list uploads nothing; any other result must bring its files.
+        if: contains(needs.screenshots.outputs.result, '"file"')
+        with:
+          name: pr-screenshots
+          path: ${{ runner.temp }}/shots
+      - name: Update the description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.screenshots.outputs.pr }}
+          RESULT: ${{ needs.screenshots.outputs.result }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ $PR =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+          [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
+          [[ $PLAYWRIGHT_PUBLIC_BASE_URL =~ ^https://[^[:space:]]+$ ]] || { echo "PLAYWRIGHT_PUBLIC_BASE_URL must be an https URL" >&2; exit 1; }
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') != "open $HEAD_SHA" ]]; then
+            echo "The pull request closed or has a newer commit; skipping."
+            exit 0
+          fi
+          shots="$RUNNER_TEMP/shots"
+          out="$RUNNER_TEMP/pr-screenshots-out"
+          mkdir -p "$shots"
+          key="pr-agent/$PR/$HEAD_SHA"
+          python3 .github/scripts/pr-screenshots.py prepare "$RESULT" "$shots" \
+            "${PLAYWRIGHT_PUBLIC_BASE_URL%/}/$key" "$out"
+          while IFS= read -r name; do
+            aws s3 cp "$shots/$name" "s3://$S3_BUCKET/playwright/$key/$name" \
+              --endpoint-url "$S3_ENDPOINT" --content-type image/png \
+              --cache-control "public,max-age=31536000,immutable"
+          done < "$out/uploads.txt"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
+          if [[ ! -s $out/section.md ]] && ! grep -qF '<!-- rakazo-pr-screenshots:start -->' "$out/body.md"; then
+            exit 0
+          fi
+          python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null

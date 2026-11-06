@@ -5,15 +5,20 @@ import { reduceThreadSnapshot } from "@rakazo/core";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
-import { rpc, subscribeThread } from "./api";
+import { rpc } from "./api";
+import { subscribeThread } from "./api-live";
 import { hapticSuccess } from "./haptics";
+import type { MobileSnapshot } from "./mobile-types";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import { useThreadLiveSubscription } from "./thread-live";
 import type { PinnedThreadWindow } from "./thread-window";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("@rakazo/core", async (importOriginal) => ({
