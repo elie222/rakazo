@@ -14,7 +14,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
-import { handleRpcError, logUnexpectedRpcError } from "./app.js";
+import { handleRpcError, logUnexpectedRpcError } from "./rpc-errors.js";
 
 describe("logUnexpectedRpcError", () => {
   afterEach(() => {
