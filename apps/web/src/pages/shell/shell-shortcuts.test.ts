@@ -4,7 +4,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RakazoDesktop } from "../../lib/desktop";
 import type { ShellShortcut, ShortcutHost } from "./shell-shortcuts";
-import { cycleBotId, shellShortcut, startsTyping, useShellShortcuts } from "./shell-shortcuts";
+import {
+  cycleBotId,
+  quoteShortcutLabel,
+  shellShortcut,
+  startsTyping,
+  useShellShortcuts,
+} from "./shell-shortcuts";
 
 function keyEvent(
   partial: Partial<Omit<KeyboardEvent, "target">> &
@@ -29,6 +35,40 @@ const windowsBrowser: ShortcutHost = { desktop: false, apple: false };
 const textarea = document.createElement("textarea");
 
 describe("shellShortcut", () => {
+  it("quotes with the plain chord in the desktop app and Shift on the web", () => {
+    for (const host of [macApp, windowsApp]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: true }), host)).toBeNull();
+    }
+    for (const host of [macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      // The browser keeps the plain chord for its address bar.
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: false }), host)).toBeNull();
+    }
+    for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      for (const extra of [
+        { altKey: true },
+        { repeat: true },
+        { isComposing: true },
+        { metaKey: true, ctrlKey: true },
+      ]) {
+        expect(shellShortcut(keyEvent({ ...chord, ...extra }), host)).toBeNull();
+      }
+      expect(
+        shellShortcut(keyEvent({ key: "l", metaKey: !host.apple, ctrlKey: host.apple }), host),
+      ).toBeNull();
+    }
+  });
+
+  it("writes the pill hint for each host", () => {
+    expect(quoteShortcutLabel(macApp)).toBe("⌘L");
+    expect(quoteShortcutLabel(windowsApp)).toBe("Ctrl+L");
+    expect(quoteShortcutLabel(macBrowser)).toBe("⌘⇧L");
+    expect(quoteShortcutLabel(windowsBrowser)).toBe("Ctrl+Shift+L");
+  });
   it("opens the command menu and the create menu with Cmd or Ctrl everywhere", () => {
     for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
       expect(shellShortcut(keyEvent({ key: "k", metaKey: true }), host)).toEqual({
@@ -228,6 +268,29 @@ describe("cycleBotId", () => {
 });
 
 describe("useShellShortcuts", () => {
+  it("leaves the address-bar chord alone and consumes the web chord only when a quote applied", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux");
+    const run = vi.fn(() => false);
+    const unmount = await mount(run);
+    const press = (shiftKey: boolean) => {
+      const event = new KeyboardEvent("keydown", {
+        key: shiftKey ? "L" : "l",
+        ctrlKey: true,
+        shiftKey,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event;
+    };
+    expect(press(false).defaultPrevented).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(press(true).defaultPrevented).toBe(false);
+    run.mockReturnValue(true);
+    expect(press(true).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: "quote-selection" });
+    await unmount();
+    vi.restoreAllMocks();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     delete window.rakazoDesktop;
