@@ -1,6 +1,7 @@
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import {
+  applyThreadSendReceipt,
   attachmentsForThread,
   newClientId,
   pageReply,
@@ -247,6 +248,12 @@ export function useThreadSend({
           return resumeLiveNotifications(apiBase, token, spaceId ?? "");
       })
       .catch(() => undefined);
+    if (botTarget && attempt.acceptedRun && isCurrentTarget(botTarget, undefined)) {
+      const shown = history.snapRef.current;
+      const receipt = { botId: botTarget, ...attempt.acceptedRun };
+      const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+      if (next !== shown) history.commitSnap(next);
+    }
     if (
       attempt.payload.originThreadKey !== (activeGroupId.current ?? activeBotId.current) ||
       !navigation.isFocused()
