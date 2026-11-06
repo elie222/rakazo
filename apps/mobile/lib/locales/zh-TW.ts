@@ -97,6 +97,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
 
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API 金鑰",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "DeepInfra API 金鑰",
   "Show password": "顯示密碼",
   "Hide password": "隱藏密碼",
   Export: "匯出",

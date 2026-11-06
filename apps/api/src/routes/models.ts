@@ -7,7 +7,7 @@ import {
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
-  probeOpenAiCompatibleModels,
+  probeOpenAiCompatibleModelList,
   providerCatalogCache,
   resolveMemberMainModel,
   selectDefaultCredentialId,
@@ -20,8 +20,8 @@ import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatiblePresetFor,
   usableModelId,
 } from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
@@ -259,13 +259,15 @@ export function modelsRoutes(ctx: RouterContext) {
             }
           }
           try {
-            const models = await probeOpenAiCompatibleModels(
+            // Only the hosted presets' fixed URLs use the injected transport; a caller-supplied
+            // URL always goes out through the default fetch.
+            const { models, details } = await probeOpenAiCompatibleModelList(
               { ...input, apiKey, headers },
-              isOllamaCloudBaseUrl(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              openAiCompatiblePresetFor(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
-            return { models };
+            return details ? { models, details } : { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
               message: error instanceof Error ? error.message : "Could not list models",

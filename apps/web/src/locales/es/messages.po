@@ -2719,6 +2719,10 @@ msgstr "días"
 msgid "Decline"
 msgstr "Rechazar"
 
+#: src/lib/compatible-preset.ts
+msgid "DeepInfra API key"
+msgstr "Clave de API de DeepInfra"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -3652,6 +3656,10 @@ msgstr "La entrada de imágenes no está configurada para este modelo."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Área de carga de imagen"
+
+#: src/lib/compatible-preset.ts
+msgid "Images"
+msgstr "Imágenes"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
@@ -4775,15 +4783,9 @@ msgstr "Falló la conexión OAuth"
 msgid "Offline"
 msgstr "Sin conexión"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/lib/compatible-preset.ts
 msgid "Ollama API key"
 msgstr "Clave de API de Ollama"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -6702,6 +6704,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Recibe {weeks} semanas gratis."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/compatible-preset.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

@@ -38,7 +38,8 @@ import {
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { probedModelFields } from "../../lib/compatible-preset";
 import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
@@ -53,6 +54,7 @@ import {
 import { useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
+import { useProbeModelInfo } from "../../lib/use-probe-model-info";
 import { errorText } from "../../lib/user-error";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
@@ -119,7 +121,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const probeInfo = useProbeModelInfo();
+  const clearProbeInfo = probeInfo.clear;
+  const resetOpenAiCompatibleProbe = useCallback(() => {
+    modelProbe.reset();
+    clearProbeInfo();
+  }, [modelProbe, clearProbeInfo]);
   const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(
     () =>
@@ -387,12 +394,28 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     invalidatePreflight();
   }
 
+  /**
+   * What the model listing says about a model replaces the form's guesses (images, thinking,
+   * context limit); the toggles stay editable. A model the listing does not describe leaves
+   * them as they are. Returns whether thinking is on for the model afterwards.
+   */
+  function applyProbedModelFields(id: string): boolean {
+    const probed = probedModelFields(probeInfo.infoRef.current.get(id), maxTokens);
+    if (probed.supportsImages !== undefined) setSupportsImages(probed.supportsImages);
+    if (probed.reasoning !== undefined) setReasoning(probed.reasoning);
+    if (probed.reasoning === false) setThinkingLevel(null);
+    if (probed.contextWindow !== undefined) setContextWindow(probed.contextWindow);
+    if (probed.maxTokens !== undefined) setMaxTokens(probed.maxTokens);
+    return probed.reasoning ?? reasoning;
+  }
+
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
+    const nextReasoning = applyProbedModelFields(nextModelId);
     setThinkingLevel(
       clampCatalogThinkingLevel(
         credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
+        nextReasoning ? compatibleThinkingLevels(apiProtocol) : [],
       ) as ThinkingLevel | null,
     );
   }
@@ -447,18 +470,28 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc.models.probeOpenAiCompatible({
-          ...input,
-          apiProtocol,
-          headers: modelHeadersInput(headerRows),
-          credentialId: credential?.id,
-        }),
+        probeInfo.record(
+          rpc.models.probeOpenAiCompatible({
+            ...input,
+            apiProtocol,
+            headers: modelHeadersInput(headerRows),
+            credentialId: credential?.id,
+          }),
+        ),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
+        // A saved connection keeps its own settings for the model it already runs.
+        const keepSaved =
+          next === current &&
+          credential?.modelId === current &&
+          savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
         if (next !== current) stageCompatibleModelId(next);
-        else setModelId(next);
+        else {
+          setModelId(next);
+          if (!keepSaved) applyProbedModelFields(next);
+        }
         const unavailable = unavailableSelectedModel(current, models);
         if (unavailable) {
           setPreflightFailure(unavailable);
@@ -573,7 +606,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       );
       return;
     }
-    const { input, savingLimitOnly, activeModelId } = request;
+    const { savingLimitOnly, activeModelId } = request;
+    // Prompt-caching support the model listing published rides along with the connection.
+    const cacheCapabilities = isOpenAiCompatible
+      ? probeInfo.infoRef.current.get(modelId.trim())?.cacheCapabilities
+      : undefined;
+    const input = cacheCapabilities ? { ...request.input, cacheCapabilities } : request.input;
     setError(null);
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");
@@ -713,6 +751,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     preflightSuccess,
     preflightTarget,
     preflightTesting,
+    probeInfoById: probeInfo.infoById,
     probeModels,
     probeServerModels,
     probing,

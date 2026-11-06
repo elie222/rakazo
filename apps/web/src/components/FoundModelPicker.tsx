@@ -18,11 +18,14 @@ export function FoundModelPicker({
   value,
   onChange,
   otherValue,
+  hint,
 }: {
   models: readonly string[];
   value: string;
   onChange: (value: string) => void;
   otherValue: string;
+  /** Small capability note shown beside a model, such as "Images · Thinking". */
+  hint?: (id: string) => string;
 }) {
   const { t } = useLingui();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -71,7 +74,12 @@ export function FoundModelPicker({
             <CommandGroup>
               {visible.map((id) => (
                 <CommandItem key={id} value={id} onSelect={() => pick(id)}>
-                  {id}
+                  <span className="min-w-0 break-all">{id}</span>
+                  {hint?.(id) ? (
+                    <span className="ms-auto shrink-0 ps-2 text-body-sm text-muted-foreground">
+                      {hint(id)}
+                    </span>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>

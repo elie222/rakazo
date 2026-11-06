@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- DeepInfra is a model connection choice next to Ollama Cloud. Paste a DeepInfra API key and **Find models** lists its chat models, with each model's image input, thinking, context window and prompt cache pricing filled in from DeepInfra's own model details ([self-hosted models](docs/self-host-models.md)).
+
 ## [0.8.0] - 2026-11-04
 
 ### Added

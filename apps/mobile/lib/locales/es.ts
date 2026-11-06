@@ -123,6 +123,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not update name": "No se pudo actualizar el nombre",
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Clave de API de Ollama",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "Clave de API de DeepInfra",
   "Show password": "Mostrar contraseña",
   "Hide password": "Ocultar contraseña",
   Export: "Exportar",

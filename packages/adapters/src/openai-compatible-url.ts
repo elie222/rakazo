@@ -11,7 +11,8 @@ import {
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+/** Hosts of the hosted presets (Ollama Cloud, DeepInfra), reachable even with public hosts off. */
+const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com", "api.deepinfra.com"]);
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";

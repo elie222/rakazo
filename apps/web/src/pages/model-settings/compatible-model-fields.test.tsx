@@ -56,6 +56,7 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     modelId,
     preflightFailure: null,
     preflightTarget: null,
+    probeInfoById: new Map(),
     probeModels: [],
     probeServerModels: () => Promise.resolve(),
     probing: false,
@@ -239,5 +240,49 @@ it("counts the main model when the search hides it", async () => {
     expect(view.container.textContent).not.toContain("hidden by your search");
   } finally {
     await view.unmount();
+  }
+});
+
+it("shows what a discovered model supports beside its name", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <CompatibleModelFields
+        {...props(["vision-model", "plain-model"], [], "vision-model")}
+        probeInfoById={
+          new Map([
+            ["vision-model", { id: "vision-model", supportsImages: true, reasoning: true }],
+            ["plain-model", { id: "plain-model", supportsImages: false }],
+          ])
+        }
+      />,
+    ),
+  );
+  try {
+    expect(visibleRows(container)).toEqual(["vision-modelImages · Thinking", "plain-model"]);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("keeps the server URL and setup help only for a custom server", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = (baseUrl: string) =>
+    act(async () => root.render(<CompatibleModelFields {...props([], [])} baseUrl={baseUrl} />));
+  try {
+    await render("http://127.0.0.1:8000/v1");
+    expect(container.textContent).toContain("Setup help");
+    for (const preset of ["https://ollama.com/v1", "https://api.deepinfra.com/v1/openai"]) {
+      await render(preset);
+      expect(container.textContent).not.toContain("Setup help");
+    }
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
   }
 });

@@ -1,7 +1,9 @@
 import type {
+  CacheCapabilities,
   ModelApiProtocol,
   ModelHeaderRow,
   ModelOAuthBegin,
+  OpenAiCompatibleModelInfo,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -12,12 +14,13 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   isCloudflareModelProvider,
-  isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   modelHeadersInput,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatibleKeyRequired,
+  openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -71,6 +74,7 @@ import {
   modelConnectionRequest,
 } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
+import { presetKeyPlaceholder, probedModelPrefill } from "../../lib/openai-compatible-presets";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
 import { useListSearch } from "../../lib/use-list-search";
@@ -121,9 +125,16 @@ export default function ModelConnection() {
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  // What the server's listing says about each found model; picking one prefills the switches.
+  const [probeDetails, setProbeDetails] = useState<OpenAiCompatibleModelInfo[]>([]);
+  // Prompt-cache support the listing reported for the model on screen, sent on connect.
+  const [cacheCapabilities, setCacheCapabilities] = useState<CacheCapabilities | undefined>();
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const resetOpenAiCompatibleProbe = useCallback(() => {
+    modelProbe.reset();
+    setProbeDetails([]);
+  }, [modelProbe]);
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -224,6 +235,7 @@ export default function ModelConnection() {
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       resetOpenAiCompatibleProbe();
+      setCacheCapabilities(undefined);
       setModelId(nextModel);
       setHeaderRows(null);
       setEnabledModelIds(fields.enabledModelIds);
@@ -239,7 +251,7 @@ export default function ModelConnection() {
       setGatewayId(fields.gatewayId);
       return nextMe;
     },
-    [request, rpc, t],
+    [request, resetOpenAiCompatibleProbe, rpc, t],
   );
 
   useFocusEffect(
@@ -266,6 +278,9 @@ export default function ModelConnection() {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  // A hosted preset (Ollama Cloud, DeepInfra) needs a key and has no setup to explain.
+  const hostedPreset = isOpenAiCompatible ? openAiCompatiblePresetFor(baseUrl) : undefined;
+  const keyRequired = isOpenAiCompatible && openAiCompatibleKeyRequired(baseUrl);
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
@@ -345,11 +360,14 @@ export default function ModelConnection() {
     if (!baseUrl.trim()) return;
     Keyboard.dismiss();
     clearFeedback();
+    // The probe keeps only the model ids; hold the rest for the success callback, which a
+    // superseded probe never reaches.
+    let found: OpenAiCompatibleModelInfo[] = [];
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) =>
-        rpc(
+      request: async (input) => {
+        const result = await rpc(
           "models/probeOpenAiCompatible",
           {
             ...input,
@@ -358,10 +376,14 @@ export default function ModelConnection() {
             credentialId: credential?.id,
           },
           { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
-        ),
+        );
+        found = result.details ?? [];
+        return result;
+      },
       onSuccess: (models) => {
+        setProbeDetails(found);
         const next = modelId.trim() || models[0] || "";
-        if (next !== modelId) stageCompatibleModelId(next);
+        if (next !== modelId) stageCompatibleModelId(next, found);
         else setModelId(next);
         publishFeedback("probe", {
           notice:
@@ -399,12 +421,23 @@ export default function ModelConnection() {
     }
   }
 
-  function stageCompatibleModelId(nextModelId: string) {
+  function stageCompatibleModelId(nextModelId: string, details = probeDetails) {
+    // The connection's saved model keeps the settings its owner chose.
+    const savedModel =
+      credential?.modelId === nextModelId &&
+      savedCompatibleEndpointMatches(baseUrl, credential.baseUrl);
+    const prefill = savedModel ? {} : probedModelPrefill(details, nextModelId);
+    const nextReasoning = prefill.reasoning ?? reasoning;
     setModelId(nextModelId);
+    if (prefill.reasoning !== undefined) setReasoning(prefill.reasoning);
+    if (prefill.supportsImages !== undefined) setSupportsImages(prefill.supportsImages);
+    if (prefill.contextWindow !== undefined) setContextWindow(prefill.contextWindow);
+    // The previous model's cache support does not carry over to this one.
+    setCacheCapabilities(prefill.cacheCapabilities);
     setThinkingLevel(
       clampCatalogThinkingLevel(
         credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
+        nextReasoning ? compatibleThinkingLevels(apiProtocol) : [],
       ) as ThinkingLevel | null,
     );
   }
@@ -458,9 +491,11 @@ export default function ModelConnection() {
     const { savingLimitOnly, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc("models/connect", connect.input, {
-        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
-      });
+      const saved = await rpc(
+        "models/connect",
+        cacheCapabilities ? { ...connect.input, cacheCapabilities } : connect.input,
+        { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
+      );
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       if (!limitsOnly) setApiKey("");
@@ -673,7 +708,7 @@ export default function ModelConnection() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!hostedPreset ? (
         <>
           {disclosureRow(t("Setup help"), showEndpointHelp, () =>
             setShowEndpointHelp((visible) => !visible),
@@ -882,12 +917,12 @@ export default function ModelConnection() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {isOllamaCloudBaseUrl(baseUrl) ? (
+        {keyRequired ? (
           <Text style={styles.sectionTitle}>{t("API key")}</Text>
         ) : (
           disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
         )}
-        {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
+        {showApiKey || keyRequired ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -897,8 +932,8 @@ export default function ModelConnection() {
             importantForAutofill="no"
             onChangeText={updateApiKey}
             placeholder={
-              isOllamaCloudBaseUrl(baseUrl)
-                ? t("Ollama API key")
+              hostedPreset
+                ? presetKeyPlaceholder(hostedPreset, t)
                 : credential?.hasKey
                   ? t("Paste a replacement key")
                   : t("Optional")

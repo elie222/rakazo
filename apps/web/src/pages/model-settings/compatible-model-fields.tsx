@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
+import { openAiCompatiblePresetFor } from "@rakazo/contracts";
 import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -15,6 +15,7 @@ import {
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { modelCapabilityHint } from "../../lib/compatible-preset";
 import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -40,6 +41,7 @@ export function CompatibleModelFields({
   modelId,
   preflightFailure,
   preflightTarget,
+  probeInfoById,
   probeModels,
   probeServerModels,
   probing,
@@ -81,6 +83,7 @@ export function CompatibleModelFields({
   | "modelId"
   | "preflightFailure"
   | "preflightTarget"
+  | "probeInfoById"
   | "probeModels"
   | "probeServerModels"
   | "probing"
@@ -147,7 +150,7 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!openAiCompatiblePresetFor(baseUrl) ? (
         <Disclosure
           className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}
@@ -262,6 +265,11 @@ export function CompatibleModelFields({
                   }}
                 />
                 <span className="min-w-0 break-all">{id}</span>
+                {modelCapabilityHint(probeInfoById.get(id)) ? (
+                  <span className="shrink-0 text-body-sm text-muted-foreground">
+                    {modelCapabilityHint(probeInfoById.get(id))}
+                  </span>
+                ) : null}
               </Label>
             ))}
             {visibleRows.length ? null : (

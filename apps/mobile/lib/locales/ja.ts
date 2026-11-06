@@ -120,6 +120,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not update name": "名前を更新できませんでした",
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "OllamaのAPIキー",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "DeepInfraのAPIキー",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを非表示",
   Export: "エクスポート",

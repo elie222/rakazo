@@ -3,9 +3,9 @@ import type { SettingsScope } from "@rakazo/contracts";
 import {
   compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
+  OPENAI_COMPATIBLE_PRESETS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatiblePresetFor,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
@@ -101,13 +101,11 @@ export function ModelSettingsOverlay({
     [
       ...groups.map((group) => ({ id: group.id, name: group.name })),
       ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-        ? [
-            {
-              id: OPENAI_COMPATIBLE_PROVIDER_ID,
-              name: t`Ollama Cloud`,
-              baseUrl: OLLAMA_CLOUD_BASE_URL,
-            },
-          ]
+        ? OPENAI_COMPATIBLE_PRESETS.map((preset) => ({
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: preset.name,
+            baseUrl: preset.baseUrl,
+          }))
         : []),
     ],
     (entry) => entry.id,
@@ -115,7 +113,8 @@ export function ModelSettingsOverlay({
   );
   const providers = allProviders.filter((entry) =>
     entry.baseUrl
-      ? !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+      ? openAiCompatiblePresetFor(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+          ?.baseUrl !== entry.baseUrl
       : !credentialByProvider.has(entry.id),
   );
   const connectionName = (entry: ModelCredential) => {
@@ -131,7 +130,7 @@ export function ModelSettingsOverlay({
       credentialByProvider.get(id)?.baseUrl,
       groups.find((group) => group.id === id)?.name ?? id,
     );
-  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+  // A hosted preset (Ollama Cloud, DeepInfra) shares the compatible provider id with a saved local server.
   const connected = Boolean(
     credential &&
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),

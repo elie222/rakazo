@@ -104,6 +104,8 @@ export const ZH_MESSAGES: Record<string, string> = {
 
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API 密钥",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "DeepInfra API 密钥",
   "Show password": "显示密码",
   "Hide password": "隐藏密码",
   Export: "导出",

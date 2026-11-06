@@ -111,6 +111,8 @@ export const RU_MESSAGES: Record<string, string> = {
 
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "API-ключ Ollama",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "API-ключ DeepInfra",
   "Show password": "Показать пароль",
   "Hide password": "Скрыть пароль",
   Export: "Экспорт",

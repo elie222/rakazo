@@ -110,6 +110,8 @@ export const PL_MESSAGES: Record<string, string> = {
     "{summary} Modele zapasowe zawiodły lub były niedostępne dla tego żądania.",
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Klucz API Ollama",
+  DeepInfra: "DeepInfra",
+  "DeepInfra API key": "Klucz API DeepInfra",
   "Show password": "Pokaż hasło",
   "Hide password": "Ukryj hasło",
   Export: "Eksportuj",

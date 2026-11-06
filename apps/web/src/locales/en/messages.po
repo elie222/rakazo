@@ -2719,6 +2719,10 @@ msgstr "days"
 msgid "Decline"
 msgstr "Decline"
 
+#: src/lib/compatible-preset.ts
+msgid "DeepInfra API key"
+msgstr "DeepInfra API key"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -3652,6 +3656,10 @@ msgstr "Image input is not configured for this model."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Image upload area"
+
+#: src/lib/compatible-preset.ts
+msgid "Images"
+msgstr "Images"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
@@ -4775,15 +4783,9 @@ msgstr "OAuth connection failed"
 msgid "Offline"
 msgstr "Offline"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/lib/compatible-preset.ts
 msgid "Ollama API key"
 msgstr "Ollama API key"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -6702,6 +6704,7 @@ msgid "They get {weeks} weeks free."
 msgstr "They get {weeks} weeks free."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/compatible-preset.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

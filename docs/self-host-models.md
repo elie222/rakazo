@@ -100,6 +100,10 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 
+## DeepInfra
+
+In **Settings → Models**, choose **DeepInfra**, paste an API key from deepinfra.com, then **Find models**. The list shows DeepInfra's chat models only, and each model's image input, thinking, context window and prompt cache pricing are prefilled from DeepInfra's own model metadata. **Supports thinking** starts on only for models that accept `reasoning_effort`; models that always think, with no effort control, start with it off. Like Ollama Cloud, this needs no environment configuration and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. DeepInfra's model list answers without a key, so Rakazo checks the key against DeepInfra's account endpoint before listing or saving.
+
 ## OpenAI-compatible connections
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /

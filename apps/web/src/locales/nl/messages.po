@@ -2719,6 +2719,10 @@ msgstr "dagen"
 msgid "Decline"
 msgstr "Weigeren"
 
+#: src/lib/compatible-preset.ts
+msgid "DeepInfra API key"
+msgstr "DeepInfra API-sleutel"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -3652,6 +3656,10 @@ msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Gebied voor afbeeldingsuploads"
+
+#: src/lib/compatible-preset.ts
+msgid "Images"
+msgstr "Afbeeldingen"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
@@ -4775,14 +4783,8 @@ msgstr "OAuth-verbinding mislukt"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/lib/compatible-preset.ts
 msgid "Ollama API key"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -6702,6 +6704,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Zij krijgen {weeks} weken gratis."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/compatible-preset.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

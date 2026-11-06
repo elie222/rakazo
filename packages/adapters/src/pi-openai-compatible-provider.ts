@@ -5,18 +5,20 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import type { ModelApiProtocol } from "@rakazo/contracts";
+import type { ModelApiProtocol, OpenAiCompatibleModelInfo } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   ipVersion,
   isCloudMetadataAddress,
+  isDeepInfraBaseUrl,
   isLinkLocalAddress,
   isNonPublicAddress,
   MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
 import { Agent } from "undici";
+import { deepInfraModelList } from "./deepinfra-models.js";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import type { ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
@@ -424,8 +426,14 @@ export function prepareOpenAiCompatibleConnect(
 
 export type OpenAiCompatibleModelsResponse = {
   object?: string;
-  data?: Array<{ id?: string }>;
+  data?: Array<{ id?: string; metadata?: unknown }>;
   models?: Array<{ id?: string }>;
+};
+
+/** Model ids a server lists, with per-model capabilities when the server publishes them. */
+export type OpenAiCompatibleModelList = {
+  models: string[];
+  details?: OpenAiCompatibleModelInfo[];
 };
 
 /** Shared suffix: /models probe is optional when the user already knows a model id. */
@@ -496,18 +504,27 @@ async function readBoundedJson(
   }
 }
 
-/** Some compatible servers expose their model list without authenticating. */
+/**
+ * Hosted services whose model list answers without a key, so listing models proves nothing:
+ * each gets an authenticated endpoint on the same host that refuses a missing or bad key.
+ */
+const HOSTED_KEY_CHECK_URLS: ReadonlyMap<string, string> = new Map([
+  ["ollama.com", "https://ollama.com/api/balance"],
+  ["api.deepinfra.com", "https://api.deepinfra.com/v1/me"],
+]);
+
 export async function verifyOpenAiCompatibleApiKey(
   input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (new URL(input.baseUrl).hostname !== "ollama.com") return;
+  const checkUrl = HOSTED_KEY_CHECK_URLS.get(new URL(input.baseUrl).hostname);
+  if (!checkUrl) return;
   if (!input.apiKey?.trim()) throw new Error(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
-    response = await safeFetch("https://ollama.com/api/balance", {
+    response = await safeFetch(checkUrl, {
       headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
       redirect: "error",
       signal: AbortSignal.any([
@@ -525,7 +542,18 @@ export async function verifyOpenAiCompatibleApiKey(
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
+/** Model ids only; see `probeOpenAiCompatibleModelList` for per-model capabilities. */
 export async function probeOpenAiCompatibleModels(
+  ...args: Parameters<typeof probeOpenAiCompatibleModelList>
+): Promise<string[]> {
+  return (await probeOpenAiCompatibleModelList(...args)).models;
+}
+
+/**
+ * Lists the models a server offers. DeepInfra also tags each model in its listing, so its
+ * probe keeps only chat models and returns their capabilities as `details`.
+ */
+export async function probeOpenAiCompatibleModelList(
   input: {
     baseUrl: string;
     apiKey?: string;
@@ -535,7 +563,7 @@ export async function probeOpenAiCompatibleModels(
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
   opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
-): Promise<string[]> {
+): Promise<OpenAiCompatibleModelList> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, opts);
   assertHttpsForKeyedOpenAiCompatibleUrl(
     baseUrl,
@@ -578,7 +606,11 @@ export async function probeOpenAiCompatibleModels(
       );
     }
     const body = await readBoundedJson(response, opts);
-    return probeModelIds(body, opts);
+    const ids = probeModelIds(body, opts);
+    if (isDeepInfraBaseUrl(baseUrl.href) && Array.isArray(body.data)) {
+      return deepInfraModelList(body.data, ids);
+    }
+    return { models: ids };
   } catch (error) {
     const aborted =
       (error instanceof Error && error.name === "AbortError") ||

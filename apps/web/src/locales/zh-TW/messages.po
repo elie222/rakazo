@@ -2720,6 +2720,10 @@ msgstr "天"
 msgid "Decline"
 msgstr "拒絕"
 
+#: src/lib/compatible-preset.ts
+msgid "DeepInfra API key"
+msgstr "DeepInfra API 金鑰"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -3653,6 +3657,10 @@ msgstr "此模型尚未設定圖片輸入。"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "圖片上傳區域"
+
+#: src/lib/compatible-preset.ts
+msgid "Images"
+msgstr "圖片"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
@@ -4776,15 +4784,9 @@ msgstr "OAuth 連線失敗"
 msgid "Offline"
 msgstr "離線"
 
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
+#: src/lib/compatible-preset.ts
 msgid "Ollama API key"
 msgstr "Ollama API 金鑰"
-
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Ollama Cloud"
-msgstr "Ollama Cloud"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -6703,6 +6705,7 @@ msgid "They get {weeks} weeks free."
 msgstr "對方可免費使用 {weeks} 週。"
 
 #: src/components/call/CallCard.tsx
+#: src/lib/compatible-preset.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx

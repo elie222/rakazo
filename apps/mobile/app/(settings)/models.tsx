@@ -1,8 +1,8 @@
 import {
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
+  OPENAI_COMPATIBLE_PRESETS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatiblePresetFor,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -27,6 +27,7 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
+import { presetName } from "../../lib/openai-compatible-presets";
 import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -159,7 +160,7 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus the Ollama Cloud preset of the compatible one. */
+  /** Every provider, popular first, plus a preset (Ollama Cloud, DeepInfra) per hosted compatible service. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -171,11 +172,12 @@ export default function Models() {
     }
     const all = [...grouped.values()];
     if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      all.push({
-        id: OPENAI_COMPATIBLE_PROVIDER_ID,
-        name: t("Ollama Cloud"),
-        baseUrl: OLLAMA_CLOUD_BASE_URL,
-      });
+      for (const preset of OPENAI_COMPATIBLE_PRESETS)
+        all.push({
+          id: OPENAI_COMPATIBLE_PROVIDER_ID,
+          name: presetName(preset, t),
+          baseUrl: preset.baseUrl,
+        });
     return popularModelProvidersFirst(
       all,
       (provider) => provider.id,
@@ -186,12 +188,19 @@ export default function Models() {
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    const ollama = credentials.some(
-      (entry) =>
-        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && isOllamaCloudBaseUrl(entry.baseUrl),
-    );
+    // A hosted preset is offered once, until a connection to its endpoint is saved.
+    const connectedPresets = new Set<string>();
+    for (const entry of credentials) {
+      const preset =
+        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? openAiCompatiblePresetFor(entry.baseUrl)
+          : undefined;
+      if (preset) connectedPresets.add(preset.baseUrl);
+    }
     return allProviders.filter((provider) =>
-      provider.baseUrl ? !ollama : !connected.has(canonicalPiProviderId(provider.id)),
+      provider.baseUrl
+        ? !connectedPresets.has(provider.baseUrl)
+        : !connected.has(canonicalPiProviderId(provider.id)),
     );
   }, [allProviders, credentials]);
 

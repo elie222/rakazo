@@ -960,7 +960,7 @@ it("lists not-connected providers by name alone", async () => {
   const view = await renderSettings();
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["DeepSeek", "Ollama Cloud", "OpenAI-compatible"]);
+    expect(pickerOptions()).toEqual(["DeepInfra", "DeepSeek", "Ollama Cloud", "OpenAI-compatible"]);
     expect(document.querySelectorAll("[cmdk-group-heading]")).toHaveLength(0);
   } finally {
     await view.unmount();
@@ -1266,6 +1266,101 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
   }
 });
 
+const deepInfraDetails = [
+  {
+    id: "vision-model",
+    supportsImages: true,
+    reasoning: true,
+    contextWindow: 131072,
+    cacheCapabilities: { scope: "connection" as const },
+  },
+  { id: "text-model", supportsImages: false, reasoning: false, contextWindow: 32768 },
+];
+
+it("opens the DeepInfra preset with a required key and prefills the model's capabilities", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "DeepInfra");
+    expect(titles(view.container)).toContain("Connect DeepInfra");
+    expect(baseUrlField(view.container).value).toBe("https://api.deepinfra.com/v1/openai");
+    for (const name of ["Setup help", "API key"]) {
+      expect(
+        [...view.container.querySelectorAll("button")].filter((row) => row.textContent === name),
+      ).toHaveLength(0);
+    }
+    const key = view.container.querySelector(
+      'input[placeholder="DeepInfra API key"]',
+    ) as HTMLInputElement;
+    expect(key.required).toBe(true);
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(key, "fake-fixture-key");
+    await click(buttons(view.container, "Find models")[0]);
+    expect(view.container.querySelector('[data-testid="compatible-model-rows"]')?.textContent).toBe(
+      "vision-modelImages · Thinkingtext-model",
+    );
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        baseUrl: "https://api.deepinfra.com/v1/openai",
+        apiKey: "fake-fixture-key",
+        modelId: "vision-model",
+        reasoning: true,
+        supportsImages: true,
+        contextWindow: 131072,
+        cacheCapabilities: { scope: "connection" as const },
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("re-prefills the capabilities when another found model becomes the default", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({
+    models: ["vision-model", "text-model"],
+    details: deepInfraDetails,
+  });
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "DeepInfra");
+    await typeInto(
+      view.container.querySelector('input[placeholder="DeepInfra API key"]') as HTMLInputElement,
+      "fake-fixture-key",
+    );
+    await click(buttons(view.container, "Find models")[0]);
+    await act(async () => {
+      modelCheckbox(view.container, "text-model").click();
+    });
+    const select = view.container.querySelector(
+      "select[aria-label='Models from server']",
+    ) as HTMLSelectElement;
+    await selectValue(select, "text-model");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: "text-model",
+        reasoning: false,
+        supportsImages: false,
+        contextWindow: 32768,
+      }),
+    );
+    expect(models.connect.mock.calls.at(-1)?.[0]).not.toHaveProperty("cacheCapabilities");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("offers a saved Ollama connection's models without the Ollama preset", async () => {
   models.list.mockResolvedValue([compatibleEntry]);
   models.credentials.mockResolvedValue([
@@ -1281,7 +1376,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
   const view = await renderSettings(false);
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["fixture-model"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "DeepInfra"]);
   } finally {
     await view.unmount();
   }
@@ -1302,7 +1397,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   const view = await renderSettings(false);
   try {
     await openPicker("Add fallback");
-    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "DeepInfra", "Ollama Cloud"]);
     await choose("Ollama Cloud");
     expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
   } finally {

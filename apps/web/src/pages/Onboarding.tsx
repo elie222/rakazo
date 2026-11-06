@@ -6,14 +6,15 @@ import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   isCloudflareModelProvider,
-  isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   modelHeadersInput,
-  OLLAMA_CLOUD_BASE_URL,
+  OPENAI_COMPATIBLE_PRESETS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
+  openAiCompatibleKeyRequired,
+  openAiCompatiblePresetFor,
   openAiCompatibleProbeSuccessMessage,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
@@ -40,7 +41,7 @@ import {
   SelectValue,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AccountMenu } from "../components/AccountMenu";
 import { FoundModelPicker } from "../components/FoundModelPicker";
@@ -51,6 +52,11 @@ import {
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { PageLoading } from "../components/PageLoading";
 import { SignupSurvey } from "../components/SignupSurvey";
+import {
+  modelCapabilityHint,
+  presetApiKeyPlaceholder,
+  probedModelFields,
+} from "../lib/compatible-preset";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
@@ -64,12 +70,14 @@ import {
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
+import { useProbeModelInfo } from "../lib/use-probe-model-info";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
 const CREDITS_OPTION = "__rakazo_credits__";
+const presetOptionValue = (presetId: string) => `preset:${presetId}`;
 /** A provider whose catalog entry offers both sign-in and a key appears once per way to connect. */
 type ProviderAuth = "sign-in" | "key";
 
@@ -175,7 +183,12 @@ export function OnboardingPage() {
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const probeInfo = useProbeModelInfo();
+  const clearProbeInfo = probeInfo.clear;
+  const resetOpenAiCompatibleProbe = useCallback(() => {
+    modelProbe.reset();
+    clearProbeInfo();
+  }, [modelProbe, clearProbeInfo]);
   const createStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", setError);
@@ -296,7 +309,13 @@ export function OnboardingPage() {
         .flatMap((entry) => {
           const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
           return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-            ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+            ? [
+                item,
+                ...OPENAI_COMPATIBLE_PRESETS.map((preset) => ({
+                  value: presetOptionValue(preset.id),
+                  label: preset.name,
+                })),
+              ]
             : [item];
         }),
       (option) => option.value,
@@ -342,7 +361,7 @@ export function OnboardingPage() {
     if (
       option === providerOptionValue(provider, providerAuth) &&
       !presetBaseUrl &&
-      !isOllamaCloudBaseUrl(baseUrl)
+      !openAiCompatiblePresetFor(baseUrl)
     )
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
@@ -388,7 +407,9 @@ export function OnboardingPage() {
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc.models.probeOpenAiCompatible({ ...input, headers: modelHeadersInput(headerRows) }),
+        probeInfo.record(
+          rpc.models.probeOpenAiCompatible({ ...input, headers: modelHeadersInput(headerRows) }),
+        ),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const trimmed = modelIdRef.current.trim();
@@ -400,6 +421,7 @@ export function OnboardingPage() {
           (wasManual) => wasManual || (Boolean(trimmed) && !models.includes(trimmed)),
         );
         setModelId(next);
+        applyProbedModelFields(next);
         const unavailable = unavailableSelectedModel(trimmed, models);
         if (unavailable) {
           setPreflightFailure(unavailable);
@@ -444,6 +466,19 @@ export function OnboardingPage() {
     setPreflightFailure(result.failure);
   }
 
+  /**
+   * Fills the image, thinking and context settings from what the model listing says about this
+   * model. The toggles stay editable; a model the listing does not describe changes nothing.
+   */
+  function applyProbedModelFields(id: string) {
+    const probed = probedModelFields(probeInfo.infoRef.current.get(id), maxTokens);
+    if (probed.supportsImages !== undefined) setSupportsImages(probed.supportsImages);
+    if (probed.reasoning !== undefined) setReasoning(probed.reasoning);
+    if (probed.reasoning === false) setThinkingLevel(null);
+    if (probed.contextWindow !== undefined) setContextWindow(probed.contextWindow);
+    if (probed.maxTokens !== undefined) setMaxTokens(probed.maxTokens);
+  }
+
   function stagedThinkingLevel(): ThinkingLevel | null {
     return clampCatalogThinkingLevel(
       thinkingLevel,
@@ -481,6 +516,8 @@ export function OnboardingPage() {
           );
           return;
         }
+        // Prompt-caching support the model listing published rides along with the connection.
+        const cacheCapabilities = probeInfo.infoRef.current.get(modelId.trim())?.cacheCapabilities;
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
@@ -492,6 +529,7 @@ export function OnboardingPage() {
           contextWindow: parsedContextWindow,
           supportsImages,
           maxImagesPerPrompt: maxImagesPerPromptInput,
+          ...(cacheCapabilities ? { cacheCapabilities } : {}),
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });
@@ -577,8 +615,8 @@ export function OnboardingPage() {
                 value={
                   credits
                     ? CREDITS_OPTION
-                    : isOpenAiCompatible && isOllamaCloudBaseUrl(baseUrl)
-                      ? "ollama-preset"
+                    : isOpenAiCompatible && openAiCompatiblePresetFor(baseUrl)
+                      ? presetOptionValue(openAiCompatiblePresetFor(baseUrl)?.id ?? "")
                       : provider
                         ? providerOptionValue(provider, providerAuth)
                         : null
@@ -594,8 +632,10 @@ export function OnboardingPage() {
                     return;
                   }
                   setCredits(false);
-                  if (value === "ollama-preset")
-                    selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL);
+                  const preset = OPENAI_COMPATIBLE_PRESETS.find(
+                    (entry) => presetOptionValue(entry.id) === value,
+                  );
+                  if (preset) selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, preset.baseUrl);
                   else selectProvider(value);
                 }}
                 items={providerItems}
@@ -664,8 +704,10 @@ export function OnboardingPage() {
                             invalidatePreflight();
                             setManualModelId(next === CUSTOM_MODEL_OPTION);
                             setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
+                            if (next !== CUSTOM_MODEL_OPTION) applyProbedModelFields(next);
                           }}
                           otherValue={CUSTOM_MODEL_OPTION}
+                          hint={(id) => modelCapabilityHint(probeInfo.infoById.get(id))}
                         />
                       ) : (
                         <Input
@@ -688,6 +730,7 @@ export function OnboardingPage() {
                           onClick={() => {
                             setManualModelId(false);
                             setModelId(probeModels[0] ?? "");
+                            applyProbedModelFields(probeModels[0] ?? "");
                             invalidatePreflight();
                           }}
                         >
@@ -904,10 +947,8 @@ export function OnboardingPage() {
                         aria-label={t`API key`}
                         value={apiKey}
                         onChange={(e) => updateApiKey(e.target.value)}
-                        required={isOllamaCloudBaseUrl(baseUrl)}
-                        placeholder={
-                          isOllamaCloudBaseUrl(baseUrl) ? t`Ollama API key` : t`Optional`
-                        }
+                        required={openAiCompatibleKeyRequired(baseUrl)}
+                        placeholder={presetApiKeyPlaceholder(baseUrl) ?? t`Optional`}
                         type="password"
                         autoComplete="new-password"
                         className="mt-2"

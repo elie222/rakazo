@@ -1,5 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
+import { openAiCompatibleKeyRequired } from "@rakazo/contracts";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -7,6 +7,7 @@ import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
+import { presetApiKeyPlaceholder } from "../../lib/compatible-preset";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -394,13 +395,10 @@ export function CompatibleKeyControls({
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={isOllamaCloudBaseUrl(baseUrl)}
+          required={openAiCompatibleKeyRequired(baseUrl)}
           placeholder={
-            isOllamaCloudBaseUrl(baseUrl)
-              ? t`Ollama API key`
-              : credential?.hasKey
-                ? t`Paste a replacement key`
-                : t`Optional`
+            presetApiKeyPlaceholder(baseUrl) ??
+            (credential?.hasKey ? t`Paste a replacement key` : t`Optional`)
           }
           type="password"
           autoComplete="new-password"
