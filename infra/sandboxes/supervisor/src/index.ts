@@ -1339,7 +1339,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   if (process.argv.includes("--print-attest-tag")) {
     // Offline installs cannot build the attestation image on the Docker host;
     // this prints the exact content-hash tag to build elsewhere and preload.
-    console.log(expectedAttestImage(attestContext));
+    process.stdout.write(`${expectedAttestImage(attestContext)}\n`);
     process.exit(0);
   }
   // A rejected startup keeps Node's default: the error is printed and the process exits.
