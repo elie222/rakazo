@@ -165,6 +165,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     teamChatAmbientEnabled: false,
     teamChatRules: "",
     fleetManagement: false,
+    replyMode: "chat",
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
@@ -285,6 +286,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
     voice: "Voice",
     readAloud: "Read replies aloud",
     fleetManagement: "Manage other bots",
+    replyMode: "Replies",
   };
   const controls = [...advanced.querySelectorAll("h3, span, label, div")].flatMap((node) =>
     Object.entries(labels)
@@ -302,6 +304,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
     "voice",
     "readAloud",
     "fleetManagement",
+    "replyMode",
   ]);
 });
 
@@ -446,6 +449,17 @@ describe("BotSettings bot management saves", () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
     await clickSave();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+
+  it("saves only the reply mode when it changes", async () => {
+    await render();
+    const select = container.querySelector<HTMLSelectElement>('select[id$="-reply-mode"]');
+    if (!select) throw new Error("Missing reply mode");
+    await act(async () => {
+      select.value = "messages";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ replyMode: "messages" });
   });
 });
 

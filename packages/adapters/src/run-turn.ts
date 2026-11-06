@@ -58,6 +58,7 @@ import {
   flushPendingTools,
   flushProgress,
   mayBeSilentEnding,
+  narrationBecomesMessages,
   nextProgressNonce,
   progressHeldForSilence,
   publishMidTurnNarration,
@@ -338,6 +339,10 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (ctx.replyMode === "messages") {
+    await flushProgress(ctx);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+  }
   if (!event.fromRunUser) return;
   const now = Date.now();
   if (
@@ -363,7 +368,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger) && !mayBeSilentEnding(ctx, text)) {
+  if (text && narrationBecomesMessages(ctx) && !mayBeSilentEnding(ctx, text)) {
     reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
@@ -797,6 +802,9 @@ export async function completeRun(ctx: RunContext) {
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
   // When nothing follows the last step, the notes since the last interim message are the reply.
+  // Messages mode keeps only the latest one; the earlier ones were private working.
+  const fallbackNotes =
+    ctx.replyMode === "messages" ? reply.workingNotes.slice(-1) : reply.workingNotes;
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
@@ -805,11 +813,8 @@ export async function completeRun(ctx: RunContext) {
     !reply.textSinceLastStep.trim()
   ) {
     flushPendingTools(reply);
-    reply.messageSegments = withoutLastToolStepNotes(
-      reply.messageSegments,
-      reply.workingNotes.length,
-    );
-    const notes = reply.workingNotes.join("\n\n");
+    reply.messageSegments = withoutLastToolStepNotes(reply.messageSegments, fallbackNotes.length);
+    const notes = fallbackNotes.join("\n\n");
     const separator = assistantTurnSeparator(reply.assembled, notes);
     reply.assembled += separator + notes;
     reply.currentTextSegment += separator + notes;

@@ -145,6 +145,9 @@ export const ES_MESSAGES: Record<string, string> = {
   "Search bots": "Buscar bots",
   "About {label}": "Acerca de {label}",
   "Manage other bots": "Gestionar otros bots",
+  Replies: "Respuestas",
+  Chat: "Chat",
+  Messages: "Mensajes",
   "Allow cross-space bot communication":
     "Permitir la comunicación entre bots de distintos espacios",
   Headers: "Encabezados",

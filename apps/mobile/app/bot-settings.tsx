@@ -1,4 +1,4 @@
-import type { Bot, BotAvatarSet, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { Bot, BotAvatarSet, ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_AVATAR_SHAPE_COUNT,
   BOT_COLORS,
@@ -83,6 +83,7 @@ export default function BotSettingsScreen() {
   const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
   const [fleetManagement, setFleetManagement] = useState(true);
+  const [replyMode, setReplyMode] = useState<ReplyMode>("chat");
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -127,6 +128,18 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, fleetManagement: value });
         },
         onChange: setFleetManagement,
+        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+      }),
+    [botId, t],
+  );
+
+  const replyModeSave = useMemo(
+    () =>
+      createQueuedSave<ReplyMode>("chat", {
+        save: async (value) => {
+          await rpc("bots/update", { botId, replyMode: value });
+        },
+        onChange: setReplyMode,
         onError: (err) => setError(errorText(err, t("Could not save bot"))),
       }),
     [botId, t],
@@ -199,9 +212,11 @@ export default function BotSettingsScreen() {
         crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
+        setReplyMode(next.replyMode);
+        replyModeSave.reset(next.replyMode);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
-  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
+  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, replyModeSave, notifySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -433,6 +448,7 @@ export default function BotSettingsScreen() {
         dailyCheckInsSave.flush(),
         crossSpaceSave.flush(),
         fleetSave.flush(),
+        replyModeSave.flush(),
         notifySave.flush(),
         nameSave.flush(),
       ]);
@@ -707,6 +723,23 @@ export default function BotSettingsScreen() {
                   value={fleetManagement}
                 />
               </View>
+            </SettingsGroup>
+            <SettingsGroup label={t("Replies")}>
+              <MenuPicker
+                plain
+                choices={[
+                  { key: "chat", label: t("Chat") },
+                  { key: "messages", label: t("Messages") },
+                ]}
+                label={t("Replies")}
+                showLabel={false}
+                onChange={(value) => {
+                  if (!botId) return;
+                  setError(null);
+                  replyModeSave.update(value as ReplyMode);
+                }}
+                value={replyMode}
+              />
             </SettingsGroup>
             <View>
               <View

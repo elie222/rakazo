@@ -1363,6 +1363,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Nie udało się wyświetlić wykresu: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr "Czat"
 
@@ -4215,6 +4216,10 @@ msgstr "Wiadomość…"
 msgid "Messaged {peer}"
 msgstr "Wysłano wiadomość do {peer}"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Messages"
+msgstr "Wiadomości"
+
 #: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Komunikatory"
@@ -5557,6 +5562,10 @@ msgstr "Zastąp klucz"
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
 msgstr "Zastępuje login zapisany dla {0}"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Replies"
+msgstr "Odpowiedzi"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"

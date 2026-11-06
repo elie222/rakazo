@@ -137,6 +137,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "{count} Nachrichten mit {peer}",
   "About {label}": "Über {label}",
   "Manage other bots": "Andere Bots verwalten",
+  Replies: "Antworten",
+  Chat: "Chat",
+  Messages: "Nachrichten",
   "Allow cross-space bot communication":
     "Kommunikation zwischen Bots in verschiedenen Spaces erlauben",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
