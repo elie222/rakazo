@@ -62,7 +62,7 @@ function TemplateIcon({ id, large = false }: { id: string; large?: boolean }) {
 
 function Sample({ text }: { text: string }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background px-4 py-3 text-[14px]">
+    <div className="rounded-xl border border-border/60 bg-background px-4 py-3 text-body">
       <ChatMarkdown>{text}</ChatMarkdown>
     </div>
   );
@@ -123,16 +123,16 @@ export function BotTemplatesDialog({
               <span className="flex min-w-0 items-center gap-3">
                 <TemplateIcon id={template.id} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium text-foreground">
+                  <span className="block truncate text-body-lg font-medium text-foreground">
                     {name}
                   </span>
-                  <span className="block truncate text-[13px] text-muted-foreground">
+                  <span className="block truncate text-body-sm text-muted-foreground">
                     {summary}
                   </span>
                 </span>
               </span>
               {/* A glimpse of the example; the template's page shows all of it. */}
-              <span className="block h-40 overflow-hidden rounded-xl border border-border/60 bg-background px-3.5 py-2.5 text-[13px] mask-b-from-60%">
+              <span className="block h-40 overflow-hidden rounded-xl border border-border/60 bg-background px-3.5 py-2.5 text-body-sm mask-b-from-60%">
                 <ChatMarkdown>{sample}</ChatMarkdown>
               </span>
             </button>
@@ -268,8 +268,8 @@ function TemplateDetail({
         </Button>
         <TemplateIcon id={template.id} large />
         <div className="min-w-0 flex-1 pt-1">
-          <h2 className="truncate text-[20px] font-semibold text-foreground">{name}</h2>
-          <p className="truncate text-[13.5px] text-muted-foreground">{summary}</p>
+          <h2 className="truncate text-heading2 font-semibold text-foreground">{name}</h2>
+          <p className="truncate text-body text-muted-foreground">{summary}</p>
         </div>
         <div className="shrink-0 pt-2">
           {template.botId ? (
@@ -310,8 +310,8 @@ function TemplateDetail({
                 >
                   <Icon size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-medium">{row.title}</span>
-                    <span className="block truncate text-[12.5px] text-muted-foreground">
+                    <span className="block truncate text-body-lg font-medium">{row.title}</span>
+                    <span className="block truncate text-body-sm text-muted-foreground">
                       {row.detail}
                     </span>
                   </span>
@@ -323,7 +323,7 @@ function TemplateDetail({
                   />
                 </button>
                 {isOpen && row.body ? (
-                  <div className="mx-4 mb-3 rounded-lg bg-background px-3.5 py-2.5 text-[13px]">
+                  <div className="mx-4 mb-3 rounded-lg bg-background px-3.5 py-2.5 text-body-sm">
                     <ChatMarkdown>{row.body}</ChatMarkdown>
                   </div>
                 ) : null}
@@ -349,7 +349,7 @@ function AppsSection({ apps }: { apps: ConnectionCatalogItem[] }) {
         {apps.map((app) => (
           <li key={app.slug} className="flex items-center gap-3 px-4 py-3">
             <PluginLogo name={app.name} logo={app.logo} />
-            <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium">{app.name}</span>
+            <span className="min-w-0 flex-1 truncate text-body-lg font-medium">{app.name}</span>
             {app.connected ? (
               <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
             ) : null}
