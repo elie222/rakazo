@@ -82,6 +82,8 @@ async function main() {
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
+      process.env.INBOUND_EMAIL_DOMAIN = "bots.rakazo.test";
+      process.env.INBOUND_EMAIL_SECRET = "test-inbound-email-secret-test-32chars";
       // The offline wallet, so Settings shows Wallet and sign-in completes without a provider.
       process.env.PAYMENT_WALLET_PROVIDER = "emulator";
       process.env.RAKAZO_NAV_LINKS = JSON.stringify([

@@ -215,6 +215,7 @@ export const ZH_MESSAGES: Record<string, string> = {
 
   "Couldn't refresh — showing the last loaded messages.": "无法刷新——显示最近加载的消息。",
   "Too many unsent messages": "未发送消息过多",
+  "Unsent messages": "未发送消息",
   "Not sent": "未发送",
   "Not sent. Tap to retry": "未发送。轻点重试",
   "Not sent · Tap to retry": "未发送 · 轻点重试",
@@ -599,6 +600,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Slack message": "Slack 消息",
   "Message event": "消息事件",
   "When something changes": "有变化时",
+  "When an email arrives": "收到邮件时",
   "Teams not enabled": "未启用 Teams",
   "Slack not enabled": "未启用 Slack",
   "Teams message": "Teams 消息",
@@ -768,6 +770,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sign in": "登录",
   "Sign in to Rakazo": "登录 Rakazo",
   "Sign out": "退出登录",
+  "Sign out anyway": "仍要退出",
+  "Signing out deletes unsent messages.": "退出登录将删除未发送的消息。",
   "Sign up": "注册",
   "Sign up for Rakazo": "注册 Rakazo",
   "Sign-in": "登录",
@@ -839,6 +843,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "What this bot is for": "这个 Bot 的用途",
   Working: "工作中",
   "Working…": "处理中…",
+  "Running {name}…": "正在运行 {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "工作已停止，但线程无法刷新：{detail}",
   "You have control": "你已接管控制",
@@ -1002,6 +1007,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "使用手机自带的语音朗读，而不是已连接的语音服务。",
   "Call sounds": "通话提示音",
+  "Call greeting": "通话问候语",
   "Hello {name}, {bot} here.": "你好 {name}，我是 {bot}。",
   "Hello, {bot} here.": "你好，我是 {bot}。",
   "OK, switching to {name}.": "好的，正在切换到 {name}。",
@@ -1136,6 +1142,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Start plan": "开始套餐",
   "Switch to yearly": "切换为按年",
   "Switch to yearly?": "切换为按年付费？",
+  "Switch anyway": "仍要切换",
+  "Switching servers deletes unsent messages.": "切换服务器将删除未发送的消息。",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小时电脑时长",
   "Switch to {name}?": "切换到 {name}？",

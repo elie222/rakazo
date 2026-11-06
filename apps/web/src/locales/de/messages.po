@@ -882,6 +882,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "Jeder bei @{ownerDomain}"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Alle mit dem Link"
@@ -1091,6 +1095,7 @@ msgstr "Avatar-Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1210,10 +1215,6 @@ msgstr "Modell des Bots"
 
 #: src/components/SignupSurvey.tsx
 msgid "Both"
-msgstr ""
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
 msgstr ""
 
 #: src/components/ModelCredits.tsx
@@ -1511,6 +1512,10 @@ msgstr ""
 msgid "City"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "Beanspruchen"
+
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr ""
@@ -1536,6 +1541,10 @@ msgstr "Unterhaltung leeren"
 
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -3062,6 +3071,15 @@ msgstr "Profil bearbeiten"
 msgid "Email"
 msgstr "E-Mail"
 
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "E-Mail"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "E-Mail-Adresse"
+
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen"
@@ -3314,8 +3332,16 @@ msgstr "Dateien oder Ordner auf dem Computer"
 msgid "Files or folders, one per line"
 msgstr "Dateien oder Ordner, einer pro Zeile"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr ""
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
@@ -3326,7 +3352,6 @@ msgstr ""
 msgid "Filter by who made it"
 msgstr "Nach Ersteller filtern"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filter"
@@ -4556,7 +4581,7 @@ msgid "No apps match your search."
 msgstr "Keine Apps entsprechen deiner Suche."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
+msgid "No artifacts yet"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -4580,6 +4605,10 @@ msgstr "Nicht mehr aktiv"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
@@ -4790,6 +4819,10 @@ msgstr ""
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Nur ich"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5470,6 +5503,10 @@ msgstr "{site} entfernen"
 msgid "Remove change trigger"
 msgstr "Änderungsauslöser entfernen"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "E-Mail-Auslöser entfernen"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5748,6 +5785,10 @@ msgstr "läuft"
 msgid "Running"
 msgstr "Läuft"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} läuft…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Wird ausgeführt…"
@@ -5868,6 +5909,7 @@ msgstr "Bildschirm nicht verbunden"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5887,6 +5929,10 @@ msgstr "Apps suchen"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search apps and tools"
+msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
@@ -6572,6 +6618,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Wird getestet…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "Diese Adresse ist nicht verfügbar"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Der Bot kann die Datei nutzen, sieht das Bild aber nicht."
@@ -7109,6 +7159,10 @@ msgstr "{hostLabel} verwenden"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Verwende {oauthEnvReference} für das Zugriffstoken."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "Verwende 2 bis 64 Zeichen"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7129,6 +7183,10 @@ msgstr "Standards für {label} verwenden"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7334,6 +7392,10 @@ msgstr "Was überwachen"
 msgid "When a webhook fires"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "Wenn eine E-Mail eingeht"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Wenn der Bot fertig ist oder eine Eingabe benötigt"
@@ -7359,6 +7421,10 @@ msgstr "Wo sollen Bots ausgeführt werden?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Wer diese Seite öffnen kann"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Wer es starten kann"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

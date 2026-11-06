@@ -106,9 +106,11 @@ export function SettingsOverlay({
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputer =
-    (computerSettingsEnabled && (canConfigureComputers || canChooseOwnComputer(sandboxProvider))) ||
-    keepComputerRecovery ||
-    computersAreUnavailable(sandboxProvider);
+    computerSettingsEnabled &&
+    (canConfigureComputers ||
+      canChooseOwnComputer(sandboxProvider) ||
+      keepComputerRecovery ||
+      computersAreUnavailable(sandboxProvider));
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =

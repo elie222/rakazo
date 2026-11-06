@@ -882,6 +882,10 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "自分のキーで、あらゆるモデルを"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain} の全員"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "リンクを知っている全員"
@@ -1091,6 +1095,7 @@ msgstr "Avatar Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1211,10 +1216,6 @@ msgstr "ボットのモデル"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "両方"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "ボット"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1511,6 +1512,10 @@ msgstr "Rakazoの使い方を選択"
 msgid "City"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "取得"
+
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr "Claudeサブスクリプション"
@@ -1537,6 +1542,10 @@ msgstr "会話をクリア"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "フィルター{label}を解除"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "フィルターをクリア"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3062,6 +3071,15 @@ msgstr "プロフィールを編集"
 msgid "Email"
 msgstr "メールアドレス"
 
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "メール"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "メールアドレス"
+
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "このメールアドレスは登録できません"
@@ -3314,9 +3332,17 @@ msgstr "コンピューター上のファイルまたはフォルダ"
 msgid "Files or folders, one per line"
 msgstr "ファイルまたはフォルダ（1行に1つ）"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "ボットが作成したレポート、ドキュメント、画像などのファイルがここに集まります。"
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "ボットを絞り込む"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "ボットで絞り込む"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3326,7 +3352,6 @@ msgstr "日付で絞り込む"
 msgid "Filter by who made it"
 msgstr "作成者で絞り込む"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "フィルター"
@@ -4556,8 +4581,8 @@ msgid "No apps match your search."
 msgstr "検索に一致するアプリはありません。"
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "アーティファクトが見つかりません。"
+msgid "No artifacts yet"
+msgstr "まだアーティファクトはありません"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4581,6 +4606,10 @@ msgstr "現在は無効"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "一致するアーティファクトはありません"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4790,6 +4819,10 @@ msgstr "1回限りの購入です。クレジットは失効しません。"
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "自分のみ"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5470,6 +5503,10 @@ msgstr "{site} を削除"
 msgid "Remove change trigger"
 msgstr "変更トリガーを削除"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "メールトリガーを削除"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5748,6 +5785,10 @@ msgstr "実行中"
 msgid "Running"
 msgstr "実行中"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} を実行中…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "実行中…"
@@ -5868,6 +5909,7 @@ msgstr "画面が接続されていません"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5888,6 +5930,10 @@ msgstr "アプリを検索"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search apps and tools"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "アーティファクトを検索"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -6572,6 +6618,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "テスト中…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "そのアドレスは使用できません"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "ボットはファイルを利用できますが、画像の内容は見えません。"
@@ -7109,6 +7159,10 @@ msgstr "{hostLabel}を使用"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "アクセストークンには{oauthEnvReference}を使用してください。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2〜64文字で入力してください"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7129,6 +7183,10 @@ msgstr "{label}でデフォルトを使用"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "英字、数字、ピリオド、ハイフン、アンダースコアを使ってください"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7334,6 +7392,10 @@ msgstr "監視する対象"
 msgid "When a webhook fires"
 msgstr "Webhookが呼び出されたとき"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "メールを受信したとき"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "完了時または入力が必要なとき"
@@ -7359,6 +7421,10 @@ msgstr "ボットをどこで実行しますか？"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "このページを開けるユーザー"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "開始できる人"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

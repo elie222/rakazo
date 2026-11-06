@@ -882,6 +882,10 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Herhangi bir model, kendi anahtarınla"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Anyone at @{ownerDomain}"
+msgstr "@{ownerDomain} adresindeki herkes"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "Bağlantıya sahip herkes"
@@ -1091,6 +1095,7 @@ msgstr "Avatar Stüdyosu"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1211,10 +1216,6 @@ msgstr "Botun modeli"
 #: src/components/SignupSurvey.tsx
 msgid "Both"
 msgstr "İkisi de"
-
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "Botlar"
 
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
@@ -1511,6 +1512,10 @@ msgstr "Rakazo'yu nasıl kullanacağını seç"
 msgid "City"
 msgstr "Şehir"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Claim"
+msgstr "Al"
+
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr "Claude aboneliği"
@@ -1537,6 +1542,10 @@ msgstr "Sohbeti temizle"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "{label} filtresini temizle"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "Filtreleri temizle"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -3062,6 +3071,15 @@ msgstr "Profili Düzenle"
 msgid "Email"
 msgstr "E-posta"
 
+#: src/pages/RoutineEditor.tsx
+msgctxt "routine trigger"
+msgid "Email"
+msgstr "E-posta"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Email address"
+msgstr "E-posta adresi"
+
 #: src/lib/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "Bu e-posta adresinin kaydolmasına izin verilmiyor"
@@ -3314,9 +3332,17 @@ msgstr "Bilgisayardaki dosya veya klasörler"
 msgid "Files or folders, one per line"
 msgstr "Dosya veya klasörler, her satıra bir tane"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "Botlarınızın oluşturduğu raporlar, belgeler ve görseller gibi dosyalar burada toplanır."
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "Botları filtrele"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "Bota göre filtrele"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -3326,7 +3352,6 @@ msgstr "Tarihe göre filtrele"
 msgid "Filter by who made it"
 msgstr "Oluşturana göre filtrele"
 
-#: src/pages/Artifacts.tsx
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filtreler"
@@ -4556,8 +4581,8 @@ msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "Çıktı bulunamadı."
+msgid "No artifacts yet"
+msgstr "Henüz çıktı yok"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4581,6 +4606,10 @@ msgstr "Artık etkin değil"
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "Eşleşme yok"
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "Eşleşen çıktı yok"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4790,6 +4819,10 @@ msgstr "Tek seferlik satın alma. Krediler sona ermez."
 #: src/components/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
+
+#: src/pages/RoutineEditor.tsx
+msgid "Only me"
+msgstr "Yalnızca ben"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5470,6 +5503,10 @@ msgstr "Kaldır: {site}"
 msgid "Remove change trigger"
 msgstr "Değişiklik tetikleyicisini kaldır"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Remove email trigger"
+msgstr "E-posta tetikleyicisini kaldır"
+
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -5748,6 +5785,10 @@ msgstr "çalışıyor"
 msgid "Running"
 msgstr "Çalışıyor"
 
+#: src/pages/shell/transcript.tsx
+msgid "Running {workingRoutine}…"
+msgstr "{workingRoutine} çalışıyor…"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Çalışıyor…"
@@ -5868,6 +5909,7 @@ msgstr "Ekran bağlı değil"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5888,6 +5930,10 @@ msgstr "Uygulama ara"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search apps and tools"
 msgstr ""
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "Çıktılarda ara"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -6572,6 +6618,10 @@ msgstr "Test ediliyor"
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
+#: src/pages/RoutineEditor.tsx
+msgid "That address isn't available"
+msgstr "Bu adres kullanılamıyor"
+
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot dosyayı kullanabilir ama resmi göremez."
@@ -7109,6 +7159,10 @@ msgstr "{hostLabel} kullan"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Erişim belirteci için {oauthEnvReference} kullanın."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Use 2 to 64 characters"
+msgstr "2 ile 64 karakter kullanın"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -7129,6 +7183,10 @@ msgstr "{label}: varsayılanlarını kullan"
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "Bu botta kullan"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Use letters, numbers, dots, dashes or underscores"
+msgstr "Harf, rakam, nokta, tire veya alt çizgi kullanın"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7334,6 +7392,10 @@ msgstr "İzlenecek öğe"
 msgid "When a webhook fires"
 msgstr "Webhook tetiklendiğinde"
 
+#: src/pages/RoutineEditor.tsx
+msgid "When an email arrives"
+msgstr "E-posta geldiğinde"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Tamamladığında veya yanıt gerektiğinde"
@@ -7359,6 +7421,10 @@ msgstr "Botlar nerede çalışsın?"
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
 msgstr "Bu sayfayı kimler açabilir"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Who can start it"
+msgstr "Kimler başlatabilir"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

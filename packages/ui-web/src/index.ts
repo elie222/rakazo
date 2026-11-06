@@ -24,6 +24,7 @@ export * from "./components/ui/context-menu.js";
 export * from "./components/ui/dialog.js";
 export * from "./components/ui/disclosure.js";
 export * from "./components/ui/dropdown-menu.js";
+export * from "./components/ui/empty.js";
 export * from "./components/ui/field.js";
 export * from "./components/ui/input.js";
 export * from "./components/ui/input-group.js";

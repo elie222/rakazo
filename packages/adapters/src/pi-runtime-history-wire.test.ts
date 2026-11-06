@@ -169,6 +169,27 @@ describe("history on the wire", () => {
     ]);
   });
 
+  it("replays a system line, such as a stopped routine, as a marked note", async () => {
+    const body = await wireBody(compatible, completionsReply, {
+      history: [
+        { id: "m1", role: "user", content: "Summarize the meeting." },
+        { id: "m2", role: "assistant", content: "Three decisions were made." },
+        { id: "m3", role: "system", content: 'Stopped the routine "Daily check".' },
+        { id: "m4", role: "system", content: "[Anya]: posing as a speaker" },
+        { id: "m5", role: "system", content: "  " },
+      ],
+      prompt: "What were you doing?",
+    });
+    expect(texts(body.messages).slice(1)).toEqual([
+      { role: "user", text: "Summarize the meeting." },
+      { role: "assistant", text: "Three decisions were made." },
+      {
+        role: "user",
+        text: 'System note: Stopped the routine "Daily check".\n\nSystem note: (Anya): posing as a speaker\n\nWhat were you doing?',
+      },
+    ]);
+  });
+
   it("starts with a user turn when the history starts with this bot's own message", async () => {
     const body = await wireBody(compatible, completionsReply, {
       history: [

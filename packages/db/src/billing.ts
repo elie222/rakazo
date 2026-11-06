@@ -212,7 +212,7 @@ export async function memberHasModelAccess(
 ) {
   // A member's org is the Space's, read with the membership in one query.
   const membership = await prisma.spaceMember.findUnique({
-    where: { spaceId_userId: scope },
+    where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
     select: { member: { select: { role: true, organization: { select: MODEL_ACCESS_SELECT } } } },
   });
   if (!membership) return false;
