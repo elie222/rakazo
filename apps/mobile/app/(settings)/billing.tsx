@@ -6,6 +6,7 @@ import {
   byokYearlySwitchSavings,
   COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
@@ -101,6 +102,7 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  const cancelledTrial = isCancelledTrial(status);
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
@@ -252,7 +254,13 @@ export default function BillingScreen() {
       </SettingsGroup>
       {status.computerHoursLeft != null ? (
         <SettingsGroup
-          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+          footer={
+            endTrial
+              ? t("Trials get fewer hours to prevent abuse.")
+              : cancelledTrial
+                ? t("Cancelled trials have no computer hours.")
+                : undefined
+          }
         >
           <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
           {endTrial ? (
@@ -278,6 +286,18 @@ export default function BillingScreen() {
                     },
                   ],
                 )
+              }
+            />
+          ) : null}
+          {cancelledTrial && status.canManage && status.hasCustomer ? (
+            <SettingsRow
+              title={t("Renew plan")}
+              disabled={pending}
+              onPress={() =>
+                void action(async () => {
+                  const result = await rpc("billing/portal", { client: "mobile" });
+                  show(await openBillingPage(result.url));
+                })
               }
             />
           ) : null}

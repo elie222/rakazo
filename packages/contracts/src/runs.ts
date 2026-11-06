@@ -7,6 +7,11 @@ export const COMPUTER_RATE_LIMIT_ERROR = "Too many computer requests. Try again 
 /** The organization spent this period's computer allowance; computers start again at renewal. */
 export const COMPUTER_ALLOWANCE_USED_ERROR = "No computer hours left.";
 
+/** Whether an error says the computer hours are spent, which only a plan change can fix. */
+export function isComputerAllowanceUsed(message: string | null | undefined): boolean {
+  return message?.startsWith(COMPUTER_ALLOWANCE_USED_ERROR) ?? false;
+}
+
 export const RUN_TRIGGERS = [
   "user",
   "routine",

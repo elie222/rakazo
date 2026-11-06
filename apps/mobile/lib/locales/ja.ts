@@ -1118,6 +1118,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  Upgrade: "アップグレード",
+  "Cancelled trials have no computer hours.":
+    "キャンセルしたトライアルにはコンピューター時間がありません。",
+  "Renew plan": "プランを更新",
   "Trials get fewer hours to prevent abuse.":
     "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
   "Start plan now": "今すぐプランを開始",

@@ -1447,6 +1447,10 @@ msgstr "annulé"
 msgid "Cancelled"
 msgstr "Annulé"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr "Les essais annulés n’ont pas d’heures d’ordinateur."
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr ""
@@ -5737,6 +5741,10 @@ msgstr "Renommer"
 msgid "Rename section"
 msgstr "Renommer la section"
 
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr "Renouveler l’abonnement"
+
 #: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
@@ -7332,6 +7340,7 @@ msgid "Updating…"
 msgstr "Mise à jour en cours…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "Passer à l’offre payante"
 

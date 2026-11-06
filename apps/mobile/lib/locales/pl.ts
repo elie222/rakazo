@@ -1131,6 +1131,10 @@ export const PL_MESSAGES: Record<string, string> = {
   Credits: "Środki",
   "Available credits": "Dostępne środki",
   "Computer hours left": "Pozostałe godziny pracy komputera",
+  Upgrade: "Ulepsz",
+  "Cancelled trials have no computer hours.":
+    "Anulowane okresy próbne nie mają godzin pracy komputera.",
+  "Renew plan": "Odnów plan",
   "Trials get fewer hours to prevent abuse.":
     "Okres próbny ma mniej godzin, aby zapobiegać nadużyciom.",
   "Start plan now": "Uruchom plan teraz",

@@ -2271,6 +2271,11 @@ export const BillingStatusSchema = z.object({
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
+/** A trial set to cancel, which gets no computer hours until it is renewed. */
+export function isCancelledTrial(status: BillingStatus): boolean {
+  return status.state === "trialing" && status.cancelAtPeriodEnd;
+}
+
 /** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
 export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {
   return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);
