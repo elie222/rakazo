@@ -375,7 +375,10 @@ function RoutineEditor({
     );
   }
 
-  const canSave = dirty && !saving;
+  // A newly added email trigger needs the bot's address first; the server refuses it without one.
+  const awaitingAddress =
+    Boolean(draft.emailSenders) && !base?.emailSenders && !email.address?.address;
+  const canSave = dirty && !saving && !awaitingAddress;
   return (
     <>
       <Stack.Screen
