@@ -496,7 +496,9 @@ test("in the macOS app a page's top row sits below the window controls and its c
   await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
   // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
   await page.addInitScript(() => {
-    (window as Window & { rakazoDesktop?: unknown }).rakazoDesktop = { platform: "darwin" };
+    (window as unknown as { rakazoDesktop: { platform: string } }).rakazoDesktop = {
+      platform: "darwin",
+    };
   });
   await page.reload();
   await page
