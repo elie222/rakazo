@@ -685,6 +685,76 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     }
   });
 
+  it("leaves an update queued when the deletion claim lands before its replacement", async () => {
+    const { spaceId, botId, userId } = identity;
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-deleting-pause-"));
+    const sandbox = new FakeSandboxProvider();
+    // The claim commits after the update is claimed, before the replacement claims the computer.
+    let claimed = false;
+    const computers = new Proxy(prisma.computer, {
+      get(target, key) {
+        const value = Reflect.get(target, key);
+        if (key === "findUniqueOrThrow" && !claimed)
+          return async (...args: unknown[]) => {
+            claimed = true;
+            await prisma.space.update({
+              where: { id: spaceId },
+              data: {
+                deletingAt: new Date(),
+                deletionClaimId: `organization-deletion:${spaceId}:x`,
+              },
+            });
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const client = Object.create(prisma, { computer: { value: computers } }) as PrismaClient;
+    client.$transaction = prisma.$transaction.bind(prisma) as PrismaClient["$transaction"];
+    const deps = {
+      prisma: client,
+      sandbox,
+      home: new LocalAgentHomeStore(dataDir),
+      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+      events: { append: vi.fn() } as unknown as ThreadEvents,
+      dataDir,
+    };
+    const context = {
+      operationId: "deleting-pause",
+      traceId: "deleting-pause",
+      spaceId,
+      userId,
+      botId,
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    try {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+      });
+      await provisionComputer({ ...deps, prisma }, computerId, context);
+      const update = await prisma.computerUpdate.create({
+        data: { computerId, botId, action: "recover" },
+      });
+      const destroy = vi.spyOn(sandbox, "destroy");
+
+      await performComputerUpdate(deps, update.id);
+
+      expect(destroy).not.toHaveBeenCalled();
+      // Calling the deletion off lets reconciliation run it as if it had never started.
+      await expect(
+        prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } }),
+      ).resolves.toMatchObject({ status: "queued" });
+    } finally {
+      await prisma.space.update({
+        where: { id: spaceId },
+        data: { deletingAt: null, deletionClaimId: null },
+      });
+      await prisma.computerUpdate.deleteMany({ where: { computerId } });
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it.each(["reset", "update"] as const)(
     "does not %s a computer when the deletion claim commits while it waits for the row",
     async (operation) => {

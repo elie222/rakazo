@@ -15,6 +15,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
@@ -218,7 +219,10 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
+    throw error;
+  });
 }
 
 /**
