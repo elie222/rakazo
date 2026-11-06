@@ -435,7 +435,7 @@ msgstr "{summary} Your backup models also failed."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, saved as {savedAs}"
 
@@ -835,7 +835,7 @@ msgstr "All {credit} goes to model usage."
 
 #: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "All bots"
 msgstr "All bots"
 
@@ -887,7 +887,7 @@ msgstr "Allowed in this space"
 msgid "Allowed once"
 msgstr "Allowed once"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
 msgstr "Already connected"
 
@@ -1008,7 +1008,7 @@ msgstr "API key for {provider}"
 msgid "API key header"
 msgstr "API key header"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
 msgstr "API keys"
 
@@ -1349,7 +1349,7 @@ msgid "Browse MCP servers"
 msgstr "Browse MCP servers"
 
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
 msgstr "Built-in"
 
@@ -2014,7 +2014,7 @@ msgstr "Contact"
 msgid "Contacts"
 msgstr "Contacts"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "Contains code to run"
@@ -2459,7 +2459,8 @@ msgstr "Could not reach the model server."
 msgid "Could not reach the server"
 msgstr "Could not reach the server"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "Could not read these files"
 
@@ -2734,7 +2735,7 @@ msgstr "Country"
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2782,7 +2783,7 @@ msgstr "Created"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "Creating…"
@@ -2899,11 +2900,11 @@ msgstr "Default"
 msgid "Default ({0})"
 msgstr "Default ({0})"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from Hermes"
 msgstr "Default from Hermes"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from OpenClaw"
 msgstr "Default from OpenClaw"
 
@@ -3004,7 +3005,7 @@ msgid "Deny"
 msgstr "Deny"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -3858,7 +3859,7 @@ msgstr "Inbox & email"
 msgid "Inbox triage"
 msgstr "Inbox triage"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "Include API keys"
 
@@ -3901,16 +3902,16 @@ msgstr "Instruction history"
 #: src/components/AskCard.tsx
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions"
 msgstr "Instructions"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions {position}"
 msgstr "Instructions {position}"
 
 #: src/lib/agent-import-errors.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "Instructions are too long. Untick some files."
 
@@ -4199,7 +4200,7 @@ msgstr "Logins"
 msgid "Logins and keys your bots can use."
 msgstr "Logins and keys your bots can use."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
 msgstr "Looks like it contains a key"
 
@@ -4309,7 +4310,7 @@ msgid "MCP server"
 msgstr "MCP server"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "MCP servers"
 msgstr "MCP servers"
 
@@ -4339,15 +4340,15 @@ msgstr "Members ({0})"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/settings-nav.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory"
 msgstr "Memory"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory {position}"
 msgstr "Memory {position}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "Memory for {title}"
 
@@ -4363,11 +4364,11 @@ msgstr "Mentions"
 msgid "Mentions only"
 msgstr "Mentions only"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions OpenClaw features"
 msgstr "Mentions OpenClaw features"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions: {mentions}"
 msgstr "Mentions: {mentions}"
 
@@ -4467,7 +4468,7 @@ msgstr "Mode"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "Model"
@@ -4588,7 +4589,7 @@ msgstr "My computers"
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4601,7 +4602,7 @@ msgstr "Name"
 msgid "Name on card"
 msgstr "Name on card"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Name this bot"
 msgstr "Name this bot"
 
@@ -4816,7 +4817,7 @@ msgstr "No model catalog is available."
 msgid "No models listed."
 msgstr "No models listed."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "No OpenClaw, Hermes or agent document found."
 
@@ -4880,7 +4881,7 @@ msgstr "None"
 msgid "Normal"
 msgstr "Normal"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not a valid skill"
 msgstr "Not a valid skill"
 
@@ -4897,7 +4898,7 @@ msgstr "Not checked yet"
 msgid "Not connected"
 msgstr "Not connected"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not imported"
 msgstr "Not imported"
 
@@ -4914,12 +4915,12 @@ msgstr "Not in the plugin catalog"
 msgid "Not now"
 msgstr "Not now"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Not supported in Rakazo"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not used by Rakazo"
 msgstr "Not used by Rakazo"
 
@@ -5267,7 +5268,7 @@ msgstr "Pending"
 msgid "Permissions"
 msgstr "Permissions"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "Persona"
 
@@ -5937,7 +5938,7 @@ msgstr "Rotate key"
 msgid "Routine"
 msgstr "Routine"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Routines"
@@ -6445,19 +6446,19 @@ msgstr "Skill"
 msgid "Skill {0}"
 msgstr "Skill {0}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
 msgstr "Skill {position}"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "Skills"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skills join the library all your bots share."
 msgstr "Skills join the library all your bots share."
 
@@ -6497,7 +6498,7 @@ msgstr "Slide up to lock"
 msgid "Some plugins could not be loaded."
 msgstr "Some plugins could not be loaded."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Some settings are not imported"
 msgstr "Some settings are not imported"
 
@@ -6891,7 +6892,7 @@ msgstr "The shared link stops working"
 msgid "The unused difference is credited to your next invoice."
 msgstr "The unused difference is credited to your next invoice."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
 msgstr "These files are too large to import."
 
@@ -6928,11 +6929,11 @@ msgstr "This account is deactivated"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "This app needs its own sign-in setup to connect."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "This backup could not be read."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "This bot"
 
@@ -7097,7 +7098,7 @@ msgstr "Time of day"
 msgid "Timezone"
 msgstr "Timezone"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Timing may differ"
 msgstr "Timing may differ"
 
@@ -7672,7 +7673,7 @@ msgstr "Work"
 msgid "Working"
 msgstr "Working"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Working instructions"
 msgstr "Working instructions"
 

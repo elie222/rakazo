@@ -435,7 +435,7 @@ msgstr "{summary} 予備のモデルでもエラーが発生しました。"
 msgid "{title}, {label}"
 msgstr "{title}、{label}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}（{savedAs} として保存）"
 
@@ -835,7 +835,7 @@ msgstr "{credit} はすべてモデルの利用に充てられます。"
 
 #: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "All bots"
 msgstr "すべてのボット"
 
@@ -887,7 +887,7 @@ msgstr ""
 msgid "Allowed once"
 msgstr "今回のみ許可しました"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
 msgstr "接続済み"
 
@@ -1008,7 +1008,7 @@ msgstr "{provider}のAPIキー"
 msgid "API key header"
 msgstr "APIキーのヘッダー"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
 msgstr "APIキー"
 
@@ -1349,7 +1349,7 @@ msgid "Browse MCP servers"
 msgstr "MCPサーバーを探す"
 
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
 msgstr "組み込み"
 
@@ -2014,7 +2014,7 @@ msgstr ""
 msgid "Contacts"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "実行するコードを含みます"
@@ -2459,7 +2459,8 @@ msgstr "モデルサーバーに接続できませんでした。"
 msgid "Could not reach the server"
 msgstr "サーバーに接続できませんでした"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "これらのファイルを読み込めませんでした"
 
@@ -2734,7 +2735,7 @@ msgstr ""
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2782,7 +2783,7 @@ msgstr "作成済み"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "作成中…"
@@ -2899,11 +2900,11 @@ msgstr "デフォルト"
 msgid "Default ({0})"
 msgstr "デフォルト（{0}）"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from Hermes"
 msgstr "Hermesの初期設定"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from OpenClaw"
 msgstr "OpenClawの初期設定"
 
@@ -3004,7 +3005,7 @@ msgid "Deny"
 msgstr "拒否"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Description"
 msgstr "説明"
 
@@ -3858,7 +3859,7 @@ msgstr "受信トレイとメール"
 msgid "Inbox triage"
 msgstr "受信トレイの仕分け"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "APIキーを含める"
 
@@ -3901,16 +3902,16 @@ msgstr "指示の履歴"
 #: src/components/AskCard.tsx
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions"
 msgstr "指示"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions {position}"
 msgstr "指示 {position}"
 
 #: src/lib/agent-import-errors.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "指示が長すぎます。いくつかのファイルのチェックを外してください。"
 
@@ -4199,7 +4200,7 @@ msgstr ""
 msgid "Logins and keys your bots can use."
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
 msgstr "キーが含まれているようです"
 
@@ -4309,7 +4310,7 @@ msgid "MCP server"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "MCP servers"
 msgstr "MCPサーバー"
 
@@ -4339,15 +4340,15 @@ msgstr "メンバー（{0}）"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/settings-nav.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory"
 msgstr "メモリ"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory {position}"
 msgstr "メモリ {position}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "{title}のメモリ"
 
@@ -4363,11 +4364,11 @@ msgstr "メンション"
 msgid "Mentions only"
 msgstr "メンションのみ"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions OpenClaw features"
 msgstr "OpenClawの機能に言及しています"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions: {mentions}"
 msgstr "言及: {mentions}"
 
@@ -4467,7 +4468,7 @@ msgstr "モード"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "モデル"
@@ -4588,7 +4589,7 @@ msgstr ""
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4601,7 +4602,7 @@ msgstr "名前"
 msgid "Name on card"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Name this bot"
 msgstr "このボットに名前を付ける"
 
@@ -4816,7 +4817,7 @@ msgstr "利用できるモデルカタログがありません。"
 msgid "No models listed."
 msgstr "モデルが一覧にありません。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "OpenClaw、Hermes、またはエージェントのドキュメントが見つかりません。"
 
@@ -4880,7 +4881,7 @@ msgstr ""
 msgid "Normal"
 msgstr "通常"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not a valid skill"
 msgstr "有効なスキルではありません"
 
@@ -4897,7 +4898,7 @@ msgstr "未確認"
 msgid "Not connected"
 msgstr "未接続"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not imported"
 msgstr "インポートされていません"
 
@@ -4914,12 +4915,12 @@ msgstr "プラグインカタログにありません"
 msgid "Not now"
 msgstr "今はしない"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Rakazoでは未対応です"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not used by Rakazo"
 msgstr "Rakazoでは使用しません"
 
@@ -5267,7 +5268,7 @@ msgstr ""
 msgid "Permissions"
 msgstr "権限"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "ペルソナ"
 
@@ -5937,7 +5938,7 @@ msgstr "キーをローテーション"
 msgid "Routine"
 msgstr "ルーティン"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "ルーティン"
@@ -6445,19 +6446,19 @@ msgstr "スキル"
 msgid "Skill {0}"
 msgstr "スキル{0}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
 msgstr "スキル {position}"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "スキル"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skills join the library all your bots share."
 msgstr "スキルはすべてのボットで共有するライブラリに追加されます。"
 
@@ -6497,7 +6498,7 @@ msgstr "上にスライドしてロック"
 msgid "Some plugins could not be loaded."
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Some settings are not imported"
 msgstr "一部の設定はインポートされません"
 
@@ -6891,7 +6892,7 @@ msgstr "共有リンクは使えなくなります"
 msgid "The unused difference is credited to your next invoice."
 msgstr "未使用分の差額は次回の請求書に充当されます。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
 msgstr "これらのファイルは大きすぎてインポートできません。"
 
@@ -6928,11 +6929,11 @@ msgstr "このアカウントは無効化されています"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "このアプリを接続するには、専用のサインイン設定が必要です。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "このバックアップを読み込めませんでした。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "このボット"
 
@@ -7097,7 +7098,7 @@ msgstr "時刻"
 msgid "Timezone"
 msgstr "タイムゾーン"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Timing may differ"
 msgstr "実行タイミングが異なる場合があります"
 
@@ -7672,7 +7673,7 @@ msgstr "仕事"
 msgid "Working"
 msgstr "作業中"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Working instructions"
 msgstr "作業の指示"
 

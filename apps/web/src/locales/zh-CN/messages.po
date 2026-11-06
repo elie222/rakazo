@@ -435,7 +435,7 @@ msgstr "{summary} 备用模型也失败了。"
 msgid "{title}, {label}"
 msgstr "{title}，{label}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}，保存为 {savedAs}"
 
@@ -835,7 +835,7 @@ msgstr "全部 {credit} 都用于模型用量。"
 
 #: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "All bots"
 msgstr "全部 Bot"
 
@@ -887,7 +887,7 @@ msgstr "已在此空间允许"
 msgid "Allowed once"
 msgstr "已允许一次"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
 msgstr "已连接"
 
@@ -1008,7 +1008,7 @@ msgstr "{provider} 的 API 密钥"
 msgid "API key header"
 msgstr "API 密钥请求头"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
 msgstr "API 密钥"
 
@@ -1349,7 +1349,7 @@ msgid "Browse MCP servers"
 msgstr "浏览 MCP 服务器"
 
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
 msgstr "内置"
 
@@ -2014,7 +2014,7 @@ msgstr ""
 msgid "Contacts"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "包含可运行的代码"
@@ -2459,7 +2459,8 @@ msgstr "无法连接到模型服务器。"
 msgid "Could not reach the server"
 msgstr "无法连接服务器"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "无法读取这些文件"
 
@@ -2734,7 +2735,7 @@ msgstr ""
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2782,7 +2783,7 @@ msgstr "已创建"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "正在创建…"
@@ -2899,11 +2900,11 @@ msgstr "默认"
 msgid "Default ({0})"
 msgstr "默认（{0}）"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from Hermes"
 msgstr "Hermes 默认内容"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from OpenClaw"
 msgstr "OpenClaw 默认内容"
 
@@ -3004,7 +3005,7 @@ msgid "Deny"
 msgstr "拒绝"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Description"
 msgstr "描述"
 
@@ -3858,7 +3859,7 @@ msgstr "收件箱和邮件"
 msgid "Inbox triage"
 msgstr "收件箱整理"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "包含 API 密钥"
 
@@ -3901,16 +3902,16 @@ msgstr "指令历史"
 #: src/components/AskCard.tsx
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions"
 msgstr "指令"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions {position}"
 msgstr "指令 {position}"
 
 #: src/lib/agent-import-errors.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "指令太长。请取消勾选部分文件。"
 
@@ -4199,7 +4200,7 @@ msgstr ""
 msgid "Logins and keys your bots can use."
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
 msgstr "似乎包含密钥"
 
@@ -4309,7 +4310,7 @@ msgid "MCP server"
 msgstr "MCP 服务器"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "MCP servers"
 msgstr "MCP 服务器"
 
@@ -4339,15 +4340,15 @@ msgstr "成员（{0}）"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/settings-nav.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory"
 msgstr "记忆"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory {position}"
 msgstr "记忆 {position}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "{title} 的记忆"
 
@@ -4363,11 +4364,11 @@ msgstr "提及"
 msgid "Mentions only"
 msgstr "只在被 @ 时"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions OpenClaw features"
 msgstr "提到了 OpenClaw 功能"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions: {mentions}"
 msgstr "提到：{mentions}"
 
@@ -4467,7 +4468,7 @@ msgstr "模式"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/onboarding/model-step.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Model"
 msgstr "模型"
@@ -4588,7 +4589,7 @@ msgstr ""
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4601,7 +4602,7 @@ msgstr "名称"
 msgid "Name on card"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Name this bot"
 msgstr "给这个 Bot 命名"
 
@@ -4816,7 +4817,7 @@ msgstr "没有可用的模型目录。"
 msgid "No models listed."
 msgstr "未列出模型。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "未找到 OpenClaw、Hermes 或 Agent 文档。"
 
@@ -4880,7 +4881,7 @@ msgstr ""
 msgid "Normal"
 msgstr "普通"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not a valid skill"
 msgstr "不是有效的技能"
 
@@ -4897,7 +4898,7 @@ msgstr "尚未检查"
 msgid "Not connected"
 msgstr "未连接"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not imported"
 msgstr "未导入"
 
@@ -4914,12 +4915,12 @@ msgstr "不在插件目录中"
 msgid "Not now"
 msgstr "暂不"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Rakazo 不支持"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not used by Rakazo"
 msgstr "Rakazo 不使用"
 
@@ -5267,7 +5268,7 @@ msgstr "待处理"
 msgid "Permissions"
 msgstr "权限"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "人设"
 
@@ -5937,7 +5938,7 @@ msgstr "轮换密钥"
 msgid "Routine"
 msgstr "例行任务"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "例行任务"
@@ -6445,19 +6446,19 @@ msgstr "技能"
 msgid "Skill {0}"
 msgstr "技能 {0}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
 msgstr "技能 {position}"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Skills"
 msgstr "技能"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skills join the library all your bots share."
 msgstr "技能会加入所有 Bot 共享的技能库。"
 
@@ -6497,7 +6498,7 @@ msgstr "上滑锁定"
 msgid "Some plugins could not be loaded."
 msgstr "部分插件无法加载。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Some settings are not imported"
 msgstr "部分设置不会导入"
 
@@ -6891,7 +6892,7 @@ msgstr "共享链接将失效"
 msgid "The unused difference is credited to your next invoice."
 msgstr "未使用的差额将抵扣到你的下一张账单。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
 msgstr "这些文件太大，无法导入。"
 
@@ -6928,11 +6929,11 @@ msgstr "此账户已停用"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "此应用需要单独设置登录后才能连接。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "无法读取此备份。"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "此 Bot"
 
@@ -7097,7 +7098,7 @@ msgstr "时间"
 msgid "Timezone"
 msgstr "时区"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Timing may differ"
 msgstr "运行时间可能不同"
 
@@ -7672,7 +7673,7 @@ msgstr "工作"
 msgid "Working"
 msgstr "工作中"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Working instructions"
 msgstr "工作指令"
 
