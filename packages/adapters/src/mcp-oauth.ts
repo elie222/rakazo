@@ -217,7 +217,10 @@ function urlSecrets(text: string): string[] {
     const [[key, value] = []] = new URLSearchParams(pair);
     if (!key || !value) continue;
     // Both the decoded value and its spelling in the argument, which the server may echo.
-    if (isCredentialArg(key, value)) values.push(value, pair.slice(pair.indexOf("=") + 1));
+    if (isCredentialArg(key, value)) {
+      addSecret(values, value);
+      values.push(pair.slice(pair.indexOf("=") + 1));
+    }
   }
   return values;
 }

@@ -3007,6 +3007,7 @@ describe("MCP OAuth", () => {
       [`https://${T}@git.example.test/`],
       [`https://api.example.test/?apiKey=${T}`],
       ["--url", `https://api.example.test/mcp?token=${T}`],
+      [`https://api.example.test/mcp?authorization=Bearer%20${T}`],
     ];
     for (const args of credentials) expect(launchArgSecrets(args), args.join(" ")).toContain(T);
 
