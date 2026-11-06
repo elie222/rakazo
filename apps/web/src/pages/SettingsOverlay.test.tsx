@@ -129,6 +129,7 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
             onClose={() => undefined}
             section="general"
             onSectionChange={() => undefined}
+            shellRpc={{} as never}
             {...next}
           />
         </QueryClientProvider>,

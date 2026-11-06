@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { ModelConnectInputSchema } from "@rakazo/contracts";
+import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { BOT_FILES_EVAL_CASES, BOT_FILES_FIXTURE_VERSION } from "../evals/bot-files.js";
 import type { EvalCase } from "../evals/cases.js";
@@ -91,11 +91,16 @@ async function main() {
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
       "max-tool-calls": { type: "string", default: "30" },
+      "reply-mode": { type: "string" },
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
   if (values["cases-file"] && values.suite !== "tool-choice")
     throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
+  if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
+  if (values["reply-mode"] && values.suite === "approval")
+    throw new Error("--reply-mode sets the trial's bots; the approval suite has none");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
@@ -209,6 +214,7 @@ async function main() {
       maxOutputTokens: values["max-output-tokens"] ? Number(values["max-output-tokens"]) : null,
     },
     controls,
+    replyMode: replyMode.data,
     strategy: strategies.length === 1 ? strategies[0] : "comparison",
     strategies,
     executionOrder:
@@ -595,6 +601,7 @@ async function main() {
       trials[i] = {
         ...(await runTrial(scenario, planned.trial, {
           ...controls,
+          replyMode: replyMode.data,
           connection,
           pricing,
           judge,

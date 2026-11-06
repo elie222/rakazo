@@ -9,6 +9,7 @@ import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../component
 import { VaultSettings } from "../components/VaultSettings";
 import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
+import type { RpcClient } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import {
   ComputerSettingsPanel,
@@ -59,6 +60,7 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
   onLeftSpace,
+  shellRpc,
 }: {
   /** The space the Space page edits; it need not be the selected space. */
   space?: SettingsSpace | null;
@@ -94,6 +96,8 @@ export function SettingsOverlay({
   onVoiceStatusMaybeChanged?: () => void | Promise<void>;
   /** After leaving a space, with the space the server moved this person to. */
   onLeftSpace?: (spaceId: string, activeSpaceId: string) => void;
+  /** Pinned to the space this window shows; billing acts on it. */
+  shellRpc: RpcClient;
 }) {
   const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -431,7 +435,9 @@ export function SettingsOverlay({
                       computerSettingsEnabled={computerSettingsEnabled}
                     />
                   ) : null}
-                  {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
+                  {section === "billing" && billingEnabled ? (
+                    <BillingSettingsPanel client={shellRpc} />
+                  ) : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                   {section === "models" ? (
                     <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />

@@ -1,10 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
+import { isUniqueViolation } from "@rakazo/db";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import type { RunContext } from "./run-context.js";
 import { neverAsks } from "./run-context.js";
-import { isUniqueViolation, publishMessage } from "./run-messages.js";
+import { publishMessage } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { argumentGiven } from "./update-bot-patch.js";

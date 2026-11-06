@@ -5,6 +5,7 @@ import type {
   BotAvatarSet,
   ComputerMode,
   ModelCatalogEntry,
+  ReplyMode,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -38,9 +39,10 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Settings, X } from "lucide-react";
+import { Download, Mail, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
+import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
@@ -137,6 +139,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     voiceId?: string | null;
@@ -188,6 +191,8 @@ export function BotSettings({
   useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
+  const [replyMode, setReplyMode] = useState(bot.replyMode);
+  useEffect(() => setReplyMode(bot.replyMode), [bot.replyMode]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
@@ -248,6 +253,7 @@ export function BotSettings({
         avatarSet?: BotAvatarSet;
         notifyOnFinish?: boolean;
         fleetManagement?: boolean;
+        replyMode?: ReplyMode;
         crossSpaceCommunication?: boolean;
         dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
@@ -337,6 +343,7 @@ export function BotSettings({
       avatarSet?: BotAvatarSet;
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
+      replyMode?: ReplyMode;
       crossSpaceCommunication?: boolean;
       dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
@@ -357,6 +364,10 @@ export function BotSettings({
       }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
+        return;
+      }
+      if (patchOverrides?.replyMode !== undefined) {
+        await onSave({ replyMode: patchOverrides.replyMode });
         return;
       }
       const selected = selectedModel;
@@ -465,6 +476,7 @@ export function BotSettings({
         setDailyCheckIns(!patchOverrides.dailyCheckIns);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
+      if (patchOverrides?.replyMode !== undefined) setReplyMode(bot.replyMode);
       setError(errorText(err, t`Could not save`));
     } finally {
       pendingSavesRef.current -= 1;
@@ -494,6 +506,7 @@ export function BotSettings({
     avatarSet?: BotAvatarSet;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
@@ -551,6 +564,7 @@ export function BotSettings({
             void enqueueSave({ name: value });
           }}
         />
+        <BotEmail bot={{ id: bot.id, name }} />
       </div>
       <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
         <TabsList className="w-full">
@@ -780,6 +794,23 @@ export function BotSettings({
                 />
               </div>
             </SettingsGroup>
+            <SettingsGroup label={t`Replies`} plain>
+              <NativeSelect
+                id={`${ids}-reply-mode`}
+                aria-label={t`Replies`}
+                className="w-full"
+                value={replyMode}
+                disabled={saving}
+                onChange={(event) => {
+                  const next = event.target.value as ReplyMode;
+                  setReplyMode(next);
+                  void enqueueSave({ replyMode: next });
+                }}
+              >
+                <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
+                <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
+              </NativeSelect>
+            </SettingsGroup>
             <InstructionSettings key={bot.id} bot={bot} />
             <SettingsGroup label={t`How other bots see it`} plain>
               <Textarea
@@ -987,4 +1018,30 @@ function SettingsGroup({
 function humanizeTool(name: string) {
   const words = name.replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The bot's address under its name; on a server that receives email, offered until claimed. */
+function BotEmail({ bot }: { bot: { id: string; name: string } }) {
+  const queries = useSpaceQueries();
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
+  const [claiming, setClaiming] = useState(false);
+  if (!email) return null;
+  if (!email.address && !claiming) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="mt-1 text-muted-foreground"
+        onClick={() => setClaiming(true)}
+      >
+        <Mail />
+        <Trans>Get an email address</Trans>
+      </Button>
+    );
+  }
+  return (
+    <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
+      <BotEmailAddressField bot={bot} domain={email.domain} address={email.address} />
+    </div>
+  );
 }
