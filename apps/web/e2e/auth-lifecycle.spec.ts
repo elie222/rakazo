@@ -125,6 +125,14 @@ test(
   },
 );
 
+test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  // Where a refused SSO sign-in lands; password and code sign-in show the same text.
+  await page.goto("/sign-in?error=ACCOUNT_DEACTIVATED");
+  await expect(page.getByText("This account is deactivated")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
+});
+
 test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.goto("/no-such-page");

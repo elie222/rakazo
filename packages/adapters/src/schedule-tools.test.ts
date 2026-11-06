@@ -1,5 +1,6 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
@@ -781,7 +782,6 @@ describe("schedule tool persistence", () => {
     await listSchedulesFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
     });
     expect(findMany).toHaveBeenCalledWith(
@@ -789,7 +789,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
         },
       }),
@@ -798,7 +797,6 @@ describe("schedule tool persistence", () => {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       routineId: "routine-1",
     });
@@ -808,7 +806,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
           id: "routine-1",
         },
@@ -816,10 +813,10 @@ describe("schedule tool persistence", () => {
     );
 
     findMany.mockClear();
-    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+        where: { spaceId: "ws-1", botId: "bot-1" },
       }),
     );
 
@@ -827,12 +824,11 @@ describe("schedule tool persistence", () => {
     await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       routineId: "routine-1",
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1", id: "routine-1" },
+        where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1" },
       }),
     );
   });
@@ -924,7 +920,7 @@ describe("schedule_create with a watch", () => {
     expect(result).toMatchObject({ error: "Bot not found." });
     expect(d.prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: base.botId, spaceId: base.spaceId, userId: base.userId, archivedAt: null },
+        where: { id: base.botId, spaceId: base.spaceId, archivedAt: null },
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -971,7 +967,6 @@ describe("cancelScheduleFromTool", () => {
     const input = {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       name: "Daily",
     };
@@ -985,7 +980,6 @@ describe("cancelScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
       },
@@ -1089,7 +1083,10 @@ describe("updateScheduleFromTool", () => {
     const cancel = vi.fn(async () => undefined);
     const append = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, updateMany } },
+      prisma: {
+        routine: { findFirst, updateMany, count: vi.fn(async () => 0) },
+        run: { updateManyAndReturn: vi.fn(async () => []) },
+      },
       events: { append },
       jobs: { enqueue, cancel },
     } as unknown as Parameters<typeof updateScheduleFromTool>[0];
@@ -1122,6 +1119,26 @@ describe("updateScheduleFromTool", () => {
       expect(append).not.toHaveBeenCalled();
     },
   );
+
+  it("takes over another member's schedule and restarts its watch baseline", async () => {
+    const { findFirst, updateMany, update } = setup();
+    await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        id: "routine-1",
+        bot: { archivedAt: null },
+      },
+      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+    });
+  });
 
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
@@ -1294,7 +1311,6 @@ describe("updateScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
         bot: { archivedAt: null },

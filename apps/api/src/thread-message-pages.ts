@@ -1,4 +1,9 @@
-import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
+import type {
+  MessageAuthor,
+  MessageBlock,
+  ThreadMessage,
+  ThreadMessagePage,
+} from "@rakazo/contracts";
 import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
@@ -9,6 +14,7 @@ import {
 } from "@rakazo/core";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { loadMessageAuthors } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
 
@@ -16,6 +22,7 @@ const replySelection = {
   threadId: true,
   role: true,
   botId: true,
+  authorUserId: true,
   blocks: true,
 } as const;
 
@@ -59,7 +66,7 @@ export async function loadMessagePage(
       const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
       return {
         threadId,
-        messages: messages.map(toThreadMessage),
+        messages: await toThreadMessages(prisma, messages),
         olderCursor: hasOlder ? (first?.seq ?? null) : null,
         coveredThroughSeq,
       };
@@ -88,7 +95,7 @@ export async function loadMessagePage(
     if (hasSubstantive || includePeerReceipts || !hasOlder || includePeerRuns) {
       return {
         threadId,
-        messages: visibleRows.map(toThreadMessage),
+        messages: await toThreadMessages(prisma, visibleRows),
         olderCursor: hasOlder ? (pageRows[0]?.seq ?? null) : null,
       };
     }
@@ -150,6 +157,7 @@ async function withoutPeerRunMessages<
         block.kind === "ask" ||
         block.kind === "text" ||
         block.kind === "chart" ||
+        block.kind === "app" ||
         block.kind === "file" ||
         block.kind === "image" ||
         block.kind === "page",
@@ -219,6 +227,7 @@ export function shouldForwardPeerThreadEvent(event: {
           block.kind === "ask" ||
           block.kind === "text" ||
           block.kind === "chart" ||
+          block.kind === "app" ||
           block.kind === "file" ||
           block.kind === "image" ||
           block.kind === "page"),
@@ -252,25 +261,37 @@ export function shouldForwardBackgroundThreadEvent(event: {
   return Array.isArray(blocks) && blocks.some(isBackgroundInputBlock);
 }
 
-function toThreadMessage(row: {
+type MessageRow = {
   id: string;
   threadId: string;
   seq: number;
   role: string;
   blocks: Prisma.JsonValue;
   botId: string | null;
+  authorUserId?: string | null;
   replyToMessageId: string | null;
   replyQuote: string | null;
   replyTo?: {
     threadId: string;
     role: string;
     botId: string | null;
+    authorUserId?: string | null;
     blocks: Prisma.JsonValue;
   } | null;
   runId: string | null;
   clientNonce?: string | null;
   createdAt: Date;
-}): ThreadMessage {
+};
+
+async function toThreadMessages(prisma: MessageDb, rows: MessageRow[]): Promise<ThreadMessage[]> {
+  const authors = await loadMessageAuthors(
+    prisma,
+    rows.flatMap((row) => [row.authorUserId, row.replyTo?.authorUserId]),
+  );
+  return rows.map((row) => toThreadMessage(row, authors));
+}
+
+function toThreadMessage(row: MessageRow, authors: Map<string, MessageAuthor>): ThreadMessage {
   const parent = row.replyTo?.threadId === row.threadId ? row.replyTo : null;
   const parsed = parent ? MessageBlockSchema.array().safeParse(parent.blocks) : undefined;
   const replyPreview =
@@ -279,10 +300,12 @@ function toThreadMessage(row: {
           parsed.data,
           parent.role as ThreadMessage["role"],
           parent.botId ?? undefined,
+          parent.authorUserId ? authors.get(parent.authorUserId) : undefined,
         )
       : row.replyToMessageId || row.replyQuote != null
         ? null
         : undefined;
+  const author = row.authorUserId ? authors.get(row.authorUserId) : undefined;
   return {
     id: row.id,
     threadId: row.threadId,
@@ -290,6 +313,7 @@ function toThreadMessage(row: {
     role: row.role as ThreadMessage["role"],
     blocks: row.blocks as ThreadMessage["blocks"],
     botId: row.botId ?? undefined,
+    ...(author ? { author } : {}),
     replyToMessageId: row.replyToMessageId ?? undefined,
     replyQuote: row.replyQuote ?? undefined,
     replyPreview,

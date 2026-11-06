@@ -30,6 +30,7 @@ export const COMPUTER_IMAGE = resolveComputerImage();
 /** The files from infra/sandboxes/computer the supervisor sends when it builds the image locally. */
 export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "Dockerfile",
+  "apt-security.sh",
   "start.sh",
   "user-env.sh",
   "control.py",

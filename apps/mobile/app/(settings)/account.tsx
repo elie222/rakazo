@@ -29,6 +29,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
+import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
 import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
@@ -51,6 +52,12 @@ import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { endCallBeforeSessionEnd } from "../../lib/call-session";
+import {
+  getHapticsEnabled,
+  loadHapticsPreference,
+  setHapticsEnabled,
+  subscribeHaptics,
+} from "../../lib/haptics";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
@@ -96,6 +103,8 @@ import {
 } from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
+
+let hapticsSaveVersion = 0;
 
 export default function Account() {
   const sideInsets = useSideInsets();
@@ -180,6 +189,28 @@ export default function Account() {
     getCachedRemoteImagesEnabled,
     () => false,
   );
+  const hapticsEnabled = useSyncExternalStore(
+    subscribeHaptics,
+    getHapticsEnabled,
+    getHapticsEnabled,
+  );
+  function updateHaptics(value: boolean) {
+    const version = ++hapticsSaveVersion;
+    const isCurrent = () => version === hapticsSaveVersion && getHapticsEnabled() === value;
+    void setHapticsEnabled(value).catch(() => {
+      if (!isCurrent()) return;
+      Alert.alert(t("Haptics"), t("Could not save"), [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Retry"),
+          onPress: () => {
+            if (isCurrent()) updateHaptics(value);
+          },
+        },
+      ]);
+    });
+  }
+
   const loadRemoteImagesLabel = t("Load web images automatically");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const stackOptions = useStackedSettings();
@@ -188,6 +219,7 @@ export default function Account() {
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
   const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
     <SettingsRow
@@ -278,6 +310,7 @@ export default function Account() {
 
   useFocusEffect(
     useCallback(() => {
+      void loadHapticsPreference();
       void loadTrustedLinkSites().catch(() => undefined);
     }, []),
   );
@@ -627,6 +660,7 @@ export default function Account() {
             title={t("Language")}
             value={UI_LOCALE_LABELS[locale]}
           />
+          <SettingsSwitch label={t("Haptics")} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
         {Platform.OS === "android" ? (
@@ -695,6 +729,21 @@ export default function Account() {
               onPress={() => router.push("/billing")}
             />
           ) : null}
+          {me ? (
+            <SettingsRow
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // The space header holds Members too, but a single space has no header.
+              onPress={() =>
+                openFromSettingsSheet(router, {
+                  pathname: "/space-members",
+                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
+                })
+              }
+              title={t("Members")}
+            />
+          ) : null}
           {(
             [
               ...(me?.ticketBoardEnabled ? [{ title: t("Board"), href: "/board" } as const] : []),
@@ -711,6 +760,9 @@ export default function Account() {
               disabled={pending}
               onPress={() => router.push("/approvals")}
             />
+          ) : null}
+          {spending?.shown ? (
+            <SpendingLimitRow key="spending-limit" status={spending} disabled={pending} />
           ) : null}
           {(
             [

@@ -53,6 +53,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { paidRequestEffect } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
 import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
@@ -79,6 +80,7 @@ import { callMediaTool } from "./run-tools-files.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
+import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -86,6 +88,7 @@ type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
   batch: ToolBatch | undefined;
+  onceOnly: boolean;
 };
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
@@ -102,6 +105,11 @@ export interface ToolCall {
   readonly nextApprovedTool: string | undefined;
   /** A gated call that policy or the reviewer allowed without asking. */
   readonly bypassApproval: boolean;
+  /**
+   * The approved payment this call presses, counted against the user's spending limit just before
+   * the press: the handler records it then, so a call that stops earlier never uses the room.
+   */
+  readonly spend: PurchaseApproval | undefined;
   /** This call moved its effect to executing. request_secret can hand the claim back. */
   claimedEffect: boolean;
   /** Store the result on the effect; false when it could not be stored. */
@@ -273,6 +281,10 @@ export async function gateToolCall(
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
     toolRequiresExplicitApproval(name);
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
@@ -364,6 +376,23 @@ export async function gateToolCall(
             : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
       },
     };
+  }
+  // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
+  // which was counted when it was requested. One the limit refuses is refused before the card; the
+  // handler counts it for good just before the press.
+  const spends = purchase && !paysWithWallet(args) ? purchase : undefined;
+  if (spends && nextApprovedTool !== name) {
+    const spender = {
+      userId: run.userId,
+      spaceId: run.spaceId,
+      botId: ctx.bot.id,
+      threadId: ctx.thread.id,
+    };
+    const refused = await pagePaymentPrecheck(deps.prisma, spender, spends);
+    if (refused) {
+      await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
+      return { result: { error: refused } };
+    }
   }
   let reviewReason: string | undefined;
   let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
@@ -520,8 +549,14 @@ export async function gateToolCall(
     applied,
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
+    spend: spends,
   });
-  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
+  const card = {
+    reviewReason,
+    summary: request.fleetSummary,
+    batch: connectorTool?.batch,
+    onceOnly: asksEveryTime,
+  };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);

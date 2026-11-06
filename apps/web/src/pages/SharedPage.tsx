@@ -49,10 +49,10 @@ function SharedPageBody() {
       <main className="grid min-h-dvh place-items-center bg-background px-6 text-center">
         <div className="flex max-w-[360px] flex-col items-center gap-3">
           <img src="/favicon-32x32.png" alt="" className="size-8 rounded-full" />
-          <h1 className="text-[18px] leading-6 font-medium text-foreground">
+          <h1 className="text-heading3 font-medium text-foreground">
             <Trans>This page isn't available</Trans>
           </h1>
-          <p className="text-[14px] leading-5 text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             <Trans>The owner may have turned off its link or deleted it.</Trans>
           </p>
           <a href="/" className={`${buttonVariants({ variant: "outline", size: "sm" })} mt-1`}>
@@ -66,7 +66,7 @@ function SharedPageBody() {
   const failed = shared.isError && !shared.data;
   if (failed || viewer.failed) {
     return (
-      <div className="grid min-h-dvh place-items-center bg-background px-6 text-center text-[15px] text-muted-foreground">
+      <div className="grid min-h-dvh place-items-center bg-background px-6 text-center text-body-lg text-muted-foreground">
         <div className="flex flex-col items-center gap-3">
           <p role="alert">
             <Trans>Couldn't load this page. Try again.</Trans>

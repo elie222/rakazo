@@ -22,6 +22,25 @@ describe("buildApprovalAskBlock", () => {
     expect(JSON.stringify(block)).not.toContain("token-secret");
   });
 
+  it("offers no Always allow on an approval that asks every time", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "schedule_create",
+      { name: "Check", prompt: "Summarize changes", watch: { kind: "command", command: "ls" } },
+      [],
+      { onceOnly: true },
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Review before schedule_create",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+  });
+
   it("bounds model-controlled summaries and details", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
@@ -169,6 +188,30 @@ describe("bot management approval cards", () => {
     expect(approvalDetailLength("set_child_instructions")).toBeGreaterThanOrEqual(
       lines.join("\n").length,
     );
+  });
+
+  it("carries a payment's receipt with secrets redacted", () => {
+    const block = buildApprovalAskBlock("effect-1", "browser_act", {}, ["fake-token"], {
+      summary: {
+        onceOnly: true,
+        title: "Pay on shop.test?",
+        lines: ["Socks: $9.00"],
+        receipt: {
+          button: "Pay fake-token",
+          items: [{ name: "Socks fake-token", amount: "$9.00" }],
+          amount: "$9.00",
+          amountSource: "page",
+        },
+      },
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.receipt).toEqual({
+      button: "Pay [redacted]",
+      items: [{ name: "Socks [redacted]", amount: "$9.00" }],
+      amount: "$9.00",
+      amountSource: "page",
+    });
+    expect(block.detail).toBe("Socks: $9.00");
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {

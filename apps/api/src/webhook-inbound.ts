@@ -5,6 +5,7 @@ import { inboundRoutineModelPin } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { accountDeactivated } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -200,7 +201,8 @@ export async function loadWebhookTarget(
     },
   });
 
-  if (!bot?.thread || !bot.webhookSecretId) {
+  // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.
+  if (!bot?.thread || !bot.webhookSecretId || (await accountDeactivated(deps.prisma, bot.userId))) {
     cache.delete(botId);
     return null;
   }

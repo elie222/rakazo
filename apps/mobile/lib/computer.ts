@@ -175,7 +175,11 @@ export function previewPlaceholder(
 
 export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
   if (computer?.busyBotName) return t("{name} is using it", { name: computer.busyBotName });
-  if (computer?.controlHolder === "user" && computer.controlBotId === botId) {
+  if (
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther
+  ) {
     return t("You have control");
   }
   if (computer?.state === "suspended") return t("Asleep");

@@ -45,6 +45,7 @@ import {
   mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -1419,6 +1420,7 @@ export function blockText(message: MobileMessage) {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
       }
       if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
+      if (block.kind === "app") return `[app: ${block.server}]`;
       if (block.kind === "page") return `[page: ${block.title}]`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
@@ -1965,6 +1967,7 @@ export function applyMobileThreadEvent(
       callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
+      ...payloadAuthor(event.payload ?? {}, known),
       ...replyMetadata(event.payload ?? {}, known),
     };
     return {

@@ -7,6 +7,7 @@ import {
   formatMessagingLinkCode,
   issueMessagingLinkCode,
   runAsSystem,
+  spaceIsShared,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
@@ -96,9 +97,11 @@ export function messagingRoutes(ctx: RouterContext) {
             spaceId: bot.spaceId,
             botId: bot.id,
           });
+          const shared = await spaceIsShared(deps.prisma, bot.spaceId);
           return {
             code: formatMessagingLinkCode(issued.code),
             expiresAt: issued.expiresAt.toISOString(),
+            ...(shared ? { shared } : {}),
           };
         }),
       },

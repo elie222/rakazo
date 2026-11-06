@@ -1,4 +1,6 @@
 FROM node:24.22.1-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
+COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
+RUN /tmp/apt-security.sh
 # pnpm lives in the image so containers start without downloading it.
 ENV COREPACK_HOME=/usr/local/share/corepack
 RUN corepack enable
@@ -39,6 +41,8 @@ RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
+# Last root step, so a cached earlier layer cannot be the filesystem that ships.
+RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
 ENV GIT_SHA=$GIT_SHA

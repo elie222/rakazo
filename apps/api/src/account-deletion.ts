@@ -7,7 +7,7 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import { anySignal, requestDeadline, withAbort } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
+import type { Prisma, ThreadEvents } from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
@@ -16,9 +16,11 @@ import {
   deletePageShareSecrets,
   keepOrganizationTrialUse,
   listStalledOrganizationDeletions,
+  prepareAccountDeletion,
   recordAuditEvent,
   recordComputerRunEnd,
   releaseOrganizationDeletionClaim,
+  restoreSpaceDeletionClaims,
   runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   setOrganizationDeletionLease,
@@ -26,14 +28,39 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
+import { afterSpaceDeparture } from "./space-departure.js";
 
 /**
  * In shared spaces, the account's bot folders also live on the space's Team Computer from before
  * each person got their own. Each sandbox is destroyed at its provider before its row goes, so a
  * failure keeps the handle and deleting again resumes from what is left.
  */
-export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: string): Promise<void> {
-  const { claimId, spaceIds } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+export async function deleteAccountContent(
+  deps: SpaceDeletionDeps & {
+    events: ThreadEvents;
+    billing?: Pick<BillingService, "cancelForDeletedUser">;
+  },
+  userId: string,
+): Promise<void> {
+  const { claimId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
+  try {
+    // Cancel under the claims, so a checkout opened while another organization's cancellation
+    // waits is refused by the deletion check instead of outliving the account.
+    await deps.billing?.cancelForDeletedUser(userId);
+  } catch (error) {
+    // Nothing was destroyed yet, so the account stays as it was: give back only what this
+    // attempt claimed, keeping claims an earlier attempt left and other deletions' markers.
+    await restoreSpaceDeletionClaims(deps.prisma, claimId, takenOver);
+    throw error;
+  }
+  // Then leave other people's Spaces, so what this account made there passes to their owners
+  // instead of being torn down with it. None of them is claimed above: each keeps another full
+  // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
+  // and start others' waiting follow-ups.
+  const departures = await prepareAccountDeletion(deps.prisma, userId);
+  for (const departure of departures) {
+    await afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure);
+  }
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
   await deleteClaimedSpaces(deps, {
     userId,

@@ -273,6 +273,8 @@ export interface ConnectorTool {
   label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -295,6 +297,8 @@ export interface ConnectorRoute {
   connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -303,11 +307,26 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** Read the tool's app after a successful call. Only a caller that shows it asks. */
+  withApp?: boolean;
+}
+
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
 }
 
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
@@ -548,7 +567,10 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
-  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  /**
+   * Group threads and shared spaces: the label the model sees on the prompt, the same as on
+   * history ("User", or the person's name in a space several people share).
+   */
   promptSpeaker?: string;
   instructions: string;
   history: Array<{
@@ -557,9 +579,10 @@ export interface AgentRunRequest {
     role: "user" | "assistant" | "system";
     content: string;
     /**
-     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
-     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
-     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     * Who wrote this message when it is neither this bot nor the human of a personal direct chat:
+     * another bot's current name, or the person: "User", or their name in a space several people
+     * share. The runtime shows such a message to the model as a user turn that starts with
+     * "[speaker]: ".
      */
     speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
@@ -756,7 +779,10 @@ export interface VoiceSynthesizeRequest {
   text: string;
   voiceId: string;
   apiKey: string;
-  /** Connection speech model. Fish uses this, then `FISH_TTS_MODEL`, then s2.1-pro. */
+  /**
+   * Connection speech model, for providers whose catalog entry sets `speechModel`. Without
+   * one, each adapter uses its own default.
+   */
   model?: string;
   signal?: AbortSignal;
 }
@@ -785,7 +811,7 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
@@ -1165,6 +1191,8 @@ export type BrowserActStep =
       site?: string;
       label?: string;
       amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
     }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
@@ -1233,6 +1261,16 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

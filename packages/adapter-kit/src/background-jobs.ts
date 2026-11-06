@@ -22,7 +22,11 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
-  "history.compact": z.object({ threadId: z.string().min(1) }),
+  // The member whose turn asked for it, who pays; older jobs name only the thread.
+  "history.compact": z.object({
+    threadId: z.string().min(1),
+    userId: z.string().min(1).optional(),
+  }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
@@ -170,10 +174,10 @@ export function messagingDeliverJob(runId?: string, availableAt?: Date): Backgro
   };
 }
 
-export function historyCompactJob(threadId: string): BackgroundJob {
+export function historyCompactJob(threadId: string, userId?: string): BackgroundJob {
   return {
     name: "history.compact",
-    payload: { threadId },
+    payload: userId ? { threadId, userId } : { threadId },
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
   };

@@ -182,6 +182,10 @@ msgstr "{count} days"
 msgid "{count} months"
 msgstr "{count} months"
 
+#: src/components/AskCard.tsx
+msgid "{count} more"
+msgstr "{count} more"
+
 #: src/lib/billing.ts
 msgid "{count} weeks"
 msgstr "{count} weeks"
@@ -217,6 +221,10 @@ msgstr "{hiddenSelectedCount, plural, one {# selected model is hidden by your se
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours}h ago"
+
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr "{inviterName} invited you"
 
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
@@ -364,6 +372,38 @@ msgstr "{remaining} left"
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# seat} other {# seats}}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a day"
+msgstr "{shown} a day"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a month"
+msgstr "{shown} a month"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} a week"
+msgstr "{shown} a week"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} in total"
+msgstr "{shown} in total"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent"
+msgstr "{shown} spent"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this month"
+msgstr "{shown} spent this month"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent this week"
+msgstr "{shown} spent this week"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "{shown} spent today"
+msgstr "{shown} spent today"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
@@ -491,6 +531,10 @@ msgstr "Account menu for {name}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "Actions for {0}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr "Actions for {name}"
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
@@ -689,6 +733,10 @@ msgstr "All {credit} goes to model usage."
 msgid "All bots"
 msgstr "All bots"
 
+#: src/pages/Artifacts.tsx
+msgid "All files"
+msgstr "All files"
+
 #: src/components/integrations/space-availability.tsx
 msgid "All spaces"
 msgstr "All spaces"
@@ -761,13 +809,13 @@ msgstr "Always allowed"
 msgid "Always open {site}"
 msgstr "Always open {site}"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Amount"
+msgstr "Amount"
+
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "An API key is stored for this provider, not a subscription sign-in."
-
-#: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "An existing Honcho peer to read from. Rakazo never writes to it."
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -902,7 +950,6 @@ msgid "Approving…"
 msgstr "Approving…"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Apps"
 msgstr "Apps"
 
@@ -1019,6 +1066,7 @@ msgstr "Avatar Studio"
 #: src/components/vault/VaultPageHeader.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1139,13 +1187,13 @@ msgstr "Bot's model"
 msgid "Both"
 msgstr "Both"
 
-#: src/pages/Artifacts.tsx
-msgid "Bots"
-msgstr "Bots"
-
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Bots and browser automation"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Bots use the accounts of whoever messages them"
+msgstr "Bots use the accounts of whoever messages them"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1167,6 +1215,10 @@ msgstr "Browse MCP servers"
 #: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Built-in"
+
+#: src/components/AskCard.tsx
+msgid "Button “{button}” · read from the page, not checked"
+msgstr "Button “{button}” · read from the page, not checked"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Call"
@@ -1212,6 +1264,8 @@ msgstr "Can't read images"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/ModelCredits.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1238,6 +1292,10 @@ msgstr "Cancel new bot"
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
 msgstr "Cancel new group"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Cancel open invites"
+msgstr "Cancel open invites"
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1450,6 +1508,10 @@ msgstr "Clear conversation"
 #: src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
 msgstr "Clear filter {label}"
+
+#: src/pages/Artifacts.tsx
+msgid "Clear filters"
+msgstr "Clear filters"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
@@ -1857,6 +1919,10 @@ msgstr "Copy code"
 msgid "Copy diagram source"
 msgstr "Copy diagram source"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr "Copy invite link"
+
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
@@ -1898,6 +1964,10 @@ msgstr "Could not approve this server"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "Could not authorize this app"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not cancel invites"
+msgstr "Could not cancel invites"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -1984,6 +2054,10 @@ msgstr "Could not create bot"
 #: src/pages/GroupPanel.tsx
 msgid "Could not create group"
 msgstr "Could not create group"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr "Could not create invite link"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2082,6 +2156,10 @@ msgstr "Could not install connector"
 msgid "Could not install plugin"
 msgstr "Could not install plugin"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr "Could not leave space"
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/user-devices.ts
@@ -2125,6 +2203,10 @@ msgstr "Could not load integrations"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "Could not load MCP servers"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr "Could not load members"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2215,6 +2297,10 @@ msgstr "Could not remove"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "Could not remove connector"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr "Could not remove member"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -2307,6 +2393,10 @@ msgstr "Could not save rule"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not save skill"
 msgstr "Could not save skill"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Could not save spending limit"
+msgstr "Could not save spending limit"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
@@ -2517,10 +2607,6 @@ msgid "Credential"
 msgstr "Credential"
 
 #: src/pages/PluginsOverlay.tsx
-msgid "Credential saved"
-msgstr "Credential saved"
-
-#: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Credentials are encrypted and never sent to the model."
 
@@ -2548,6 +2634,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron expression"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Currency"
+msgstr "Currency"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2572,6 +2662,10 @@ msgstr "Customize {label}"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "Customize bot avatar"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Daily"
+msgstr "Daily"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
@@ -2605,6 +2699,7 @@ msgstr "days"
 msgid "Decline"
 msgstr "Decline"
 
+#: src/components/ComputerProviderSettings.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -2722,11 +2817,6 @@ msgstr "Denied"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Deny"
-
-#. placeholder {0}: settings.defaultProvider
-#: src/components/ComputerProviderSettings.tsx
-msgid "Deployment default ({0})"
-msgstr "Deployment default ({0})"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -2922,6 +3012,7 @@ msgid "Each name can be used once."
 msgstr "Each name can be used once."
 
 #: src/components/AskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3083,6 +3174,14 @@ msgstr "Every month"
 msgid "Every week"
 msgstr "Every week"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone here sees its chats, bots and memory"
+msgstr "Everyone here sees its chats, bots and memory"
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
+msgstr "Everyone in this bot's space can read the chats it gets from {linkApp}."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor token"
@@ -3191,15 +3290,26 @@ msgstr "Files or folders on the computer"
 msgid "Files or folders, one per line"
 msgstr "Files or folders, one per line"
 
+#: src/pages/Artifacts.tsx
+msgid "Files your bots create, like reports, docs and images, collect here."
+msgstr "Files your bots create, like reports, docs and images, collect here."
+
 #: src/pages/GroupPanel.tsx
 msgid "Filter bots"
 msgstr "Filter bots"
+
+#: src/pages/Artifacts.tsx
+msgid "Filter by bot"
+msgstr "Filter by bot"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "Filter by date"
 
 #: src/pages/Artifacts.tsx
+msgid "Filter by who made it"
+msgstr "Filter by who made it"
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filters"
@@ -3631,6 +3741,10 @@ msgstr "Interval unit"
 msgid "Invalid code"
 msgstr "Invalid code"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr "Invite"
+
 #: src/pages/shell/chat-header.tsx
 msgid "Invite a friend"
 msgstr "Invite a friend"
@@ -3640,8 +3754,13 @@ msgid "Invite friends"
 msgstr "Invite friends"
 
 #: src/components/InviteDialog.tsx
+#: src/components/SpaceMembersSettings.tsx
 msgid "Invite link"
 msgstr "Invite link"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr "Invite link copied"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3667,6 +3786,14 @@ msgstr "Its conversation, files, and routines will be permanently deleted. Bots 
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr "Join"
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr "Join {spaceName}"
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3724,9 +3851,19 @@ msgstr "Last check {0}: no changes"
 msgid "Later"
 msgstr "Later"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Leave"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr "Leave {0}?"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr "Leave space"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -3818,9 +3955,11 @@ msgstr "Loading voice providers…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3863,6 +4002,10 @@ msgstr "Low"
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Low"
+
+#: src/pages/Artifacts.tsx
+msgid "Made by bots"
+msgstr "Made by bots"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
@@ -3972,6 +4115,10 @@ msgstr "Medium"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "Member"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Members"
+msgstr "Members"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4155,6 +4302,7 @@ msgid "month"
 msgstr "month"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monthly"
@@ -4167,6 +4315,7 @@ msgstr "Monthly credits"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Monthly credits expire at renewal. Top-ups do not expire."
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
@@ -4254,6 +4403,7 @@ msgstr "Needs an answer"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
+#: src/pages/PluginsOverlay.tsx
 msgid "Needs an OAuth client ID"
 msgstr "Needs an OAuth client ID"
 
@@ -4264,6 +4414,10 @@ msgstr "Needs attention"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Needs input"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Needs sign-in"
+msgstr "Needs sign-in"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4385,12 +4539,8 @@ msgid "No apps match your search."
 msgstr "No apps match your search."
 
 #: src/pages/Artifacts.tsx
-msgid "No artifacts found."
-msgstr "No artifacts found."
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No auth"
-msgstr "No auth"
+msgid "No artifacts yet"
+msgstr "No artifacts yet"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -4410,13 +4560,13 @@ msgstr "No bots match"
 msgid "No longer active"
 msgstr "No longer active"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No managed app catalog is configured on this deployment."
-msgstr "No managed app catalog is configured on this deployment."
-
 #: src/components/VaultSettings.tsx
 msgid "No matches"
 msgstr "No matches"
+
+#: src/pages/Artifacts.tsx
+msgid "No matching artifacts"
+msgstr "No matching artifacts"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
@@ -4460,6 +4610,10 @@ msgstr "No remote MCP servers found"
 msgid "No reply"
 msgstr "No reply"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "No reset"
+msgstr "No reset"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
@@ -4495,6 +4649,7 @@ msgstr "No tickets yet"
 msgid "No trigger"
 msgstr "No trigger"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "None"
@@ -4515,6 +4670,10 @@ msgstr "Not added: {0}"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "Not checked yet"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Not connected"
+msgstr "Not connected"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
@@ -4543,6 +4702,7 @@ msgid "Not used by Rakazo"
 msgstr "Not used by Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Not working"
 msgstr "Not working"
 
@@ -4570,17 +4730,9 @@ msgstr "OAuth client ID (optional)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth client secret (optional)"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth connected"
-msgstr "OAuth connected"
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth connection failed"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "OAuth expired"
-msgstr "OAuth expired"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Offline"
@@ -4608,6 +4760,10 @@ msgstr "on day {day} at {time}"
 #: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
+
+#: src/components/AskCard.tsx
+msgid "On the button"
+msgstr "On the button"
 
 #: src/lib/cron.ts
 msgid "One-time"
@@ -4683,6 +4839,7 @@ msgid "Open navigation"
 msgstr "Open navigation"
 
 #: src/components/pages/PublicPageShell.tsx
+#: src/pages/Invite.tsx
 #: src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "Open Rakazo"
@@ -4752,6 +4909,7 @@ msgid "Output"
 msgstr "Output"
 
 #: src/components/pages/SharePopover.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -5074,6 +5232,10 @@ msgstr "React"
 msgid "Reactions"
 msgstr "Reactions"
 
+#: src/components/AskCard.tsx
+msgid "Read from the page, not checked"
+msgstr "Read from the page, not checked"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Read replies aloud"
@@ -5095,6 +5257,10 @@ msgstr "Reasoning effort"
 msgid "Recall and write"
 msgstr "Recall and write"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Recall from this peer; save to Rakazo’s own peers."
+msgstr "Recall from this peer; save to Rakazo’s own peers."
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "Recall only"
@@ -5106,6 +5272,10 @@ msgstr "Received"
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Recent"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Recent payments"
+msgstr "Recent payments"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Recommended"
@@ -5243,6 +5413,8 @@ msgstr "Reload"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/components/SpaceMembersSettings.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
@@ -5264,6 +5436,10 @@ msgstr "Remove {0}"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "Remove {0} from the group"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr "Remove {memberName}?"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5414,6 +5590,10 @@ msgstr "Reset password"
 msgid "Reset your password"
 msgstr "Reset your password"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Resets"
+msgstr "Resets"
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "Resetting…"
@@ -5461,6 +5641,7 @@ msgstr "Restoring your workspace"
 #: src/components/PasskeySettings.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5586,6 +5767,7 @@ msgstr "Saturday"
 #: src/components/ComputerProviderSettings.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/SecretAskCard.tsx
+#: src/components/SpendingLimitSettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5673,6 +5855,7 @@ msgstr "Screen not connected"
 
 #: src/components/FoundModelPicker.tsx
 #: src/components/VaultSettings.tsx
+#: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5689,6 +5872,10 @@ msgstr "Search"
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "Search apps"
+
+#: src/pages/Artifacts.tsx
+msgid "Search artifacts"
+msgstr "Search artifacts"
 
 #: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
@@ -5709,6 +5896,10 @@ msgstr "Search by domain"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr "Search integrations.sh"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Search MCP servers for “{query}”"
+msgstr "Search MCP servers for “{query}”"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -5827,6 +6018,10 @@ msgstr "Server name"
 msgid "Server URL"
 msgstr "Server URL"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Set"
+msgstr "Set"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5899,6 +6094,7 @@ msgstr "Shared memory"
 msgid "Show"
 msgstr "Show"
 
+#: src/components/SpendingLimitSettings.tsx
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Show all"
@@ -5990,6 +6186,10 @@ msgstr "Sign-in cancelled. Try again."
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Site"
 msgstr "Site"
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Sites you sign in to stay signed in for everyone in this space"
+msgstr "Sites you sign in to stay signed in for everyone in this space"
 
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
@@ -6107,6 +6307,10 @@ msgstr "Speaking"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Speech model"
+
+#: src/components/SpendingLimitSettings.tsx
+msgid "Spending limit"
+msgstr "Spending limit"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
@@ -6360,6 +6564,10 @@ msgstr "Testing…"
 msgid "The bot can use the file but won't see the picture."
 msgstr "The bot can use the file but won't see the picture."
 
+#: src/components/SecretAskCard.tsx
+msgid "The bot's browser stays signed in for everyone in this space"
+msgstr "The bot's browser stays signed in for everyone in this space"
+
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -6449,6 +6657,10 @@ msgid "Thinking: {0}"
 msgstr "Thinking: {0}"
 
 #: src/lib/user-error.ts
+msgid "This account is deactivated"
+msgstr "This account is deactivated"
+
+#: src/lib/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "This app needs its own sign-in setup to connect."
 
@@ -6514,6 +6726,10 @@ msgstr "This file is not valid UTF-8 text."
 #: src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
 msgstr "This import was already used. Choose the files again."
+
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr "This invite link is no longer valid."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -6672,6 +6888,10 @@ msgstr "Tool name"
 #: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/AskCard.tsx
+msgid "Total"
+msgstr "Total"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
@@ -7054,6 +7274,10 @@ msgstr "Weekdays"
 msgid "Weekends"
 msgstr "Weekends"
 
+#: src/components/SpendingLimitSettings.tsx
+msgid "Weekly"
+msgstr "Weekly"
+
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
 msgstr "Welcome to Rakazo"
@@ -7202,6 +7426,10 @@ msgstr "You have control"
 msgid "Your Anthropic"
 msgstr "Your Anthropic"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Your apps"
+msgstr "Your apps"
+
 #: src/components/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
@@ -7244,6 +7472,10 @@ msgstr "Your OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Your OpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private"
+msgstr "Your other spaces stay private"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

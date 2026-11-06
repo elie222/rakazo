@@ -110,7 +110,7 @@ export function SpaceSettingOverrides({
 
   if (overrides.data === undefined) {
     return overrides.isError ? (
-      <div role="alert" className="text-[12.5px] text-destructive">
+      <div role="alert" className="text-body-sm text-destructive">
         {errorText(overrides.error)}
         <Button variant="ghost" size="sm" onClick={() => void overrides.refetch()}>
           {t`Retry`}
@@ -133,7 +133,7 @@ export function SpaceSettingOverrides({
                   <>
                     <p>{label}</p>
                     {custom ? null : (
-                      <p className="text-[13px] text-muted-foreground">{t`Your defaults`}</p>
+                      <p className="text-body-sm text-muted-foreground">{t`Your defaults`}</p>
                     )}
                   </>
                 }
@@ -161,7 +161,7 @@ export function SpaceSettingOverrides({
         })}
       </SettingsGroup>
       {actionError ? (
-        <p role="alert" className="text-[12.5px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {actionError}
         </p>
       ) : null}
