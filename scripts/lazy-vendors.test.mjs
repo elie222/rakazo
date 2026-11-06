@@ -20,9 +20,16 @@ const ENTRIES = [
 // every messaging platform needs, not a vendor.
 const OPTIONAL_VENDORS =
   /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node|@alicloud\/.+|@darabonba\/typescript|@kubernetes\/client-node|@larksuiteoapi\/node-sdk|@photon-ai\/chat-adapter-imessage|mppx|railway)$/;
-// Packages the bundles load only through import() that are not vendor SDKs: an image library,
-// the auth library's own SCIM plugin, and the email parser and DKIM check for inbound mail.
-const LAZY_NON_VENDORS = ["sharp", "@better-auth/scim", "postal-mime", "mailauth"];
+// Packages the bundles load through import() that are not vendor SDKs: an image library, the
+// auth library's own SCIM plugin, the email parser and DKIM check for inbound mail, and the
+// database client, which is also imported statically.
+const LAZY_NON_VENDORS = [
+  "sharp",
+  "@better-auth/scim",
+  "postal-mime",
+  "mailauth",
+  "@prisma/client",
+];
 // Known static imports still to make lazy. Remove an entry once its SDK loads on demand.
 const PENDING = [
   "@chat-adapter/slack",
@@ -90,11 +97,11 @@ test("every pending vendor SDK is still statically imported somewhere", () => {
   );
 });
 
-test("every package loaded only on demand is a listed vendor SDK or a known non-vendor", () => {
-  // A vendor SDK missing from OPTIONAL_VENDORS could become a static import unnoticed.
+test("every package loaded on demand is a listed vendor SDK or a known non-vendor", () => {
+  // A vendor SDK missing from OPTIONAL_VENDORS could become a static import unnoticed, also when
+  // another bundle already imports it statically.
   assert.deepEqual(
     [...dynamicPackages]
-      .filter((name) => !staticPackages.has(name))
       .filter((name) => !OPTIONAL_VENDORS.test(name) && !LAZY_NON_VENDORS.includes(name))
       .sort(),
     [],
