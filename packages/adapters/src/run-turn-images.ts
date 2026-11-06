@@ -72,7 +72,6 @@ export async function loadCurrentTurnImages(
     where: {
       id: { in: imageBlocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -149,7 +148,6 @@ async function loadTurnImagesWithinBudget(
     where: {
       id: { in: imageBlocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
     select: { id: true, storageKey: true, size: true },
   });

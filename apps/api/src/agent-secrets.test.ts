@@ -115,11 +115,13 @@ describe("agent secrets on the vault", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    await expect(listAgentSecrets(deps, actor)).rejects.toBeInstanceOf(ORPCError);
+    await expect(listAgentSecrets(deps, actor)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
-    ).rejects.toBeInstanceOf(ORPCError);
-    await expect(deleteAgentSecret(deps, actor, "acme_token")).rejects.toBeInstanceOf(ORPCError);
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(deleteAgentSecret(deps, actor, "acme_token")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     expect(rows).toHaveLength(1);
   });
 

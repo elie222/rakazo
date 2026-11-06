@@ -65,7 +65,6 @@ export async function listSpaceRuns(
   const rows = await prisma.run.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       bot: { archivedAt: null },
       // Background ticket work belongs on the board, not in the activity list. A background
       // helper and the turn passing on its result show in the chat, on the helper's card.

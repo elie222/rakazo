@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type { ResolvedAppearance, WebColorTokens } from "@rakazo/ui-tokens";
@@ -12,6 +12,7 @@ const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FONT_STACK = /^[\w\s"',-]+$/;
 const FAMILY = /^[\w -]+$/;
 const WEIGHT = /^\d{3}(?: \d{3})?$/;
+const LENGTH = /^\d+(?:\.\d+)?(?:px|rem)$/;
 const FONT_TYPES: Record<string, { format: string; mime: string }> = {
   ".woff2": { format: "woff2", mime: "font/woff2" },
   ".woff": { format: "woff", mime: "font/woff" },
@@ -28,6 +29,8 @@ export type InstanceTheme = {
   dark: Overlay;
   light: Overlay;
   fonts: { sans?: string; mono?: string; files: FontFile[] };
+  /** The base corner size; the `rounded-sm` to `rounded-2xl` scale is derived from it. */
+  radius?: string;
 };
 
 function readOverlay(value: unknown, where: string): Overlay {
@@ -68,17 +71,30 @@ function readFontFiles(value: unknown, themeDir: string): FontFile[] {
     if (weight !== undefined && (typeof weight !== "string" || !WEIGHT.test(weight))) {
       throw new Error(`${where}.weight must look like "400" or "100 900"`);
     }
-    return { family, file: path.resolve(themeDir, file), weight };
+    const resolved = path.resolve(themeDir, file);
+    if (path.isAbsolute(file) || !inside(themeDir, resolved)) {
+      throw new Error(`${where}.file must be inside the theme's folder`);
+    }
+    return { family, file: resolved, weight };
   });
+}
+
+function inside(dir: string, file: string): boolean {
+  const relative = path.relative(dir, file);
+  const escapes = relative === ".." || relative.startsWith(`..${path.sep}`);
+  return relative !== "" && !escapes && !path.isAbsolute(relative);
 }
 
 export function parseInstanceTheme(source: string, themeDir: string): InstanceTheme {
   const raw: unknown = JSON.parse(source);
   if (!raw || typeof raw !== "object") throw new Error("theme must be an object");
-  const { dark, light, fonts, ...rest } = raw as Record<string, unknown>;
+  const { dark, light, fonts, radius, ...rest } = raw as Record<string, unknown>;
   const unknownKey = Object.keys(rest)[0];
   if (unknownKey) throw new Error(`${unknownKey} is not a theme field`);
   const fontObject = (fonts ?? {}) as Record<string, unknown>;
+  if (radius !== undefined && (typeof radius !== "string" || !LENGTH.test(radius))) {
+    throw new Error('radius must look like "12px" or "0.5rem"');
+  }
   return {
     dark: readOverlay(dark, "dark"),
     light: readOverlay(light, "light"),
@@ -87,6 +103,7 @@ export function parseInstanceTheme(source: string, themeDir: string): InstanceTh
       mono: readFont(fontObject.mono, "fonts.mono"),
       files: readFontFiles(fontObject.files, themeDir),
     },
+    radius,
   };
 }
 
@@ -113,13 +130,14 @@ function fontFace(font: FontFile, index: number): string {
 /** Loaded after the app stylesheet; `html[...]` outranks the token blocks' `:root, [data-theme]`. */
 export function renderInstanceThemeCss(theme: InstanceTheme): string {
   const appearances: ResolvedAppearance[] = ["dark", "light"];
-  const fonts = [
+  const root = [
     theme.fonts.sans && `  --font-sans: ${theme.fonts.sans};`,
     theme.fonts.mono && `  --font-mono: ${theme.fonts.mono};`,
+    theme.radius && `  --radius: ${theme.radius};`,
   ].filter((line): line is string => Boolean(line));
   return [
     ...theme.fonts.files.map(fontFace),
-    block("html:root", fonts),
+    block("html:root", root),
     ...appearances.map((appearance) =>
       block(`html[data-theme="${appearance}"]`, colorLines(theme[appearance])),
     ),
@@ -181,7 +199,11 @@ export function instanceThemeMiddleware(themeFile: string, warn: (reason: string
     try {
       const font = loadTheme(themeFile).fonts.files[index];
       if (!font) return next();
-      const body = readFileSync(font.file);
+      // A symlink in the theme folder must not reach outside it either.
+      const themeDir = realpathSync(path.dirname(path.resolve(themeFile)));
+      const real = realpathSync(font.file);
+      if (!inside(themeDir, real)) throw new Error(`${font.file} is outside the theme's folder`);
+      const body = readFileSync(real);
       res.setHeader("content-type", FONT_TYPES[path.extname(font.file).toLowerCase()]?.mime ?? "");
       res.setHeader("cache-control", "no-cache");
       res.end(body);

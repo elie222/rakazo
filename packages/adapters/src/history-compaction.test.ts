@@ -249,6 +249,7 @@ type HarnessMessage = {
   role: string;
   botId?: string;
   blocks: MessageBlock[];
+  authorUserId?: string;
 };
 
 function compactionHarness(
@@ -265,6 +266,8 @@ function compactionHarness(
     historyCompactionGeneration?: number;
     historyCompactionRetryAfterSeq?: number;
     wasCleared?: boolean;
+    threadCreatorLeft?: boolean;
+    spaceMembers?: number;
     resolveModel?: (scope: {
       userId: string;
       spaceId: string;
@@ -349,6 +352,15 @@ function compactionHarness(
     event: {
       findFirst: vi.fn(async () => (options.wasCleared ? { seq: 0 } : null)),
     },
+    spaceMember: {
+      findUnique: vi.fn(async () => (options.threadCreatorLeft ? null : { userId: "user-1" })),
+      count: vi.fn(async () => options.spaceMembers ?? 1),
+    },
+    user: {
+      findMany: vi.fn(async (args: { where: { id: { in: string[] } } }) =>
+        args.where.id.in.map((id) => ({ id, name: id === "user-1" ? "Ava" : "Ben" })),
+      ),
+    },
     message: {
       findMany: vi.fn(
         async (args: {
@@ -367,6 +379,7 @@ function compactionHarness(
       ),
     },
     bot: {
+      findUnique: vi.fn(async () => ({ userId: "owner-1" })),
       findMany: vi.fn(async (args: { where: { id: { in: string[] } } }) =>
         (options.bots ?? [{ id: "bot-1", name: "Anya" }]).filter((bot) =>
           args.where.id.in.includes(bot.id),
@@ -623,6 +636,28 @@ describe("compactHistory", () => {
     expect(request.prompt).toContain("[image: diagram.png]");
   });
 
+  it("names who wrote each line in a shared space", async () => {
+    const messages: HarnessMessage[] = Array.from({ length: 50 }, (_, i) => ({
+      seq: i,
+      role: i % 2 === 0 ? "user" : "bot",
+      blocks: [{ kind: "text", text: `message ${i}` }],
+      ...(i % 2 === 0 ? { authorUserId: i % 4 === 0 ? "user-1" : "user-2" } : {}),
+    }));
+    const shared = compactionHarness({ deploymentModelKey: "key", messages, spaceMembers: 2 });
+    await compactHistory(shared.deps, "thread-1");
+    const [sharedRequest] = shared.runtime.run.mock.calls[0]!;
+    expect(sharedRequest.prompt).toContain("Ava: message 0");
+    expect(sharedRequest.prompt).toContain("Ben: message 2");
+    expect(sharedRequest.prompt).toContain("Anya: message 1");
+
+    const personal = compactionHarness({ deploymentModelKey: "key", messages });
+    await compactHistory(personal.deps, "thread-1");
+    const [personalRequest] = personal.runtime.run.mock.calls[0]!;
+    expect(personalRequest.prompt).toContain("User: message 0");
+    expect(personalRequest.prompt).not.toContain("Ava");
+    expect(personal.prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
   it("compacts locally without a semantic memory provider", async () => {
     const harness = compactionHarness({
       settings: {
@@ -674,6 +709,39 @@ describe("compactHistory", () => {
       id: "claude-sonnet",
       apiKey: "user-model-key",
     });
+  });
+
+  it("bills the member whose turn asked for the summary, and skips one who has left", async () => {
+    const resolveModel = vi.fn(async () => ({
+      provider: "anthropic",
+      id: "claude-sonnet",
+      apiKey: "member-model-key",
+    }));
+    const harness = compactionHarness({
+      deploymentModelKey: "deployment-key",
+      resolveModel,
+      nextMessageSeq: 150,
+    });
+
+    await compactHistory(harness.deps, "thread-1", "user-2");
+
+    expect(resolveModel).toHaveBeenCalledWith({
+      userId: "user-2",
+      spaceId: "workspace-1",
+      botId: "bot-1",
+    });
+    // The rest of the backlog is summarized at the same member's expense.
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1", "user-2"));
+
+    const departed = compactionHarness({
+      deploymentModelKey: "deployment-key",
+      resolveModel,
+      threadCreatorLeft: true,
+    });
+    resolveModel.mockClear();
+    await compactHistory(departed.deps, "thread-1", "user-2");
+    expect(resolveModel).not.toHaveBeenCalled();
+    expect(departed.runtime.run).not.toHaveBeenCalled();
   });
 
   it("rebuilds local coverage without regressing the legacy cursor", async () => {

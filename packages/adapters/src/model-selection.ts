@@ -7,7 +7,13 @@ import {
   usableModelId,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
+import {
+  chooseModelCredential,
+  findModelCredential,
+  findModelCredentialById,
+  GUEST_ROLE,
+  organizationForMember,
+} from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelSeesImages, modelAcceptsImageInput } from "./model-vision.js";
@@ -20,6 +26,7 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import type { CatalogReads } from "./pi-live-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
 import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
@@ -42,8 +49,20 @@ async function credentialLiveListsModel(
   provider: string,
   modelId: string,
   codex?: CodexLiveCatalog,
+  reads?: CatalogReads,
 ): Promise<boolean> {
-  if (await providerLiveListsModel(prisma, secrets, userId, secretId, provider, modelId))
+  if (
+    await providerLiveListsModel(
+      prisma,
+      secrets,
+      userId,
+      secretId,
+      provider,
+      modelId,
+      undefined,
+      reads,
+    )
+  )
     return true;
   if (provider !== "openai-codex" || !codex || !liveCatalogEntry(provider, modelId)) return false;
   const secret = await loadModelSecret(prisma, secrets, userId, secretId);
@@ -59,6 +78,7 @@ export async function connectionServesModel(
     prisma: PrismaClient;
     secretStore: Pick<SecretStore, "load">;
     codexCatalog?: CodexLiveCatalog;
+    reads?: CatalogReads;
   },
   userId: string,
   credential: { secretId: string },
@@ -87,6 +107,7 @@ export async function connectionServesModel(
     provider,
     modelId,
     deps.codexCatalog,
+    deps.reads,
   );
 }
 
@@ -901,12 +922,24 @@ export async function hasHostedModelCredits(
   const deployment = resolveDeploymentModel();
   if (!deployment.configured || deployment.provider !== provider) return false;
   const space = await prisma.space.findFirst({
-    where: { id: scope.spaceId, organization: { members: { some: { userId: scope.userId } } } },
+    where: {
+      id: scope.spaceId,
+      organization: { members: { some: { userId: scope.userId, role: { not: GUEST_ROLE } } } },
+    },
     select: {
       organization: { select: { modelCredits: { select: { mode: true, balanceMicros: true } } } },
     },
   });
-  const credits = space?.organization.modelCredits;
+  // A guest in someone's shared Space is paid for by their own organization.
+  const guestPayer = space ? null : await organizationForMember(prisma, scope);
+  const credits = space
+    ? space.organization.modelCredits
+    : guestPayer
+      ? await prisma.modelCreditAccount.findUnique({
+          where: { organizationId: guestPayer.organizationId },
+          select: { mode: true, balanceMicros: true },
+        })
+      : null;
   if (credits?.mode === "credits") return true;
   if (!credits || credits.balanceMicros <= 0n) return false;
   return !(await prisma.userModelCredential.findFirst({

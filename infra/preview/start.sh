@@ -16,6 +16,8 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER_EMAIL=preview@example.com
 OWNER_PASSWORD=rakazo-preview-demo
 PGDATA="$DATA/postgres"
+IMAGE_ID=$(cat "$ROOT/infra/preview/image-id" 2> /dev/null || true)
+INITIALIZED_IMAGE="$PGDATA/.preview-image"
 
 log() { printf '[preview] %s\n' "$*"; }
 as_postgres() { gosu postgres "$@"; }
@@ -49,9 +51,11 @@ init_database() {
 start_database() {
   as_postgres "$PG_BIN/pg_ctl" -D "$PGDATA" -l "$PGDATA/server.log" -w -s \
     -o "-c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=''" start
-  PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -h 127.0.0.1 -U rakazo -d postgres \
-    -c "SELECT 1 FROM pg_database WHERE datname = 'rakazo'" | grep -q 1 \
-    || PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/createdb" -h 127.0.0.1 -U rakazo rakazo
+  if ! PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -h 127.0.0.1 -U rakazo -d postgres \
+    -c "SELECT 1 FROM pg_database WHERE datname = 'rakazo'" | grep -q 1; then
+    rm -f "$INITIALIZED_IMAGE"
+    PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/createdb" -h 127.0.0.1 -U rakazo rakazo
+  fi
 }
 
 stop_database() {
@@ -75,6 +79,13 @@ migrate() {
     _ "$ROOT"
 }
 
+demo_account_exists() {
+  PGPASSWORD=$PG_OWNER_PASSWORD "$PG_BIN/psql" -qtA -v ON_ERROR_STOP=1 \
+    -v owner_email="$OWNER_EMAIL" -h 127.0.0.1 -U rakazo -d rakazo <<'SQL' | grep -qx t
+SELECT EXISTS (SELECT 1 FROM "user" WHERE email = :'owner_email' AND "emailVerified");
+SQL
+}
+
 shutdown() {
   kill $(jobs -pr) 2> /dev/null || true
   wait || true
@@ -95,18 +106,30 @@ waiting=$!
 
 [[ -f "$PGDATA/PG_VERSION" ]] || init_database
 start_database
-if ! migrate; then
-  # A rewritten branch can leave migrations that no longer apply; a preview's data is disposable.
-  log "Migrations failed; starting over with an empty database"
-  stop_database
-  find "$PGDATA" -mindepth 1 -delete
-  find "$DATA/app" -mindepth 1 -delete
-  init_database
-  start_database
-  migrate
+setup_required=
+if [[ -z $IMAGE_ID || $(cat "$INITIALIZED_IMAGE" 2> /dev/null || true) != "$IMAGE_ID" ]]; then
+  rm -f "$INITIALIZED_IMAGE"
+  if ! migrate; then
+    # A rewritten branch can leave migrations that no longer apply; a preview's data is disposable.
+    log "Migrations failed; starting over with an empty database"
+    stop_database
+    find "$PGDATA" -mindepth 1 -delete
+    find "$DATA/app" -mindepth 1 -delete
+    init_database
+    start_database
+    migrate
+  fi
+  setup_required=1
 fi
-OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
-  gosu node bash -c 'cd "$1/apps/api" && node dist/cli/bootstrap-owner.js' _ "$ROOT"
+if [[ -n $setup_required ]] || ! demo_account_exists; then
+  rm -f "$INITIALIZED_IMAGE"
+  OWNER_EMAIL=$OWNER_EMAIL OWNER_PASSWORD=$OWNER_PASSWORD \
+    gosu node bash -c 'cd "$1/apps/api" && node dist/cli/bootstrap-owner.js' _ "$ROOT"
+  if [[ -n $IMAGE_ID ]]; then
+    printf '%s\n' "$IMAGE_ID" > "$INITIALIZED_IMAGE.tmp"
+    mv "$INITIALIZED_IMAGE.tmp" "$INITIALIZED_IMAGE"
+  fi
+fi
 
 gosu node bash -c 'cd "$1/apps/api" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
 gosu node bash -c 'cd "$1/apps/worker" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &

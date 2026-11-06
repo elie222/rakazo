@@ -4214,7 +4214,7 @@ describeJourneys("required product journeys", () => {
       );
     });
 
-    it("organize_bot sets, clears and pins sections for bots and groups of the user only", async () => {
+    it("organize_bot sets, clears and pins sections for bots and groups in its own space only", async () => {
       const { cookie, me, chief } = await fleetOwner("organize");
       const outsider = await signup(
         app,
@@ -4222,8 +4222,14 @@ describeJourneys("required product journeys", () => {
         "Other",
       );
       const outsiderMe = await rpc<Me>(app, outsider, "me");
+      // Sections are shared within a space, so another user's lives in their own space.
       const foreignSection = await prisma.botSection.create({
-        data: { spaceId: me.spaceId, userId: outsiderMe.userId, name: "Research", position: 0 },
+        data: {
+          spaceId: outsiderMe.spaceId,
+          userId: outsiderMe.userId,
+          name: "Research",
+          position: 0,
+        },
       });
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");

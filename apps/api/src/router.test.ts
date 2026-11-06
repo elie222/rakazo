@@ -41,6 +41,7 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
   configureProviderTransactionPool,
+  Prisma,
   runProviderTransaction,
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -2315,9 +2316,10 @@ describe("MCP server health", () => {
     const recordHealth = async (patch: Row) => {
       if (server) server = { ...server, healthCheckedAt: new Date(5), ...patch };
     };
-    const updateMany = vi.fn(async ({ data }: { data: Row }) => {
+    const updateMany = vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
+      if (!matches(where)) return { count: 0 };
       await recordHealth(data);
-      return { count: server ? 1 : 0 };
+      return { count: 1 };
     });
     const matches = (where: Row): boolean =>
       Boolean(server) &&
@@ -2853,16 +2855,13 @@ describe("MCP server health", () => {
 
     it("probes the server once its OAuth session completes", async () => {
       const h = harness({ row: baseRow() });
-      const complete = vi.fn(async () => undefined);
+      const complete = vi.fn(async () => ({ serverId: "server-1", revision: 1 }));
       Object.assign(h.deps, {
         mcpOAuth: {
           ...(h.deps.mcpOAuth as object),
           complete,
         },
       });
-      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
-      };
       const client = createRouterClient(createRouter(h.deps), {
         context: {
           actor: {
@@ -2879,6 +2878,188 @@ describe("MCP server health", () => {
 
       expect(complete).toHaveBeenCalledTimes(1);
       expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops a check from before sign-in as soon as its OAuth session completes", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+          command: null,
+          args: [],
+          healthStatus: "error",
+          healthMessage: "HTTP 401",
+        }),
+        probe: () => new Promise(() => undefined),
+      });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+        },
+      });
+      // A separate session lookup failing must not skip the reset: the completed sign-in names
+      // its server.
+      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+        findFirst: vi.fn(async () => {
+          throw new Error("pool timeout");
+        }),
+      };
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+
+      // The new check is still running, so the list must not keep showing the old failure.
+      expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
+      await flush();
+      expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps an edit's failed check that lands while its OAuth session completes", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => {
+            // The sign-in wrote revision 2; an edit (revision 3) and its failed check land
+            // before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return { serverId: "server-1", revision: 2 };
+          }),
+        },
+      });
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+      // The edit already checks its own settings.
+      expect(h.probe).not.toHaveBeenCalled();
+    });
+
+    // Each API health write below runs after its server row was read; an edit (revision 2)
+    // and its failed check that land in between must survive it.
+    const editLandsDuring = (h: { row: () => Row | null }) =>
+      Object.assign(h.row() as Row, {
+        revision: 2,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+    const stillFailing = { revision: 2, healthStatus: "error", healthMessage: "HTTP 500" };
+
+    it("keeps an edit's failed check over a check of the old settings with no runtime", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h.createRouterWithoutProbe().mcp.servers.test({ id: "server-1" });
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over a crashed check of the old settings", async () => {
+      const h = harness({
+        probe: async () => {
+          editLandsDuring(h);
+          throw new Error("crashed");
+        },
+      });
+      await h.client.mcp.servers.test({ id: "server-1" }).catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over an account-pending write for the old settings", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: "client-1", credential: false };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.servers.test({ id: "server-1" })
+        .catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over the reset that starts a check of the old settings", async () => {
+      const h = harness({ probe: () => new Promise(() => undefined) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "connected", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("resets health to account-pending for the revision a disconnect committed", async () => {
+      const h = harness({ row: baseRow({ revision: 2, healthStatus: "ok" }) });
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), disconnect: vi.fn(async () => 2) },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        healthStatus: "unknown",
+        healthMessage: "Connect this server's account to check it.",
+      });
+    });
+
+    it("keeps a newer sign-in's failed check that lands before a disconnect resets health", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          disconnect: vi.fn(async () => {
+            // The disconnect committed revision 2; a new sign-in (revision 3) and its failed
+            // check land before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return 2;
+          }),
+        },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
     });
   });
 });
@@ -4191,6 +4372,7 @@ describe("computer terminal and file transfer", () => {
       writeFile: vi.fn().mockResolvedValue(undefined),
     };
     const prisma = {
+      spaceMember: { count: vi.fn(async () => 1) },
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
@@ -7253,7 +7435,13 @@ describe("group restore with archived bots", () => {
     const tx = {
       bot,
       chatGroup,
-      chatGroupMember: { findMany: vi.fn(async () => archivedBots.map((item) => ({ bot: item }))) },
+      chatGroupMember: {
+        findMany: vi.fn(async () =>
+          archivedBots.map(({ id, computerId }) => ({
+            bot: { id, computer: computerId ? { id: computerId, userId: "user-1" } : null },
+          })),
+        ),
+      },
       computer: {
         count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
       },
@@ -7364,7 +7552,13 @@ describe("routine live Codex model validation", () => {
         createRouter({
           prisma: {
             bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
-            routine: { findFirst: vi.fn(async () => row), create: save, update: save },
+            routine: {
+              findFirst: vi.fn(async () => row),
+              create: save,
+              update: save,
+              count: vi.fn(async () => 0),
+            },
+            run: { updateManyAndReturn: vi.fn(async () => []) },
             userModelPreference: { findMany: vi.fn(async () => []) },
             userModelCredential: {
               findMany: vi.fn(async () => [
@@ -7435,7 +7629,7 @@ describe("routine live Codex model validation", () => {
 });
 
 describe("routines.list", () => {
-  it("marks routines another Space member created as not editable", async () => {
+  it("lets every Space member change a routine, whoever created it", async () => {
     const actor = { userId: "user-1", spaceId: "space-1" };
     const row = (id: string, userId: string) => ({
       id,
@@ -7474,9 +7668,10 @@ describe("routines.list", () => {
     );
 
     const routines = await client.routines.list({ botId: "bot-1" });
+    // Nothing marks either one read-only: any member may change it.
     expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
-      { id: "mine", editable: true },
-      { id: "theirs", editable: false },
+      { id: "mine", editable: undefined },
+      { id: "theirs", editable: undefined },
     ]);
     expect(routines[0]).not.toHaveProperty("userId");
   });
@@ -7530,6 +7725,7 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const cancel = vi.fn(async () => undefined);
+    const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
       secret: { findFirst: vi.fn(async () => null) },
       userModelPreference: {
@@ -7551,7 +7747,9 @@ describe("routines.update", () => {
           botArchived && args.where.bot?.archivedAt === null ? null : savedRoutine,
         ),
         update,
+        count: vi.fn(async () => 0),
       },
+      run: { updateManyAndReturn: moveQueued },
       bot: {
         findFirst: vi.fn(async () =>
           botArchived ? null : { id: "bot-1", thread: { id: "thread-1" }, computer: null },
@@ -7583,7 +7781,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, moveQueued, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -7613,6 +7811,32 @@ describe("routines.update", () => {
     const response = await call();
     expect(response.status).toBe(404);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("takes over a routine and restarts its watch baseline when someone else edits it", async () => {
+    const { call, update, moveQueued } = fixture(false, false, { userId: "user-2" });
+    expect((await call({ name: "Renamed" })).status).toBe(200);
+    const data = update.mock.calls[0]![0].data;
+    expect(data.userId).toBe("user-1");
+    expect(data).toHaveProperty("watchState", Prisma.DbNull);
+    // An occurrence already queued runs with the new owner's accounts.
+    expect(moveQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          routineId: routine.id,
+          userId: "user-2",
+          status: "queued",
+          routine: { userId: "user-1" },
+        },
+        data: { userId: "user-1" },
+      }),
+    );
+  });
+
+  it("keeps its watch baseline when the owner edits it", async () => {
+    const { call, update } = fixture(false);
+    expect((await call({ name: "Renamed" })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("watchState");
   });
 
   const ownModel = {
@@ -7813,18 +8037,23 @@ describe("routines.remove", () => {
       env: { sandboxProvider: "fake" },
       jobs: { cancel },
     } as unknown as RouterDeps);
-    const as = (userId: string) =>
+    const as = (userId: string, spaceId = "space-1") =>
       createRouterClient(router, {
-        context: { actor: { spaceId: "space-1", userId } } as never,
+        context: { actor: { spaceId, userId } } as never,
       });
     return { as, remove, cancel };
   }
 
-  it("does not let another Space member delete a routine", async () => {
+  it("lets another Space member delete a routine, but nobody outside the Space", async () => {
     const { as, remove, cancel } = fixture();
-    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).rejects.toThrow();
+    await expect(
+      as("user-c", "space-2").routines.remove({ routineId: "routine-1" }),
+    ).rejects.toThrow();
     expect(remove).not.toHaveBeenCalled();
-    expect(cancel).not.toHaveBeenCalled();
+    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("deletes the owner's routine", async () => {
@@ -8828,7 +9057,7 @@ describe("threads.answerCall and threads.declineCall", () => {
     expect((await call("answerCall", {})).status).not.toBe(200);
     expect(prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: "bot-1", userId: "user-1", spaceId: "space-1" }),
+        where: expect.objectContaining({ id: "bot-1", spaceId: "space-1" }),
       }),
     );
     expect(prisma.message.updateMany).not.toHaveBeenCalled();
@@ -9772,7 +10001,7 @@ describe("memory documents", () => {
     });
     await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
     expect(memoryDocument.findFirst).toHaveBeenCalledWith({
-      where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
+      where: { id: "doc-1", spaceId: "space-1" },
     });
     expect(memory.remove).toHaveBeenCalledWith(
       { id: "doc-1", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
@@ -9863,7 +10092,7 @@ describe("routine watch creation boundaries", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("uses the owner boundary before creating or changing a command watch", async () => {
+  it("uses the space boundary before creating or changing a command watch", async () => {
     const { client, create, update, findBot, findRoutine } = fixture();
     findBot.mockResolvedValueOnce(null as never);
     const watch = {
@@ -9877,7 +10106,7 @@ describe("routine watch creation boundaries", () => {
     ).rejects.toBeDefined();
     expect(findBot).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+        where: expect.objectContaining({ spaceId: actor.spaceId }),
       }),
     );
     findRoutine.mockResolvedValueOnce(null as never);
@@ -9886,7 +10115,7 @@ describe("routine watch creation boundaries", () => {
     });
     expect(findRoutine).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+        where: expect.objectContaining({ spaceId: actor.spaceId }),
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -9969,6 +10198,53 @@ describe("API-key live model catalog", () => {
   );
 });
 
+describe("shared space bot permissions", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+
+  function sharedBotClient(role: string) {
+    const bot = {
+      id: "bot-1",
+      spaceId: "space-1",
+      userId: "user-2",
+      archivedAt: null,
+      webhookSecretId: null,
+      thread: { id: "thread-1" },
+      computer: null,
+    };
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => bot) },
+      spaceMember: { findUnique: vi.fn(async () => ({ role })) },
+    };
+    const secrets = { put: vi.fn() };
+    const deps = {
+      prisma,
+      secrets,
+      env: { webOrigin: "https://example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, prisma, secrets };
+  }
+
+  it("lets only the bot's creator or the space owner delete a bot for good", async () => {
+    const { client, prisma } = sharedBotClient("member");
+    await expect(
+      client.bots.remove({ botId: "bot-1", deleteMemories: false }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prisma.spaceMember.findUnique).toHaveBeenCalledWith({
+      where: { spaceId_userId: { spaceId: "space-1", userId: "user-1" } },
+      select: { role: true },
+    });
+  });
+
+  it("keeps a bot's webhook secret with its creator", async () => {
+    const { client, secrets } = sharedBotClient("owner");
+    await expect(client.bots.rotateWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+});
+
 describe("quarantined computer stop", () => {
   it.each(["already-quarantined", "before-claim", "during-stop"])(
     "preserves the recovery fence (%s)",
@@ -9996,6 +10272,7 @@ describe("quarantined computer stop", () => {
         return { count: 1 };
       });
       const prisma = {
+        spaceMember: { count: vi.fn(async () => 1) },
         bot: {
           findFirst: vi.fn(async () => {
             const snapshot = { ...row };

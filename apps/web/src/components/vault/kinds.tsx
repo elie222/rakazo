@@ -57,7 +57,7 @@ export function VaultTile({
     <span
       aria-hidden
       className={cn(
-        "grid size-9 shrink-0 place-items-center rounded-[10px] text-[14px] font-semibold",
+        "grid size-9 shrink-0 place-items-center rounded-md text-body font-semibold",
         letter ? "bg-foreground text-background" : "bg-accent text-foreground",
         className,
       )}
