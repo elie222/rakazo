@@ -10,7 +10,7 @@ import {
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
-import { McpSession } from "./mcp-transport.js";
+import { MAX_AUTHORIZATION_URL_LENGTH, McpSession } from "./mcp-transport.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -1452,6 +1452,52 @@ describe("MCP OAuth", () => {
     expect(
       await denied.validateResourceURL("http://192.0.2.10:8123/mcp", resource),
     ).toBeUndefined();
+  });
+
+  it("allows a long authorization URL from a server that publishes many scopes", async () => {
+    // PostHog's MCP publishes 157 scopes; the SDK asks for all of them, so the authorization
+    // URL runs past the 2,048 characters an MCP endpoint may use.
+    const scope = Array.from({ length: 160 }, (_, index) => `resource_${index}:read`).join(" ");
+    const url = new URL("https://auth.example.test/authorize");
+    url.searchParams.set("client_id", "client");
+    url.searchParams.set("scope", scope);
+    expect(url.href.length).toBeGreaterThan(2_048);
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+
+    await provider.redirectToAuthorization(url);
+
+    expect(provider.authorizationUrl?.searchParams.get("scope")).toBe(scope);
+    expect(onAuthorization).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses an authorization URL past its own limit, including added parameters", async () => {
+    const huge = new URL("https://auth.example.test/authorize");
+    huge.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH));
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+    await expect(provider.redirectToAuthorization(huge)).rejects.toThrow(/exceeds/);
+
+    // A URL just under the limit cannot be pushed past it by configured extra parameters.
+    const near = new URL("https://auth.example.test/authorize");
+    near.searchParams.set("scope", "x".repeat(MAX_AUTHORIZATION_URL_LENGTH - 200));
+    const padded = new StoredMcpOAuthProvider(
+      "server-1",
+      {
+        oauthClient: {
+          client_id: "client",
+          authorization_params: `prompt=consent&login_hint=${"y".repeat(400)}`,
+        },
+      },
+      async () => undefined,
+      { onAuthorization },
+    );
+    await expect(padded.redirectToAuthorization(near)).rejects.toThrow(/exceeds/);
+    expect(onAuthorization).not.toHaveBeenCalled();
   });
 
   it("allows localhost HTTP browser authorization URLs", async () => {
