@@ -1,9 +1,9 @@
+import { APP_LOCALE_LABELS } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   normalizeUiLocale,
   persistUiLocale,
   resolveUiLocale,
-  UI_LOCALE_LABELS,
   UI_LOCALE_STORAGE_KEY,
   UI_LOCALES,
 } from "./ui-locale";
@@ -15,7 +15,7 @@ describe("normalizeUiLocale", () => {
 
   it("offers Polish in the language picker", () => {
     expect(UI_LOCALES).toContain("pl");
-    expect(UI_LOCALE_LABELS.pl).toBe("Polski");
+    expect(APP_LOCALE_LABELS.pl).toBe("Polski");
   });
 
   it("maps regional tags onto supported locales", () => {

@@ -11,8 +11,8 @@ import { sharedInflight } from "../../lib/shared-inflight";
 import { errorText } from "../../lib/user-error";
 import type { RoutineDraftState, RoutineEditor } from "../RoutineEditor";
 import {
-  draftFromRoutine,
-  emptyRoutineDraft,
+  draftStateFromRoutine,
+  emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
 } from "../RoutineEditor";
@@ -37,7 +37,7 @@ export function useRoutineEditor({
   setPanel: (panel: Panel) => void;
 }) {
   const { t } = useLingui();
-  const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
+  const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraftState());
   const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<Record<string, string>>({});
   const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]) || null;
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
@@ -59,7 +59,7 @@ export function useRoutineEditor({
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
-    setRoutineDraft({ ...emptyRoutineDraft(), name, prompt });
+    setRoutineDraft({ ...emptyRoutineDraftState(), name, prompt });
     setRevealedWebhookSecrets({});
     setEditingRoutine(null);
     setPanel("routine");
@@ -67,16 +67,16 @@ export function useRoutineEditor({
 
   function restoreRoutine(routine: Routine | null) {
     setEditingRoutine(routine);
-    setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
+    setRoutineDraft(routine ? draftStateFromRoutine(routine) : emptyRoutineDraftState());
     setRevealedWebhookSecrets({});
   }
   function editRoutine(routine: Routine) {
-    setRoutineDraft(draftFromRoutine(routine));
+    setRoutineDraft(draftStateFromRoutine(routine));
     setRevealedWebhookSecrets({});
     setEditingRoutine(routine);
   }
   function startRoutine(routine?: Routine) {
-    setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
+    setRoutineDraft(routine ? draftStateFromRoutine(routine) : emptyRoutineDraftState());
     setRevealedWebhookSecrets({});
     setEditingRoutine(routine ?? null);
     setRoutineError(null);
@@ -219,7 +219,7 @@ export function useRoutineEditor({
             if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
               setEditingRoutine(saved);
               // Fields edited while the save was in flight keep the newer value.
-              const fresh = draftFromRoutine(saved);
+              const fresh = draftStateFromRoutine(saved);
               setRoutineDraft(
                 (current) =>
                   Object.fromEntries(

@@ -6751,42 +6751,6 @@ function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number
   return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }
 
-describe("mobile clipboard text", () => {
-  it("copies message content with transport labels and omits card chrome", async () => {
-    const { copyableMobileMessageText } = await import("./api");
-    expect(
-      copyableMobileMessageText({
-        id: "message",
-        role: "bot",
-        blocks: [
-          { kind: "text", text: "Hello" },
-          {
-            kind: "channel_message",
-            provider: "sendblue",
-            transport: "SMS",
-            channelId: "ch-1",
-            fromAddress: "+15551234567",
-            fromLabel: "Sender",
-            text: "Reply",
-          },
-          { kind: "card", lines: [] },
-        ],
-      }),
-    ).toBe("Hello\nSender (SMS): Reply");
-  });
-
-  it("keeps leading whitespace for selection while copying trims it", async () => {
-    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
-    const message: MobileMessage = {
-      id: "message",
-      role: "user",
-      blocks: [{ kind: "text", text: "    indented\nnext  " }],
-    };
-    expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
-    expect(copyableMobileMessageText(message)).toBe("indented\nnext");
-  });
-});
-
 it("sends the deletion-code request with a JSON body", async () => {
   const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
   vi.stubGlobal("fetch", fetchMock);
