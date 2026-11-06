@@ -24,7 +24,7 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, DragEvent, RefObject } from "react";
+import type { ClipboardEvent, ComponentProps, CSSProperties, DragEvent, RefObject } from "react";
 import {
   memo,
   useEffect,
@@ -112,6 +112,7 @@ const ComposerBody = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  sendColors,
   docked = false,
 }: {
   activeName?: string;
@@ -153,6 +154,8 @@ const ComposerBody = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** The bot's color, as your messages to it wear it; the send button matches them. */
+  sendColors?: { background: string; foreground: string };
   /** Floating over an open page instead of sitting under the chat. */
   docked?: boolean;
 }) {
@@ -751,6 +754,15 @@ const ComposerBody = memo(function Composer({
     }
   }, [replyTarget, replyName, t]);
 
+  // The same chat-user colors your bubbles in this chat wear (set the same way in the transcript).
+  const sendStyle = sendColors
+    ? ({
+        "--chat-user": sendColors.background,
+        "--chat-user-foreground": sendColors.foreground,
+      } as CSSProperties)
+    : undefined;
+  // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
+  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <fieldset
       aria-label={t`Message composer`}
@@ -1117,7 +1129,8 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                style={sendStyle}
+                className={sendClassName}
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
@@ -1142,7 +1155,8 @@ const ComposerBody = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                style={sendStyle}
+                className={sendClassName}
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
