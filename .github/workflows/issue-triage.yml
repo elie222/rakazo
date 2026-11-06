@@ -49,7 +49,7 @@ jobs:
         uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Read-only token: agent mode writes it into git config.
+          # Read-only token: agent mode writes it into git config, so .git is unreadable.
           github_token: ${{ github.token }}
           prompt: Follow .github/prompts/issue-triage.md.
           claude_args: >-
@@ -57,7 +57,7 @@ jobs:
             --effort high
             --max-turns 25
             --allowedTools Read,Grep,Glob
-            --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task
+            --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,"Read(./.git/**)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["type","size","priority_high","duplicate_of","reason"],"properties":{"type":{"enum":["bug","enhancement","question","documentation","self-host"]},"size":{"enum":["small","medium","large"]},"priority_high":{"type":"boolean"},"duplicate_of":{"type":["integer","null"]},"reason":{"type":"string"}}}'
 
   label:
