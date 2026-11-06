@@ -8,6 +8,7 @@ import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
 import { blockText } from "./api";
 import type { CallState } from "./call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "./call-session";
+import { loadCallGreetingEnabled } from "./call-sounds";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "./session";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "./thread-voice";
 import { speakQueue, speakText } from "./voice";
@@ -46,6 +47,7 @@ vi.mock("./call-session", () => ({
   setCallProviderTranscribe: vi.fn(),
   startCall: vi.fn(() => "call-1"),
 }));
+vi.mock("./call-sounds", () => ({ loadCallGreetingEnabled: vi.fn(async () => true) }));
 vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./dictation", () => ({ available: async () => true }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
@@ -94,6 +96,7 @@ describe("useThreadVoiceCall hand-over", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.mocked(startCall).mockClear();
     vi.mocked(takeShortcutVoiceChat).mockReset().mockReturnValue(false);
+    vi.mocked(loadCallGreetingEnabled).mockReset().mockResolvedValue(true);
     await saveSessionToken("fake-token-a");
     root = createRoot(document.createElement("div"));
   });
@@ -137,6 +140,31 @@ describe("useThreadVoiceCall hand-over", () => {
           headers: expect.objectContaining({ "x-rakazo-space-id": "space-riley" }),
         }),
       }),
+    );
+  });
+
+  it("starts fresh and put-through calls straight to listening with the greeting off", async () => {
+    vi.mocked(loadCallGreetingEnabled).mockResolvedValue(false);
+    vi.mocked(takeShortcutVoiceChat).mockReturnValueOnce(true);
+    render("riley");
+    await flush();
+    openBotChat?.(max, true);
+    render("max");
+    await flush();
+
+    expect(vi.mocked(startCall).mock.calls.map(([call]) => [call.botId, call.greeting])).toEqual([
+      ["riley", undefined],
+      ["max", undefined],
+    ]);
+  });
+
+  it("keeps the greeting when the setting cannot be read", async () => {
+    vi.mocked(loadCallGreetingEnabled).mockRejectedValue(new Error("device locked"));
+    vi.mocked(takeShortcutVoiceChat).mockReturnValueOnce(true);
+    render("riley");
+    await flush();
+    expect(startCall).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
     );
   });
 

@@ -1000,6 +1000,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "使用手机自带的语音朗读，而不是已连接的语音服务。",
   "Call sounds": "通话提示音",
+  "Call greeting": "通话问候语",
   "Hello {name}, {bot} here.": "你好 {name}，我是 {bot}。",
   "Hello, {bot} here.": "你好，我是 {bot}。",
   "OK, switching to {name}.": "好的，正在切换到 {name}。",

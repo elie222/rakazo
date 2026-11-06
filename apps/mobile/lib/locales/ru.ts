@@ -1019,6 +1019,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
   "Call sounds": "Звуки звонка",
+  "Call greeting": "Приветствие в звонке",
   "Hello {name}, {bot} here.": "Привет, {name}, это {bot}.",
   "Hello, {bot} here.": "Привет, это {bot}.",
   "OK, switching to {name}.": "Хорошо, переключаю на {name}.",
