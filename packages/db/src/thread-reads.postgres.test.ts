@@ -188,12 +188,15 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
   });
 
   it("marks a chat unread for one person only", async () => {
+    await expect(
+      as(bea, () => markThreadUnreadFromFor(prisma, reader(bea), "no-such-message")),
+    ).resolves.toBe(false);
     const [first] = await asSystem(prisma).message.findMany({
       where: { threadId },
       orderBy: { seq: "asc" },
       take: 1,
     });
-    await as(bea, () => markThreadUnreadFromFor(prisma, reader(bea), first!.seq));
+    await as(bea, () => markThreadUnreadFromFor(prisma, reader(bea), first!.id));
     expect(await stateOf(bea)).toEqual({ unread: true, lastReadSeq: -1 });
     expect(await unread(ada)).toBe(false);
 
@@ -217,7 +220,10 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
     // One tab marks the chat unread from its first message and has not committed yet.
     const otherTab = as(ada, () =>
       prisma.$transaction(async (tx) => {
-        await markThreadUnreadFromFor(tx, reader(ada), 0);
+        await tx.threadRead.update({
+          where: { threadId_userId: { threadId, userId: ada } },
+          data: { unread: true, lastReadSeq: -1 },
+        });
         marked();
         await held;
       }),

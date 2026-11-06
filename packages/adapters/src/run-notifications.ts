@@ -15,6 +15,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
+const NOTIFY_RECIPIENTS_AT_ONCE = 5;
 
 export async function runNotificationsEnabled(
   prisma: PrismaClient,
@@ -184,40 +185,44 @@ async function deliverChatNotice(
   const notifications = deps.notifications;
   if (!notifications || !input.recipients.length) return;
   const sender = bot && (await notificationIdentity(bot));
-  const failures = await Promise.all(
-    input.recipients.map(async (userId) => {
-      // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
-      // count the push leaves the badge as it is.
-      const badge = await countUnreadInboxChats(deps.prisma, { spaceId, userId }).catch((error) => {
-        getLogger().error("unread chat count", error);
-        return undefined;
-      });
-      return notifications
-        .send(
-          {
-            ...message,
-            ...(sender ? { sender } : {}),
-            ...(groupId ? { groupId } : {}),
-            ...(badge === undefined ? {} : { badge }),
-          },
-          {
-            operationId: "notify",
-            traceId: message.botId,
-            spaceId,
-            userId,
-            botId: message.botId,
-            signal: new AbortController().signal,
-          },
-        )
-        .then(
-          () => undefined,
-          (error: unknown) => {
-            getLogger().error("run notification", error);
-            return { error };
-          },
-        );
-    }),
-  );
+  const deliver = async (userId: string) => {
+    // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
+    // count the push leaves the badge as it is.
+    const badge = await countUnreadInboxChats(deps.prisma, { spaceId, userId }).catch((error) => {
+      getLogger().error("unread chat count", error);
+      return undefined;
+    });
+    return notifications
+      .send(
+        {
+          ...message,
+          ...(sender ? { sender } : {}),
+          ...(groupId ? { groupId } : {}),
+          ...(badge === undefined ? {} : { badge }),
+        },
+        {
+          operationId: "notify",
+          traceId: message.botId,
+          spaceId,
+          userId,
+          botId: message.botId,
+          signal: new AbortController().signal,
+        },
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          getLogger().error("run notification", error);
+          return { error };
+        },
+      );
+  };
+  // A few members at a time, so a large Space does not take the whole connection pool at once.
+  const failures: Array<{ error: unknown } | undefined> = [];
+  for (let start = 0; start < input.recipients.length; start += NOTIFY_RECIPIENTS_AT_ONCE) {
+    const batch = input.recipients.slice(start, start + NOTIFY_RECIPIENTS_AT_ONCE);
+    failures.push(...(await Promise.all(batch.map(deliver))));
+  }
   const failed = failures.find((failure) => failure !== undefined);
   if (failed && input.retryOnFailure) throw failed.error;
 }

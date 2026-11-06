@@ -1898,12 +1898,9 @@ export async function markThreadUnreadFrom(
   target: ThreadTarget,
   messageId: string,
 ) {
-  const message = await prisma.message.findFirst({
-    where: { id: messageId, threadId: target.threadId },
-    select: { seq: true },
-  });
-  if (!message) throw new ORPCError("NOT_FOUND");
-  await markThreadUnreadFromFor(prisma, readerOf(actor, target), message.seq);
+  if (!(await markThreadUnreadFromFor(prisma, readerOf(actor, target), messageId))) {
+    throw new ORPCError("NOT_FOUND");
+  }
 }
 
 export async function setThreadUnreadState(

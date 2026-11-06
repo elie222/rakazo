@@ -140,6 +140,13 @@ describe("notifications in a shared Space", () => {
     ]);
   });
 
+  it("reaches every member of a larger Space, a few at a time", async () => {
+    const many = Array.from({ length: 12 }, (_, index) => `user-${index + 1}`);
+    const { value, send } = deps({ members: many });
+    await notifyRun(value, run, message);
+    expect(recipients(send).sort()).toEqual([...many].sort());
+  });
+
   it("asks only the person whose run it is to answer, take over, or fix a failure", async () => {
     for (const kind of ["help", "takeover", "failure"] as const) {
       const { value, publish, send } = deps({ members: shared });

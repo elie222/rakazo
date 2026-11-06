@@ -53,13 +53,10 @@ export async function clearThreadReads(tx: Prisma.TransactionClient, threadId: s
  * between reading the latest seq and writing it.
  */
 export function markThreadReadFor(prisma: PrismaClient, reader: Reader): Promise<number | null> {
-  const { threadId, spaceId, userId } = reader;
+  const { threadId, userId } = reader;
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
-      const [thread] = await tx.$queryRaw<Array<{ nextMessageSeq: number }>>`
-        SELECT "nextMessageSeq" FROM threads
-        WHERE id = ${threadId} AND "spaceId" = ${spaceId}
-        FOR SHARE`;
+      const thread = await lockThread(tx, reader);
       if (!thread) return null;
       const latestSeq = thread.nextMessageSeq - 1;
       // Held until commit, so a Mark as Unread from another tab lands before or after, not lost.
@@ -78,27 +75,45 @@ export function markThreadReadFor(prisma: PrismaClient, reader: Reader): Promise
   );
 }
 
-/** Marks the chat unread for one person from the message at `seq`: the divider goes above it. */
-export async function markThreadUnreadFromFor(
-  prisma: Pick<PrismaClient, "threadRead">,
+/** Holds the thread as markThreadReadFor does: a clear waits, and its seq is the latest. */
+async function lockThread(tx: Prisma.TransactionClient, reader: Reader) {
+  const [thread] = await tx.$queryRaw<Array<{ nextMessageSeq: number }>>`
+    SELECT "nextMessageSeq" FROM threads
+    WHERE id = ${reader.threadId} AND "spaceId" = ${reader.spaceId}
+    FOR SHARE`;
+  return thread;
+}
+
+/**
+ * Marks the chat unread for one person from one of its messages: the divider goes above it.
+ * False when the message is gone, such as after the chat was cleared.
+ */
+export function markThreadUnreadFromFor(
+  prisma: PrismaClient,
   reader: Reader,
-  seq: number,
-) {
-  const state = { unread: true, lastReadSeq: seq - 1 };
-  await prisma.threadRead.upsert({
-    where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
-    create: { ...reader, ...state },
-    update: state,
-  });
+  messageId: string,
+): Promise<boolean> {
+  return withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      if (!(await lockThread(tx, reader))) return false;
+      const message = await tx.message.findFirst({
+        where: { id: messageId, threadId: reader.threadId },
+        select: { seq: true },
+      });
+      if (!message) return false;
+      const state = { unread: true, lastReadSeq: message.seq - 1 };
+      await tx.threadRead.upsert({
+        where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
+        create: { ...reader, ...state },
+        update: state,
+      });
+      return true;
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
 }
 
 /** Mark as Read or Unread from the chat list, without moving where the divider goes. */
-export async function setThreadUnreadFor(
-  prisma: Pick<PrismaClient, "thread" | "threadRead">,
-  reader: Reader,
-  unread: boolean,
-) {
-  const where = { threadId_userId: { threadId: reader.threadId, userId: reader.userId } };
+export async function setThreadUnreadFor(prisma: PrismaClient, reader: Reader, unread: boolean) {
   if (!unread) {
     await prisma.threadRead.updateMany({
       where: { threadId: reader.threadId, userId: reader.userId, unread: true },
@@ -106,15 +121,16 @@ export async function setThreadUnreadFor(
     });
     return;
   }
-  const thread = await prisma.thread.findFirst({
-    where: { id: reader.threadId, spaceId: reader.spaceId },
-    select: { nextMessageSeq: true },
-  });
-  if (!thread) return;
-  await prisma.threadRead.upsert({
-    where,
-    // Someone with no read state had read it all.
-    create: { ...reader, unread: true, lastReadSeq: thread.nextMessageSeq - 1 },
-    update: { unread: true },
-  });
+  await withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const thread = await lockThread(tx, reader);
+      if (!thread) return;
+      await tx.threadRead.upsert({
+        where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
+        // Someone with no read state had read it all.
+        create: { ...reader, unread: true, lastReadSeq: thread.nextMessageSeq - 1 },
+        update: { unread: true },
+      });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
 }

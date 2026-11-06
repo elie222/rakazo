@@ -34,18 +34,30 @@ CREATE POLICY thread_reads_tenant ON "thread_reads"
 CREATE POLICY thread_reads_system ON "thread_reads"
   USING ((SELECT app_rls_bypass()));
 
--- The previous release marks a chat unread on the thread only. While it finishes its runs, a
--- reply it writes marks the chat unread for every member, as before.
+-- The previous release reads and writes the shared flag on the thread. While it finishes its
+-- runs, what it writes there applies to every member, as it did before: a reply marks the chat
+-- unread for everyone (from the message it wrote), and reading or clearing it reads it for
+-- everyone.
 CREATE FUNCTION thread_reads_mirror_unread() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
   AS $$
 BEGIN
+  IF NOT NEW."unread" THEN
+    UPDATE "thread_reads" SET "unread" = false WHERE "threadId" = NEW."id";
+    RETURN NEW;
+  END IF;
   INSERT INTO "thread_reads" ("threadId", "userId", "spaceId", "unread", "lastReadSeq")
-  SELECT NEW."id", m."userId", NEW."spaceId", true, NEW."lastReadSeq"
+  SELECT NEW."id", m."userId", NEW."spaceId", true,
+    CASE
+      -- A message it wrote: everything before it was read.
+      WHEN NEW."nextMessageSeq" > OLD."nextMessageSeq" THEN GREATEST(NEW."nextMessageSeq" - 2, -1)
+      -- Mark as Unread from a message, or by hand: where it put the divider.
+      ELSE NEW."lastReadSeq"
+    END
   FROM "space_members" m
   WHERE m."spaceId" = NEW."spaceId"
   ON CONFLICT ("threadId", "userId") DO UPDATE SET "unread" = true;
   RETURN NEW;
 END $$;
 CREATE TRIGGER threads_mirror_unread AFTER UPDATE OF "unread" ON "threads"
-  FOR EACH ROW WHEN (NEW."unread") EXECUTE FUNCTION thread_reads_mirror_unread();
+  FOR EACH ROW EXECUTE FUNCTION thread_reads_mirror_unread();
