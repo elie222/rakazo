@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createToolCallRecordStore,
   fencedCode,
   foldToolCallRecords,
   prettyToolText,
@@ -80,6 +81,57 @@ describe("foldToolCallRecords", () => {
         exitCode: 1,
       },
     ]);
+  });
+
+  it("shows what a file action returned, since its command event prints nothing", () => {
+    expect(
+      foldToolCallRecords([
+        {
+          type: "computer.command",
+          payload: {
+            executionId: "x1",
+            kind: "write_file",
+            command: "/tmp/a.py",
+            cwd: ".",
+            status: "done",
+            exitCode: 0,
+            output: "",
+          },
+        },
+        {
+          type: "agent.tool.completed",
+          payload: {
+            name: "write_file",
+            executionId: "x1",
+            outcome: "succeeded",
+            preview: "Wrote 12 bytes.",
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        executionId: "x1",
+        name: "write_file",
+        status: "done",
+        outcome: "succeeded",
+        exitCode: 0,
+        output: "Wrote 12 bytes.",
+      },
+    ]);
+  });
+
+  it("drops a run's live records when it ends and keeps only the newest runs", () => {
+    const store = createToolCallRecordStore();
+    const called = (runId: string) => ({
+      type: "agent.tool.called",
+      runId,
+      payload: { name: "shell", executionId: `${runId}-x` },
+    });
+    for (let i = 0; i < 10; i += 1) store.record(called(`run-${i}`));
+    expect(store.get("run-0")).toBeUndefined();
+    expect(store.get("run-9")?.get("run-9-x")?.name).toBe("shell");
+    store.record({ type: "run.completed", runId: "run-9", payload: {} });
+    expect(store.get("run-9")).toBeUndefined();
   });
 
   it("keeps a shell command running after its tool returned early", () => {

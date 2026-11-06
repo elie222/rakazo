@@ -130,7 +130,11 @@ export function projectMessages(
     if (event.type === "agent.tool.completed") {
       const update = toolCompletedUpdate(payload);
       const live = event.runId ? liveById.get(progressMessageId(event)) : undefined;
-      if (update && live) live.blocks = reduceLiveMessageBlocks(live.blocks, update);
+      if (update && live) {
+        live.blocks = reduceLiveMessageBlocks(live.blocks, update);
+        // The message changed, so it sorts after what landed before this result.
+        live.meta = { ...live.meta, seq: event.seq };
+      }
       continue;
     }
     if (event.type === "thread.cleared") {
@@ -520,14 +524,15 @@ const DETAIL_KEYS = [
 
 /**
  * One line that says what a call is about: its command, path, query or similar argument, else
- * its scalar arguments. Nested or empty arguments give nothing. Callers redact it.
+ * its scalar arguments. Nested or empty arguments give nothing. The line is whole, so a caller
+ * can redact it before bounding it with boundToolStepDetail; a secret cut in half would escape.
  */
-export function toolCallDetail(args: unknown): string | undefined {
+export function toolCallDetailLine(args: unknown): string | undefined {
   if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
   const record = args as Record<string, unknown>;
   for (const key of DETAIL_KEYS) {
     const value = record[key];
-    if (typeof value === "string" && value.trim()) return boundDetail(value);
+    if (typeof value === "string" && value.trim()) return oneLine(value);
   }
   const scalars = Object.entries(record).filter(
     ([, value]) =>
@@ -536,14 +541,25 @@ export function toolCallDetail(args: unknown): string | undefined {
       typeof value === "boolean",
   );
   if (scalars.length === 0) return undefined;
-  return boundDetail(scalars.map(([key, value]) => `${key}: ${String(value)}`).join(", "));
+  return oneLine(scalars.map(([key, value]) => `${key}: ${String(value)}`).join(", "));
 }
 
-function boundDetail(text: string): string {
-  const line = text.replace(/\s+/g, " ").trim();
+/** The bounded detail line of a call that carries no secrets. */
+export function toolCallDetail(args: unknown): string | undefined {
+  const line = toolCallDetailLine(args);
+  return line === undefined ? undefined : boundToolStepDetail(line);
+}
+
+/** Cuts a detail to what a step may carry. Always the last step, after any redaction. */
+export function boundToolStepDetail(text: string): string {
+  const line = oneLine(text);
   return line.length > TOOL_STEP_DETAIL_MAX_CHARS
     ? `${line.slice(0, TOOL_STEP_DETAIL_MAX_CHARS - 1).trimEnd()}…`
     : line;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */

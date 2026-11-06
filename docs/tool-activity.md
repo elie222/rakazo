@@ -43,8 +43,9 @@ API responses are the same with it on or off.
   redacted JSON (`input`); the `agent.tool.completed` audit carries a bounded, redacted
   `preview` of the text the tool returned. Shell commands keep
   streaming their output through `computer.command` events as before.
-- `threads.toolCalls` folds a run's completion and command events into one record per call
-  for the expanded rows. Live runs apply the same events as they arrive.
+- `threads.toolCalls` folds a run's call and completion events, plus the newest shell-output
+  event of each command, into one record per call for the expanded rows. Live runs apply the
+  same events as they arrive and drop a run's live records once it ends.
 
 ## Platform scope
 
@@ -64,6 +65,8 @@ API responses are the same with it on or off.
   `apps/mobile/lib/tool-activity-card.test.tsx`,
   `apps/mobile/lib/message-presentation.test.ts`, and
   `apps/web/src/pages/AccountSettingsOverlay.test.tsx`.
+- iOS screenshot catalog: the `tool-activity` section turns the switch on, runs a scripted
+  shell call, and opens its row.
 - UI E2E with fake data and screenshots: `apps/web/e2e/tool-activity.spec.ts` covers the
   `apps/web/e2e/fixtures/tool-activity.html` fixture and one scripted-runtime chat turn in
   the real app. `apps/web/e2e/tool-activity-disclosure.spec.ts` checks the setting-off view

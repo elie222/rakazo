@@ -1,18 +1,5 @@
-import type { MessageBlock, ToolStep } from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
-
-export type ToolStepStatus = "running" | "ok" | "error";
-
-/**
- * How a step row reads: a failed call shows as such; one still without a result is running
- * while the run is live. A finished run's step with no recorded result reads as done, which
- * also keeps replies saved before results were recorded looking as they did.
- */
-export function toolStepStatus(step: Pick<ToolStep, "outcome">, live: boolean): ToolStepStatus {
-  if (step.outcome === "error") return "error";
-  if (step.outcome === undefined && live) return "running";
-  return "ok";
-}
 
 /** Number of tool calls behind a steps block: the sum of each row's count. */
 export function toolStepCount(steps: readonly { count: number }[]): number {

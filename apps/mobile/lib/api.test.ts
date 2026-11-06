@@ -4146,6 +4146,28 @@ describe("mobile thread event reduction", () => {
     );
   });
 
+  it("keeps the thread and first activity time on a live message for its tool card", () => {
+    const started = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      runId: "run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:01.000Z",
+      payload: { text: "Running: ls", activity: true },
+    });
+    const called = applyMobileThreadEvent(started, {
+      type: "agent.tool.called",
+      runId: "run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:09.000Z",
+      payload: { name: "shell", executionId: "x1" },
+    });
+    expect(called?.messages[0]).toMatchObject({
+      id: "progress:run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:01.000Z",
+    });
+  });
+
   it("formats channel messages with their platform attribution", () => {
     expect(
       blockText(

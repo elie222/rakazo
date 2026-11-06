@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { isToolActivityBlock } from "./tool-activity.js";
+import { isToolActivityBlock, toolStepStatus } from "./tool-activity.js";
 
 describe("tool activity", () => {
   it.each<MessageBlock>([
@@ -37,5 +37,14 @@ describe("tool activity", () => {
       }),
     ).toBe(false);
     expect(isToolActivityBlock({ kind: "text", text: "Done." })).toBe(false);
+  });
+});
+
+describe("toolStepStatus", () => {
+  it("reads a failed call as an error and an unfinished one as running only while live", () => {
+    expect(toolStepStatus({ outcome: "error" }, true)).toBe("error");
+    expect(toolStepStatus({ outcome: "ok" }, true)).toBe("ok");
+    expect(toolStepStatus({}, true)).toBe("running");
+    expect(toolStepStatus({}, false)).toBe("ok");
   });
 });

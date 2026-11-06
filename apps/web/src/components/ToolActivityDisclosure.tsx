@@ -2,7 +2,13 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage, ToolCallRecord, ToolStep } from "@rakazo/contracts";
-import { formatCompactDuration, toolCallMarkdown } from "@rakazo/core";
+import type { ToolStepStatus } from "@rakazo/core";
+import {
+  formatCompactDuration,
+  LIVE_TOOL_STEP_WINDOW,
+  toolCallMarkdown,
+  toolStepStatus,
+} from "@rakazo/core";
 import {
   Collapsible,
   CollapsibleContent,
@@ -13,12 +19,8 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
 import { useSpaceQueries } from "../lib/query";
-import type { ToolStepStatus } from "../lib/tool-activity-view";
-import { toolStepCount, toolStepStatus } from "../lib/tool-activity-view";
+import { toolStepCount } from "../lib/tool-activity-view";
 import { liveToolCallRecords, subscribeToolCallRecords } from "../lib/tool-call-records";
-
-/** While a run is live, only the most recent steps are listed so a long run does not push the chat down. */
-export const LIVE_TOOL_STEP_WINDOW = 6;
 
 /** Where a step's result lives: the run's records, read when the row opens. */
 export type ToolStepSource = { threadId: string; runId: string };
@@ -97,7 +99,7 @@ function ToolStepRow({
   onToggle,
 }: {
   step: ToolStep;
-  status: ReturnType<typeof toolStepStatus>;
+  status: ToolStepStatus;
   /** Undefined when the row has no result to open. */
   expanded: boolean | undefined;
   onToggle: (() => void) | undefined;
@@ -160,19 +162,24 @@ function ToolStepRow({
   );
 }
 
-function useToolCallRecord(source: ToolStepSource, executionId: string) {
+/**
+ * The record for one call: the live one while the thread's events carry it, else a read of
+ * the run's events. A live record left unfinished by a run that has ended is stale (the
+ * client missed its result), so the read wins once it has one.
+ */
+function useToolCallRecord(source: ToolStepSource, executionId: string, runLive: boolean) {
   const live = useSyncExternalStore(subscribeToolCallRecords, () =>
     liveToolCallRecords(source.runId),
   )?.get(executionId);
+  const stale = live !== undefined && !runLive && live.status !== "done";
   const queries = useSpaceQueries();
   const fetched = useQuery({
     ...queries.threads.toolCalls.queryOptions({ input: source }),
-    // The live records are newer than anything a read returns.
-    enabled: live === undefined,
+    enabled: live === undefined || stale,
     staleTime: 0,
   });
-  const record: ToolCallRecord | undefined =
-    live ?? fetched.data?.find((item) => item.executionId === executionId);
+  const read = fetched.data?.find((item) => item.executionId === executionId);
+  const record: ToolCallRecord | undefined = stale ? (read ?? live) : (live ?? read);
   return { record, loading: live === undefined && fetched.isPending, failed: fetched.isError };
 }
 
@@ -191,7 +198,7 @@ function ToolStepDetail({
   source: ToolStepSource;
   status: ToolStepStatus;
 }) {
-  const { record, loading, failed } = useToolCallRecord(source, executionId);
+  const { record, loading, failed } = useToolCallRecord(source, executionId, status === "running");
   const running = record?.status === "running" || status === "running";
   const markdown = record ? toolCallMarkdown(record) : "";
   const exit =

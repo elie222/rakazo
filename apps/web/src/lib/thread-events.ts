@@ -487,7 +487,8 @@ export function reduceThreadSnapshot(
       blocks,
       botId: event.botId,
       runId: event.runId,
-      createdAt: event.createdAt,
+      // The run's first activity, kept so the card counts up from it.
+      createdAt: previous?.createdAt ?? event.createdAt,
     };
     return { ...prev, cursor: event.seq, messages: [...remaining, streaming] };
   }
@@ -503,7 +504,8 @@ export function reduceThreadSnapshot(
       blocks,
       botId: event.botId,
       runId: event.runId,
-      createdAt: event.createdAt,
+      // The run's first activity, kept so the card counts up from it.
+      createdAt: previous?.createdAt ?? event.createdAt,
     };
     return { ...prev, cursor: event.seq, messages: [...remaining, next] };
   }

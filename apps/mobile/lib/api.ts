@@ -1891,6 +1891,13 @@ export function applyMobileThreadEvent(
       }),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      // The thread and the run's first activity, which its tool card reads results and time from.
+      ...((event.threadId ?? previous?.threadId)
+        ? { threadId: event.threadId ?? previous?.threadId }
+        : {}),
+      ...((previous?.createdAt ?? event.createdAt)
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,
@@ -1910,6 +1917,13 @@ export function applyMobileThreadEvent(
       ),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      // The thread and the run's first activity, which its tool card reads results and time from.
+      ...((event.threadId ?? previous?.threadId)
+        ? { threadId: event.threadId ?? previous?.threadId }
+        : {}),
+      ...((previous?.createdAt ?? event.createdAt)
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,

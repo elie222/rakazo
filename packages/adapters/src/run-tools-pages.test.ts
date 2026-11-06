@@ -145,6 +145,18 @@ describe("save_page", () => {
     expect(
       redactBlocks([{ kind: "steps", steps: [{ label: `Run ${secret}`, count: 1 }] }], [secret]),
     ).toEqual([{ kind: "steps", steps: [{ label: "Run [redacted]", count: 1 }] }]);
+    // A later secret's replacement may lengthen a saved detail; it is bounded again.
+    expect(
+      redactBlocks(
+        [
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 1, detail: `${"x".repeat(195)}${secret}` }],
+          },
+        ],
+        [secret],
+      )[0],
+    ).toMatchObject({ steps: [{ detail: expect.stringMatching(/^x{195}\[red…$/) }] });
     // A step's detail is the call's own argument, such as a shell command.
     expect(
       redactBlocks(

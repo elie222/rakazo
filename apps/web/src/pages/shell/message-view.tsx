@@ -8,7 +8,12 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
+import {
+  isPeerReceiptBlocks,
+  isToolActivityBlock,
+  LIVE_TOOL_STEP_WINDOW,
+  otherAuthor,
+} from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -20,7 +25,6 @@ import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
-  LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
   ToolActivityDisclosure,
   ToolOnlyNarration,

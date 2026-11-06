@@ -11,6 +11,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
 import {
+  boundToolStepDetail,
   containsSecret,
   displayName,
   humanizeToolName,
@@ -19,7 +20,7 @@ import {
   redactSecrets,
   redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
-  toolCallDetail,
+  toolCallDetailLine,
   userRunError,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
@@ -626,10 +627,14 @@ function toolCallArgs(event: RuntimeEvent<"tool">): unknown {
   return inner && typeof inner === "object" ? inner : event.args;
 }
 
-/** What the call is about, safe to show: its arguments' main line with secrets taken out. */
+/**
+ * What the call is about, safe to show: its arguments' main line with secrets taken out, cut
+ * to length only afterwards so a secret is never split and a replacement never overruns.
+ */
 function toolStepDetail(args: unknown, secrets: string[]): string | undefined {
-  const detail = toolCallDetail(args);
-  return detail === undefined ? undefined : sanitizeSensitiveText(redactSecrets(detail, secrets));
+  const line = toolCallDetailLine(args);
+  if (line === undefined) return undefined;
+  return boundToolStepDetail(sanitizeSensitiveText(redactSecrets(line, secrets)));
 }
 
 /**

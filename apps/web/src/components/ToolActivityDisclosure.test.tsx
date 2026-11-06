@@ -31,9 +31,9 @@ const visibleText = (html: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+import { LIVE_TOOL_STEP_WINDOW } from "@rakazo/core";
 import { seedToolCallRecords } from "../lib/tool-call-records";
 import {
-  LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
   ToolActivityDisclosure,
   ToolOnlyNarration,

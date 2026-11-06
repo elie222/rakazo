@@ -1,5 +1,9 @@
 import type { ToolCallRecord } from "@rakazo/contracts";
 import { ComputerCommandSchema } from "@rakazo/contracts";
+import { isRunTerminalEvent } from "./events.js";
+
+/** Runs whose live records a client keeps at once. */
+const LIVE_RUNS_KEPT = 8;
 
 /** Events that say what a tool call did: its call, its completion audit and any shell output it streamed. */
 export function isToolCallRecordEvent(event: { type: string }): boolean {
@@ -74,10 +78,9 @@ export function reduceToolCallRecord(
         payload.outcome === "error" || payload.outcome === "paused" ? payload.outcome : "succeeded",
       ...(durationMs === undefined ? {} : { durationMs }),
       ...(typeof payload.error === "string" ? { error: payload.error } : {}),
-      // A shell command's own output already says what it printed.
-      ...(prior?.output === undefined && typeof payload.preview === "string"
-        ? { output: payload.preview }
-        : {}),
+      // A shell command's own output already says what it printed; a file or app action
+      // records none, so what the tool returned stands for it.
+      ...(!prior?.output && typeof payload.preview === "string" ? { output: payload.preview } : {}),
     };
   }
   if (event.type === "computer.command") {
@@ -93,7 +96,8 @@ export function reduceToolCallRecord(
       name: prior?.name ?? command.kind,
       status: command.status,
       ...(command.kind === "shell" ? { command: command.command } : {}),
-      output: command.output,
+      // A file or app action prints nothing unless it failed.
+      ...(command.kind === "shell" || command.output ? { output: command.output } : {}),
       exitCode: command.exitCode,
     };
   }
@@ -117,13 +121,27 @@ export function createToolCallRecordStore() {
     for (const listener of listeners) listener();
   };
   return {
-    /** Applies a thread event; events that say nothing about a call are ignored. */
+    /**
+     * Applies a thread event; events that say nothing about a call are ignored. A run's records
+     * go when it ends, since its stored events then say everything, and only the newest few
+     * runs are kept, so a long session never piles up output.
+     */
     record(event: { type: string; runId?: string | null; payload?: unknown }): void {
-      if (!event.runId || !isToolCallRecordEvent(event)) return;
+      if (!event.runId) return;
+      if (isRunTerminalEvent(event)) {
+        if (byRun.delete(event.runId)) notify();
+        return;
+      }
+      if (!isToolCallRecordEvent(event)) return;
       const records = byRun.get(event.runId) ?? new Map<string, ToolCallRecord>();
       const next = reduceToolCallRecord(records, { type: event.type, payload: event.payload });
       if (!next) return;
+      byRun.delete(event.runId);
       byRun.set(event.runId, new Map(records).set(next.executionId, next));
+      for (const runId of byRun.keys()) {
+        if (byRun.size <= LIVE_RUNS_KEPT) break;
+        byRun.delete(runId);
+      }
       notify();
     },
     /** Puts records in place of a run's events, for fixtures and tests. */

@@ -1324,6 +1324,30 @@ describe("thread event reduction", () => {
     });
   });
 
+  it("keeps the live message's first activity time while later events update it", () => {
+    const first = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Running: ls", activity: true },
+        createdAt: "2026-08-16T00:00:01.000Z",
+      }),
+    );
+    const second = reduceThreadSnapshot(
+      first,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "shell", executionId: "x1" },
+        createdAt: "2026-08-16T00:00:09.000Z",
+      }),
+    );
+    expect(second?.messages[0]?.createdAt).toBe("2026-08-16T00:00:01.000Z");
+  });
+
   it("holds a tool call that lands mid-sentence until the sentence completes", () => {
     const initial = snapshot([]);
 

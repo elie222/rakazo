@@ -1,6 +1,12 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock, ToolCallRecord, ToolStep } from "@rakazo/contracts";
-import { formatCompactDuration, toolCallMarkdown } from "@rakazo/core";
+import type { ToolStepStatus } from "@rakazo/core";
+import {
+  formatCompactDuration,
+  LIVE_TOOL_STEP_WINDOW,
+  toolCallMarkdown,
+  toolStepStatus,
+} from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -11,18 +17,9 @@ import { toolCallRecords } from "../../lib/tool-call-records";
 import { NativeSymbol } from "../native-symbol";
 
 type StepsBlock = Extract<MessageBlock, { kind: "steps" }>;
-type Status = "running" | "ok" | "error";
+type Status = ToolStepStatus;
 
-/** While a run is live, only the newest steps are listed so a long run does not push the chat down. */
-const LIVE_STEP_WINDOW = 6;
 const MONO = Platform.select({ ios: "ui-monospace", default: "monospace" });
-
-/** A failed call shows as such; one still without a result is running while the run is live. */
-function stepStatus(step: Pick<ToolStep, "outcome">, live: boolean): Status {
-  if (step.outcome === "error") return "error";
-  if (step.outcome === undefined && live) return "running";
-  return "ok";
-}
 
 /**
  * A reply's tool calls: one line with the count and time, open while the run is live. Each row
@@ -51,7 +48,9 @@ export function ToolActivityCard({
   const elapsed = useElapsed(live ? startedAt : undefined);
   const duration = live ? elapsed : formatCompactDuration(block.durationMs);
   const hidden =
-    live && block.steps.length > LIVE_STEP_WINDOW ? block.steps.length - LIVE_STEP_WINDOW : 0;
+    live && block.steps.length > LIVE_TOOL_STEP_WINDOW
+      ? block.steps.length - LIVE_TOOL_STEP_WINDOW
+      : 0;
   const shown = hidden > 0 ? block.steps.slice(hidden) : block.steps;
   const summary = [
     live ? t("Working…") : t("Done"),
@@ -98,7 +97,7 @@ export function ToolActivityCard({
                 ) : null}
                 <StepRow
                   step={step}
-                  status={stepStatus(step, live)}
+                  status={toolStepStatus(step, live)}
                   expanded={expandable ? expanded : undefined}
                   onToggle={
                     expandable
@@ -118,7 +117,7 @@ export function ToolActivityCard({
                     executionId={step.executionId}
                     runId={runId}
                     threadId={threadId}
-                    status={stepStatus(step, live)}
+                    status={toolStepStatus(step, live)}
                   />
                 ) : null}
               </View>
@@ -191,13 +190,23 @@ function StepRow({
   );
 }
 
-/** The record for one call: the live one when the thread's events carried it, else read once. */
-function useToolCallRecord(runId: string, executionId: string, threadId: string | undefined) {
+/**
+ * The record for one call: the live one while the thread's events carry it, else a read of
+ * the run's events. A live record left unfinished by a run that has ended is stale (the
+ * client missed its result), so the read wins once it has one.
+ */
+function useToolCallRecord(
+  runId: string,
+  executionId: string,
+  threadId: string | undefined,
+  runLive: boolean,
+) {
   const live = useSyncExternalStore(toolCallRecords.subscribe, () =>
     toolCallRecords.get(runId),
   )?.get(executionId);
+  const stale = live !== undefined && !runLive && live.status !== "done";
   const [fetched, setFetched] = useState<{ records?: ToolCallRecord[]; failed?: boolean }>();
-  const needsFetch = live === undefined && threadId !== undefined;
+  const needsFetch = (live === undefined || stale) && threadId !== undefined;
   useEffect(() => {
     if (!needsFetch || !threadId) return;
     let cancelled = false;
@@ -209,8 +218,13 @@ function useToolCallRecord(runId: string, executionId: string, threadId: string 
       cancelled = true;
     };
   }, [needsFetch, threadId, runId]);
-  const record = live ?? fetched?.records?.find((item) => item.executionId === executionId);
-  return { record, loading: needsFetch && fetched === undefined, failed: fetched?.failed === true };
+  const read = fetched?.records?.find((item) => item.executionId === executionId);
+  const record = stale ? (read ?? live) : (live ?? read);
+  return {
+    record,
+    loading: live === undefined && needsFetch && fetched === undefined,
+    failed: fetched?.failed === true,
+  };
 }
 
 /**
@@ -233,7 +247,12 @@ function StepPanel({
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  const { record, loading, failed } = useToolCallRecord(runId, executionId, threadId);
+  const { record, loading, failed } = useToolCallRecord(
+    runId,
+    executionId,
+    threadId,
+    status === "running",
+  );
   const running = record?.status === "running" || status === "running";
   const markdown = record ? toolCallMarkdown(record) : "";
   const exit =

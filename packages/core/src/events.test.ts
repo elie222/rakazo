@@ -3,6 +3,7 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  boundToolStepDetail,
   completeToolStep,
   containsSecret,
   createStreamingRedactor,
@@ -23,6 +24,7 @@ import {
   sanitizeUtf16ForJson,
   stripLiveStreamingProgress,
   toolCallDetail,
+  toolCallDetailLine,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
@@ -851,6 +853,13 @@ describe("toolCallDetail", () => {
     expect(toolCallDetail({ path: "apps/web/package.json" })).toBe("apps/web/package.json");
     expect(toolCallDetail({ query: "weather tomorrow", limit: 5 })).toBe("weather tomorrow");
     expect(toolCallDetail({ command: "x".repeat(400) })).toHaveLength(200);
+  });
+
+  it("gives the whole line for a caller to redact before it bounds it", () => {
+    const command = `curl -u ${"x".repeat(199)}SECRET`;
+    expect(toolCallDetailLine({ command })).toBe(command);
+    expect(boundToolStepDetail(command.replace("SECRET", "[redacted]"))).toHaveLength(200);
+    expect(boundToolStepDetail("  a  \n b ")).toBe("a b");
   });
 
   it("falls back to the scalar arguments and gives nothing for nested or empty ones", () => {
