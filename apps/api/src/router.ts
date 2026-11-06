@@ -52,6 +52,7 @@ import { pagesRoutes } from "./routes/pages.js";
 import { paymentWalletRoutes } from "./routes/payment-wallet.js";
 import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
+import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import { threadsRoutes } from "./routes/threads.js";
 import type { VoiceDeps } from "./voice.js";
 
@@ -119,6 +120,8 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    /** Domain of bots' email addresses; unset when this server receives no email. */
+    inboundEmailDomain?: string;
     ticketBoardEnabled?: boolean;
     navLinks?: NavLink[];
     adminEmails?: string[];
@@ -141,6 +144,7 @@ export interface RouterDeps {
     integrationsCatalogUrl?: string;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
+    computerSettingsEnabled?: boolean;
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
   };
@@ -169,5 +173,6 @@ export function createRouter(deps: RouterDeps) {
     ...contentRoutes(ctx),
     ...pagesRoutes(ctx),
     ...paymentWalletRoutes(ctx),
+    ...spendingLimitRoutes(ctx),
   });
 }

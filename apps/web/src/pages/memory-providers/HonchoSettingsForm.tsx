@@ -112,8 +112,8 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
             maxLength={512}
             autoComplete="off"
           />
-          <p id={userPeerDescriptionId} className="mt-2 text-[13px] text-muted-foreground">
-            <Trans>An existing Honcho peer to read from. Rakazo never writes to it.</Trans>
+          <p id={userPeerDescriptionId} className="mt-2 text-body-sm text-muted-foreground">
+            <Trans>Recall from this peer; save to Rakazo’s own peers.</Trans>
           </p>
           {!userPeerValid ? (
             <FieldError id={userPeerErrorId}>

@@ -5,6 +5,7 @@ import type {
   BotAvatarSet,
   ComputerMode,
   ModelCatalogEntry,
+  ReplyMode,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -38,9 +39,10 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Settings, X } from "lucide-react";
+import { Download, Mail, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
+import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
@@ -60,7 +62,7 @@ const KnowledgeSection = lazyComponent(() =>
   import("../KnowledgeSection").then((module) => module.KnowledgeSection),
 );
 
-const rowLabelClass = "text-sm text-foreground";
+const rowLabelClass = "text-body text-foreground";
 
 /** The advanced fields one Save sends, in the order their saved snapshot keeps them. */
 function advancedValues(bot: Bot) {
@@ -137,6 +139,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     voiceId?: string | null;
@@ -188,6 +191,8 @@ export function BotSettings({
   useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
+  const [replyMode, setReplyMode] = useState(bot.replyMode);
+  useEffect(() => setReplyMode(bot.replyMode), [bot.replyMode]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
@@ -248,6 +253,7 @@ export function BotSettings({
         avatarSet?: BotAvatarSet;
         notifyOnFinish?: boolean;
         fleetManagement?: boolean;
+        replyMode?: ReplyMode;
         crossSpaceCommunication?: boolean;
         dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
@@ -337,6 +343,7 @@ export function BotSettings({
       avatarSet?: BotAvatarSet;
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
+      replyMode?: ReplyMode;
       crossSpaceCommunication?: boolean;
       dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
@@ -357,6 +364,10 @@ export function BotSettings({
       }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
+        return;
+      }
+      if (patchOverrides?.replyMode !== undefined) {
+        await onSave({ replyMode: patchOverrides.replyMode });
         return;
       }
       const selected = selectedModel;
@@ -465,6 +476,7 @@ export function BotSettings({
         setDailyCheckIns(!patchOverrides.dailyCheckIns);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
+      if (patchOverrides?.replyMode !== undefined) setReplyMode(bot.replyMode);
       setError(errorText(err, t`Could not save`));
     } finally {
       pendingSavesRef.current -= 1;
@@ -494,6 +506,7 @@ export function BotSettings({
     avatarSet?: BotAvatarSet;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    replyMode?: ReplyMode;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
@@ -544,13 +557,14 @@ export function BotSettings({
           editLabel={t`Edit name`}
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
-          className="text-xl font-semibold"
+          className="text-heading2 font-semibold"
           onCommit={(value) => {
             if (!value.trim()) return;
             setName(value.trim());
             void enqueueSave({ name: value });
           }}
         />
+        <BotEmail bot={{ id: bot.id, name }} />
       </div>
       <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
         <TabsList className="w-full">
@@ -587,7 +601,7 @@ export function BotSettings({
                 <label
                   htmlFor={`${ids}-notify-finish`}
                   id={`${ids}-notify-finish-label`}
-                  className="text-sm"
+                  className="text-body"
                 >
                   <Trans>When it finishes or needs input</Trans>
                 </label>
@@ -615,7 +629,7 @@ export function BotSettings({
           </ErrorBoundary>
           <div className="space-y-6 pt-6">
             <div ref={modelRef}>
-              <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground pe-1">
+              <div className="mb-2 flex items-center justify-between text-label font-medium text-muted-foreground pe-1">
                 <Trans>Model</Trans>
                 {onOpenConnections ? (
                   <Button
@@ -648,7 +662,7 @@ export function BotSettings({
                 {thinkingOptions.length ? (
                   <label
                     htmlFor={`${ids}-thinking`}
-                    className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"
+                    className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
                   >
                     <Trans>Thinking</Trans>
                     <NativeSelect
@@ -670,10 +684,10 @@ export function BotSettings({
                 ) : null}
               </div>
             </div>
-            <SettingsGroup label={t`Computer`} plain>
+            <BotPanelGroup label={t`Computer`} plain>
               <ComputerModePicker value={computerMode} onChange={setComputerMode} />
               {memoryProviderConfigured ? (
-                <div className="mt-4 text-sm text-foreground">
+                <div className="mt-4 text-body text-foreground">
                   <Trans>Memory scope</Trans>
                   <div className="mt-2 flex gap-2">
                     {(
@@ -699,11 +713,11 @@ export function BotSettings({
                   </div>
                 </div>
               ) : null}
-            </SettingsGroup>
-            <SettingsGroup label={t`Voice`}>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Voice`}>
               <label
                 htmlFor={`${ids}-auto-speak`}
-                className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm text-foreground"
+                className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
               >
                 <span className={rowLabelClass}>
                   <Trans>Read replies aloud</Trans>
@@ -717,7 +731,7 @@ export function BotSettings({
               {voices?.length ? (
                 <label
                   htmlFor={`${ids}-voice`}
-                  className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"
+                  className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
                 >
                   <Trans>Voice</Trans>
                   <NativeSelect
@@ -735,9 +749,9 @@ export function BotSettings({
                   </NativeSelect>
                 </label>
               ) : null}
-            </SettingsGroup>
-            <SettingsGroup label={t`Permissions`}>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Permissions`}>
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
                   <Trans>Daily check-ins on unfinished work</Trans>
                 </label>
@@ -751,7 +765,7 @@ export function BotSettings({
                   }}
                 />
               </div>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-cross-space`} className={rowLabelClass}>
                   <Trans>Allow cross-space bot communication</Trans>
                 </label>
@@ -765,7 +779,7 @@ export function BotSettings({
                   }}
                 />
               </div>
-              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
                   <Trans>Manage other bots</Trans>
                 </label>
@@ -779,9 +793,26 @@ export function BotSettings({
                   }}
                 />
               </div>
-            </SettingsGroup>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Replies`} plain>
+              <NativeSelect
+                id={`${ids}-reply-mode`}
+                aria-label={t`Replies`}
+                className="w-full"
+                value={replyMode}
+                disabled={saving}
+                onChange={(event) => {
+                  const next = event.target.value as ReplyMode;
+                  setReplyMode(next);
+                  void enqueueSave({ replyMode: next });
+                }}
+              >
+                <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
+                <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
+              </NativeSelect>
+            </BotPanelGroup>
             <InstructionSettings key={bot.id} bot={bot} />
-            <SettingsGroup label={t`How other bots see it`} plain>
+            <BotPanelGroup label={t`How other bots see it`} plain>
               <Textarea
                 id={`${ids}-description`}
                 aria-label={t`How other bots see it`}
@@ -793,8 +824,8 @@ export function BotSettings({
                 rows={2}
                 className="min-h-16 max-h-96 resize-none field-sizing-content"
               />
-            </SettingsGroup>
-            <SettingsGroup label={t`Tools`} plain>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Tools`} plain>
               <section data-testid="bot-settings-tools">
                 <div className="space-y-2 [&>*]:mt-0">
                   <div>
@@ -818,7 +849,7 @@ export function BotSettings({
                   {disabledBuiltinTools.map((toolName) => (
                     <div
                       key={toolName}
-                      className="flex min-h-11 items-center justify-between gap-3 text-sm"
+                      className="flex min-h-11 items-center justify-between gap-3 text-body"
                     >
                       <span>{humanizeTool(toolName)}</span>
                       <Button
@@ -839,11 +870,11 @@ export function BotSettings({
                   ))}
                 </div>
               </section>
-            </SettingsGroup>
+            </BotPanelGroup>
             <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
               <button
                 type="button"
-                className="flex min-h-12 w-full items-center justify-between text-sm"
+                className="flex min-h-12 w-full items-center justify-between text-body"
                 onClick={() => {
                   setError(null);
                   onExport().catch((err: unknown) => setError(errorText(err)));
@@ -854,7 +885,7 @@ export function BotSettings({
               </button>
               <button
                 type="button"
-                className="min-h-12 w-full border-t border-border text-start text-sm text-destructive"
+                className="min-h-12 w-full border-t border-border text-start text-body text-destructive"
                 onClick={onClear}
               >
                 <Trans>Clear conversation</Trans>
@@ -879,7 +910,7 @@ export function BotSettings({
           ) : null}
         </TabsContent>
       </Tabs>
-      {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
     </div>
   );
 }
@@ -964,7 +995,7 @@ function InlineProfileField({
 }
 
 /** `plain` drops the card for a section whose single control already draws its own frame. */
-function SettingsGroup({
+function BotPanelGroup({
   label,
   plain = false,
   children,
@@ -987,4 +1018,30 @@ function SettingsGroup({
 function humanizeTool(name: string) {
   const words = name.replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The bot's address under its name; on a server that receives email, offered until claimed. */
+function BotEmail({ bot }: { bot: { id: string; name: string } }) {
+  const queries = useSpaceQueries();
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
+  const [claiming, setClaiming] = useState(false);
+  if (!email) return null;
+  if (!email.address && !claiming) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="mt-1 text-muted-foreground"
+        onClick={() => setClaiming(true)}
+      >
+        <Mail />
+        <Trans>Get an email address</Trans>
+      </Button>
+    );
+  }
+  return (
+    <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
+      <BotEmailAddressField bot={bot} domain={email.domain} address={email.address} />
+    </div>
+  );
 }

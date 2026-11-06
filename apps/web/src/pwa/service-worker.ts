@@ -3,6 +3,8 @@ export const CACHE_PREFIX = "rakazo-shell-";
 
 // Live data, auth callbacks and the screen proxy always go straight to the server.
 const BYPASS_PREFIXES = ["/api", "/rpc", "/novnc", "/.well-known", "/health"];
+// A self-hosted instance's theme (stylesheet and fonts): fetched fresh, cached for offline reloads.
+const THEME_PREFIX = "/instance-theme";
 const ACTIVATION_TIMEOUT_MS = 3_000;
 const BUILD_ID = /^\d{14}$/;
 
@@ -91,8 +93,37 @@ export function installServiceWorker(
       event.respondWith(navigate(request));
     } else if (precached.has(url.pathname) || url.pathname.startsWith("/assets/")) {
       event.respondWith(cacheFirst(event, url.pathname));
+    } else if (url.pathname.startsWith(THEME_PREFIX)) {
+      event.respondWith(networkFirst(event));
     }
   });
+
+  async function networkFirst(event: FetchEvent): Promise<Response> {
+    const cache = await scope.caches.open(cacheName);
+    try {
+      const response = await scope.fetch(event.request);
+      if (response.ok) {
+        event.waitUntil(cache.put(event.request, response.clone()).catch(() => undefined));
+      }
+      return response;
+    } catch (error) {
+      const cached = await cachedAnywhere(event.request);
+      if (cached) return cached;
+      throw error;
+    }
+  }
+
+  /** The current shell cache first, then the previous one activation keeps for open tabs. */
+  async function cachedAnywhere(request: Request): Promise<Response | undefined> {
+    const cached = await (await scope.caches.open(cacheName)).match(request);
+    if (cached) return cached;
+    for (const name of await scope.caches.keys()) {
+      if (!name.startsWith(CACHE_PREFIX) || name === cacheName) continue;
+      const previous = await (await scope.caches.open(name)).match(request);
+      if (previous) return previous;
+    }
+    return undefined;
+  }
 
   async function navigate(request: Request): Promise<Response> {
     if (await activateWaitingWorker()) {
@@ -126,14 +157,9 @@ export function installServiceWorker(
   }
 
   async function cacheFirst(event: FetchEvent, pathname: string): Promise<Response> {
-    const cache = await scope.caches.open(cacheName);
-    const cached = await cache.match(event.request);
+    const cached = await cachedAnywhere(event.request);
     if (cached) return cached;
-    for (const name of await scope.caches.keys()) {
-      if (!name.startsWith(CACHE_PREFIX) || name === cacheName) continue;
-      const previous = await (await scope.caches.open(name)).match(event.request);
-      if (previous) return previous;
-    }
+    const cache = await scope.caches.open(cacheName);
     const response = await scope.fetch(event.request);
     // A missing chunk can come back as the SPA's HTML; never store that as an asset.
     const html = response.headers.get("content-type")?.includes("text/html") ?? false;

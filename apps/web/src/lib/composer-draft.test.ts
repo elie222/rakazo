@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  appendComposerDraftText,
   beginComposerDraftSubmission,
   composerDraftBindingsKey,
   composerDraftStorageKey,
@@ -96,6 +97,30 @@ describe("composer drafts", () => {
       settleComposerDraftSubmission("thread", accepted, true);
       expect(readComposerDraft("thread", storage)).toBe("");
       expect(storage.getItem(composerDraftBindingsKey("thread"))).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a newer same-text binding from another tab when late words join an in-flight send", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    try {
+      const group = [
+        { start: 0, end: 4, mention: { kind: "group" as const, id: "group", name: "Bob" } },
+      ];
+      const bot = [{ start: 0, end: 4, mention: { kind: "bot" as const, id: "bot", name: "Bob" } }];
+      writeComposerDraft("thread", "@Bob", storage, group);
+      const submitted = beginComposerDraftSubmission("thread", "@Bob");
+      // Another tab binds the same text to another mention while the send is in flight.
+      storage.setItem(
+        composerDraftBindingsKey("thread"),
+        JSON.stringify({ version: 1, text: "@Bob", bindings: bot }),
+      );
+      appendComposerDraftText("thread", "new words");
+      settleComposerDraftSubmission("thread", submitted, true);
+      expect(readComposerDraft("thread", storage)).toBe("@Bob new words");
+      expect(readComposerDraftBindings("thread", storage)).toEqual(bot);
     } finally {
       vi.unstubAllGlobals();
     }

@@ -23,13 +23,13 @@ export function OptionRow({
       aria-pressed={selected || undefined}
       onClick={onClick}
       className={cn(
-        "-mx-2 h-auto w-[calc(100%+1rem)] min-w-0 justify-start gap-3 whitespace-normal px-2 py-2 text-start text-[15px] font-normal",
+        "-mx-2 h-auto w-[calc(100%+1rem)] min-w-0 justify-start gap-3 whitespace-normal px-2 py-2 text-start text-body-lg font-normal",
         selected && "bg-accent disabled:opacity-100",
       )}
     >
       <span
         aria-hidden
-        className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-muted text-[13px] text-muted-foreground"
+        className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-muted text-body-sm text-muted-foreground"
       >
         {letter}
       </span>

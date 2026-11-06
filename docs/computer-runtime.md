@@ -167,14 +167,14 @@ warns that unsaved work may be lost.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
-minutes is marked interrupted and remains reserved until its provider calls settle.
-Only then is recovery available. If a worker has permanently disappeared, an operator
-must stop the affected workers and verify that provider operations have stopped before
-using the server-owner-only **Release computer** action in the interrupted dialog.
-Its confirmation requires an explicit assertion that workers and provider operations
-have stopped, then makes normal recovery available. The corresponding RPC is
-`computer/releaseInterrupted` with `{ id, workersStopped: true }`; it accepts only
-interrupted operations in the owner’s current workspace. A stale heartbeat alone
-never authorizes takeover. Progress reports
+minutes is marked interrupted and stays reserved, because its provider calls may still
+be running. If that worker settles, it records the outcome as usual. If it has not
+settled an hour after it was marked interrupted, the reconciler records the operation
+as failed and frees the computer, assuming by then that the provider calls have ended.
+The reconciler cannot know which state an unfinished save or teardown started from,
+so a computer with its machine still attached is quarantined, as after a stop the
+provider could not confirm, and bots cannot use it until Recover, Update or Reset
+replaces it. Any other computer left mid-save, mid-teardown or mid-boot becomes an
+error. Recover is then available. Progress reports
 actual lifecycle stages rather than estimated percentages; workspace files and
 browser profiles are portable, while system packages outside the workspace are not.

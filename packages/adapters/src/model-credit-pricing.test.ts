@@ -37,5 +37,17 @@ describe("hosted model credit reservations", () => {
         100,
       ),
     ).toBeUndefined();
+    // The resolver gives an unlisted configured model zero placeholder rates; that
+    // model is unpriced, not free, so observers must refuse to reserve the call.
+    expect(
+      maximumModelCallCost(
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        1_000_000,
+        1_000_000,
+      ),
+    ).toBeUndefined();
+    expect(
+      maximumModelCallCost({ input: 0, output: 1, cacheRead: 0, cacheWrite: 0 }, 0, 1_000_000),
+    ).toBe(1);
   });
 });

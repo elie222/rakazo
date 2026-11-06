@@ -1,12 +1,19 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  CompatibleEndpointPreset,
+  ModelOAuthSignInMode,
+  ModelRoutingField,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   canonicalPiProviderId,
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
+import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -38,6 +45,8 @@ export type PiCatalogEntry = {
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
+  routingFields?: ModelRoutingField[];
+  endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
 
@@ -48,7 +57,7 @@ export type PiCatalogEntry = {
 const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   "openai-codex": "gpt-6-luna",
   openai: "gpt-6-luna",
-  openrouter: "openai/gpt-6-luna",
+  openrouter: "anthropic/claude-haiku-5.5",
   anthropic: "claude-haiku-5-5",
   google: "gemini-3.8-flash",
   groq: "openai/gpt-oss-120b",
@@ -295,6 +304,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       ),
     );
     const modelIds = providerModels.map((model) => model.id);
+    const routingFields = cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
@@ -317,9 +327,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // endpoint. Keep each custom connection scoped to its entered model ID.
         // Its image support is the connection's own setting, not the catalog's.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? { placeholder: true }
+          ? { placeholder: true, endpointPresets: COMPATIBLE_ENDPOINT_PRESETS }
           : { images: model.input.includes("image") }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
+        ...(routingFields ? { routingFields } : {}),
       });
     }
   }

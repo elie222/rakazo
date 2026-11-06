@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
+  activeThreadRuns,
   answerableAskMessageIds,
   channelMessageSender,
   chatUserBubbleColors,
@@ -18,13 +19,26 @@ import {
   isRunWorking,
   memberName,
   newClientId,
+  otherAuthor,
+  workingRoutineName,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { Keyboard, Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
+import {
+  Keyboard,
+  LayoutTemplate,
+  Lock,
+  Monitor,
+  Moon,
+  Plug,
+  Plus,
+  ScrollText,
+  Sun,
+  Users,
+} from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -33,7 +47,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useParams } from "react-router-dom";
 import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
@@ -44,17 +57,10 @@ import { PageViewHost } from "../components/pages/PageViewHost";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
-import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
-import {
-  getBotsSidebarDensity,
-  subscribeBotsSidebarDensity,
-} from "../lib/bots-sidebar-density-pref";
+import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
 import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
-import {
-  getComposerEnterToSend,
-  subscribeComposerEnterToSend,
-} from "../lib/composer-enter-to-send-pref";
+import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
@@ -66,14 +72,13 @@ import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
-import { activeThreadRuns } from "../lib/thread-events";
-import { getToolActivityEnabled, subscribeToolActivity } from "../lib/tool-activity-preference";
+import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineEditor";
+import { RoutineList } from "./RoutineList";
 import { useSettingsNavItems } from "./settings-nav";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
@@ -182,21 +187,9 @@ function SpaceShell() {
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
-  const showToolActivity = useSyncExternalStore(
-    subscribeToolActivity,
-    getToolActivityEnabled,
-    () => true,
-  );
-  const botsSidebarDensity = useSyncExternalStore<BotsSidebarDensity>(
-    subscribeBotsSidebarDensity,
-    getBotsSidebarDensity,
-    () => "comfortable",
-  );
-  const enterToSend = useSyncExternalStore(
-    subscribeComposerEnterToSend,
-    getComposerEnterToSend,
-    () => false,
-  );
+  const showToolActivity = toolActivityPreference.use();
+  const botsSidebarDensity = botsSidebarDensityPreference.use();
+  const enterToSend = composerEnterToSendPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const lastBotTab = useRef<Panel>("routines");
@@ -450,7 +443,7 @@ function SpaceShell() {
       },
     },
   );
-  const { speakingMessageId, speakMessage } = useReadAloud({
+  const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
     active,
     snapshot,
     callBotId: call?.botId,
@@ -681,6 +674,7 @@ function SpaceShell() {
     sandboxProvider: bootstrapMe?.sandboxProvider,
     refreshThread,
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
+    onUpgrade: () => openSettings("billing"),
   });
   const { computerBot, openComputer } = computerControls;
   const composer = useComposerActions({
@@ -718,7 +712,9 @@ function SpaceShell() {
 
   const replyTargetName = composer.replyTarget
     ? composer.replyTarget.role === "user"
-      ? (channelMessageSender(composer.replyTarget.blocks) ?? t`You`)
+      ? (otherAuthor(composer.replyTarget.author, userId)?.name ??
+        channelMessageSender(composer.replyTarget.blocks) ??
+        t`You`)
       : (resolveTranscriptMemberName(composer.replyTarget.botId) ?? active?.name ?? t`Bot`)
     : undefined;
   useRightPanelRestore({
@@ -851,7 +847,9 @@ function SpaceShell() {
   const settingsNavItems = useSettingsNavItems({
     messaging: messagingSurfaceEnabled,
     wallet: Boolean(bootstrapMe?.paymentWalletProvider),
-    computer: computersAreUnavailable(bootstrapMe?.sandboxProvider),
+    computer:
+      bootstrapMe?.computerSettingsEnabled === true &&
+      computersAreUnavailable(bootstrapMe?.sandboxProvider),
     billing: bootstrapMe?.billingEnabled === true,
     updates: Boolean(desktopBridge()?.update),
   });
@@ -879,6 +877,12 @@ function SpaceShell() {
       label: t`Connect apps`,
       icon: Plug,
       onSelect: () => setOverlay({ kind: "integrations" }),
+    },
+    {
+      id: "bot-templates",
+      label: t`Bot templates`,
+      icon: LayoutTemplate,
+      onSelect: () => setOverlay({ kind: "templates" }),
     },
     {
       id: "keyboard-shortcuts",
@@ -938,6 +942,16 @@ function SpaceShell() {
         window.location.assign("/app");
         return;
       }
+    }
+    await refreshBots(true);
+  }
+
+  async function leftSpace(spaceId: string, activeSpaceId: string) {
+    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+    // Leaving the open space changes the auth boundary, so reload like a space switch.
+    if (effectiveSpaceId === spaceId && selectSpace(activeSpaceId)) {
+      window.location.assign("/app");
+      return;
     }
     await refreshBots(true);
   }
@@ -1131,6 +1145,7 @@ function SpaceShell() {
           ) : (
             <Transcript
               key={activeSnapshot?.threadId}
+              meId={userId}
               scrollRef={thread.messageScroll}
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
@@ -1146,6 +1161,7 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
+              workingRoutine={workingRoutineName(workingRuns)}
               userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active
@@ -1168,6 +1184,7 @@ function SpaceShell() {
               onAddRoutine={addSkillRoutine}
               voiceReady={Boolean(voiceStatus?.ready)}
               speakingMessageId={speakingMessageId}
+              callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
@@ -1179,7 +1196,7 @@ function SpaceShell() {
           // Let messages continue behind the composer's rounded top corners.
           <div className="pointer-events-none relative z-30 -mt-7">
             {recordingSkill ? (
-              <div className="pointer-events-auto bg-background px-6 pb-2 text-center text-[13px] text-destructive">
+              <div className="pointer-events-auto bg-background px-6 pb-2 text-center text-body-sm text-destructive">
                 <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
               </div>
             ) : null}
@@ -1187,6 +1204,7 @@ function SpaceShell() {
               key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
+              sendColors={userBubble}
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               running={composerRunning}
               disabled={Boolean(recordingSkill)}
@@ -1292,7 +1310,11 @@ function SpaceShell() {
                 computerControls.holdComputerRecovery();
               }}
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
-              onOpenComputerSettings={() => openSettings("computer")}
+              onOpenComputerSettings={
+                bootstrapMe?.computerSettingsEnabled === true
+                  ? () => openSettings("computer")
+                  : undefined
+              }
               onOpen={() => void openComputer()}
               cleaningUpDisk={cleaningUpDisk}
               onCleanUpDisk={() => {
@@ -1372,6 +1394,7 @@ function SpaceShell() {
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
           onConnectedAppsChange={setFooterLogos}
+          onOpenBot={openCreatedBot}
         />
       </Suspense>
 
@@ -1386,6 +1409,7 @@ function SpaceShell() {
           spaces={spaces}
           renameSpace={renameSpace}
           removeSpace={removeSpace}
+          leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
           openAgentImport={() => setPanel("import-agent")}
           alive={alive}

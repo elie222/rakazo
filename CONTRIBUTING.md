@@ -7,6 +7,21 @@ Thanks for helping improve Rakazo. Keep changes focused and testable.
 Follow the [source checkout setup](README.md#local-development-source-checkout) for prerequisites,
 required secrets, and startup commands.
 
+For a new Git worktree, run `pnpm setup:worktree`. It copies the main checkout's local
+`.env` if one exists and keeps any `.env` already in the worktree.
+The main checkout is the original clone, located through `git worktree list` rather than
+a fixed directory or branch name.
+Worktrees attached to a bare repository skip copying because there is no original checkout.
+The source must be a Git-ignored regular file; symbolic links are rejected.
+Settings such as `RAKAZO_DEV_TAILNET=1` are inherited only when you enabled them locally;
+the setup command does not enable sharing or change any settings. If the main checkout
+has no `.env`, development uses its usual defaults.
+
+In T3 Code, import the worktree setup action from the repository's `t3.json` in project
+settings. It runs on worktree creation with T3's default timing. Existing worktrees keep their
+own settings; later changes to the main `.env` are not copied automatically.
+Run `pnpm install --frozen-lockfile` when you need to run or test the worktree.
+
 ## Checks before you open a PR
 
 | Command | When to run |
@@ -23,7 +38,11 @@ required secrets, and startup commands.
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
-CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
+PR CI always runs `pnpm lint`. Typechecks and unit tests target affected packages and
+their dependents unless a change requires checking all packages. Production builds
+(including Electron smoke tests), Postgres integration tests, and web E2E run according to the
+[changed-area classification](.github/scripts/changed-areas.sh) in the
+[CI workflow](.github/workflows/ci.yml).
 
 Ordinary test processes (`NODE_ENV=test`) do not load the checkout's `.env`.
 Verification CLIs load configuration before starting isolated test processes;

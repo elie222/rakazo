@@ -109,7 +109,7 @@ export function ShellSidePanel({
           panel !== "import-agent" ? (
             <div className="mb-4 flex items-center justify-between">
               {!active && panel !== "settings" ? (
-                <span className="text-[13.5px] text-muted-foreground">
+                <span className="text-body text-muted-foreground">
                   <Trans>Group</Trans>
                 </span>
               ) : null}

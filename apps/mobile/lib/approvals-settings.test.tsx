@@ -5,7 +5,9 @@ import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
+import AddApprovalRule from "../app/(settings)/approval-rule-add";
 import Approvals from "../app/(settings)/approvals";
+import { queryClient } from "./query";
 
 type Rule = {
   id: string;
@@ -20,7 +22,8 @@ const state = vi.hoisted(() => ({
   settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
   rules: [] as Rule[],
   headerItems: [] as { label: string; onPress: () => void }[],
-  prompt: vi.fn(),
+  search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
+  router: { push: vi.fn(), back: vi.fn(), replace: vi.fn(), canGoBack: vi.fn(() => true) },
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -43,22 +46,28 @@ vi.mock("./i18n", () => {
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./api", () => ({
   rpc: state.rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-selected",
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   useLocalSearchParams: () => ({ spaceId: state.spaceId }),
   useNavigation: () => ({
-    setOptions: (options: { unstable_headerRightItems: () => typeof state.headerItems }) => {
-      state.headerItems = options.unstable_headerRightItems();
+    setOptions: (options: {
+      unstable_headerRightItems?: () => typeof state.headerItems;
+      headerSearchBarOptions?: typeof state.search;
+    }) => {
+      if (options.unstable_headerRightItems)
+        state.headerItems = options.unstable_headerRightItems();
+      if (options.headerSearchBarOptions) state.search = options.headerSearchBarOptions;
     },
   }),
+  useRouter: () => state.router,
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
-vi.mock("../components/name-dialog", () => ({ TextFieldDialog: () => null }));
 vi.mock("react-native", () => ({
-  Alert: { prompt: state.prompt },
-  Platform: { OS: "ios" },
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("p"),
@@ -129,14 +138,26 @@ vi.mock("../components/native-segmented-control", () => ({
 }));
 vi.mock("../components/settings-group", () => ({
   SettingsFooter: element("small"),
-  SettingsGroup: element("section"),
-  SettingsRow: ({ title, value }: { title: string; value?: string }) =>
-    createElement("span", null, `${title}: ${value}`),
+  SettingsGroup: ({ label, children }: { label?: string; children?: ReactNode }) =>
+    createElement("section", { "data-label": label }, children),
+  SettingsRow: ({
+    title,
+    onPress,
+    dimmed,
+  }: {
+    title: string;
+    onPress?: () => void;
+    dimmed?: boolean;
+  }) => createElement("span", { onClick: onPress, "data-dimmed": dimmed || undefined }, title),
 }));
 
 let root: Root;
 let container: HTMLDivElement;
-const rows = () => [...container.querySelectorAll("span")].map((node) => node.textContent);
+/** Each rule as "group: title", in the order shown. */
+const rows = () =>
+  [...container.querySelectorAll("span")].map(
+    (node) => `${node.closest("section")?.getAttribute("data-label")}: ${node.textContent}`,
+  );
 const menu = (title: string) => container.querySelector(`[aria-label="${title}"]`)!;
 const menuButton = (title: string, action: string) =>
   [...menu(title).querySelectorAll("button")].find((node) => node.textContent === action);
@@ -150,15 +171,21 @@ const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
 
 async function render() {
   await act(async () => root.render(createElement(Approvals)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   state.spaceId = undefined;
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
   state.headerItems = [];
-  state.prompt.mockReset();
+  state.search = null;
+  state.router.push.mockReset();
+  state.router.back.mockReset();
+  state.router.replace.mockReset();
+  state.router.canGoBack.mockReset().mockReturnValue(true);
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
@@ -183,16 +210,19 @@ beforeEach(() => {
   root = createRoot(container);
 });
 
-it("lists only the rules; the mode is a row in settings", async () => {
+it("lists only the rules, grouped by what they do; the mode is a row in settings", async () => {
   state.rules = [rule({ id: "tool", matchValue: "send_email" })];
   await render();
-  expect(rows()).toEqual(["Send email: Allow"]);
+  expect(rows()).toEqual(["Always allow: Send email"]);
   expect(container.querySelector('[role="radiogroup"]')).toBeNull();
   expect(container.querySelector("small")).toBeNull();
-  expect(state.rpc.mock.calls.map(([proc]) => proc)).toEqual(["approvalRules/list"]);
+  expect(state.rpc.mock.calls.map(([proc]) => proc)).toEqual([
+    "approvalRules/list",
+    "autoReview/get",
+  ]);
 });
 
-it("switches and removes rules, keeping legacy category rules removable only", async () => {
+it("moves and removes rules, keeping legacy category rules removable only", async () => {
   state.rules = [
     rule({ id: "tool", matchValue: "send_email" }),
     rule({ id: "site", effect: "require_approval", matchKind: "site", matchValue: "example.com" }),
@@ -204,29 +234,65 @@ it("switches and removes rules, keeping legacy category rules removable only", a
     }),
   ];
   await render();
-  expect(rows()).toEqual(["Send email: Allow", "example.com: Ask", "email: Ask"]);
-  expect(menuButton("Send email", "Allow")?.getAttribute("aria-pressed")).toBe("true");
-  expect(menuButton("email", "Allow")).toBeUndefined();
+  expect(rows()).toEqual([
+    "Always allow: Send email",
+    "Always ask: example.com",
+    "Always ask: Email",
+  ]);
+  expect(menuButton("Send email", "Always allow")?.getAttribute("aria-pressed")).toBe("true");
+  expect(menuButton("Email", "Always allow")).toBeUndefined();
+  expect(menuButton("Email", "Remove")).toBeDefined();
 
-  await act(async () => menuButton("example.com", "Block")!.click());
+  await act(async () => menuButton("example.com", "Blocked")!.click());
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
     scope: "account",
     effect: "deny",
     matchKind: "site",
     matchValue: "example.com",
   });
-  expect(rows()).toEqual(["Send email: Allow", "example.com: Block", "email: Ask"]);
+  expect(rows()).toEqual(["Always allow: Send email", "Always ask: Email", "Blocked: example.com"]);
 
   await act(async () => menuButton("Send email", "Remove")!.click());
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/remove", { scope: "account", id: "tool" });
-  expect(rows()).toEqual(["example.com: Block", "email: Ask"]);
+  expect(rows()).toEqual(["Always ask: Email", "Blocked: example.com"]);
+});
+
+it("offers Ask and Block, not Allow, for a tool a person approves every time", async () => {
+  state.rules = [rule({ id: "space", effect: "require_approval", matchValue: "create_space" })];
+  await render();
+  expect(menuButton("Create space", "Always ask")).toBeDefined();
+  expect(menuButton("Create space", "Blocked")).toBeDefined();
+  expect(menuButton("Create space", "Always allow")).toBeUndefined();
+});
+
+it("dims every rule but blocks in Never ask, where only blocks apply", async () => {
+  state.settings = { ...state.settings, mode: "never" };
+  state.rules = [
+    rule({ id: "allow", matchValue: "send_email" }),
+    rule({ id: "ask", effect: "require_approval", matchValue: "write_file" }),
+    rule({ id: "block", effect: "deny", matchValue: "shell" }),
+  ];
+  await render();
+  const dimmed = [...container.querySelectorAll("span[data-dimmed]")].map((n) => n.textContent);
+  expect(dimmed).toEqual(["Send email", "Write file"]);
 });
 
 it("edits a Space's own copy when opened with one", async () => {
   state.spaceId = "space-1";
   await render();
-  const spaceContext = { requestContext: { headers: { space: "space-1" } } };
-  expect(state.rpc.mock.calls).toEqual([["approvalRules/list", { scope: "space" }, spaceContext]]);
+  const spaceContext = {
+    signal: expect.any(AbortSignal),
+    requestContext: { headers: { space: "space-1" } },
+  };
+  expect(state.rpc.mock.calls).toEqual([
+    ["approvalRules/list", { scope: "space" }, spaceContext],
+    ["autoReview/get", { scope: "space" }, spaceContext],
+  ]);
+  await act(async () => state.headerItems.find((item) => item.label === "Add rule")!.onPress());
+  expect(state.router.push).toHaveBeenCalledWith({
+    pathname: "/approval-rule-add",
+    params: { spaceId: "space-1" },
+  });
 });
 
 function retry() {
@@ -243,46 +309,99 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(rows()).toEqual([]);
 
   await act(async () => retry()!.click());
-  expect(rows()).toEqual(["Send email: Allow"]);
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(rows()).toEqual(["Always allow: Send email"]);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });
 
-it("switches a tool rule back to Ask", async () => {
-  state.rules = [
-    {
-      id: "tool",
-      effect: "always_allow",
-      matchKind: "tool",
-      matchValue: "write_file",
-      createdAt: "2026-10-25T00:00:00.000Z",
-    },
-  ];
-  await render();
-  await act(async () => menuButton("Write file", "Ask")!.click());
+it("adds a tool from the picker, which searches and leaves out tools that have a rule", async () => {
+  state.rules = [rule({ id: "blocked", effect: "deny", matchValue: "write_file" })];
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  const picker = () => [...container.querySelectorAll("span")].map((node) => node.textContent);
+  expect(picker()).toContain("Shell");
+  expect(picker()).not.toContain("Write file");
+
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
+  expect(picker()).toEqual(["Shell", "User computer shell"]);
+
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "zzz" } }));
+  expect(picker()).toEqual([]);
+  expect(container.textContent).toContain("No matches");
+
+  await act(async () => state.search!.onChangeText({ nativeEvent: { text: "shel" } }));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
+  );
+  await act(async () => shell!.click());
   expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
     scope: "account",
     effect: "require_approval",
     matchKind: "tool",
-    matchValue: "write_file",
+    matchValue: "shell",
   });
-  expect(menuButton("Write file", "Ask")!.getAttribute("aria-pressed")).toBe("true");
+  expect(state.router.back).toHaveBeenCalled();
 });
 
-it("adds a tool rule from the header prompt", async () => {
-  await render();
-  await act(async () => state.headerItems.find((item) => item.label === "Add rule")!.onPress());
-  const [, , buttons] = state.prompt.mock.calls[0] as [
-    string,
-    undefined,
-    { text: string; onPress?: (value?: string) => void }[],
-  ];
-  await act(async () => buttons.find((button) => button.text === "Save")!.onPress!(" write_file "));
-  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
-    scope: "account",
-    effect: "require_approval",
-    matchKind: "tool",
-    matchValue: "write_file",
+it("saves once and goes back once when a tool is tapped twice", async () => {
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
+  );
+  await act(async () => {
+    shell!.click();
+    shell!.click();
   });
-  expect(rows()).toEqual(["Write file: Ask"]);
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "approvalRules/set")).toHaveLength(1);
+  expect(state.router.back).toHaveBeenCalledTimes(1);
+});
+
+it("opens the rules after saving when the picker was the first screen", async () => {
+  state.spaceId = "space-1";
+  state.router.canGoBack.mockReturnValue(false);
+  await act(async () => root.render(createElement(AddApprovalRule)));
+  const shell = [...container.querySelectorAll("span")].find(
+    (node) => node.textContent === "Shell",
+  );
+  await act(async () => shell!.click());
+  expect(state.router.back).not.toHaveBeenCalled();
+  expect(state.router.replace).toHaveBeenCalledWith({
+    pathname: "/approvals",
+    params: { spaceId: "space-1" },
+  });
+});
+
+it("drops Never ask dimming when a later mode read fails", async () => {
+  state.settings = { ...state.settings, mode: "never" };
+  state.rules = [rule({ id: "allow", matchValue: "send_email" })];
+  await render();
+  expect(container.querySelector("span[data-dimmed]")).not.toBeNull();
+  const fallback = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, ...rest: unknown[]) => {
+    if (proc === "autoReview/get") throw new Error("offline");
+    return fallback(proc, ...(rest as [Record<string, unknown>]));
+  });
+  await act(async () => root.render(createElement("div")));
+  await render();
+  expect(container.querySelector("span[data-dimmed]")).toBeNull();
+});
+
+it("keeps a saved move when a read that started before it lands later", async () => {
+  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
+  await render();
+  let finishRead!: (rules: Rule[]) => void;
+  const fallback = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, ...rest: unknown[]) =>
+    proc === "approvalRules/list"
+      ? new Promise((resolve) => (finishRead = resolve))
+      : fallback(proc, ...(rest as [Record<string, unknown>])),
+  );
+  await act(async () => root.render(createElement("div")));
+  await render();
+  await act(async () => menuButton("example.com", "Blocked")!.click());
+  expect(rows()).toEqual(["Blocked: example.com"]);
+  await act(async () =>
+    finishRead([rule({ id: "site", matchKind: "site", matchValue: "example.com" })]),
+  );
+  expect(rows()).toEqual(["Blocked: example.com"]);
 });

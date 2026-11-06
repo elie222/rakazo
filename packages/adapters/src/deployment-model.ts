@@ -3,7 +3,7 @@ import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
 
-export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-6-luna";
+export const DEFAULT_OPENROUTER_MODEL_ID = "anthropic/claude-haiku-5.5";
 
 /**
  * What Pi reports for a provider that authenticates from the host instead of a key: an AWS
@@ -39,10 +39,12 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   const keys: Record<string, string | undefined> = {
     openrouter: env.OPENROUTER_API_KEY,
     anthropic: env.ANTHROPIC_API_KEY,
+    deepseek: env.DEEPSEEK_API_KEY,
   };
   const models: Record<string, string> = {
     openrouter: DEFAULT_OPENROUTER_MODEL_ID,
     anthropic: "claude-sonnet-5",
+    deepseek: "deepseek-flash",
   };
   const explicitModel = env.PI_DEFAULT_MODEL?.trim();
   const key = keys[provider];

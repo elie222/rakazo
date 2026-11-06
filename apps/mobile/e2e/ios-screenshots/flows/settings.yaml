@@ -98,6 +98,13 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 11-routine
+- openLink: "rakazo:///routine-runs?routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}&botName=Researcher"
+- extendedWaitUntil:
+    visible: ".*Run history.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 11b-routine-runs
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - scrollUntilVisible:
     element: "Advanced"
@@ -188,3 +195,22 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 20-artifacts
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Haptics"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 21-haptics
+- tapOn:
+    text: "Haptics"
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 22-haptics-toggled
+- tapOn:
+    text: "Haptics"
+    index: 1

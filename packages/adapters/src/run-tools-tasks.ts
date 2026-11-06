@@ -3,6 +3,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
+import type { RunContext } from "./run-context.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 import {
   cancelScheduleFromTool,
@@ -11,6 +12,8 @@ import {
   createScheduleFromTool,
   isScheduleValueProvided,
   listSchedulesFromTool,
+  scheduleCreateError,
+  scheduleCreateFields,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 import {
@@ -35,6 +38,36 @@ import {
   updateTicket,
 } from "./ticket-tools.js";
 
+/** A command watch may not run what the desktop guard keeps the bot from running itself. */
+function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
+  const command = commandWatchFromTool(watch);
+  const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
+  return desktopGuardApplies(ctx.computer) && refusal
+    ? desktopProtectionGuardMessage(refusal)
+    : undefined;
+}
+
+/**
+ * What `schedule_create` refuses before saving anything. Checked before the approval gate,
+ * so a routine that cannot be saved returns its error and shows no card; the handler checks again.
+ */
+export async function scheduleCreateRefusal(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+): Promise<{ error: string } | undefined> {
+  const { deps, run, bot, thread } = ctx;
+  const error =
+    commandWatchGuardError(ctx, args.watch) ??
+    (await scheduleCreateError(deps.prisma, {
+      spaceId: run.spaceId,
+      botId: bot.id,
+      userId: run.userId,
+      threadId: thread.id,
+      ...scheduleCreateFields(args),
+    }));
+  return error ? { error } : undefined;
+}
+
 /** The task catalog, scratchpad, ticket board, schedules and skills. */
 export const taskTools: ToolHandlers = {
   async task_catalog(ctx) {
@@ -43,7 +76,7 @@ export const taskTools: ToolHandlers = {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
   },
@@ -175,28 +208,14 @@ export const taskTools: ToolHandlers = {
   async schedule_create(ctx, call) {
     const { deps, run, bot, thread } = ctx;
     const { args } = call;
-    const command = commandWatchFromTool(args.watch);
-    const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
-    if (desktopGuardApplies(ctx.computer) && refusal)
-      return call.finish({ error: desktopProtectionGuardMessage(refusal) });
+    const refusal = commandWatchGuardError(ctx, args.watch);
+    if (refusal) return call.finish({ error: refusal });
     const created = await createScheduleFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
       threadId: thread.id,
-      name: String(args.name ?? ""),
-      prompt: String(args.prompt ?? ""),
-      timezone: args.timezone ? String(args.timezone) : undefined,
-      schedule: compactScheduleInput({
-        cron: args.cron,
-        every: args.every,
-        unit: args.unit,
-        runAt: args.runAt,
-        delayMinutes: args.delayMinutes,
-        delaySeconds: args.delaySeconds,
-        startAt: args.startAt,
-        watch: args.watch,
-      }),
+      ...scheduleCreateFields(args),
     });
     return call.finish(created);
   },
@@ -232,8 +251,7 @@ export const taskTools: ToolHandlers = {
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
     });
   },
   async schedule_cancel(ctx, call) {
@@ -242,7 +260,6 @@ export const taskTools: ToolHandlers = {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
       ...(thread.groupId ? { threadId: thread.id } : {}),
       routineId: args.routineId ? String(args.routineId) : undefined,
       name: args.name ? String(args.name) : undefined,

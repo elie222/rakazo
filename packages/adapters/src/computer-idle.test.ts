@@ -367,6 +367,7 @@ describe("sandbox idle", () => {
         runningSince: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -666,6 +667,33 @@ describe("sandbox idle", () => {
       }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("stops a computer whose files are too large to save when its provider keeps its disk", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({
+      exportError: new WorkspaceTooLargeError("bytes"),
+      persistentHome: true,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      undefined,
+    );
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.computer.homeRevision).toBe("rev-before");
+    expect(harness.prisma.message.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ clientNonce: expect.stringMatching(/^computer-unsaved:/) }),
+      }),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "computer.checkpoint_skipped", reason: "too_large" }),
+    );
   });
 
   it("checks again later without an error when another save moved the home first", async () => {
@@ -1943,6 +1971,7 @@ function idleHarness(
     backgroundWorkProbeFailed?: boolean;
     codingAgent?: string;
     exportError?: Error;
+    persistentHome?: boolean;
     probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
     runningSince?: Date | null;
@@ -1969,6 +1998,7 @@ function idleHarness(
     userId: "user",
     controlHolder: "none",
     controlLeaseId: null,
+    controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
     executionRunId: null as string | null,
@@ -2043,6 +2073,7 @@ function idleHarness(
     },
   };
   const sandbox = {
+    describe: () => ({ capabilities: { persistentHome: options.persistentHome ?? false } }),
     billsWhileRunning:
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* (_computer: unknown, request: { argv: string[] }) {

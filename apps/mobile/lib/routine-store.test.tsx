@@ -4,8 +4,9 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
-import { useBotRoutines } from "./routine-store";
+import { saveBotRoutine, useBotRoutines } from "./routine-store";
 
 vi.mock("./api", () => ({
   rpc: vi.fn(),
@@ -60,4 +61,11 @@ it("hides a delay seen before a failed read until a read answers again", async (
   expect(container.textContent).toBe("on time");
   await update(() => queryClient.setQueryData(key, [routine as Routine], { updatedAt: now + 3 }));
   expect(container.textContent).toBe("delayed");
+});
+
+it("keeps a routine deleted while its update was saving out of the list", async () => {
+  vi.mocked(rpc).mockResolvedValueOnce(routine as Routine);
+  await update(() => queryClient.setQueryData(key, []));
+  await saveBotRoutine("bot-1", { update: { routineId: "routine-1", name: "Renamed" } });
+  expect(queryClient.getQueryData(key)).toEqual([]);
 });

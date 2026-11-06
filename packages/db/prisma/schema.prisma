@@ -40,10 +40,23 @@ model User {
   /// emails then follow the language of the browser that asked for them.
   locale                      String?
   marketingEmailOptOutAt      DateTime?
-  /// When an organization this person owns first subscribed or was given free own-key days.
+  /// When an organization this person owns first subscribed; uses up every trial kind.
   billingTrialUsedAt          DateTime?
+  /// When an organization this person owns was given free own-key days; uses up only that
+  /// trial, and survives the organization the days belonged to.
+  byokTrialUsedAt             DateTime?
+  /// The organization whose open checkout session holds this owner's one own-key trial,
+  /// and until when that hold lasts. Null once the session is paid, expired, or cancelled.
+  byokTrialCheckoutOrganizationId String?
+  byokTrialCheckoutExpiresAt      DateTime?
+  /// Set while the account may not sign in or run work; its content stays. Cleared to reactivate.
+  deactivatedAt               DateTime?
   sessions                    Session[]
   accounts                    Account[]
+  scimSubject                 ScimSubject?
+  scimUsers                   ScimUser[]
+  scimIdentityTombstones      ScimIdentityTombstone[]
+  scimProjectionGrants        ScimProjectionGrant[]
   passkeys                    Passkey[]
   members                     Member[]
   accessGrants                AccessGrant[]
@@ -51,6 +64,8 @@ model User {
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
   paymentWallet               PaymentWallet?
+  spendingLimit               SpendingLimit?
+  payments                    Payment[]
   secrets                     Secret[]
   mcpServers                  McpServer[]
   botSections                 BotSection[]
@@ -62,6 +77,7 @@ model User {
   approvalRules               UserActionApprovalRule[]
   autoReviewPreference        UserActionAutoReviewPreference?
   createdSpaces               Space[]                      @relation("SpaceCreator")
+  spaceInvites                SpaceInvite[]                @relation("SpaceInviteCreator")
   botSecrets BotSecret[]
   vaultCredentials VaultCredential[]
   agentSecrets               AgentSecret[]
@@ -234,6 +250,150 @@ model Passkey {
   @@unique([credentialID])
   @@index([userId])
   @@map("passkey")
+}
+
+// Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin. Field names and
+// types must match the plugin's schema; the plugin reads and writes these tables directly.
+
+model ScimConnectionBinding {
+  id                              String    @id
+  connectionId                    String
+  connectionKey                   String    @unique
+  provisioningDomainId            String
+  createdAt                       DateTime
+  decommissionedAt                DateTime?
+  decommissionStatus              String    @default("active")
+  decommissionCursorUserId        String?
+  decommissionReconciledUserCount Int       @default(0)
+  decommissionBatchCount          Int       @default(0)
+  decommissionRevision            Int       @default(0)
+  decommissionCompletedAt         DateTime?
+  decommissionLeaseId             String?
+  decommissionLeaseExpiresAt      DateTime?
+
+  @@index([connectionId])
+  @@map("scim_connection_bindings")
+}
+
+model ScimIdentityTombstone {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  externalId           String
+  externalIdKey        String   @unique
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile              String
+  deletedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scim_identity_tombstones")
+}
+
+model ScimSubject {
+  id              String   @id
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileSourceId String?
+  revision        Int
+  createdAt       DateTime
+  updatedAt       DateTime
+
+  @@index([profileSourceId])
+  @@map("scim_subjects")
+}
+
+model ScimUser {
+  id                   String                @id
+  connectionId         String
+  provisioningDomainId String
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionUserKey    String                @unique
+  userName             String
+  userNameKey          String                @unique
+  primaryEmail         String
+  workEmailValueIndex  String
+  emailValueIndex      String
+  displayName          String
+  formattedName        String
+  givenName            String?
+  familyName           String?
+  serializedEmails     String
+  serializedAttributes String?
+  externalId           String?
+  externalIdKey        String?               @unique
+  active               Boolean
+  orderKey             String                @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  projectionGrants     ScimProjectionGrant[]
+  groupMemberships     ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scim_users")
+}
+
+model ScimProjectionGrant {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  scimUserId           String
+  scimUser             ScimUser @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKind           String
+  sourceId             String
+  sourceValue          String?
+  role                 String
+  grantKey             String   @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([scimUserId])
+  @@index([userId])
+  @@map("scim_projection_grants")
+}
+
+model ScimGroup {
+  id                   String            @id
+  connectionId         String
+  provisioningDomainId String
+  revision             Int               @default(0)
+  displayName          String
+  displayNameKey       String            @unique
+  externalId           String?
+  externalIdKey        String?           @unique
+  orderKey             String            @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  members              ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@map("scim_groups")
+}
+
+model ScimGroupMember {
+  id            String    @id
+  connectionId  String
+  groupId       String
+  group         ScimGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  scimUserId    String
+  scimUser      ScimUser  @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  membershipKey String    @unique
+  createdAt     DateTime
+
+  @@index([connectionId])
+  @@index([groupId])
+  @@index([scimUserId])
+  @@map("scim_group_members")
 }
 
 /// Better Auth credential rate limits. `lastRequest` is epoch milliseconds.
@@ -427,7 +587,11 @@ model Space {
   createdAt                   DateTime                     @default(now())
   deletingAt                  DateTime?
   deletionClaimId             String?
+  /// The attempt holding the claim: every account deletion attempt shares one `deletionClaimId`,
+  /// so its rollback and handover touch only rows still carrying its own attempt id.
+  deletionAttemptId           String?
   memberships                 SpaceMember[]
+  invites                     SpaceInvite[]
   bots                        Bot[]
   botSections                 BotSection[]
   botDeletions                BotDeletion[]
@@ -437,6 +601,7 @@ model Space {
   runs                        Run[]
   routines                    Routine[]
   scratchpadItems             ScratchpadItem[]
+  botEmailMessages            BotEmailMessage[]
   taughtSkills                TaughtSkill[]
   agentSkills                 AgentSkill[]
   agentImports                AgentImport[]
@@ -534,6 +699,24 @@ model Invitation {
   @@index([organizationId])
   @@index([email])
   @@map("invitation")
+}
+
+/// A single-use link that adds whoever opens it to a space. Only the token's
+/// SHA-256 is stored, so a database copy cannot be used to join.
+model SpaceInvite {
+  id              String    @id @default(cuid())
+  spaceId         String
+  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  tokenHash       String    @unique
+  createdByUserId String
+  createdBy       User      @relation("SpaceInviteCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedByUserId String?
+  createdAt       DateTime  @default(now())
+
+  @@index([spaceId, createdAt])
+  @@map("space_invites")
 }
 
 model DeploymentSettings {
@@ -769,6 +952,7 @@ model Bot {
   crossSpaceCommunication Boolean @default(true)
   dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
+  replyMode              String  @default("chat")
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
@@ -789,6 +973,8 @@ model Bot {
   ticketComments    TicketComment[]   @relation("TicketCommentAuthorBot")
 
   externalConversations ExternalConversation[]
+  emailAddress      BotEmailAddress?
+  emailMessages     BotEmailMessage[]
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -907,6 +1093,9 @@ model Message {
   role             String
   blocks           Json
   botId            String?
+  /// The person who wrote a user message. No foreign key, so the history keeps
+  /// its shape after that person leaves the space or deletes their account.
+  authorUserId     String?
   replyToMessageId String?
   replyQuote       String?
   replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
@@ -1110,6 +1299,45 @@ model CloudAgent {
   @@map("cloud_agents")
 }
 
+/// The most a user's bots may spend in a period, across every bot and Space. Minor units.
+model SpendingLimit {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  /// Lowercase ISO 4217 code.
+  currency  String
+  /// day | week | month | none
+  period    String
+  /// When a limit that never resets started counting.
+  startsAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("spending_limits")
+}
+
+/// A payment the user approved, from a checkout click or their wallet, counted against the
+/// spending limit until it is released (it never went through). No card details.
+model Payment {
+  id           String    @id @default(uuid())
+  /// The approved effect or wallet operation; one payment each.
+  operationKey String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId      String
+  botId        String
+  threadId     String
+  /// The checkout's host.
+  site         String
+  amount       Int
+  /// Lowercase ISO 4217 code.
+  currency     String
+  releasedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("payments")
+}
+
 model PaymentWallet {
   id         String    @id @default(cuid())
   userId     String    @unique
@@ -1186,6 +1414,7 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@index([spaceId, kind, status])
+  @@index([kind, status, updatedAt])
   @@map("external_effects")
 }
 
@@ -1207,6 +1436,8 @@ model Routine {
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
+  /// Email trigger: whose authenticated mail starts it ("owner" or "domain"); null without one.
+  emailSenders   String?
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
@@ -1225,6 +1456,49 @@ model Routine {
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
   @@map("routines")
+}
+
+/// A bot's inbound email name. The row outlives its bot, so a name is never handed out twice.
+model BotEmailAddress {
+  name      String   @id
+  botId     String?  @unique
+  bot       Bot?     @relation(fields: [botId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  /// Last time the owner was told their own mail could not be verified; spaces those notes out.
+  unverifiedNoticeAt DateTime?
+
+  @@map("bot_email_addresses")
+}
+
+/// Mail delivered to a bot's address, whoever sent it, and mail the bot sent. Kept until it is deleted.
+model BotEmailMessage {
+  id          String    @id @default(cuid())
+  spaceId     String
+  space       Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  /// The same message, however often it is delivered, is saved once per bot.
+  key         String
+  /// The sender's Message-ID and the thread it answers, for replies.
+  messageId   String?
+  references  String[]
+  fromAddress String
+  fromName    String
+  /// Signed by the From address's own domain (DKIM), so the sender is not forged.
+  verified    Boolean
+  /// The bot sent this one; its other messages are mail it received.
+  sent        Boolean   @default(false)
+  to          String[]
+  cc          String[]
+  subject     String
+  text        String
+  /// Kept files ({ artifactId, name, mimeType, size }) and names of refused ones ({ name }).
+  attachments Json      @default("[]")
+  receivedAt  DateTime  @default(now())
+
+  @@unique([botId, key])
+  @@index([botId, receivedAt])
+  @@map("bot_email_messages")
 }
 
 model ScratchpadItem {
@@ -1471,6 +1745,8 @@ model Computer {
   controlLeaseExpiresAt   DateTime?
   controlBotId            String?
   controlRunId            String?
+  /// The person holding user control. A Space's members share its computers, never a lease.
+  controlUserId           String?
   controlFence            Int                      @default(0)
   executionRunId          String?
   executionBotId          String?
@@ -1858,6 +2134,9 @@ model MessagingChannel {
   threadId      String              @unique
   name          String?
   introPostedAt DateTime?
+  /// The platform time of the newest roster this channel has processed, so a
+  /// delayed older roster changes no membership.
+  rosterSeenAt  DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   members       MessagingChannelMember[]

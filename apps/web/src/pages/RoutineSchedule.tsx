@@ -123,12 +123,12 @@ export function RoutineSchedule({
     <div className="mt-2 rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
         <Clock size={17} strokeWidth={1.6} className="shrink-0 text-muted-foreground" aria-hidden />
-        <span className="text-[14.5px] text-foreground">{lead}</span>
+        <span className="text-body-lg text-foreground">{lead}</span>
         {detail ? (
-          <span className="flex-1 text-[14.5px] text-muted-foreground">{detail}</span>
+          <span className="flex-1 text-body-lg text-muted-foreground">{detail}</span>
         ) : null}
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-body text-muted-foreground">
         <NativeSelect
           size="sm"
           value={value.freq}
@@ -166,7 +166,7 @@ export function RoutineSchedule({
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="h-7 min-w-[120px] flex-1 font-mono text-[13px] md:text-[13px]"
+            className="h-7 min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
           />
         ) : null}
       </div>

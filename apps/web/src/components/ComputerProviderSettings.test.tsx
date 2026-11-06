@@ -143,3 +143,24 @@ it("hides the account form when no provider supports accounts", async () => {
   await act(async () => root.render(<ComputerProviderSettings scope="account" />));
   expect(host.querySelector("form")).toBeNull();
 });
+
+it("blocks the fields while a save is in flight", async () => {
+  account.get.mockResolvedValue(saved);
+  let finishSave!: () => void;
+  account.update.mockReturnValue(
+    new Promise((resolve) => {
+      finishSave = () => resolve(saved);
+    }),
+  );
+  await act(async () => root.render(<ComputerProviderSettings scope="account" />));
+
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  // The response replaces the draft, so an edit accepted meanwhile would be
+  // silently lost while the form still claims "Saved".
+  expect(host.querySelector("fieldset")?.disabled).toBe(true);
+  expect(host.querySelector<HTMLSelectElement>("select")?.matches(":disabled")).toBe(true);
+
+  finishSave();
+  await act(async () => {});
+  expect(host.querySelector("fieldset")?.disabled).toBe(false);
+});

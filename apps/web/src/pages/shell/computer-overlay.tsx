@@ -104,20 +104,28 @@ export function ComputerOverlay({
                 variant="overlay"
               />
             ) : (
-              <span className="truncate text-[15.5px] font-medium text-foreground" dir="auto">
+              <span className="truncate text-body-lg font-medium text-foreground" dir="auto">
                 {computerLabel(computer?.mode, bot.name)}
               </span>
             )}
             {!recordingSkill && hasControl ? (
               computer?.takeoverRequested ? (
-                <span className="rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning">
+                <span className="rounded-full bg-warning/15 px-[11px] py-1 text-body-sm text-warning">
                   <Trans>Needs you</Trans>
                 </span>
               ) : (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                <span className="rounded-full bg-success/15 px-[11px] py-1 text-body-sm text-success">
                   <Trans>You have control</Trans>
                 </span>
               )
+            ) : null}
+            {!recordingSkill && hasControl && computer?.shared ? (
+              <span
+                data-testid="computer-shared-browser"
+                className="min-w-0 truncate text-body-sm text-muted-foreground"
+              >
+                <Trans>Sites you sign in to stay signed in for everyone in this space</Trans>
+              </span>
             ) : null}
           </div>
           <div className="flex items-center gap-3">
@@ -184,14 +192,14 @@ export function ComputerOverlay({
         {sendError ? (
           <div
             role="alert"
-            className="border-b border-destructive/40 bg-destructive/10 px-[18px] py-2 text-[13px] text-destructive"
+            className="border-b border-destructive/40 bg-destructive/10 px-[18px] py-2 text-body-sm text-destructive"
           >
             {sendError}
           </div>
         ) : null}
         <div className="relative min-h-0 flex-1 bg-background">
           {computer?.kind === "desktop" ? (
-            <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
+            <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-body text-muted-foreground/80" />
           ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
             <>
               <iframe
@@ -217,7 +225,7 @@ export function ComputerOverlay({
               ) : null}
             </>
           ) : (
-            <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+            <div className="grid h-full place-items-center text-body text-muted-foreground/80">
               {computerScreenError ??
                 computerBooting ??
                 (computer?.state === "stopped" || computer?.state === "suspended" ? (

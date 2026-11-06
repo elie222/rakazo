@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 
 export interface SignupPolicyEnv {
   signupsEnabled: string | undefined;
@@ -14,10 +15,6 @@ type OrganizationClient = Pick<
 
 function newId(): string {
   return randomBytes(16).toString("hex");
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /**

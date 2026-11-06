@@ -455,3 +455,18 @@ describe("web origin", () => {
     expect(load).not.toThrow(value);
   });
 });
+
+describe("directory provisioning environment", () => {
+  it("stays off without a token and keeps a long one", () => {
+    expect(loadEnv(base).scimBearerToken).toBeUndefined();
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: " " }).scimBearerToken).toBeUndefined();
+    const token = "a".repeat(32);
+    expect(loadEnv({ ...base, SCIM_BEARER_TOKEN: ` ${token} ` }).scimBearerToken).toBe(token);
+  });
+  it.each(["a".repeat(31), `${"a".repeat(16)} ${"a".repeat(16)}`])(
+    "refuses a short or spaced token",
+    (token) => {
+      expect(() => loadEnv({ ...base, SCIM_BEARER_TOKEN: token })).toThrow("SCIM_BEARER_TOKEN");
+    },
+  );
+});

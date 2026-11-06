@@ -61,6 +61,20 @@ type DocumentContents = Pick<
   "executeJavaScript" | "isCrashed" | "isDestroyed"
 >;
 
+const TIMED_OUT = Symbol("timed-out");
+
+/** A hung renderer must not hold the wait past its deadline; a late answer is ignored. */
+function withRemainingDeadline<T>(
+  call: () => Promise<T>,
+  remainingMs: number,
+): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), remainingMs);
+  });
+  return Promise.race([call(), timeout]).finally(() => clearTimeout(timer));
+}
+
 export async function waitForMountedAppDocument(
   contents: DocumentContents,
   timeoutMs = 20_000,
@@ -81,7 +95,11 @@ export async function waitForMountedAppDocument(
     }
     let state: AppDocumentState;
     try {
-      state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as AppDocumentState;
+      const answer = await withRemainingDeadline(
+        () => contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT),
+        deadline - Date.now(),
+      );
+      state = answer === TIMED_OUT ? "pending" : (answer as AppDocumentState);
     } catch (error) {
       // A reload or redirect during startup disposes the frame being asked; ask the next document.
       if (contents.isDestroyed()) throw error;

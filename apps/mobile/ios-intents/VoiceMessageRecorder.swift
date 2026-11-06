@@ -24,7 +24,7 @@ struct RecordVoiceMessageIntent: AppIntent {
     if recorder.isRecording {
       await recorder.finish()
     } else {
-      try recorder.start()
+      try await recorder.start()
     }
     return .result()
   }
@@ -48,6 +48,7 @@ final class VoiceMessageRecorder {
   private var text = ""
   private var timer: Task<Void, Never>?
   private var started = Date()
+  private var starting = false
   private var sendMessage: ((String) async throws -> Void)?
   /// Messages still sending or showing their result; each keeps the microphone, and so the app, open.
   private var finishing = 0
@@ -63,7 +64,10 @@ final class VoiceMessageRecorder {
     await staleCleanup?.value
   }
 
-  func start() throws {
+  func start() async throws {
+    guard !starting, !isRecording else { return }
+    starting = true
+    defer { starting = false }
     // Permission prompts cannot show from the background; the app asks for both on its first call.
     guard AVAudioApplication.shared.recordPermission == .granted,
       SFSpeechRecognizer.authorizationStatus() == .authorized
@@ -76,7 +80,7 @@ final class VoiceMessageRecorder {
       throw VoiceMessageError.liveActivitiesOff
     }
     // Read while unlocked: the recording can end after the iPhone locks again.
-    let sendMessage = try lastBotSender()
+    let sendMessage = try await lastBotSender()
     let activity: Activity<VoiceMessageAttributes>
     do {
       activity = try Activity.request(

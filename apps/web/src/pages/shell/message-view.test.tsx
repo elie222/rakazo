@@ -13,7 +13,7 @@ const skills = vi.hoisted(() => ({
   save: vi.fn(async () => ({})),
   testRun: vi.fn(async () => ({ runId: "run" })),
 }));
-vi.mock("../../lib/rpc", () => ({ rpc: { skills } }));
+vi.mock("../../lib/rpc", () => ({ rpc: { skills, artifacts: { get: vi.fn() } } }));
 
 vi.mock("@lingui/core/macro", () => ({
   plural: (count: number, forms: { one: string; other: string }) =>
@@ -88,6 +88,7 @@ function renderView(
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -221,6 +222,7 @@ it("keeps an edit made after a save when the saved status arrives late", async (
         onAddRoutine={vi.fn()}
         voiceReady={false}
         speaking={false}
+        callHoldsSpeaker={false}
         onSpeak={vi.fn()}
         onOpenComputer={vi.fn()}
         showToolActivity={false}
@@ -260,6 +262,54 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   expect(button().textContent).toBe("Saved");
 });
 
+const ana = { id: "user-a", name: "Ana" };
+const authored: ThreadMessage = {
+  id: "message",
+  threadId: "thread",
+  seq: 1,
+  role: "user",
+  author: ana,
+  blocks: [{ kind: "text", text: "Book the table" }],
+  createdAt: new Date().toISOString(),
+};
+
+function renderAuthored(message: ThreadMessage, meId = "user-b") {
+  renderView(message.role, message.blocks, { message, meId });
+  const bubble = container.querySelector<HTMLElement>('[data-testid="message-user-bubble"]');
+  if (!bubble?.parentElement) throw new Error("user bubble missing");
+  return { bubble, row: bubble.parentElement };
+}
+
+it("names someone else's message and keeps it on the people side", () => {
+  const { bubble, row } = renderAuthored(authored);
+
+  expect(container.textContent).toBe("AnaBook the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-muted");
+  expect(bubble.className).not.toContain("bg-chat-user");
+});
+
+it("keeps my own message unnamed on the right", () => {
+  const { bubble, row } = renderAuthored(authored, ana.id);
+
+  expect(container.textContent).toBe("Book the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-chat-user");
+});
+
+it("names the person a reply quotes instead of saying You", () => {
+  renderAuthored({
+    ...authored,
+    author: undefined,
+    replyToMessageId: "parent",
+    replyPreview: { role: "user", author: ana, text: "Find us a restaurant" },
+  });
+
+  expect(container.querySelector('[data-testid="reply-parent-preview"]')?.textContent).toContain(
+    "Ana: Find us a restaurant",
+  );
+});
+
 it("speaks the message it renders", () => {
   const onSpeak = vi.fn();
   renderView("bot", [{ kind: "text", text: "Hello" }], { onSpeak, voiceReady: true });
@@ -269,6 +319,29 @@ it("speaks the message it renders", () => {
   act(() => button?.click());
   expect(onSpeak).toHaveBeenCalledTimes(1);
   expect(onSpeak.mock.calls[0]?.[0]).toMatchObject({ id: "message" });
+});
+
+it("disables starting a read while a call holds the speaker, keeping stop available", () => {
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+  });
+  const startButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Speak this reply"]'),
+  ];
+  expect(startButtons().length).toBeGreaterThan(0);
+  for (const button of startButtons()) expect(button.disabled).toBe(true);
+
+  renderView("bot", [{ kind: "text", text: "Hello" }], {
+    voiceReady: true,
+    callHoldsSpeaker: true,
+    speaking: true,
+  });
+  const stopButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop speaking"]'),
+  ];
+  expect(stopButtons().length).toBeGreaterThan(0);
+  for (const button of stopButtons()) expect(button.disabled).toBe(false);
 });
 
 it("opens one counted peer line without an inline reply toggle", () => {

@@ -12,6 +12,7 @@ export function measureWorkflowSteps(
   runSteps: ReadonlyMap<string, number>,
   pricing?: EvalPricing,
   minimumCacheTokens?: number,
+  pricedModel?: { provider: string; modelId: string },
 ) {
   const unique = [...new Map(calls.map((call) => [call.id, call])).values()];
   const steps = new Map<number, LedgerCall[]>(
@@ -30,7 +31,8 @@ export function measureWorkflowSteps(
     if (step === undefined) unattributed.push(call);
     else steps.get(step)!.push(call);
   }
-  const measure = (bucket: LedgerCall[]) => measureCalls(bucket, pricing, minimumCacheTokens);
+  const measure = (bucket: LedgerCall[]) =>
+    measureCalls(bucket, pricing, minimumCacheTokens, pricedModel);
   const foreground = [...steps].map(([step, bucket]) => ({ step, ...measure(bucket) }));
   const background = { compaction: measure(compaction), unattributed: measure(unattributed) };
   const workflow = measure(unique);

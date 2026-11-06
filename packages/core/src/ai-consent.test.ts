@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AiConsentBlocked,
   aiConsentTarget,
+  aiConsentTargets,
   aiDataUsesForProcedure,
   ensureAiDataConsent,
 } from "./ai-consent.js";
@@ -102,6 +103,7 @@ describe("foreground AI consent", () => {
     expect(prompt).not.toHaveBeenCalled();
     expect(aiDataUsesForProcedure("threads/get")).toEqual([]);
     expect(aiDataUsesForProcedure("threads/send")).toEqual(["model", "memory"]);
+    expect(aiDataUsesForProcedure("threads/sendWithRoutines")).toEqual(["model", "memory"]);
     expect(aiDataUsesForProcedure("voice/prepare")).toEqual(["voice"]);
     expect(
       aiDataUsesForProcedure("routines/update", { routineId: "routine", active: false }),
@@ -116,6 +118,11 @@ describe("foreground AI consent", () => {
       settingsScope: "account",
     });
     expect(aiConsentTarget({ botId: "bot", scope: "elsewhere" })).toEqual({ botId: "bot" });
+    expect(aiConsentTargets({ groupId: "group", routineIds: ["routine-1", "routine-2"] })).toEqual([
+      { groupId: "group" },
+      { routineId: "routine-1" },
+      { routineId: "routine-2" },
+    ]);
   });
   it("coalesces concurrent prompts and grants for one account-space recipient", async () => {
     let decide!: (allowed: boolean) => void;

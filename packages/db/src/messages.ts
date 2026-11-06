@@ -1,6 +1,6 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
-import { withTransactionRetry } from "./transaction-retry.js";
+import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 /**
  * Group turns use channel inputs and their own outputs, never private thread history.
@@ -38,6 +38,7 @@ export function loadRunHistoryMessages(
       botId: true,
       runId: true,
       blocks: true,
+      authorUserId: true,
       createdAt: true,
       replyToMessageId: true,
       replyQuote: true,
@@ -62,6 +63,8 @@ export interface CreateThreadMessageInput {
   role: "user" | "bot" | "system";
   blocks: MessageBlock[];
   botId?: string;
+  /** The signed-in person who wrote a user message; null when the sender is not a known user. */
+  authorUserId?: string;
   replyToMessageId?: string;
   replyQuote?: string;
   runId?: string;
@@ -75,8 +78,9 @@ export interface CreateThreadMessageInput {
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
   return withTransactionRetry(() =>
-    prisma.$transaction((tx: Prisma.TransactionClient) =>
-      createThreadMessageInTransaction(tx, input),
+    prisma.$transaction(
+      (tx: Prisma.TransactionClient) => createThreadMessageInTransaction(tx, input),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     ),
   );
 }
@@ -104,12 +108,34 @@ export async function createThreadMessageInTransaction(
       role: input.role,
       blocks: input.blocks as Prisma.InputJsonValue,
       botId: input.botId,
+      authorUserId: input.authorUserId,
       replyToMessageId: input.replyToMessageId,
       replyQuote: input.replyQuote,
       runId: input.runId,
       clientNonce: input.clientNonce,
     },
   });
+}
+
+/** One lookup for every author on a page. A deleted account has no author. */
+export async function loadMessageAuthors(
+  db: Pick<Prisma.TransactionClient, "user">,
+  userIds: Iterable<string | null | undefined>,
+): Promise<Map<string, MessageAuthor>> {
+  const ids = [...new Set(userIds)].filter((id): id is string => Boolean(id));
+  if (ids.length === 0) return new Map();
+  const users = await db.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  return new Map(users.map((user) => [user.id, user]));
+}
+
+export async function loadMessageAuthor(
+  db: Pick<Prisma.TransactionClient, "user">,
+  userId: string | null | undefined,
+): Promise<MessageAuthor | undefined> {
+  return userId ? (await loadMessageAuthors(db, [userId])).get(userId) : undefined;
 }
 
 export class RunHistoryWriteError extends Error {

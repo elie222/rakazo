@@ -49,7 +49,9 @@ tags:
 # The name field opens focused.
 - inputText: "Work"
 - takeScreenshot: "41-new-organization"
-- tapOn: "Create"
+# The keyboard covers the sheet's Create button, and the inbox's + behind the sheet is also
+# named "Create", so submit from the keyboard.
+- pressKey: Enter
 # The new organization's inbox asks for notifications again on Android.
 - tapOn:
     text: "Don’t allow"

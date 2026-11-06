@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import type { AccountExportSource, PrismaClient } from "@rakazo/db";
 import {
+  accountDeactivated,
   parseComputerMode,
   readAccountExport,
   runAsTenant,
@@ -214,7 +215,9 @@ export function mountAccountExportRoute(
 ): void {
   app.get("/api/account/export", async (c) => {
     const userId = await deps.auth.consumeAccountExportToken(c.req.query("token") ?? "");
-    if (!userId) return c.text("Export link expired", 410, { "cache-control": "no-store" });
+    // A link issued just before the account was deactivated no longer downloads it.
+    if (!userId || (await accountDeactivated(deps.prisma, userId)))
+      return c.text("Export link expired", 410, { "cache-control": "no-store" });
     const now = new Date();
     const source = await readAccountExport(deps.prisma, userId);
     const body = zipStream(accountArchiveFiles(source, deps, { signal: c.req.raw.signal, now }));

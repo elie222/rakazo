@@ -1,4 +1,5 @@
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
@@ -66,6 +67,7 @@ function createDeps(
     threadId: "sendblue:grp-1",
     name: "Family",
     introPostedAt: null,
+    rosterSeenAt: null as Date | null,
   };
   const outboundRows: Array<Record<string, unknown>> = [];
   const txMock = {
@@ -139,8 +141,13 @@ function createDeps(
     messagingChannel: {
       findMany: vi.fn(async () => [{ id: channel.id }]),
       findUnique: vi.fn(async () => channel),
+      // The transaction's roster read and write share the channel object's state.
+      findUniqueOrThrow: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
-      update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(channel, data);
+        return channel;
+      }),
     },
     messagingChannelMember: {
       findUnique: vi.fn(
@@ -271,6 +278,25 @@ function createDeps(
         }
         return { count };
       }),
+      aggregate: vi.fn(
+        async ({
+          where,
+          _max,
+        }: {
+          where?: { threadId?: string };
+          _max?: { createdAt?: boolean };
+        }) => {
+          const times = outboundRows
+            .filter((row) => !where?.threadId || row.threadId === where.threadId)
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       deleteMany: vi.fn(async ({ where }: { where: { idempotencyKey?: string } }) => {
         let count = 0;
         for (let i = outboundRows.length - 1; i >= 0; i -= 1) {
@@ -304,9 +330,11 @@ function createDeps(
           })),
         ),
         agentConnection: prisma.agentConnection,
+        messagingChannel: prisma.messagingChannel,
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
         messagingIdentity: prisma.messagingIdentity,
+        user: prisma.user,
         messagingLinkCode,
         bot: prisma.bot,
       }),
@@ -373,6 +401,15 @@ const groupEvent = {
 };
 
 describe("createMessagingInboundHandler DM routing", () => {
+  it("drops a message for a bot whose Space is being deleted instead of failing the delivery", async () => {
+    const deps = createDeps();
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+
+    await expect(handle(dmEvent)).resolves.toBeUndefined();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
   it("delivers a known sender's message into their bot's existing thread", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
@@ -389,6 +426,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       threadId: "thread-1",
       botId: "bot-1",
       userId: "user-1",
+      authorUserId: "user-1",
       blocks: [{ kind: "text", text: "hello bot" }],
       prompt: "hello bot",
       trigger: "messaging",
@@ -990,6 +1028,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           botId: "bot-1",
+          userId: "user-1",
           active: true,
           messageProvider: "slack",
         }),
@@ -1607,6 +1646,62 @@ describe("createMessagingInboundHandler channel routing", () => {
     expect(deps.outboundRows.filter((row) => row.kind === "intro")).toHaveLength(0);
   });
 
+  it("still fans a message out to the other members when one member's Space is being deleted", async () => {
+    const senderMember = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peerMember = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [senderMember, peerMember] });
+    const peerIdentity = {
+      id: "mi-2",
+      provider: "sendblue",
+      address: "+15553333333",
+      userId: "user-2",
+      spaceId: "ws-2",
+      botId: "bot-2",
+      outboundSinceInbound: 0,
+    };
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { provider_address?: { provider: string; address: string }; id?: string };
+        }) => {
+          if (where.id === "mi-2" || where.provider_address?.address === "+15553333333") {
+            return peerIdentity;
+          }
+          return {
+            id: "mi-1",
+            provider: "sendblue",
+            address: "+15551111111",
+            userId: "user-1",
+            spaceId: "ws-1",
+            botId: "bot-1",
+            outboundSinceInbound: 0,
+          };
+        },
+      ),
+    });
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+    await expect(
+      handle({ ...groupEvent, participants: ["+15551111111", "+15553333333"] }),
+    ).resolves.toBeUndefined();
+
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("fans an approved member's message out to every approved member bot", async () => {
     const senderMember = {
       id: "cm-1",
@@ -1819,6 +1914,359 @@ describe("createMessagingInboundHandler channel routing", () => {
     // A webhook with no participants roster must not mass-mark members left.
     await sparseHandle({ ...groupEvent, participants: [] });
     expect(sparse.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep an approved member when a delayed roster older than the newest arrives", async () => {
+    const joined = {
+      id: "cm-x",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    // The newer event first: its roster names the member, so the channel records it.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // A retry of an older webhook, delivered late: its roster predates the member.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("does not re-invite a member who left when the roster naming them is older", async () => {
+    const gone = {
+      id: "cm-y",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: "mi-2",
+      status: "left",
+    };
+    const deps = createDeps({ members: [gone] });
+    const handle = createMessagingInboundHandler(deps);
+    // A newer event without the member sets the channel's roster time first.
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    // The delayed older roster still names the member, who has since left.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(gone.status).toBe("left");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-2")).toBe(false);
+  });
+
+  it("does not discover members or queue invitations from a delayed older roster", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...groupEvent,
+      handle: "handle-new",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111", "+15554444444"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(deps.members.map((member) => member.address)).not.toContain("+15554444444");
+  });
+
+  it("ignores a roster whose time is not newer than the newest one seen", async () => {
+    const joined = {
+      id: "cm-z",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [joined] });
+    const handle = createMessagingInboundHandler(deps);
+    const at = new Date("2026-11-04T10:01:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-first",
+      participants: ["+15551111111", "+15553333333"],
+      rosterAt: at,
+    });
+    await handle({
+      ...groupEvent,
+      handle: "handle-conflict",
+      participants: ["+15551111111"],
+      rosterAt: at,
+    });
+
+    expect(joined.status).toBe("approved");
+  });
+
+  it("keeps a leaver out and a peer in when an older roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    // The newest roster names both; the channel settles on its time.
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: new Date("2026-11-04T10:02:00.000Z"),
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A delayed delivery of a roster from before the settled one, naming only
+    // the leaver: it must not re-invite them or sweep the peer out.
+    await handle({
+      ...groupEvent,
+      handle: "handle-old",
+      participants: ["+15551111111"],
+      rosterAt: new Date("2026-11-04T10:01:00.000Z"),
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
+
+  it("keeps a leaver out and a peer in when an equal-time roster follows the LEAVE", async () => {
+    const leaver = {
+      id: "cm-a",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peer = {
+      id: "cm-b",
+      channelId: "ch-1",
+      address: "+15552222222",
+      identityId: null,
+      status: "approved",
+    };
+    const deps = createDeps({ members: [leaver, peer], approvedMember: leaver });
+    const handle = createMessagingInboundHandler(deps);
+    const settled = new Date("2026-11-04T10:02:00.000Z");
+    await handle({
+      ...groupEvent,
+      handle: "handle-settled",
+      participants: ["+15551111111", "+15552222222"],
+      rosterAt: settled,
+    });
+    await handle({ ...dmEvent, content: "LEAVE" });
+    expect(leaver.status).toBe("left");
+
+    // A conflicting roster claiming the same time as the settled one: not
+    // newer, so it changes no membership either.
+    await handle({
+      ...groupEvent,
+      handle: "handle-equal",
+      participants: ["+15551111111"],
+      rosterAt: settled,
+    });
+
+    expect(leaver.status).toBe("left");
+    expect(peer.status).toBe("approved");
+    expect(deps.outboundRows.some((row) => row.idempotencyKey === "invite:ch-1:mi-1")).toBe(false);
+  });
+
+  it("sweeps a member out when a real roster follows one with a far-future platform time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-f",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The sender's clock is far ahead of the server's: the roster's membership is
+      // not trusted, so the member keeps their status.
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A later real roster without the member must still win and sweep them out.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps two rosters' own order when both run seconds ahead of the server", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Both platform clocks are seconds ahead of the server's: within the accepted
+      // skew, so each roster keeps its own time as its version.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      const member = {
+        id: "cm-g",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A second roster, one platform second newer, without the member.
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when its roster is redelivered later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-h",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // The roster runs seconds ahead of the server, within the accepted skew.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+      // A newer roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-second",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:06.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The first webhook is redelivered after both. Its own time is still the older
+      // version, so it must not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-first",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2026-11-05T10:00:05.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not re-invite a removed member when a far-future roster naming them is replayed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const member = {
+        id: "cm-i",
+        channelId: "ch-1",
+        address: "+15552222222",
+        identityId: null,
+        status: "approved",
+      };
+      const deps = createDeps({ members: [member] });
+      const handle = createMessagingInboundHandler(deps);
+      // A roster dated far ahead of the server's clock: its membership is not trusted,
+      // so it changes nothing.
+      vi.setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+      expect(member.status).toBe("approved");
+
+      // A real roster removes the member.
+      vi.setSystemTime(new Date("2026-11-05T10:00:01.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-now",
+        participants: ["+15551111111"],
+        rosterAt: new Date("2026-11-05T10:00:01.000Z"),
+      });
+      expect(member.status).toBe("left");
+
+      // The far-future webhook is replayed after both: still distrusted, so it must
+      // not restart the member's approval cycle.
+      vi.setSystemTime(new Date("2026-11-05T10:00:02.000Z"));
+      await handle({
+        ...groupEvent,
+        handle: "handle-future",
+        participants: ["+15551111111", "+15552222222"],
+        rosterAt: new Date("2099-01-01T00:00:00.000Z"),
+      });
+
+      expect(member.status).toBe("left");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sanitizes attacker-controlled channel names before storing them", async () => {
@@ -2638,6 +3086,28 @@ describe("teamChatSenderCanWakeMessageRoutines", () => {
         ...dmEvent,
         provider: "slack",
         from: "U999",
+        isDirect: true,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("treats a deactivated linked sender like a stranger", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+    });
+    deps.prisma.user.findUnique = vi.fn(async () => ({ deactivatedAt: new Date() })) as never;
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(deps, {
+        ...dmEvent,
+        provider: "slack",
+        from: "U123",
         isDirect: true,
       }),
     ).resolves.toBe(false);

@@ -7,24 +7,6 @@ export type UiLocale = (typeof UI_LOCALES)[number];
 
 export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
 
-export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
-  en: "English",
-  de: "Deutsch",
-  ko: "한국어",
-  tr: "Türkçe",
-  hi: "हिन्दी",
-  "pt-BR": "Português (Brasil)",
-  "zh-CN": "简体中文",
-  "zh-TW": "繁體中文",
-  es: "Español",
-  ru: "Русский",
-  fr: "Français",
-  he: "עברית",
-  nl: "Nederlands",
-  ja: "日本語",
-  pl: "Polski",
-};
-
 /** Normalize BCP-47 tags (`de-DE`, `ko-KR`, `pt-BR`, `zh-CN`, `es-ES`) to a supported UI locale, else `en`. */
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
   return matchUiLocale(raw, UI_LOCALES);

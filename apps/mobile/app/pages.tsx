@@ -1,4 +1,3 @@
-import { MenuView } from "@expo/ui/community/menu";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { PageSummary } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
@@ -6,6 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { LongPressMenu } from "../components/long-press-menu";
 import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { useTextEditDialog } from "../components/profile-edit-dialog";
 import { SettingsGroup, SettingsRow } from "../components/settings-group";
@@ -100,9 +100,8 @@ export default function PagesScreen() {
     }
   };
   const row = (page: PageSummary) => (
-    <MenuView
+    <LongPressMenu
       key={page.id}
-      shouldOpenOnLongPress
       colorScheme={colorScheme}
       title={page.title}
       actions={[
@@ -115,15 +114,18 @@ export default function PagesScreen() {
       ]}
       onPressAction={(event) => act(page, event.nativeEvent.event)}
     >
-      <SettingsRow
-        accessibilityRole="button"
-        chevron="right"
-        title={page.title}
-        detail={`${page.visibility === "link" ? `${t("Shared")} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
-        leading={<PageIcon colors={tokens} width={26} />}
-        onPress={() => open(page)}
-      />
-    </MenuView>
+      {(onLongPress) => (
+        <SettingsRow
+          accessibilityRole="button"
+          chevron="right"
+          title={page.title}
+          detail={`${page.visibility === "link" ? `${t("Shared")} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
+          leading={<PageIcon colors={tokens} width={26} />}
+          onPress={() => open(page)}
+          onLongPress={onLongPress}
+        />
+      )}
+    </LongPressMenu>
   );
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);

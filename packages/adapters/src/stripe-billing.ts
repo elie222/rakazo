@@ -22,12 +22,15 @@ import {
   ByokTierSchema,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
 const MAX_RETRIES = 2;
 const MAX_RETRY_DELAY_MS = 5_000;
+// Room for a 100-item list page with expanded objects.
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 export interface StripeBillingConfig {
   secretKey: string;
@@ -705,7 +708,7 @@ export class StripeBillingProvider implements BillingProvider {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
 
-  private async expireOpenCheckouts(customerId: string): Promise<void> {
+  async expireOpenCheckouts(customerId: string): Promise<void> {
     const seen = new Set<string>();
     for (;;) {
       const query = encodeStripeForm({ customer: customerId, status: "open", limit: 100 });
@@ -793,7 +796,9 @@ export class StripeBillingProvider implements BillingProvider {
         },
         body,
       });
-      const json: unknown = await response.json().catch(() => undefined);
+      const json: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES).catch(
+        () => undefined,
+      );
       if (response.ok) {
         if (json === undefined) throw new Error("Invalid Stripe response");
         return json;

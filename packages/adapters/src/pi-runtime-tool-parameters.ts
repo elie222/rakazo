@@ -1,7 +1,8 @@
-import { Type } from "@earendil-works/pi-ai";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { Type } from "typebox";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
@@ -67,6 +68,7 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "ask_user") {
     return Type.Object({
       question: Type.String({ maxLength: 240 }),
+      detail: Type.Optional(Type.String({ maxLength: MAX_APPROVAL_DETAIL_LENGTH })),
       options: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), {
         minItems: 2,
         maxItems: 4,

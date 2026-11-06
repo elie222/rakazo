@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting an MCP server whose OAuth asks for many permissions, such as PostHog's, no longer fails with "MCP URL exceeds 2048 characters". The browser sign-in link now has its own, larger limit, while MCP server addresses keep the 2,048-character one.
+
+## [0.8.0] - 2026-11-04
+
+### Added
+
+- On iPhone and iPad, an image pasted into a chat's message field is added as an attachment, as on web. Text copied with it still goes into the field. This needs the new app build.
+- On iPhone and iPad, Rakazo appears in the share sheet. Share a link, text, photos or files from any app, pick a bot, and it lands in that bot's message field as a draft. This needs the new app build.
+- More keyboard shortcuts on web and desktop: start a group chat, connect apps, open the chat's details panel, jump to the message box and dictate. Cmd/Ctrl+/ lists every shortcut, as do **Keyboard shortcuts** in the command menu and **Help** in the desktop app.
+- Cmd/Ctrl+F in the desktop app finds text in the open chat, highlighting every match and stepping through them. Searching bots moves to Cmd/Ctrl+Shift+F.
+- The web app is fully translated into Turkish. Before, large parts of it fell back to English.
+- When the desktop app runs its own local server, **Settings** now shows the **Let bots use this computer** switch, as it does when connected to another server.
+- Self-hosters can make DeepSeek the deployment's default model with `PI_DEFAULT_PROVIDER=deepseek` and `DEEPSEEK_API_KEY` ([self-hosted models](docs/self-host-models.md)).
+- The long-wait "still needs an answer" reminder, and the notice that a waiting chat was stopped, now show as browser and desktop alerts, not only on phones.
+
+### Changed
+
+- A group message that names no bot now reaches every bot in the group, instead of only the first ([groups](docs/groups.md)). Each bot decides whether the message is for it, and a bot with nothing to add stays quiet. Replying to a bot's message or tagging a bot still sends to that bot alone. An untagged message can now start a run for each bot in the group, up to ten.
+
+### Fixed
+
+- Pressing Stop ends a quiet model call or a long-running tool within about a second. Before, it could keep running, and billing, for up to a minute.
+- Connector and category approval rules now apply to tools named with a hyphen, like `<app>-<action>`, and loading a connected app's tool description no longer asks for approval.
+- Switching to another chat on web no longer deletes attachments you picked but hadn't sent, and archiving a chat keeps them for when it's restored.
+- Renaming a model connection no longer resets unsaved edits in the same form.
+- Voice calls that use provider transcription now send a server's configured extra headers, so servers behind a gateway that needs them can transcribe calls.
+- On Linux, a brief network drop while checking a downloaded desktop update no longer shows an update error. The update is kept and verified on the next check.
+- On self-hosted Docker setups, a computer still running an older image no longer asks for payment approval on every browser click.
+
 ## [0.7.0] - 2026-11-04
 
 ### Security

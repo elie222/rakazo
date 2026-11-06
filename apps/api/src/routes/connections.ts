@@ -2,12 +2,14 @@ import { ORPCError } from "@orpc/server";
 import type { AdapterContext, ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import {
+  advisoryLock,
   pickReusableConnection,
   planLiveConnectionSync,
   prepareManagedConnectorForTransaction,
-  sanitizeComposioError,
+  sanitizeIntegrationError,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { isIntegrationProviderId } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   IsolationError,
@@ -166,7 +168,7 @@ async function lockProviderConnectionScope(
   connectorId: string,
   provider: string,
 ): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('connection-provider'), hashtext(${providerScopeKey(owner, connectorId, provider)}))`;
+  await advisoryLock(tx, "connection-provider", providerScopeKey(owner, connectorId, provider));
 }
 
 /** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
@@ -277,8 +279,7 @@ export function connectionsRoutes(ctx: RouterContext) {
       }),
       begin: authed.connections.begin.handler(async ({ context, input }) => {
         const connector =
-          deps.integrationSettings &&
-          (input.connectorId === "composio" || input.connectorId === "pipedream")
+          deps.integrationSettings && isIntegrationProviderId(input.connectorId)
             ? await deps.integrationSettings.resolve(input.connectorId)
             : deps.connectors.managed(input.connectorId);
         if (!connector) {
@@ -476,7 +477,7 @@ export function connectionsRoutes(ctx: RouterContext) {
             });
             throw new ORPCError(error.code, { status: 400, message: error.message });
           }
-          throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+          throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
         }
       }),
       complete: authed.connections.complete.handler(async ({ context, input }) => {
@@ -637,7 +638,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                 try {
                   await transactionConnector.complete({ state, code: input.code }, adapterContext);
                 } catch (error) {
-                  throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+                  throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
                 }
               }
               const ready = await transactionConnector.connectionReady(
@@ -938,7 +939,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                 );
               } catch (error) {
                 if (error instanceof ORPCError) throw error;
-                throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+                throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
               }
               return {
                 remote: null as null | RemoteRevoke,
@@ -999,7 +1000,7 @@ export function connectionsRoutes(ctx: RouterContext) {
               else getLogger().error(message, error, where);
             }
             if (error instanceof ORPCError) throw error;
-            throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+            throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
           }
         }
         return { ok: true as const };

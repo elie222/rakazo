@@ -30,6 +30,7 @@ function deps(
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
+    deletingSpace?: boolean;
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -43,12 +44,18 @@ function deps(
     );
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
+    space: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({ deletingAt: options.deletingSpace ? new Date() : null }),
+    },
     run: {
       findFirst: vi
         .fn()
         .mockResolvedValue(options.senderRunning === false ? null : { id: "run-1" }),
       findUnique: vi.fn().mockResolvedValue({ status: "running" }),
       create: vi.fn().mockResolvedValue({ id: "run-2" }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     bot: {
       findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
@@ -102,6 +109,18 @@ describe("messaging another bot", () => {
   beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
   afterEach(() => vi.unstubAllEnvs());
 
+  it("starts no run for the target while the Space is being deleted", async () => {
+    const harness = deps({ deletingSpace: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart the q3 numbers",
+    });
+
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
@@ -138,6 +157,34 @@ describe("messaging another bot", () => {
       ),
     ).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts sent files on the recipient's message, and only the text in the sender's echo", async () => {
+    const harness = deps();
+    const file = {
+      kind: "file" as const,
+      artifactId: "artifact-zip",
+      name: "project.zip",
+      mimeType: "application/zip",
+      size: 19_000,
+    };
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "deploy this",
+      files: [file],
+    });
+
+    expect(sent).toMatchObject({ ok: true });
+    const created = harness.tx.message.create.mock.calls.map(
+      ([call]) => (call as { data: { threadId: string; blocks: Array<{ kind: string }> } }).data,
+    );
+    expect(created.find((m) => m.threadId === "thread-sender")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_sent" }),
+    ]);
+    expect(created.find((m) => m.threadId === "thread-target")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_received" }),
+      file,
+    ]);
   });
 
   it("marks a forced failure return unread on both sides", async () => {
@@ -288,7 +335,8 @@ describe("messaging another bot", () => {
       { allowTerminalSource: true },
     );
     expect(sent.ok).toBe(true);
-    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The Space's lock, then both thread rows.
+    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(harness.tx.message.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -638,6 +686,10 @@ describe("hardening", () => {
     });
     expect(sent.ok).toBe(true);
     expect(harness.deps.prisma.$transaction).toHaveBeenCalledTimes(2);
+    // The retried delivery keeps the thread-lock budget.
+    expect(harness.deps.prisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 });
@@ -791,7 +843,7 @@ describe("automatic outcome return", () => {
 
     expect(returned).toBe(true);
     expect(harness.deps.prisma.bot.findFirst).toHaveBeenCalledWith({
-      where: { id: "bot-target", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { id: "bot-target", spaceId: run.spaceId, archivedAt: null },
       select: { id: true },
     });
     expect(harness.enqueue).not.toHaveBeenCalled();

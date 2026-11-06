@@ -9,6 +9,8 @@ import { sendThreadMessage } from "./thread-target.js";
 function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
+    space: { findUnique: vi.fn(async () => null) },
+    user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
     $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
     chatGroup: {
@@ -357,6 +359,7 @@ describe("current image send admission", () => {
         taskId: "task-active",
         status: "running",
         trigger: "user",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: false,
@@ -443,6 +446,7 @@ describe("current image send admission", () => {
         taskId: "task-waiting",
         status: "waiting_input",
         trigger: "routine",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: true,
@@ -465,6 +469,7 @@ describe("current image send admission", () => {
           id: "obsolete",
           taskId: "obsolete-task",
           status: "waiting_input",
+          userId: "user-1",
           trigger: "routine",
           modelProvider: "openrouter",
           modelId: "deepseek/deepseek-v4-pro",

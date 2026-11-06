@@ -1,9 +1,6 @@
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxKind } from "@rakazo/contracts";
-import { BoatSandboxProvider } from "./boat-sandbox.js";
-import { BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
-import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
@@ -114,13 +111,15 @@ export async function createSandboxProvider(
         template: opts.sandboxTemplate,
         onUnsafeStop: opts.onUnsafeStop,
       });
-    case "daytona":
+    case "daytona": {
       if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");
-      return new DaytonaSandboxProvider({
+      const { createDaytonaSandboxProvider } = await import("./daytona-sandbox.js");
+      return createDaytonaSandboxProvider({
         apiKey: opts.daytonaApiKey,
         apiUrl: opts.daytonaApiUrl,
         target: opts.daytonaTarget,
       });
+    }
     case "createos":
       if (!opts.createosApiKey?.trim())
         return missingRemoteKey("createos", "CREATEOS_SANDBOX_API_KEY");
@@ -130,12 +129,16 @@ export async function createSandboxProvider(
         shape: opts.createosShape,
         rootfs: opts.createosRootfs,
       });
-    case "boat":
+    case "boat": {
       if (!opts.boatApiKey?.trim()) return missingRemoteKey("boat", "BOAT_API_KEY");
+      const { BoatSandboxProvider } = await import("./boat-sandbox.js");
       return new BoatSandboxProvider({ apiKey: opts.boatApiKey, apiUrl: opts.boatApiUrl });
-    case "boxd":
+    }
+    case "boxd": {
       if (!opts.boxdApiKey?.trim()) return missingRemoteKey("boxd", "BOXD_API_KEY");
-      return new BoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
+      const { createBoxdSandboxProvider } = await import("./boxd-sandbox.js");
+      return createBoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
+    }
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
       if (!opts.railwayEnvironmentId?.trim())

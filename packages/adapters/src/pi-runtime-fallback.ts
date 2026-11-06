@@ -407,8 +407,17 @@ export function fallbackAwareModelStream(
           continue;
         }
         return candidate;
-      } catch {
-        // Do not persist credential-resolution diagnostics; they can contain secrets.
+      } catch (error) {
+        // Never log the message: credential diagnostics can quote the key.
+        const failure = (error ?? {}) as { name?: unknown; code?: unknown; status?: unknown };
+        getLogger().warn("model.backup.unavailable", {
+          runId: state.request.runId,
+          provider: choice.provider,
+          model: choice.id,
+          "error.type": typeof failure.name === "string" ? failure.name : typeof error,
+          ...(typeof failure.code === "string" ? { "error.code": failure.code } : {}),
+          ...(typeof failure.status === "number" ? { "error.status": failure.status } : {}),
+        });
         skip("The backup connection or request could not be prepared.");
       }
     }
@@ -458,16 +467,14 @@ export function fallbackAwareModelStream(
       let sawVisibleOutput = false;
       let restart = false;
       let stream: AssistantMessageEventStream;
+      // A backup runs at its own effort, never the main model's.
+      const runsRequestModel = sameModelTarget(target.config, state.request.model);
+      const requestedThinking =
+        target.config.thinkingLevel ??
+        (runsRequestModel ? (options?.reasoning ?? state.request.model.thinkingLevel) : undefined);
       const thinkingLevel =
         thinkingOverride ??
-        (target.model.reasoning
-          ? thinkingLevelFor(
-              target.model,
-              target.config.thinkingLevel ??
-                options?.reasoning ??
-                state.request.model.thinkingLevel,
-            )
-          : "off");
+        (target.model.reasoning ? thinkingLevelFor(target.model, requestedThinking) : "off");
       const sentTarget = outputBudget ? withOutputBudget(target, outputBudget) : target;
       const sentMaxTokens = resolveCompletionMaxTokens(
         sentTarget.model.maxTokens,

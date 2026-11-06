@@ -50,8 +50,10 @@ import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
+import { clearLastBot } from "../lib/last-bot";
 import { loadLinkFavicon } from "../lib/link-favicons";
 import {
   configureForegroundNotifications,
@@ -103,6 +105,9 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+registerSessionDiskCache((sameAccount) => {
+  if (!sameAccount) return clearLastBot();
+});
 installClientUpdates();
 registerSessionDiskCache(() => void clearAppBadge());
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
@@ -344,6 +349,7 @@ function LayoutContent() {
 
   useEffect(() => {
     markMobileStartupMounted();
+    void loadHapticsPreference();
     void Promise.all([
       Promise.all([
         trackMobileStartup("server", loadApiBase()),
@@ -470,6 +476,15 @@ function LayoutContent() {
                       }}
                     />
                     <Stack.Screen
+                      name="space-members"
+                      options={{
+                        title: t("Members"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
+                    <Stack.Screen
                       name="new-organization"
                       options={{
                         headerShown: false,
@@ -529,6 +544,10 @@ function LayoutContent() {
                     />
                     <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
+                    <Stack.Screen
+                      name="routine-runs"
+                      options={glassHeaderOptions(t("Run history"))}
+                    />
                     <Stack.Screen name="board" options={glassHeaderOptions(t("Board"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

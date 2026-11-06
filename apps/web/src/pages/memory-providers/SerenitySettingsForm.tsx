@@ -93,7 +93,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
             pressed={!allowWrites}
             disabled={busy}
             onPressedChange={() => setAllowWrites(false)}
-            className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             <Trans>Recall only</Trans>
           </Toggle>
@@ -101,7 +101,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
             pressed={allowWrites}
             disabled={busy}
             onPressedChange={() => setAllowWrites(true)}
-            className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             <Trans>Recall and write</Trans>
           </Toggle>

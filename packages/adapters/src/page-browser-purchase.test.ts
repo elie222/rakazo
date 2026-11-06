@@ -8,6 +8,7 @@ type Purchase = {
   label: string;
   amount: string;
   amountFrom: "button" | "page";
+  items?: Array<{ name: string; amount: string }>;
 } | null;
 type Helper = {
   paymentPage: (frame?: boolean, enter?: boolean) => { purchase: Purchase };
@@ -273,6 +274,27 @@ describe("purchase detection in the page helper", () => {
       page(`<form><label>Username<input name="user"></label><label>Password<input type="password"
       name="password"></label><label>Security code<input name="sms"></label><button>Sign in</button></form>`);
     expect(invest.intent("Sign in")).toBeNull();
+  });
+
+  it("leaves a passenger form's frequent-flyer and ID card numbers alone", () => {
+    const { intent, helper } =
+      page(`<form><label>Passport number<input name="docNo"></label><label>Airline<input name="carrier"></label>
+      <label>Card No.<input name="psgCardNo"></label><label>ID card number<input name="idCardNo"></label>
+      <button>Continue</button></form><div onclick="next()">Confirm</div>`);
+    expect(intent("Continue")).toBeNull();
+    expect(intent("Confirm")).toBeNull();
+    // A click on the screen that cannot be placed asks only on a page that shows a payment.
+    expect(helper.paymentPage().purchase).toBeNull();
+  });
+
+  it("still finds a card form by its security code, or by the words credit card", () => {
+    const coded = page(`<form><label>Card number<input name="cardNo"></label>
+      <label>CVN2<input name="cvn2"></label><button>Continue</button></form>`);
+    expect(coded.intent("Continue")?.reason).toBe("card_form");
+    const named = page(
+      `<form><label>Credit card number<input name="number"></label><button>Next</button></form>`,
+    );
+    expect(named.intent("Next")?.reason).toBe("card_form");
   });
 
   it("is not moved by page text that claims approval or by a lying label elsewhere", () => {
@@ -551,11 +573,148 @@ describe("a key on the screen", () => {
     expect(ordinary.helper.paymentPage(false, true).purchase).toBeNull();
   });
 
+  it("reports the page's total beside a button that names less", () => {
+    const deposit = page(`<p>Total: $250</p>\n<button>Pay $5 deposit</button>`);
+    expect(deposit.helper.paymentPage().purchase).toEqual({
+      reason: "payment_page",
+      label: "Pay $5 deposit",
+      amount: "$5",
+      amountFrom: "button",
+      total: "$250",
+    });
+  });
+
   it("does not let a gift card or voucher field make a form a card form", () => {
     const gift = page(`<form><input name="gift_card_number"><button>Redeem</button></form>`);
     expect(gift.intent("Redeem")).toBeNull();
     const decoy = page(`<input name="gift_card_number" aria-label="Gift card number" value="">
       <input placeholder="Voucher card number"><label>Promo card no<input></label>`);
     expect(decoy.helper.paymentPage().purchase).toBeNull();
+  });
+
+  it("lists the order lines the checkout shows above its total, and nothing around them", () => {
+    const { intent, helper } = page(`
+      <header><a href="/cart">Cart · Socks $9.00</a></header>
+      <main>
+        <form>
+          <label>Card number<input autocomplete="cc-number"></label>
+          <label><input type="radio" name="ship"> Express delivery $12.00</label>
+          <button>Pay $23.40</button>
+        </form>
+        <aside>
+          <h2>Order summary</h2>
+          <ul>
+            <li><span>Bananas × 6</span><span>$3.00</span></li>
+            <li><a href="/oat-milk">Oat milk 1L</a> <small>× 2</small><b>$8.40</b></li>
+            <li style="display:none"><span>Hidden gift</span><span>$1.00</span></li>
+          </ul>
+          <table>
+            <tr><td>Subtotal</td><td>$11.40</td></tr>
+            <tr><td>Delivery:</td><td>$6.00</td></tr>
+            <tr><td>Tax</td><td>6,00 €</td></tr>
+          </table>
+          <div><span>Total</span> <strong>$23.40</strong></div>
+        </aside>
+        <section><h2>You may also like</h2><p>Grapes 500g $4.00</p></section>
+      </main>`);
+    const items = [
+      { name: "Bananas × 6", amount: "$3.00" },
+      { name: "Oat milk 1L × 2", amount: "$8.40" },
+      { name: "Delivery", amount: "$6.00" },
+      { name: "Tax", amount: "6,00 €" },
+    ];
+    expect(intent("Pay $23.40")).toMatchObject({ amount: "$23.40", items });
+    expect(helper.paymentPage().purchase).toMatchObject({ items });
+  });
+
+  it("reads no further back than a card form, and lists nothing without a total", () => {
+    const split = page(`
+      <p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <form><input autocomplete="cc-number"><button>Place order</button></form>
+      <p><span>Delivery</span> <span>$6.00</span></p>
+      <p>Order total: $9.00</p>`);
+    expect(split.intent("Place order")?.items).toEqual([{ name: "Delivery", amount: "$6.00" }]);
+    const noTotal = page(`<p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <form><input autocomplete="cc-number"><button>Pay $3</button></form>`);
+    expect(noTotal.intent("Pay $3")).not.toHaveProperty("items");
+  });
+
+  it("reads each line's own amount: a credit, a quantity cell, a price split over tags, an item named for a total", () => {
+    const { intent } = page(`<table>
+        <tr><td>Bananas</td><td>2</td><td>150,00 €</td></tr>
+        <tr><td>Discount</td><td>-€5,00</td></tr>
+        <tr><td>Totally Oats</td><td>2,00 €</td></tr>
+        <tr><td>Plums</td><td>$<span>3</span><span>.</span><span>00</span></td></tr>
+      </table>
+      <p>Total: 147,00 €</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([
+      { name: "Bananas 2", amount: "150,00 €" },
+      { name: "Discount", amount: "-€5,00" },
+      { name: "Totally Oats", amount: "2,00 €" },
+      { name: "Plums", amount: "$3.00" },
+    ]);
+  });
+
+  it("leaves out an order line written in a color or size the shopper cannot see", () => {
+    const { intent } = page(`
+      <p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <p style="color: transparent"><span>Gift card</span> <span>$50.00</span></p>
+      <p><span style="font-size: 0">Socks</span> <span>$5.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
+  });
+
+  it("never reads several products as one line with the last one's price", () => {
+    const { intent } = page(`
+      <div><span>Bananas</span> <span>$3.00</span> <span>Oat milk</span> <span>$8.40</span></div>
+      <p>Total: $11.40</p><button>Place order</button>`);
+    expect(intent("Place order")).not.toHaveProperty("items");
+  });
+
+  it("finds the order summary at the end of a long page", () => {
+    const { intent, win } = page(`<div>${"<span>Item</span>".repeat(8000)}</div>
+      <p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`);
+    // jsdom is slow over so many elements: the clock stands still, so the time budget is not what is tested.
+    (win as unknown as { performance: { now: () => number } }).performance.now = () => 0;
+    expect(intent("Place order")?.items).toEqual([{ name: "Bananas × 6", amount: "$3.00" }]);
+  });
+
+  it("lists no order lines when reading them would hold up the purchase check", () => {
+    const html = `<p><span>Bananas × 6</span> <span>$3.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`;
+    const { intent, win } = page(html);
+    let now = 0;
+    // Each look at the clock moves it a second on: the reader is out of time at once.
+    (win as unknown as { performance: { now: () => number } }).performance.now = () =>
+      (now += 1000);
+    expect(intent("Place order")).toMatchObject({ label: "Place order", amount: "$3.00" });
+    expect(intent("Place order")).not.toHaveProperty("items");
+  });
+
+  it("lists a line with a quantity picker, but not a choice or an offer to add", () => {
+    const { intent } = page(`
+      <ul>
+        <li><span>Bananas</span><button aria-label="Fewer">−</button><input type="number" value="6">
+          <button>+</button><button>Remove</button><span>$3.00</span></li>
+        <li><span>Oat milk 1L</span><select><option>1</option><option selected>2</option></select>
+          <span>$8.40</span></li>
+        <li><span>2-year warranty</span><button>Add</button><span>$19.99</span></li>
+        <li><label><input type="checkbox"> Gift wrap</label><span>$4.00</span></li>
+      </ul>
+      <p>Total: $11.40</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([
+      { name: "Bananas", amount: "$3.00" },
+      { name: "Oat milk 1L", amount: "$8.40" },
+    ]);
+  });
+
+  it("keeps an order line's visible words only, whole for the adapter to redact and cut", () => {
+    const { intent } = page(`
+      <p><span>Ban​anas‮ ${"x".repeat(100)}</span> <span>$3.00</span></p>
+      <p>Total: $3.00</p><button>Place order</button>`);
+    expect(intent("Place order")?.items).toEqual([
+      { name: `Bananas ${"x".repeat(100)}`, amount: "$3.00" },
+    ]);
   });
 });

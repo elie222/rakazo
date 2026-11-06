@@ -17,6 +17,7 @@
   "dependencies": {
     "@better-auth/expo": "1.7.16",
     "@better-auth/passkey": "1.7.16",
+    "@better-auth/scim": "1.7.16",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",

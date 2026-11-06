@@ -243,10 +243,12 @@ export function createMcpServers(
       await deps.mcp.probe(server, { spaceId: actor.spaceId, userId: actor.userId });
     } catch {
       getLogger().error("mcp server probe failed", { "mcp.server.id": server.id });
-      await recordMcpServerHealth(deps.prisma, server.id, {
-        status: "error",
-        message: "Could not check this MCP server",
-      });
+      await recordMcpServerHealth(
+        deps.prisma,
+        server.id,
+        { status: "error", message: "Could not check this MCP server" },
+        server.revision,
+      );
     }
   };
   /**
@@ -263,7 +265,7 @@ export function createMcpServers(
       status: "unknown" | "installing",
       message: string | null,
     ): Promise<McpServerRow> => {
-      await recordMcpServerHealth(deps.prisma, row.id, { status, message });
+      await recordMcpServerHealth(deps.prisma, row.id, { status, message }, row.revision);
       return {
         ...row,
         healthStatus: status,

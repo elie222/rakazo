@@ -19,7 +19,7 @@ export function SpaceSearchResults({
 }) {
   if (loading) {
     return (
-      <div className="px-3 py-4 text-[14px] text-muted-foreground">
+      <div className="px-3 py-4 text-body text-muted-foreground">
         <Trans>Searching…</Trans>
       </div>
     );
@@ -27,7 +27,7 @@ export function SpaceSearchResults({
   if (error) {
     return (
       <div className="px-3 py-4">
-        <p role="alert" className="text-[14px] text-destructive">
+        <p role="alert" className="text-body text-destructive">
           {error}
         </p>
         <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={onRetry}>
@@ -38,7 +38,7 @@ export function SpaceSearchResults({
   }
   if (!hits.length) {
     return (
-      <div className="px-3 py-4 text-[14px] text-muted-foreground">
+      <div className="px-3 py-4 text-body text-muted-foreground">
         <Trans>No results</Trans>
       </div>
     );
@@ -53,14 +53,14 @@ export function SpaceSearchResults({
           className="rounded-xl px-2.5 py-[11px] text-start hover:bg-sidebar-accent"
         >
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[15px] font-medium text-foreground" dir="auto">
+            <span className="truncate text-body-lg font-medium text-foreground" dir="auto">
               {hit.title}
             </span>
-            <span className="shrink-0 text-[12px] uppercase tracking-wide text-muted-foreground/80">
+            <span className="shrink-0 text-label uppercase tracking-wide text-muted-foreground/80">
               {searchKindLabel(hit)}
             </span>
           </div>
-          <div className="mt-0.5 flex min-w-0 gap-2 text-[13px] text-muted-foreground" dir="auto">
+          <div className="mt-0.5 flex min-w-0 gap-2 text-body-sm text-muted-foreground" dir="auto">
             <span className="max-w-[40%] shrink-0 truncate text-foreground/75">
               {hit.groupName ?? hit.botName}
             </span>

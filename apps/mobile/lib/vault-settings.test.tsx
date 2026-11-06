@@ -48,6 +48,8 @@ vi.mock("./i18n", () => {
   return { t, useI18n: () => ({ t }) };
 });
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+// The bots' addresses read on their own; this screen's tests cover the vault's items.
+vi.mock("../components/bot-email", () => ({ BotEmailAddressesGroup: () => null }));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
@@ -63,6 +65,7 @@ vi.mock("expo-router", () => ({
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("react-native", () => ({
   Alert: { alert: state.alert },
+  Platform: { OS: "ios" },
   Pressable: element("span"),
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },

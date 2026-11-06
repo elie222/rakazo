@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
-import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
+import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../lib/session";
@@ -204,7 +204,7 @@ export function CallCard() {
           color={tokens.destructiveForeground}
           border={tokens.destructiveFill}
           background={tokens.destructiveFill}
-          onPress={endCall}
+          onPress={hangUp}
         />
       </View>
       {call.transcriptOpen ? (

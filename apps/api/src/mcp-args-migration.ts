@@ -1,5 +1,5 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
-import { persistPreparedSecret } from "@rakazo/adapters";
+import { lockMcpOAuthMaterial, persistPreparedSecret } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { serverSecretSpace } from "./availability.js";
@@ -48,7 +48,7 @@ export async function moveMcpArgsIntoSecrets(
         });
         const moved = await persistPreparedSecret(prisma, secrets, stored, () =>
           prisma.$transaction(async (tx) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${row.id}))`;
+            await lockMcpOAuthMaterial(tx, row.id);
             const current = await tx.mcpServer.findUnique({ where: { id: row.id } });
             const currentSecret = current?.secretId
               ? await tx.secret.findUnique({ where: { id: current.secretId } })
