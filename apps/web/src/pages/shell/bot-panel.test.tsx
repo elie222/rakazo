@@ -39,6 +39,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  useCopyText: () => [false, () => {}],
   SectionHeading: ({
     variant: _variant,
     ...props
