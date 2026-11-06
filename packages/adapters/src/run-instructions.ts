@@ -449,11 +449,12 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
 /** The bot's own address, which it may give out, and the inbox tools this run has. */
 export function botEmailInstruction(
   address: string,
-  tools: { read: boolean; delete: boolean },
+  tools: { read: boolean; send: boolean; delete: boolean },
 ): string {
   return [
     `Your email address is ${address}.`,
     tools.read ? "Every email sent to it is saved to your inbox; check it with read_email." : "",
+    tools.send ? "Send email from it with send_email." : "",
     tools.delete ? "Delete emails from your inbox with delete_email." : "",
   ]
     .filter(Boolean)

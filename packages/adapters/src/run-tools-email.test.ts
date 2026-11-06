@@ -7,7 +7,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { botEmailInstruction } from "./run-instructions.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
-import { emailTools } from "./run-tools-email.js";
+import {
+  emailTools,
+  SEND_EMAIL_DAILY_LIMIT,
+  SEND_EMAIL_OWNER_DAILY_LIMIT,
+} from "./run-tools-email.js";
 
 type Row = {
   id: string;
@@ -367,16 +371,20 @@ describe("delete_email", () => {
 
 describe("botEmailInstruction", () => {
   it("names only the inbox tools the run has", () => {
-    const both = botEmailInstruction("scout@bots.test", { read: true, delete: true });
-    const readOnly = botEmailInstruction("scout@bots.test", { read: true, delete: false });
+    const all = botEmailInstruction("scout@bots.test", { read: true, send: true, delete: true });
+    const readOnly = botEmailInstruction("scout@bots.test", {
+      read: true,
+      send: false,
+      delete: false,
+    });
 
-    expect(both).toContain("read_email");
-    expect(both).toContain("delete_email");
+    for (const tool of ["read_email", "send_email", "delete_email"]) expect(all).toContain(tool);
     expect(readOnly).toContain("read_email");
+    expect(readOnly).not.toContain("send_email");
     expect(readOnly).not.toContain("delete_email");
-    expect(botEmailInstruction("scout@bots.test", { read: false, delete: false })).toBe(
-      "Your email address is scout@bots.test.",
-    );
+    expect(
+      botEmailInstruction("scout@bots.test", { read: false, send: false, delete: false }),
+    ).toBe("Your email address is scout@bots.test.");
   });
 });
 
@@ -509,5 +517,258 @@ describe("claim_email_address", () => {
     expect(toolRequiresExplicitApproval("claim_email_address")).toBe(true);
     // Its result is the bot's own address, so a later preference change in the run still works.
     expect(toolResultTaintsRun("claim_email_address")).toBe(false);
+  });
+});
+
+describe("send_email", () => {
+  type Saved = Record<string, unknown> & {
+    id: string;
+    key: string;
+    sent: boolean;
+    receivedAt: Date;
+  };
+
+  function sendRun(
+    options: {
+      sentToday?: number;
+      ownerSentToday?: number;
+      fail?: boolean;
+      original?: Record<string, unknown>;
+      secrets?: string[];
+    } = {},
+  ) {
+    const saved: Saved[] = [];
+    const send = vi.fn(async (_message: Record<string, unknown>) => {
+      if (options.fail) throw new Error("domain not verified");
+    });
+    const ctx = {
+      deps: {
+        inboundEmailDomain: "bots.test",
+        email: { send },
+        prisma: {
+          botEmailAddress: { findUnique: async () => ({ name: "scout" }) },
+          botEmailMessage: {
+            findFirst: async ({ where }: { where: { id: string } }) =>
+              where.id === "in-1" ? (options.original ?? null) : null,
+            findUnique: async ({ where }: { where: { botId_key: { key: string } } }) =>
+              saved.find((row) => row.key === where.botId_key.key) ?? null,
+            count: async ({ where }: { where: { botId?: string } }) =>
+              where.botId
+                ? (options.sentToday ?? saved.length)
+                : (options.ownerSentToday ?? saved.length),
+            create: async ({ data }: { data: Record<string, unknown> }) => {
+              const row = {
+                ...data,
+                id: `sent-${saved.length + 1}`,
+                receivedAt: new Date(),
+              } as Saved;
+              saved.push(row);
+              return { id: row.id };
+            },
+            delete: async ({ where }: { where: { id: string } }) => {
+              saved.splice(
+                saved.findIndex((row) => row.id === where.id),
+                1,
+              );
+            },
+          },
+        },
+      },
+      bot: { id: "bot-1", userId: "owner-1", spaceId: "space-1", name: 'Scout "Bot"' },
+      run: { userId: "owner-1" },
+      secrets: options.secrets ?? ["hunter2-secret", "line-one\nline-two"],
+    };
+    const call = (args: Record<string, unknown>, effectKey = "effect-1") =>
+      emailTools.send_email!(
+        ctx as never,
+        {
+          name: "send_email",
+          args,
+          effectKey,
+          executionId: "c",
+          finish: async (r: unknown) => r,
+        } as never,
+      ) as Promise<Record<string, unknown>>;
+    return { call, send, saved };
+  }
+
+  it("sends from the bot's own address and keeps a copy in its inbox", async () => {
+    const { call, send, saved } = sendRun();
+
+    const result = await call({
+      to: "Support@Shop.test",
+      subject: "Order 42",
+      text: "My password is hunter2-secret. Where is order 42?",
+    });
+
+    expect(result).toEqual({
+      sent: true,
+      id: "sent-1",
+      from: "scout@bots.test",
+      to: ["Support@shop.test"],
+    });
+    expect(send).toHaveBeenCalledWith({
+      from: '"Scout Bot" <scout@bots.test>',
+      replyTo: "scout@bots.test",
+      to: ["Support@shop.test"],
+      subject: "Order 42",
+      text: expect.not.stringContaining("hunter2-secret"),
+    });
+    expect(saved).toEqual([
+      expect.objectContaining({ sent: true, fromAddress: "scout@bots.test", key: "sent:effect-1" }),
+    ]);
+  });
+
+  it("keeps a reply's subject within the limit", async () => {
+    const { call, send } = sendRun({
+      original: { subject: "s".repeat(500), messageId: "<t@shop.test>", references: [] },
+    });
+
+    await call({ to: ["a@shop.test"], text: "Hi", inReplyTo: "in-1" });
+
+    expect(String(send.mock.calls[0]?.[0].subject)).toHaveLength(500);
+  });
+
+  it("keeps a secret that spans lines out of the subject", async () => {
+    const { call, send } = sendRun();
+
+    await call({ to: ["a@shop.test"], subject: "Key line-one\nline-two", text: "Hi" });
+
+    expect(send.mock.calls[0]?.[0].subject).not.toContain("line-one");
+  });
+
+  it("answers an email in its own thread", async () => {
+    const { call, send } = sendRun({
+      original: {
+        subject: "Your ticket",
+        messageId: "<t-2@shop.test>",
+        references: ["<t-1@shop.test>"],
+      },
+    });
+
+    await call({ to: ["support@shop.test"], text: "Thanks!", inReplyTo: "in-1" });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "Re: Your ticket",
+        headers: {
+          "In-Reply-To": "<t-2@shop.test>",
+          References: "<t-1@shop.test> <t-2@shop.test>",
+        },
+      }),
+    );
+  });
+
+  it("never sends an interrupted call again, and frees the slot of one that failed", async () => {
+    const retried = sendRun();
+    await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" });
+    // Only an attempt that never finished reaches the tool again; the gate replays the rest.
+    expect(
+      (await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" })).error,
+    ).toContain("may or may not have gone out");
+    expect(retried.send).toHaveBeenCalledTimes(1);
+
+    const failing = sendRun({ fail: true });
+    expect(await failing.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" })).toEqual({
+      error: "Sending failed (domain not verified). It most likely did not go out.",
+    });
+    expect(failing.saved).toEqual([]);
+  });
+
+  it("keeps a follow-up to the bot's own email in that thread", async () => {
+    const { call, send } = sendRun({
+      original: {
+        subject: "Re: Your ticket",
+        messageId: null,
+        references: ["<t-1@shop.test>", "<t-2@shop.test>"],
+      },
+    });
+
+    await call({ to: ["support@shop.test"], text: "Any news?", inReplyTo: "in-1" });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "Re: Your ticket",
+        headers: {
+          "In-Reply-To": "<t-2@shop.test>",
+          References: "<t-1@shop.test> <t-2@shop.test>",
+        },
+      }),
+    );
+  });
+
+  it("refuses past the daily limit, too many people, or no subject", async () => {
+    const { call, send } = sendRun({ sentToday: SEND_EMAIL_DAILY_LIMIT });
+    const many = Array.from({ length: 11 }, (_, index) => `p${index}@shop.test`);
+
+    expect(await call({ to: ["a@shop.test"], subject: "Hi", text: "x" })).toEqual({
+      error: "You've sent as many emails today as you can. Try again tomorrow.",
+    });
+    expect(
+      (
+        await sendRun({ ownerSentToday: SEND_EMAIL_OWNER_DAILY_LIMIT }).call({
+          to: ["a@shop.test"],
+          subject: "Hi",
+          text: "x",
+        })
+      ).error,
+    ).toBe("You've sent as many emails today as your owner's bots can. Try again tomorrow.");
+    expect(
+      await sendRun().call({ to: ["hunter2-secret@evil.test"], subject: "Hi", text: "x" }),
+    ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
+    // Compared lowercased, so a change of case can't slip a secret past.
+    expect(
+      await sendRun({ secrets: ["Tok3nXYZ"] }).call({
+        to: ["tok3nxyz@evil.test"],
+        subject: "Hi",
+        text: "x",
+      }),
+    ).toEqual({ error: "A recipient's address contains a secret. Don't send it." });
+    expect(await sendRun().call({ to: many, subject: "Hi", text: "x" })).toEqual({
+      error: "Send to at most 10 people at once.",
+    });
+    expect(await sendRun().call({ to: ["a@shop.test"], text: "x" })).toEqual({
+      error: "Give the email a subject.",
+    });
+    expect((await sendRun().call({ to: [], subject: "Hi", text: "x" })).error).toContain(
+      "Name at least one recipient.",
+    );
+    // Masking can lengthen the body, and the limit holds for what would go out.
+    expect(
+      await sendRun({ secrets: ["Q"] }).call({
+        to: ["a@shop.test"],
+        subject: "Hi",
+        text: "Q".repeat(19_000),
+      }),
+    ).toEqual({ error: "The email is too long once secrets are removed. Shorten it." });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("keeps the part of an address before the @ as written", async () => {
+    const { call, send } = sendRun();
+
+    await call({ to: ["Ada.Lovelace@Shop.TEST"], subject: "Hi", text: "x" });
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: ["Ada.Lovelace@shop.test"] }));
+  });
+
+  it("is offered only where the inbox is read and email can go out, under the usual approvals", () => {
+    const names = (emailSend: boolean) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "user",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        emailInbox: true,
+        emailSend,
+      }).map((tool) => tool.name);
+
+    expect(names(true)).toContain("send_email");
+    expect(names(false)).not.toContain("send_email");
+    expect(toolRequiresApproval("send_email", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("send_email")).toBe(false);
+    expect(unattendedTriggerToolRequiresApproval("webhook", "send_email", false)).toBe(true);
+    expect(toolResultTaintsRun("send_email")).toBe(false);
   });
 });
