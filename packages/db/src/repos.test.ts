@@ -29,7 +29,7 @@ const baseBot = {
   memoryScope: null as string | null,
   createdAt: new Date("2026-08-19T00:00:00.000Z"),
   updatedAt: new Date("2026-08-19T00:00:00.000Z"),
-  thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+  thread: { id: "thread-1", reads: [{ unread: false }], messages: [], runs: [] },
   runs: [],
   computer: null,
 };
@@ -450,7 +450,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           id: "thread-2",
-          unread: true,
+          reads: [{ unread: true }],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running", threadId: "group-thread" }],
@@ -478,7 +478,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         ]),
     } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceBotsForSpaces(["ws-2"])).resolves.toEqual([
+    await expect(repos.listSpaceBotsForSpaces(["ws-2"], "user-1")).resolves.toEqual([
       {
         id: "bot-2",
         spaceId: "ws-2",

@@ -345,6 +345,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     foreground,
     focused,
     sessionEpoch,
+    userId,
     activeBotId,
     activeGroupId,
     readVisibleTarget,

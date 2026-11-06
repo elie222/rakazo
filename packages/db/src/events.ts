@@ -70,6 +70,7 @@ import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
+import { clearThreadReads } from "./thread-reads.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
@@ -419,9 +420,11 @@ export async function clearThread(
         spaceId: input.spaceId,
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
-      data: { unread: false },
+      // Takes the thread's row lock, as every message writer does; nothing in it changes.
+      data: { nextMessageSeq: { increment: 0 } },
       select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
+    await clearThreadReads(tx, input.threadId);
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,

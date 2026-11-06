@@ -256,7 +256,9 @@ describePostgres("bot email addresses (PostgreSQL)", () => {
     });
     expect(notes).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(thread.unread).toBe(true);
+    await expect(
+      system.threadRead.count({ where: { threadId: thread.id, unread: true } }),
+    ).resolves.toBeGreaterThan(0);
     // Both copies of the owner's message are one inbox entry; the stranger's is another.
     const saved = await system.botEmailMessage.findMany({
       where: { botId: target.id },

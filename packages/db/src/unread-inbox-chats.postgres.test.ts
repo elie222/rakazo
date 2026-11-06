@@ -74,6 +74,15 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
     await close();
   });
 
+  // Unread for everyone in the Space, as a bot's reply leaves it.
+  function readsFor(spaceId: string, unread: boolean) {
+    if (!unread) return {};
+    const members = spaceId === spaceIds[3] ? [otherUserId] : [userId, otherUserId];
+    return {
+      reads: { create: members.map((member) => ({ spaceId, userId: member, unread: true })) },
+    };
+  }
+
   async function bot(spaceId: string, owner = userId, unread = true, archived = false) {
     return asSystem(prisma).bot.create({
       data: {
@@ -82,7 +91,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
         name: "Fixture",
         color: "blue",
         archivedAt: archived ? new Date() : null,
-        thread: { create: { spaceId, userId: owner, unread } },
+        thread: { create: { spaceId, userId: owner, ...readsFor(spaceId, unread) } },
       },
       include: { thread: true },
     });
@@ -103,7 +112,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
         name: "Fixture",
         archivedAt: archived ? new Date() : null,
         members: { create: members.map((member) => ({ botId: member.id })) },
-        thread: { create: { spaceId, userId: owner, unread } },
+        thread: { create: { spaceId, userId: owner, ...readsFor(spaceId, unread) } },
       },
     });
   }
@@ -134,8 +143,13 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
         spaceId,
         botId: externalBot.id,
         userId,
-        thread: { create: { spaceId, userId, unread: true } },
+        thread: { create: { spaceId, userId, ...readsFor(spaceId, true) } },
       },
+    });
+    // Unread only for someone else: another member read it, or it was theirs to read.
+    const readByThem = await bot(spaceId, userId, false);
+    await asSystem(prisma).threadRead.create({
+      data: { threadId: readByThem.thread!.id, spaceId, userId: otherUserId, unread: true },
     });
     await expect(
       runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { spaceId, userId })),

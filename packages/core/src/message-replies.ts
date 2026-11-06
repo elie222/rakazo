@@ -43,6 +43,17 @@ export function otherAuthor(
   return author && meId && author.id !== meId ? author : undefined;
 }
 
+/**
+ * A live message that leaves the chat unread for this viewer until they read it: a bot's, or
+ * one someone else in the space wrote. Their own never does.
+ */
+export function messageUnreadFor(payload: Record<string, unknown>, meId: string | undefined) {
+  return (
+    payload.role === "bot" ||
+    (payload.role === "user" && Boolean(otherAuthor(payloadAuthor(payload).author, meId)))
+  );
+}
+
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
   return quote ? quote.replace(/\s+/gu, " ") : (preview || fallback || "").split(/\r?\n/u)[0] || "";
 }

@@ -322,6 +322,7 @@ function fixture({
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
@@ -487,6 +488,7 @@ function fixture({
     externalEffect,
   };
   const transactionalPrisma = Object.assign(prisma, {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
       action(prisma),
@@ -687,6 +689,7 @@ function fixture({
         blocks: [{ kind: "text", text: promptText }],
       };
       const tx = {
+        $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn(async () => null) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },

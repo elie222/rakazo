@@ -45,7 +45,7 @@ export async function executeCloudAgentTool(
       // Serialize with clearThread before creating either the intent or its card.
       await tx.thread.update({
         where: { id: run.threadId, spaceId: context.spaceId },
-        data: { unread: false },
+        data: { nextMessageSeq: { increment: 0 } },
       });
       const existing = await tx.cloudAgent.findUnique({
         where: { operationKey: context.operationId },

@@ -40,6 +40,7 @@ export function useThreadSync({
   foreground,
   focused,
   sessionEpoch,
+  userId,
   activeBotId,
   activeGroupId,
   readVisibleTarget,
@@ -59,6 +60,8 @@ export function useThreadSync({
   foreground: boolean;
   focused: boolean;
   sessionEpoch: number;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  userId: string;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   readVisibleTarget: RefObject<string | null>;
@@ -193,6 +196,7 @@ export function useThreadSync({
     focused,
     readOnly,
     sessionEpoch,
+    userId,
     messageId,
     historyEpoch,
     expandedHistoryThread,

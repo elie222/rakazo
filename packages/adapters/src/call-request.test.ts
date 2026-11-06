@@ -27,6 +27,7 @@ function prismaWith(options: {
     },
   ];
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
     event: { create: vi.fn(async () => ({ seq: 0 })) },
@@ -245,6 +246,7 @@ describe("requestUserCall security", () => {
     let saved: { id: string; blocks: unknown; botId: string; thread: { spaceId: string } } | null =
       null;
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       $queryRaw: vi.fn(async () => []),
       thread: {
         findFirst: vi.fn(
@@ -414,7 +416,12 @@ describe("requestUserCall security", () => {
     ]);
     expect(results.filter((result) => "ok" in result)).toHaveLength(1);
     expect(tx.message.create).toHaveBeenCalledOnce();
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The ring lock, once per attempt; the rest set and restore the unread mark's system context.
+    expect(
+      tx.$queryRaw.mock.calls.filter((call) =>
+        ((call as unknown[])[0] as TemplateStringsArray).join("?").includes("pg_advisory"),
+      ),
+    ).toHaveLength(2);
     expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
   });
 

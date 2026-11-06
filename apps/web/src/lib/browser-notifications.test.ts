@@ -90,6 +90,23 @@ describe("browser notifications", () => {
     );
   });
 
+  it("accepts another member's message in a shared chat, never the viewer's own", () => {
+    const by = (id: string) =>
+      event({
+        payload: {
+          role: "user",
+          author: { id, name: "Ada Owner" },
+          blocks: [{ kind: "text", text: "Saturday works" }],
+        },
+      });
+    expect(shouldNotifyBrowser(by("user-a"), context({ meId: "user-b" }))).toBe(true);
+    expect(shouldNotifyBrowser(by("user-b"), context({ meId: "user-b" }))).toBe(false);
+    expect(browserNotificationMessage(by("user-a"), "Chief")).toEqual({
+      title: "Chief",
+      body: "Ada Owner: Saturday works",
+    });
+  });
+
   it("puts the bot message in the native notification", () => {
     expect(browserNotificationMessage(event(), "Chief")).toEqual({
       title: "Chief",

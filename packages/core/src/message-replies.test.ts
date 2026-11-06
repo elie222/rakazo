@@ -5,6 +5,7 @@ import { messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
   isPageOriginReply,
+  messageUnreadFor,
   otherAuthor,
   payloadAuthor,
   previewMessageText,
@@ -125,6 +126,14 @@ describe("message authors", () => {
     expect(otherAuthor(undefined, "user-b")).toBeUndefined();
     // Before the session loads, nobody is named rather than everyone.
     expect(otherAuthor(ana, undefined)).toBeUndefined();
+  });
+
+  it("counts a bot's message and another member's as unread, never my own", () => {
+    expect(messageUnreadFor({ role: "bot" }, "user-a")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-b")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-a")).toBe(false);
+    // A message with no known author, such as a webhook's, leaves the chat as it was.
+    expect(messageUnreadFor({ role: "user" }, "user-b")).toBe(false);
   });
 
   it("reads a live event's author and keeps the known one across updates", () => {

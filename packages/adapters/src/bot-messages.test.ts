@@ -44,6 +44,7 @@ function deps(
     );
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
     space: {
       findUnique: vi
         .fn()
@@ -69,6 +70,11 @@ function deps(
     event: { create: vi.fn().mockResolvedValue({ seq: 7 }) },
     thread: { update: vi.fn().mockResolvedValue({}) },
   };
+  /** Each time a chat was marked unread for its Space's members. */
+  const unreadMarks = () =>
+    tx.$executeRaw.mock.calls.filter(([sql]) =>
+      (sql as TemplateStringsArray).join("?").includes("INSERT INTO thread_reads"),
+    );
   let transactionAttempts = 0;
   const prisma = {
     bot: {
@@ -100,6 +106,7 @@ function deps(
       "prisma" | "events" | "jobs"
     >,
     tx,
+    unreadMarks,
     enqueue,
     notify,
   };
@@ -151,11 +158,7 @@ describe("messaging another bot", () => {
     expect(harness.notify).toHaveBeenCalledWith("thread-target", 7);
     expect(harness.notify).toHaveBeenCalledWith("thread-sender", 7);
     expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
-    expect(
-      harness.tx.thread.update.mock.calls.filter(
-        ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
-      ),
-    ).toHaveLength(0);
+    expect(harness.unreadMarks()).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -210,10 +213,7 @@ describe("messaging another bot", () => {
       { forceUnread: true },
     );
 
-    const unreadWrites = harness.tx.thread.update.mock.calls.filter(
-      ([call]) => (call as { data?: { unread?: boolean } }).data?.unread === true,
-    );
-    expect(unreadWrites).toHaveLength(2);
+    expect(harness.unreadMarks()).toHaveLength(2);
   });
 
   it("tells the sender to continue independent work", async () => {
