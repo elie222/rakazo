@@ -627,6 +627,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Only me": "Только я",
   "Anyone at @{domain}": "Любой из @{domain}",
   "Remove email trigger": "Удалить триггер почты",
+  "Get an email address": "Получить адрес почты",
+  "Bot email addresses": "Адреса почты ботов",
   "Use 2 to 64 characters": "Используйте от 2 до 64 символов",
   "Use letters, numbers, dots, dashes or underscores":
     "Используйте буквы, цифры, точки, дефисы или подчёркивания",

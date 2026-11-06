@@ -1,5 +1,6 @@
 import {
   toolRequiresApproval,
+  toolRequiresExplicitApproval,
   toolResultTaintsRun,
   unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
@@ -376,5 +377,137 @@ describe("botEmailInstruction", () => {
     expect(botEmailInstruction("scout@bots.test", { read: false, delete: false })).toBe(
       "Your email address is scout@bots.test.",
     );
+  });
+});
+
+describe("claim_email_address", () => {
+  function claimRun(
+    options: {
+      claimed?: Record<string, string>;
+      domain?: string;
+      runUserId?: string;
+      raceTo?: string;
+      tainted?: boolean;
+      approved?: boolean;
+    } = {},
+  ) {
+    // name → botId, as bot_email_addresses keeps them.
+    const names = new Map(Object.entries(options.claimed ?? {}));
+    const ctx = {
+      deps: {
+        inboundEmailDomain: "domain" in options ? options.domain : "bots.test",
+        prisma: {
+          // This is the run's first attempt.
+          attempt: { count: async () => 1 },
+          botEmailAddress: {
+            findUnique: async ({ where }: { where: { botId?: string; name?: string } }) => {
+              if (where.name) {
+                const botId = names.get(where.name);
+                return botId ? { botId, name: where.name } : null;
+              }
+              const entry = [...names].find(([, botId]) => botId === where.botId);
+              return entry ? { name: entry[0], botId: entry[1] } : null;
+            },
+            create: async ({ data }: { data: { name: string; botId: string } }) => {
+              if (options.raceTo) names.set(options.raceTo, data.botId);
+              if (options.raceTo || names.has(data.name))
+                throw Object.assign(new Error("taken"), { code: "P2002" });
+              names.set(data.name, data.botId);
+              return data;
+            },
+          },
+        },
+      },
+      bot: { id: "bot-1", userId: "owner-1" },
+      run: { userId: options.runUserId ?? "owner-1" },
+      state: { tainted: Boolean(options.tainted) },
+      runId: "run-1",
+      trust: { receivedOutsideMessage: async () => false },
+    };
+    const call = (args: Record<string, unknown>) =>
+      emailTools.claim_email_address!(
+        ctx as never,
+        {
+          name: "claim_email_address",
+          args,
+          executionId: "c",
+          nextApprovedTool: options.approved ? "claim_email_address" : undefined,
+          finish: async (r: unknown) => r,
+        } as never,
+      ) as Promise<Record<string, unknown>>;
+    return { call, names };
+  }
+
+  it("claims the name the owner agreed to, for good", async () => {
+    const { call, names } = claimRun();
+
+    expect(await call({ name: " Scout " })).toEqual({ address: "scout@bots.test" });
+    expect(names.get("scout")).toBe("bot-1");
+    expect(await call({ name: "other" })).toEqual({
+      error: "You already have an address, and it can't change.",
+      address: "scout@bots.test",
+    });
+  });
+
+  it("claims after outside content only when the owner approved this call", async () => {
+    const steered = claimRun({ tainted: true });
+    const approved = claimRun({ tainted: true, approved: true });
+
+    expect((await steered.call({ name: "scout" })).error).toContain("read outside content");
+    expect(steered.names.size).toBe(0);
+    expect(await approved.call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
+  });
+
+  it("tells a claim that lost a race to another name what the bot got", async () => {
+    // Another claim for this bot, with another name, lands first.
+    const { call } = claimRun({ raceTo: "raced" });
+
+    expect(await call({ name: "scout" })).toEqual({
+      error: "You already have an address, and it can't change.",
+      address: "raced@bots.test",
+    });
+  });
+
+  it("refuses taken, reserved and malformed names, and anyone but the owner", async () => {
+    const { call } = claimRun({ claimed: { scout: "bot-2" } });
+
+    expect(await call({ name: "scout" })).toEqual({
+      error: "That address isn't available. Ask for another.",
+    });
+    expect((await call({ name: "postmaster" })).error).toBe("That address isn't available");
+    expect((await call({ name: "a" })).error).toEqual(expect.any(String));
+    expect(await claimRun({ runUserId: "visitor-1" }).call({ name: "x1" })).toEqual({
+      error: "Only the bot's owner can do that.",
+    });
+    expect(await claimRun({ domain: undefined }).call({ name: "x1" })).toEqual({
+      error: "This server doesn't receive email.",
+    });
+  });
+
+  it("is offered only to the owner's own chat before the bot has an address, and always asks", () => {
+    const names = (options: { trigger: string; groupId?: string; emailClaimable: boolean }) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: options.groupId ?? null,
+        trigger: options.trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        emailClaimable: options.emailClaimable,
+      }).map((tool) => tool.name);
+
+    expect(names({ trigger: "user", emailClaimable: true })).toContain("claim_email_address");
+    expect(names({ trigger: "user", emailClaimable: false })).not.toContain("claim_email_address");
+    expect(names({ trigger: "webhook", emailClaimable: true })).not.toContain(
+      "claim_email_address",
+    );
+    expect(names({ trigger: "user", groupId: "g", emailClaimable: true })).not.toContain(
+      "claim_email_address",
+    );
+    // A bot that claims its address in this chat can read the sign-up mail that follows.
+    expect(names({ trigger: "user", emailClaimable: true })).toContain("read_email");
+    expect(names({ trigger: "webhook", emailClaimable: true })).not.toContain("read_email");
+    expect(toolRequiresExplicitApproval("claim_email_address")).toBe(true);
+    // Its result is the bot's own address, so a later preference change in the run still works.
+    expect(toolResultTaintsRun("claim_email_address")).toBe(false);
   });
 });

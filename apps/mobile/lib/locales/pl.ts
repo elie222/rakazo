@@ -522,6 +522,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Only me": "Tylko ja",
   "Anyone at @{domain}": "Każdy z @{domain}",
   "Remove email trigger": "Usuń wyzwalacz e-mail",
+  "Get an email address": "Uzyskaj adres e-mail",
+  "Bot email addresses": "Adresy e-mail botów",
   "Use 2 to 64 characters": "Użyj od 2 do 64 znaków",
   "Use letters, numbers, dots, dashes or underscores":
     "Użyj liter, cyfr, kropek, myślników lub podkreśleń",

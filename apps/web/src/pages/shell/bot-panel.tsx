@@ -39,9 +39,10 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Settings, X } from "lucide-react";
+import { Download, Mail, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
+import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
@@ -563,6 +564,7 @@ export function BotSettings({
             void enqueueSave({ name: value });
           }}
         />
+        <BotEmail bot={{ id: bot.id, name }} />
       </div>
       <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
         <TabsList className="w-full">
@@ -1016,4 +1018,30 @@ function SettingsGroup({
 function humanizeTool(name: string) {
   const words = name.replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The bot's address under its name; on a server that receives email, offered until claimed. */
+function BotEmail({ bot }: { bot: { id: string; name: string } }) {
+  const queries = useSpaceQueries();
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
+  const [claiming, setClaiming] = useState(false);
+  if (!email) return null;
+  if (!email.address && !claiming) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="mt-1 text-muted-foreground"
+        onClick={() => setClaiming(true)}
+      >
+        <Mail />
+        <Trans>Get an email address</Trans>
+      </Button>
+    );
+  }
+  return (
+    <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
+      <BotEmailAddressField bot={bot} domain={email.domain} address={email.address} />
+    </div>
+  );
 }

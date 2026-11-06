@@ -92,9 +92,18 @@ export function selectBuiltinToolsForRun(options: {
   userComputerScreen?: boolean;
   /** The bot has an email address and this run is its owner's own, outside any group or channel. */
   emailInbox?: boolean;
+  /** This server receives email and the bot has no address yet. */
+  emailClaimable?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  // Claiming is offered only in the owner's own chat, so once the bot claims an address there it
+  // can read the mail that follows, such as a sign-up code, in the same run.
+  const emailClaimOffered =
+    Boolean(options.emailClaimable) &&
+    ownerStartedRun &&
+    !options.groupId &&
+    !options.messagingChannelRun;
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -133,7 +142,8 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
-      (options.emailInbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      (options.emailInbox || emailClaimOffered || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&

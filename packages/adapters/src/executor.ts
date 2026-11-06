@@ -1433,6 +1433,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputer: userComputer === "connected",
             userComputerScreen,
             emailInbox,
+            emailClaimable:
+              Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
           }),
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
