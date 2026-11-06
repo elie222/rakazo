@@ -8,7 +8,6 @@ import {
   commandWatchFromTool,
   compactScheduleInput,
   createScheduleFromTool,
-  filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
   isOneShotRoutineCron,
   listSchedulesFromTool,
@@ -262,29 +261,8 @@ describe("filterBuiltinToolsForThread", () => {
     ]);
   });
 
-  it("allows schedule creation in routine runs but hides schedule updates", () => {
-    expect(filterBuiltinToolsForRun(tools, "routine").map((tool) => tool.name)).toEqual([
-      "handoff_to_bot",
-      "message_bot",
-      "schedule_create",
-      "schedule_list",
-      "schedule_cancel",
-      "remember",
-    ]);
-    const withUpdate = [...tools, { name: "schedule_update" }];
-    expect(filterBuiltinToolsForRun(withUpdate, "routine").map((tool) => tool.name)).not.toContain(
-      "schedule_update",
-    );
-    expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toEqual(
-      withUpdate.map((tool) => tool.name),
-    );
-  });
-
-  it("composes thread then run filters without dropping group schedule tools", () => {
-    const groupTools = filterBuiltinToolsForRun(
-      filterBuiltinToolsForThread(tools, "group-1"),
-      "routine",
-    ).map((tool) => tool.name);
+  it("filters group threads without dropping schedule tools", () => {
+    const groupTools = filterBuiltinToolsForThread(tools, "group-1").map((tool) => tool.name);
     expect(groupTools).toEqual([
       "handoff_to_bot",
       "schedule_create",
@@ -292,11 +270,7 @@ describe("filterBuiltinToolsForThread", () => {
       "schedule_cancel",
       "remember",
     ]);
-    expect(
-      filterBuiltinToolsForRun(filterBuiltinToolsForThread(tools, "group-1"), "user").map(
-        (tool) => tool.name,
-      ),
-    ).toContain("schedule_create");
+    expect(groupTools).toContain("schedule_create");
   });
 
   it("covers every schedule tool name", () => {

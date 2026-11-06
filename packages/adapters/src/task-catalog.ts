@@ -12,6 +12,7 @@ type TaskCatalogInput = {
   spaceId: string;
   botId: string;
   userId: string;
+  ownerUserId?: string;
   /** In a group run, marks which routines post in the group. */
   groupThreadId?: string;
   tools: readonly Pick<ConnectorTool, "name" | "description" | "readOnly">[];
@@ -39,6 +40,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     listSchedulesFromTool(deps, {
       spaceId: input.spaceId,
       botId: input.botId,
+      ...(input.ownerUserId ? { ownerUserId: input.ownerUserId } : {}),
       ...(input.groupThreadId ? { groupThreadId: input.groupThreadId } : {}),
     }),
     deps.prisma.taughtSkill.findMany({

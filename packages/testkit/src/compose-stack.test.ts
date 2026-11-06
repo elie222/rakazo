@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { composeBaseArgs } from "./compose-stack.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
+const require = createRequire(import.meta.url);
 
 describe("compose stack reachability", () => {
   it("applies the root env file to every compose invocation, like scripts/backup.sh", () => {
@@ -43,9 +45,22 @@ exit 1
 `,
       );
       chmodSync(path.join(bin, "docker"), 0o755);
+      const vitestPackagePath = require.resolve("vitest/package.json");
+      const vitestPackage = JSON.parse(readFileSync(vitestPackagePath, "utf8")) as {
+        bin: { vitest: string };
+      };
+      const vitestCliPath = path.resolve(path.dirname(vitestPackagePath), vitestPackage.bin.vitest);
+      const vitestConfigPath = path.join(bin, "vitest.config.mjs");
+      writeFileSync(vitestConfigPath, "export default {};\n");
       const result = spawnSync(
-        "pnpm",
-        ["exec", "vitest", "run", "packages/testkit/src/compose.backup.test.ts"],
+        process.execPath,
+        [
+          vitestCliPath,
+          "run",
+          "--config",
+          vitestConfigPath,
+          "packages/testkit/src/compose.backup.test.ts",
+        ],
         {
           cwd: repoRoot,
           env: {

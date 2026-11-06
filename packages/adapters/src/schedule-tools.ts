@@ -31,18 +31,6 @@ export const SCHEDULE_TOOL_NAMES = new Set([
   "schedule_cancel",
 ]);
 
-/** Routine runs may create, list, or cancel routines, but may not update them. */
-const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_update"]);
-
-export function filterBuiltinToolsForRun<T extends { name: string }>(
-  tools: T[],
-  runTrigger: string,
-): T[] {
-  return runTrigger === "routine"
-    ? tools.filter((tool) => !ROUTINE_RUN_HIDDEN_TOOLS.has(tool.name))
-    : tools;
-}
-
 /** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],
@@ -736,10 +724,14 @@ async function createWatchFromTool(
  */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; groupThreadId?: string },
+  input: { spaceId: string; botId: string; groupThreadId?: string; ownerUserId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
-    where: { spaceId: input.spaceId, botId: input.botId },
+    where: {
+      spaceId: input.spaceId,
+      botId: input.botId,
+      ...(input.ownerUserId ? { userId: input.ownerUserId } : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
   return {
@@ -820,6 +812,8 @@ export async function updateScheduleFromTool(
     threadId: string;
     /** In a group, only that thread's routines. */
     scopeThreadId?: string;
+    /** Restricts routine runs to schedules owned by this user. */
+    ownerUserId?: string;
     routineId: string;
     name?: string;
     prompt?: string;
@@ -838,20 +832,23 @@ export async function updateScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
+    ...(input.ownerUserId ? { userId: input.ownerUserId } : {}),
     ...(input.scopeThreadId ? { threadId: input.scopeThreadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, id: routineId, bot: { archivedAt: null } },
   });
   if (!existing) {
-    return input.scopeThreadId
-      ? groupNotFoundError(deps.prisma, {
-          spaceId: input.spaceId,
-          botId: input.botId,
-          id: routineId,
-          bot: { archivedAt: null },
-        })
-      : { error: "Schedule not found." };
+    return input.ownerUserId
+      ? { error: "Schedule not found." }
+      : input.scopeThreadId
+        ? groupNotFoundError(deps.prisma, {
+            spaceId: input.spaceId,
+            botId: input.botId,
+            id: routineId,
+            bot: { archivedAt: null },
+          })
+        : { error: "Schedule not found." };
   }
 
   let timezone = existing.timezone;
@@ -920,7 +917,7 @@ export async function updateScheduleFromTool(
   const { count } = await deps.prisma.routine.updateMany({
     where: {
       ...scope,
-      userId: existing.userId,
+      userId: input.ownerUserId ?? existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
@@ -989,6 +986,8 @@ export async function cancelScheduleFromTool(
     botId: string;
     /** In a group, only that thread's routines. */
     threadId?: string;
+    /** Restricts routine runs to schedules owned by this user. */
+    ownerUserId?: string;
     routineId?: string;
     name?: string;
   },
@@ -1002,23 +1001,28 @@ export async function cancelScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
+    ...(input.ownerUserId ? { userId: input.ownerUserId } : {}),
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
   });
   if (!existing) {
-    return input.threadId
-      ? groupNotFoundError(deps.prisma, {
-          spaceId: input.spaceId,
-          botId: input.botId,
-          ...(routineId ? { id: routineId } : { name: name! }),
-        })
-      : { error: "Schedule not found." };
+    return input.ownerUserId
+      ? { error: "Schedule not found." }
+      : input.threadId
+        ? groupNotFoundError(deps.prisma, {
+            spaceId: input.spaceId,
+            botId: input.botId,
+            ...(routineId ? { id: routineId } : { name: name! }),
+          })
+        : { error: "Schedule not found." };
   }
 
   // The scope is part of the delete, so the routine cannot change hands between the read and it.
-  const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });
+  const { count } = await deps.prisma.routine.deleteMany({
+    where: { ...scope, id: existing.id },
+  });
   if (count === 0) return { error: "Schedule not found." };
   await deps.jobs.cancel(routineJobKey(existing.id));
   return { ok: true as const, routineId: existing.id, name: existing.name };

