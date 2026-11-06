@@ -37,6 +37,7 @@ import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
+  COMPUTER_USING_RUNS,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
 } from "@rakazo/core";
@@ -191,6 +192,7 @@ async function assertComputerFreeFor(
   const othersWork = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
+      ...COMPUTER_USING_RUNS,
       userId: { not: actor.userId },
       ...(bot.computerId ? { bot: { computerId: bot.computerId } } : { botId: bot.id }),
     },

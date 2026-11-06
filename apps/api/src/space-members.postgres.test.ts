@@ -948,6 +948,16 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
     ).resolves.toMatchObject({ status: 409 });
+    // A background helper never uses the computer, so it doesn't keep teaching away.
+    await system.run.updateMany({
+      where: { botId: bot.id, status: "running" },
+      data: { trigger: "helper" },
+    });
+    expect(
+      JSON.stringify(
+        await call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
+      ),
+    ).not.toContain("working for someone else");
 
     // A member removed while holding the screen frees it at once, not when the lease runs out.
     await system.computer.update({

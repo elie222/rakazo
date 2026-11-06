@@ -137,3 +137,80 @@ describe("returning a helper's outcome", () => {
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 });
+
+describe("passing a helper's result back in a shared space", () => {
+  // The bot was made by "creator"; "member" shares the space and started the helper.
+  function shared(overrides: { member?: boolean; archived?: boolean } = {}) {
+    const createRun = vi.fn(async (_args: unknown) => ({ id: "wake" }));
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: { updateMany: vi.fn(async () => ({ count: 1 })), create: createRun },
+      message: {
+        findFirst: vi.fn(async () => ({
+          id: "card",
+          threadId: "chat",
+          blocks: [
+            { kind: "subagent", agentId: "call-1", name: "scout", task: "t", status: "running" },
+          ],
+        })),
+        update: vi.fn(async () => ({})),
+      },
+      spaceMember: {
+        findUnique: vi.fn(async () => (overrides.member === false ? null : { id: "membership" })),
+      },
+      bot: {
+        findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+          overrides.archived ||
+          (where.userId !== undefined && where.userId !== "creator") ||
+          where.archivedAt !== null
+            ? null
+            : { id: "bot" },
+        ),
+      },
+      task: { create: vi.fn(async () => ({ id: "wake-task" })) },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn(async () => ({ threadId: "chat" })) },
+      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    };
+    const enqueue = vi.fn(async () => undefined);
+    const run = {
+      id: "helper-run",
+      spaceId: "space",
+      botId: "bot",
+      userId: "member",
+      sourceMessageId: "card",
+    };
+    const returned = returnHelperOutcome(
+      { prisma, events: { notify: vi.fn(async () => undefined) }, jobs: { enqueue } } as never,
+      run,
+      { status: "completed", text: "found three venues" },
+    );
+    return { returned, createRun, enqueue };
+  }
+
+  it("brings it back for a member who did not make the bot, as their own turn", async () => {
+    const h = shared();
+    await h.returned;
+    expect(h.createRun).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        threadId: "chat",
+        userId: "member",
+        trigger: "helper_result",
+        clientNonce: "helper-result:helper-run",
+      }),
+      select: { id: true },
+    });
+    expect(h.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("wake"));
+  });
+
+  it.each([
+    ["the member has left the space", { member: false }],
+    ["the bot is archived", { archived: true }],
+  ])("only settles the card when %s", async (_label, overrides) => {
+    const h = shared(overrides);
+    await h.returned;
+    expect(h.createRun).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+});

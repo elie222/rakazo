@@ -239,14 +239,15 @@ export async function returnHelperOutcome(
       payload: { messageId: card.id, role: "bot", blocks: nextBlocks },
     });
     if (outcome.status === "stopped") return { threadId: card.threadId, eventSeq: event.seq };
-    // Like the cloud-agent wake: only for an active bot of a person still in the space.
+    // Like the cloud-agent wake: only for a person still in the space and a bot still active
+    // there. In a shared space that bot may be another member's; the turn runs as this person.
     const [member, bot] = await Promise.all([
       tx.spaceMember.findUnique({
         where: { spaceId_userId: { spaceId: run.spaceId, userId: run.userId } },
         select: { id: true },
       }),
       tx.bot.findFirst({
-        where: { id: run.botId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+        where: { id: run.botId, spaceId: run.spaceId, archivedAt: null },
         select: { id: true },
       }),
     ]);
