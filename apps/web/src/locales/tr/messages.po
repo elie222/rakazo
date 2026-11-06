@@ -435,7 +435,7 @@ msgstr "{summary} Yedek modelleriniz de başarısız oldu."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} olarak kaydedilir"
 
@@ -834,7 +834,7 @@ msgstr "{credit} tutarın tamamı model kullanımına gider."
 
 #: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "All bots"
 msgstr "Tüm botlar"
 
@@ -886,7 +886,7 @@ msgstr "Bu alanda izinli"
 msgid "Allowed once"
 msgstr "Bir kez izin verildi"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
 msgstr "Zaten bağlı"
 
@@ -1007,7 +1007,7 @@ msgstr "{provider} için API anahtarı"
 msgid "API key header"
 msgstr "API anahtarı üstbilgisi"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
 msgstr "API anahtarları"
 
@@ -1348,7 +1348,7 @@ msgid "Browse MCP servers"
 msgstr "MCP sunucularına göz at"
 
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
 msgstr "Yerleşik"
 
@@ -2012,7 +2012,7 @@ msgstr "Kişi"
 msgid "Contacts"
 msgstr "Kişiler"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "Çalıştırılacak kod içeriyor"
@@ -2457,7 +2457,8 @@ msgstr "Model sunucusuna ulaşılamadı."
 msgid "Could not reach the server"
 msgstr "Sunucuya ulaşılamadı"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "Bu dosyalar okunamadı"
 
@@ -2732,7 +2733,7 @@ msgstr "Ülke"
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2780,7 +2781,7 @@ msgstr "Oluşturuldu"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "Oluşturuluyor…"
@@ -2897,11 +2898,11 @@ msgstr "Varsayılan"
 msgid "Default ({0})"
 msgstr "Varsayılan ({0})"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from Hermes"
 msgstr "Hermes varsayılanı"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Default from OpenClaw"
 msgstr "OpenClaw varsayılanı"
 
@@ -3002,7 +3003,7 @@ msgid "Deny"
 msgstr "Reddet"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Description"
 msgstr "Açıklama"
 
@@ -3856,7 +3857,7 @@ msgstr "Gelen kutusu ve e-posta"
 msgid "Inbox triage"
 msgstr "Gelen kutusu ayıklama"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "API anahtarlarını dahil et"
 
@@ -3899,16 +3900,16 @@ msgstr "Talimat geçmişi"
 #: src/components/AskCard.tsx
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions"
 msgstr "Talimatlar"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions {position}"
 msgstr "Talimatlar {position}"
 
 #: src/lib/agent-import-errors.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "Talimatlar çok uzun. Bazı dosyaların işaretini kaldırın."
 
@@ -4197,7 +4198,7 @@ msgstr "Girişler"
 msgid "Logins and keys your bots can use."
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
 msgstr "Bir anahtar içeriyor gibi görünüyor"
 
@@ -4307,7 +4308,7 @@ msgid "MCP server"
 msgstr "MCP sunucusu"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "MCP servers"
 msgstr "MCP sunucuları"
 
@@ -4337,15 +4338,15 @@ msgstr "Üyeler ({0})"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/settings-nav.ts
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory"
 msgstr "Hafıza"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory {position}"
 msgstr "Hafıza {position}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "{title} için hafıza"
 
@@ -4361,11 +4362,11 @@ msgstr "Bahsetmeler"
 msgid "Mentions only"
 msgstr "Yalnızca bahsetmeler"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions OpenClaw features"
 msgstr "OpenClaw özelliklerinden bahsediyor"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Mentions: {mentions}"
 msgstr "Bahsedilenler: {mentions}"
 
@@ -4465,7 +4466,7 @@ msgstr "Mod"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/routine-editor/model-settings.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "Model"
@@ -4586,7 +4587,7 @@ msgstr "Bilgisayarlarım"
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4599,7 +4600,7 @@ msgstr "Ad"
 msgid "Name on card"
 msgstr "Kart üzerindeki isim"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Name this bot"
 msgstr "Bota bir ad ver"
 
@@ -4813,7 +4814,7 @@ msgstr "Kullanılabilir model kataloğu yok."
 msgid "No models listed."
 msgstr "Listelenen model yok."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "OpenClaw, Hermes veya agent belgesi bulunamadı."
 
@@ -4877,7 +4878,7 @@ msgstr "Yok"
 msgid "Normal"
 msgstr "Normal"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not a valid skill"
 msgstr "Geçerli bir beceri değil"
 
@@ -4894,7 +4895,7 @@ msgstr "Henüz kontrol edilmedi"
 msgid "Not connected"
 msgstr "Bağlı değil"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not imported"
 msgstr "İçe aktarılmadı"
 
@@ -4911,12 +4912,12 @@ msgstr "Eklenti kataloğunda yok"
 msgid "Not now"
 msgstr "Şimdi değil"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Rakazo'da desteklenmiyor"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Not used by Rakazo"
 msgstr "Rakazo tarafından kullanılmıyor"
 
@@ -5264,7 +5265,7 @@ msgstr "Beklemede"
 msgid "Permissions"
 msgstr "İzinler"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Persona"
 msgstr "Kişilik"
 
@@ -5934,7 +5935,7 @@ msgstr "Anahtarı yenile"
 msgid "Routine"
 msgstr "Rutin"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Rutinler"
@@ -6442,7 +6443,7 @@ msgstr "Beceri"
 msgid "Skill {0}"
 msgstr "Beceri: {0}"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
 msgstr "Beceri {position}"
 
@@ -6450,11 +6451,11 @@ msgstr "Beceri {position}"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/Shell.tsx
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skills"
 msgstr "Beceriler"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Skills join the library all your bots share."
 msgstr "Beceriler tüm botlarınızın paylaştığı kitaplığa eklenir."
 
@@ -6494,7 +6495,7 @@ msgstr "Kilitlemek için yukarı kaydır"
 msgid "Some plugins could not be loaded."
 msgstr "Bazı eklentiler yüklenemedi."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Some settings are not imported"
 msgstr "Bazı ayarlar içe aktarılmaz"
 
@@ -6888,7 +6889,7 @@ msgstr "Paylaşılan bağlantı çalışmayı durdurur"
 msgid "The unused difference is credited to your next invoice."
 msgstr "Kullanılmayan fark bir sonraki faturanıza alacak olarak yansıtılır."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
 msgstr "Bu dosyalar içe aktarmak için çok büyük."
 
@@ -6925,11 +6926,11 @@ msgstr "Bu hesap devre dışı bırakıldı"
 msgid "This app needs its own sign-in setup to connect."
 msgstr "Bu uygulamanın bağlanması için kendi oturum açma kurulumu gerekiyor."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "Bu yedek okunamadı."
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "This bot"
 msgstr "Bu bot"
 
@@ -7094,7 +7095,7 @@ msgstr "Günün saati"
 msgid "Timezone"
 msgstr "Saat dilimi"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Timing may differ"
 msgstr "Zamanlama farklı olabilir"
 
@@ -7669,7 +7670,7 @@ msgstr "İş"
 msgid "Working"
 msgstr "Çalışıyor"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/agent-import-plan.tsx
 msgid "Working instructions"
 msgstr "Çalışma talimatları"
 
