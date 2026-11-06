@@ -288,17 +288,7 @@ async function main() {
     artifacts,
     connector: stack.connector,
     connectors: stack.connector,
-    listConnectedPluginSlugs: async (userId) => {
-      const provider = await integrationSettings.resolve("composio");
-      if (!provider) return [];
-      return provider.listConnectedExternalIds({
-        userId,
-        spaceId: "",
-        operationId: "connections.sync",
-        traceId: "connections.sync",
-        signal: AbortSignal.timeout(15_000),
-      });
-    },
+    listConnectedPluginSlugs: (userId) => integrationSettings.listConnectedPluginSlugs(userId),
     secrets: [
       deploymentModelKey ?? "",
       process.env.COMPOSIO_API_KEY ?? "",
