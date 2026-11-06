@@ -38,7 +38,7 @@ import {
   MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
 } from "./team-chat-startup.js";
-import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-target.js";
+import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,

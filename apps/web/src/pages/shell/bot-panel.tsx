@@ -684,7 +684,7 @@ export function BotSettings({
                 ) : null}
               </div>
             </div>
-            <SettingsGroup label={t`Computer`} plain>
+            <BotPanelGroup label={t`Computer`} plain>
               <ComputerModePicker value={computerMode} onChange={setComputerMode} />
               {memoryProviderConfigured ? (
                 <div className="mt-4 text-body text-foreground">
@@ -713,8 +713,8 @@ export function BotSettings({
                   </div>
                 </div>
               ) : null}
-            </SettingsGroup>
-            <SettingsGroup label={t`Voice`}>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Voice`}>
               <label
                 htmlFor={`${ids}-auto-speak`}
                 className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
@@ -749,8 +749,8 @@ export function BotSettings({
                   </NativeSelect>
                 </label>
               ) : null}
-            </SettingsGroup>
-            <SettingsGroup label={t`Permissions`}>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Permissions`}>
               <div className="flex min-h-11 items-center justify-between gap-3 text-body">
                 <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
                   <Trans>Daily check-ins on unfinished work</Trans>
@@ -793,8 +793,8 @@ export function BotSettings({
                   }}
                 />
               </div>
-            </SettingsGroup>
-            <SettingsGroup label={t`Replies`} plain>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Replies`} plain>
               <NativeSelect
                 id={`${ids}-reply-mode`}
                 aria-label={t`Replies`}
@@ -810,9 +810,9 @@ export function BotSettings({
                 <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
                 <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
               </NativeSelect>
-            </SettingsGroup>
+            </BotPanelGroup>
             <InstructionSettings key={bot.id} bot={bot} />
-            <SettingsGroup label={t`How other bots see it`} plain>
+            <BotPanelGroup label={t`How other bots see it`} plain>
               <Textarea
                 id={`${ids}-description`}
                 aria-label={t`How other bots see it`}
@@ -824,8 +824,8 @@ export function BotSettings({
                 rows={2}
                 className="min-h-16 max-h-96 resize-none field-sizing-content"
               />
-            </SettingsGroup>
-            <SettingsGroup label={t`Tools`} plain>
+            </BotPanelGroup>
+            <BotPanelGroup label={t`Tools`} plain>
               <section data-testid="bot-settings-tools">
                 <div className="space-y-2 [&>*]:mt-0">
                   <div>
@@ -870,7 +870,7 @@ export function BotSettings({
                   ))}
                 </div>
               </section>
-            </SettingsGroup>
+            </BotPanelGroup>
             <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
               <button
                 type="button"
@@ -995,7 +995,7 @@ function InlineProfileField({
 }
 
 /** `plain` drops the card for a section whose single control already draws its own frame. */
-function SettingsGroup({
+function BotPanelGroup({
   label,
   plain = false,
   children,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
-import type { McpServer } from "./domain.js";
-import { mcpServerConnection, mcpServerNeedsSignIn } from "./domain.js";
+import type { McpServer } from "./mcp.js";
+import { mcpServerConnection, mcpServerNeedsSignIn } from "./mcp.js";
 
 function server(overrides: Partial<McpServer> = {}): McpServer {
   return {

@@ -774,6 +774,8 @@ export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+  /** The provider can filter its listed voices by language. */
+  languages?: boolean;
 }
 
 export interface VoiceVerifyResult {
