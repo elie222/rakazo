@@ -15,8 +15,11 @@ bot called during the run.
 - Each step shows the tool, the call's main argument (the shell command, path, query or
   similar, bounded and with secrets taken out), how long it took, and whether it succeeded,
   failed, or is still running.
-- A step opens to a small terminal: the full shell command when there is one, what the call
-  returned or printed (with secrets taken out), its exit code or error, and a Copy button.
+- A step opens to a code card: the full shell command when there is one, otherwise the call's
+  arguments as JSON, then what the call returned or printed (JSON indented, secrets taken out),
+  its exit code or error, and Copy buttons for the command and the output.
+- A call shows as a step as soon as it starts. Only a call that lands mid-sentence in the bot's
+  own text waits for that sentence to end; a tool status line never holds one back.
   A running shell command's output follows live. Rows of a finished run read their results
   on demand from the run's events; a step saved before results were recorded shows
   "No output recorded".
@@ -35,8 +38,9 @@ API responses are the same with it on or off.
 
 - A `steps` block row carries the call's `executionId`, `detail`, `outcome` and
   `durationMs`, all optional, so replies saved before this stay readable.
-- The `agent.tool.called` event carries the call's `detail`; the `agent.tool.completed` audit
-  carries a bounded, redacted `preview` of the text the tool returned. Shell commands keep
+- The `agent.tool.called` event carries the call's `detail` and its arguments as bounded,
+  redacted JSON (`input`); the `agent.tool.completed` audit carries a bounded, redacted
+  `preview` of the text the tool returned. Shell commands keep
   streaming their output through `computer.command` events as before.
 - `threads.toolCalls` folds a run's completion and command events into one record per call
   for the expanded rows. Live runs apply the same events as they arrive.

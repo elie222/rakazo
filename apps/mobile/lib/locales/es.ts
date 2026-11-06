@@ -675,6 +675,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "No output recorded.": "No se registró ninguna salida.",
   "Couldn't load this step.": "No se pudo cargar este paso.",
   "exit {code}": "código de salida {code}",
+  "Copy output": "Copiar salida",
   "API key": "Clave de API",
   "Account ID": "ID de cuenta",
   "Gateway ID": "ID de gateway",

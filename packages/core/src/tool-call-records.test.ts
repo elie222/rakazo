@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldToolCallRecords, reduceToolCallRecord } from "./tool-call-records.js";
+import { foldToolCallRecords, prettyToolText, reduceToolCallRecord } from "./tool-call-records.js";
 
 describe("foldToolCallRecords", () => {
   it("gives one record per call with its outcome, duration and result text", () => {
@@ -110,6 +110,45 @@ describe("foldToolCallRecords", () => {
       payload: { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 5 },
     });
     expect(first).toMatchObject({ executionId: "x1", status: "done", outcome: "succeeded" });
+  });
+
+  it("keeps a call's arguments from its call event until its result lands", () => {
+    expect(
+      foldToolCallRecords([
+        {
+          type: "agent.tool.called",
+          payload: { name: "web_search", executionId: "x1", input: '{\n  "query": "weather"\n}' },
+        },
+        {
+          type: "agent.tool.completed",
+          payload: {
+            name: "web_search",
+            executionId: "x1",
+            outcome: "succeeded",
+            preview: "Sunny.",
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        executionId: "x1",
+        name: "web_search",
+        status: "done",
+        outcome: "succeeded",
+        input: '{\n  "query": "weather"\n}',
+        output: "Sunny.",
+      },
+    ]);
+    expect(foldToolCallRecords([{ type: "agent.tool.called", payload: { name: "x" } }])).toEqual(
+      [],
+    );
+  });
+
+  it("indents JSON output and leaves other text alone", () => {
+    expect(prettyToolText('{"a":[1,2]}')).toBe('{\n  "a": [\n    1,\n    2\n  ]\n}');
+    expect(prettyToolText("[1,2]")).toBe("[\n  1,\n  2\n]");
+    expect(prettyToolText("{not json")).toBe("{not json");
+    expect(prettyToolText("plain text\n")).toBe("plain text\n");
   });
 
   it("ignores malformed command events", () => {

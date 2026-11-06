@@ -373,9 +373,12 @@ export function reduceLiveMessageBlocks(
       ? update.payload?.activity === true
       : tail?.kind === "progress" && tail.activity === true;
 
-  if (pendingTools.length > 0 && endsSentence(tailText)) {
+  // A tool status line is not the bot's prose, so a call never waits behind it: the step shows
+  // at once and the line stays after it as the working label.
+  if (pendingTools.length > 0 && (activity || endsSentence(tailText))) {
     let next = activity ? [...segments] : appendTextSegment(segments, tailText);
     for (const call of pendingTools) next = appendToolCallSegment(next, call);
+    if (activity && tailText) next.push({ kind: "progress", text: tailText, activity: true });
     return next;
   }
   if (!tailText) return [...segments];

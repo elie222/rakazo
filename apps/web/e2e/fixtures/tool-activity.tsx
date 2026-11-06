@@ -97,6 +97,7 @@ seedToolCallRecords(
       ...(running
         ? { output: "Checking 3 calendars" }
         : { output: step.output, durationMs: step.durationMs }),
+      ...(step.command ? {} : { input: JSON.stringify({ query: step.detail }, null, 2) }),
       ...(step.outcome === "error"
         ? { outcome: "error", error: "Anna's calendar is not shared." }
         : running

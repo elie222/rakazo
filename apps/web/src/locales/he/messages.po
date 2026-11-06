@@ -1913,6 +1913,10 @@ msgstr "העתקת מקור הדיאגרמה"
 msgid "Copy link"
 msgstr "העתקת קישור"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Copy output"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "העתקת ההנחיה"

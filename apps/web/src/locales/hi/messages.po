@@ -1913,6 +1913,10 @@ msgstr "डायग्राम स्रोत कॉपी करें"
 msgid "Copy link"
 msgstr "लिंक कॉपी करें"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Copy output"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "प्रॉम्प्ट कॉपी करें"

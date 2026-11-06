@@ -1914,6 +1914,10 @@ msgstr "複製圖表原始碼"
 msgid "Copy link"
 msgstr "複製連結"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Copy output"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "複製提示詞"

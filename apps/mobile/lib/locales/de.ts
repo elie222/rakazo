@@ -704,6 +704,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "No output recorded.": "Keine Ausgabe aufgezeichnet.",
   "Couldn't load this step.": "Dieser Schritt konnte nicht geladen werden.",
   "exit {code}": "Exit-Code {code}",
+  "Copy output": "Ausgabe kopieren",
   "API key": "API-Schlüssel",
   "Account ID": "Konto-ID",
   "Gateway ID": "Gateway-ID",

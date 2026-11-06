@@ -685,6 +685,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "No output recorded.": "出力は記録されていません。",
   "Couldn't load this step.": "このステップを読み込めませんでした。",
   "exit {code}": "終了コード {code}",
+  "Copy output": "出力をコピー",
   "API key": "APIキー",
   "Account ID": "アカウントID",
   "Gateway ID": "ゲートウェイID",

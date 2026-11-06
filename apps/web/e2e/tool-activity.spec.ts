@@ -109,11 +109,16 @@ test("tool activity shows for live and finished runs when the user turned it on"
     await expect(panel.getByTestId("tool-step-output")).toHaveText("Tue Aug 18 20:00:00 CEST 2026");
     await expect(panel.getByTestId("tool-step-exit")).toHaveText("exit 0");
     await expect(panel.getByTestId("tool-step-copy")).toHaveText("Copy");
+    await expect(panel.getByTestId("tool-step-copy-output")).toHaveText("Copy output");
+    // A structured call shows its arguments instead of a command line.
+    const searchRow = page.getByTestId("tool-step").filter({ hasText: "Search inbox" });
+    await searchRow.click();
+    await expect(page.getByTestId("tool-step-input")).toContainText('"query": "from:anna tuesday"');
     const failedRow = page.getByTestId("tool-step").filter({ hasText: "Compare calendars" });
     await expect(failedRow.getByRole("img")).toHaveAccessibleName("Failed");
     await failedRow.click();
     await expect(page.getByTestId("tool-step-error")).toHaveText("Anna's calendar is not shared.");
-    await expect(page.getByTestId("tool-step-panel")).toHaveCount(2);
+    await expect(page.getByTestId("tool-step-panel")).toHaveCount(3);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
     await captureScreenshot(page, testInfo, `default-done-steps-open-${viewport.name}`);
   }

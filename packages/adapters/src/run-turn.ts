@@ -9,6 +9,7 @@ import {
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
+import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
 import {
   containsSecret,
   displayName,
@@ -524,7 +525,9 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
-  const detail = toolStepDetail(event, ctx.secrets);
+  const callArgs = toolCallArgs(event);
+  const detail = toolStepDetail(callArgs, ctx.secrets);
+  const input = toolCallInput(event.name, callArgs, ctx.secrets);
   reply.pendingTools.push(
     ...(stepNames.length > 0 ? stepNames : [event.name]).map((name) => ({
       name,
@@ -552,6 +555,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
       name: event.name,
       executionId: event.executionId,
       ...(detail === undefined ? {} : { detail }),
+      ...(input === undefined ? {} : { input }),
     },
   });
   await showNarrationStatus(ctx, heldNote);
@@ -616,11 +620,29 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   }
 }
 
-/** What the call is about, safe to show: its arguments' main line with secrets taken out. */
-function toolStepDetail(event: RuntimeEvent<"tool">, secrets: string[]): string | undefined {
+/** The arguments the call is about: a deferred tool's own, when reached through use_tool. */
+function toolCallArgs(event: RuntimeEvent<"tool">): unknown {
   const inner = event.name === USE_TOOL ? event.args.arguments : undefined;
-  const detail = toolCallDetail(inner && typeof inner === "object" ? inner : event.args);
+  return inner && typeof inner === "object" ? inner : event.args;
+}
+
+/** What the call is about, safe to show: its arguments' main line with secrets taken out. */
+function toolStepDetail(args: unknown, secrets: string[]): string | undefined {
+  const detail = toolCallDetail(args);
   return detail === undefined ? undefined : sanitizeSensitiveText(redactSecrets(detail, secrets));
+}
+
+/**
+ * The call's arguments for the activity view, as bounded JSON with secrets taken out. A shell
+ * command's text already streams with its output, so it carries none.
+ */
+function toolCallInput(name: string, args: unknown, secrets: string[]): string | undefined {
+  if (name === "shell" || name === "user_computer_shell") return undefined;
+  if (!args || typeof args !== "object" || Object.keys(args).length === 0) return undefined;
+  const json = sanitizeSensitiveText(redactSecrets(JSON.stringify(args, null, 2), secrets));
+  return json.length > TOOL_RESULT_PREVIEW_MAX_CHARS
+    ? `${json.slice(0, TOOL_RESULT_PREVIEW_MAX_CHARS)}…`
+    : json;
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */

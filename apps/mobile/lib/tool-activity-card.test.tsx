@@ -141,8 +141,18 @@ describe("mobile tool activity card", () => {
       ]),
     );
     expect(container.textContent).toContain("exit 1");
-    const copy = [...container.querySelectorAll("button")].find((b) => b.textContent === "Copy");
-    await act(async () => copy?.click());
+    const buttons = () => [...container.querySelectorAll("button")];
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "Copy")
+        ?.click(),
+    );
+    expect(setStringAsync).toHaveBeenCalledWith("pnpm test");
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "Copy output")
+        ?.click(),
+    );
     expect(setStringAsync).toHaveBeenCalledWith("RUN\n1 failed");
     expect(container.textContent).toContain("Copied");
   });

@@ -694,6 +694,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "No output recorded.": "Brak zapisanego wyniku.",
   "Couldn't load this step.": "Nie udało się wczytać tego kroku.",
   "exit {code}": "kod wyjścia {code}",
+  "Copy output": "Kopiuj wynik",
   "API key": "Klucz API",
   "Account ID": "Identyfikator konta",
   "Gateway ID": "Identyfikator bramy",

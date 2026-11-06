@@ -1913,6 +1913,10 @@ msgstr "다이어그램 소스 복사"
 msgid "Copy link"
 msgstr "링크 복사"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Copy output"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "프롬프트 복사"

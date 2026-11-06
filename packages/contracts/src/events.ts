@@ -476,6 +476,8 @@ export const ToolCallRecordSchema = z.object({
   error: z.string().optional(),
   /** The full shell command, when the call ran one. */
   command: z.string().optional(),
+  /** The call's arguments as redacted, bounded JSON; absent for a shell command, whose text is `command`. */
+  input: z.string().optional(),
   /** Redacted text the tool returned, or the shell's output tail while and after it runs. */
   output: z.string().optional(),
   exitCode: z.number().int().nullable().optional(),

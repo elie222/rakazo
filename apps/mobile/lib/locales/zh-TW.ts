@@ -302,6 +302,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "No output recorded.": "未記錄輸出。",
   "Couldn't load this step.": "無法載入此步驟。",
   "exit {code}": "結束代碼 {code}",
+  "Copy output": "複製輸出",
   "GraphQL endpoint": "GraphQL 端點",
   "https://example.com/graphql": "https://example.com/graphql",
   React: "回應",

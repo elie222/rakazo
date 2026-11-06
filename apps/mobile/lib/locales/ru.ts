@@ -342,6 +342,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "No output recorded.": "Вывод не записан.",
   "Couldn't load this step.": "Не удалось загрузить этот шаг.",
   "exit {code}": "код выхода {code}",
+  "Copy output": "Скопировать вывод",
   "GraphQL endpoint": "Конечная точка GraphQL",
   "https://example.com/graphql": "https://example.com/graphql",
   "Add thumbs-up": "Поставить отметку «Нравится»",

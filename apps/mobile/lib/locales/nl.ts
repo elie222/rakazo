@@ -697,6 +697,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "No output recorded.": "Geen uitvoer vastgelegd.",
   "Couldn't load this step.": "Deze stap kon niet worden geladen.",
   "exit {code}": "exitcode {code}",
+  "Copy output": "Uitvoer kopiëren",
   "API key": "API-sleutel",
   "Account ID": "Account-ID",
   "Gateway ID": "Gateway-ID",

@@ -10,6 +10,7 @@ import {
   humanizeToolName,
   isRunTerminalEvent,
   liveActivityLine,
+  liveMessageComposing,
   normalizeResponseStreamingPreference,
   noteLastToolStep,
   projectMessages,
@@ -138,15 +139,24 @@ describe("reduceLiveMessageBlocks", () => {
     ).toEqual([{ kind: "progress", text: "Using browser", activity: true }]);
   });
 
-  it("replaces punctuated activity text with its tool step", () => {
+  it("shows a tool step at once behind a status line, which stays as the working label", () => {
+    // A status line is not prose: "Running: ls -la" never ends a sentence, yet the step must show.
     const activity = reduceLiveMessageBlocks([], {
       type: "progress",
-      payload: { text: "Running: echo done.", activity: true },
+      payload: { text: "Running: ls -la", activity: true },
     });
-
-    expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+    const blocks = reduceLiveMessageBlocks(activity, {
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+      detail: "ls -la",
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls -la" }] },
+      { kind: "progress", text: "Running: ls -la", activity: true },
     ]);
+    expect(liveActivityLine([{ id: "progress:run-1", blocks }])).toBe("Running: ls -la");
+    expect(liveMessageComposing(blocks)).toBe(false);
   });
 
   it("keeps a tool waiting on an unfinished sentence when a reset drops the text", () => {

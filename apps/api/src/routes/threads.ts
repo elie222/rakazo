@@ -69,8 +69,8 @@ export function callMarkerClientNonce(callId: string): string {
 }
 
 /** The card is closed by a marker; the run that follows finishes whatever the call left open. */
-/** Enough events for a long run: two per call, plus one more per streamed shell command. */
-const TOOL_CALL_RECORD_EVENTS = 4_000;
+/** Enough events for a long run: two per call, plus two more per streamed shell command. */
+const TOOL_CALL_RECORD_EVENTS = 6_000;
 
 const HANG_UP_PROMPT =
   "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
@@ -353,7 +353,7 @@ export function threadsRoutes(ctx: RouterContext) {
           where: {
             threadId: thread.id,
             runId: input.runId,
-            type: { in: ["agent.tool.completed", "computer.command"] },
+            type: { in: ["agent.tool.called", "agent.tool.completed", "computer.command"] },
           },
           orderBy: { seq: "asc" },
           take: TOOL_CALL_RECORD_EVENTS,

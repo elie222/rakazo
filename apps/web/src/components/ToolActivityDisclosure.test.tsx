@@ -239,9 +239,47 @@ describe("ToolSteps", () => {
     );
     expect(container.querySelector('[data-testid="tool-step-exit"]')?.textContent).toBe("exit 1");
     expect(container.querySelector('[data-testid="tool-step-copy"]')?.textContent).toBe("Copy");
+    expect(container.querySelector('[data-testid="tool-step-copy-output"]')?.textContent).toBe(
+      "Copy output",
+    );
 
     flushSync(() => row?.click());
     expect(container.querySelector('[data-testid="tool-step-panel"]')).toBeNull();
+    root.unmount();
+  });
+
+  it("shows a structured call's arguments and indents its JSON result", () => {
+    seedToolCallRecords("run-1", [
+      {
+        executionId: "x1",
+        name: "web_search",
+        status: "done",
+        outcome: "succeeded",
+        input: '{\n  "query": "weather"\n}',
+        output: '{"results":[{"title":"Sunny"}]}',
+      },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Web search", count: 1, executionId: "x1", detail: "weather" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-input"]')?.textContent).toBe(
+      '{\n  "query": "weather"\n}',
+    );
+    expect(container.querySelector('[data-testid="tool-step-output"]')?.textContent).toBe(
+      '{\n  "results": [\n    {\n      "title": "Sunny"\n    }\n  ]\n}',
+    );
+    expect(container.querySelector('[data-testid="tool-step-command"]')).toBeNull();
     root.unmount();
   });
 

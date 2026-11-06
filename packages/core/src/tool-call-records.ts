@@ -1,9 +1,27 @@
 import type { ToolCallRecord } from "@rakazo/contracts";
 import { ComputerCommandSchema } from "@rakazo/contracts";
 
-/** Events that say what a tool call did: its completion audit and any shell output it streamed. */
+/** Events that say what a tool call did: its call, its completion audit and any shell output it streamed. */
 export function isToolCallRecordEvent(event: { type: string }): boolean {
-  return event.type === "agent.tool.completed" || event.type === "computer.command";
+  return (
+    event.type === "agent.tool.called" ||
+    event.type === "agent.tool.completed" ||
+    event.type === "computer.command"
+  );
+}
+
+/**
+ * Tool output for people: JSON comes back indented, anything else as it was. A shell prints
+ * text, so this only changes what structured tools return.
+ */
+export function prettyToolText(text: string): string {
+  const trimmed = text.trim();
+  if (!/^[[{]/.test(trimmed)) return text;
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return text;
+  }
 }
 
 /**
@@ -27,6 +45,18 @@ export function reduceToolCallRecord(
   records: ReadonlyMap<string, ToolCallRecord>,
   event: { type: string; payload: unknown },
 ): ToolCallRecord | undefined {
+  if (event.type === "agent.tool.called") {
+    const payload = asRecord(event.payload);
+    if (typeof payload.executionId !== "string") return undefined;
+    const prior = records.get(payload.executionId);
+    return {
+      ...prior,
+      executionId: payload.executionId,
+      name: typeof payload.name === "string" ? payload.name : (prior?.name ?? ""),
+      status: prior?.status ?? "running",
+      ...(typeof payload.input === "string" ? { input: payload.input } : {}),
+    };
+  }
   if (event.type === "agent.tool.completed") {
     const payload = asRecord(event.payload);
     if (typeof payload.executionId !== "string") return undefined;

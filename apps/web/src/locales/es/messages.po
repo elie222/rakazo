@@ -1913,6 +1913,10 @@ msgstr "Copiar fuente del diagrama"
 msgid "Copy link"
 msgstr "Copiar enlace"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Copy output"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "Copiar prompt"
