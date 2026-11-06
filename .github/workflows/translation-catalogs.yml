@@ -112,10 +112,20 @@ jobs:
           [ "${files[0]}" = "$PATCH_DIR/catalogs.patch" ]
           [ -f "$PATCH_DIR/catalogs.patch" ] && [ ! -L "$PATCH_DIR/catalogs.patch" ]
           git apply --index --include='apps/web/src/locales/*' "$PATCH_DIR/catalogs.patch"
-          while read -r mode file; do
-            [ "$mode" = 100644 ]
-            [[ "$file" =~ ^apps/web/src/locales/[A-Za-z-]+/messages\.po$ ]]
-          done < <(git diff --cached --raw | awk '{ print $2, $6 }')
+          # Only edits to catalogs that already exist may be published: no renames, additions,
+          # deletions, mode changes or other paths. Rename detection is off so every path a
+          # change touches is listed, and paths are NUL-delimited so none can be forged.
+          changed=0
+          while IFS= read -r -d '' meta && IFS= read -r -d '' file; do
+            read -r old_mode new_mode _ _ status <<<"${meta#:}"
+            if [ "$status" != M ] || [ "$old_mode" != 100644 ] || [ "$new_mode" != 100644 ] ||
+              ! [[ "$file" =~ ^apps/web/src/locales/[A-Za-z-]+/messages\.po$ ]]; then
+              echo "::error::Refusing catalog change: $status $old_mode $new_mode $file"
+              exit 1
+            fi
+            changed=$((changed + 1))
+          done < <(git diff --cached --no-renames --raw -z)
+          [ "$changed" -gt 0 ]
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -m "Update translation catalogs"
