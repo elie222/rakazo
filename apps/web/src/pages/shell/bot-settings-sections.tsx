@@ -51,7 +51,7 @@ export function ComputerModePicker({
 }
 
 /** `plain` drops the card for a section whose single control already draws its own frame. */
-function SettingsGroup({
+function BotPanelGroup({
   label,
   plain = false,
   children,
@@ -209,7 +209,7 @@ export function ComputerGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`Computer`} plain>
+    <BotPanelGroup label={t`Computer`} plain>
       <ComputerModePicker value={computerMode} onChange={onComputerModeChange} />
       {memoryProviderConfigured ? (
         <div className="mt-4 text-body text-foreground">
@@ -238,7 +238,7 @@ export function ComputerGroup({
           </div>
         </div>
       ) : null}
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 
@@ -259,7 +259,7 @@ export function VoiceGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`Voice`}>
+    <BotPanelGroup label={t`Voice`}>
       <label
         htmlFor={`${ids}-auto-speak`}
         className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
@@ -294,7 +294,7 @@ export function VoiceGroup({
           </NativeSelect>
         </label>
       ) : null}
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 
@@ -319,7 +319,7 @@ export function PermissionsGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`Permissions`}>
+    <BotPanelGroup label={t`Permissions`}>
       <div className="flex min-h-11 items-center justify-between gap-3 text-body">
         <label htmlFor={`${ids}-daily-check-ins`} className={rowLabelClass}>
           <Trans>Daily check-ins on unfinished work</Trans>
@@ -353,7 +353,7 @@ export function PermissionsGroup({
           onCheckedChange={onFleetManagementChange}
         />
       </div>
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 
@@ -370,7 +370,7 @@ export function RepliesGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`Replies`} plain>
+    <BotPanelGroup label={t`Replies`} plain>
       <NativeSelect
         id={`${ids}-reply-mode`}
         aria-label={t`Replies`}
@@ -382,7 +382,7 @@ export function RepliesGroup({
         <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
         <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
       </NativeSelect>
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 
@@ -400,7 +400,7 @@ export function DescriptionGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`How other bots see it`} plain>
+    <BotPanelGroup label={t`How other bots see it`} plain>
       <Textarea
         id={`${ids}-description`}
         aria-label={t`How other bots see it`}
@@ -412,7 +412,7 @@ export function DescriptionGroup({
         rows={2}
         className="min-h-16 max-h-96 resize-none field-sizing-content"
       />
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 
@@ -429,7 +429,7 @@ export function ToolsGroup({
 }) {
   const { t } = useLingui();
   return (
-    <SettingsGroup label={t`Tools`} plain>
+    <BotPanelGroup label={t`Tools`} plain>
       <section data-testid="bot-settings-tools">
         <div className="space-y-2 [&>*]:mt-0">
           <div>
@@ -470,7 +470,7 @@ export function ToolsGroup({
           ))}
         </div>
       </section>
-    </SettingsGroup>
+    </BotPanelGroup>
   );
 }
 

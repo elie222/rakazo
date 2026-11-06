@@ -559,7 +559,7 @@ msgstr ""
 msgid "A bit of everything"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "कमांड का आउटपुट"
 
@@ -606,7 +606,7 @@ msgstr "एक्सेस टोकन (वैकल्पिक)"
 msgid "Account"
 msgstr "खाता"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Account default"
 msgstr "खाता डिफ़ॉल्ट"
 
@@ -663,11 +663,11 @@ msgstr "जोड़ें"
 msgid "Add {0} to the group"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "चलाने के लिए कमांड जोड़ें"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "निगरानी के लिए फ़ाइल या फ़ोल्डर जोड़ें"
 
@@ -773,7 +773,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "रूटीन में जोड़ें"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr ""
 
@@ -809,13 +809,13 @@ msgstr "क्या जोड़ा जाएगा"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "उन्नत"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr ""
 
@@ -858,7 +858,7 @@ msgstr ""
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
@@ -938,7 +938,7 @@ msgstr "इंपोर्ट की गई एक API कुंजी जाँ
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "इंपोर्ट की गई एक API कुंजी इस्तेमाल नहीं हो सकी। उसे अनचेक करके दोबारा कोशिश करें।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "एक इंटीग्रेशन टूल"
 
@@ -979,7 +979,7 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "@{ownerDomain} पर कोई भी"
 
@@ -1166,7 +1166,7 @@ msgstr "ऑटो"
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr ""
 
@@ -1311,7 +1311,7 @@ msgstr ""
 msgid "Bot templates"
 msgstr "बॉट टेम्पलेट"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "बॉट का मॉडल"
 
@@ -1496,7 +1496,7 @@ msgid "Chart failed to render: {error}"
 msgstr "चार्ट रेंडर नहीं हो सका: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1533,12 +1533,12 @@ msgstr "चैट"
 msgid "Check again"
 msgstr "फिर से जांचें"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "जाँच का अंतराल"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "जाँच विफल: {0}"
 
@@ -1651,7 +1651,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "{0} की बातचीत साफ़ करें?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Clear conversation"
 msgstr "बातचीत साफ़ करें"
 
@@ -1783,7 +1783,7 @@ msgid "Comfortable"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "कमांड"
 
@@ -1818,7 +1818,6 @@ msgstr "पूर्ण"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
-#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "कंप्यूटर"
@@ -2762,7 +2761,7 @@ msgstr "समूह बनाएं"
 msgid "Create organization"
 msgstr "संगठन बनाएँ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr ""
 
@@ -2851,7 +2850,7 @@ msgstr "बॉट अवतार अनुकूलित करें"
 msgid "Daily"
 msgstr "रोज़"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "अधूरे काम पर रोज़ पूछें"
 
@@ -2893,8 +2892,8 @@ msgid "Default"
 msgstr "डिफ़ॉल्ट"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/routine-editor/model-settings.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "डिफ़ॉल्ट ({0})"
 
@@ -3056,7 +3055,7 @@ msgstr "क्या आपका मतलब <0>{emailSuggestion}</0> था?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "टूल अक्षम करें"
 
@@ -3226,7 +3225,8 @@ msgstr "प्रोफ़ाइल संपादित करें"
 msgid "Email"
 msgstr "ईमेल"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "ईमेल"
@@ -3248,7 +3248,7 @@ msgid "Email verification required"
 msgstr "ईमेल सत्यापन आवश्यक है"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "{0} सक्षम करें"
 
@@ -3337,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "इस स्पेस के सभी बॉट ये नोट्स पढ़ते हैं और इन्हें अपडेट रखते हैं।"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "हर दिन"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "हर घंटे"
@@ -3361,12 +3361,12 @@ msgstr "हर संदेश"
 msgid "Every Monday"
 msgstr "हर सोमवार"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "हर महीने"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "हर सप्ताह"
@@ -3409,7 +3409,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "एक्सपोर्ट करें"
 
@@ -3462,11 +3462,11 @@ msgstr "विफल।"
 msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "बदलाव दर्शाने वाले फ़ील्ड"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "तुलना के लिए फ़ील्ड, जैसे id, modifiedTime (वैकल्पिक)"
 
@@ -3475,11 +3475,11 @@ msgstr "तुलना के लिए फ़ील्ड, जैसे id, mo
 msgid "File"
 msgstr "फ़ाइल"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "कंप्यूटर पर फ़ाइलें या फ़ोल्डर"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "फ़ाइलें या फ़ोल्डर, हर पंक्ति में एक"
 
@@ -3632,7 +3632,9 @@ msgstr "मोबाइल ऐप पाएँ"
 msgid "Getting ready"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr ""
 
@@ -3684,7 +3686,7 @@ msgstr "पहले कॉल समाप्त करें, फिर स्
 msgid "Hang up, then enter the code on screen."
 msgstr "कॉल समाप्त करें, फिर स्क्रीन पर कोड डालें।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr ""
 
@@ -3776,7 +3778,7 @@ msgstr ""
 msgid "How often"
 msgstr "कितनी बार"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "How other bots see it"
 msgstr "दूसरे बॉट इसे कैसे देखते हैं"
 
@@ -3862,7 +3864,7 @@ msgstr "API कुंजियाँ शामिल करें"
 msgid "Incoming call"
 msgstr "आने वाली कॉल"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
 msgstr "डिफ़ॉल्ट का पालन करें"
 
@@ -3926,7 +3928,7 @@ msgstr ""
 msgid "Integrations"
 msgstr "इंटीग्रेशन"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "अंतराल"
@@ -3965,7 +3967,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
 msgstr "पृथक"
 
@@ -4017,7 +4019,7 @@ msgstr "मेमोरी रखें"
 msgid "Keep tool results whole"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr ""
 
@@ -4040,12 +4042,12 @@ msgid "Language"
 msgstr "भाषा"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "पिछली जाँच {0}: बदलाव हुए"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "पिछली जाँच {0}: कोई बदलाव नहीं"
 
@@ -4239,7 +4241,7 @@ msgstr ""
 msgid "Manage MCP servers"
 msgstr "MCP सर्वर प्रबंधित करें"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "अन्य बॉट प्रबंधित करें"
 
@@ -4347,7 +4349,7 @@ msgstr "मेमोरी {position}"
 msgid "Memory for {title}"
 msgstr "{title} के लिए मेमोरी"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
 msgstr "मेमोरी स्कोप"
 
@@ -4386,7 +4388,8 @@ msgstr "{activeName} को संदेश भेजें"
 msgid "Message composer"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr ""
 
@@ -4406,7 +4409,7 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4446,7 +4449,7 @@ msgid "minute"
 msgstr "मिनट"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "मिनट"
 
@@ -4461,9 +4464,9 @@ msgstr "मोड"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "मॉडल"
 
@@ -4471,7 +4474,7 @@ msgstr "मॉडल"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "मॉडल \"{modelId}\" सूची में नहीं था।"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Model connections"
 msgstr "मॉडल कनेक्शन"
 
@@ -4861,7 +4864,7 @@ msgstr ""
 msgid "No tickets yet"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr ""
 
@@ -4926,7 +4929,7 @@ msgstr "काम नहीं कर रहा"
 msgid "Nothing remembered yet"
 msgstr "अभी तक कुछ याद नहीं किया गया"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "सूचनाएं"
 
@@ -4954,7 +4957,7 @@ msgstr "OAuth कनेक्शन विफल"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr ""
 
@@ -4983,7 +4986,7 @@ msgstr ""
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "सिर्फ़ मैं"
 
@@ -5246,7 +5249,7 @@ msgstr "अपनी API कुंजी पेस्ट करें"
 msgid "Paste your API key, then test again."
 msgstr "अपनी API कुंजी पेस्ट करें, फिर फिर से परीक्षण करें।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr ""
@@ -5257,7 +5260,7 @@ msgstr ""
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "अनुमतियाँ"
 
@@ -5295,7 +5298,7 @@ msgstr "कैटलॉग से एक मॉडल चुनें।"
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "सूची से एक मॉडल चुनें या इस एंडपॉइंट द्वारा दिया गया मॉडल id दर्ज करें।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "जाँचने के लिए टूल चुनें"
 
@@ -5338,11 +5341,11 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "चैट में “कोई बदलाव नहीं” पोस्ट करें"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr ""
 
@@ -5384,7 +5387,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "निजी"
 
@@ -5451,7 +5454,7 @@ msgstr "प्रतिक्रियाएँ"
 msgid "Read from the page, not checked"
 msgstr "पेज से पढ़ा गया, जाँचा नहीं गया"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
 
@@ -5667,11 +5670,11 @@ msgstr "{secretName} हटाएँ? बॉट इसका उपयोग न
 msgid "Remove {site}"
 msgstr "{site} हटाएं"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "बदलाव ट्रिगर हटाएँ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "ईमेल ट्रिगर हटाएँ"
 
@@ -5682,7 +5685,7 @@ msgstr "ईमेल ट्रिगर हटाएँ"
 msgid "Remove from every space?"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr ""
 
@@ -5690,7 +5693,7 @@ msgstr ""
 msgid "Remove header"
 msgstr "हेडर हटाएँ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr ""
 
@@ -5707,7 +5710,7 @@ msgstr "स्किल {0} हटाएं"
 msgid "Remove skills"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr ""
 
@@ -5760,7 +5763,7 @@ msgstr "कुंजी बदलें"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Replies"
 msgstr ""
 
@@ -5920,7 +5923,7 @@ msgstr ""
 msgid "Root filesystem"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr ""
 
@@ -5962,7 +5965,7 @@ msgstr "चल रहा है"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "चल रहा है"
 
@@ -5978,7 +5981,7 @@ msgstr "चल रहा है…"
 msgid "Runs"
 msgstr "रन"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
@@ -6042,7 +6045,7 @@ msgstr "सहेजा गया, लेकिन सूची रिफ़्�
 msgid "Saved."
 msgstr "सहेजा गया।"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr ""
 
@@ -6320,7 +6323,7 @@ msgstr "शेयर करें, लिंक वाला कोई भी �
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Shared"
 msgstr "साझा"
 
@@ -6472,11 +6475,13 @@ msgstr ""
 msgid "Skipped {0}"
 msgstr "{0} को छोड़ा गया"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr ""
 
@@ -6632,7 +6637,7 @@ msgstr ""
 msgid "Steps"
 msgstr "चरण"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6765,7 +6770,7 @@ msgstr "कोई कार्य सिखाएं"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "सिखाना जारी है। नया संदेश भेजने से पहले सिखाना रोकें।"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Team"
 msgstr "टीम"
 
@@ -6773,7 +6778,8 @@ msgstr "टीम"
 msgid "Team Computer"
 msgstr "टीम कंप्यूटर"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr ""
 
@@ -6901,8 +6907,8 @@ msgstr "उन्हें {weeks} हफ़्ते मुफ़्त मि�
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/routine-editor/model-settings.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "सोच रहा है"
 
@@ -7126,25 +7132,25 @@ msgstr "साइडबार दिखाएं या छिपाएं"
 msgid "Tokens"
 msgstr "टोकन"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "टूल आर्ग्युमेंट (JSON)"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "टूल आर्ग्युमेंट JSON ऑब्जेक्ट होने चाहिए"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "टूल आर्ग्युमेंट JSON होने चाहिए"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "टूल का नाम"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr ""
 
@@ -7490,7 +7496,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7528,7 +7534,7 @@ msgstr ""
 msgid "Web, desktop and mobile apps"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr ""
 
@@ -7541,7 +7547,7 @@ msgid "week"
 msgstr ""
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "कार्यदिवस"
@@ -7582,7 +7588,7 @@ msgstr "आप कौन-सा परिणाम दिखाकर बता�
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
 
@@ -7590,7 +7596,7 @@ msgstr "यह बॉट किस लिए है"
 msgid "What to return"
 msgstr "क्या लौटाना है"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "किसकी निगरानी करें"
 
@@ -7598,11 +7604,12 @@ msgstr "किसकी निगरानी करें"
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "जब ईमेल आए"
 
@@ -7610,11 +7617,13 @@ msgstr "जब ईमेल आए"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "जब काम पूरा हो या आपकी जानकारी चाहिए"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "कुछ बदलने पर"
 
@@ -7644,7 +7653,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "यह पेज कौन खोल सकता है"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "कौन शुरू कर सकता है"
 

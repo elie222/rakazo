@@ -1,14 +1,14 @@
-import type { MemoryDocument } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -18,40 +18,22 @@ export default function MemoryScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useI18n();
-  const [notes, setNotes] = useState<MemoryDocument[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const read = rpcQuery("memory/list", { scope: "user" });
+  // A refetch replaces one still running, so a slow earlier read cannot bring back a deleted note.
+  const { data: notes, error: failure, refetch } = useQuery(read, queryClient);
+  const error = failure ? errorText(failure, t("Could not load memory")) : null;
   const [refreshing, setRefreshing] = useState(false);
-  const live = useRef(true);
-  // Only the newest load may land, so a slow earlier one cannot bring back a deleted note.
-  const latestLoad = useRef(0);
-
-  const load = useCallback(async () => {
-    const order = ++latestLoad.current;
-    const current = () => live.current && order === latestLoad.current;
-    try {
-      const docs = await rpc("memory/list", { scope: "user" });
-      if (!current()) return;
-      setNotes(docs);
-      setError(null);
-    } catch (reason) {
-      if (current()) setError(errorText(reason, t("Could not load memory")));
-    }
-  }, [t]);
 
   // Bots write memory as they run, and a note may have changed in its editor.
   useFocusEffect(
     useCallback(() => {
-      live.current = true;
-      void load();
-      return () => {
-        live.current = false;
-      };
-    }, [load]),
+      void refetch();
+    }, [refetch]),
   );
 
   async function refresh() {
     setRefreshing(true);
-    await load();
+    await refetch();
     setRefreshing(false);
   }
 
@@ -91,10 +73,8 @@ export default function MemoryScreen() {
           <NativeActionButton
             fill={false}
             label={t("Retry")}
-            onPress={() => {
-              setError(null);
-              void load();
-            }}
+            // Back to the spinner while it reads again.
+            onPress={() => void queryClient.resetQueries({ queryKey: read.queryKey })}
             prominence="secondary"
           />
         ) : null}

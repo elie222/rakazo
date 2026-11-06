@@ -4,6 +4,7 @@ import type { CallExchange } from "@rakazo/core";
 import {
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
+  callTurn,
   createCallSendTracker,
   createInterimBargeIn,
   errorStatus,
@@ -15,10 +16,10 @@ import {
   isSecretAskBlock,
   isThreadSnapshotEvent,
   newClientId,
+  pendingCallSecretAsk,
   reduceThreadSnapshot,
   runThreadSubscription,
   speechFromBlocks,
-  spokenDecision,
   spokenMemory,
 } from "@rakazo/core";
 import { getGlobalBroadcastChannel } from "better-auth/client";
@@ -201,7 +202,7 @@ export function startCall(call: {
   unsubDictation = dictation.subscribe((heard) => {
     if (!state) return;
     if (heard.status === "listening") {
-      set({ heard: pendingSecretAsk(thread) ? "" : heard.transcript });
+      set({ heard: pendingCallSecretAsk(thread) ? "" : heard.transcript });
       watchInterim(heard.transcript);
     } else interim.clear();
     if (heard.error) {
@@ -551,7 +552,7 @@ async function listen() {
   if (guardTimer) return;
   set({ phase: "listening", heard: "" });
   speaker.stop();
-  if (state.muted || pendingSecretAsk(thread)) {
+  if (state.muted || pendingCallSecretAsk(thread)) {
     dictation.stop("cancel");
     micOpen = false;
     return;
@@ -561,7 +562,7 @@ async function listen() {
 
 /** Starts dictation unless it is already running, muted, or waiting on a typed secret. */
 async function openMic() {
-  if (!state || micOpen || state.muted || pendingSecretAsk(thread)) return;
+  if (!state || micOpen || state.muted || pendingCallSecretAsk(thread)) return;
   micOpen = true;
   try {
     await dictation.listen({
@@ -602,35 +603,30 @@ async function handleTranscript(text: string) {
     void listen();
     return;
   }
-  if (pendingSecretAsk(thread)) {
+  const turn = callTurn(thread, text);
+  if (turn.kind === "enter_code") {
     set({ heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   const { botId, exchanges } = state;
-  const askId = latestAskId(thread);
-  const askMessage = thread?.messages.find((message) => message.id === askId);
   // Captured now: a call started while this is in flight must not re-attach the new feed
   // or commit this turn onto it. The same bot can be called again, so the bot id is not enough.
   const callFeed = feed;
   const turnCallId = callId;
   const closing = isFarewell(text);
   // An approval is only answered on screen, next to its details; a spoken reply would be refused.
-  if (
-    askMessage?.blocks.some(
-      (block) => block.kind === "ask" && block.status !== "answered" && isApprovalAskBlock(block),
-    )
-  ) {
+  if (turn.kind === "approve_on_screen") {
     // The caption covers a card the call never read; once tapped, it must not pass for the reply.
-    spokenMessageIds.add(askMessage.id);
-    approvalRunId = askMessage.runId ?? null;
-    awaitingReply = approvalRunId !== null;
+    spokenMessageIds.add(turn.messageId);
+    approvalRunId = turn.runId;
+    awaitingReply = true;
     if (closing) hangUpAfterReply = true;
     set({ heard: "", caption: t`Approve or deny it on screen.` });
     void listen();
     return;
   }
   approvalRunId = null;
-  awaitedRunId = askMessage?.runId ?? null;
+  awaitedRunId = turn.kind === "answer" ? turn.runId : null;
   awaitingReply = true;
   set({ heard: text, phase: "thinking", exchanges: [...exchanges, { role: "user", text }] });
   if (closing) {
@@ -643,17 +639,18 @@ async function handleTranscript(text: string) {
   let releasePendingSend: () => void = () => undefined;
   try {
     const clientNonce = callClientNonce(turnCallId);
-    const sendRequest = askMessage
-      ? rpc.threads.answer({
-          botId,
-          runId: askMessage.runId ?? "",
-          messageId: askMessage.id,
-          answer: spokenDecision(text) ?? text,
-          clientNonce,
-        })
-      : runActive(thread)
-        ? rpc.threads.followUp({ botId, text, clientNonce })
-        : rpc.threads.send({ botId, clientNonce, text });
+    const sendRequest =
+      turn.kind === "answer"
+        ? rpc.threads.answer({
+            botId,
+            runId: turn.runId,
+            messageId: turn.messageId,
+            answer: turn.answer,
+            clientNonce,
+          })
+        : turn.kind === "follow_up"
+          ? rpc.threads.followUp({ botId, text, clientNonce })
+          : rpc.threads.send({ botId, clientNonce, text });
     releasePendingSend = callSends.track(turnCallId, sendRequest);
     const receipt = await sendRequest;
     if (!state || state.botId !== botId || callId !== turnCallId) return;
@@ -698,7 +695,7 @@ function reactToThread() {
   if (!state || state.phase === "ringing" || openingPending) return;
   // The bot already said goodbye: neither its marker nor the work it files after it is spoken.
   if (botEndedCall) return;
-  if (pendingSecretAsk(thread)) {
+  if (pendingCallSecretAsk(thread)) {
     dictation.stop("cancel");
     micOpen = false;
     set({ heard: "" });
@@ -773,26 +770,4 @@ function replyFinished(message: ThreadMessage) {
 
 function runActive(snapshot: ThreadSnapshot | null) {
   return Boolean(snapshot?.run && RUN_ACTIVE.includes(snapshot.run.status));
-}
-
-function pendingSecretAsk(snapshot: ThreadSnapshot | null) {
-  const askId = latestAskId(snapshot);
-  const askMessage = snapshot?.messages.find((message) => message.id === askId);
-  return Boolean(
-    askMessage?.blocks.some(
-      (block) => block.kind === "ask" && isSecretAskBlock(block) && block.status !== "answered",
-    ),
-  );
-}
-
-function latestAskId(snapshot: ThreadSnapshot | null): string | null {
-  if (snapshot?.run?.status !== "waiting_input") return null;
-  for (let index = snapshot.messages.length - 1; index >= 0; index -= 1) {
-    const message = snapshot.messages[index];
-    if (message?.runId !== snapshot.run.id) continue;
-    if (message.blocks.some((block) => block.kind === "ask" && block.status !== "answered")) {
-      return message.id;
-    }
-  }
-  return null;
 }

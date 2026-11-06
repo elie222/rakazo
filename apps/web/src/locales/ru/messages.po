@@ -559,7 +559,7 @@ msgstr ""
 msgid "A bit of everything"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "Вывод команды"
 
@@ -606,7 +606,7 @@ msgstr "Токен доступа (необязательно)"
 msgid "Account"
 msgstr "Аккаунт"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Account default"
 msgstr "Учетная запись по умолчанию"
 
@@ -663,11 +663,11 @@ msgstr "Добавить"
 msgid "Add {0} to the group"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "Добавьте команду для выполнения"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "Добавьте файл или папку для отслеживания"
 
@@ -773,7 +773,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "Добавить в задачу"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "Добавить триггер"
 
@@ -809,13 +809,13 @@ msgstr "Будет добавлено"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Расширенные"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "Расширенные..."
 
@@ -858,7 +858,7 @@ msgstr ""
 msgid "Allow"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Разрешить общение ботов из разных пространств"
 
@@ -938,7 +938,7 @@ msgstr "Не удалось проверить импортированный AP
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "Не удалось использовать импортированный API-ключ. Снимите отметку и повторите попытку."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "Инструмент интеграции"
 
@@ -979,7 +979,7 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "Любой из @{ownerDomain}"
 
@@ -1166,7 +1166,7 @@ msgstr "Авто"
 msgid "Automated senders"
 msgstr "Автоматические отправители"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "Доступно после сохранения задачи"
 
@@ -1311,7 +1311,7 @@ msgstr ""
 msgid "Bot templates"
 msgstr "Шаблоны ботов"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "Модель бота"
 
@@ -1496,7 +1496,7 @@ msgid "Chart failed to render: {error}"
 msgstr "Не удалось отобразить диаграмму: {error}."
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Chat"
 msgstr ""
 
@@ -1533,12 +1533,12 @@ msgstr "Чаты"
 msgid "Check again"
 msgstr "Проверить снова"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "Проверять каждые"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "Ошибка проверки: {0}"
 
@@ -1651,7 +1651,7 @@ msgid "Clear {0}’s conversation?"
 msgstr "Очистить диалог {0}?"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Clear conversation"
 msgstr "Очистить диалог"
 
@@ -1783,7 +1783,7 @@ msgid "Comfortable"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Команда"
 
@@ -1818,7 +1818,6 @@ msgstr "Завершено"
 
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
-#: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "Компьютер"
@@ -2762,7 +2761,7 @@ msgstr "Создать группу"
 msgid "Create organization"
 msgstr "Создать организацию"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "Создать задачу"
 
@@ -2851,7 +2850,7 @@ msgstr "Настроить аватар бота"
 msgid "Daily"
 msgstr "Ежедневно"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "Ежедневные напоминания о незавершённой работе"
 
@@ -2893,8 +2892,8 @@ msgid "Default"
 msgstr "По умолчанию"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/routine-editor/model-settings.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "По умолчанию ({0})"
 
@@ -3056,7 +3055,7 @@ msgstr "Вы имели в виду <0>{emailSuggestion}</0>?"
 msgid "Didn't catch that."
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Отключить инструмент"
 
@@ -3226,7 +3225,8 @@ msgstr "Редактировать профиль"
 msgid "Email"
 msgstr "Электронная почта"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "Почта"
@@ -3248,7 +3248,7 @@ msgid "Email verification required"
 msgstr "Требуется подтверждение электронной почты"
 
 #. placeholder {0}: humanizeTool(toolName)
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Enable {0}"
 msgstr "Включить {0}"
 
@@ -3337,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Все боты в этом пространстве читают эти заметки и поддерживают их в актуальном состоянии."
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Каждый день"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Каждый час"
@@ -3361,12 +3361,12 @@ msgstr "Все сообщения"
 msgid "Every Monday"
 msgstr "Каждый понедельник"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "Каждый месяц"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "Каждую неделю"
@@ -3409,7 +3409,7 @@ msgid "Expiry"
 msgstr ""
 
 #: src/components/AccountDataSettings.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Экспорт"
 
@@ -3462,11 +3462,11 @@ msgstr "Неуспешный."
 msgid "Failure handling"
 msgstr "Обработка сбоев"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "Поля, указывающие на изменение"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Поля для сравнения, например id, modifiedTime (необязательно)"
 
@@ -3475,11 +3475,11 @@ msgstr "Поля для сравнения, например id, modifiedTime (�
 msgid "File"
 msgstr "Файл"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "Файлы или папки на компьютере"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "Файлы или папки, по одному на строку"
 
@@ -3632,7 +3632,9 @@ msgstr "Скачать мобильное приложение"
 msgid "Getting ready"
 msgstr "Подготовка"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "Git-событие"
 
@@ -3684,7 +3686,7 @@ msgstr "Сначала повесьте трубку, затем введите 
 msgid "Hang up, then enter the code on screen."
 msgstr "Повесьте трубку, затем введите код на экране."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "заголовок"
 
@@ -3776,7 +3778,7 @@ msgstr ""
 msgid "How often"
 msgstr "Как часто"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "How other bots see it"
 msgstr "Как его видят другие боты"
 
@@ -3862,7 +3864,7 @@ msgstr "Включить ключи API"
 msgid "Incoming call"
 msgstr "Входящий звонок"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
 msgstr "Наследовать значение по умолчанию"
 
@@ -3926,7 +3928,7 @@ msgstr "Домен интеграции"
 msgid "Integrations"
 msgstr "Интеграции"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "Интервал"
@@ -3965,7 +3967,7 @@ msgid "Invite link copied"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
 msgstr "изолированный"
 
@@ -4017,7 +4019,7 @@ msgstr "Сохранить память"
 msgid "Keep tool results whole"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "ключ"
 
@@ -4040,12 +4042,12 @@ msgid "Language"
 msgstr "Язык"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "Последняя проверка {0}: есть изменения"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "Последняя проверка {0}: без изменений"
 
@@ -4239,7 +4241,7 @@ msgstr ""
 msgid "Manage MCP servers"
 msgstr "Управление серверами MCP"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "Управлять другими ботами"
 
@@ -4347,7 +4349,7 @@ msgstr "Память {position}"
 msgid "Memory for {title}"
 msgstr "Память для {title}"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
 msgstr "Область памяти"
 
@@ -4386,7 +4388,8 @@ msgstr "Сообщение {activeName}"
 msgid "Message composer"
 msgstr "Поле сообщения"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "Событие сообщения"
 
@@ -4406,7 +4409,7 @@ msgstr "Сообщение…"
 msgid "Messaged {peer}"
 msgstr "Отправлено сообщение {peer}"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Messages"
 msgstr ""
 
@@ -4446,7 +4449,7 @@ msgid "minute"
 msgstr "минута"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "минуты"
 
@@ -4461,9 +4464,9 @@ msgstr "Режим"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "Модель"
 
@@ -4471,7 +4474,7 @@ msgstr "Модель"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "Модель \"{modelId}\" отсутствует в списке."
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Model connections"
 msgstr "Подключения моделей"
 
@@ -4861,7 +4864,7 @@ msgstr ""
 msgid "No tickets yet"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "Нет триггера"
 
@@ -4926,7 +4929,7 @@ msgstr "Не работает"
 msgid "Nothing remembered yet"
 msgstr "Пока ничего не запомнено"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "Уведомления"
 
@@ -4954,7 +4957,7 @@ msgstr "Соединение OAuth не удалось"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "По расписанию"
 
@@ -4983,7 +4986,7 @@ msgstr ""
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Только я"
 
@@ -5246,7 +5249,7 @@ msgstr "Вставьте свой ключ API"
 msgid "Paste your API key, then test again."
 msgstr "Вставьте API-ключ и повторите тест."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Приостановлено"
@@ -5257,7 +5260,7 @@ msgstr "Приостановлено"
 msgid "Pending"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "Разрешения"
 
@@ -5295,7 +5298,7 @@ msgstr "Выберите модель из каталога."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Выберите модель из списка или введите id модели, который обслуживает этот адрес."
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "Выберите инструмент для проверки"
 
@@ -5338,11 +5341,11 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "Писать «Без изменений» в чат"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "ОТПРАВИТЬ в"
 
@@ -5384,7 +5387,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "Личный"
 
@@ -5451,7 +5454,7 @@ msgstr ""
 msgid "Read from the page, not checked"
 msgstr "Прочитано со страницы, не проверено"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Читать ответы вслух"
 
@@ -5667,11 +5670,11 @@ msgstr "Удалить {secretName}? Боты больше не смогут е�
 msgid "Remove {site}"
 msgstr "Удалить {site}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "Удалить триггер изменений"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "Удалить триггер почты"
 
@@ -5682,7 +5685,7 @@ msgstr "Удалить триггер почты"
 msgid "Remove from every space?"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "Удалить событие Git"
 
@@ -5690,7 +5693,7 @@ msgstr "Удалить событие Git"
 msgid "Remove header"
 msgstr "Удалить заголовок"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "Удалить триггер сообщения"
 
@@ -5707,7 +5710,7 @@ msgstr "Удалить навык {0}"
 msgid "Remove skills"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Удалить вебхук"
 
@@ -5760,7 +5763,7 @@ msgstr "Заменить ключ"
 msgid "Replaces the login saved for {0}"
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Replies"
 msgstr ""
 
@@ -5920,7 +5923,7 @@ msgstr ""
 msgid "Root filesystem"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "Сменить ключ"
 
@@ -5962,7 +5965,7 @@ msgstr "выполняется"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "Выполняется"
 
@@ -5978,7 +5981,7 @@ msgstr "Выполняется…"
 msgid "Runs"
 msgstr "Запуски"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Запускается, когда этот бот получает проверенное сообщение от этого провайдера."
 
@@ -6042,7 +6045,7 @@ msgstr "Сохранено, но обновить список не удалос
 msgid "Saved."
 msgstr "Сохранено."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Сохранено. Поверните, чтобы раскрыть."
 
@@ -6320,7 +6323,7 @@ msgstr "Поделиться, по ссылке может смотреть лю
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Shared"
 msgstr "Общий"
 
@@ -6472,11 +6475,13 @@ msgstr ""
 msgid "Skipped {0}"
 msgstr "Пропущен {0}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "Сообщение Slack"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slack не включен"
 
@@ -6632,7 +6637,7 @@ msgstr ""
 msgid "Steps"
 msgstr "Шаги"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6765,7 +6770,7 @@ msgstr "Научить задачу"
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "Обучение в процессе. Прекратите обучение, прежде чем отправлять новое сообщение."
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Team"
 msgstr "Команда"
 
@@ -6773,7 +6778,8 @@ msgstr "Команда"
 msgid "Team Computer"
 msgstr "Командный компьютер"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "Сообщение Teams"
 
@@ -6901,8 +6907,8 @@ msgstr "Друг получает {weeks} недели бесплатно."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/routine-editor/model-settings.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "рассуждение"
 
@@ -7126,25 +7132,25 @@ msgstr "Показать или скрыть боковую панель"
 msgid "Tokens"
 msgstr "Токены"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Аргументы инструмента (JSON)"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "Аргументы должны быть объектом JSON"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "Аргументы должны быть в формате JSON"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "Название инструмента"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Tools"
 msgstr "Инструменты"
 
@@ -7490,7 +7496,7 @@ msgid "View source"
 msgstr ""
 
 #: src/pages/settings-nav.ts
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
@@ -7528,7 +7534,7 @@ msgstr ""
 msgid "Web, desktop and mobile apps"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Вебхук"
 
@@ -7541,7 +7547,7 @@ msgid "week"
 msgstr ""
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Будни"
@@ -7582,7 +7588,7 @@ msgstr "Какой результат вы продемонстрируете?"
 msgid "What should this routine do each time it runs?"
 msgstr "Что должна делать эта задача при каждом запуске?"
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "Для чего нужен этот бот"
 
@@ -7590,7 +7596,7 @@ msgstr "Для чего нужен этот бот"
 msgid "What to return"
 msgstr "Что вернуть"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "Что отслеживать"
 
@@ -7598,11 +7604,12 @@ msgstr "Что отслеживать"
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "Когда срабатывает вебхук"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "Когда приходит письмо"
 
@@ -7610,11 +7617,13 @@ msgstr "Когда приходит письмо"
 msgid "When bots check with you before acting."
 msgstr ""
 
-#: src/pages/shell/bot-settings-sections.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
 msgstr "Когда бот завершает работу или ждёт ответа"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "При изменениях"
 
@@ -7644,7 +7653,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "Кто может открыть эту страницу"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "Кто может запустить"
 

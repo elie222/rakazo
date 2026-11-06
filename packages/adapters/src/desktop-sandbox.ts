@@ -50,6 +50,7 @@ import {
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
@@ -909,8 +910,7 @@ async function* streamLocalCommand(
   sweep: () => void,
 ): AsyncIterable<ProcessEvent> {
   if (signal.aborted) {
-    yield { type: "stderr", data: "command aborted\n" };
-    yield { type: "exit", code: 130 };
+    yield* abortedCommandEvents();
     return;
   }
   const direct = directCommandArgv(argv);
