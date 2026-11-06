@@ -449,7 +449,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4353,7 +4353,7 @@ msgstr "Geheugen voor {title}"
 msgid "Memory scope"
 msgstr "Geheugenbereik"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr "Vermeldingen"
 
@@ -5645,7 +5645,7 @@ msgstr "Verwijderen"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "{0} verwijderen"
 
@@ -6193,7 +6193,7 @@ msgstr "Selecteer een bot"
 msgid "Self-hosted"
 msgstr "Zelf gehost"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "Verzenden"
 
@@ -6438,7 +6438,7 @@ msgid "Skill"
 msgstr "Skill"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "Skill {0}"
 
@@ -6638,7 +6638,7 @@ msgid "Steps"
 msgstr "Stappen"
 
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

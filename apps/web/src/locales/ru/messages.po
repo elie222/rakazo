@@ -449,7 +449,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4353,7 +4353,7 @@ msgstr "Память для {title}"
 msgid "Memory scope"
 msgstr "Область памяти"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr "Упоминания"
 
@@ -5645,7 +5645,7 @@ msgstr "Удалить"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "Удалить {0}"
 
@@ -6193,7 +6193,7 @@ msgstr "Выберите бота"
 msgid "Self-hosted"
 msgstr "Свой сервер"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "Отправить"
 
@@ -6438,7 +6438,7 @@ msgid "Skill"
 msgstr "Навык"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "Навык {0}"
 
@@ -6638,7 +6638,7 @@ msgid "Steps"
 msgstr "Шаги"
 
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

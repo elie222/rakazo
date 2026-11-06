@@ -449,7 +449,7 @@ msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小时电脑时长"
 
 #. placeholder {0}: mention.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
@@ -4353,7 +4353,7 @@ msgstr "{title} 的记忆"
 msgid "Memory scope"
 msgstr "记忆范围"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Mentions"
 msgstr "提及"
 
@@ -5645,7 +5645,7 @@ msgstr "移除"
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
 #: src/components/ComputerDeviceSettings.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "移除 {0}"
 
@@ -6193,7 +6193,7 @@ msgstr "选择 Bot"
 msgid "Self-hosted"
 msgstr "自托管"
 
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Send"
 msgstr "发送"
 
@@ -6438,7 +6438,7 @@ msgid "Skill"
 msgstr "技能"
 
 #. placeholder {0}: skill.name
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 msgid "Skill {0}"
 msgstr "技能 {0}"
 
@@ -6638,7 +6638,7 @@ msgid "Steps"
 msgstr "步骤"
 
 #: src/pages/RoutineList.tsx
-#: src/pages/shell/composer.tsx
+#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
