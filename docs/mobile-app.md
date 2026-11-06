@@ -49,7 +49,7 @@ working status while a bot runs.
 On iPhone, Rakazo adds actions to Shortcuts, Siri and the Action button:
 
 - **Message Bot** and **Ask Bot**: send a message. Ask Bot also returns the reply.
-- **Record Message**: talk, then pause or press again to send it to the bot you talked to last.
+- **Record Message**: talk, then pause or press again to send it to the bot whose chat you opened last.
   Progress shows in the Dynamic Island and on the Lock Screen.
 - **Open Bot**, **Start Voice Chat** and **Run Routine**.
 
