@@ -14,6 +14,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -170,6 +171,8 @@ export async function messageBot(
   try {
     committed = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
+        if (!(await spaceTakesWork(tx, run.spaceId)))
+          return { ok: false as const, error: "this Space is being deleted" };
         for (const threadId of [run.threadId, targetThreadId].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
