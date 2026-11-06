@@ -50,9 +50,17 @@ exit 1
         bin: { vitest: string };
       };
       const vitestCliPath = path.resolve(path.dirname(vitestPackagePath), vitestPackage.bin.vitest);
+      const vitestConfigPath = path.join(bin, "vitest.config.mjs");
+      writeFileSync(vitestConfigPath, "export default {};\n");
       const result = spawnSync(
         process.execPath,
-        [vitestCliPath, "run", "packages/testkit/src/compose.backup.test.ts"],
+        [
+          vitestCliPath,
+          "run",
+          "--config",
+          vitestConfigPath,
+          "packages/testkit/src/compose.backup.test.ts",
+        ],
         {
           cwd: repoRoot,
           env: {
