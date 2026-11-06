@@ -104,6 +104,7 @@ export function FixtureTranscript({
         onAddRoutine={noop}
         voiceReady={false}
         speakingMessageId={null}
+        callHoldsSpeaker={false}
         onSpeak={noop}
         onOpenComputer={noop}
       />
