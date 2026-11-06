@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.1.0",
   "license": "Apache-2.0",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@12.18.0",
   "engines": {
     "node": "^22.22.2 || ^24.0.0 || >=26.0.0"
   },
@@ -52,36 +52,5 @@
     "turbo": "2.11.10",
     "typescript": "7.0.2",
     "vitest": "4.1.12"
-  },
-  "pnpm": {
-    "supportedArchitectures": {
-      "os": [
-        "current"
-      ],
-      "cpu": [
-        "current",
-        "x64",
-        "arm64"
-      ]
-    },
-    "overrides": {
-      "react": "19.2.3",
-      "react-dom": "19.2.3",
-      "proxy-addr@<2.0.8": "2.0.8",
-      "dompurify@<3.4.17": "3.4.17",
-      "ws@>=8 <8.21.1": "8.22.0",
-      "@grpc/grpc-js@<1.14.5": "1.14.7",
-      "@opentelemetry/core@>=2 <2.8.0": "2.12.0",
-      "@composio/core>undici": "7.30.1",
-      "@electron/get>undici": "7.30.1",
-      "e2b>undici": "7.30.1",
-      "e2b>undici8": "npm:undici@8.12.3",
-      "joi@>=18 <18.3.1": "18.3.2"
-    },
-    "patchedDependencies": {
-      "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
-      "dockerode@5.0.1": "patches/dockerode@5.0.1.patch",
-      "fflate@0.8.3": "patches/fflate@0.8.3.patch"
-    }
   }
 }
