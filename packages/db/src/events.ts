@@ -683,7 +683,7 @@ export async function sendUserMessage(
         },
       });
       return { message, task, run, busy, event };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
   const committed = await commit().catch(async (error) => {
     const winner = await replay();
     if (winner) return { replay: winner } as const;
@@ -1764,7 +1764,10 @@ export async function appendEvent(
 ): Promise<ProductEvent> {
   // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
   const event = await withTransactionRetry(() =>
-    prisma.$transaction((tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input)),
+    prisma.$transaction(
+      (tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   );
   if (
     input.runId &&
