@@ -407,10 +407,6 @@ msgstr "今天已花费 {shown}"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/plugins/manage-view.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr "{skillCount, plural, one {# 个技能} other {# 个技能}}"
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."

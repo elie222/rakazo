@@ -1,6 +1,6 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { CapabilityInstall, ConnectionCatalogItem, McpServer } from "@rakazo/contracts";
-import { mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
+import { mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { catalogItemKey } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import type { PluginSelection } from "../../components/integrations/plugin-marketplace";
@@ -98,7 +98,6 @@ export function ManageView({
               <InstalledPluginRow
                 key={`${install.id}:connector`}
                 install={install}
-                part="connector"
                 selection={installedSelection(install)}
                 servers={pluginServers(install)}
                 onOpen={onOpenPlugin}
@@ -174,20 +173,16 @@ export function ManageView({
 
 function InstalledPluginRow({
   install,
-  part,
   selection,
   servers,
   onOpen,
 }: {
   install: CapabilityInstall;
-  part: "connector" | "skills";
   selection: PluginSelection;
   servers: McpServer[];
   onOpen: (selection: PluginSelection) => void;
 }) {
-  const parsed = PluginPreviewSchema.safeParse(install.config);
-  const skillCount = parsed.success ? parsed.data.skills.length : 0;
-  const signInNeeded = part === "connector" && servers.some(mcpServerNeedsSignIn);
+  const signInNeeded = servers.some(mcpServerNeedsSignIn);
   return (
     <div data-testid="installed-plugin" className={`${ROW_SHELL} ${ROW_HOVER}`}>
       <button type="button" className={ROW_BUTTON} onClick={() => onOpen(selection)}>
@@ -195,11 +190,7 @@ function InstalledPluginRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body-lg font-medium">{selection.name}</span>
           <span className="block truncate text-body-sm text-muted-foreground">
-            {part === "connector" ? (
-              <Plural value={servers.length} one="# connector" other="# connectors" />
-            ) : (
-              <Plural value={skillCount} one="# skill" other="# skills" />
-            )}
+            <Plural value={servers.length} one="# connector" other="# connectors" />
           </span>
         </span>
       </button>
