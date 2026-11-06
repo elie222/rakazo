@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
@@ -16,7 +16,10 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
 export function messageHasInlineControls(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) =>
-      block.kind === "ask" || block.kind === "app_connect" || block.kind === "mcp_approval",
+      block.kind === "ask" ||
+      block.kind === "app_connect" ||
+      block.kind === "mcp_approval" ||
+      block.kind === "import_setup",
   );
 }
 
@@ -26,12 +29,12 @@ export type MessagePresentationSegment =
 
 /** Blocks the thread draws as their own native card instead of inside the text bubble. */
 function isCardBlock(block: MessageBlock): boolean {
-  return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
-}
-
-/** The import setup checklist links to web settings, so mobile leaves it out. */
-function isWebOnlyBlock(block: MessageBlock): boolean {
-  return block.kind === "import_setup";
+  return (
+    block.kind === "app_connect" ||
+    block.kind === "choice" ||
+    block.kind === "computer" ||
+    block.kind === "import_setup"
+  );
 }
 
 /**
@@ -54,8 +57,7 @@ export function messagePresentationSegments(
       segments.push({ kind: "steps", block });
       continue;
     }
-    if (!isCardBlock(block) && !isToolActivityBlock(block) && !isWebOnlyBlock(block))
-      content.push(block);
+    if (!isCardBlock(block) && !isToolActivityBlock(block)) content.push(block);
   }
   flush();
   return segments;
@@ -68,7 +70,7 @@ export function hasVisibleMessagePresentation(
   return blocks.some(
     (block) =>
       (showToolActivity && block.kind === "steps") ||
-      (!isToolActivityBlock(block) && !isDismissedChoice(block) && !isWebOnlyBlock(block)),
+      (!isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block)),
   );
 }
 

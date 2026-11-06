@@ -1,8 +1,10 @@
 # Bot email addresses
 
-Give each bot its own address, such as `scout@bots.example.com`. Mail you forward or CC to it can
-start the bot's [routines](./routines.md). This is optional and off until you set it up. Rakazo
-receives mail only; bots do not send email from these addresses.
+Give each bot its own address, such as `scout@bots.example.com`. Every email sent to it is saved
+to the bot's inbox, which the bot reads when it needs to, for example to pick up the code when it
+signs up for a service. Your own mail to it starts the bot, and mail can start its
+[routines](./routines.md). Bots can also [send email](#sending) from their address. This is
+optional and off until you set it up.
 
 You need a domain (or subdomain) that receives mail for every name on it, and something that
 hands each message to Rakazo. Rakazo does not run a mail server itself: any mail relay that can
@@ -10,7 +12,8 @@ make an HTTPS request works.
 
 ## Configure Rakazo
 
-Set both on the API, then restart it:
+Set both on the API, and `INBOUND_EMAIL_DOMAIN` on the worker too, so each bot knows its address.
+Then restart them:
 
 ```bash
 INBOUND_EMAIL_DOMAIN=bots.example.com
@@ -18,10 +21,10 @@ INBOUND_EMAIL_SECRET=$(openssl rand -base64 32)
 ```
 
 Use a domain that nothing else receives mail on, and set exactly the domain the relay receives
-mail for. Once it is set, **Email** appears under
-**Add trigger** in the routine editor, and each bot's owner picks the bot's name there the first
-time. Names are lowercase, never change, and are never given to another bot, even after the bot
-is deleted.
+mail for. Once it is set, a bot's owner can get it an address under its name in the bot's
+settings, by asking the bot in chat, or when adding an **Email** trigger to a routine. Claimed
+addresses are listed in the Vault. Names are lowercase, never change, and are never given to
+another bot, even after the bot is deleted.
 
 ## Hand mail to Rakazo
 
@@ -116,19 +119,53 @@ case "$status" in
 esac
 ```
 
+## The inbox
+
+Each message is saved once, however often the relay delivers it, until the bot deletes it or the
+bot itself is deleted. Deleting mail follows the owner's [approval](./approvals.md) settings, and
+files kept from that mail stay in the bot's files. A bot
+saves at most 500 messages a day that start nothing; past that, such mail is dropped until the
+day's count falls, while mail that starts the bot or a routine is always saved. The bot
+reads its inbox only in its owner's own chat, routines and mail, never in a group chat or a shared
+channel, and what it reads counts as outside data.
+
+## Sending
+
+Bots send from their own address through the same provider as account email (`EMAIL_PROVIDER`
+and its settings), so set those on the worker as well as the API. The provider must be allowed to
+send as the bot domain:
+
+- **Resend:** add the domain under **Domains** and publish the DNS records it shows. They sit on
+  a `send` subdomain and the domain's DKIM selector, so they don't clash with the MX records that
+  receive mail.
+- **SMTP:** the relay must accept a From address on the domain and sign it with DKIM, or
+  recipients will mark the mail as spam.
+
+Replies go to the bot's address and land in its inbox. Each send follows the bot's usual
+[approval](./approvals.md) settings. A bot sends at most 50 emails a day, and one owner's bots 200
+between them, each to at most 10 people, and never includes a secret the run has used. What it sends stays in its inbox, and deleting mail never removes it.
+
 ## Who can start work
 
 Rakazo checks each message's DKIM signature itself and does not trust results a relay added. A
-message counts only when it is signed by the domain in its **From** address and that signature
-covers its **To** and **Cc**, which must name the bot. Mail that fails, mail sent BCC, automatic
-replies and mailing-list mail are dropped.
+message is verified only when it is signed by the domain in its **From** address and that
+signature covers its **To** and **Cc**. Many services sign with another domain, so their mail is
+saved as unverified: the bot can still read it but is told its sender could be forged. Signed
+mail that doesn't name the bot in **To** or **Cc**, such as a BCC or a message replayed from
+someone else's inbox, is saved as unverified too, without its files.
 
-Each email trigger then starts only for its owner's own address, or for anyone at the owner's
-email domain when the routine allows it. Mail that claims the owner's address but fails the check posts a
+Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
+reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once
+the owner has confirmed their account's email address; mail that only copies the bot is saved. An
+email trigger
+starts its routine for the owner's own address, or for anyone at the owner's email domain when
+the routine allows it. Mail that claims the owner's address but fails the check posts a
 note in the bot's chat, at most once a day, without any of its content. That usually means the
 owner's domain does not sign its own mail: Google Workspace and Microsoft 365 need DKIM turned on
 for a custom domain.
 
-The message reaches the bot as outside data, never as instructions, and runs it starts follow the
-stricter [approval](./approvals.md) rules for outside events. Up to four attachments are kept,
-within the usual upload type and size limits; the bot sees the names of any it could not keep.
+A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
+the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
+by mail follow the stricter [approval](./approvals.md) rules for outside events. Up to four
+attachments of verified mail are kept, within the usual upload type and size limits; the bot sees
+the names of any it could not keep, and of every file in unverified mail.

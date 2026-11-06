@@ -531,6 +531,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Only me": "Nur ich",
   "Anyone at @{domain}": "Jeder bei @{domain}",
   "Remove email trigger": "E-Mail-Auslöser entfernen",
+  "Get an email address": "E-Mail-Adresse anlegen",
+  "Bot email addresses": "E-Mail-Adressen der Bots",
   "Use 2 to 64 characters": "Verwende 2 bis 64 Zeichen",
   "Use letters, numbers, dots, dashes or underscores":
     "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche",
@@ -919,6 +921,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die vorherige Serversitzung konnte nicht gelöscht werden",
   "Could not clear the previous space":
     "Die vorherige Space-Auswahl konnte nicht zurückgesetzt werden",
+  "Could not save the previous server session":
+    "Die vorherige Serversitzung konnte nicht gespeichert werden",
   "Could not save the server URL": "Server-URL konnte nicht gespeichert werden",
   "Could not send reset email": "E-Mail zum Zurücksetzen konnte nicht gesendet werden",
   "The server changed while starting the request":
@@ -1435,6 +1439,45 @@ export const DE_MESSAGES: Record<string, string> = {
   "Discard changes?": "Änderungen verwerfen?",
   Discard: "Verwerfen",
   "Could not delete note": "Notiz konnte nicht gelöscht werden",
+  "Morning briefing": "Morgenbriefing",
+  "Your day at a glance, every weekday morning":
+    "Dein Tag auf einen Blick, jeden Werktag am Morgen",
+  "**Thursday**\n\n**Calendar**\n- 10:00 Design review, moved to 11:30\n- 14:00 Call with Dana\n\n**Needs you**\n- Alex asked for the Q4 numbers by noon\n- A contract is waiting for your signature\n\n**Worth knowing**\n- Light rain after 4pm\n- Two stories on the topics you follow":
+    "**Donnerstag**\n\n**Kalender**\n- 10:00 Design-Review, verschoben auf 11:30\n- 14:00 Call mit Dana\n\n**Wartet auf dich**\n- Alex möchte die Q4-Zahlen bis 12 Uhr\n- Ein Vertrag wartet auf deine Unterschrift\n\n**Gut zu wissen**\n- Leichter Regen ab 16 Uhr\n- Zwei Artikel zu Themen, denen du folgst",
+  "Inbox triage": "Posteingang sortieren",
+  "Sorts new email and drafts the replies": "Sortiert neue E-Mails und entwirft die Antworten",
+  '**12 new since 8:00**\n\n**Reply needed**\n1. Priya wants to move Friday\'s review. Draft: "Friday works if we start at 2."\n2. Your card expires on the 30th. Draft ready.\n3. Sam asked about the API limits. Draft ready.\n\n**For your information**: a shipping update and a calendar change\n\n**Low priority**: 7 newsletters and notifications':
+    "**12 neue seit 8:00**\n\n**Antwort nötig**\n1. Priya möchte das Review am Freitag verschieben. Entwurf: „Freitag passt, wenn wir um 14 Uhr anfangen.“\n2. Deine Karte läuft am 30. ab. Entwurf bereit.\n3. Sam hat nach den API-Limits gefragt. Entwurf bereit.\n\n**Zur Info**: ein Versand-Update und eine Kalenderänderung\n\n**Niedrige Priorität**: 7 Newsletter und Benachrichtigungen",
+  "PR reviewer": "PR-Reviewer",
+  "Reviews pull requests waiting on you": "Prüft Pull Requests, die auf dich warten",
+  "**2 pull requests are waiting on you**\n\n**#482 Add retry to webhook delivery**\n- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n- No test for the backoff cap.\n\nSuggested review: request changes.\n\n**#479 Fix date parsing in reports**\nLooks good. Suggested review: approve.":
+    "**2 Pull Requests warten auf dich**\n\n**#482 Retry für Webhook-Zustellung hinzufügen**\n- Wiederholt auch bei 404, ein gelöschter Endpunkt wird also fünfmal erneut angefragt. Nur bei 5xx und Timeouts wiederholen?\n- Kein Test für die Backoff-Obergrenze.\n\nEmpfohlenes Review: Änderungen anfordern.\n\n**#479 Datums-Parsing in Berichten korrigieren**\nSieht gut aus. Empfohlenes Review: genehmigen.",
+  "Topic watch": "Themenradar",
+  "A weekly digest of what changed on topics you follow":
+    "Ein wöchentlicher Überblick, was sich bei deinen Themen getan hat",
+  "**This week**\n\n**Open-source AI agents**\n- A major release adds scheduled tasks (3 days ago)\n- Two new comparisons; both call memory the main gap\n\n**competitor.example**\n- Pricing: the Team plan went from $20 to $25 per seat\n\nNothing new on battery recycling.":
+    "**Diese Woche**\n\n**Open-Source-KI-Agenten**\n- Ein großes Release bringt geplante Aufgaben (vor 3 Tagen)\n- Zwei neue Vergleiche; beide sehen beim Gedächtnis die größte Lücke\n\n**competitor.example**\n- Preise: Der Team-Tarif stieg von $20 auf $25 pro Platz\n\nNichts Neues zum Batterierecycling.",
+  "API key for {provider}": "API-Schlüssel für {provider}",
+  "Credentials: {names}": "Zugangsdaten: {names}",
+  "Environment variables: {names}": "Umgebungsvariablen: {names}",
+  "Program: {name}": "Programm: {name}",
+  "Uses paths on your computer": "Nutzt Pfade auf deinem Computer",
+  "Needs: {names}": "Benötigt: {names}",
+  "Uses files that are not imported": "Nutzt Dateien, die nicht importiert werden",
+  "Setup complete": "Einrichtung abgeschlossen",
+  "Finish setting up": "Einrichtung abschließen",
+  "Check this yourself": "Bitte selbst prüfen",
+  "Could not load templates": "Vorlagen konnten nicht geladen werden",
+  Skill: "Skill",
+  "{schedule}, paused until you turn it on": "{schedule}, pausiert, bis du sie einschaltest",
+  "This template was just updated. Check it again.":
+    "Diese Vorlage wurde gerade aktualisiert. Sieh sie dir noch einmal an.",
+  "Could not create the bot": "Der Bot konnte nicht erstellt werden",
+  "Create bot": "Bot erstellen",
+  Adds: "Enthält",
+  "Works with": "Funktioniert mit",
+  "Bot templates": "Bot-Vorlagen",
+  Templates: "Vorlagen",
   "Recent payments": "Letzte Zahlungen",
   "Spending limit": "Ausgabenlimit",
   Amount: "Betrag",

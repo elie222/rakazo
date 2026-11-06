@@ -34,6 +34,7 @@ function dispatchContext(tainted: boolean) {
   return {
     deps: {
       prisma: {
+        bot: { findUnique: async () => null },
         user: {
           findUniqueOrThrow: async () => ({
             timezone: "UTC" as string | null,

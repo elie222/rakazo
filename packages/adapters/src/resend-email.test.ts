@@ -41,6 +41,26 @@ describe("ResendEmailProvider", () => {
     });
   });
 
+  it("sends as a bot's own address, with its copies and reply-to", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id: "email-1" }));
+    await new ResendEmailProvider(
+      { ...config, replyTo: "founder@example.test" },
+      { fetch: request },
+    ).send({
+      ...message,
+      from: "Scout <scout@bots.test>",
+      cc: ["grace@example.test"],
+      replyTo: "scout@bots.test",
+    });
+    const body = JSON.parse(request.mock.calls[0]![1]!.body as string);
+    expect(body).toMatchObject({
+      from: "Scout <scout@bots.test>",
+      cc: ["grace@example.test"],
+      reply_to: "scout@bots.test",
+    });
+    expect(body).not.toHaveProperty("replyTo");
+  });
+
   it("gives separate deliveries different keys", async () => {
     const request = vi
       .fn<typeof fetch>()

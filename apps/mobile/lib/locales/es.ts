@@ -510,6 +510,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Only me": "Solo yo",
   "Anyone at @{domain}": "Cualquiera en @{domain}",
   "Remove email trigger": "Quitar disparador de correo",
+  "Get an email address": "Obtener una dirección de correo",
+  "Bot email addresses": "Direcciones de correo de los bots",
   "Use 2 to 64 characters": "Usa de 2 a 64 caracteres",
   "Use letters, numbers, dots, dashes or underscores":
     "Usa letras, números, puntos, guiones o guiones bajos",
@@ -872,6 +874,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "No se pudo borrar la sesión local",
   "Could not clear the previous server session":
     "No se pudo borrar la sesión del servidor anterior",
+  "Could not save the previous server session":
+    "No se pudo guardar la sesión del servidor anterior",
   "Could not save the server URL": "No se pudo guardar la URL del servidor",
   "Could not send reset email": "No se pudo enviar el correo de restablecimiento",
   "The server changed while starting the request": "El servidor cambió al iniciar la solicitud",
@@ -1379,6 +1383,44 @@ export const ES_MESSAGES: Record<string, string> = {
   "Discard changes?": "¿Descartar los cambios?",
   Discard: "Descartar",
   "Could not delete note": "No se pudo eliminar la nota",
+  "Morning briefing": "Resumen matutino",
+  "Your day at a glance, every weekday morning": "Tu día de un vistazo, cada mañana entre semana",
+  "**Thursday**\n\n**Calendar**\n- 10:00 Design review, moved to 11:30\n- 14:00 Call with Dana\n\n**Needs you**\n- Alex asked for the Q4 numbers by noon\n- A contract is waiting for your signature\n\n**Worth knowing**\n- Light rain after 4pm\n- Two stories on the topics you follow":
+    "**Jueves**\n\n**Calendario**\n- 10:00 Revisión de diseño, movida a las 11:30\n- 14:00 Llamada con Dana\n\n**Te necesitan**\n- Alex pidió las cifras del Q4 antes del mediodía\n- Un contrato espera tu firma\n\n**Para tener en cuenta**\n- Lluvia ligera a partir de las 16:00\n- Dos noticias sobre los temas que sigues",
+  "Inbox triage": "Clasificación del correo",
+  "Sorts new email and drafts the replies": "Ordena el correo nuevo y redacta las respuestas",
+  '**12 new since 8:00**\n\n**Reply needed**\n1. Priya wants to move Friday\'s review. Draft: "Friday works if we start at 2."\n2. Your card expires on the 30th. Draft ready.\n3. Sam asked about the API limits. Draft ready.\n\n**For your information**: a shipping update and a calendar change\n\n**Low priority**: 7 newsletters and notifications':
+    '**12 nuevos desde las 8:00**\n\n**Requieren respuesta**\n1. Priya quiere mover la revisión del viernes. Borrador: "El viernes me viene bien si empezamos a las 14:00."\n2. Tu tarjeta vence el día 30. Borrador listo.\n3. Sam preguntó por los límites de la API. Borrador listo.\n\n**Para tu información**: una actualización de envío y un cambio en el calendario\n\n**Prioridad baja**: 7 boletines y notificaciones',
+  "PR reviewer": "Revisor de PR",
+  "Reviews pull requests waiting on you": "Revisa las solicitudes de incorporación que te esperan",
+  "**2 pull requests are waiting on you**\n\n**#482 Add retry to webhook delivery**\n- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n- No test for the backoff cap.\n\nSuggested review: request changes.\n\n**#479 Fix date parsing in reports**\nLooks good. Suggested review: approve.":
+    "**Tienes 2 solicitudes de incorporación pendientes**\n\n**#482 Añadir reintentos a la entrega de webhooks**\n- También reintenta con 404, así que un endpoint eliminado se reintenta cinco veces. ¿Reintentar solo con 5xx y tiempos de espera agotados?\n- No hay prueba para el límite del backoff.\n\nRevisión sugerida: solicitar cambios.\n\n**#479 Corregir el análisis de fechas en los informes**\nSe ve bien. Revisión sugerida: aprobar.",
+  "Topic watch": "Radar de temas",
+  "A weekly digest of what changed on topics you follow":
+    "Un resumen semanal de lo que cambió en los temas que sigues",
+  "**This week**\n\n**Open-source AI agents**\n- A major release adds scheduled tasks (3 days ago)\n- Two new comparisons; both call memory the main gap\n\n**competitor.example**\n- Pricing: the Team plan went from $20 to $25 per seat\n\nNothing new on battery recycling.":
+    "**Esta semana**\n\n**Agentes de IA de código abierto**\n- Una versión importante añade tareas programadas (hace 3 días)\n- Dos comparativas nuevas; ambas señalan la memoria como la principal carencia\n\n**competitor.example**\n- Precios: el plan Team pasó de $20 a $25 por usuario\n\nNada nuevo sobre reciclaje de baterías.",
+  "API key for {provider}": "Clave de API de {provider}",
+  "Credentials: {names}": "Credenciales: {names}",
+  "Environment variables: {names}": "Variables de entorno: {names}",
+  "Program: {name}": "Programa: {name}",
+  "Uses paths on your computer": "Usa rutas de tu ordenador",
+  "Needs: {names}": "Necesita: {names}",
+  "Uses files that are not imported": "Usa archivos que no se importan",
+  "Setup complete": "Configuración completa",
+  "Finish setting up": "Termina la configuración",
+  "Check this yourself": "Compruébalo tú",
+  "Could not load templates": "No se pudieron cargar las plantillas",
+  Skill: "Habilidad",
+  "{schedule}, paused until you turn it on": "{schedule}, en pausa hasta que la actives",
+  "This template was just updated. Check it again.":
+    "Esta plantilla se acaba de actualizar. Revísala de nuevo.",
+  "Could not create the bot": "No se pudo crear el bot",
+  "Create bot": "Crear bot",
+  Adds: "Incluye",
+  "Works with": "Funciona con",
+  "Bot templates": "Plantillas de bots",
+  Templates: "Plantillas",
   "Recent payments": "Pagos recientes",
   "Spending limit": "Límite de gasto",
   Amount: "Importe",

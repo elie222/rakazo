@@ -34,7 +34,7 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
-import { BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
+import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -45,6 +45,11 @@ import {
   VaultRevealed,
   VaultRevealInput,
 } from "./bot-secrets.js";
+import {
+  BotTemplateListingSchema,
+  CreateBotFromTemplateInput,
+  CreateBotFromTemplateOutput,
+} from "./bot-template.js";
 import {
   AccessGrantInputSchema,
   AccessGrantSchema,
@@ -581,6 +586,8 @@ export const appContract = {
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
+    templates: oc.output(z.array(BotTemplateListingSchema)),
+    createFromTemplate: oc.input(CreateBotFromTemplateInput).output(CreateBotFromTemplateOutput),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -601,6 +608,7 @@ export const appContract = {
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
     emailAddress: oc.input(botId).output(BotEmailAddressSchema),
+    emailAddresses: oc.output(BotEmailAddressesSchema),
     claimEmailAddress: oc
       .input(z.object({ botId: Id, name: BotEmailNameSchema }))
       .output(z.object({ address: z.string() })),

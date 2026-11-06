@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -61,11 +56,6 @@ msgstr ""
 #. placeholder {0}: server.health.toolCount
 #: src/pages/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
-msgstr ""
-
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
 msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
@@ -145,6 +135,11 @@ msgstr "שעות סיכום של {0}"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
+
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}, מושהית עד להפעלה"
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -234,10 +229,6 @@ msgstr "{label}, ריק"
 msgid "{minutes}m ago"
 msgstr "לפני {minutes} דק׳"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{name} (same name as a built-in skill)"
 msgstr ""
@@ -268,6 +259,14 @@ msgstr "אפשרויות {name}"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} נעצר"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keep their own model"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keeps its own model"
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -454,6 +453,100 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} שעות מחשב בחודש"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**12 הודעות חדשות מאז 8:00**\n"
+"\n"
+"**דורש תשובה**\n"
+"1. Priya רוצה להזיז את הסקירה של יום שישי. טיוטה: \"שישי מתאים אם נתחיל ב-14:00.\"\n"
+"2. הכרטיס שלך יפוג ב-30 לחודש. טיוטה מוכנה.\n"
+"3. Sam שאל על מגבלות ה-API. טיוטה מוכנה.\n"
+"\n"
+"**לידיעתך**: עדכון משלוח ושינוי ביומן\n"
+"\n"
+"**עדיפות נמוכה**: 7 ניוזלטרים והתראות"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**2 pull requests ממתינים לך**\n"
+"\n"
+"**#482 הוספת ניסיונות חוזרים למסירת webhooks**\n"
+"- מנסה שוב גם על 404, כך ש-endpoint שנמחק מקבל חמישה ניסיונות חוזרים. לנסות שוב רק על 5xx ופסקי זמן?\n"
+"- אין בדיקה לתקרת ה-backoff.\n"
+"\n"
+"סקירה מוצעת: בקשת שינויים.\n"
+"\n"
+"**#479 תיקון פענוח תאריכים בדוחות**\n"
+"נראה טוב. סקירה מוצעת: אישור."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**השבוע**\n"
+"\n"
+"**סוכני AI בקוד פתוח**\n"
+"- גרסה גדולה מוסיפה משימות מתוזמנות (לפני 3 ימים)\n"
+"- שתי השוואות חדשות; שתיהן מציינות את הזיכרון כפער העיקרי\n"
+"\n"
+"**competitor.example**\n"
+"- תמחור: תוכנית Team עלתה מ-$20 ל-$25 למשתמש\n"
+"\n"
+"אין חדש בנושא מחזור סוללות."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**יום חמישי**\n"
+"\n"
+"**יומן**\n"
+"- 10:00 סקירת עיצוב, הועברה ל-11:30\n"
+"- 14:00 שיחה עם Dana\n"
+"\n"
+"**ממתין לך**\n"
+"- Alex ביקש את נתוני Q4 עד הצהריים\n"
+"- חוזה ממתין לחתימה שלך\n"
+"\n"
+"**כדאי לדעת**\n"
+"- גשם קל אחרי 16:00\n"
+"- שתי כתבות על הנושאים שבמעקב שלך"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ חודש"
@@ -479,6 +572,10 @@ msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש ל�
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "סיכום שבועי של מה שהשתנה בנושאים שבמעקב שלך"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -699,6 +796,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "מה יתווסף"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1065,6 +1166,7 @@ msgstr "זמין לפקודות shell בתור {commandVariable}"
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1163,13 +1265,13 @@ msgstr "בוט"
 msgid "Bot"
 msgstr "בוט"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "כתובות האימייל של הבוטים"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "הבוט צופה ולא פועל"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Bot models"
-msgstr ""
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
@@ -1182,6 +1284,11 @@ msgstr "תצוגה מקדימה של מסך הבוט"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "תבניות בוטים"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1202,6 +1309,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr "בוטים עם מחשב ודפדפן משלהם"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots with their own model"
+msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1249,6 +1360,10 @@ msgstr ""
 msgid "Calls"
 msgstr "קריאות"
 
+#: src/pages/settings-nav.ts
+msgid "Calls, dictation, and replies read aloud."
+msgstr ""
+
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
 msgstr "יכולים לצפות בלי להתחבר"
@@ -1277,7 +1392,6 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -1383,6 +1497,10 @@ msgstr "הגדרות צ׳אט"
 msgid "Chat with your bot from Slack."
 msgstr "שוחחו עם הבוט שלכם מ-Slack."
 
+#: src/pages/settings-nav.ts
+msgid "Chat with your bots from other apps."
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr ""
@@ -1457,6 +1575,10 @@ msgstr "בחירת צורה או צבע לבוט, או העלאת תמונה"
 msgid "Choose a model"
 msgstr "בחירת מודל"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model that can see the screen"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
 msgstr "בחירת סיסמה חדשה"
@@ -1487,7 +1609,7 @@ msgstr ""
 msgid "City"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "תפוס"
 
@@ -1537,6 +1659,10 @@ msgstr "מנקה…"
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "סגירה"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "סגירת תבניות הבוטים"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1707,6 +1833,10 @@ msgstr "המחשב כבוי"
 msgid "Computer-use model"
 msgstr "מודל לשימוש במחשב"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model…"
+msgstr ""
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1811,6 +1941,7 @@ msgstr "יש לחבר קודם את הספק של המודל הזה."
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "חבר מפתח API משלך במודלים או בחר בקרדיטים של Rakazo בחיוב."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1901,10 +2032,12 @@ msgstr "המשך עם {0}"
 msgid "Conversations"
 msgstr ""
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1919,6 +2052,11 @@ msgstr "הועתק"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "העתקה"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "העתקת {address}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2075,6 +2213,10 @@ msgstr "לא ניתן ליצור את המקטע"
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create space"
 msgstr "לא ניתן ליצור את המרחב"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "לא ניתן ליצור את הבוט"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -2235,6 +2377,10 @@ msgstr "לא ניתן לטעון את אפשרויות ההתחברות"
 msgid "Could not load skill"
 msgstr "לא ניתן לטעון את המיומנות"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "לא ניתן לטעון את התבניות"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "לא ניתן לטעון את התוצר הזה."
@@ -2261,6 +2407,10 @@ msgstr "לא ניתן להתנתק. יש לנסות שוב."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "לא ניתן לפתוח את החיוב"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "לא ניתן לפתוח את הבוט"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2583,6 +2733,10 @@ msgstr "יצירת קטע והעברת {0} אליו."
 msgid "Create account"
 msgstr "יצירת חשבון"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "יצירת בוט"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "יצירת קבוצה"
@@ -2609,6 +2763,7 @@ msgstr "יצירת Rakazo משלך"
 msgid "Created"
 msgstr "נוצר"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3056,7 +3211,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "אימייל"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "כתובת אימייל"
 
@@ -3455,6 +3610,10 @@ msgstr ""
 msgid "General"
 msgstr "כללי"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "קבלת כתובת אימייל"
+
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "הורדת האפליקציה לנייד"
@@ -3681,6 +3840,10 @@ msgstr "לא פעיל"
 msgid "Inbox & email"
 msgstr "תיבת דואר נכנס ואימייל"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "מיון דואר נכנס"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "לכלול מפתחות API"
@@ -3722,6 +3885,7 @@ msgid "Instruction history"
 msgstr "היסטוריית הנחיות"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3980,6 +4144,7 @@ msgstr "טוען תצוגה מקדימה…"
 msgid "Loading voice providers…"
 msgstr "טוען ספקי קול…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4015,6 +4180,10 @@ msgstr ""
 
 #: src/components/vault/kinds.tsx
 msgid "Logins"
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Logins and keys your bots can use."
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
@@ -4361,6 +4530,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "פעולות נוספות במחשב"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "תדריך בוקר"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4822,6 +4995,7 @@ msgstr "רק אני"
 msgid "Only you"
 msgstr "רק את/ה"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -5175,6 +5349,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST אל"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "סוקר PR"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5685,6 +5863,7 @@ msgid "Restoring your workspace"
 msgstr "משחזר את סביבת העבודה"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5720,6 +5899,10 @@ msgstr "חזרה ל-Rakazo"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "יש לבדוק את הגדרות הספק ולבדוק שוב."
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "סוקר pull requests שממתינים לך"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -6245,6 +6428,10 @@ msgstr "אתר"
 msgid "Sites you sign in to stay signed in for everyone in this space"
 msgstr ""
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "מיומנות"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6332,6 +6519,10 @@ msgstr "מוין לפי {column}, בסדר עולה"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "מוין לפי {column}, בסדר יורד"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "ממיין אימיילים חדשים ומנסח טיוטות לתשובות"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6528,7 +6719,6 @@ msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "החלפה"
 
@@ -6589,6 +6779,11 @@ msgstr "הודעת Teams"
 msgid "Template"
 msgstr ""
 
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "תבניות"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "בדיקה"
@@ -6614,7 +6809,7 @@ msgstr ""
 msgid "Testing…"
 msgstr "בודק…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "הכתובת הזו לא זמינה"
 
@@ -6628,6 +6823,10 @@ msgstr ""
 
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "The computer your bots work on."
 msgstr ""
 
 #: src/lib/model-connection-preflight.ts
@@ -6680,10 +6879,6 @@ msgstr "הקישור המשותף יפסיק לעבוד"
 #: src/components/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
 msgstr "ההפרש שלא נוצל יזוכה בחשבונית הבאה שלך."
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -6871,6 +7066,10 @@ msgstr ""
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "התחברות עם המנוי הזה עדיין לא זמינה ב-Rakazo. אפשר להשתמש בפרטי גישה של ההתקנה או לבחור ספק אחר."
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "התבנית הזו עודכנה עכשיו. כדאי לבדוק אותה שוב."
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "השבוע"
@@ -6947,6 +7146,10 @@ msgstr "שם הכלי"
 msgid "Tools"
 msgstr "כלים"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "מעקב נושאים"
+
 #: src/components/AskCard.tsx
 msgid "Total"
 msgstr "סה״כ"
@@ -7015,6 +7218,14 @@ msgstr "אפשר לנסות את הבדיקה שוב."
 #: src/lib/cron.ts
 msgid "Tuesday"
 msgstr "יום שלישי"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn on"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -7155,7 +7366,7 @@ msgstr "שימוש ב{hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "השתמשו ב-2 עד 64 תווים"
 
@@ -7180,9 +7391,13 @@ msgstr "שימוש בברירות המחדל עבור {label}"
 msgid "Use in this bot"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "השתמשו באותיות, ספרות, נקודות, מקפים או קווים תחתונים"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use main model"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7194,10 +7409,6 @@ msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
-msgstr ""
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Use space default"
 msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -7384,6 +7595,10 @@ msgstr "מה להחזיר"
 msgid "What to watch"
 msgstr ""
 
+#: src/pages/settings-nav.ts
+msgid "What your bots remember between chats."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "כש-webhook מופעל"
@@ -7391,6 +7606,10 @@ msgstr "כש-webhook מופעל"
 #: src/pages/RoutineEditor.tsx
 msgid "When an email arrives"
 msgstr "כשמגיע אימייל"
+
+#: src/pages/settings-nav.ts
+msgid "When bots check with you before acting."
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
@@ -7413,6 +7632,14 @@ msgstr "מתי להשתמש"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "איפה הבוטים ירוצו?"
+
+#: src/pages/settings-nav.ts
+msgid "Where your bots pay from."
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Which LLMs your bots use."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
@@ -7444,6 +7671,10 @@ msgstr "הוראות עבודה"
 #: src/pages/shell/transcript.tsx
 msgid "Working…"
 msgstr "עובד…"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "עובד עם"
 
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
@@ -7519,6 +7750,10 @@ msgstr "הדיסק של המחשב כמעט מלא. פנה מקום על ידי 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr ""
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "היום שלך במבט אחד, בכל בוקר של יום עבודה"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

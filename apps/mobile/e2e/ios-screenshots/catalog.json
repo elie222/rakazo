@@ -101,7 +101,7 @@
     "id": "skills",
     "title": "Skills",
     "flow": "flows/skills.yaml",
-    "screens": ["skills", "skill", "plugin"]
+    "screens": ["skills", "skill", "plugin", "bot-templates", "bot-template"]
   },
   {
     "id": "memory",

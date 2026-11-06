@@ -491,8 +491,11 @@ export function VoiceSettingsOverlay({
                   disabled={busy || !canConnect}
                   onClick={() => void connectKey()}
                 >
+                  {/* A keyless option has nothing to connect; choosing it turns voice on. */}
                   {pending === "connect" ? (
                     <Trans>Connecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn on</Trans>
                   ) : credential && selfHosted ? (
                     <Trans>Reconnect</Trans>
                   ) : credential ? (
@@ -513,6 +516,8 @@ export function VoiceSettingsOverlay({
                 >
                   {pending === "disconnect" ? (
                     <Trans>Disconnecting…</Trans>
+                  ) : keyless ? (
+                    <Trans>Turn off</Trans>
                   ) : (
                     <Trans>Disconnect</Trans>
                   )}

@@ -1702,23 +1702,25 @@ describe("own instructions through update_bot", () => {
       long,
     );
   });
-  it("rejects an instructions offset that is not a plain read", async () => {
+  it("reads when an instructions offset comes with other fields, and names them", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     const long = "x".repeat(19_000);
     f.instructionState.instructions = long;
     f.setCalls([
       { args: { instructions_offset: -1 }, executionId: "call-1" },
       { args: { instructions_offset: 1.5 }, executionId: "call-2" },
-      { args: { instructions_offset: 0, name: "New name" }, executionId: "call-3" },
+      { args: { instructions_offset: 8000, name: "New name" }, executionId: "call-3" },
       { args: { instructions_offset: 19_000 }, executionId: "call-4" },
     ]);
     await f.run();
     expect(f.results).toEqual([
       { error: "instructions_offset must be a whole number of 0 or more." },
       { error: "instructions_offset must be a whole number of 0 or more." },
-      {
-        error: "instructions_offset only works on a read: call update_bot with no other fields.",
-      },
+      expect.objectContaining({
+        name: "Assistant",
+        instructionsOffset: 8000,
+        ignoredFields: expect.stringContaining('name="New name"'),
+      }),
       { error: "instructions_offset is past the end of your instructions." },
     ]);
     expect(f.instructionState.instructions).toBe(long);
@@ -2021,6 +2023,23 @@ describe("own settings through update_bot", () => {
       expect(f.effects).toEqual([]);
     },
   );
+  it("answers a paged read that also names a model or instructions, even outside the owner's chat", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { instructions_offset: 1, model: "Claude Sonnet", instructions: "Rewrite" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({
+        instructions: "Draft only",
+        ignoredFields: expect.stringContaining('model="Claude Sonnet"'),
+      }),
+    ]);
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
@@ -2065,6 +2084,46 @@ describe("own settings through update_bot", () => {
     await f.run();
     expect(f.results[0]).toMatchObject({ error: expect.stringContaining("outside content") });
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("treats its own id in bot_id as its own settings", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: " bot-1 ", name: "Scout" }, executionId: "call-1" },
+      { args: { bot_id: "bot-1", readAloud: true }, executionId: "call-2" },
+    ]);
+    await f.run();
+    // Not refused as bot management (off here), and its own edit counts as no outside content.
+    expect(f.results).toEqual([
+      expect.objectContaining({ ok: true, name: "Scout" }),
+      { ok: true, readAloud: true },
+    ]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", autoSpeak: false },
+        data: { autoSpeak: true },
+      }),
+    );
+    for (const effect of f.effects) expect(effect.request).not.toHaveProperty("bot_id");
+  });
+  it("holds instructions sent with its own id in bot_id like any own change", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: "bot-1", instructions: "Reply in short notes." }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toEqual([
+      expect.objectContaining({
+        kind: "update_bot",
+        status: "intended",
+        request: {
+          instructions: "Reply in short notes.",
+          reason: "Set in chat",
+          previousInstructions: "Draft only",
+          previousInstructionsFromBaseline: true,
+        },
+      }),
+    ]);
   });
   it("reads its settings when called with no fields", async () => {
     const f = fixture({ name: "update_bot", builtin: true });

@@ -57,6 +57,7 @@ export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export { bundledSkillNames } from "./hermes.js";
 export type { AgentImportReader, SkillFiles } from "./shared.js";
+export { renameSkillMd } from "./shared.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
@@ -192,7 +193,7 @@ export function readAgentImportFolder(
   files: AgentImportFile[],
   options: { includeSecrets: boolean },
 ): {
-  source: Exclude<AgentImportSource, "document">;
+  source: Exclude<AgentImportSource, "document" | "template">;
   root: string;
   files: Map<string, string>;
 } | null {
@@ -338,7 +339,7 @@ function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportP
 function detectSource(
   paths: Set<string>,
   root: string,
-): Exclude<AgentImportSource, "document"> | null {
+): Exclude<AgentImportSource, "document" | "template"> | null {
   const has = (path: string) => paths.has(path);
   if (
     root === ".hermes" ||

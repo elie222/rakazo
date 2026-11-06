@@ -68,6 +68,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  LayoutTemplate,
   Plus,
   Search,
   TriangleAlert,
@@ -196,11 +197,13 @@ export function PluginsOverlay({
   onConnectedAppsChange,
   onClose,
   onOpenMcp,
+  onOpenTemplates,
   activeBotId,
 }: {
   onConnectedAppsChange?: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onClose: () => void;
   onOpenMcp?: () => void;
+  onOpenTemplates?: () => void;
   activeBotId?: string;
 }) {
   const { t } = useLingui();
@@ -1628,6 +1631,17 @@ export function PluginsOverlay({
                 </span>
                 <Plural value={connectedCount} one="# connected" other="# connected" />
                 <ChevronRight />
+              </Button>
+            ) : null}
+            {browsing && onOpenTemplates ? (
+              <Button
+                variant="ghost"
+                className="-my-1 h-9 gap-2 px-2.5 text-body text-muted-foreground"
+                data-testid="open-bot-templates"
+                onClick={onOpenTemplates}
+              >
+                <LayoutTemplate />
+                <Trans>Templates</Trans>
               </Button>
             ) : null}
             {browsing || view === "manage" ? renderAddMenu() : null}

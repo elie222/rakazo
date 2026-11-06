@@ -48,6 +48,8 @@ vi.mock("./i18n", () => {
   return { t, useI18n: () => ({ t }) };
 });
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+// The bots' addresses read on their own; this screen's tests cover the vault's items.
+vi.mock("../components/bot-email", () => ({ BotEmailAddressesGroup: () => null }));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),

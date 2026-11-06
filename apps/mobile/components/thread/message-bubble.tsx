@@ -46,6 +46,7 @@ import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../change-undo";
+import { ImportSetupCard } from "../ImportSetupCard";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
 import { McpApprovalCard } from "../McpApprovalCard";
@@ -723,6 +724,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const computerBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "computer" }> => block.kind === "computer",
   );
+  const setupBlocks = message.blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "import_setup" }> =>
+      block.kind === "import_setup",
+  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) =>
@@ -775,6 +780,16 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           botId={cardBotId}
           threadId={message.threadId}
           messageId={message.id}
+          block={block}
+          accessibilityActions={actionProps.accessibilityActions}
+          onAccessibilityAction={actionProps.onAccessibilityAction}
+        />
+      ))}
+      {setupBlocks.map((block, index) => (
+        <ImportSetupCard
+          key={`import-setup-${index}`}
+          botId={cardBotId}
+          botName={speaker}
           block={block}
           accessibilityActions={actionProps.accessibilityActions}
           onAccessibilityAction={actionProps.onAccessibilityAction}

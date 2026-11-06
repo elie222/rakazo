@@ -18,11 +18,6 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未讀）"
 
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
-msgstr "{0, plural, one {# 個機器人使用自己的模型：} other {# 個機器人使用自己的模型：}}"
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -63,11 +58,6 @@ msgstr "{0, plural, other {# 個空間}}"
 #: src/pages/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, other {# 個工具}}"
-
-#. placeholder {0}: pinned.length
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
-msgstr "{0, plural, one {將 # 個機器人切換為空間預設模型？} other {將 # 個機器人切換為空間預設模型？}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -146,6 +136,11 @@ msgstr "{0} 彙整時數"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
 msgstr "{0} TB"
+
+#. placeholder {0}: schedule(routine.crons)
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "{0}, paused until you turn it on"
+msgstr "{0}，開啟前保持暫停"
 
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
@@ -235,10 +230,6 @@ msgstr "{label}，空白"
 msgid "{minutes}m ago"
 msgstr "{minutes} 分鐘前"
 
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr "{moved, plural, one {# 個機器人已改用空間預設模型。} other {# 個機器人已改用空間預設模型。}}"
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{name} (same name as a built-in skill)"
 msgstr "{name}（與內建技能同名）"
@@ -269,6 +260,14 @@ msgstr "{name} 選項"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} 已停止"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keep their own model"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{names} keeps its own model"
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -455,6 +454,100 @@ msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小時電腦時數"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**12 new since 8:00**\n"
+"\n"
+"**Reply needed**\n"
+"1. Priya wants to move Friday's review. Draft: \"Friday works if we start at 2.\"\n"
+"2. Your card expires on the 30th. Draft ready.\n"
+"3. Sam asked about the API limits. Draft ready.\n"
+"\n"
+"**For your information**: a shipping update and a calendar change\n"
+"\n"
+"**Low priority**: 7 newsletters and notifications"
+msgstr "**8:00 以來 12 封新郵件**\n"
+"\n"
+"**需要回覆**\n"
+"1. Priya 想調整星期五審查的時間。草稿：「如果下午 2 點開始，星期五可以。」\n"
+"2. 你的卡片將於 30 日到期。草稿已備妥。\n"
+"3. Sam 詢問了 API 限制。草稿已備妥。\n"
+"\n"
+"**供你參考**：一則出貨更新和一項行事曆變更\n"
+"\n"
+"**低優先順序**：7 封電子報和通知"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**2 pull requests are waiting on you**\n"
+"\n"
+"**#482 Add retry to webhook delivery**\n"
+"- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n"
+"- No test for the backoff cap.\n"
+"\n"
+"Suggested review: request changes.\n"
+"\n"
+"**#479 Fix date parsing in reports**\n"
+"Looks good. Suggested review: approve."
+msgstr "**有 2 個 pull request 在等你**\n"
+"\n"
+"**#482 為 webhook 傳送加入重試**\n"
+"- 遇到 404 也會重試，導致已刪除的端點被重試五次。只對 5xx 和逾時重試？\n"
+"- 缺少退避上限的測試。\n"
+"\n"
+"建議審查結果：要求修改。\n"
+"\n"
+"**#479 修正報表中的日期解析**\n"
+"看起來沒問題。建議審查結果：核准。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**This week**\n"
+"\n"
+"**Open-source AI agents**\n"
+"- A major release adds scheduled tasks (3 days ago)\n"
+"- Two new comparisons; both call memory the main gap\n"
+"\n"
+"**competitor.example**\n"
+"- Pricing: the Team plan went from $20 to $25 per seat\n"
+"\n"
+"Nothing new on battery recycling."
+msgstr "**本週**\n"
+"\n"
+"**開源 AI 代理**\n"
+"- 一個重大版本新增了排程任務（3 天前）\n"
+"- 兩篇新的比較文章；都認為記憶是最大缺口\n"
+"\n"
+"**competitor.example**\n"
+"- 定價：Team 方案從每席 $20 漲到 $25\n"
+"\n"
+"電池回收方面沒有新消息。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "**Thursday**\n"
+"\n"
+"**Calendar**\n"
+"- 10:00 Design review, moved to 11:30\n"
+"- 14:00 Call with Dana\n"
+"\n"
+"**Needs you**\n"
+"- Alex asked for the Q4 numbers by noon\n"
+"- A contract is waiting for your signature\n"
+"\n"
+"**Worth knowing**\n"
+"- Light rain after 4pm\n"
+"- Two stories on the topics you follow"
+msgstr "**星期四**\n"
+"\n"
+"**行事曆**\n"
+"- 10:00 設計審查，改到 11:30\n"
+"- 14:00 與 Dana 通話\n"
+"\n"
+"**需要你處理**\n"
+"- Alex 要你中午前提供 Q4 數字\n"
+"- 有一份合約等你簽名\n"
+"\n"
+"**值得留意**\n"
+"- 下午 4 點後有小雨\n"
+"- 你關注的主題有兩則新報導"
+
 #: src/components/ModelCredits.tsx
 msgid "/ month"
 msgstr "/ 月"
@@ -480,6 +573,10 @@ msgstr "已開啟 <0>{0}</0> 的登入分頁。請在該分頁輸入以下代碼
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "訂閱憑證已安全儲存。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "A weekly digest of what changed on topics you follow"
+msgstr "每週彙整你關注主題的最新變化"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -700,6 +797,10 @@ msgstr ""
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Adds"
+msgstr "將新增"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -1066,6 +1167,7 @@ msgstr "Shell 命令可透過 {commandVariable} 使用"
 msgid "Avatar Studio"
 msgstr "頭像工作室"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/vault/VaultPageHeader.tsx
@@ -1164,13 +1266,13 @@ msgstr "機器人"
 msgid "Bot"
 msgstr "機器人"
 
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Bot email addresses"
+msgstr "Bot 的電子郵件地址"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
 msgstr "機器人只觀察，不操作"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Bot models"
-msgstr "機器人模型"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
@@ -1183,6 +1285,11 @@ msgstr "機器人螢幕預覽"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
 msgstr ""
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+#: src/pages/Shell.tsx
+msgid "Bot templates"
+msgstr "機器人範本"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -1203,6 +1310,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr "擁有專屬電腦與瀏覽器的機器人"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots with their own model"
+msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1250,6 +1361,10 @@ msgstr "撥號中…"
 msgid "Calls"
 msgstr "通話"
 
+#: src/pages/settings-nav.ts
+msgid "Calls, dictation, and replies read aloud."
+msgstr ""
+
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
 msgstr "無需登入即可檢視"
@@ -1278,7 +1393,6 @@ msgstr "無法讀取影像"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -1384,6 +1498,10 @@ msgstr "聊天設定"
 msgid "Chat with your bot from Slack."
 msgstr "在 Slack 與你的機器人聊天。"
 
+#: src/pages/settings-nav.ts
+msgid "Chat with your bots from other apps."
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr "ChatGPT 訂閱"
@@ -1458,6 +1576,10 @@ msgstr "選擇機器人形狀和顏色，或上傳圖片"
 msgid "Choose a model"
 msgstr "選擇模型"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model that can see the screen"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
 msgstr "設定新密碼"
@@ -1488,7 +1610,7 @@ msgstr "選擇 Rakazo 的使用方式"
 msgid "City"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Claim"
 msgstr "認領"
 
@@ -1538,6 +1660,10 @@ msgstr "正在清空…"
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "關閉"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Close bot templates"
+msgstr "關閉機器人範本"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1708,6 +1834,10 @@ msgstr "電腦已停止"
 msgid "Computer-use model"
 msgstr "電腦操作模型"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model…"
+msgstr ""
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -1812,6 +1942,7 @@ msgstr "請先連結此模型的供應商。"
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "請在「模型」中連接你自己的 API 金鑰，或在「帳務」中選擇 Rakazo 點數。"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
@@ -1902,10 +2033,12 @@ msgstr "透過 {0} 繼續"
 msgid "Conversations"
 msgstr "對話"
 
+#: src/components/BotEmailAddressField.tsx
 #: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/pages/PublicPageShell.tsx
 #: src/components/pages/SharePopover.tsx
+#: src/components/vault/BotEmailAddresses.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1920,6 +2053,11 @@ msgstr "已複製"
 #: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "複製"
+
+#: src/components/BotEmailAddressField.tsx
+#: src/components/vault/BotEmailAddresses.tsx
+msgid "Copy {address}"
+msgstr "複製 {address}"
 
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
@@ -2076,6 +2214,10 @@ msgstr "無法建立分組"
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create space"
 msgstr "無法建立空間"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not create the bot"
+msgstr "無法建立機器人"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -2236,6 +2378,10 @@ msgstr "無法載入登入選項"
 msgid "Could not load skill"
 msgstr "無法載入技能"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not load templates"
+msgstr "無法載入範本"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "無法載入此成品。"
@@ -2262,6 +2408,10 @@ msgstr "無法登出，請再試一次。"
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "無法開啟帳務頁面"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Could not open the bot"
+msgstr "無法開啟機器人"
 
 #: src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -2584,6 +2734,10 @@ msgstr "建立分組並把 {0} 移入。"
 msgid "Create account"
 msgstr "建立帳號"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Create bot"
+msgstr "建立機器人"
+
 #: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "建立群組"
@@ -2610,6 +2764,7 @@ msgstr "建立你的 Rakazo"
 msgid "Created"
 msgstr "已建立"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3057,7 +3212,7 @@ msgctxt "routine trigger"
 msgid "Email"
 msgstr "電子郵件"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Email address"
 msgstr "電子郵件地址"
 
@@ -3456,6 +3611,10 @@ msgstr ""
 msgid "General"
 msgstr "一般"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Get an email address"
+msgstr "取得電子郵件地址"
+
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "下載手機應用程式"
@@ -3682,6 +3841,10 @@ msgstr "未啟用"
 msgid "Inbox & email"
 msgstr "收件匣和郵件"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Inbox triage"
+msgstr "收件匣整理"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
 msgstr "包含 API 金鑰"
@@ -3723,6 +3886,7 @@ msgid "Instruction history"
 msgstr "指令歷史"
 
 #: src/components/AskCard.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/InstructionSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions"
@@ -3981,6 +4145,7 @@ msgstr "正在載入預覽…"
 msgid "Loading voice providers…"
 msgstr "正在載入語音供應商…"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
@@ -4016,6 +4181,10 @@ msgstr ""
 
 #: src/components/vault/kinds.tsx
 msgid "Logins"
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Logins and keys your bots can use."
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
@@ -4362,6 +4531,10 @@ msgstr "更多應用程式"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "更多電腦操作"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Morning briefing"
+msgstr "晨間簡報"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4823,6 +4996,7 @@ msgstr "僅限我"
 msgid "Only you"
 msgstr "僅限自己"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -5176,6 +5350,10 @@ msgstr "在聊天室中傳送「沒有變更」"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST 到"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "PR reviewer"
+msgstr "PR 審查員"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
@@ -5686,6 +5864,7 @@ msgid "Restoring your workspace"
 msgstr "正在還原工作空間"
 
 #: src/components/AccountAccess.tsx
+#: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
@@ -5721,6 +5900,10 @@ msgstr "返回 Rakazo"
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "請檢查供應商設定並重新測試。"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Reviews pull requests waiting on you"
+msgstr "審查等你處理的 pull request"
 
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -6246,6 +6429,10 @@ msgstr "網站"
 msgid "Sites you sign in to stay signed in for everyone in this space"
 msgstr ""
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Skill"
+msgstr "技能"
+
 #. placeholder {0}: skill.name
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
@@ -6333,6 +6520,10 @@ msgstr "已依 {column} 遞增排序"
 #: src/components/markdown-copy.tsx
 msgid "Sorted by {column}, descending"
 msgstr "已依 {column} 遞減排序"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Sorts new email and drafts the replies"
+msgstr "分類新郵件並草擬回覆"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -6529,7 +6720,6 @@ msgid "Supports thinking"
 msgstr "支援思考"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switch"
 msgstr "切換"
 
@@ -6590,6 +6780,11 @@ msgstr "Teams 訊息"
 msgid "Template"
 msgstr ""
 
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Templates"
+msgstr "範本"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "測試"
@@ -6615,7 +6810,7 @@ msgstr "測試"
 msgid "Testing…"
 msgstr "正在測試…"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "That address isn't available"
 msgstr "此地址無法使用"
 
@@ -6630,6 +6825,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "瀏覽器反覆中斷麥克風連線。請重新啟動語音輸入。"
+
+#: src/pages/settings-nav.ts
+msgid "The computer your bots work on."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -6681,10 +6880,6 @@ msgstr "共用連結將失效"
 #: src/components/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
 msgstr "未使用的差額將抵扣到你的下一張帳單。"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr "已清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。"
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -6872,6 +7067,10 @@ msgstr "此伺服器的工具結果超出模型容量。請關閉該伺服器的
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "此訂閱登入在 Rakazo 中尚不可用。請使用部署憑證或選擇其他供應商。"
 
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "This template was just updated. Check it again."
+msgstr "此範本剛剛更新，請重新查看。"
+
 #: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr "本週"
@@ -6948,6 +7147,10 @@ msgstr "工具名稱"
 msgid "Tools"
 msgstr "工具"
 
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Topic watch"
+msgstr "主題追蹤"
+
 #: src/components/AskCard.tsx
 msgid "Total"
 msgstr "合計"
@@ -7016,6 +7219,14 @@ msgstr "請重試測試。"
 #: src/lib/cron.ts
 msgid "Tuesday"
 msgstr "週二"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Turn on"
+msgstr ""
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -7156,7 +7367,7 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "存取權杖請使用 {oauthEnvReference}。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "請使用 2 到 64 個字元"
 
@@ -7181,9 +7392,13 @@ msgstr "{label}使用預設值"
 msgid "Use in this bot"
 msgstr "在此機器人中使用"
 
-#: src/pages/RoutineEditor.tsx
+#: src/components/BotEmailAddressField.tsx
 msgid "Use letters, numbers, dots, dashes or underscores"
 msgstr "請使用字母、數字、點、連字號或底線"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use main model"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7196,10 +7411,6 @@ msgstr "輸入密碼時，請使用受保護的輸入。"
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "使用 Rakazo 額度"
-
-#: src/pages/model-settings/space-bots-model.tsx
-msgid "Use space default"
-msgstr "使用空間預設模型"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
@@ -7385,6 +7596,10 @@ msgstr "回傳內容"
 msgid "What to watch"
 msgstr "監視內容"
 
+#: src/pages/settings-nav.ts
+msgid "What your bots remember between chats."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "當 Webhook 觸發時"
@@ -7392,6 +7607,10 @@ msgstr "當 Webhook 觸發時"
 #: src/pages/RoutineEditor.tsx
 msgid "When an email arrives"
 msgstr "收到電子郵件時"
+
+#: src/pages/settings-nav.ts
+msgid "When bots check with you before acting."
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "When it finishes or needs input"
@@ -7414,6 +7633,14 @@ msgstr "何時使用"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "機器人應在哪裡執行？"
+
+#: src/pages/settings-nav.ts
+msgid "Where your bots pay from."
+msgstr ""
+
+#: src/pages/settings-nav.ts
+msgid "Which LLMs your bots use."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
@@ -7445,6 +7672,10 @@ msgstr "工作指示"
 #: src/pages/shell/transcript.tsx
 msgid "Working…"
 msgstr "處理中…"
+
+#: src/components/bot-templates/bot-templates-dialog.tsx
+msgid "Works with"
+msgstr "搭配使用的應用程式"
 
 #: src/components/ModelCredits.tsx
 msgid "Works with your ChatGPT or Claude plan."
@@ -7520,6 +7751,10 @@ msgstr "電腦的磁碟快滿了。請刪除不再需要的建置輸出和快取
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
 msgstr "你的資料"
+
+#: src/components/bot-templates/bot-template-copy.ts
+msgid "Your day at a glance, every weekday morning"
+msgstr "每個工作日早上，一眼掌握當天安排"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

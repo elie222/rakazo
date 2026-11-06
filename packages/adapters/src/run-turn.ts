@@ -65,8 +65,8 @@ import {
   flushProgress,
   mayBeSilentEnding,
   narrationBecomesMessages,
-  nextProgressNonce,
   progressHeldForSilence,
+  publishInterimMessage,
   publishMidTurnNarration,
   publishNarrationBeforeAsk,
   recordExplicitNoResponse,
@@ -345,7 +345,6 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
  * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
-  const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
   if (ctx.replyMode === "messages") {
@@ -386,16 +385,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.hasStreamedText = false;
     reply.pendingProgress = "";
     reply.redactor.skip();
-    await publishMessage(
-      deps,
-      run,
-      "bot",
-      [{ kind: "text", text }],
-      undefined,
-      nextProgressNonce(ctx),
-    );
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    await publishInterimMessage(ctx, text);
   }
   reply.progressBudgetStart = reply.midTurnProgressCount;
   reply.turnStartedAtMs = now;
@@ -469,16 +459,7 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
   if (reply.assembled.trim()) {
     const narration = clampUserProgressMessage(redactSecrets(reply.assembled, ctx.secrets));
     if (narration && canPublishDurableNarration(ctx)) {
-      await publishMessage(
-        deps,
-        run,
-        "bot",
-        [{ kind: "text", text: narration }],
-        undefined,
-        nextProgressNonce(ctx),
-      );
-      reply.midTurnUserTexts.push(narration);
-      reply.publishedMidTurnUserMessage = true;
+      await publishInterimMessage(ctx, narration);
     } else if (narration) {
       reply.discardedMidTurnNarration = true;
       reply.lastDiscardedMidTurnNarration = narration;
