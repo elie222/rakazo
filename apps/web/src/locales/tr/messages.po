@@ -1318,6 +1318,10 @@ msgstr "iptal edildi"
 msgid "Cancelled"
 msgstr "İptal edildi"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr ""
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr "Kart"
@@ -5534,6 +5538,10 @@ msgstr "Yeniden adlandır"
 msgid "Rename section"
 msgstr "Bölümü yeniden adlandır"
 
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr "{day} tarihinde yenileniyor"
@@ -7092,6 +7100,7 @@ msgid "Updating…"
 msgstr "Güncelleniyor…"
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "Yükselt"
 

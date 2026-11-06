@@ -101,6 +101,11 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  const renewTrial =
+    status.canManage &&
+    status.state === "trialing" &&
+    status.cancelAtPeriodEnd &&
+    status.hasCustomer;
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
@@ -252,7 +257,13 @@ export default function BillingScreen() {
       </SettingsGroup>
       {status.computerHoursLeft != null ? (
         <SettingsGroup
-          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+          footer={
+            endTrial
+              ? t("Trials get fewer hours to prevent abuse.")
+              : renewTrial
+                ? t("Cancelled trials have no computer hours.")
+                : undefined
+          }
         >
           <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
           {endTrial ? (
@@ -278,6 +289,18 @@ export default function BillingScreen() {
                     },
                   ],
                 )
+              }
+            />
+          ) : null}
+          {renewTrial ? (
+            <SettingsRow
+              title={t("Renew plan")}
+              disabled={pending}
+              onPress={() =>
+                void action(async () => {
+                  const result = await rpc("billing/portal", { client: "mobile" });
+                  show(await openBillingPage(result.url));
+                })
               }
             />
           ) : null}

@@ -1318,6 +1318,10 @@ msgstr "abgebrochen"
 msgid "Cancelled"
 msgstr "Abgebrochen"
 
+#: src/components/ModelCredits.tsx
+msgid "Cancelled trials have no computer hours."
+msgstr ""
+
 #: src/components/vault/kinds.tsx
 msgid "Card"
 msgstr ""
@@ -5534,6 +5538,10 @@ msgstr "Umbenennen"
 msgid "Rename section"
 msgstr "Abschnitt umbenennen"
 
+#: src/components/ModelCredits.tsx
+msgid "Renew plan"
+msgstr ""
+
 #: src/lib/billing.ts
 msgid "Renews {day}"
 msgstr ""
@@ -7092,6 +7100,7 @@ msgid "Updating…"
 msgstr ""
 
 #: src/pages/shell/shell-sidebar.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
 msgstr "Upgraden"
 

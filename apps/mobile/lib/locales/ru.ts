@@ -1143,6 +1143,10 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  Upgrade: "Улучшить план",
+  "Cancelled trials have no computer hours.":
+    "У отменённого пробного периода нет часов компьютера.",
+  "Renew plan": "Возобновить план",
   "Trials get fewer hours to prevent abuse.":
     "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
   "Start plan now": "Начать тариф сейчас",

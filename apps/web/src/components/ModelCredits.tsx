@@ -658,6 +658,25 @@ export function ModelCreditsSettings({
                 <Trans>Start plan now</Trans>
               </Button>
             </>
+          ) : status.canManage && status.state === "trialing" && status.hasCustomer ? (
+            <>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Cancelled trials have no computer hours.</Trans>
+              </p>
+              <Button
+                className="mt-5"
+                variant="secondary"
+                disabled={pending}
+                onClick={() =>
+                  void action(async () => {
+                    const { url } = await client.billing.portal();
+                    window.location.assign(url);
+                  })
+                }
+              >
+                <Trans>Renew plan</Trans>
+              </Button>
+            </>
           ) : null}
         </div>
       ) : null}

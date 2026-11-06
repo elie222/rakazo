@@ -1104,6 +1104,9 @@ export const NL_MESSAGES: Record<string, string> = {
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
+  Upgrade: "Upgraden",
+  "Cancelled trials have no computer hours.": "Opgezegde proefperiodes hebben geen computeruren.",
+  "Renew plan": "Abonnement verlengen",
   "Trials get fewer hours to prevent abuse.":
     "Proefperiodes krijgen minder uren om misbruik te voorkomen.",
   "Start plan now": "Abonnement nu starten",

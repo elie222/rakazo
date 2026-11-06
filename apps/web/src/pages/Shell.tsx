@@ -682,6 +682,7 @@ function SpaceShell() {
     sandboxProvider: bootstrapMe?.sandboxProvider,
     refreshThread,
     refreshGroupThread: (id) => refreshGroupThreadRef.current(id),
+    onUpgrade: () => openSettings("billing"),
   });
   const { computerBot, openComputer } = computerControls;
   const composer = useComposerActions({
