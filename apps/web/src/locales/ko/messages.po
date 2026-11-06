@@ -18,7 +18,7 @@ msgid " (unread)"
 msgstr " (읽지 않음)"
 
 #. placeholder {0}: servers.length
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
 msgstr ""
 
@@ -407,10 +407,6 @@ msgstr "오늘 {shown} 지출"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr ""
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -440,7 +436,7 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs}(으)로 저장"
 
 #: src/components/ToolActivityDisclosure.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, other {도구 #개}}"
 
@@ -615,7 +611,7 @@ msgstr "계정 기본값"
 msgid "Account ID"
 msgstr "계정 ID"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Account label"
 msgstr ""
 
@@ -653,7 +649,8 @@ msgstr "활동"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "추가"
@@ -708,7 +705,7 @@ msgstr ""
 msgid "Add an HTTPS server URL."
 msgstr "HTTPS 서버 URL을 입력하세요."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Add another"
 msgstr ""
 
@@ -716,7 +713,7 @@ msgstr ""
 msgid "Add credits"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr ""
 
@@ -783,13 +780,14 @@ msgid "Add workspace"
 msgstr "워크스페이스 추가"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Adding…"
 msgstr "추가 중…"
 
@@ -1004,7 +1002,7 @@ msgstr "API 키"
 msgid "API key for {provider}"
 msgstr "{provider}용 API 키"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "API key header"
 msgstr "API 키 헤더"
 
@@ -1126,7 +1124,7 @@ msgstr "파일 첨부"
 msgid "Attachment"
 msgstr "첨부 파일"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr ""
 
@@ -1198,7 +1196,8 @@ msgstr "아바타 스튜디오"
 #: src/pages/Board.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1232,7 +1231,7 @@ msgstr ""
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer 토큰"
 
@@ -1344,6 +1343,7 @@ msgstr ""
 msgid "Browse"
 msgstr ""
 
+#: src/pages/plugins/add-menu.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr ""
@@ -1801,7 +1801,7 @@ msgstr "명령 변수"
 msgid "Comment"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Communication"
 msgstr ""
 
@@ -1871,7 +1871,7 @@ msgstr "컴퓨터를 사용할 수 있습니다. 계속하려면 새로고침하
 msgid "Computers are off on this server."
 msgstr "이 서버에서는 컴퓨터가 꺼져 있습니다."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
@@ -1968,7 +1968,7 @@ msgstr "AI 모델에서 자체 API 키를 연결하거나 결제에서 Rakazo �
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1998,7 +1998,7 @@ msgid "Connection test failed."
 msgstr "연결 테스트에 실패했습니다."
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다."
 
@@ -2178,7 +2178,7 @@ msgid "Could not complete the update. Try again."
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "연결하지 못했습니다."
@@ -2367,12 +2367,13 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "연동 목록을 불러오지 못했습니다."
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
@@ -2500,7 +2501,7 @@ msgid "Could not remove the credential"
 msgstr ""
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
 msgstr ""
 
@@ -2525,7 +2526,7 @@ msgstr "차트를 만들지 못했습니다."
 msgid "Could not reset password"
 msgstr "비밀번호를 재설정할 수 없습니다"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "연결을 해제하지 못했습니다."
 
@@ -2599,7 +2600,7 @@ msgstr ""
 msgid "Could not save this choice"
 msgstr "선택 내용을 저장하지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
 msgstr ""
 
@@ -2788,11 +2789,11 @@ msgstr "생성됨"
 msgid "Creating…"
 msgstr "만드는 중…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credential"
 msgstr "인증 정보"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "인증 정보는 암호화되며 모델에 전송되지 않습니다."
 
@@ -2863,7 +2864,7 @@ msgid "Dark"
 msgstr "다크"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Data"
 msgstr ""
 
@@ -3009,7 +3010,7 @@ msgstr "거부"
 msgid "Description"
 msgstr "설명"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Design"
 msgstr ""
 
@@ -3030,7 +3031,7 @@ msgstr ""
 msgid "Details"
 msgstr "세부 정보"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Developer"
 msgstr ""
 
@@ -3062,7 +3063,7 @@ msgstr ""
 msgid "Disable a tool"
 msgstr "도구 비활성화"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "비활성화됨"
 
@@ -3510,7 +3511,7 @@ msgstr "만든 주체로 필터링"
 msgid "Filters"
 msgstr "필터"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Finance"
 msgstr ""
 
@@ -3592,7 +3593,8 @@ msgid "From {0}"
 msgstr ""
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "From GitHub"
 msgstr ""
 
@@ -3700,7 +3702,7 @@ msgstr ""
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "헤더 이름"
 
@@ -3923,7 +3925,7 @@ msgstr "이 방을 위한 지침"
 msgid "Instructions updated"
 msgstr "지침 업데이트됨"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr ""
 
@@ -4147,7 +4149,7 @@ msgstr "기억 설정을 불러오는 중…"
 msgid "Loading model catalog…"
 msgstr "모델 목록을 불러오는 중…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr ""
 
@@ -4240,7 +4242,8 @@ msgstr "{0} 관리"
 msgid "Manage billing"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Manage MCP servers"
 msgstr "MCP 서버 관리"
 
@@ -4248,11 +4251,11 @@ msgstr "MCP 서버 관리"
 msgid "Manage other bots"
 msgstr "다른 봇 관리"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual setup required"
 msgstr ""
 
@@ -4272,7 +4275,7 @@ msgstr "읽지 않음으로 표시"
 msgid "Markdown table"
 msgstr "Markdown 표"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Marketing"
 msgstr ""
 
@@ -4305,7 +4308,8 @@ msgstr "최대 출력 토큰 수"
 msgid "MCP endpoint"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "MCP server"
 msgstr ""
 
@@ -4533,12 +4537,13 @@ msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr ""
 
@@ -4587,7 +4592,7 @@ msgstr ""
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4624,7 +4629,7 @@ msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth 클라이언트 ID가 필요합니다"
 
@@ -4636,7 +4641,7 @@ msgstr "확인 필요"
 msgid "Needs input"
 msgstr "입력 필요"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs sign-in"
 msgstr "로그인 필요"
 
@@ -4755,7 +4760,7 @@ msgstr "다음 페이지"
 msgid "Next settings sections"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "검색 결과가 없습니다."
 
@@ -4763,7 +4768,7 @@ msgstr "검색 결과가 없습니다."
 msgid "No artifacts yet"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "No authentication"
 msgstr "인증 없음"
 
@@ -4837,7 +4842,7 @@ msgid "No reset"
 msgstr "초기화 안 함"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4893,7 +4898,7 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "아직 확인되지 않음"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not connected"
 msgstr "연결되지 않음"
 
@@ -4905,7 +4910,7 @@ msgstr "가져오지 않음"
 msgid "Not in Rakazo's catalog"
 msgstr "Rakazo 카탈로그에 없음"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Not in the plugin catalog"
 msgstr "플러그인 카탈로그에 없음"
 
@@ -4924,7 +4929,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo에서 사용하지 않음"
 
 #: src/components/McpServerHealthLine.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "작동하지 않음"
 
@@ -5332,7 +5337,7 @@ msgid "Plugin"
 msgstr "플러그인"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Plugin GitHub URL"
 msgstr ""
 
@@ -5361,7 +5366,7 @@ msgid "Preferences"
 msgstr "환경설정"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Preview"
 msgstr ""
 
@@ -5398,7 +5403,7 @@ msgstr "Bot 전용"
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
 msgstr ""
 
@@ -5498,7 +5503,7 @@ msgstr "최근"
 msgid "Recent payments"
 msgstr "최근 결제"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
 msgstr ""
 
@@ -5572,7 +5577,7 @@ msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 msgid "Recreating the computer"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Recruiting & HR"
 msgstr ""
 
@@ -5640,7 +5645,8 @@ msgstr "새로고침"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "삭제"
@@ -5684,7 +5690,7 @@ msgstr "이메일 트리거 제거"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
 msgstr ""
 
@@ -5722,7 +5728,8 @@ msgid "Removed, but list refresh failed"
 msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Removing…"
 msgstr "삭제 중…"
 
@@ -5880,6 +5887,8 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/plugins/manage-view.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5988,7 +5997,7 @@ msgstr "실행"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
 msgstr ""
 
@@ -6100,7 +6109,7 @@ msgstr "화면이 연결되지 않음"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
@@ -6130,7 +6139,8 @@ msgstr "Bot 검색"
 msgid "Search bots, actions, and settings"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr ""
 
@@ -6138,7 +6148,7 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "MCP 서버에서 “{query}” 검색"
 
@@ -6170,7 +6180,7 @@ msgstr ""
 msgid "Search: {0}"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "검색 중…"
@@ -6179,7 +6189,7 @@ msgstr "검색 중…"
 msgid "Security"
 msgstr "보안"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Security & Ops"
 msgstr ""
 
@@ -6354,7 +6364,7 @@ msgstr ""
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "더 보기"
@@ -6384,7 +6394,7 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/use-onboarding-model.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Sign in"
 msgstr "로그인"
 
@@ -6493,7 +6503,7 @@ msgid "Slide up to lock"
 msgstr ""
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
 msgstr ""
 
@@ -6690,7 +6700,7 @@ msgstr "보조 에이전트"
 msgid "Submit"
 msgstr "확인"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Submit a plugin"
 msgstr ""
 
@@ -7157,7 +7167,7 @@ msgid "Tool name"
 msgstr "도구 이름"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr ""
@@ -7265,7 +7275,7 @@ msgstr "섹션 없음"
 msgid "Undo"
 msgstr "실행 취소"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Uninstall"
 msgstr ""
 
@@ -7483,11 +7493,11 @@ msgstr ""
 msgid "Vault"
 msgstr "보관함"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verify and add"
 msgstr "확인 후 추가"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verifying…"
 msgstr "확인 중…"
 
@@ -7495,7 +7505,7 @@ msgstr "확인 중…"
 msgid "Version"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "View all"
 msgstr ""
 
@@ -7747,7 +7757,7 @@ msgstr "직접 조작 중"
 msgid "Your Anthropic"
 msgstr "사용 중인 Anthropic"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "내 앱"
 

@@ -18,7 +18,7 @@ msgid " (unread)"
 msgstr " (nieprzeczytane)"
 
 #. placeholder {0}: servers.length
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
 msgstr "{0, plural, one {# łącznik} few {# łączniki} many {# łączników} other {# łącznika}}"
 
@@ -407,10 +407,6 @@ msgstr "Wydano dziś: {shown}"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr "{skillCount, plural, one {# umiejętność} few {# umiejętności} many {# umiejętności} other {# umiejętności}}"
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -440,7 +436,7 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, zapisano jako {savedAs}"
 
 #: src/components/ToolActivityDisclosure.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# narzędzie} few {# narzędzia} many {# narzędzi} other {# narzędzia}}"
 
@@ -615,7 +611,7 @@ msgstr "Domyślne dla konta"
 msgid "Account ID"
 msgstr "Identyfikator konta"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Account label"
 msgstr "Etykieta konta"
 
@@ -653,7 +649,8 @@ msgstr "Aktywność"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "Dodaj"
@@ -708,7 +705,7 @@ msgstr "Dodaj klucz dostawcy głosu i wybierz głos w ustawieniach głosu."
 msgid "Add an HTTPS server URL."
 msgstr "Dodaj adres HTTPS serwera."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Add another"
 msgstr "Dodaj kolejne"
 
@@ -716,7 +713,7 @@ msgstr "Dodaj kolejne"
 msgid "Add credits"
 msgstr "Doładuj środki"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "Dodaj własne"
 
@@ -783,13 +780,14 @@ msgid "Add workspace"
 msgstr "Dodaj obszar roboczy"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr "Dodano"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Adding…"
 msgstr "Dodawanie…"
 
@@ -1004,7 +1002,7 @@ msgstr "Klucz API"
 msgid "API key for {provider}"
 msgstr "Klucz API dostawcy {provider}"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "API key header"
 msgstr "Nagłówek klucza API"
 
@@ -1126,7 +1124,7 @@ msgstr "Załącz plik"
 msgid "Attachment"
 msgstr "Załącznik"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "Uwierzytelnianie"
 
@@ -1198,7 +1196,8 @@ msgstr "Studio awatara"
 #: src/pages/Board.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1232,7 +1231,7 @@ msgstr "Uwierzytelnianie Basic ({username})"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Token Bearer"
 
@@ -1344,6 +1343,7 @@ msgstr "Etykieta mózgu"
 msgid "Browse"
 msgstr "Przeglądaj"
 
+#: src/pages/plugins/add-menu.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "Przeglądaj serwery MCP"
@@ -1801,7 +1801,7 @@ msgstr "Zmienna polecenia"
 msgid "Comment"
 msgstr "Komentarz"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Communication"
 msgstr "Komunikacja"
 
@@ -1871,7 +1871,7 @@ msgstr "Komputery są dostępne. Odśwież stronę lub otwórz bota, aby kontynu
 msgid "Computers are off on this server."
 msgstr "Komputery są wyłączone na tym serwerze."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "Skonfiguruj katalog wtyczek na serwerze, aby łączyć aplikacje."
 
@@ -1968,7 +1968,7 @@ msgstr "Połącz własny klucz API w Modelach lub wybierz środki Rakazo w Rozli
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1998,7 +1998,7 @@ msgid "Connection test failed."
 msgstr "Test połączenia nie powiódł się."
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "Połączenie z {0} wciąż oczekuje. Możesz zamknąć to okno i sprawdzić ponownie."
 
@@ -2178,7 +2178,7 @@ msgid "Could not complete the update. Try again."
 msgstr "Nie udało się ukończyć aktualizacji. Spróbuj ponownie."
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Nie udało się połączyć"
@@ -2367,12 +2367,13 @@ msgstr "Nie udało się wczytać ustawień komputera"
 msgid "Could not load credentials."
 msgstr "Nie udało się wczytać danych uwierzytelniających."
 
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "Nie udało się wczytać integracji"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "Nie udało się wczytać serwerów MCP"
 
@@ -2500,7 +2501,7 @@ msgid "Could not remove the credential"
 msgstr "Nie udało się usunąć danych uwierzytelniających"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
 msgstr "Nie udało się zmienić nazwy połączenia"
 
@@ -2525,7 +2526,7 @@ msgstr "Nie udało się wyświetlić wykresu"
 msgid "Could not reset password"
 msgstr "Nie udało się zresetować hasła"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "Nie udało się cofnąć połączenia"
 
@@ -2599,7 +2600,7 @@ msgstr "Nie udało się zapisać danych uwierzytelniających"
 msgid "Could not save this choice"
 msgstr "Nie udało się zapisać tego wyboru"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
 msgstr "Nie udało się przeszukać katalogu"
 
@@ -2788,11 +2789,11 @@ msgstr "Utworzono"
 msgid "Creating…"
 msgstr "Tworzenie…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credential"
 msgstr "Dane uwierzytelniające"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Dane uwierzytelniające są szyfrowane i nigdy nie trafiają do modelu."
 
@@ -2863,7 +2864,7 @@ msgid "Dark"
 msgstr "Ciemny"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Data"
 msgstr "Dane"
 
@@ -3009,7 +3010,7 @@ msgstr "Odmów"
 msgid "Description"
 msgstr "Opis"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Design"
 msgstr "Projektowanie"
 
@@ -3030,7 +3031,7 @@ msgstr "Aktualizacja aplikacji komputerowej"
 msgid "Details"
 msgstr "Szczegóły"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Developer"
 msgstr "Programista"
 
@@ -3062,7 +3063,7 @@ msgstr "Nie udało się tego rozpoznać."
 msgid "Disable a tool"
 msgstr "Wyłącz narzędzie"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "Wyłączone"
 
@@ -3510,7 +3511,7 @@ msgstr "Filtruj według autora"
 msgid "Filters"
 msgstr "Filtry"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Finance"
 msgstr "Finanse"
 
@@ -3592,7 +3593,8 @@ msgid "From {0}"
 msgstr "Od {0}"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "From GitHub"
 msgstr "Z GitHub"
 
@@ -3700,7 +3702,7 @@ msgstr "Nagłówek \"{header}\""
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "Nazwa nagłówka"
 
@@ -3923,7 +3925,7 @@ msgstr "Instrukcje dla tego pokoju"
 msgid "Instructions updated"
 msgstr "Zaktualizowano instrukcje"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "Domena integracji"
 
@@ -4147,7 +4149,7 @@ msgstr "Wczytywanie ustawień pamięci…"
 msgid "Loading model catalog…"
 msgstr "Wczytywanie katalogu modeli…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr "Wczytywanie wtyczek…"
 
@@ -4240,7 +4242,8 @@ msgstr "Zarządzaj {0}"
 msgid "Manage billing"
 msgstr "Zarządzaj rozliczeniami"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Manage MCP servers"
 msgstr "Zarządzaj serwerami MCP"
 
@@ -4248,11 +4251,11 @@ msgstr "Zarządzaj serwerami MCP"
 msgid "Manage other bots"
 msgstr "Zarządzaj innymi botami"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr "Ręcznie"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual setup required"
 msgstr "Wymagana ręczna konfiguracja"
 
@@ -4272,7 +4275,7 @@ msgstr "Oznacz jako nieprzeczytane"
 msgid "Markdown table"
 msgstr "Tabela Markdown"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Marketing"
 msgstr "Marketing"
 
@@ -4305,7 +4308,8 @@ msgstr "Maksymalna liczba tokenów odpowiedzi"
 msgid "MCP endpoint"
 msgstr "Punkt końcowy MCP"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "MCP server"
 msgstr "Serwer MCP"
 
@@ -4533,12 +4537,13 @@ msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Miesięczne środki wygasają przy odnowieniu. Doładowania nie wygasają."
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "Więcej"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "Więcej aplikacji"
 
@@ -4587,7 +4592,7 @@ msgstr "Moje komputery"
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4624,7 +4629,7 @@ msgstr "Wymaga odpowiedzi"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs an OAuth client ID"
 msgstr "Wymaga identyfikatora klienta OAuth"
 
@@ -4636,7 +4641,7 @@ msgstr "Wymaga uwagi"
 msgid "Needs input"
 msgstr "Wymaga danych"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs sign-in"
 msgstr "Wymaga logowania"
 
@@ -4755,7 +4760,7 @@ msgstr "Następna strona"
 msgid "Next settings sections"
 msgstr "Następne sekcje ustawień"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "Żadna aplikacja nie pasuje do wyszukiwania."
 
@@ -4763,7 +4768,7 @@ msgstr "Żadna aplikacja nie pasuje do wyszukiwania."
 msgid "No artifacts yet"
 msgstr "Brak artefaktów"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "No authentication"
 msgstr "Bez uwierzytelniania"
 
@@ -4837,7 +4842,7 @@ msgid "No reset"
 msgstr "Bez resetu"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4893,7 +4898,7 @@ msgstr "Nie dodano: {0}"
 msgid "Not checked yet"
 msgstr "Jeszcze nie sprawdzono"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not connected"
 msgstr "Nie połączono"
 
@@ -4905,7 +4910,7 @@ msgstr "Nie zaimportowano"
 msgid "Not in Rakazo's catalog"
 msgstr "Poza katalogiem Rakazo"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Not in the plugin catalog"
 msgstr "Poza katalogiem wtyczek"
 
@@ -4924,7 +4929,7 @@ msgid "Not used by Rakazo"
 msgstr "Nieużywane przez Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "Nie działa"
 
@@ -5332,7 +5337,7 @@ msgid "Plugin"
 msgstr "Wtyczka"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Plugin GitHub URL"
 msgstr "Adres GitHub wtyczki"
 
@@ -5361,7 +5366,7 @@ msgid "Preferences"
 msgstr "Preferencje"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Preview"
 msgstr "Podgląd"
 
@@ -5398,7 +5403,7 @@ msgstr "Prywatne"
 msgid "Private workspace with its own bots and groups."
 msgstr "Prywatny obszar roboczy z własnymi botami i grupami."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
 msgstr "Produktywność"
 
@@ -5498,7 +5503,7 @@ msgstr "Ostatnie"
 msgid "Recent payments"
 msgstr "Ostatnie płatności"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
 msgstr "Zalecane"
 
@@ -5572,7 +5577,7 @@ msgstr "Odtwórz komputer, który nie działa."
 msgid "Recreating the computer"
 msgstr "Odtwarzanie komputera"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Recruiting & HR"
 msgstr "Rekrutacja i HR"
 
@@ -5640,7 +5645,8 @@ msgstr "Wczytaj ponownie"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "Usuń"
@@ -5684,7 +5690,7 @@ msgstr "Usuń wyzwalacz e-mail"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
 msgstr "Usunąć ze wszystkich przestrzeni?"
 
@@ -5722,7 +5728,8 @@ msgid "Removed, but list refresh failed"
 msgstr "Usunięto, ale nie udało się odświeżyć listy"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Removing…"
 msgstr "Usuwanie…"
 
@@ -5880,6 +5887,8 @@ msgstr "Przywracanie obszaru roboczego"
 #: src/pages/Auth.tsx
 #: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/plugins/manage-view.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5988,7 +5997,7 @@ msgstr "Uruchomienia"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Uruchamia się, gdy bot otrzyma zweryfikowaną wiadomość od tego dostawcy."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
 msgstr "Sprzedaż i CRM"
 
@@ -6100,7 +6109,7 @@ msgstr "Ekran nie jest połączony"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
@@ -6130,7 +6139,8 @@ msgstr "Szukaj botów"
 msgid "Search bots, actions, and settings"
 msgstr "Szukaj botów, działań i ustawień"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Szukaj według domeny"
 
@@ -6138,7 +6148,7 @@ msgstr "Szukaj według domeny"
 msgid "Search integrations.sh"
 msgstr "Szukaj w integrations.sh"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "Szukaj „{query}” w serwerach MCP"
 
@@ -6170,7 +6180,7 @@ msgstr "Szukaj w sejfie"
 msgid "Search: {0}"
 msgstr "Wyszukiwanie: {0}"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Wyszukiwanie…"
@@ -6179,7 +6189,7 @@ msgstr "Wyszukiwanie…"
 msgid "Security"
 msgstr "Bezpieczeństwo"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Security & Ops"
 msgstr "Bezpieczeństwo i operacje"
 
@@ -6354,7 +6364,7 @@ msgstr "Pokaż listę"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "Pokaż więcej"
@@ -6384,7 +6394,7 @@ msgstr "Zagęszczenie panelu bocznego"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/use-onboarding-model.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Sign in"
 msgstr "Zaloguj się"
 
@@ -6493,7 +6503,7 @@ msgid "Slide up to lock"
 msgstr "Przesuń w górę, aby zablokować"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
 msgstr "Nie udało się wczytać części wtyczek."
 
@@ -6690,7 +6700,7 @@ msgstr "subagent"
 msgid "Submit"
 msgstr "Wyślij"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Submit a plugin"
 msgstr "Zgłoś wtyczkę"
 
@@ -7157,7 +7167,7 @@ msgid "Tool name"
 msgstr "Nazwa narzędzia"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Narzędzia"
@@ -7265,7 +7275,7 @@ msgstr "Nieprzypisane"
 msgid "Undo"
 msgstr "Cofnij"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Uninstall"
 msgstr "Odinstaluj"
 
@@ -7483,11 +7493,11 @@ msgstr "Zmienne"
 msgid "Vault"
 msgstr "Sejf"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verify and add"
 msgstr "Zweryfikuj i dodaj"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verifying…"
 msgstr "Weryfikowanie…"
 
@@ -7495,7 +7505,7 @@ msgstr "Weryfikowanie…"
 msgid "Version"
 msgstr "Wersja"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "View all"
 msgstr "Zobacz wszystkie"
 
@@ -7747,7 +7757,7 @@ msgstr "Sterujesz komputerem"
 msgid "Your Anthropic"
 msgstr "Twój Anthropic"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "Twoje aplikacje"
 

@@ -18,7 +18,7 @@ msgid " (unread)"
 msgstr " (अपठित)"
 
 #. placeholder {0}: servers.length
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
 msgstr ""
 
@@ -407,10 +407,6 @@ msgstr "आज {shown} खर्च हुए"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr ""
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -440,7 +436,7 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} नाम से सेव होगा"
 
 #: src/components/ToolActivityDisclosure.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# टूल} other {# टूल}}"
 
@@ -615,7 +611,7 @@ msgstr "खाता डिफ़ॉल्ट"
 msgid "Account ID"
 msgstr "खाता आईडी"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Account label"
 msgstr ""
 
@@ -653,7 +649,8 @@ msgstr "गतिविधि"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "जोड़ें"
@@ -708,7 +705,7 @@ msgstr ""
 msgid "Add an HTTPS server URL."
 msgstr "एक HTTPS सर्वर URL दर्ज करें।"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Add another"
 msgstr ""
 
@@ -716,7 +713,7 @@ msgstr ""
 msgid "Add credits"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr ""
 
@@ -783,13 +780,14 @@ msgid "Add workspace"
 msgstr "वर्कस्पेस जोड़ें"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Adding…"
 msgstr "जोड़ा जा रहा है…"
 
@@ -1004,7 +1002,7 @@ msgstr "API कुंजी"
 msgid "API key for {provider}"
 msgstr "{provider} के लिए API कुंजी"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "API key header"
 msgstr "API कुंजी हेडर"
 
@@ -1126,7 +1124,7 @@ msgstr "फ़ाइल संलग्न करें"
 msgid "Attachment"
 msgstr "अटैचमेंट"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr ""
 
@@ -1198,7 +1196,8 @@ msgstr "अवतार स्टूडियो"
 #: src/pages/Board.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1232,7 +1231,7 @@ msgstr ""
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "बियरर टोकन"
 
@@ -1344,6 +1343,7 @@ msgstr ""
 msgid "Browse"
 msgstr ""
 
+#: src/pages/plugins/add-menu.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr ""
@@ -1801,7 +1801,7 @@ msgstr "कमांड वेरिएबल"
 msgid "Comment"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Communication"
 msgstr ""
 
@@ -1871,7 +1871,7 @@ msgstr "कंप्यूटर उपलब्ध हैं। जारी �
 msgid "Computers are off on this server."
 msgstr "इस सर्वर पर कंप्यूटर बंद हैं।"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
@@ -1968,7 +1968,7 @@ msgstr "मॉडल्स में अपनी API कुंजी कने�
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1998,7 +1998,7 @@ msgid "Connection test failed."
 msgstr "कनेक्शन परीक्षण विफल रहा।"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} से कनेक्शन अभी लंबित है। आप इसे बंद करके बाद में जांच सकते हैं।"
 
@@ -2178,7 +2178,7 @@ msgid "Could not complete the update. Try again."
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "कनेक्ट नहीं हो सका"
@@ -2367,12 +2367,13 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "इंटीग्रेशन लोड नहीं हो सके"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "MCP सर्वर लोड नहीं हो सके"
 
@@ -2500,7 +2501,7 @@ msgid "Could not remove the credential"
 msgstr ""
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
 msgstr ""
 
@@ -2525,7 +2526,7 @@ msgstr "चार्ट रेंडर नहीं हो सका"
 msgid "Could not reset password"
 msgstr "पासवर्ड रीसेट नहीं किया जा सका"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "कनेक्शन रद्द नहीं किया जा सका"
 
@@ -2599,7 +2600,7 @@ msgstr ""
 msgid "Could not save this choice"
 msgstr "यह विकल्प सहेजा नहीं जा सका"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
 msgstr ""
 
@@ -2788,11 +2789,11 @@ msgstr ""
 msgid "Creating…"
 msgstr "बनाया जा रहा है…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credential"
 msgstr "क्रेडेंशियल"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।"
 
@@ -2863,7 +2864,7 @@ msgid "Dark"
 msgstr "डार्क"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Data"
 msgstr ""
 
@@ -3009,7 +3010,7 @@ msgstr "अस्वीकार करें"
 msgid "Description"
 msgstr "विवरण"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Design"
 msgstr ""
 
@@ -3030,7 +3031,7 @@ msgstr ""
 msgid "Details"
 msgstr "विवरण"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Developer"
 msgstr ""
 
@@ -3062,7 +3063,7 @@ msgstr ""
 msgid "Disable a tool"
 msgstr "टूल अक्षम करें"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "अक्षम"
 
@@ -3510,7 +3511,7 @@ msgstr "किसने बनाया, उसके अनुसार फ़�
 msgid "Filters"
 msgstr "फ़िल्टर"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Finance"
 msgstr ""
 
@@ -3592,7 +3593,8 @@ msgid "From {0}"
 msgstr ""
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "From GitHub"
 msgstr ""
 
@@ -3700,7 +3702,7 @@ msgstr ""
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "हेडर नाम"
 
@@ -3923,7 +3925,7 @@ msgstr "इस रूम के लिए निर्देश"
 msgid "Instructions updated"
 msgstr "निर्देश अपडेट किए गए"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr ""
 
@@ -4147,7 +4149,7 @@ msgstr "मेमोरी सेटिंग्स लोड हो रही �
 msgid "Loading model catalog…"
 msgstr "मॉडल कैटलॉग लोड हो रहा है…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr ""
 
@@ -4240,7 +4242,8 @@ msgstr "{0} प्रबंधित करें"
 msgid "Manage billing"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Manage MCP servers"
 msgstr "MCP सर्वर प्रबंधित करें"
 
@@ -4248,11 +4251,11 @@ msgstr "MCP सर्वर प्रबंधित करें"
 msgid "Manage other bots"
 msgstr "अन्य बॉट प्रबंधित करें"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual setup required"
 msgstr ""
 
@@ -4272,7 +4275,7 @@ msgstr "अपठित चिह्नित करें"
 msgid "Markdown table"
 msgstr "Markdown तालिका"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Marketing"
 msgstr ""
 
@@ -4305,7 +4308,8 @@ msgstr "अधिकतम आउटपुट टोकन"
 msgid "MCP endpoint"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "MCP server"
 msgstr ""
 
@@ -4533,12 +4537,13 @@ msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr ""
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr ""
 
@@ -4587,7 +4592,7 @@ msgstr ""
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4624,7 +4629,7 @@ msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth क्लाइंट ID चाहिए"
 
@@ -4636,7 +4641,7 @@ msgstr "ध्यान देने की ज़रूरत"
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs sign-in"
 msgstr "साइन इन ज़रूरी है"
 
@@ -4755,7 +4760,7 @@ msgstr "अगला पृष्ठ"
 msgid "Next settings sections"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "आपकी खोज से कोई ऐप मेल नहीं खाता।"
 
@@ -4763,7 +4768,7 @@ msgstr "आपकी खोज से कोई ऐप मेल नहीं �
 msgid "No artifacts yet"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "No authentication"
 msgstr "कोई प्रमाणीकरण नहीं"
 
@@ -4837,7 +4842,7 @@ msgid "No reset"
 msgstr "रीसेट नहीं"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4893,7 +4898,7 @@ msgstr ""
 msgid "Not checked yet"
 msgstr "अभी तक जाँच नहीं हुई"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not connected"
 msgstr "कनेक्ट नहीं है"
 
@@ -4905,7 +4910,7 @@ msgstr "इंपोर्ट नहीं हुआ"
 msgid "Not in Rakazo's catalog"
 msgstr "Rakazo के कैटलॉग में नहीं"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Not in the plugin catalog"
 msgstr ""
 
@@ -4924,7 +4929,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo इसका उपयोग नहीं करता"
 
 #: src/components/McpServerHealthLine.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "काम नहीं कर रहा"
 
@@ -5332,7 +5337,7 @@ msgid "Plugin"
 msgstr "प्लगइन"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Plugin GitHub URL"
 msgstr ""
 
@@ -5361,7 +5366,7 @@ msgid "Preferences"
 msgstr "प्राथमिकताएँ"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Preview"
 msgstr ""
 
@@ -5398,7 +5403,7 @@ msgstr "निजी"
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
 msgstr ""
 
@@ -5498,7 +5503,7 @@ msgstr "हाल के"
 msgid "Recent payments"
 msgstr "हाल के भुगतान"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
 msgstr ""
 
@@ -5572,7 +5577,7 @@ msgstr "काम न कर रहे कंप्यूटर को फिर
 msgid "Recreating the computer"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Recruiting & HR"
 msgstr ""
 
@@ -5640,7 +5645,8 @@ msgstr "फिर से लोड करें"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "हटाएं"
@@ -5684,7 +5690,7 @@ msgstr "ईमेल ट्रिगर हटाएँ"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
 msgstr ""
 
@@ -5722,7 +5728,8 @@ msgid "Removed, but list refresh failed"
 msgstr "हटाया गया, लेकिन सूची रिफ़्रेश विफल रही"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Removing…"
 msgstr "हटाया जा रहा है…"
 
@@ -5880,6 +5887,8 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/plugins/manage-view.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5988,7 +5997,7 @@ msgstr "रन"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
 msgstr ""
 
@@ -6100,7 +6109,7 @@ msgstr "स्क्रीन कनेक्ट नहीं है"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
@@ -6130,7 +6139,8 @@ msgstr "बॉट खोजें"
 msgid "Search bots, actions, and settings"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr ""
 
@@ -6138,7 +6148,7 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "MCP सर्वर में “{query}” खोजें"
 
@@ -6170,7 +6180,7 @@ msgstr ""
 msgid "Search: {0}"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "खोजा जा रहा है…"
@@ -6179,7 +6189,7 @@ msgstr "खोजा जा रहा है…"
 msgid "Security"
 msgstr "सुरक्षा"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Security & Ops"
 msgstr ""
 
@@ -6354,7 +6364,7 @@ msgstr ""
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "और दिखाएँ"
@@ -6384,7 +6394,7 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/use-onboarding-model.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Sign in"
 msgstr "साइन इन करें"
 
@@ -6493,7 +6503,7 @@ msgid "Slide up to lock"
 msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
 msgstr ""
 
@@ -6690,7 +6700,7 @@ msgstr "सबएजेंट"
 msgid "Submit"
 msgstr "सबमिट करें"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Submit a plugin"
 msgstr ""
 
@@ -7157,7 +7167,7 @@ msgid "Tool name"
 msgstr "टूल का नाम"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr ""
@@ -7265,7 +7275,7 @@ msgstr "असाइन नहीं किया गया"
 msgid "Undo"
 msgstr "पूर्ववत करें"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Uninstall"
 msgstr ""
 
@@ -7483,11 +7493,11 @@ msgstr ""
 msgid "Vault"
 msgstr "वॉल्ट"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verify and add"
 msgstr "पुष्टि करके जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verifying…"
 msgstr "पुष्टि की जा रही है…"
 
@@ -7495,7 +7505,7 @@ msgstr "पुष्टि की जा रही है…"
 msgid "Version"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "View all"
 msgstr ""
 
@@ -7747,7 +7757,7 @@ msgstr "नियंत्रण आपके पास है"
 msgid "Your Anthropic"
 msgstr "आपका Anthropic"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "आपके ऐप्स"
 

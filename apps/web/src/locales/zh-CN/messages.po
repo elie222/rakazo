@@ -18,7 +18,7 @@ msgid " (unread)"
 msgstr "（未读）"
 
 #. placeholder {0}: servers.length
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
 msgstr "{0, plural, one {# 个连接器} other {# 个连接器}}"
 
@@ -407,10 +407,6 @@ msgstr "今天已花费 {shown}"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr "{skillCount, plural, one {# 个技能} other {# 个技能}}"
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -440,7 +436,7 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}，保存为 {savedAs}"
 
 #: src/components/ToolActivityDisclosure.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 
@@ -615,7 +611,7 @@ msgstr "账户默认"
 msgid "Account ID"
 msgstr "账户 ID"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Account label"
 msgstr "账户名称"
 
@@ -653,7 +649,8 @@ msgstr "动态"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "添加"
@@ -708,7 +705,7 @@ msgstr "请在语音设置中添加语音提供商密钥并选择声音。"
 msgid "Add an HTTPS server URL."
 msgstr "请填写 HTTPS 服务器 URL。"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Add another"
 msgstr "再添加一个"
 
@@ -716,7 +713,7 @@ msgstr "再添加一个"
 msgid "Add credits"
 msgstr "添加额度"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "添加自定义"
 
@@ -783,13 +780,14 @@ msgid "Add workspace"
 msgstr "添加工作区"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr "已添加"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Adding…"
 msgstr "正在添加…"
 
@@ -1004,7 +1002,7 @@ msgstr "API 密钥"
 msgid "API key for {provider}"
 msgstr "{provider} 的 API 密钥"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "API key header"
 msgstr "API 密钥请求头"
 
@@ -1126,7 +1124,7 @@ msgstr "附加文件"
 msgid "Attachment"
 msgstr "附件"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "认证"
 
@@ -1198,7 +1196,8 @@ msgstr "头像工作室"
 #: src/pages/Board.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1232,7 +1231,7 @@ msgstr "基本认证（{username}）"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -1344,6 +1343,7 @@ msgstr "Brain 标签"
 msgid "Browse"
 msgstr "浏览"
 
+#: src/pages/plugins/add-menu.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "浏览 MCP 服务器"
@@ -1801,7 +1801,7 @@ msgstr "命令变量"
 msgid "Comment"
 msgstr "评论"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Communication"
 msgstr "沟通"
 
@@ -1871,7 +1871,7 @@ msgstr "电脑已经可用。重新加载，或打开一个 Bot 继续。"
 msgid "Computers are off on this server."
 msgstr "此服务器未开启电脑。"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "要连接应用，请先在服务器上配置插件目录。"
 
@@ -1968,7 +1968,7 @@ msgstr "请在“模型”中连接你自己的 API 密钥，或在“账单”�
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1998,7 +1998,7 @@ msgid "Connection test failed."
 msgstr "连接测试失败。"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 
@@ -2178,7 +2178,7 @@ msgid "Could not complete the update. Try again."
 msgstr "无法完成更新。请重试。"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "无法连接"
@@ -2367,12 +2367,13 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr "无法加载凭据。"
 
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "无法加载集成"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "无法加载 MCP 服务器"
 
@@ -2500,7 +2501,7 @@ msgid "Could not remove the credential"
 msgstr "无法移除凭据"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
 msgstr "无法重命名连接"
 
@@ -2525,7 +2526,7 @@ msgstr "无法渲染图表"
 msgid "Could not reset password"
 msgstr "无法重置密码"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "无法撤销连接"
 
@@ -2599,7 +2600,7 @@ msgstr "无法保存凭据"
 msgid "Could not save this choice"
 msgstr "无法保存此选择"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
 msgstr "无法搜索目录"
 
@@ -2788,11 +2789,11 @@ msgstr "已创建"
 msgid "Creating…"
 msgstr "正在创建…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credential"
 msgstr "凭据"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "凭据已加密，不会发送给模型。"
 
@@ -2863,7 +2864,7 @@ msgid "Dark"
 msgstr "深色"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Data"
 msgstr "数据"
 
@@ -3009,7 +3010,7 @@ msgstr "拒绝"
 msgid "Description"
 msgstr "描述"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Design"
 msgstr "设计"
 
@@ -3030,7 +3031,7 @@ msgstr "桌面更新"
 msgid "Details"
 msgstr "详情"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Developer"
 msgstr "开发"
 
@@ -3062,7 +3063,7 @@ msgstr ""
 msgid "Disable a tool"
 msgstr "禁用工具"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "已禁用"
 
@@ -3510,7 +3511,7 @@ msgstr "按创建者筛选"
 msgid "Filters"
 msgstr "筛选器"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Finance"
 msgstr "财务"
 
@@ -3592,7 +3593,8 @@ msgid "From {0}"
 msgstr "从 {0}"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "From GitHub"
 msgstr "来自 GitHub"
 
@@ -3700,7 +3702,7 @@ msgstr "请求头“{header}”"
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "请求头名称"
 
@@ -3923,7 +3925,7 @@ msgstr "此房间的指示"
 msgid "Instructions updated"
 msgstr "指令已更新"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "集成域名"
 
@@ -4147,7 +4149,7 @@ msgstr "正在加载记忆设置…"
 msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr "正在加载插件…"
 
@@ -4240,7 +4242,8 @@ msgstr "管理 {0}"
 msgid "Manage billing"
 msgstr "管理账单"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
 
@@ -4248,11 +4251,11 @@ msgstr "管理 MCP 服务器"
 msgid "Manage other bots"
 msgstr "管理其他机器人"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr "手动"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual setup required"
 msgstr "需要手动设置"
 
@@ -4272,7 +4275,7 @@ msgstr "标为未读"
 msgid "Markdown table"
 msgstr "Markdown 表格"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Marketing"
 msgstr "营销"
 
@@ -4305,7 +4308,8 @@ msgstr "最大输出 token 数"
 msgid "MCP endpoint"
 msgstr "MCP 端点"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "MCP server"
 msgstr "MCP 服务器"
 
@@ -4533,12 +4537,13 @@ msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "每月额度在续订时到期。充值额度不会过期。"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "更多"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "更多应用"
 
@@ -4587,7 +4592,7 @@ msgstr ""
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4624,7 +4629,7 @@ msgstr "等你回答"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs an OAuth client ID"
 msgstr "需要 OAuth 客户端 ID"
 
@@ -4636,7 +4641,7 @@ msgstr "需要处理"
 msgid "Needs input"
 msgstr "需要输入"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs sign-in"
 msgstr "需要登录"
 
@@ -4755,7 +4760,7 @@ msgstr "下一页"
 msgid "Next settings sections"
 msgstr "下一组设置项"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "没有匹配的应用。"
 
@@ -4763,7 +4768,7 @@ msgstr "没有匹配的应用。"
 msgid "No artifacts yet"
 msgstr "还没有产物"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "No authentication"
 msgstr "无认证"
 
@@ -4837,7 +4842,7 @@ msgid "No reset"
 msgstr "不重置"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4893,7 +4898,7 @@ msgstr "未添加：{0}"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not connected"
 msgstr "未连接"
 
@@ -4905,7 +4910,7 @@ msgstr "未导入"
 msgid "Not in Rakazo's catalog"
 msgstr "不在 Rakazo 目录中"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Not in the plugin catalog"
 msgstr "不在插件目录中"
 
@@ -4924,7 +4929,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo 不使用"
 
 #: src/components/McpServerHealthLine.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "无法正常工作"
 
@@ -5332,7 +5337,7 @@ msgid "Plugin"
 msgstr "插件"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Plugin GitHub URL"
 msgstr "插件 GitHub URL"
 
@@ -5361,7 +5366,7 @@ msgid "Preferences"
 msgstr "偏好设置"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Preview"
 msgstr "预览"
 
@@ -5398,7 +5403,7 @@ msgstr "私有"
 msgid "Private workspace with its own bots and groups."
 msgstr "单独的工作区，有自己的 Bot 和群组。"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
 msgstr "效率"
 
@@ -5498,7 +5503,7 @@ msgstr "最近"
 msgid "Recent payments"
 msgstr "最近付款"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
 msgstr "推荐"
 
@@ -5572,7 +5577,7 @@ msgstr "重建无法正常工作的电脑。"
 msgid "Recreating the computer"
 msgstr "正在重建电脑"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Recruiting & HR"
 msgstr "招聘与人事"
 
@@ -5640,7 +5645,8 @@ msgstr "重新加载"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "移除"
@@ -5684,7 +5690,7 @@ msgstr "移除邮件触发器"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
 msgstr "从所有工作区移除？"
 
@@ -5722,7 +5728,8 @@ msgid "Removed, but list refresh failed"
 msgstr "已移除，但列表刷新失败"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Removing…"
 msgstr "正在移除…"
 
@@ -5880,6 +5887,8 @@ msgstr "正在恢复工作区"
 #: src/pages/Auth.tsx
 #: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/plugins/manage-view.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5988,7 +5997,7 @@ msgstr "运行"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "这个 Bot 收到该提供方发来的已验证消息时会运行。"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
 msgstr "销售与 CRM"
 
@@ -6100,7 +6109,7 @@ msgstr "屏幕未连接"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
@@ -6130,7 +6139,8 @@ msgstr "搜索 Bot"
 msgid "Search bots, actions, and settings"
 msgstr "搜索机器人、操作和设置"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "按域名搜索"
 
@@ -6138,7 +6148,7 @@ msgstr "按域名搜索"
 msgid "Search integrations.sh"
 msgstr "搜索 integrations.sh"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "在 MCP 服务器中搜索“{query}”"
 
@@ -6170,7 +6180,7 @@ msgstr ""
 msgid "Search: {0}"
 msgstr "搜索：{0}"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "正在搜索…"
@@ -6179,7 +6189,7 @@ msgstr "正在搜索…"
 msgid "Security"
 msgstr "安全"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Security & Ops"
 msgstr "安全与运维"
 
@@ -6354,7 +6364,7 @@ msgstr "显示列表"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "显示更多"
@@ -6384,7 +6394,7 @@ msgstr "侧栏密度"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/use-onboarding-model.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Sign in"
 msgstr "登录"
 
@@ -6493,7 +6503,7 @@ msgid "Slide up to lock"
 msgstr "上滑锁定"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
 msgstr "部分插件无法加载。"
 
@@ -6690,7 +6700,7 @@ msgstr "子 Agent"
 msgid "Submit"
 msgstr "提交"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Submit a plugin"
 msgstr "提交插件"
 
@@ -7157,7 +7167,7 @@ msgid "Tool name"
 msgstr "工具名称"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "工具"
@@ -7265,7 +7275,7 @@ msgstr "未分配"
 msgid "Undo"
 msgstr "撤销"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Uninstall"
 msgstr "卸载"
 
@@ -7483,11 +7493,11 @@ msgstr ""
 msgid "Vault"
 msgstr "保管库"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verify and add"
 msgstr "校验并添加"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verifying…"
 msgstr "正在校验…"
 
@@ -7495,7 +7505,7 @@ msgstr "正在校验…"
 msgid "Version"
 msgstr "版本"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "View all"
 msgstr "查看全部"
 
@@ -7747,7 +7757,7 @@ msgstr "你已接管"
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "你的应用"
 

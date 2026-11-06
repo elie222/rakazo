@@ -1,199 +1,60 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type {
   CapabilityInstall,
-  Connection,
   ConnectionCatalogItem,
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
-  McpServer,
-  McpServerConnection,
   McpSourcePreset,
-  PluginMarketplaceEntry,
 } from "@rakazo/contracts";
+import { mcpServerConnection } from "@rakazo/contracts";
 import {
-  CATALOG_SEARCH_QUERY_MAX_LENGTH,
-  CONNECTION_LABEL_MAX_LENGTH,
-  mcpServerConnection,
-  mcpServerNeedsSignIn,
-  PluginPreviewSchema,
-  SUBMIT_PLUGIN_URL,
-} from "@rakazo/contracts";
-import type { PluginCategory } from "@rakazo/core";
-import {
-  buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
-  catalogItemAccounts,
   catalogItemKey,
-  connectCatalogItem,
-  filterConnectionCatalogItems,
-  humanizeToolName,
   installedPluginParts,
-  integrationCatalogsReady,
-  isCatalogItemConnected,
-  isRecommendedPlugin,
   managedAppFor,
-  matchesPluginQuery,
-  matchesWordPrefixes,
-  OTHER_PLUGINS,
-  PLUGIN_CATEGORIES,
 } from "@rakazo/core";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
-  Badge,
   Button,
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  Disclosure,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Field,
-  FieldDescription,
-  FieldLabel,
   Input,
-  NativeSelect,
-  NativeSelectOption,
-  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
-import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowUpRight,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  LayoutTemplate,
-  Plus,
-  Search,
-  TriangleAlert,
-  X,
-} from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, LayoutTemplate, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type {
   ManagedAppLink,
   PluginSelection,
 } from "../components/integrations/plugin-marketplace";
-import {
-  PluginDetail,
-  PluginLogo,
-  PluginRow,
-  pluginSelection,
-  ROW_BUTTON,
-  ROW_HOVER,
-  ROW_SHELL,
-} from "../components/integrations/plugin-marketplace";
-import {
-  AvailabilityControl,
-  AvailabilityLabel,
-  reachesOtherSpaces,
-  useOwnSpaces,
-} from "../components/integrations/space-availability";
-import { connectedAppMarks } from "../lib/connected-apps";
-import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
-import { useSpaceQueries } from "../lib/query";
+import { PluginDetail, pluginSelection } from "../components/integrations/plugin-marketplace";
+import { reachesOtherSpaces, useOwnSpaces } from "../components/integrations/space-availability";
+import type { connectedAppMarks } from "../lib/connected-apps";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { AddMenu } from "./plugins/add-menu";
+import { ConnectorDetail } from "./plugins/connector-detail";
+import { DomainSearch, useDomainSearch } from "./plugins/domain-search";
+import { GithubImport } from "./plugins/github-import";
+import { ManageView } from "./plugins/manage-view";
+import type { TileContext } from "./plugins/parts";
+import { ViewTitle } from "./plugins/parts";
+import { PluginBrowse } from "./plugins/plugin-browse";
+import type { SourceKind } from "./plugins/source-form";
+import { SourceFormView, useSourceForm } from "./plugins/source-form";
+import { PLUGIN_PAGE_SIZE, useCatalogBrowse } from "./plugins/use-catalog-browse";
+import { usePluginConnections } from "./plugins/use-plugin-connections";
 
-function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
-  return logo ? (
-    <img
-      src={logo}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-    />
-  ) : (
-    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
-      {name[0]}
-    </div>
-  );
-}
-
-function connectionLabel(state: McpServerConnection): ReactElement {
-  switch (state) {
-    case "disabled":
-      return <Trans>Disabled</Trans>;
-    case "needs_client":
-      return <Trans>Needs an OAuth client ID</Trans>;
-    case "needs_sign_in":
-      return <Trans>Needs sign-in</Trans>;
-    case "not_working":
-      return <Trans>Not working</Trans>;
-    case "connected":
-      return <Trans>Connected</Trans>;
-    case "not_connected":
-      return <Trans>Not connected</Trans>;
-  }
-}
-
-function ConnectionStatus({ server }: { server: McpServer }) {
-  const state = mcpServerConnection(server);
-  const warning = state === "needs_sign_in" || state === "needs_client";
-  const Icon =
-    state === "connected"
-      ? Check
-      : warning
-        ? TriangleAlert
-        : state === "not_working"
-          ? CircleAlert
-          : null;
-  const tone =
-    state === "connected"
-      ? "text-success"
-      : warning
-        ? "text-warning"
-        : state === "not_working"
-          ? "text-destructive"
-          : "text-muted-foreground";
-  return (
-    <span className={`flex min-w-0 items-center gap-1 text-body-sm ${tone}`}>
-      {Icon ? <Icon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
-      <span className="truncate">{connectionLabel(state)}</span>
-    </span>
-  );
-}
-
-type SourceKind = "mcp" | "api" | "graphql";
 type OverlayView = "browse" | "manage" | "github" | "source" | "browseMcp" | "domain";
 
-const NO_CATALOG: ConnectionCatalogItem[] = [];
-const NO_CONNECTIONS: Connection[] = [];
-const NO_SOURCES: CapabilityInstall[] = [];
-const NO_PLUGINS: PluginMarketplaceEntry[] = [];
-const NO_PRESETS: McpSourcePreset[] = [];
-const SECTION_SIZE = 6;
 const CHIP_COUNT = 6;
-const PLUGIN_PAGE_SIZE = 24;
-
-/** "GMAIL_SEND_EMAIL" under Gmail reads as "Send email": the app is already the page title. */
-function toolLabel(name: string, item: ConnectionCatalogItem) {
-  const prefix = `${item.slug}_`;
-  const bare = name.toLowerCase().startsWith(prefix.toLowerCase())
-    ? name.slice(prefix.length)
-    : name;
-  return humanizeToolName(bare);
-}
-
-function markConnected(
-  items: ConnectionCatalogItem[],
-  connectorId: string,
-  slug: string,
-  connected: boolean,
-) {
-  return items.map((entry) =>
-    entry.connectorId === connectorId && entry.slug === slug ? { ...entry, connected } : entry,
-  );
-}
 
 export function PluginsOverlay({
   onConnectedAppsChange,
@@ -209,147 +70,66 @@ export function PluginsOverlay({
   activeBotId?: string;
 }) {
   const { t } = useLingui();
-  const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
-  // Only accounts whose label is being edited; the rest follow the saved name.
-  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
-  const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
-  const [sourcePreset, setSourcePreset] = useState<McpSourcePreset | null>(null);
-  const [sourceName, setSourceName] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [credential, setCredential] = useState("");
-  const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
-  const [authName, setAuthName] = useState("x-api-key");
-  const [pending, setPending] = useState<string | null>(null);
   const [confirmingSource, setConfirmingSource] = useState<string | null>(null);
   const spaceCount = useOwnSpaces().length;
-  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
-  const [sourceHint, setSourceHint] = useState<string | null>(null);
-  const [catalogFeedQuery, setCatalogFeedQuery] = useState("");
-  const [catalogFeedResults, setCatalogFeedResults] = useState<IntegrationCatalogResult[]>([]);
-  const [catalogFeedError, setCatalogFeedError] = useState<string | null>(null);
-  const [catalogFeedPending, setCatalogFeedPending] = useState(false);
-  const [catalogFeedSearched, setCatalogFeedSearched] = useState(false);
   const [view, setView] = useState<OverlayView>("browse");
   const [publicCatalogQuery, setPublicCatalogQuery] = useState("");
   // Where a source form returns: the domain search that prefilled it, or browse.
   const [sourceBack, setSourceBack] = useState<OverlayView>("browse");
   const [plugin, setPlugin] = useState<PluginSelection | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
-  const [pluginCount, setPluginCount] = useState(PLUGIN_PAGE_SIZE);
   const [gitSource, setGitSource] = useState("");
   const [detailKey, setDetailKey] = useState<{
     connectorId: string;
     slug: string;
   } | null>(null);
-  const connectionAttempt = useRef<AbortController | null>(null);
-  const queries = useSpaceQueries();
-  const queryClient = useQueryClient();
-  const mcpOptions = queries.mcp.servers.list.queryOptions();
-  const mcpQuery = useQuery(mcpOptions);
-  const mcpServers = mcpQuery.data ?? [];
-  const sourcePresets =
-    useQuery(queries.capabilities.sourcePresets.queryOptions()).data ?? NO_PRESETS;
-  const mcpError = mcpQuery.error ? errorText(mcpQuery.error, t`Could not load MCP servers`) : null;
-  async function loadIntegrations() {
-    // The catalog call reconciles connection rows, so list them after it settles.
-    const catalog = rpc.connections.catalog({});
-    const [items, installs, rows, catalogFeed] = await Promise.all([
-      catalog,
-      rpc.capabilities.list(),
-      catalog.catch(() => undefined).then(() => rpc.connections.list()),
-      optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: "" })),
-    ]);
-    return {
-      catalog: items,
-      connections: rows,
-      sources: installs.filter(
-        (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",
-      ),
-      plugins: installs.filter((install) => install.kind === "plugin"),
-      catalogFeedEnabled: catalogFeed.enabled,
-    };
-  }
-  const integrationsOptions = queryOptions({
-    queryKey: [...queries.connections.catalog.queryKey({ input: {} }), "integrations"],
-    queryFn: loadIntegrations,
+  const state = usePluginConnections({
+    activeBotId,
+    detailKey,
+    closeDetail,
+    onConnectedAppsChange,
   });
-  const integrations = useQuery(integrationsOptions);
-  const catalogLoaded = integrations.data !== undefined;
-  const loading = !catalogLoaded && integrations.isFetching;
-  const catalog = integrations.data?.catalog ?? NO_CATALOG;
-  const connections = integrations.data?.connections ?? NO_CONNECTIONS;
-  const sources = integrations.data?.sources ?? NO_SOURCES;
-  const pluginInstalls = integrations.data?.plugins ?? NO_SOURCES;
-  const pluginCatalog = useQuery(
-    queries.marketplace.catalog.queryOptions({ input: { query: "" }, staleTime: 60_000 }),
-  );
-  const assignmentsQuery = useQuery(
-    queries.mcp.assignments.list.queryOptions({
-      input: activeBotId ? { botId: activeBotId } : skipToken,
-    }),
-  );
-  const assigned = useMemo(
-    () => new Set((assignmentsQuery.data ?? []).map((row) => row.serverId)),
-    [assignmentsQuery.data],
-  );
-  const catalogFeedEnabled = integrations.data?.catalogFeedEnabled ?? false;
-  // A failed refresh is shown even over what was cached, so stale apps never pass as current.
-  const loadError = integrations.error
-    ? errorText(integrations.error, t`Could not load integrations`)
-    : null;
-  const toolsQuery = useQuery(
-    queries.connections.tools.queryOptions({
-      input: detailKey
-        ? { connectorId: detailKey.connectorId, provider: detailKey.slug }
-        : skipToken,
-    }),
-  );
-  const tools = (detailKey && toolsQuery.data) || [];
-  const toolsLoading = detailKey !== null && toolsQuery.isPending && toolsQuery.isFetching;
-
-  function updateIntegrations(
-    update: (
-      current: NonNullable<typeof integrations.data>,
-    ) => NonNullable<typeof integrations.data>,
-  ) {
-    return writeSaved(queryClient, integrationsOptions.queryKey, (current) =>
-      update(
-        current ?? {
-          catalog: NO_CATALOG,
-          connections: NO_CONNECTIONS,
-          sources: NO_SOURCES,
-          plugins: NO_SOURCES,
-          catalogFeedEnabled: false,
-        },
-      ),
-    );
-  }
-
-  /** Reads integrations again with requests sent after a change. */
-  async function refresh() {
-    void fetchFresh(queryClient, mcpOptions).catch(() => undefined);
-    void queryClient.invalidateQueries({ queryKey: queries.mcp.assignments.key() });
-    await fetchFresh(queryClient, {
-      queryKey: integrationsOptions.queryKey,
-      queryFn: loadIntegrations,
-    });
-  }
-
-  function refreshTools() {
-    void queryClient.invalidateQueries({
-      queryKey: queries.connections.tools.key(),
-    });
-  }
-
-  useEffect(() => {
-    return () => connectionAttempt.current?.abort();
-  }, []);
-
-  useEffect(() => {
-    if (catalogLoaded) onConnectedAppsChange?.(connectedAppMarks(catalog, connections));
-  }, [catalog, catalogLoaded, connections, onConnectedAppsChange]);
+  const {
+    mcpServers,
+    sourcePresets,
+    integrations,
+    catalogLoaded,
+    loading,
+    catalog,
+    sources,
+    pluginInstalls,
+    assigned,
+    catalogFeedEnabled,
+    loadError,
+    updateIntegrations,
+    refresh,
+    pending,
+    setPending,
+    catalogError,
+    setCatalogError,
+    itemConnected,
+    connect,
+  } = state;
+  const browse = useCatalogBrowse({
+    catalog,
+    catalogLoaded,
+    loadError,
+    pluginCatalog: state.pluginCatalog,
+  });
+  const {
+    query,
+    setQuery,
+    setVisibleCount,
+    category,
+    setCategory,
+    setPluginCount,
+    catalogEntries,
+    pluginForApp,
+    categoryLabel,
+    categories,
+  } = browse;
+  const sourceForm = useSourceForm();
+  const domainSearch = useDomainSearch();
 
   const detailItem = useMemo(() => {
     if (!detailKey) return null;
@@ -360,80 +140,6 @@ export function PluginsOverlay({
     );
   }, [catalog, detailKey]);
 
-  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
-  const showFeatured = !query.trim();
-
-  const visible = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
-  // Apps whose name starts with the query come before plugins; mid-word matches trail them.
-  const strongMatches = showFeatured
-    ? []
-    : visible.filter((item) => matchesWordPrefixes(item.name, query));
-  const weakMatches = showFeatured
-    ? visible
-    : visible.filter((item) => !matchesWordPrefixes(item.name, query));
-  const rendered = weakMatches.slice(0, visibleCount);
-
-  const catalogEntries = pluginCatalog.data?.entries ?? NO_PLUGINS;
-  // An empty managed catalog says nothing about plugins that are still loading or unavailable.
-  const catalogsReady = integrationCatalogsReady({
-    catalogLoaded,
-    catalogFailed: !!loadError,
-    pluginsLoaded: pluginCatalog.isSuccess,
-    pluginsUnavailable: !!pluginCatalog.data?.unavailableRegistries.length,
-  });
-  // One row per brand: a plugin for a managed app lends that app its skills instead of being
-  // listed again. Skill packs with nothing to connect belong to Skills, not here.
-  const { plugins, pluginForApp } = useMemo(() => {
-    const forApp = new Map<string, PluginMarketplaceEntry>();
-    const listed: PluginMarketplaceEntry[] = [];
-    for (const entry of catalogEntries) {
-      const app = managedAppFor(entry, catalog);
-      if (app) {
-        if (entry.skillCount && !forApp.has(catalogItemKey(app)))
-          forApp.set(catalogItemKey(app), entry);
-      } else if (entry.hasConnector) listed.push(entry);
-    }
-    return { plugins: listed, pluginForApp: forApp };
-  }, [catalog, catalogEntries]);
-  const categoryLabels: Record<PluginCategory, string> = {
-    productivity: t`Productivity`,
-    communication: t`Communication`,
-    sales: t`Sales & CRM`,
-    marketing: t`Marketing`,
-    finance: t`Finance`,
-    people: t`Recruiting & HR`,
-    design: t`Design`,
-    code: t`Developer`,
-    data: t`Data`,
-    ops: t`Security & Ops`,
-  };
-  const categoryLabel = (name: string) => categoryLabels[name as PluginCategory] ?? name;
-  // Managed apps standing in for a plugin keep that plugin's category, so a category lists them too.
-  const mergedBrands = catalog.flatMap((item) => {
-    const entry = pluginForApp.get(catalogItemKey(item));
-    return entry ? [{ item, entry }] : [];
-  });
-  const categories: string[] = PLUGIN_CATEGORIES.filter(
-    (name) =>
-      plugins.some((entry) => entry.category === name) ||
-      mergedBrands.some(({ entry }) => entry.category === name),
-  );
-  const brandMatches = category
-    ? mergedBrands.filter(
-        ({ item, entry }) =>
-          entry.category === (category === OTHER_PLUGINS ? null : category) &&
-          (matchesWordPrefixes(item.name, query) ||
-            matchesPluginQuery(entry, query, categoryLabel(entry.category ?? ""))),
-      )
-    : [];
-  const searching = query.trim().length > 0;
-  const pluginMatches = plugins.filter(
-    (entry) =>
-      (!category || entry.category === (category === OTHER_PLUGINS ? null : category)) &&
-      matchesPluginQuery(entry, query, entry.category ? categoryLabel(entry.category) : ""),
-  );
-  const installedPlugin = (installedSource: string) =>
-    pluginInstalls.find((row) => row.source === installedSource);
   const pluginServers = (install: CapabilityInstall | undefined) =>
     install ? mcpServers.filter((server) => server.installId === install.id) : [];
   const standaloneServers = mcpServers.filter((server) => !server.installId);
@@ -518,169 +224,20 @@ export function PluginsOverlay({
     setDetailKey(null);
   }
 
-  function itemConnected(item: ConnectionCatalogItem) {
-    return isCatalogItemConnected(connections, item);
-  }
-
-  async function notifyAppConnected(item: ConnectionCatalogItem) {
-    if (!activeBotId) return;
-    await rpc.onboarding
-      .appConnected({
-        botId: activeBotId,
-        provider: item.slug,
-        connectorId: item.connectorId,
-      })
-      .catch(() => undefined);
-  }
-
-  function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
-    return updateIntegrations((current) => ({
-      ...current,
-      catalog: markConnected(current.catalog, item.connectorId, item.slug, connected),
-    }));
-  }
-
-  async function connect(item: ConnectionCatalogItem) {
-    connectionAttempt.current?.abort();
-    const controller = new AbortController();
-    connectionAttempt.current = controller;
-    setCatalogError(null);
-    const key = catalogItemKey(item);
-    setPending(key);
-    try {
-      const result = await connectCatalogItem(item, connections, {
-        begin: (input) => rpc.connections.begin(input),
-        complete: (input) => rpc.connections.complete(input),
-        openUrl: (url) => window.open(url, "rakazo-plugin-connect", "noopener,noreferrer"),
-        signal: controller.signal,
-      });
-      if (result.status === "aborted") return;
-      if (result.status === "connected") {
-        await setItemConnected(item, true);
-        void notifyAppConnected(item);
-        await refresh().catch(() => undefined);
-        refreshTools();
-        return;
-      }
-      setCatalogError(
-        t`Connection to ${item.name} is still pending. You can close this and check again.`,
-      );
-      await refresh().catch(() => undefined);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      setCatalogError(errorText(err, t`Could not connect`));
-    } finally {
-      if (connectionAttempt.current === controller) {
-        connectionAttempt.current = null;
-        setPending(null);
-      }
-    }
-  }
-
-  async function revokeAccount(row: Connection, item: ConnectionCatalogItem) {
-    setCatalogError(null);
-    setPending(row.id);
-    try {
-      await rpc.connections.revoke({ connectionId: row.id });
-      const remaining = catalogItemAccounts(connections, item).filter(
-        (entry) => entry.id !== row.id,
-      );
-      if (remaining.every((entry) => entry.status !== "connected")) {
-        await setItemConnected(item, false);
-      }
-      await refresh().catch(() => undefined);
-      refreshTools();
-    } catch (err) {
-      setCatalogError(errorText(err, t`Could not revoke connection`));
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function uninstall(item: ConnectionCatalogItem) {
-    const matches = catalogItemAccounts(connections, item);
-    if (matches.length === 0) {
-      void setItemConnected(item, false);
-      closeDetail();
-      return;
-    }
-    setCatalogError(null);
-    setPending(`uninstall:${catalogItemKey(item)}`);
-    try {
-      for (const row of matches) {
-        await rpc.connections.revoke({ connectionId: row.id });
-      }
-      await setItemConnected(item, false);
-      await refresh().catch(() => undefined);
-      closeDetail();
-    } catch (err) {
-      setCatalogError(errorText(err, t`Could not revoke connection`));
-      await refresh().catch(() => undefined);
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function renameAccount(row: Connection) {
-    const displayName = (labelDrafts[row.id] ?? row.displayName).trim();
-    const clearDraft = () => setLabelDrafts(({ [row.id]: _draft, ...rest }) => rest);
-    if (!displayName || displayName === row.displayName) {
-      clearDraft();
-      return;
-    }
-    setPending(`rename:${row.id}`);
-    setCatalogError(null);
-    try {
-      const updated = await rpc.connections.rename({
-        connectionId: row.id,
-        displayName,
-      });
-      await updateIntegrations((current) => ({
-        ...current,
-        connections: current.connections.map((entry) =>
-          entry.id === row.id ? { ...entry, displayName: updated.displayName } : entry,
-        ),
-      }));
-      clearDraft();
-    } catch (err) {
-      setCatalogError(errorText(err, t`Could not rename connection`));
-    } finally {
-      setPending(null);
-    }
-  }
+  const tileContext: TileContext = {
+    connections: state,
+    pluginForApp,
+    onOpenApp: openApp,
+    onOpenDetail: openDetail,
+  };
 
   function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
     setPlugin(null);
     setDetailKey(null);
     setSourceBack("browse");
     setView("source");
-    setSourceKind(kind);
-    setSourcePreset(preset);
+    sourceForm.start(kind, preset);
     setSourceError(null);
-    setSourceHint(null);
-    setSourceName(preset?.name ?? "");
-    setSourceUrl(preset?.url ?? "");
-    setCredential("");
-    setAuthType(preset ? "bearer" : "none");
-    setAuthName("x-api-key");
-  }
-
-  async function searchCatalogFeed() {
-    setCatalogFeedError(null);
-    setCatalogFeedPending(true);
-    setCatalogFeedSearched(false);
-    setCatalogFeedResults([]);
-    try {
-      const response = await rpc.capabilities.catalogSearch({
-        query: catalogFeedQuery,
-      });
-      setCatalogFeedResults(response.results);
-      setCatalogFeedSearched(true);
-    } catch (err) {
-      setCatalogFeedError(errorText(err, t`Could not search catalog`));
-    } finally {
-      setCatalogFeedPending(false);
-    }
   }
 
   function beginCatalogSurface(
@@ -690,18 +247,13 @@ export function PluginsOverlay({
     if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
     setSourceBack("domain");
     setView("source");
-    setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
-    setSourcePreset(null);
-    setSourceName(result.name);
-    setSourceUrl(surface.source);
-    setCredential("");
-    setAuthType(surface.auth?.type ?? "none");
-    setAuthName(surface.auth?.headerName ?? "x-api-key");
-    setSourceHint(surface.auth?.note ?? null);
+    sourceForm.startFromCatalog(result, surface, surface.source);
     setSourceError(null);
   }
 
   async function installSource() {
+    const { sourceKind, sourcePreset, sourceName, sourceUrl, credential, authType, authName } =
+      sourceForm;
     if (!sourceKind) return;
     setSourceError(null);
     setPending("install-source");
@@ -725,8 +277,8 @@ export function PluginsOverlay({
               ? { auth }
               : { preset: "custom", auth },
       });
-      setCredential("");
-      setSourceKind(null);
+      sourceForm.setCredential("");
+      sourceForm.setSourceKind(null);
       setView("manage");
       await refresh();
     } catch (err) {
@@ -757,340 +309,6 @@ export function PluginsOverlay({
     }
   }
 
-  function renderCatalogActions(item: ConnectionCatalogItem) {
-    const key = catalogItemKey(item);
-    const connected = itemConnected(item);
-    const connecting = pending === key;
-    if (connected) {
-      return (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={connecting}
-          onClick={(event) => {
-            event.stopPropagation();
-            openDetail(item);
-          }}
-        >
-          {connecting ? <Trans>Adding…</Trans> : <Trans>Added</Trans>}
-        </Button>
-      );
-    }
-    return (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={connecting}
-        onClick={(event) => {
-          event.stopPropagation();
-          void connect(item);
-        }}
-      >
-        {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
-      </Button>
-    );
-  }
-
-  function renderCatalogTile(
-    item: ConnectionCatalogItem,
-    label: string,
-    logo?: string | null,
-    opts?: { tileTestId?: boolean },
-  ) {
-    const connected = itemConnected(item);
-    const openable = connected || pluginForApp.has(catalogItemKey(item));
-    const tileTestId = opts?.tileTestId !== false && connected;
-    const icon = <ConnectorIcon name={label} logo={logo} />;
-    const title = (
-      <div className="min-w-0 flex-1 text-start">
-        <div className="truncate text-body-lg font-medium text-foreground">{label}</div>
-      </div>
-    );
-    return (
-      <div
-        key={catalogItemKey(item)}
-        data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
-        className={`${ROW_SHELL}${openable ? ` ${ROW_HOVER}` : ""}`}
-      >
-        {openable ? (
-          <button type="button" className={ROW_BUTTON} onClick={() => openApp(item)}>
-            {icon}
-            {title}
-          </button>
-        ) : (
-          <>
-            {icon}
-            {title}
-          </>
-        )}
-        {renderCatalogActions(item)}
-      </div>
-    );
-  }
-
-  function renderDetail(item: ConnectionCatalogItem) {
-    const accounts = catalogItemAccounts(connections, item);
-    const key = catalogItemKey(item);
-    const connecting = pending === key;
-    const uninstalling = pending === `uninstall:${key}`;
-    const toolCount = tools.length;
-
-    return (
-      <div data-testid="connection-detail" className="space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label={t`Back`}
-              onClick={closeDetail}
-            >
-              <ChevronLeft />
-            </Button>
-            {item.logo ? (
-              <img
-                src={item.logo}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-              />
-            ) : (
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
-                {item.name[0]}
-              </div>
-            )}
-            <div className="truncate text-heading3 font-medium text-foreground">{item.name}</div>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={uninstalling || connecting}
-            onClick={() => void uninstall(item)}
-          >
-            {uninstalling ? <Trans>Removing…</Trans> : <Trans>Uninstall</Trans>}
-          </Button>
-        </div>
-
-        <section data-testid="connection-accounts" className="space-y-1">
-          {accounts.map((row) => (
-            <div key={row.id} className="group/account flex items-center gap-2">
-              <Input
-                value={labelDrafts[row.id] ?? row.displayName}
-                aria-label={t`Account label`}
-                maxLength={CONNECTION_LABEL_MAX_LENGTH}
-                className="h-9 rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
-                onChange={(event) =>
-                  setLabelDrafts((current) => ({
-                    ...current,
-                    [row.id]: event.target.value,
-                  }))
-                }
-                onBlur={() => void renameAccount(row)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
-                    if (event.key === "Escape") event.stopPropagation();
-                    return;
-                  }
-                  if (event.key === "Enter") {
-                    event.currentTarget.blur();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
-                size="sm"
-                disabled={pending === row.id || uninstalling}
-                onClick={() => void revokeAccount(row, item)}
-              >
-                {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-9 px-2 text-body text-muted-foreground"
-            size="sm"
-            disabled={connecting || uninstalling}
-            onClick={() => void connect(item)}
-          >
-            <Plus />
-            {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
-          </Button>
-        </section>
-
-        {toolsLoading || tools.length > 0 ? (
-          <Disclosure
-            data-testid="connection-tools"
-            className="px-2"
-            summaryClassName="text-body-sm text-muted-foreground"
-            summary={
-              toolsLoading ? (
-                <Trans>Tools</Trans>
-              ) : (
-                <Plural value={toolCount} one="# tool" other="# tools" />
-              )
-            }
-          >
-            <div className="flex flex-wrap gap-1.5 pt-3">
-              {tools.map((tool) => (
-                <Badge
-                  key={tool.name}
-                  variant="secondary"
-                  className="h-6 px-2.5 text-label font-normal"
-                  title={tool.description || undefined}
-                >
-                  {toolLabel(tool.name, item)}
-                </Badge>
-              ))}
-            </div>
-          </Disclosure>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderPluginRow(entry: PluginMarketplaceEntry) {
-    const selection = pluginSelection(entry);
-    return (
-      <PluginRow
-        key={entry.id}
-        name={entry.displayName}
-        description={entry.description}
-        logo={entry.logo}
-        site={selection.site}
-        installed={Boolean(installedPlugin(entry.installedSource))}
-        onOpen={() => openPlugin(selection)}
-      />
-    );
-  }
-
-  function renderPluginSections() {
-    if (pluginCatalog.isPending)
-      return (
-        <div className="grid place-items-center py-8">
-          <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading plugins…`} />
-        </div>
-      );
-    const unavailable =
-      pluginCatalog.error || pluginCatalog.data?.unavailableRegistries.length ? (
-        <div role="alert" className="mt-6 flex items-center gap-3 text-body text-muted-foreground">
-          <Trans>Some plugins could not be loaded.</Trans>
-          <Button variant="outline" size="sm" onClick={() => void pluginCatalog.refetch()}>
-            <Trans>Retry</Trans>
-          </Button>
-        </div>
-      ) : null;
-    return (
-      <>
-        {unavailable}
-        {renderPluginResults()}
-      </>
-    );
-  }
-
-  function renderPluginResults() {
-    if (category || searching)
-      return pluginMatches.length || brandMatches.length ? (
-        <section data-testid="plugin-results" className="mt-2">
-          <div className="grid grid-cols-2 gap-2">
-            {brandMatches.map(({ item }) => renderCatalogTile(item, item.name, item.logo))}
-            {pluginMatches.slice(0, pluginCount).map(renderPluginRow)}
-          </div>
-          {pluginCount < pluginMatches.length ? (
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPluginCount((count) => count + PLUGIN_PAGE_SIZE)}
-              >
-                <Trans>Show more</Trans>
-              </Button>
-            </div>
-          ) : null}
-        </section>
-      ) : null;
-    // A recommended brand this deployment already offers as a managed app is listed as that app.
-    const recommended = catalogEntries
-      .filter(isRecommendedPlugin)
-      .map((entry) => ({ entry, item: managedAppFor(entry, catalog) }))
-      .filter(({ entry, item }) => item || entry.hasConnector)
-      .slice(0, SECTION_SIZE);
-    const uncategorized = plugins.filter((entry) => !entry.category);
-    const sections: Array<[string, string, PluginMarketplaceEntry[]]> = [
-      ...categories.map((name): [string, string, PluginMarketplaceEntry[]] => [
-        name,
-        categoryLabel(name),
-        plugins.filter((entry) => entry.category === name),
-      ]),
-      ...(uncategorized.length
-        ? [[OTHER_PLUGINS, t`More`, uncategorized] as [string, string, PluginMarketplaceEntry[]]]
-        : []),
-    ].filter(([, , entries]) => entries.length);
-    return (
-      <>
-        {recommended.length ? (
-          <section data-testid="plugin-section" className="mt-8">
-            <SectionHeading as="h2" className="mb-2 px-2.5">
-              <Trans>Recommended</Trans>
-            </SectionHeading>
-            <div className="grid grid-cols-2 gap-2">
-              {recommended.map(({ entry, item }) =>
-                item ? renderCatalogTile(item, item.name, item.logo) : renderPluginRow(entry),
-              )}
-            </div>
-          </section>
-        ) : null}
-        {sections.map(([name, label, entries]) => (
-          <section key={name} data-testid="plugin-section" className="mt-8">
-            <div className="mb-2 flex items-center justify-between px-2.5">
-              <SectionHeading as="h2">{label}</SectionHeading>
-              {entries.length > SECTION_SIZE ? (
-                <Button variant="text" size="sm" onClick={() => setCategory(name)}>
-                  <Trans>View all</Trans>
-                </Button>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {entries.slice(0, SECTION_SIZE).map(renderPluginRow)}
-            </div>
-          </section>
-        ))}
-      </>
-    );
-  }
-
-  /** Nothing leaves for the public catalog until the person picks this row. */
-  function renderPublicCatalogRow(query: string) {
-    return (
-      <div className={`mt-2 ${ROW_SHELL} ${ROW_HOVER}`}>
-        <button
-          type="button"
-          className={ROW_BUTTON}
-          onClick={() => {
-            setPublicCatalogQuery(query);
-            openAddView("browseMcp");
-          }}
-        >
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-favicon-plate text-muted-foreground">
-            <Search className="size-4" />
-          </div>
-          <span className="min-w-0 flex-1 truncate text-body-lg font-medium text-foreground">
-            <Trans>Search MCP servers for “{query}”</Trans>
-          </span>
-        </button>
-      </div>
-    );
-  }
-
   function openAddView(next: OverlayView) {
     setPlugin(null);
     setDetailKey(null);
@@ -1099,488 +317,9 @@ export function PluginsOverlay({
   }
 
   function leaveSource() {
-    setSourceKind(null);
+    sourceForm.close();
     setSourceError(null);
-    setSourceHint(null);
     setView(sourceBack);
-  }
-
-  function renderAddMenu() {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" aria-label={t`Add custom`} />}
-        >
-          <Plus />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={() => openAddView("github")}>
-            <Trans>From GitHub</Trans>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => beginSource("mcp")}>
-            <Trans>MCP server</Trans>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => beginSource("api")}>OpenAPI</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => beginSource("graphql")}>GraphQL</DropdownMenuItem>
-          {sourcePresets.map((preset) => (
-            <DropdownMenuItem key={preset.id} onClick={() => beginSource("mcp", preset)}>
-              {preset.name}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => {
-              setPublicCatalogQuery("");
-              openAddView("browseMcp");
-            }}
-          >
-            <Trans>Browse MCP servers</Trans>
-          </DropdownMenuItem>
-          {catalogFeedEnabled ? (
-            <DropdownMenuItem onClick={() => openAddView("domain")}>
-              <Trans>Search by domain</Trans>
-            </DropdownMenuItem>
-          ) : null}
-          {onOpenMcp ? (
-            <DropdownMenuItem onClick={onOpenMcp}>
-              <Trans>Manage MCP servers</Trans>
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-
-  function renderViewTitle(title: ReactNode, onBack: () => void) {
-    return (
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="-ms-2 text-muted-foreground"
-          aria-label={t`Back`}
-          onClick={onBack}
-        >
-          <ChevronLeft />
-        </Button>
-        <SectionHeading as="h2" variant="heading">
-          {title}
-        </SectionHeading>
-      </div>
-    );
-  }
-
-  function renderGithubImport() {
-    return (
-      <div data-testid="plugin-git-import" className="max-w-xl space-y-6">
-        {renderViewTitle(<Trans>From GitHub</Trans>, () => setView("browse"))}
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const source = gitSource.trim();
-            if (!source) return;
-            openPlugin({
-              source,
-              installedSource: source.replace(/\/$/, ""),
-              name: source.replace(/\/$/, "").split("/").pop() ?? source,
-            });
-          }}
-        >
-          <Field>
-            <FieldLabel htmlFor="plugin-git-url">
-              <Trans>Plugin GitHub URL</Trans>
-            </FieldLabel>
-            <Input
-              id="plugin-git-url"
-              value={gitSource}
-              onChange={(event) => setGitSource(event.target.value)}
-              placeholder="https://github.com/owner/plugin"
-              maxLength={2048}
-              autoFocus
-            />
-          </Field>
-          <Button type="submit" disabled={!gitSource.trim()}>
-            <Trans>Preview</Trans>
-          </Button>
-        </form>
-      </div>
-    );
-  }
-
-  function renderSourceForm() {
-    if (!sourceKind) return null;
-    const custom = !sourcePreset;
-    return (
-      <div data-testid="integrations-source-form" className="max-w-xl space-y-6">
-        {renderViewTitle(
-          sourcePreset ? (
-            sourcePreset.name
-          ) : sourceKind === "mcp" ? (
-            <Trans>MCP server</Trans>
-          ) : sourceKind === "graphql" ? (
-            "GraphQL"
-          ) : (
-            "OpenAPI"
-          ),
-          leaveSource,
-        )}
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void installSource();
-          }}
-        >
-          <Field>
-            <FieldLabel htmlFor="source-name">
-              <Trans>Name</Trans>
-            </FieldLabel>
-            <Input
-              id="source-name"
-              value={sourceName}
-              onChange={(event) => setSourceName(event.target.value)}
-              autoFocus
-            />
-          </Field>
-          {!sourcePreset?.url ? (
-            <Field>
-              <FieldLabel htmlFor="source-url">URL</FieldLabel>
-              <Input
-                id="source-url"
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder={
-                  sourcePreset?.urlPlaceholder ??
-                  (sourceKind === "mcp"
-                    ? "https://example.com/mcp"
-                    : sourceKind === "graphql"
-                      ? "https://example.com/graphql"
-                      : "https://example.com/openapi.json")
-                }
-              />
-            </Field>
-          ) : null}
-          {custom ? (
-            <Field>
-              <FieldLabel htmlFor="source-auth">
-                <Trans>Authentication</Trans>
-              </FieldLabel>
-              <NativeSelect
-                id="source-auth"
-                className="w-full"
-                value={authType}
-                onChange={(event) => setAuthType(event.target.value as typeof authType)}
-              >
-                <NativeSelectOption value="none">
-                  <Trans>No authentication</Trans>
-                </NativeSelectOption>
-                <NativeSelectOption value="bearer">
-                  <Trans>Bearer token</Trans>
-                </NativeSelectOption>
-                <NativeSelectOption value="header">
-                  <Trans>API key header</Trans>
-                </NativeSelectOption>
-              </NativeSelect>
-            </Field>
-          ) : null}
-          {custom && authType === "header" ? (
-            <Field>
-              <FieldLabel htmlFor="source-header">
-                <Trans>Header name</Trans>
-              </FieldLabel>
-              <Input
-                id="source-header"
-                value={authName}
-                onChange={(event) => setAuthName(event.target.value)}
-              />
-            </Field>
-          ) : null}
-          {!custom || authType !== "none" ? (
-            <Field>
-              <FieldLabel htmlFor="source-credential">
-                {sourcePreset ? <Trans>Bearer token</Trans> : <Trans>Credential</Trans>}
-              </FieldLabel>
-              <Input
-                id="source-credential"
-                type="password"
-                autoComplete="new-password"
-                value={credential}
-                onChange={(event) => setCredential(event.target.value)}
-              />
-              <FieldDescription>
-                <Trans>Credentials are encrypted and never sent to the model.</Trans>
-              </FieldDescription>
-            </Field>
-          ) : null}
-          {sourceHint ? <p className="text-body text-muted-foreground">{sourceHint}</p> : null}
-          {sourceError ? (
-            <p role="alert" className="text-body text-destructive">
-              {sourceError}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={pending === "install-source"}>
-            {pending === "install-source" ? (
-              <Trans>Verifying…</Trans>
-            ) : (
-              <Trans>Verify and add</Trans>
-            )}
-          </Button>
-        </form>
-      </div>
-    );
-  }
-
-  function renderDomainSearch() {
-    return (
-      <div data-testid="integrations-catalog-feed" className="max-w-2xl space-y-6">
-        {renderViewTitle(<Trans>Search by domain</Trans>, () => setView("browse"))}
-        <div className="space-y-3">
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void searchCatalogFeed();
-            }}
-          >
-            <Input
-              value={catalogFeedQuery}
-              disabled={catalogFeedPending}
-              onChange={(event) => {
-                setCatalogFeedQuery(event.target.value);
-                setCatalogFeedResults([]);
-                setCatalogFeedError(null);
-                setCatalogFeedSearched(false);
-              }}
-              placeholder="github.com"
-              aria-label={t`Integration domain`}
-            />
-            <Button
-              type="submit"
-              variant="secondary"
-              size="sm"
-              disabled={!catalogFeedQuery.trim() || catalogFeedPending}
-            >
-              {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
-            </Button>
-          </form>
-          {catalogFeedError ? (
-            <p className="text-body text-destructive">{catalogFeedError}</p>
-          ) : null}
-          {catalogFeedSearched && !catalogFeedPending && catalogFeedResults.length === 0 ? (
-            <p className="text-body text-muted-foreground">
-              <Trans>No results</Trans>
-            </p>
-          ) : null}
-          {catalogFeedResults.map((result) => (
-            <div
-              key={`${result.domain}:${result.name}:${result.pageUrl ?? ""}`}
-              className="rounded-xl border border-border/70 p-3"
-            >
-              <div className="font-medium text-foreground">
-                {result.pageUrl ? (
-                  <a
-                    href={result.pageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:underline"
-                  >
-                    {result.name}
-                  </a>
-                ) : (
-                  result.name
-                )}
-              </div>
-              <div className="text-label text-muted-foreground">{result.domain}</div>
-              {result.description ? (
-                <p className="mt-2 text-body text-muted-foreground">{result.description}</p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {result.surfaces.map((surface) => {
-                  const canAdd =
-                    Boolean(surface.source) &&
-                    (surface.kind === "mcp" || surface.kind === "openapi");
-                  return (
-                    <Button
-                      key={`${result.domain}:${surface.slug}`}
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={!canAdd}
-                      title={canAdd ? undefined : t`Manual setup required`}
-                      onClick={() => beginCatalogSurface(result, surface)}
-                    >
-                      <span>{surface.kind.toUpperCase()}</span>
-                      <span>{canAdd ? t`Add` : t`Manual`}</span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  function renderBrowseMcp() {
-    return (
-      <div className="space-y-6">
-        {renderViewTitle(<Trans>Browse MCP servers</Trans>, () => setView("browse"))}
-        <IntegrationSetup
-          botId={activeBotId}
-          initialQuery={publicCatalogQuery || undefined}
-          onDone={() => {
-            setView("manage");
-            void refresh().catch((err: unknown) =>
-              setCatalogError(errorText(err, t`Could not load integrations`)),
-            );
-          }}
-        />
-      </div>
-    );
-  }
-
-  function renderInstalledPlugin(install: CapabilityInstall, part: "connector" | "skills") {
-    const selection = installedSelection(install);
-    const servers = pluginServers(install);
-    const parsed = PluginPreviewSchema.safeParse(install.config);
-    const skillCount = parsed.success ? parsed.data.skills.length : 0;
-    const signInNeeded = part === "connector" && servers.some(mcpServerNeedsSignIn);
-    return (
-      <div
-        key={`${install.id}:${part}`}
-        data-testid="installed-plugin"
-        className={`${ROW_SHELL} ${ROW_HOVER}`}
-      >
-        <button type="button" className={ROW_BUTTON} onClick={() => openPlugin(selection)}>
-          <PluginLogo name={selection.name} logo={selection.logo} site={selection.site} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-body-lg font-medium">{selection.name}</span>
-            <span className="block truncate text-body-sm text-muted-foreground">
-              {part === "connector" ? (
-                <Plural value={servers.length} one="# connector" other="# connectors" />
-              ) : (
-                <Plural value={skillCount} one="# skill" other="# skills" />
-              )}
-            </span>
-          </span>
-        </button>
-        <AvailabilityLabel availability={install.availability} />
-        {signInNeeded ? (
-          <Button variant="secondary" size="sm" onClick={() => openPlugin(selection)}>
-            <Trans>Sign in</Trans>
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderManage() {
-    const appPlugins = connectorInstalls;
-    const hasApps = appCount > 0 || Boolean(mcpError);
-    return (
-      <div data-testid="integrations-manage" className="space-y-8">
-        {renderViewTitle(<Trans>Your apps</Trans>, () => setView("browse"))}
-
-        {hasApps ? (
-          <section data-testid="connected-apps">
-            {onOpenMcp && standaloneServers.length ? (
-              <div className="mb-2 flex justify-end">
-                <Button variant="link" size="xs" onClick={onOpenMcp}>
-                  <Trans>Manage MCP servers</Trans>
-                </Button>
-              </div>
-            ) : null}
-            {mcpError ? (
-              <div
-                role="alert"
-                className="mb-2 flex items-center gap-2 px-2.5 text-body text-destructive"
-              >
-                {mcpError}
-                <Button variant="link" size="xs" onClick={() => void mcpQuery.refetch()}>
-                  <Trans>Retry</Trans>
-                </Button>
-              </div>
-            ) : null}
-            {sourceError ? (
-              <p role="alert" className="mb-2 px-2.5 text-body text-destructive">
-                {sourceError}
-              </p>
-            ) : null}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {connectedItems.map((item) =>
-                renderCatalogTile(item, item.name, item.logo, { tileTestId: false }),
-              )}
-              {appPlugins.map((install) => renderInstalledPlugin(install, "connector"))}
-              <div data-testid="registered-mcp-servers" className="contents">
-                {standaloneServers.map((server) => (
-                  <div
-                    key={server.id}
-                    data-testid="registered-mcp-server"
-                    className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
-                  >
-                    <ConnectorIcon name={server.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body-lg font-medium">{server.name}</span>
-                      <ConnectionStatus server={server} />
-                    </span>
-                    <AvailabilityLabel availability={server.availability} />
-                  </div>
-                ))}
-              </div>
-              <div data-testid="tool-sources" className="contents">
-                {sources.map((source) => (
-                  <div
-                    key={source.id}
-                    data-testid="tool-source"
-                    className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
-                  >
-                    <ConnectorIcon name={source.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body-lg font-medium">{source.name}</span>
-                      <span className="block truncate text-body-sm text-muted-foreground">
-                        {source.kind === "api"
-                          ? "OpenAPI"
-                          : source.kind === "graphql"
-                            ? "GraphQL"
-                            : "MCP"}{" "}
-                        {source.source}
-                      </span>
-                      <span className="mt-1 block">
-                        <AvailabilityControl
-                          kind="install"
-                          id={source.id}
-                          availability={source.availability}
-                          onChanged={refresh}
-                        />
-                      </span>
-                    </span>
-                    <Button
-                      type="button"
-                      variant={confirmingSource === source.id ? "destructive" : "secondary"}
-                      size="sm"
-                      disabled={pending === source.id}
-                      onClick={() => void removeSource(source)}
-                    >
-                      {pending === source.id ? (
-                        <Trans>Removing…</Trans>
-                      ) : confirmingSource === source.id ? (
-                        <Trans>Remove from every space?</Trans>
-                      ) : (
-                        <Trans>Remove</Trans>
-                      )}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        ) : null}
-      </div>
-    );
   }
 
   return (
@@ -1634,7 +373,19 @@ export function PluginsOverlay({
                 <Trans>Templates</Trans>
               </Button>
             ) : null}
-            {browsing || view === "manage" ? renderAddMenu() : null}
+            {browsing || view === "manage" ? (
+              <AddMenu
+                presets={sourcePresets}
+                onGithub={() => openAddView("github")}
+                onSource={beginSource}
+                onBrowseMcp={() => {
+                  setPublicCatalogQuery("");
+                  openAddView("browseMcp");
+                }}
+                onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
+                onOpenMcp={onOpenMcp}
+              />
+            ) : null}
             <DialogClose
               render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
             >
@@ -1755,161 +506,73 @@ export function PluginsOverlay({
               onChanged={refresh}
             />
           ) : detailItem ? (
-            renderDetail(detailItem)
+            <ConnectorDetail item={detailItem} state={state} onBack={closeDetail} />
           ) : view === "manage" ? (
-            renderManage()
+            <ManageView
+              state={state}
+              tileContext={tileContext}
+              connectedItems={connectedItems}
+              connectorInstalls={connectorInstalls}
+              standaloneServers={standaloneServers}
+              appCount={appCount}
+              sourceError={sourceError}
+              confirmingSource={confirmingSource}
+              onRemoveSource={(install) => void removeSource(install)}
+              onOpenMcp={onOpenMcp}
+              installedSelection={installedSelection}
+              pluginServers={pluginServers}
+              onOpenPlugin={openPlugin}
+              onBack={() => setView("browse")}
+            />
           ) : view === "github" ? (
-            renderGithubImport()
+            <GithubImport
+              value={gitSource}
+              onChange={setGitSource}
+              onBack={() => setView("browse")}
+              onPreview={openPlugin}
+            />
           ) : view === "source" ? (
-            renderSourceForm()
+            <SourceFormView
+              form={sourceForm}
+              installing={pending === "install-source"}
+              sourceError={sourceError}
+              onBack={leaveSource}
+              onSubmit={() => void installSource()}
+            />
           ) : view === "domain" ? (
-            renderDomainSearch()
+            <DomainSearch
+              state={domainSearch}
+              onBack={() => setView("browse")}
+              onPick={beginCatalogSurface}
+            />
           ) : view === "browseMcp" ? (
-            renderBrowseMcp()
+            <div className="space-y-6">
+              <ViewTitle
+                title={<Trans>Browse MCP servers</Trans>}
+                onBack={() => setView("browse")}
+              />
+              <IntegrationSetup
+                botId={activeBotId}
+                initialQuery={publicCatalogQuery || undefined}
+                onDone={() => {
+                  setView("manage");
+                  void refresh().catch((err: unknown) =>
+                    setCatalogError(errorText(err, t`Could not load integrations`)),
+                  );
+                }}
+              />
+            </div>
           ) : (
-            <>
-              {catalogLoaded && showFeatured && !category ? (
-                <div className="mb-6" data-testid="featured-connectors">
-                  {catalog.length === 0 ? (
-                    !catalogsReady || plugins.length ? null : (
-                      <p className="text-body leading-6 text-muted-foreground/80">
-                        <Trans>Configure a plugin catalog on the server to connect apps.</Trans>
-                      </p>
-                    )
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {featuredTiles.map((tile) => {
-                        const item = tile.item;
-                        const key = item ? catalogItemKey(item) : tile.id;
-                        const disabled = tile.missing || !item;
-                        if (item && !tile.missing) {
-                          // Featured is the stable hit target for connection-tile-* in E2E.
-                          return renderCatalogTile(item, tile.label, item.logo, {
-                            tileTestId: true,
-                          });
-                        }
-                        return (
-                          <div
-                            key={key}
-                            className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${
-                              disabled ? "opacity-70" : ""
-                            }`}
-                          >
-                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
-                              {tile.label[0]}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-body-lg font-medium text-foreground">
-                                {tile.label}
-                              </div>
-                              {disabled ? (
-                                <div className="truncate text-body-sm text-muted-foreground">
-                                  <Trans>Not in the plugin catalog</Trans>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {catalogsReady &&
-              visible.length === 0 &&
-              !showFeatured &&
-              !pluginMatches.length &&
-              !brandMatches.length ? (
-                <p className="text-muted-foreground/80">
-                  <Trans>No apps match your search.</Trans>
-                </p>
-              ) : null}
-              {showFeatured ? (
-                <>
-                  {renderPluginSections()}
-                  {catalogLoaded && catalog.length > 0 && !category ? (
-                    <SectionHeading as="h2" className="mt-8 mb-2 px-2.5">
-                      <Trans>More apps</Trans>
-                    </SectionHeading>
-                  ) : null}
-                  {visible.length > 0 && !category ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {rendered.map((item) =>
-                        renderCatalogTile(item, item.name, item.logo, {
-                          // Avoid duplicate connection-tile-* ids while featured is also shown.
-                          tileTestId: !showFeatured,
-                        }),
-                      )}
-                    </div>
-                  ) : null}
-                  {rendered.length < visible.length && !category ? (
-                    <div className="mt-4 flex justify-center">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)
-                        }
-                      >
-                        <Trans>Show more</Trans>
-                      </Button>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  {strongMatches.length > 0 && !category ? (
-                    <div className="mb-2 grid grid-cols-2 gap-2">
-                      {strongMatches.map((item) =>
-                        renderCatalogTile(item, item.name, item.logo, { tileTestId: true }),
-                      )}
-                    </div>
-                  ) : null}
-                  {renderPluginSections()}
-                  {rendered.length > 0 && !category ? (
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {rendered.map((item) =>
-                        renderCatalogTile(item, item.name, item.logo, { tileTestId: true }),
-                      )}
-                    </div>
-                  ) : null}
-                  {rendered.length < weakMatches.length && !category ? (
-                    <div className="mt-4 flex justify-center">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)
-                        }
-                      >
-                        <Trans>Show more</Trans>
-                      </Button>
-                    </div>
-                  ) : null}
-                  {query.trim().length >= 2 &&
-                  query.trim().length <= CATALOG_SEARCH_QUERY_MAX_LENGTH &&
-                  !category
-                    ? renderPublicCatalogRow(query.trim())
-                    : null}
-                </>
-              )}
-              {catalogLoaded && !category ? (
-                <div className="mt-10 flex justify-center">
-                  <a
-                    href={SUBMIT_PLUGIN_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-body-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Trans>Submit a plugin</Trans>
-                    <ArrowUpRight size={14} />
-                  </a>
-                </div>
-              ) : null}
-            </>
+            <PluginBrowse
+              browse={browse}
+              state={state}
+              tileContext={tileContext}
+              onOpenPlugin={openPlugin}
+              onSearchPublic={(publicQuery) => {
+                setPublicCatalogQuery(publicQuery);
+                openAddView("browseMcp");
+              }}
+            />
           )}
         </div>
       </DialogContent>

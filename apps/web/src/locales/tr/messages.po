@@ -18,7 +18,7 @@ msgid " (unread)"
 msgstr " (okunmadı)"
 
 #. placeholder {0}: servers.length
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
 msgstr "{0, plural, one {# bağlayıcı} other {# bağlayıcı}}"
 
@@ -407,10 +407,6 @@ msgstr "Bugün {shown} harcandı"
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "{skillCount, plural, one {# skill} other {# skills}}"
-msgstr "{skillCount, plural, one {# beceri} other {# beceri}}"
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -440,7 +436,7 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} olarak kaydedilir"
 
 #: src/components/ToolActivityDisclosure.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 
@@ -615,7 +611,7 @@ msgstr "Hesap varsayılanı"
 msgid "Account ID"
 msgstr "Hesap kimliği"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Account label"
 msgstr "Hesap etiketi"
 
@@ -653,7 +649,8 @@ msgstr "Etkinlik"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "Ekle"
@@ -708,7 +705,7 @@ msgstr "Ses sağlayıcısı anahtarı ekle ve Ses ayarlarından bir ses seç."
 msgid "Add an HTTPS server URL."
 msgstr "Bir HTTPS sunucu URL'si gir."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Add another"
 msgstr "Bir tane daha ekle"
 
@@ -716,7 +713,7 @@ msgstr "Bir tane daha ekle"
 msgid "Add credits"
 msgstr "Kredi ekle"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "Özel ekle"
 
@@ -783,13 +780,14 @@ msgid "Add workspace"
 msgstr "Çalışma alanı ekle"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr "Eklendi"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Adding…"
 msgstr "Ekleniyor…"
 
@@ -1004,7 +1002,7 @@ msgstr "API anahtarı"
 msgid "API key for {provider}"
 msgstr "{provider} için API anahtarı"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "API key header"
 msgstr "API anahtarı üstbilgisi"
 
@@ -1126,7 +1124,7 @@ msgstr "Dosya ekle"
 msgid "Attachment"
 msgstr "Ek"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "Kimlik doğrulama"
 
@@ -1198,7 +1196,8 @@ msgstr "Avatar Stüdyosu"
 #: src/pages/Board.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/NavLinkPage.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1232,7 +1231,7 @@ msgstr "Temel kimlik doğrulama ({username})"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -1344,6 +1343,7 @@ msgstr "Beyin etiketi"
 msgid "Browse"
 msgstr "Gözat"
 
+#: src/pages/plugins/add-menu.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "MCP sunucularına göz at"
@@ -1801,7 +1801,7 @@ msgstr "Komut değişkeni"
 msgid "Comment"
 msgstr "Yorum"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Communication"
 msgstr "İletişim"
 
@@ -1871,7 +1871,7 @@ msgstr "Bilgisayarlar hazır. Devam etmek için sayfayı yenile veya bir bot aç
 msgid "Computers are off on this server."
 msgstr "Bu sunucuda bilgisayarlar kapalı."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "Uygulamaları bağlamak için sunucuda bir eklenti kataloğu yapılandır."
 
@@ -1968,7 +1968,7 @@ msgstr "Modeller bölümünde kendi API anahtarınızı bağlayın veya Faturala
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1998,7 +1998,7 @@ msgid "Connection test failed."
 msgstr "Bağlantı testi başarısız."
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} bağlantısı hâlâ beklemede. Bunu kapatıp daha sonra tekrar kontrol edebilirsin."
 
@@ -2178,7 +2178,7 @@ msgid "Could not complete the update. Try again."
 msgstr "Güncelleme tamamlanamadı. Tekrar dene."
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Bağlanılamadı"
@@ -2367,12 +2367,13 @@ msgstr "Bilgisayar ayarları yüklenemedi"
 msgid "Could not load credentials."
 msgstr "Kimlik bilgileri yüklenemedi."
 
+#: src/pages/plugins/use-plugin-connections.ts
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "Entegrasyonlar yüklenemedi"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "MCP sunucuları yüklenemedi"
 
@@ -2500,7 +2501,7 @@ msgid "Could not remove the credential"
 msgstr "Kimlik bilgisi kaldırılamadı"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
 msgstr "Bağlantı yeniden adlandırılamadı"
 
@@ -2525,7 +2526,7 @@ msgstr "Grafik çizilemedi"
 msgid "Could not reset password"
 msgstr "Parola sıfırlanamadı"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "Bağlantı iptal edilemedi"
 
@@ -2599,7 +2600,7 @@ msgstr "Kimlik bilgisi kaydedilemedi"
 msgid "Could not save this choice"
 msgstr "Bu seçim kaydedilemedi"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
 msgstr "Katalogda arama yapılamadı"
 
@@ -2788,11 +2789,11 @@ msgstr "Oluşturuldu"
 msgid "Creating…"
 msgstr "Oluşturuluyor…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credential"
 msgstr "Kimlik bilgisi"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Kimlik bilgileri şifrelenir ve modele asla gönderilmez."
 
@@ -2863,7 +2864,7 @@ msgid "Dark"
 msgstr "Koyu"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Data"
 msgstr "Veriler"
 
@@ -3009,7 +3010,7 @@ msgstr "Reddet"
 msgid "Description"
 msgstr "Açıklama"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Design"
 msgstr "Tasarım"
 
@@ -3030,7 +3031,7 @@ msgstr "Masaüstü güncellemesi"
 msgid "Details"
 msgstr "Ayrıntılar"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Developer"
 msgstr "Geliştirici"
 
@@ -3062,7 +3063,7 @@ msgstr ""
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "Devre dışı"
 
@@ -3510,7 +3511,7 @@ msgstr "Oluşturana göre filtrele"
 msgid "Filters"
 msgstr "Filtreler"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Finance"
 msgstr "Finans"
 
@@ -3592,7 +3593,8 @@ msgid "From {0}"
 msgstr "Başlangıç: {0}"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "From GitHub"
 msgstr "GitHub'dan"
 
@@ -3700,7 +3702,7 @@ msgstr "Başlık \"{header}\""
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/McpServerForm.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Header name"
 msgstr "Üstbilgi adı"
 
@@ -3923,7 +3925,7 @@ msgstr "Bu oda için talimatlar"
 msgid "Instructions updated"
 msgstr "Talimatlar güncellendi"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "Entegrasyon etki alanı"
 
@@ -4147,7 +4149,7 @@ msgstr "Hafıza ayarları yükleniyor…"
 msgid "Loading model catalog…"
 msgstr "Model kataloğu yükleniyor…"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr "Eklentiler yükleniyor…"
 
@@ -4240,7 +4242,8 @@ msgstr "{0} yönet"
 msgid "Manage billing"
 msgstr "Faturalandırmayı yönet"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Manage MCP servers"
 msgstr "MCP sunucularını yönet"
 
@@ -4248,11 +4251,11 @@ msgstr "MCP sunucularını yönet"
 msgid "Manage other bots"
 msgstr "Diğer botları yönet"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr "Manuel"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Manual setup required"
 msgstr "Manuel kurulum gerekli"
 
@@ -4272,7 +4275,7 @@ msgstr "Okunmadı olarak işaretle"
 msgid "Markdown table"
 msgstr "Markdown tablosu"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Marketing"
 msgstr "Pazarlama"
 
@@ -4305,7 +4308,8 @@ msgstr "Maksimum çıktı token sayısı"
 msgid "MCP endpoint"
 msgstr "MCP uç noktası"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "MCP server"
 msgstr "MCP sunucusu"
 
@@ -4533,12 +4537,13 @@ msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "Aylık krediler yenilemede sona erer. Ek krediler sona ermez."
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "Daha fazla"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "Daha fazla uygulama"
 
@@ -4587,7 +4592,7 @@ msgstr "Bilgisayarlarım"
 #: src/pages/McpServerForm.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4624,7 +4629,7 @@ msgstr "Yanıt bekliyor"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/lib/user-error.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs an OAuth client ID"
 msgstr "OAuth istemci kimliği gerekli"
 
@@ -4636,7 +4641,7 @@ msgstr "İlgi gerekiyor"
 msgid "Needs input"
 msgstr "Girdi bekliyor"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Needs sign-in"
 msgstr "Oturum açılması gerekiyor"
 
@@ -4755,7 +4760,7 @@ msgstr "Sonraki sayfa"
 msgid "Next settings sections"
 msgstr "Sonraki ayar bölümleri"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
 
@@ -4763,7 +4768,7 @@ msgstr "Aramanla eşleşen uygulama yok."
 msgid "No artifacts yet"
 msgstr "Henüz çıktı yok"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
 
@@ -4837,7 +4842,7 @@ msgid "No reset"
 msgstr "Sıfırlama yok"
 
 #: src/pages/model-settings/providers-section.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4893,7 +4898,7 @@ msgstr "Eklenmedi: {0}"
 msgid "Not checked yet"
 msgstr "Henüz kontrol edilmedi"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not connected"
 msgstr "Bağlı değil"
 
@@ -4905,7 +4910,7 @@ msgstr "İçe aktarılmadı"
 msgid "Not in Rakazo's catalog"
 msgstr "Rakazo kataloğunda yok"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Not in the plugin catalog"
 msgstr "Eklenti kataloğunda yok"
 
@@ -4924,7 +4929,7 @@ msgid "Not used by Rakazo"
 msgstr "Rakazo tarafından kullanılmıyor"
 
 #: src/components/McpServerHealthLine.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "Çalışmıyor"
 
@@ -5332,7 +5337,7 @@ msgid "Plugin"
 msgstr "Eklenti"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Plugin GitHub URL"
 msgstr "Eklenti GitHub URL'si"
 
@@ -5361,7 +5366,7 @@ msgid "Preferences"
 msgstr "Tercihler"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/github-import.tsx
 msgid "Preview"
 msgstr "Önizle"
 
@@ -5398,7 +5403,7 @@ msgstr "Özel"
 msgid "Private workspace with its own bots and groups."
 msgstr "Kendi botları ve grupları olan özel çalışma alanı."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Productivity"
 msgstr "Verimlilik"
 
@@ -5498,7 +5503,7 @@ msgstr "Son"
 msgid "Recent payments"
 msgstr "Son ödemeler"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
 msgstr "Önerilen"
 
@@ -5572,7 +5577,7 @@ msgstr "Çalışmayan bir bilgisayarı yeniden oluşturun."
 msgid "Recreating the computer"
 msgstr "Bilgisayar yeniden oluşturuluyor"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Recruiting & HR"
 msgstr "İşe alım ve İK"
 
@@ -5640,7 +5645,8 @@ msgstr "Yeniden yükle"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/pages/McpServerForm.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "Kaldır"
@@ -5684,7 +5690,7 @@ msgstr "E-posta tetikleyicisini kaldır"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Remove from every space?"
 msgstr "Her alandan kaldırılsın mı?"
 
@@ -5722,7 +5728,8 @@ msgid "Removed, but list refresh failed"
 msgstr "Kaldırıldı ama liste yenilenemedi"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Removing…"
 msgstr "Kaldırılıyor…"
 
@@ -5880,6 +5887,8 @@ msgstr "Çalışma alanın geri yükleniyor"
 #: src/pages/Auth.tsx
 #: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/plugins/manage-view.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5988,7 +5997,7 @@ msgstr "Çalıştırmalar"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Bu bot bu sağlayıcıdan doğrulanmış bir mesaj aldığında çalışır."
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Sales & CRM"
 msgstr "Satış ve CRM"
 
@@ -6100,7 +6109,7 @@ msgstr "Ekran bağlı değil"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
@@ -6130,7 +6139,8 @@ msgstr "Bot ara"
 msgid "Search bots, actions, and settings"
 msgstr "Botlarda, işlemlerde ve ayarlarda ara"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/add-menu.tsx
+#: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Etki alanına göre ara"
 
@@ -6138,7 +6148,7 @@ msgstr "Etki alanına göre ara"
 msgid "Search integrations.sh"
 msgstr "integrations.sh üzerinde ara"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "MCP sunucularında “{query}” ara"
 
@@ -6170,7 +6180,7 @@ msgstr "Kasada ara"
 msgid "Search: {0}"
 msgstr "Ara: {0}"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/domain-search.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Aranıyor…"
@@ -6179,7 +6189,7 @@ msgstr "Aranıyor…"
 msgid "Security"
 msgstr "Güvenlik"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/use-catalog-browse.ts
 msgid "Security & Ops"
 msgstr "Güvenlik ve Operasyon"
 
@@ -6354,7 +6364,7 @@ msgstr "Listeyi göster"
 
 #: src/components/pages/PagesList.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "Daha fazla göster"
@@ -6384,7 +6394,7 @@ msgstr "Kenar çubuğu yoğunluğu"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/onboarding/use-onboarding-model.ts
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Sign in"
 msgstr "Oturum aç"
 
@@ -6493,7 +6503,7 @@ msgid "Slide up to lock"
 msgstr "Kilitlemek için yukarı kaydır"
 
 #: src/components/integrations/skills-dialog.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
 msgstr "Bazı eklentiler yüklenemedi."
 
@@ -6690,7 +6700,7 @@ msgstr "alt ajan"
 msgid "Submit"
 msgstr "Gönder"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "Submit a plugin"
 msgstr "Eklenti gönder"
 
@@ -7157,7 +7167,7 @@ msgid "Tool name"
 msgstr "Araç adı"
 
 #: src/components/ApprovalRulesSettings.tsx
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Araçlar"
@@ -7265,7 +7275,7 @@ msgstr "Atanmamış"
 msgid "Undo"
 msgstr "Geri al"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/connector-detail.tsx
 msgid "Uninstall"
 msgstr "Kaldır"
 
@@ -7483,11 +7493,11 @@ msgstr "Değişkenler"
 msgid "Vault"
 msgstr "Kasa"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verify and add"
 msgstr "Doğrula ve ekle"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/source-form.tsx
 msgid "Verifying…"
 msgstr "Doğrulanıyor…"
 
@@ -7495,7 +7505,7 @@ msgstr "Doğrulanıyor…"
 msgid "Version"
 msgstr "Sürüm"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/plugin-browse.tsx
 msgid "View all"
 msgstr "Tümünü gör"
 
@@ -7747,7 +7757,7 @@ msgstr "Kontrol sende"
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
 
-#: src/pages/PluginsOverlay.tsx
+#: src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "Uygulamaların"
 
