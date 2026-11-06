@@ -345,20 +345,22 @@ export function createJobReconciler(
         for (const run of helpers) {
           const expired =
             run.status === "cancelled" && stuckWorkStatusMessages().includes(run.error ?? "");
-          const outcome =
-            run.status === "completed"
-              ? {
-                  status: "completed" as const,
-                  text: (await botRunOutcomeText(deps.prisma, run.id)).text,
-                }
-              : run.status === "failed" || expired
-                ? { status: "failed" as const, text: run.error ?? "unknown error" }
-                : { status: "stopped" as const, text: "" };
-          await returnHelperOutcome(
-            { prisma: deps.prisma, jobs: deps.jobs, events },
-            run,
-            outcome,
-          ).catch(async (error) => {
+          await (async () => {
+            const outcome =
+              run.status === "completed"
+                ? {
+                    status: "completed" as const,
+                    text: (await botRunOutcomeText(deps.prisma, run.id)).text,
+                  }
+                : run.status === "failed" || expired
+                  ? { status: "failed" as const, text: run.error ?? "unknown error" }
+                  : { status: "stopped" as const, text: "" };
+            await returnHelperOutcome(
+              { prisma: deps.prisma, jobs: deps.jobs, events },
+              run,
+              outcome,
+            );
+          })().catch(async (error) => {
             getLogger().error("background helper outcome reconciliation", error);
             // Like a bot message outcome: retry later without holding the head of the queue.
             await deps.prisma.run.updateMany({

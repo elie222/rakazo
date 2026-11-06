@@ -274,9 +274,16 @@ export async function clearThread(
           where: { spaceId: input.spaceId, helperBotId: input.botId },
           select: { id: true },
         });
-    const cleared = { in: [input.threadId, ...helperThreads.map((helper) => helper.id)] };
+    const helperThreadIds = helperThreads.map((helper) => helper.id);
+    const cleared = { in: [input.threadId, ...helperThreadIds] };
     await tx.message.deleteMany({ where: { threadId: cleared } });
     await tx.event.deleteMany({ where: { threadId: cleared } });
+    if (helperThreadIds.length > 0) {
+      await tx.thread.updateMany({
+        where: { id: { in: helperThreadIds } },
+        data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
+      });
+    }
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset

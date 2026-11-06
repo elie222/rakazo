@@ -2275,7 +2275,9 @@ describeJourneys("required product journeys", () => {
       where: { id: done.threadId },
       select: { spaceId: true, userId: true },
     });
-    const imported = await prisma.thread.create({ data: { ...owner, helperBotId: bot.id } });
+    const imported = await prisma.thread.create({
+      data: { ...owner, helperBotId: bot.id, historyCompactionSummary: "venue shortlist" },
+    });
     await createThreadMessage(prisma, {
       threadId: imported.id,
       role: "bot",
@@ -2289,6 +2291,10 @@ describeJourneys("required product journeys", () => {
     );
     expect(await written()).toEqual([0, 0]);
     expect(await prisma.message.count({ where: { threadId: imported.id } })).toBe(0);
+    expect(
+      (await prisma.thread.findUniqueOrThrow({ where: { id: imported.id } }))
+        .historyCompactionSummary,
+    ).toBeNull();
     await reconcile();
     // The finished helper came back before the clear; the stopped one never does.
     expect(await prisma.run.count({ where: { clientNonce: `helper-result:${helper.id}` } })).toBe(
