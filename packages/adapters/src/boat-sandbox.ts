@@ -50,7 +50,12 @@ import {
   callerSignal,
   wrapBoatCall,
 } from "./boat-errors.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   LinuxDesktop,
@@ -71,7 +76,8 @@ import {
 
 const DISPLAY_START = 20;
 const BOAT_API_BASE = "https://boat.dev/api/v1";
-const BOAT_WORKSPACE = "/home/user/rakazo-home";
+const BOAT_HOME = "/home/user";
+const BOAT_WORKSPACE = `${BOAT_HOME}/rakazo-home`;
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
 /** Outside the workspace so checkpoints never carry it. Boat runs every command as `user`. */
 const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
@@ -556,7 +562,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       const result = await this.runCommand(
         id,
         envFile ? sourceEnvironmentCommand(envFile, argv) : argv,
-        boatCwd(request.cwd),
+        path.posix.relative(BOAT_HOME, workspaceCwd(BOAT_WORKSPACE, request.cwd, [BOAT_HOME])),
         timeoutMs,
         context.signal,
       );
@@ -1729,25 +1735,6 @@ function commandResponse(response: CommandResponse): BoatCommandResult {
     exitCode: response.exitCode ?? 1,
     timedOut: response.timedOut,
   };
-}
-
-function boatCwd(cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === BOAT_WORKSPACE
-  ) {
-    return "rakazo-home";
-  }
-  const relative = cwd.startsWith(`${BOAT_WORKSPACE}/`)
-    ? cwd.slice(BOAT_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return path.posix.join("rakazo-home", normalizeWorkspacePath(relative));
 }
 
 function configureBoatWorkspaceCommand(): string {

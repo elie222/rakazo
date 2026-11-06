@@ -32,7 +32,12 @@ import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
-import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
+import {
+  MAX_AUTHORIZATION_URL_LENGTH,
+  secureFetch,
+  validateUrl,
+  withEndpointOriginFallback,
+} from "./mcp-transport.js";
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
@@ -529,6 +534,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       authorizationUrl = validateUrl(url, {
         allowHttpLocalhost: true,
         allowPrivateEndpoint: this.options.allowPrivateEndpoint,
+        maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
       });
     } catch (error) {
       if (!this.options.onAuthorization) {
@@ -542,6 +548,11 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
     }
     requestOfflineAccess(authorizationUrl, this.material.oauth?.discoveryState);
+    // Configured parameters are added after validation; keep the final URL within bounds too.
+    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH) {
+      if (!this.options.onAuthorization) await this.invalidateCredentials("tokens");
+      throw new Error(`MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`);
+    }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
       this.options.onAuthorization(authorizationUrl);

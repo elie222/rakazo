@@ -20,6 +20,7 @@ import {
   auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsVoipProvider,
@@ -274,6 +275,13 @@ async function main() {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
   });
+  const email = configuredEmailProvider({
+    provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
+    apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+    from: process.env.EMAIL_FROM?.trim() || undefined,
+    replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+    smtpUrl: process.env.SMTP_URL?.trim() || undefined,
+  });
   const executor = createRunExecutor({
     maxUploadSizeBytes,
     mediaGeneration,
@@ -316,6 +324,10 @@ async function main() {
     onTicketChange: ticketChanges,
     ticketBoardEnabled,
     ...phoneCallSettings(process.env),
+    // Only names the bot's address to it; the API receives the mail.
+    inboundEmailDomain: process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
+    // Bots send from their own address through the same provider as account email.
+    email,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
@@ -404,6 +416,8 @@ async function main() {
         await stopHealth?.();
         await reconciler.stop();
         await jobHost.stop();
+        // A bot's email still on its way finishes before the process exits.
+        await email?.drain?.();
         await jobs.close();
         await secrets.close();
         await realtime.close();

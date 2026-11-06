@@ -40,6 +40,7 @@ import {
   runAsSystemInTransaction,
   saveModelPreference,
   updateModelRole,
+  withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
@@ -51,7 +52,6 @@ import {
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
-import { withSerializableRetry } from "../serializable-retry.js";
 import type { RouterContext } from "./context.js";
 
 export function modelsRoutes(ctx: RouterContext) {
@@ -435,7 +435,7 @@ export function modelsRoutes(ctx: RouterContext) {
             }),
           };
         };
-        await withSerializableRetry(async () => {
+        await withTransactionRetry(async () => {
           const preparedState = await loadModelState(deps.prisma);
           const preparedAuth = new Map(
             await Promise.all(
@@ -591,7 +591,7 @@ export function modelsRoutes(ctx: RouterContext) {
           provider: input.provider,
           credentialId: input.credentialId,
         });
-        await withSerializableRetry(() =>
+        await withTransactionRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
               const provider = modelCredentialProviderFilter(input.provider);

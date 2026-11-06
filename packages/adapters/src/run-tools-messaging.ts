@@ -247,7 +247,11 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
-    if (!canPublishDurableProgress(reply) && !canPostLongTaskHeadsUp(ctx)) {
+    if (
+      ctx.replyMode === "chat" &&
+      !canPublishDurableProgress(reply) &&
+      !canPostLongTaskHeadsUp(ctx)
+    ) {
       return call.finish({
         ok: true,
         note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))
@@ -258,6 +262,11 @@ export const messagingTools: ToolHandlers = {
     await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;
+    // The person already has this message; notes written before it are no longer a missing answer.
+    if (ctx.replyMode === "messages") {
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = "";
+    }
     return call.finish(
       truncated
         ? {
