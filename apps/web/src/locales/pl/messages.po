@@ -553,10 +553,6 @@ msgstr "Aktywne"
 msgid "Activity"
 msgstr "Aktywność"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Acts without asking, except for purchases. Only Block rules apply."
-msgstr "Działa bez pytania, z wyjątkiem zakupów. Obowiązują tylko reguły blokowania."
-
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1001,6 +997,10 @@ msgstr "Zapytaj"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks before sending, spending or changing anything in your apps."
 msgstr "Pyta przed wysłaniem, wydaniem pieniędzy lub zmianą czegokolwiek w twoich aplikacjach."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
+msgstr "Pyta tylko przed zakupami i pierwszym użyciem twojego komputera. Obowiązują tylko reguły blokowania."
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"

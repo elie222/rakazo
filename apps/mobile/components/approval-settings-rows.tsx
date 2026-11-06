@@ -32,7 +32,9 @@ export function ApprovalModeRow({
       : settings?.mode === "auto"
         ? t("A model approves routine actions and asks you about the rest.")
         : settings?.mode === "never"
-          ? t("Acts without asking, except for purchases. Only Block rules apply.")
+          ? t(
+              "Asks only before purchases and the first use of your computer. Only Block rules apply.",
+            )
           : settings?.mode === "ask"
             ? t("Asks before sending, spending or changing anything in your apps.")
             : undefined;

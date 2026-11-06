@@ -663,6 +663,14 @@ export function receiptItems<Item extends { name: string }>(
 /** The order rule lists group by: what goes through, what asks, what is refused. */
 export const APPROVAL_RULE_EFFECTS = ["always_allow", "require_approval", "deny"] as const;
 
+/** Whether a rule with this effect does anything in this mode: Never ask honours only blocks. */
+export function approvalRuleApplies(
+  mode: ApprovalMode | null | undefined,
+  effect: ActionApprovalRule["effect"],
+): boolean {
+  return mode !== "never" || effect === "deny";
+}
+
 /** A site reads as itself; a tool, app or older category by its name. */
 export function approvalRuleLabel(rule: ActionApprovalRule): string {
   return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);

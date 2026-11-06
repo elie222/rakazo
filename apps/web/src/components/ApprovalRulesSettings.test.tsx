@@ -155,7 +155,7 @@ it("sets the mode, says what it does, and lists Auto only when an approval model
       expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true"),
     );
     expect(container.textContent).toContain(
-      "Acts without asking, except for purchases. Only Block rules apply.",
+      "Asks only before purchases and the first use of your computer. Only Block rules apply.",
     );
     // No rules yet, so no rule groups.
     expect(container.querySelector('[data-testid^="approval-rules-"]')).toBeNull();

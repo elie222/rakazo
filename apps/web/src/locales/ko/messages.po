@@ -553,10 +553,6 @@ msgstr "활성"
 msgid "Activity"
 msgstr "활동"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Acts without asking, except for purchases. Only Block rules apply."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -1000,6 +996,10 @@ msgstr "묻기"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks before sending, spending or changing anything in your apps."
+msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
 msgstr ""
 
 #: src/pages/shell/computer-panel.tsx

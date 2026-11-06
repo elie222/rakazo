@@ -1,6 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ActionApprovalRule } from "@rakazo/contracts";
-import { APPROVAL_RULE_EFFECTS, approvalRuleLabel } from "@rakazo/core";
+import type { ApprovalMode } from "@rakazo/core";
+import { APPROVAL_RULE_EFFECTS, approvalRuleApplies, approvalRuleLabel } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
@@ -36,8 +37,8 @@ export default function ApprovalRules() {
   const styles = useThemedStyles(createStyles);
   // Null until the first load lands.
   const [rules, setRules] = useState<ActionApprovalRule[] | null>(null);
-  // In Never ask only blocks apply, so the other rules are shown dimmed.
-  const [neverAsk, setNeverAsk] = useState(false);
+  // The approval mode, which decides which rules apply; null until a fresh read lands.
+  const [mode, setMode] = useState<ApprovalMode | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,11 +59,11 @@ export default function ApprovalRules() {
         .catch((err: unknown) => {
           if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
-      // Dims only once a fresh read confirms Never ask, so a failed one never leaves stale dimming.
-      setNeverAsk(false);
+      // Dims only once a fresh read confirms the mode, so a failed one never leaves stale dimming.
+      setMode(null);
       void rpc("autoReview/get", { scope })
         .then((settings) => {
-          if (current) setNeverAsk(settings.mode === "never");
+          if (current) setMode(settings.mode);
         })
         .catch(() => undefined);
       return () => {
@@ -208,7 +209,7 @@ export default function ApprovalRules() {
                     <SettingsRow
                       accessible
                       accessibilityRole="button"
-                      dimmed={pending || (neverAsk && effect !== "deny")}
+                      dimmed={pending || !approvalRuleApplies(mode, effect)}
                       title={title}
                     />
                   </MenuView>

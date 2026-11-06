@@ -4,6 +4,7 @@ import {
   applyJudgeDecision,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
+  approvalRuleApplies,
   approvalRuleChoices,
   batchActions,
   connectorKindFromToolName,
@@ -1068,5 +1069,15 @@ describe("approvalRuleChoices", () => {
     expect(choices.some((choice) => choice.matchValue === "web_search")).toBe(false);
     const labels = choices.map((choice) => choice.label);
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+describe("approvalRuleApplies", () => {
+  it("keeps only blocks in Never ask and every rule otherwise", () => {
+    expect(approvalRuleApplies("never", "deny")).toBe(true);
+    expect(approvalRuleApplies("never", "require_approval")).toBe(false);
+    expect(approvalRuleApplies("never", "always_allow")).toBe(false);
+    expect(approvalRuleApplies("ask", "always_allow")).toBe(true);
+    expect(approvalRuleApplies(null, "require_approval")).toBe(true);
   });
 });

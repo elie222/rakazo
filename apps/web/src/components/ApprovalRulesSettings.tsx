@@ -6,7 +6,12 @@ import type {
   SettingsScope,
 } from "@rakazo/contracts";
 import type { ApprovalRuleChoice } from "@rakazo/core";
-import { APPROVAL_RULE_EFFECTS, approvalRuleChoices, approvalRuleLabel } from "@rakazo/core";
+import {
+  APPROVAL_RULE_EFFECTS,
+  approvalRuleApplies,
+  approvalRuleChoices,
+  approvalRuleLabel,
+} from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -135,7 +140,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       : autoReview?.mode === "auto"
         ? t`A model approves routine actions and asks you about the rest.`
         : autoReview?.mode === "never"
-          ? t`Acts without asking, except for purchases. Only Block rules apply.`
+          ? t`Asks only before purchases and the first use of your computer. Only Block rules apply.`
           : autoReview?.mode === "ask"
             ? t`Asks before sending, spending or changing anything in your apps.`
             : null;
@@ -187,7 +192,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
         const matching = rules.filter((rule) => rule.effect === effect);
         if (matching.length === 0) return null;
         // Never ask runs everything a block does not stop, so these rules wait for another mode.
-        const unused = autoReview?.mode === "never" && effect !== "deny";
+        const unused = !approvalRuleApplies(autoReview?.mode, effect);
         return (
           <div
             key={effect}

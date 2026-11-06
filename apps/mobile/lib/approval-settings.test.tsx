@@ -214,7 +214,7 @@ it("shows the mode as the row's value and saves a pick from the menu at once", a
   await act(async () => choice("Never ask").click());
   expect(sets()).toEqual([["autoReview/set", { scope: "account", mode: "never" }]]);
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
   expect(choices()).toEqual(["Never ask*", "Ask"]);
 
@@ -285,7 +285,7 @@ it("goes back to the stored mode and alerts when a save fails", async () => {
   await act(async () => container.querySelector("span")!.click());
   await act(async () => finishRead());
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
 });
 
@@ -300,7 +300,7 @@ it("shows the saved mode when a read started during the save lands after it", as
   await act(async () => slow.finish());
   for (const read of slow.reads.splice(0)) await act(async () => read());
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
   // It reads again once the save is done, so the rule count is fresh too.
   expect(reads()).toBe(2);
@@ -402,7 +402,7 @@ it("keeps a saved mode when a read that started before the save lands after it",
   await act(async () => choice("Never ask").click());
   await act(async () => resolveRead(stale));
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
   // The rules it read are still current, so the count follows them.
   expect(container.querySelector("output")?.textContent).toBe("1");
@@ -426,11 +426,11 @@ it.each(["autoReview/get", "approvalRules/list"])(
     await act(async () => choice("Never ask").click());
     expect(state.settings.mode).toBe("never");
     expect(row()).toBe(
-      "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
     );
     await act(async () => rejectRead(new Error("offline")));
     expect(row()).toBe(
-      "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+      "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
     );
     expect(choices()).toEqual(["Never ask*", "Ask"]);
   },
@@ -453,13 +453,13 @@ it("ignores an older refresh failure while a save is pending", async () => {
   await act(async () => choice("Never ask").click());
   await act(async () => rejectRead(new Error("offline")));
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
   expect(held()).toBe("true");
   await act(async () => slow.finish());
   expect(state.settings.mode).toBe("never");
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
 });
 
@@ -473,7 +473,7 @@ it("shows a refresh failure from a read started after a successful save", async 
   expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
   await act(async () => container.querySelector("span")!.click());
   expect(row()).toBe(
-    "Approvals | Never ask | Acts without asking, except for purchases. Only Block rules apply.",
+    "Approvals | Never ask | Asks only before purchases and the first use of your computer. Only Block rules apply.",
   );
 });
 

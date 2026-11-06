@@ -4,8 +4,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Search tools": "Szukaj narzędzi",
   "A model approves routine actions and asks you about the rest.":
     "Model zatwierdza rutynowe działania, a o resztę pyta ciebie.",
-  "Acts without asking, except for purchases. Only Block rules apply.":
-    "Działa bez pytania, z wyjątkiem zakupów. Obowiązują tylko reguły blokowania.",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "Pyta tylko przed zakupami i pierwszym użyciem twojego komputera. Obowiązują tylko reguły blokowania.",
   "Asks before sending, spending or changing anything in your apps.":
     "Pyta przed wysłaniem, wydaniem pieniędzy lub zmianą czegokolwiek w twoich aplikacjach.",
   Haptics: "Haptyka",
