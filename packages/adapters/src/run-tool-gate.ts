@@ -564,7 +564,7 @@ export async function gateToolCall(
     reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
-    onceOnly: asksEveryTime,
+    onceOnly: asksEveryTime || webhookForcedAsk,
   };
 
   if (applied?.duplicate) {

@@ -815,8 +815,10 @@ describe("connector read-only metadata and approval enforcement", () => {
         );
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
-      // The rule still covers this tool outside webhook runs.
-      expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
+      // Always allow can't skip a webhook card, so one that already has the rule doesn't offer it.
+      expect(pausedActionIds(f)).toEqual(
+        explained ? ["allow", "deny"] : ["allow", "always", "deny"],
+      );
     },
   );
 

@@ -150,6 +150,9 @@ test("A webhook run's card says why it asks after Always allow", async ({ page }
     timeout: 15_000,
   });
   await expect(reason).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Always allow this tool", exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByTestId("ask-detail").last()).toContainText(
     "Asked because a webhook started this run.",
   );
