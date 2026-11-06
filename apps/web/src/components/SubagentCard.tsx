@@ -72,7 +72,7 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
         </span>
         <span
           data-testid="subagent-task"
-          className={`mt-2 block text-body text-muted-foreground ${open ? "" : "truncate"}`}
+          className={`mt-2 block text-body text-muted-foreground ${open ? "wrap-anywhere" : "truncate"}`}
           dir="auto"
         >
           {block.task}
