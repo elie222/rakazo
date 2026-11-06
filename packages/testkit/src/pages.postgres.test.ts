@@ -168,6 +168,7 @@ describePages("pages", () => {
       pageId,
       version: 2,
       title: "Weekly KPIs",
+      format: "jsx",
       mention: `Mention it in your reply as [Weekly KPIs](page:${pageId})`,
     });
     await save({
@@ -469,6 +470,7 @@ describePages("pages", () => {
     expect(await opened.json()).toEqual({
       title: "Q3 plan",
       code: expect.stringMatching(/React\.createElement\(Page, \{ title: "Middle"/),
+      format: "jsx",
       version: 1,
       updatedAt: expect.any(String),
     });

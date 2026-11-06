@@ -1026,10 +1026,14 @@ test("a bot's HTML page draws whole in the chat and its own script runs", async 
   const frame = pageFrame(page, title);
   await expect(frame.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(frame.getByText("$48,900")).toBeVisible();
-  // The frame grew from its placeholder to the page's own height.
+  // The frame left its placeholder for the page's own height, whether that is taller or shorter.
   await expect
-    .poll(async () => (await page.locator(`iframe[title="${title}"]`).last().boundingBox())?.height)
-    .toBeGreaterThan(300);
+    .poll(async () => {
+      const content = await frame.locator("body").evaluate((body) => body.scrollHeight);
+      const box = await page.locator(`iframe[title="${title}"]`).last().boundingBox();
+      return Math.abs((box?.height ?? 0) - content);
+    })
+    .toBeLessThan(1);
   await captureScreenshot(page, testInfo, "page-inline-html");
 
   // The page's own script runs in its sandbox.
