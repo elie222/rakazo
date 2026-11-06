@@ -3003,6 +3003,7 @@ describe("MCP OAuth", () => {
       ["--header", "Authorization:Bearer", T],
       ["--header", `Authorization: Basic ${T}`],
       ["--header", `Proxy-Authorization: Bearer ${T}`],
+      ["--header", `Ocp-Apim-Subscription-Key: ${T}`],
       [`postgres://user:${T}@db.example.test/app`],
       [`DATABASE_URL=postgres://user:${T}@db.example.test/app`],
       [`https://${T}@git.example.test/`],
@@ -3012,6 +3013,12 @@ describe("MCP OAuth", () => {
       [`https://api.example.test/mcp?authorization=Bearer%20${T}`],
     ];
     for (const args of credentials) expect(launchArgSecrets(args), args.join(" ")).toContain(T);
+    // Tokens that start with "-", are lowercase, or are short still count in these positions.
+    expect(launchArgSecrets(["--header", "Authorization:Bearer", `-${T}`])).toContain(`-${T}`);
+    expect(launchArgSecrets(["-k", "sk-live-abcdefgh12345678"])).toContain(
+      "sk-live-abcdefgh12345678",
+    );
+    expect(launchArgSecrets(["https://shorttok@git.example.test/"])).toContain("shorttok");
 
     const readable = [
       "--port",

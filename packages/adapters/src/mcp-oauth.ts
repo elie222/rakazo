@@ -129,17 +129,25 @@ export function launchArgSecrets(args: string[]): string[] {
       const header = value.match(/^([^:]+):\s*([\s\S]*)$/);
       if (!header?.[1] || !header[2]) continue;
       const [, headerName, headerValue] = header;
-      // `--header Authorization:Bearer <token>` splits the token into the next argument.
+      // `--header Authorization:Bearer <token>` splits the token into the next argument, which
+      // may itself start with "-"; only an argument shaped like a flag is not the token.
       if (/^bearer$/i.test(headerValue)) {
         const token = args[index + 2];
-        if (flag[2] === undefined && !token?.startsWith("-")) add(token);
-      } else if (isAuthHeaderKey(headerName) || isCredentialArg(headerName, headerValue)) {
+        if (flag[2] === undefined && !/^(--|-.$)/.test(token ?? "")) add(token);
+      } else if (
+        isAuthHeaderKey(headerName) ||
+        // Custom auth headers (an API gateway's subscription key) have no standard name, so any
+        // header but the content-negotiation ones follows the configured-header rule.
+        (!/^(accept|content|user-agent|cache-control|connection|host)/i.test(headerName.trim()) &&
+          isConfiguredSecret(headerName, headerValue))
+      ) {
         add(headerValue);
       }
     } else if (name === "e" || normalized === "env") {
       addAssignment(value);
     } else if (name.length === 1) {
-      if (looksLikeOpaqueToken(value)) add(value);
+      // `-y` (as in `npx -y <package>`) takes no value; what follows it is the package.
+      if (name !== "y" && looksLikeOpaqueToken(value)) add(value);
     } else if (isCredentialArg(name, value)) {
       add(value);
     }
@@ -177,12 +185,9 @@ function snakeName(name: string): string {
 }
 
 /** A one-letter flag's value is a credential only when it reads like a generated token,
- * not a package name, path, or number. */
+ * not a word, path, or number. */
 function looksLikeOpaqueToken(value: string): boolean {
-  if (!/^[\w+=.-]{16,}$/.test(value) || !/\d/.test(value)) return false;
-  // Package and command names are lowercase words (`mcp-server-sqlite2`); tokens mix in
-  // capitals or are long hex.
-  return /[A-Z]/.test(value) || /^[a-f\d]{32,}$/.test(value);
+  return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
 }
 
 /** Each whitespace- or quote-separated word containing `scheme://`, from the scheme on. A scan,
@@ -211,8 +216,15 @@ function urlSecrets(text: string): string[] {
   const values: string[] = [];
   const addEncoded = (value: string) => values.push(value, decodeURIComponentSafe(value));
   if (url.password) addEncoded(url.password);
-  // A user name is a token only when it reads like one, not like an account name.
-  if (looksLikeOpaqueToken(decodeURIComponentSafe(url.username))) addEncoded(url.username);
+  // An HTTP(S) user name without a password is how a token is passed (`https://<token>@host`);
+  // otherwise, as for `ssh://git@host` or `user:password@`, it counts only when it reads like one.
+  const username = decodeURIComponentSafe(url.username);
+  if (
+    !url.password && /^https?:$/.test(url.protocol)
+      ? username.length >= MIN_NEUTRAL_SECRET_LENGTH
+      : looksLikeOpaqueToken(username)
+  )
+    addEncoded(url.username);
   for (const pair of url.search.slice(1).split("&")) {
     const [[key, value] = []] = new URLSearchParams(pair);
     if (!key || !value) continue;
