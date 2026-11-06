@@ -22,7 +22,11 @@ export type BotEmail = {
 
 /** The bot's email address and the owner's domain, read once for the screen. */
 export function useBotEmail(botId: string): BotEmail {
-  const [address, setAddress] = useState<BotEmailAddress>(null);
+  // Kept with the bot it belongs to, so switching bots never shows the last one's address.
+  const [read, setRead] = useState<{ botId: string; email: BotEmailAddress }>({
+    botId,
+    email: null,
+  });
   const [ownerDomain, setOwnerDomain] = useState("");
   // Read apart, so a failed profile read never hides the address, only the "Anyone at" choice.
   // Read again on focus: the address may have been claimed on another screen meanwhile.
@@ -31,7 +35,13 @@ export function useBotEmail(botId: string): BotEmail {
       let current = true;
       void rpc("bots/emailAddress", { botId })
         .then((email) => {
-          if (current) setAddress(email);
+          if (!current) return;
+          // An address is the bot's for good: a read that started before a claim never undoes it.
+          setRead((prior) =>
+            prior.botId === botId && prior.email?.address && !email?.address
+              ? prior
+              : { botId, email },
+          );
         })
         // Without an answer the screen offers no address; returning to it reads again.
         .catch(() => undefined);
@@ -46,10 +56,14 @@ export function useBotEmail(botId: string): BotEmail {
     }, [botId]),
   );
   return {
-    address,
+    address: read.botId === botId ? read.email : null,
     ownerDomain,
     setAddress: (claimed) =>
-      setAddress((prior) => (prior ? { ...prior, address: claimed } : prior)),
+      setRead((prior) =>
+        prior.botId === botId && prior.email
+          ? { botId, email: { ...prior.email, address: claimed } }
+          : prior,
+      ),
   };
 }
 

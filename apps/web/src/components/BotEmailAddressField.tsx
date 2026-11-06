@@ -10,7 +10,16 @@ import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
 /** A bot's email address with a copy button, or the form that claims it for good. */
-export function BotEmailAddressField({
+export function BotEmailAddressField(props: {
+  bot: { id: string; name: string };
+  domain: string;
+  address: string | null;
+}) {
+  // A fresh form per bot, so a name suggested for one bot is never claimed for another.
+  return <AddressField key={props.bot.id} {...props} />;
+}
+
+function AddressField({
   bot,
   domain,
   address,

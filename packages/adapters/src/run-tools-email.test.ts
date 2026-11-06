@@ -503,6 +503,9 @@ describe("claim_email_address", () => {
     expect(names({ trigger: "user", groupId: "g", emailClaimable: true })).not.toContain(
       "claim_email_address",
     );
+    // A bot that claims its address in this chat can read the sign-up mail that follows.
+    expect(names({ trigger: "user", emailClaimable: true })).toContain("read_email");
+    expect(names({ trigger: "webhook", emailClaimable: true })).not.toContain("read_email");
     expect(toolRequiresExplicitApproval("claim_email_address")).toBe(true);
     // Its result is the bot's own address, so a later preference change in the run still works.
     expect(toolResultTaintsRun("claim_email_address")).toBe(false);
