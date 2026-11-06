@@ -258,38 +258,45 @@ function StepPanel({
       testID="tool-step-panel"
       style={[styles.panel, { backgroundColor: tokens.background, borderColor: tokens.border }]}
     >
-      <View
-        style={[styles.panelHeader, styles.section, styles.divider, { borderColor: tokens.border }]}
-      >
-        <View
-          style={[
-            styles.dot,
-            {
-              backgroundColor:
-                status === "error" ? tokens.destructive : running ? tokens.warning : tokens.success,
-            },
-          ]}
-        />
-        <Text style={[styles.mono, muted]}>{step.label}</Text>
+      <View style={[styles.section, styles.divider, { borderColor: tokens.border }]}>
+        <View style={styles.panelHeader}>
+          <View
+            style={[
+              styles.dot,
+              {
+                backgroundColor:
+                  status === "error"
+                    ? tokens.destructive
+                    : running
+                      ? tokens.warning
+                      : tokens.success,
+              },
+            ]}
+          />
+          <Text style={[styles.mono, muted]}>{step.label}</Text>
+          {command ? (
+            <View style={styles.grow} />
+          ) : (
+            <Text numberOfLines={1} style={[styles.mono, styles.grow, muted]}>
+              {step.detail}
+            </Text>
+          )}
+          {command ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => copy("command", command)}
+              hitSlop={8}
+            >
+              <Text style={[styles.meta, muted]}>
+                {copied === "command" ? t("Copied") : t("Copy")}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
         {command ? (
-          <Text testID="tool-step-command" selectable style={[mono, styles.grow]}>
+          <Text testID="tool-step-command" selectable style={[mono, styles.command]}>
             {command}
           </Text>
-        ) : (
-          <Text numberOfLines={1} style={[styles.mono, styles.grow, muted]}>
-            {step.detail}
-          </Text>
-        )}
-        {command ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => copy("command", command)}
-            hitSlop={8}
-          >
-            <Text style={[styles.meta, muted]}>
-              {copied === "command" ? t("Copied") : t("Copy")}
-            </Text>
-          </Pressable>
         ) : null}
       </View>
       {record?.input ? (
@@ -388,8 +395,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   section: { paddingHorizontal: 10, paddingVertical: 6 },
-  panelHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  dot: { width: 6, height: 6, borderRadius: 3, marginTop: 5 },
+  panelHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  command: { marginTop: 2 },
   grow: { flex: 1, minWidth: 0 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth },
   mono: { ...typeScale.footnote, fontFamily: MONO },

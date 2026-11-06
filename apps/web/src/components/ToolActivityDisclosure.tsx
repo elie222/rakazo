@@ -217,33 +217,36 @@ function ToolStepDetail({
       dir="ltr"
       className="my-1 min-w-0 overflow-hidden rounded-lg border border-border bg-background font-mono text-label leading-5 text-foreground"
     >
-      <div className="flex items-start gap-2 border-b border-border px-2.5 py-1.5">
-        <span
-          aria-hidden
-          className={`mt-[7px] size-1.5 shrink-0 rounded-full ${dot}`}
-          style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
-        />
-        <span className="shrink-0 text-muted-foreground">{step.label}</span>
+      <div className="border-b border-border px-2.5 py-1.5">
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={`size-1.5 shrink-0 rounded-full ${dot}`}
+            style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
+          />
+          <span className="shrink-0 text-muted-foreground">{step.label}</span>
+          {command ? null : (
+            <span className="min-w-0 flex-1 truncate text-muted-foreground/80">{step.detail}</span>
+          )}
+          {command ? (
+            <Button
+              variant="text"
+              size="xs"
+              className="-my-0.5 -me-1 ms-auto shrink-0 font-sans font-normal text-muted-foreground"
+              data-testid="tool-step-copy"
+              onClick={() => copy(command)}
+            >
+              {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
+            </Button>
+          ) : null}
+        </div>
         {command ? (
           <code
-            className="min-w-0 flex-1 whitespace-pre-wrap break-words"
+            className="mt-0.5 block whitespace-pre-wrap break-words"
             data-testid="tool-step-command"
           >
             {command}
           </code>
-        ) : (
-          <span className="min-w-0 flex-1 truncate text-muted-foreground/80">{step.detail}</span>
-        )}
-        {command ? (
-          <Button
-            variant="text"
-            size="xs"
-            className="-my-0.5 -me-1 shrink-0 font-sans font-normal text-muted-foreground"
-            data-testid="tool-step-copy"
-            onClick={() => copy(command)}
-          >
-            {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-          </Button>
         ) : null}
       </div>
       {record?.input ? (
@@ -351,7 +354,8 @@ export function ToolActivityDisclosure({
       defaultOpen={live}
       data-testid="tool-activity"
       data-live={live || undefined}
-      className="group"
+      // On touch screens a floor keeps a short reply from crushing the rows; a narrow mouse window keeps the row cap that leaves room for the hover rail.
+      className="group [@media(hover:none)]:min-w-[min(20rem,80vw)]"
     >
       <CollapsibleTrigger
         className={`flex min-h-6 w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 pe-1.5 text-body-sm font-medium outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
