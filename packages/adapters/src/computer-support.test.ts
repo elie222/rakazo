@@ -64,6 +64,8 @@ describe("Team Computer bot folders", () => {
     const shellPath = instruction.match(/(\.\.\/)+shared\//)?.[0];
     expect(shellPath).toBeDefined();
     expect(path.posix.join(shellDefaultCwd, `${shellPath}report.xlsx`)).toBe(sharedForFileTools);
+    expect(instruction).toContain("shell cwd of shared");
+    expect(resolveBotWorkspaceCwd("team", "bot-1", "shared")).toBe("shared");
   });
 
   it("preserves Windows absolute working directories even when the backend runs on Linux", () => {
