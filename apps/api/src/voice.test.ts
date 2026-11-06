@@ -9,13 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
-  fishSpeechModelValue,
   isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
   persistVoiceCredential,
   prepareVoice,
+  speechModelValue,
   synthesizeVoice,
   toVoiceCredential,
   toVoiceStatus,
@@ -318,16 +318,14 @@ describe("isVoiceProviderFailure", () => {
   });
 });
 
-describe("fishSpeechModelValue", () => {
+describe("speechModelValue", () => {
   it("trims a Fish model id and treats blank as no override", () => {
-    expect(fishSpeechModelValue("  s1  ")).toBe("s1");
-    expect(fishSpeechModelValue(" ")).toBeNull();
+    expect(speechModelValue("  s1  ")).toBe("s1");
+    expect(speechModelValue(" ")).toBeNull();
   });
 
   it("rejects a model id that cannot be a Fish header", () => {
-    expect(() => fishSpeechModelValue("s1\ninjected")).toThrow(
-      "That speech model id is not valid.",
-    );
+    expect(() => speechModelValue("s1\ninjected")).toThrow("That speech model id is not valid.");
   });
 });
 
@@ -447,7 +445,7 @@ describe("updateVoiceSpeechModel", () => {
 
     await expect(
       updateVoiceSpeechModel(deps, actor, { provider: "elevenlabs", speechModel: "s1" }),
-    ).rejects.toThrow("Speech model applies to Fish Audio.");
+    ).rejects.toThrow("This voice provider has no speech model.");
     expect(account.upsert).not.toHaveBeenCalled();
   });
 });

@@ -127,7 +127,7 @@ it("selects an available provider when the saved self-hosted provider is hidden"
 it("saves a Fish speech model on the existing provider pane", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog.mockResolvedValue([
-    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, speechModel: true },
     { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
   ]);
   voice.credentials.mockResolvedValue([fish, eleven]);
@@ -503,7 +503,7 @@ it.each([null, "space-edited"])("plays a sample for the bound space %s", async (
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   speak.mockClear();
   voice.catalog.mockResolvedValue([
-    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, speechModel: true },
   ]);
   voice.credentials.mockResolvedValue([fish]);
   voice.status.mockResolvedValue({ ready: true, provider: fish.provider });
@@ -592,7 +592,7 @@ it("reopens with the cached providers and refreshes them in the background", asy
 it("keeps the provider picked during a background refresh and only its voices", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const catalog = [
-    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, speechModel: true },
     { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
   ];
   voice.catalog.mockReset().mockResolvedValue(catalog);
@@ -788,7 +788,13 @@ it("picks a Space's own voice from the account's connections without managing th
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+      {
+        id: "fish-audio",
+        name: "Fish Audio",
+        description: "",
+        transcribe: true,
+        speechModel: true,
+      },
     ]);
   voice.credentials.mockReset().mockResolvedValue([fish]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "fish-audio" });
@@ -941,7 +947,13 @@ it.each(["account", "space"] as const)(
   async (scope) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     voice.catalog.mockResolvedValue([
-      { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+      {
+        id: "fish-audio",
+        name: "Fish Audio",
+        description: "",
+        transcribe: true,
+        speechModel: true,
+      },
       { id: "macos", name: "Server (Mac)", description: "", transcribe: false, keyless: true },
     ]);
     voice.credentials.mockResolvedValue([

@@ -105,7 +105,7 @@ vi.mock("react-native", () => {
 });
 
 const catalog = [
-  { id: "fish-audio", name: "Fish Audio", transcribe: true },
+  { id: "fish-audio", name: "Fish Audio", transcribe: true, speechModel: true },
   { id: "other", name: "Other provider", transcribe: false },
   { id: "new", name: "New provider", transcribe: false },
 ];

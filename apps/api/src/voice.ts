@@ -200,10 +200,8 @@ export function voiceCredentialPlaintext(input: {
   }
 }
 
-const FISH_AUDIO_PROVIDER = "fish-audio";
-
-/** Empty clears the Fish override. Anything else must be a header-safe model id. */
-export function fishSpeechModelValue(speechModel: string): string | null {
+/** Empty clears the override. Anything else must be a header-safe model id. */
+export function speechModelValue(speechModel: string): string | null {
   const trimmed = speechModel.trim();
   if (!trimmed) return null;
   if (!isFishSpeechModelId(trimmed)) {
@@ -294,8 +292,8 @@ export async function persistVoiceCredential(
       : undefined;
   const choicesChanged = voiceChoicesChanged(previous?.apiKey, plaintext);
   const requestedSpeechModel =
-    input.provider === FISH_AUDIO_PROVIDER && input.speechModel !== undefined
-      ? fishSpeechModelValue(input.speechModel)
+    catalogEntry(input.provider)?.speechModel && input.speechModel !== undefined
+      ? speechModelValue(input.speechModel)
       : undefined;
   const provider = createVoiceProvider(input.provider, { allowPrivateEndpoint });
   const verified = await provider.verify(plaintext, voiceContext(actor, input.signal));
@@ -442,10 +440,10 @@ export async function updateVoiceSpeechModel(
   actor: Actor,
   input: { provider: string; speechModel: string; scope?: SettingsScope },
 ): Promise<VoiceCredential> {
-  if (input.provider !== FISH_AUDIO_PROVIDER) {
-    throw new ORPCError("BAD_REQUEST", { message: "Speech model applies to Fish Audio." });
+  if (!catalogEntry(input.provider)?.speechModel) {
+    throw new ORPCError("BAD_REQUEST", { message: "This voice provider has no speech model." });
   }
-  const speechModel = fishSpeechModelValue(input.speechModel);
+  const speechModel = speechModelValue(input.speechModel);
   return withSerializableRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
