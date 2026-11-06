@@ -69,12 +69,7 @@ export type OAuthMaterial = {
 /** Values that must never appear in model-visible tool results or errors. */
 export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   const values: string[] = [];
-  const add = (value: string | undefined) => {
-    if (!value) return;
-    values.push(value);
-    const bearer = value.match(/^Bearer\s+(.+)$/i);
-    if (bearer?.[1]) values.push(bearer[1]);
-  };
+  const add = (value: string | undefined) => addSecret(values, value);
   add(material.secret);
   add(material.oauth?.tokens?.access_token);
   add(material.oauth?.tokens?.refresh_token);
@@ -100,6 +95,110 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
       add(content);
   }
   return [...new Set(values)];
+}
+
+/** Registers a credential and, for a bearer value, the token on its own. */
+function addSecret(values: string[], value: string | undefined): void {
+  if (!value) return;
+  values.push(value);
+  const bearer = value.match(/^Bearer\s+(.+)$/i);
+  if (bearer?.[1]) values.push(bearer[1]);
+}
+
+/** Credentials in stdio launch arguments, which the process can echo in output and errors. */
+export function launchArgSecrets(args: string[]): string[] {
+  const values: string[] = [];
+  const add = (value: string | undefined) => addSecret(values, value);
+  const addAssignment = (assignment: string) => {
+    const match = assignment.match(/^([A-Za-z_][\w.-]*)=([\s\S]*)$/);
+    if (match?.[1] && match[2] && isConfiguredSecret(splitCamelCase(match[1]), match[2]))
+      add(match[2]);
+  };
+  for (const [index, arg] of args.entries()) {
+    for (const url of urlsIn(arg)) values.push(...urlSecrets(url));
+    const flag = arg.match(/^--?([A-Za-z][\w.-]*)(?:=([\s\S]*))?$/);
+    if (!flag?.[1]) {
+      addAssignment(arg);
+      continue;
+    }
+    const name = flag[1];
+    const next = args[index + 1];
+    const value = flag[2] ?? (next?.startsWith("-") ? undefined : next);
+    if (!value) continue;
+    const normalized = splitCamelCase(name).toLowerCase().replace(/-/g, "_");
+    if (name === "H" || normalized === "header") {
+      const header = value.match(/^([^:]+):\s*([\s\S]*)$/);
+      if (!header?.[1] || !header[2]) continue;
+      const [, headerName, headerValue] = header;
+      // `--header Authorization:Bearer <token>` splits the token into the next argument.
+      if (/^bearer$/i.test(headerValue)) {
+        if (flag[2] === undefined) add(args[index + 2]);
+      } else if (isAuthHeaderKey(headerName) || isConfiguredSecret(headerName, headerValue)) {
+        add(headerValue);
+      }
+    } else if (name === "e" || normalized === "env") {
+      addAssignment(value);
+    } else if (name.length === 1) {
+      if (looksLikeOpaqueToken(value)) add(value);
+    } else if (
+      isCredentialName(normalized) &&
+      looksLikeSecretValue(value, { allowNumeric: true })
+    ) {
+      add(value);
+    }
+  }
+  return [...new Set(values)];
+}
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
+function isCredentialName(normalized: string): boolean {
+  return (
+    isExplicitCredentialKey(normalized) ||
+    isAmbiguousCredentialKey(normalized) ||
+    /(?:^|_)(access_key|private_key|secret_key)$|^(key|pat|auth)$/.test(normalized)
+  );
+}
+
+/** `apiKey` → `api_Key`, so camelCase names match the snake_case rules. */
+function splitCamelCase(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+}
+
+/** A one-letter flag's value is a credential only when it reads like a generated token,
+ * not a package name, path, or number. */
+function looksLikeOpaqueToken(value: string): boolean {
+  return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
+}
+
+function urlsIn(text: string): string[] {
+  return text.match(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi) ?? [];
+}
+
+/** The userinfo of a URL (`user:password@`, or a bare token as the user) and its
+ * credential-named query values. */
+function urlSecrets(text: string): string[] {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return [];
+  }
+  const values: string[] = [];
+  const addEncoded = (value: string) => {
+    values.push(value);
+    try {
+      values.push(decodeURIComponent(value));
+    } catch {}
+  };
+  if (url.password) addEncoded(url.password);
+  // A user name alone is a token only when it is long enough not to be an account name.
+  else if (url.username.length >= MIN_NEUTRAL_SECRET_LENGTH) addEncoded(url.username);
+  for (const [key, value] of url.searchParams) {
+    const normalized = splitCamelCase(key).toLowerCase().replace(/-/g, "_");
+    if (isCredentialName(normalized) && looksLikeSecretValue(value, { allowNumeric: true }))
+      values.push(value, encodeURIComponent(value));
+  }
+  return values;
 }
 
 /** Redaction replaces substrings, so a short value under a neutral name would mangle output. */
