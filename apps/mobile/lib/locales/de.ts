@@ -467,6 +467,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Type your answer": "Gib deine Antwort ein",
   Username: "Benutzername",
   "Waiting for this bot’s response.": "Warten auf die Antwort dieses Bots.",
+  "Waiting on {name}": "Wartet auf {name}",
+  "Only the person who started this can answer it":
+    "Nur die Person, die das gestartet hat, kann antworten",
   "Work stopped, but the thread could not refresh: {detail}":
     "Arbeit gestoppt, aber der Thread konnte nicht aktualisiert werden: {detail}",
   archived: "archiviert",

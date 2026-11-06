@@ -6,7 +6,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
+import type { AskWaitingOn, ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
   expandPeerReplies,
   groupVoiceChats,
@@ -73,6 +73,7 @@ export const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskIds,
   dismissableAskIds,
+  waitingOnAsks,
   running,
   workingBots,
   workingRoutine,
@@ -116,6 +117,8 @@ export const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskIds: Set<string>;
   dismissableAskIds: Set<string>;
+  /** Other members' pending cards, by message: who each waits on. */
+  waitingOnAsks?: ReadonlyMap<string, AskWaitingOn>;
   running: boolean;
   workingBots: GroupAvatarMember[];
   workingRoutine?: string;
@@ -606,6 +609,7 @@ export const Transcript = memo(function Transcript({
                       isPageSuperseded={pageView.isSuperseded}
                       canAnswer={answerableAskIds.has(message.id)}
                       canDismiss={dismissableAskIds.has(message.id)}
+                      waitingOn={waitingOnAsks?.get(message.id)}
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
                       peerExchange={exchanges.lines.get(message.id)}

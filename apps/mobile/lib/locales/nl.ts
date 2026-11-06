@@ -462,6 +462,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Type your answer": "Typ je antwoord",
   Username: "Gebruikersnaam",
   "Waiting for this bot’s response.": "Wachten op het antwoord van deze bot.",
+  "Waiting on {name}": "Wacht op {name}",
+  "Only the person who started this can answer it": "Alleen degene die dit startte kan antwoorden",
   "Work stopped, but the thread could not refresh: {detail}":
     "Werk gestopt, maar de thread kon niet worden vernieuwd: {detail}",
   archived: "gearchiveerd",

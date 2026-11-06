@@ -84,6 +84,14 @@ export class AnswerTooLongError extends Error {
   }
 }
 
+/** An answer from someone other than the person whose run is waiting on it. */
+export class AnswerNotRunUserError extends Error {
+  constructor() {
+    super("Only the person who started this can answer it");
+    this.name = "AnswerNotRunUserError";
+  }
+}
+
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
 const POLL_ONLY_CATCH_UP_MS = 400;
@@ -901,7 +909,8 @@ async function commitAnswerRunInput(
   });
   // An answer resumes the run with its user's credentials and rules, so in a shared space only
   // that user answers its cards; anyone else's message starts a run of their own.
-  if (!run || run.userId !== input.answeredByUserId) return null;
+  if (!run) return null;
+  if (run.userId !== input.answeredByUserId) throw new AnswerNotRunUserError();
   const message = await tx.message.findFirst({
     where: {
       id: input.messageId,

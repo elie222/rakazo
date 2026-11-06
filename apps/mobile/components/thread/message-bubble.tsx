@@ -1,7 +1,7 @@
 import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
-import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
+import type { AskWaitingOn, ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   formatFileSize,
   isApprovalAskBlock,
@@ -50,7 +50,7 @@ import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
 import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
-import { AskBlock } from "./ask-block";
+import { AskBlock, waitingOnLabel } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
@@ -205,6 +205,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   members,
   canAnswer,
   canDismiss,
+  waitingOn,
   onAnswer,
   onOpenComputer,
   onChoiceDismissed,
@@ -228,6 +229,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   members?: MobileSnapshot["members"];
   canAnswer: boolean;
   canDismiss: boolean;
+  /** Another member's pending card: who it waits on. */
+  waitingOn?: AskWaitingOn;
   onAnswer: (
     message: MobileMessage,
     answer: string,
@@ -277,6 +280,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           actionProps={actionProps}
           canAnswer={canAnswer}
           canDismiss={canDismiss}
+          waitingOn={waitingOn}
           onAnswer={(answer, fields, remember) =>
             onAnswer(message, answer, fields, undefined, remember)
           }
@@ -462,16 +466,27 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                         isApprovalAskBlock(askBlock),
                       )}
                 </Text>
-              ) : canAnswer && onAnswer ? (
-                <AskActions
-                  actions={askBlock.actions}
-                  site={askBlock.site}
-                  approval={isApprovalAskBlock(askBlock)}
-                  instructions={askBlock.instructionUpdate?.after}
-                  accessibilityActions={actionProps.accessibilityActions}
-                  onAccessibilityAction={actionProps.onAccessibilityAction}
-                  onAnswer={(answer) => onAnswer(message, answer)}
-                />
+              ) : (canAnswer || waitingOn) && onAnswer ? (
+                <>
+                  <AskActions
+                    actions={askBlock.actions}
+                    site={askBlock.site}
+                    approval={isApprovalAskBlock(askBlock)}
+                    instructions={askBlock.instructionUpdate?.after}
+                    disabled={!canAnswer}
+                    accessibilityActions={actionProps.accessibilityActions}
+                    onAccessibilityAction={actionProps.onAccessibilityAction}
+                    onAnswer={(answer) => onAnswer(message, answer)}
+                  />
+                  {waitingOn ? (
+                    <Text
+                      {...actionProps}
+                      style={{ color: tokens.mutedForeground, marginTop: 12, ...typeScale.caption }}
+                    >
+                      {waitingOnLabel(waitingOn, t)}
+                    </Text>
+                  ) : null}
+                </>
               ) : (
                 <Text
                   {...actionProps}

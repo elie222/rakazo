@@ -1,7 +1,7 @@
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
 import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
+import type { AskWaitingOn, ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { canMarkMessageUnread, isPeerReceiptBlocks, liveMessageComposing } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -74,6 +74,8 @@ type MessageRowProps = {
   onCall: boolean;
   canAnswer: boolean;
   canDismiss: boolean;
+  /** Another member's pending card: who it waits on. */
+  waitingOn?: AskWaitingOn;
   highlighted: boolean;
   separator: boolean;
   headerAdjacent: boolean;
@@ -113,6 +115,7 @@ export const MessageRow = memo(function MessageRow({
   onCall,
   canAnswer,
   canDismiss,
+  waitingOn,
   highlighted,
   separator,
   headerAdjacent,
@@ -443,6 +446,7 @@ export const MessageRow = memo(function MessageRow({
                 members={members}
                 canAnswer={canAnswer}
                 canDismiss={canDismiss}
+                waitingOn={waitingOn}
                 onAnswer={actions.answer}
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}

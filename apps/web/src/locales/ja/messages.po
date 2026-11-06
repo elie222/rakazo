@@ -4992,6 +4992,10 @@ msgstr ""
 msgid "Only me"
 msgstr "自分のみ"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "これを始めた人だけが回答できます"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "自分のみ"
@@ -7507,6 +7511,10 @@ msgstr "しばらく待ってから再度テストしてください。"
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "順番待ち…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "{name} さんの回答を待っています"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

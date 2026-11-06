@@ -448,6 +448,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Type your answer": "回答を入力",
   Username: "ユーザー名",
   "Waiting for this bot’s response.": "このボットの応答を待っています。",
+  "Waiting on {name}": "{name} さんの回答を待っています",
+  "Only the person who started this can answer it": "これを始めた人だけが回答できます",
   "Work stopped, but the thread could not refresh: {detail}":
     "作業は停止しましたが、スレッドを更新できませんでした: {detail}",
   archived: "アーカイブ済み",

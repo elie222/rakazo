@@ -1,5 +1,6 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
+import type { AskWaitingOn } from "@rakazo/core";
 import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -18,10 +19,21 @@ import { SecretAskSheet } from "../secret-ask-sheet";
 import { VaultItemEditor } from "../vault-item-editor";
 import type { MessageActionProps } from "./message-bubble";
 
+/** In a shared space another member's card says who it waits on; only they can answer it. */
+export function waitingOnLabel(
+  waitingOn: AskWaitingOn,
+  t: (message: string, values?: Record<string, string | number>) => string,
+): string {
+  return waitingOn.name
+    ? t("Waiting on {name}", { name: waitingOn.name })
+    : t("Only the person who started this can answer it");
+}
+
 export function AskBlock({
   ask,
   canAnswer,
   canDismiss,
+  waitingOn,
   onAnswer,
   onDismiss,
   actionProps,
@@ -29,6 +41,8 @@ export function AskBlock({
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
   canDismiss: boolean;
+  /** Another member's pending card: who it waits on. */
+  waitingOn?: AskWaitingOn;
   onAnswer: (
     answer: string,
     fields?: readonly LoginFieldInput[],
@@ -195,7 +209,7 @@ export function AskBlock({
         ) : null}
         {!answered && !canAnswer ? (
           <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
-            {t("Waiting for this bot’s response.")}
+            {waitingOn ? waitingOnLabel(waitingOn, t) : t("Waiting for this bot’s response.")}
           </Text>
         ) : null}
         {error ? (
@@ -329,7 +343,7 @@ export function AskBlock({
         </>
       ) : (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
-          {t("Waiting for this bot’s response.")}
+          {waitingOn ? waitingOnLabel(waitingOn, t) : t("Waiting for this bot’s response.")}
         </Text>
       )}
       {error ? (

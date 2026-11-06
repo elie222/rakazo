@@ -815,6 +815,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Webhook: "Webhook",
   "Waiting for sign-in…": "正在等待登入…",
   "Waiting for this bot’s response.": "正在等待這個機器人的回覆。",
+  "Waiting on {name}": "正在等待 {name} 回覆",
+  "Only the person who started this can answer it": "只有發起這項請求的人可以回覆",
   "Waiting…": "等待中…",
   "What this bot is for": "這個機器人的用途",
   Working: "工作中",

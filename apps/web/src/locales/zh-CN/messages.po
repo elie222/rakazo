@@ -4992,6 +4992,10 @@ msgstr "仅输入 {codeHost} 发给你的验证码。"
 msgid "Only me"
 msgstr "仅我"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "只有发起这项请求的人可以回复"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "仅自己"
@@ -7507,6 +7511,10 @@ msgstr "请稍候并重新测试。"
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "排队等候…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "正在等待 {name} 回复"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

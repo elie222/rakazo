@@ -4988,6 +4988,10 @@ msgstr "Wpisz tylko kod wysłany przez {codeHost}."
 msgid "Only me"
 msgstr "Tylko ja"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "Odpowiedzieć może tylko osoba, która to rozpoczęła"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "Tylko Ty"
@@ -7503,6 +7507,10 @@ msgstr "Poczekaj chwilę i ponów test."
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "Oczekiwanie w kolejce…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "Czeka na odpowiedź: {name}"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

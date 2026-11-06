@@ -458,6 +458,9 @@ export const PL_MESSAGES: Record<string, string> = {
   "Type your answer": "Wpisz odpowiedź",
   Username: "Nazwa użytkownika",
   "Waiting for this bot’s response.": "Oczekiwanie na odpowiedź tego bota.",
+  "Waiting on {name}": "Czeka na odpowiedź: {name}",
+  "Only the person who started this can answer it":
+    "Odpowiedzieć może tylko osoba, która to rozpoczęła",
   "Work stopped, but the thread could not refresh: {detail}":
     "Praca została zatrzymana, ale nie udało się odświeżyć wątku: {detail}",
   archived: "zarchiwizowane",

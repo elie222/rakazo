@@ -4992,6 +4992,10 @@ msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
 msgid "Only me"
 msgstr "Yalnızca ben"
 
+#: src/components/AskCard.tsx
+msgid "Only the person who started this can answer it"
+msgstr "Buna yalnızca bunu başlatan kişi yanıt verebilir"
+
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
 msgstr "Yalnızca siz"
@@ -7507,6 +7511,10 @@ msgstr "Biraz bekle ve yeniden test et."
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "Sırada bekleniyor…"
+
+#: src/components/AskCard.tsx
+msgid "Waiting on {name}"
+msgstr "{name} bekleniyor"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
