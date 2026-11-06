@@ -17,7 +17,12 @@ import type {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
@@ -333,7 +338,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const request = onBotScreen(requested, context, DISPLAY_START);
     const result = await this.run(computer, sandboxCommandArgv(request).map(shellQuote).join(" "), {
-      cwd: remoteCwd(request.cwd),
+      cwd: workspaceCwd(REMOTE_WORKSPACE, request.cwd, ["/home/user"]),
       envs: request.env,
       signal: context.signal,
       timeoutMs: boundedSandboxCommandTimeoutMs(request.timeoutMs),
@@ -698,25 +703,6 @@ async function* walkRemoteWorkspace(
     }
   }
   for (const relative of directories) yield* walkRemoteWorkspace(desktop, relative, context);
-}
-
-function remoteCwd(cwd: string | undefined): string {
-  if (
-    !cwd ||
-    cwd === "." ||
-    cwd === "/" ||
-    cwd === "/home/rakazo" ||
-    cwd === "/home/user" ||
-    cwd === REMOTE_WORKSPACE
-  ) {
-    return REMOTE_WORKSPACE;
-  }
-  const relative = cwd.startsWith(`${REMOTE_WORKSPACE}/`)
-    ? cwd.slice(REMOTE_WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(REMOTE_WORKSPACE, relative);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

@@ -5,6 +5,7 @@ import {
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
+  isRecordNotFound,
   runAsSystem,
   SpaceLimitError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -38,7 +39,7 @@ import { mayOpenModelStream } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
-import { argumentGiven } from "./update-bot-patch.js";
+import { argumentGiven, ignoredFieldsNote } from "./update-bot-patch.js";
 
 async function archiveBot(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread, context } = ctx;
@@ -217,7 +218,7 @@ export const fleetTools: ToolHandlers = {
   async list_fleet(ctx, call) {
     const { deps } = ctx;
     const { args } = call;
-    return call.finish(await listFleet(deps, ctx.fleetRun, args));
+    return call.finish(await listFleet(await fleetPrepareDeps(deps, ctx.run), ctx.fleetRun, args));
   },
   async organize_bot(ctx, call) {
     const { deps } = ctx;
@@ -298,22 +299,27 @@ export const fleetTools: ToolHandlers = {
     const writeArgs = { ...args, instructions_offset: undefined, instructionsOffset: undefined };
     const read = !Object.values(writeArgs).some(argumentGiven);
     let readOffset = 0;
+    // A paged read that also filled in other fields is still a read: a change never pages.
+    // Name what was left out, so a real change can be sent again without the offset.
+    let ignored: string | undefined;
     if (argumentGiven(instructionsOffsetArg)) {
       const parsedOffset = Number(instructionsOffsetArg);
-      if (!read)
-        return call.finish({
-          error: "instructions_offset only works on a read: call update_bot with no other fields.",
-        });
       if (!Number.isInteger(parsedOffset) || parsedOffset < 0)
         return call.finish({ error: "instructions_offset must be a whole number of 0 or more." });
       readOffset = parsedOffset;
+      ignored = ignoredFieldsNote(writeArgs);
     }
-    if (read) {
+    if (read || ignored) {
       // A read does not rebase the baseline: the text it returns has not shaped a model
       // generation yet, and a truncated read would guard on text the model never saw.
       if (readOffset > 0 && readOffset >= live.instructions.length)
         return call.finish({ error: "instructions_offset is past the end of your instructions." });
-      return call.finish(await readOwnBotSettings(modelDeps, run, live, readOffset));
+      const settings = await readOwnBotSettings(modelDeps, run, live, readOffset);
+      return call.finish(
+        ignored && settings && typeof settings === "object" && !("error" in settings)
+          ? { ...settings, ignoredFields: ignored }
+          : settings,
+      );
     }
     const settings = await prepareOwnBotSettings(
       modelDeps,
@@ -350,8 +356,7 @@ export const fleetTools: ToolHandlers = {
           data: settings.data,
         });
       } catch (error) {
-        if (!(error && typeof error === "object" && "code" in error && error.code === "P2025"))
-          throw error;
+        if (!isRecordNotFound(error)) throw error;
         return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
       }
       await publishMessage(deps, run, "bot", [

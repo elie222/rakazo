@@ -154,6 +154,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
+  const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
+  await replyMode.scrollIntoViewIfNeeded();
+  await expect(replyMode).toHaveValue("chat");
+  await replyMode.selectOption("messages");
+  await expect(replyMode).toHaveValue("messages");
+  await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");

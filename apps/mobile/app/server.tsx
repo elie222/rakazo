@@ -21,6 +21,7 @@ import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
@@ -56,10 +57,11 @@ export default function ServerScreen() {
 
   async function save() {
     if (saving.current) return;
+    // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      setPending(true);
+      setError(null);
       let headers: Record<string, string>;
       try {
         headers = serverHeadersFromRows(headerRows);
@@ -73,6 +75,10 @@ export default function ServerScreen() {
         setError(probed.error);
         return;
       }
+      // Asked once the switch can happen. Only a different server clears the device; the same
+      // address saves without a switch.
+      if (probed.url !== current && !(await confirmUnsentSendLoss("server-switch"))) return;
+      if (!active.current) return;
       const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
         setError(saved.error);
@@ -87,10 +93,12 @@ export default function ServerScreen() {
 
   async function restoreDefault() {
     if (saving.current) return;
+    // Held across the confirmation, like save, so the two cannot run a switch in parallel.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
+      setPending(true);
+      setError(null);
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {
