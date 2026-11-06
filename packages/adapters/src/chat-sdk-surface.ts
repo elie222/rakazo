@@ -326,7 +326,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const mounted = this.byProvider.get(providerOfThreadId(threadId));
     const receipt = mounted?.platform.capabilities.receipt;
     if (!mounted || !receipt) return;
-    await this.ensureInitialized();
+    context.signal.throwIfAborted();
+    await raceWithSignal(this.ensureInitialized(), context.signal);
+    context.signal.throwIfAborted();
     const { platform } = mounted;
     if (platform.acknowledge)
       return raceWithSignal(platform.acknowledge(handle, context), context.signal);

@@ -900,6 +900,58 @@ describe("ChatSdkMessagingSurface thread history", () => {
 });
 
 describe("ChatSdkMessagingSurface acknowledge", () => {
+  it.each([true, false])(
+    "times out during unrelated initialization without sending a late receipt (custom=%s)",
+    async (custom) => {
+      const acknowledge = vi.fn(async () => {});
+      const target = createPlatform(custom ? { acknowledge } : {});
+      let release = () => {};
+      let entered = () => {};
+      const initializing = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const slow = createPlatform(
+        { provider: "slow" },
+        {
+          initialize: async () => {
+            entered();
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          },
+        },
+      );
+      const surface = new ChatSdkMessagingSurface([target.platform, slow.platform]);
+      const controller = new AbortController();
+      const pending = surface.acknowledge("mock:Duser:1", "m-1", {
+        ...context,
+        signal: controller.signal,
+      });
+      const rejected = expect(pending).rejects.toThrow("receipt timed out");
+      await initializing;
+      controller.abort(new Error("receipt timed out"));
+      await rejected;
+      // Completing initialization later must not continue the abandoned acknowledgement.
+      release();
+      await surface.initialize();
+      expect(acknowledge).not.toHaveBeenCalled();
+      expect(target.adapter.startTyping).not.toHaveBeenCalled();
+      await surface.shutdown();
+    },
+  );
+
+  it("does not initialize or create a receipt for an already-aborted request", async () => {
+    const acknowledge = vi.fn(async () => {});
+    const { surface, adapter } = createSurface({ acknowledge });
+    const controller = new AbortController();
+    controller.abort(new Error("already expired"));
+    await expect(
+      surface.acknowledge("mock:Duser:1", "m-1", { ...context, signal: controller.signal }),
+    ).rejects.toThrow("already expired");
+    expect(adapter.initialize).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+  });
+
   it.each(["mock", "mock-work"])("reacts with eyes on provider %s", async (provider) => {
     const { surface, adapter } = createSurface({
       provider,
