@@ -1,15 +1,11 @@
 import { I18nProvider } from "@lingui/react";
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { queryClient } from "../../src/lib/query";
 import { rpc } from "../../src/lib/rpc";
-import {
-  getToolActivityEnabled,
-  subscribeToolActivity,
-} from "../../src/lib/tool-activity-preference";
+import { toolActivityPreference } from "../../src/lib/tool-activity-preference";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
 import "../../src/styles.css";
 import { FixtureTranscript } from "./thread-fixture";
@@ -69,7 +65,7 @@ const messages: ThreadMessage[] = [
 ];
 
 function ThreadFixture() {
-  const showToolActivity = useSyncExternalStore(subscribeToolActivity, getToolActivityEnabled);
+  const showToolActivity = toolActivityPreference.use();
   return (
     <FixtureTranscript messages={messages} running={live} showToolActivity={showToolActivity} />
   );
