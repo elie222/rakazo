@@ -334,6 +334,27 @@ describe("egress probe", () => {
     }
   });
 
+  it("lets a first-use image build take longer than the probe deadline", async () => {
+    // The build runs after the behavioral probe settles, outside its deadline
+    // race: a fresh build can legitimately take minutes and must not fail the
+    // provision with the probe's timeout.
+    vi.useFakeTimers();
+    try {
+      const { docker } = fakeDocker();
+      const slowBuild = verifyRestrictedEgress(
+        docker,
+        "computer:test",
+        undefined,
+        () => new Promise((resolve) => setTimeout(() => resolve("attest:built"), 150_000)),
+      );
+      const assertion = expect(slowBuild).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync(200_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refuses failed DNS without falling back to open egress", async () => {
     const { docker, container, network } = fakeDocker({ statusCode: 5 });
     const error = await verifyRestrictedEgress(

@@ -98,13 +98,15 @@ export async function verifyRestrictedEgress(
   const suffix = randomBytes(4).toString("hex").slice(0, 7);
   const name = `${EGRESS_PROBE_NETWORK}-${suffix}`;
   const bridge = `rakazo-c${suffix}`;
-  // Every step is bounded, including the Docker calls before and after the
-  // probe container: a request that never returns must not hold the provision
-  // (and its cleanup) forever. A timed-out attempt leaves its network behind
-  // for the periodic cleanup, which only touches probes older than any
-  // deadline-bounded run can be.
-  await Promise.race([
-    probeFromNamedBridge(docker, image, dns, ensureAttestImage, name, bridge),
+  // Every step of the behavioral probe is bounded, including the Docker calls
+  // before and after the probe container: a request that never returns must not
+  // hold the provision (and its cleanup) forever. A timed-out attempt leaves its
+  // network behind for the periodic cleanup, which only touches probes older
+  // than any deadline-bounded run can be. The attestation and its first-use
+  // image build stay outside this race: they carry their own deadlines, and a
+  // fresh build can legitimately take minutes.
+  const verdict = await Promise.race([
+    probeFromNamedBridge(docker, image, dns, name, bridge),
     new Promise<never>((_, reject) =>
       setTimeout(
         () =>
@@ -113,16 +115,44 @@ export async function verifyRestrictedEgress(
       ).unref(),
     ),
   ]);
+  // Behavioral checks passed; attest the live firewall itself, so a partially
+  // removed ruleset cannot pass as verified. The attestation runs the
+  // supervisor-built probe image, never the configurable computer image, and
+  // runs before the DNS checks: a removed forwarded drop must surface as the
+  // rules-missing result even when the DNS configuration is also wrong.
+  await attestRestrictedEgress(docker, await ensureAttestImage());
+  // The DNS list is validated only now, after the rules are known to be in
+  // place: `auto` on a host without the ruleset must still fall back to open
+  // egress instead of failing every start on a DNS misconfiguration.
+  // Restricted computer networks are IPv4-only, so an IPv6 resolver could never
+  // be queried; skipping it silently would make the check pass without testing.
+  if (dns?.some((server) => !isIPv4(server))) {
+    throw new Error(
+      "SANDBOX_COMPUTER_DNS must list IPv4 servers: restricted computer networks are IPv4-only (see docs/self-host-docker-computers.md)",
+    );
+  }
+  // Docker's embedded resolver and resolv.conf use at most three servers; a
+  // longer list would be silently truncated, so refuse it rather than check
+  // only a prefix.
+  if (dns && dns.length > 3) {
+    throw new Error(
+      "SANDBOX_COMPUTER_DNS lists more than three servers; at most three are used (see docs/self-host-docker-computers.md)",
+    );
+  }
+  if (verdict === "dns-unreachable") {
+    throw new Error(
+      "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
+    );
+  }
 }
 
 async function probeFromNamedBridge(
   docker: Docker,
   image: string,
   dns: string[] | undefined,
-  ensureAttestImage: () => Promise<string>,
   name: string,
   bridge: string,
-) {
+): Promise<Exclude<EgressProbeVerdict, "host-reachable" | "metadata-reachable" | "inconclusive">> {
   await docker.createNetwork({
     Name: name,
     Driver: "bridge",
@@ -177,35 +207,7 @@ async function probeFromNamedBridge(
         `could not verify restricted egress: the probe exited ${result?.StatusCode ?? "late"}; see the supervisor log`,
       );
     }
-    // Behavioral checks passed; attest the live firewall itself, so a partially
-    // removed ruleset cannot pass as verified. The attestation runs the
-    // supervisor-built probe image, never the configurable computer image, and
-    // runs before the DNS checks: a removed forwarded drop must surface as the
-    // rules-missing result even when the DNS configuration is also wrong.
-    await attestRestrictedEgress(docker, await ensureAttestImage());
-    // The DNS list is validated only now, after the rules are known to be in
-    // place: `auto` on a host without the ruleset must still fall back to open
-    // egress instead of failing every start on a DNS misconfiguration.
-    // Restricted computer networks are IPv4-only, so an IPv6 resolver could never
-    // be queried; skipping it silently would make the check pass without testing.
-    if (dns?.some((server) => !isIPv4(server))) {
-      throw new Error(
-        "SANDBOX_COMPUTER_DNS must list IPv4 servers: restricted computer networks are IPv4-only (see docs/self-host-docker-computers.md)",
-      );
-    }
-    // Docker's embedded resolver and resolv.conf use at most three servers; a
-    // longer list would be silently truncated, so refuse it rather than check
-    // only a prefix.
-    if (dns && dns.length > 3) {
-      throw new Error(
-        "SANDBOX_COMPUTER_DNS lists more than three servers; at most three are used (see docs/self-host-docker-computers.md)",
-      );
-    }
-    if (verdict === "dns-unreachable") {
-      throw new Error(
-        "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
-      );
-    }
+    return verdict;
   } finally {
     await container?.remove({ force: true }).catch(() => undefined);
     await network.remove().catch(() => undefined);
