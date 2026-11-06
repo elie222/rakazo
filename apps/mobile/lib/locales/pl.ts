@@ -226,6 +226,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Nie udało się odświeżyć. Wyświetlane są ostatnio wczytane wiadomości.",
   "Too many unsent messages": "Zbyt wiele niewysłanych wiadomości",
+  "Unsent messages": "Niewysłane wiadomości",
   "Not sent": "Nie wysłano",
   "Not sent. Tap to retry": "Nie wysłano. Dotknij, aby spróbować ponownie",
   Photo: "Zdjęcie",
@@ -767,6 +768,8 @@ export const PL_MESSAGES: Record<string, string> = {
   Restore: "Przywróć",
   "Scheduled tasks": "Zaplanowane zadania",
   "Sign out": "Wyloguj się",
+  "Sign out anyway": "Wyloguj mimo to",
+  "Signing out deletes unsent messages.": "Wylogowanie usunie niewysłane wiadomości.",
   "Stream replies": "Strumieniuj odpowiedzi",
   "Load web images automatically": "Automatycznie wczytuj obrazy z sieci",
   System: "Systemowy",
@@ -1116,6 +1119,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Start plan": "Uruchom plan",
   "Switch to yearly": "Przejdź na plan roczny",
   "Switch to yearly?": "Przejść na plan roczny?",
+  "Switch anyway": "Przełącz mimo to",
+  "Switching servers deletes unsent messages.": "Zmiana serwera usunie niewysłane wiadomości.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} GB, {hours} godz. pracy komputera miesięcznie",
   "Switch to {name}?": "Zmienić na {name}?",

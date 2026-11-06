@@ -208,6 +208,7 @@ export const ZH_MESSAGES: Record<string, string> = {
 
   "Couldn't refresh — showing the last loaded messages.": "无法刷新——显示最近加载的消息。",
   "Too many unsent messages": "未发送消息过多",
+  "Unsent messages": "未发送消息",
   "Not sent": "未发送",
   "Not sent. Tap to retry": "未发送。轻点重试",
   "Not sent · Tap to retry": "未发送 · 轻点重试",
@@ -762,6 +763,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sign in": "登录",
   "Sign in to Rakazo": "登录 Rakazo",
   "Sign out": "退出登录",
+  "Sign out anyway": "仍要退出",
+  "Signing out deletes unsent messages.": "退出登录将删除未发送的消息。",
   "Sign up": "注册",
   "Sign up for Rakazo": "注册 Rakazo",
   "Sign-in": "登录",
@@ -1131,6 +1134,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Start plan": "开始套餐",
   "Switch to yearly": "切换为按年",
   "Switch to yearly?": "切换为按年付费？",
+  "Switch anyway": "仍要切换",
+  "Switching servers deletes unsent messages.": "切换服务器将删除未发送的消息。",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小时电脑时长",
   "Switch to {name}?": "切换到 {name}？",

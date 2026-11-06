@@ -229,6 +229,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Kon niet vernieuwen — de laatst geladen berichten worden getoond.",
   "Too many unsent messages": "Te veel onverzonden berichten",
+  "Unsent messages": "Onverzonden berichten",
   "Not sent": "Niet verzonden",
   "Not sent. Tap to retry": "Niet verzonden. Tik om opnieuw te proberen",
   Photo: "Foto",
@@ -773,6 +774,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Restore: "Herstellen",
   "Scheduled tasks": "Geplande taken",
   "Sign out": "Uitloggen",
+  "Sign out anyway": "Toch uitloggen",
+  "Signing out deletes unsent messages.": "Uitloggen verwijdert onverzonden berichten.",
   "Stream replies": "Antwoorden streamen",
   "Load web images automatically": "Webafbeeldingen automatisch laden",
   System: "Systeem",
@@ -1116,6 +1119,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "Start plan": "Abonnement starten",
   "Switch to yearly": "Overstappen op jaarlijks",
   "Switch to yearly?": "Overstappen op jaarlijks?",
+  "Switch anyway": "Toch wisselen",
+  "Switching servers deletes unsent messages.":
+    "Wisselen van server verwijdert onverzonden berichten.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} GB, {hours} computeruren per maand",
   "Switch to {name}?": "Overstappen naar {name}?",
