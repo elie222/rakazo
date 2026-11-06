@@ -73,6 +73,8 @@ export function useCopyText(): [
   const copy = (text: string) => {
     const attempt = ++attemptRef.current;
     if (timerRef.current) window.clearTimeout(timerRef.current);
+    // The earlier confirmation ends here; a write that never settles must not keep it on.
+    setState((current) => (current.status === "copied" ? { status: "idle", text: "" } : current));
     return writeClipboard(text, () => attempt === attemptRef.current).then((ok) => {
       // A newer attempt superseded this one; its outcome decides.
       if (attempt !== attemptRef.current) return false;

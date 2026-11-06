@@ -70,6 +70,23 @@ it("keeps the newer copy's success when an older copy fails after it", async () 
   expect(status()?.dataset.text).toBe("");
 });
 
+it("drops the earlier confirmation while a newer copy is still pending", async () => {
+  const clipboard = manualClipboard();
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: clipboard.writeText },
+    configurable: true,
+  });
+  const button = container.querySelector<HTMLButtonElement>("button");
+  const status = () => container.querySelector<HTMLElement>("span");
+
+  await act(async () => button?.click());
+  await act(async () => clipboard.writes[0]?.resolve());
+  expect(status()?.dataset.copied).toBe("true");
+
+  await act(async () => button?.click());
+  expect(status()?.dataset.copied).toBe("false");
+});
+
 it("does not let a superseded copy fall back to selection over the newer text", async () => {
   const clipboard = manualClipboard();
   Object.defineProperty(navigator, "clipboard", {

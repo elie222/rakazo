@@ -137,9 +137,11 @@ export const TableCard = memo(function TableCard({
   };
 
   const copyRows = () => {
-    setCopiedSignature(dataSignature);
+    const signature = dataSignature;
     void copyText(tableToTsv(columns, sortedRows)).then((ok) => {
-      if (ok) announce(copy.copied);
+      if (!ok) return;
+      setCopiedSignature(signature);
+      announce(copy.copied);
     });
   };
 
