@@ -46,8 +46,7 @@ const PENDING = [
 
 // Vendor SDKs statically imported by each emitted bundle: Map<entry, Set<vendor>>.
 const staticVendors = new Map();
-// Every package each bundle imports, by import kind, across all entries.
-const staticPackages = new Set();
+// Every package a bundle loads through import(), across all entries.
 const dynamicPackages = new Set();
 for (const entry of ENTRIES) {
   const options = serverBuildOptions(path.join(root, entry), path.join(root, "dist/check.js"));
@@ -63,11 +62,11 @@ for (const entry of ENTRIES) {
   for (const output of Object.values(metafile.outputs)) {
     for (const edge of output.imports ?? []) {
       const name = packageName(edge.path);
-      if (edge.path.includes("node_modules/")) {
-        if (edge.kind === "import-statement") staticPackages.add(name);
-        if (edge.kind === "dynamic-import") dynamicPackages.add(name);
+      if (edge.kind === "dynamic-import" && edge.path.includes("node_modules/")) {
+        dynamicPackages.add(name);
       }
-      if (edge.kind !== "import-statement") continue;
+      // A require() call loads its package at startup just like a static import.
+      if (edge.kind !== "import-statement" && edge.kind !== "require-call") continue;
       if (OPTIONAL_VENDORS.test(name)) found.add(name);
     }
   }
