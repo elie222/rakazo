@@ -1,6 +1,6 @@
 import { createAuth } from "@rakazo/auth";
 import { describe, expect, it } from "vitest";
-import { isTrustedOrigin, MOBILE_AUTH_ORIGINS } from "./app.js";
+import { isTrustedOrigin, MOBILE_AUTH_ORIGINS, trustedRequestOrigins } from "./app.js";
 
 // Better Auth skips its origin middleware under NODE_ENV=test, so check the
 // matcher that production uses for callback URLs and request origins.
@@ -58,6 +58,75 @@ describe("CORS origins", () => {
     ]) {
       expect(isTrustedOrigin(origin, env), origin).toBe(false);
     }
+  });
+});
+
+describe("request origin list", () => {
+  // The CORS list before the API and Better Auth shared one builder.
+  function previousRequestOrigins(env: { webOrigin: string; apiUrl: string; authUrl: string }) {
+    return new Set(
+      [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(previousVariants),
+    );
+  }
+
+  function previousVariants(origin: string): string[] {
+    if (!origin || origin === "rakazo://") return [];
+    const variants = [origin, ...previousLoopbackTwins(origin)];
+    try {
+      const url = new URL(origin);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        variants.push(url.origin);
+      }
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        const v6 = new URL(origin);
+        v6.hostname = "[::1]";
+        variants.push(v6.origin);
+      }
+    } catch {
+      return variants;
+    }
+    return variants;
+  }
+
+  function previousLoopbackTwins(origin: string): string[] {
+    try {
+      const url = new URL(origin);
+      if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)) return [];
+      const twins: string[] = [];
+      for (const host of ["localhost", "127.0.0.1"]) {
+        if (host === url.hostname) continue;
+        const twin = new URL(origin);
+        twin.hostname = host;
+        twins.push(twin.origin);
+      }
+      return twins;
+    } catch {
+      return [];
+    }
+  }
+
+  it.each([
+    env,
+    {
+      webOrigin: "http://127.0.0.1:5173/",
+      apiUrl: "http://127.0.0.1:3100/",
+      authUrl: "http://127.0.0.1:5173/",
+    },
+    {
+      webOrigin: "https://app.example.test",
+      apiUrl: "https://api.example.test",
+      authUrl: "https://app.example.test",
+    },
+    {
+      webOrigin: "https://app.example.test/",
+      apiUrl: "",
+      authUrl: "https://auth.example.test/base",
+    },
+    { webOrigin: "http://localhost:5173", apiUrl: "http://[::1]:3100", authUrl: "not a url" },
+  ])("matches the previous list for $webOrigin, $apiUrl, $authUrl", (config) => {
+    const current = trustedRequestOrigins(config);
+    expect(new Set(current)).toEqual(previousRequestOrigins(config));
+    expect(current).toHaveLength(new Set(current).size);
   });
 });
 
