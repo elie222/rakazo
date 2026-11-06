@@ -1,10 +1,10 @@
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import { controlDesktop, MAX_COMPUTER_CONTROL_RESPONSE_BYTES } from "./computer-control.js";
 import {
   publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
 } from "./computer-spec.js";
-import { controlDesktop, MAX_COMPUTER_CONTROL_RESPONSE_BYTES } from "./index.js";
 import {
   attemptComputerControl,
   preferComputerControl,

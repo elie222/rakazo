@@ -7,15 +7,15 @@ import path from "node:path";
 import { resolveSupervisorToken } from "@rakazo/core";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
+import { resolveDockerSocketPath } from "./context.js";
+import { supervisorApp } from "./index.js";
+import { waitForScreenReady } from "./readiness.js";
 import {
   MAX_SUPERVISOR_FILE_REQUEST_BYTES,
   MAX_SUPERVISOR_REQUEST_BYTES,
-  resolveDockerSocketPath,
-  supervisorApp,
   supervisorFileWriteSchema,
   supervisorRequestBodyLimit,
-  waitForScreenReady,
-} from "./index.js";
+} from "./request-limits.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   AIMED_SCROLL_CONTROL_LABEL,
