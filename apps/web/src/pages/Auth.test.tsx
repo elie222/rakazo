@@ -52,6 +52,9 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
   InputOTPGroup: () => null,
   InputOTPSlot: () => null,
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render }: { render: ReactNode }) => render,
+  TooltipContent: () => null,
   Label: ({ children, htmlFor, ...props }: React.ComponentProps<"label">) => (
     <label htmlFor={htmlFor} {...props}>
       {children}
@@ -86,10 +89,10 @@ afterEach(async () => {
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
 });
-async function render(mode: "in" | "up" | "forgot" = "in") {
+async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
   await act(async () =>
     root.render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <AuthPage mode={mode} />
       </MemoryRouter>,
     ),
@@ -188,6 +191,23 @@ it("selects a non-redirecting SSO request on desktop", async () => {
   );
 });
 
+it("lets the desktop app change its server from sign in", async () => {
+  const change = vi.fn(async () => undefined);
+  window.rakazoDesktop = { server: { change } } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Change server"]')!.click(),
+  );
+  expect(change).toHaveBeenCalledOnce();
+});
+
+it("offers no server change in a browser", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
+  await render();
+  expect(host.querySelector('[aria-label="Change server"]')).toBeNull();
+});
+
 it("keeps SSO available for retry while an authorization request is pending", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
   vi.mocked(authClient.signIn.social).mockReturnValue(new Promise(() => undefined));
@@ -235,6 +255,14 @@ it("signs in with an emailed code when the password is blank", async () => {
   // The session refetch moves a signed-in user on; until then the form stays busy.
   expect(clearSpaceSelection).toHaveBeenCalled();
   expect(button("Working…").disabled).toBe(true);
+});
+
+it("keeps an invite as the destination when switching to sign-in", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  await render("up", `/?next=${encodeURIComponent("/invite/token-1")}`);
+  expect(host.querySelector('a[href^="/sign-in"]')?.getAttribute("href")).toBe(
+    "/sign-in?next=%2Finvite%2Ftoken-1",
+  );
 });
 
 it("names a new account and keeps the email when going back from the code", async () => {

@@ -58,6 +58,8 @@ export type ThreadComposerHandle = {
   snapshot: () => ComposerSnapshot;
   reset: () => void;
   insert: (text: string) => void;
+  /** A page's reply, added on the same line as the web composer does. */
+  addReply: (text: string) => void;
 };
 
 const DRAFT_SAVE_DELAY_MS = 500;
@@ -89,6 +91,8 @@ type ThreadComposerProps = {
   stop: () => Promise<void>;
   startVoiceCall: () => Promise<void>;
   onSlashAction: (action: SlashActionId) => void;
+  /** The composer holds no text: the last of it was deleted or sent. */
+  onEmptied?: () => void;
 };
 
 export function ThreadComposer({
@@ -112,6 +116,7 @@ export function ThreadComposer({
   stop,
   startVoiceCall,
   onSlashAction,
+  onEmptied,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
   // A mention is plain text in the link blue; it turns bold while a backspace has it selected.
@@ -166,6 +171,9 @@ export function ThreadComposer({
     else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
   }, [draftScope, draft, mentionBindings]);
   useEffect(() => {
+    if (!draft) onEmptied?.();
+  }, [draft, onEmptied]);
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") flushDraftSave();
     });
@@ -184,6 +192,9 @@ export function ThreadComposer({
       attachmentIds,
     }),
     reset: () => {
+      // Empty the native field as well. It measures its height from the text it last reported,
+      // so clearing only the draft would leave it as tall as the message just sent.
+      inputRef.current?.clear();
       draftRef.current = "";
       setDraft("");
       nativeSelection.current = { start: 0, end: 0 };
@@ -201,6 +212,18 @@ export function ThreadComposer({
       const current = draftRef.current;
       draftRef.current = current ? `${current}\n${text}` : text;
       setDraft(draftRef.current);
+    },
+    addReply: (text) => {
+      const current = draftRef.current;
+      draftRef.current = current.trim() ? `${current.trimEnd()} ${text}` : text;
+      setDraft(draftRef.current);
+      // Typing continues after the reply, not where the caret was left earlier.
+      const end = draftRef.current.length;
+      pendingNativeEdit.current = null;
+      nativeSelection.current = { start: end, end };
+      selectionHistory.current = [nativeSelection.current];
+      completedSelection.current = null;
+      setSelection(nativeSelection.current);
     },
   }));
   const mentionOptions = useMemo(() => {
@@ -618,6 +641,8 @@ export function ThreadComposer({
               ) : null}
               <TextInput
                 ref={inputRef}
+                // The iOS file-drop module attaches images pasted into this field only.
+                testID="chat-composer"
                 onChangeText={updateDraft}
                 selection={selection}
                 onSelectionChange={(event) => {

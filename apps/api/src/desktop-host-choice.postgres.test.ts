@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeSandboxProvider } from "@rakazo/adapters";
+import { runAsSystem } from "@rakazo/db";
 import { expect, it } from "vitest";
 import { sessionCookieHeader } from "../../../packages/testkit/src/index.js";
 import { createApp } from "./app.js";
@@ -14,6 +15,7 @@ it.skipIf(!databaseUrl).each([
   { sandboxProvider: "fake", nativeToken: true, expected: false },
 ])("exposes native host choice only on a managed Docker instance (%j)", async (fixture) => {
   const dataDir = await mkdtemp(join(tmpdir(), "rakazo-host-choice-"));
+  const email = `host-choice-${fixture.sandboxProvider}-${fixture.nativeToken}@example.test`;
   const handles = await createApp({
     databaseUrl: databaseUrl!,
     dataDir,
@@ -32,7 +34,7 @@ it.skipIf(!databaseUrl).each([
       method: "POST",
       headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
       body: JSON.stringify({
-        email: `host-choice-${fixture.sandboxProvider}-${fixture.nativeToken}@example.test`,
+        email,
         password: "test-password-123",
         name: "Host tester",
       }),
@@ -53,6 +55,10 @@ it.skipIf(!databaseUrl).each([
       });
     }
   } finally {
+    // A managed stack admits only its first account, so each case starts without one.
+    await runAsSystem("remove the host choice tester", () =>
+      handles.prisma.user.deleteMany({ where: { email } }),
+    );
     await handles.stop();
     await rm(dataDir, { recursive: true, force: true });
   }

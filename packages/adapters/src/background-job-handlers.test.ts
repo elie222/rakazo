@@ -101,7 +101,7 @@ describe("createBackgroundJobHandlers", () => {
       deploymentModelConfigured: true,
     });
 
-    await handlers["history.compact"]({ threadId: "thread-1" });
+    await handlers["history.compact"]({ threadId: "thread-1", userId: "user-1" });
 
     expect(compactHistory).toHaveBeenCalledWith(
       {
@@ -114,6 +114,7 @@ describe("createBackgroundJobHandlers", () => {
         resolveModel,
       },
       "thread-1",
+      "user-1",
     );
   });
 
@@ -236,7 +237,7 @@ describe("createBackgroundJobHandlers", () => {
       executor.resolveModel({ userId: "user-1", spaceId: "workspace-1" }),
     ).resolves.toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
       apiKey: "deployment-key",
       baseUrl: undefined,
       thinkingLevel: null,

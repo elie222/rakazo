@@ -78,7 +78,7 @@ it("posts the guarded preview once the shell loads, and again on change or reloa
   await view.cleanup();
 });
 
-it("keeps the nested preview opaque and blocks remote images and fonts", () => {
+it("keeps the nested preview opaque and blocks remote images, media and fonts", () => {
   const preview = shell.match(/<iframe id="preview"[^>]*>/)?.[0] ?? "";
   expect(preview).toContain('sandbox="allow-scripts"');
   expect(preview).toContain('referrerpolicy="no-referrer"');
@@ -87,6 +87,14 @@ it("keeps the nested preview opaque and blocks remote images and fonts", () => {
   expect(PREVIEW_CSP).toContain("font-src data:");
   expect(PREVIEW_CSP).not.toMatch(/img-src[^;]*https:/);
   expect(PREVIEW_CSP).not.toMatch(/font-src[^;]*https:/);
+  expect(PREVIEW_CSP).toMatch(/media-src data: blob:;/);
+  expect(PREVIEW_CSP).not.toMatch(/https?:/);
+  // The srcdoc also inherits the shell's own policy, so embedded pictures and media need it there.
+  const shellPolicy =
+    shell.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1] ?? "";
+  expect(shellPolicy).toContain("img-src data:;");
+  expect(shellPolicy).toContain("media-src data: blob:;");
+  expect(shellPolicy).not.toMatch(/https?:/);
   expect(shell).not.toContain("allow-same-origin");
 });
 
@@ -118,11 +126,74 @@ it("renders only string messages from the embedding app", () => {
   shellFrame.send(shellFrame.parent, { html: "<p>object</p>" });
   expect(shellFrame.preview.srcdoc).toBe("");
   shellFrame.send(shellFrame.parent, "<p>Hello</p>");
-  expect(shellFrame.preview.srcdoc).toBe("<p>Hello</p>");
+  // The gesture guard goes first, ahead of anything the page runs.
+  expect(shellFrame.preview.srcdoc).toMatch(
+    /^<script>[^<]*rakazo-page:gesture[^<]*<\/script><p>Hello<\/p>$/,
+  );
 
   const topLevel = run(false);
   topLevel.send(topLevel.parent, "<p>Opened directly</p>");
   expect(topLevel.preview.srcdoc).toBe("");
+});
+
+it("vouches for one click or key the guard saw, never a forged, stale or inactive one", () => {
+  const script = shell.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  if (!script) throw new Error("shell script missing");
+  const preview = { srcdoc: "", contentWindow: {} };
+  const posted: { type?: string; gesture?: unknown }[] = [];
+  const parent = { postMessage: (message: (typeof posted)[number]) => posted.push(message) };
+  const activation = { isActive: true };
+  vi.stubGlobal("navigator", { userActivation: activation });
+  const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  let listener: ((event: { source: unknown; data: unknown }) => void) | undefined;
+  new Function("addEventListener", "parent", "window", "document", script)(
+    (_type: string, handler: typeof listener) => {
+      listener = handler;
+    },
+    parent,
+    {},
+    { getElementById: () => preview },
+  );
+  listener?.({ source: parent, data: "<p>Page</p>" });
+  const key = /key = "([^"]+)"/.exec(preview.srcdoc)?.[1];
+  const page = (data: object) => listener?.({ source: preview.contentWindow, data });
+  const gesture = (value = key) => page({ type: "rakazo-page:gesture", key: value });
+  const copy = (id: string) => page({ type: "rakazo-page:copy", id, text: id });
+
+  copy("on load");
+  gesture("forged");
+  copy("forged");
+  gesture();
+  copy("first");
+  copy("same click");
+  page({ type: "rakazo-page:height", height: 300 });
+  gesture();
+  copy("next click");
+  now.mockReturnValue(1_001_001);
+  copy("a second later");
+  // A gesture while the shell is not active counts for nothing.
+  activation.isActive = false;
+  gesture();
+  copy("inactive");
+  activation.isActive = true;
+  copy("after an inactive gesture");
+  gesture();
+  copy("fresh click");
+
+  expect(posted.map((message) => message.gesture)).toEqual([
+    null,
+    null,
+    `${key}:1`,
+    `${key}:1`,
+    undefined,
+    `${key}:2`,
+    null,
+    null,
+    null,
+    `${key}:3`,
+  ]);
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it("lets the shell load the nested srcdoc preview and rejects http(s) navigations", () => {

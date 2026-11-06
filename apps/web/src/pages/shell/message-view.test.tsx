@@ -5,6 +5,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "../../lib/rpc";
 import { MessageView } from "./message-view";
 
 const skills = vi.hoisted(() => ({
@@ -12,7 +13,7 @@ const skills = vi.hoisted(() => ({
   save: vi.fn(async () => ({})),
   testRun: vi.fn(async () => ({ runId: "run" })),
 }));
-vi.mock("../../lib/rpc", () => ({ rpc: { skills } }));
+vi.mock("../../lib/rpc", () => ({ rpc: { skills, artifacts: { get: vi.fn() } } }));
 
 vi.mock("@lingui/core/macro", () => ({
   plural: (count: number, forms: { one: string; other: string }) =>
@@ -73,6 +74,7 @@ function renderView(
   act(() =>
     root.render(
       <MessageView
+        rpc={rpc}
         artifactTarget={{ botId: "parent" }}
         canAnswer={false}
         canDismiss={false}
@@ -198,6 +200,7 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   const render = (block: typeof draft | (Omit<typeof draft, "status"> & { status: "saved" })) =>
     root.render(
       <MessageView
+        rpc={rpc}
         artifactTarget={{ botId: "parent" }}
         canAnswer={false}
         canDismiss={false}
@@ -257,6 +260,54 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   expect(button().textContent).toBe("Saved");
 });
 
+const ana = { id: "user-a", name: "Ana" };
+const authored: ThreadMessage = {
+  id: "message",
+  threadId: "thread",
+  seq: 1,
+  role: "user",
+  author: ana,
+  blocks: [{ kind: "text", text: "Book the table" }],
+  createdAt: new Date().toISOString(),
+};
+
+function renderAuthored(message: ThreadMessage, meId = "user-b") {
+  renderView(message.role, message.blocks, { message, meId });
+  const bubble = container.querySelector<HTMLElement>('[data-testid="message-user-bubble"]');
+  if (!bubble?.parentElement) throw new Error("user bubble missing");
+  return { bubble, row: bubble.parentElement };
+}
+
+it("names someone else's message and keeps it on the people side", () => {
+  const { bubble, row } = renderAuthored(authored);
+
+  expect(container.textContent).toBe("AnaBook the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-muted");
+  expect(bubble.className).not.toContain("bg-chat-user");
+});
+
+it("keeps my own message unnamed on the right", () => {
+  const { bubble, row } = renderAuthored(authored, ana.id);
+
+  expect(container.textContent).toBe("Book the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-chat-user");
+});
+
+it("names the person a reply quotes instead of saying You", () => {
+  renderAuthored({
+    ...authored,
+    author: undefined,
+    replyToMessageId: "parent",
+    replyPreview: { role: "user", author: ana, text: "Find us a restaurant" },
+  });
+
+  expect(container.querySelector('[data-testid="reply-parent-preview"]')?.textContent).toContain(
+    "Ana: Find us a restaurant",
+  );
+});
+
 it("speaks the message it renders", () => {
   const onSpeak = vi.fn();
   renderView("bot", [{ kind: "text", text: "Hello" }], { onSpeak, voiceReady: true });
@@ -288,4 +339,27 @@ it("opens one counted peer line without an inline reply toggle", () => {
   expect(container.querySelector('[data-testid="peer-replies-toggle"]')).toBeNull();
   act(() => line?.click());
   expect(open).toHaveBeenCalledWith({ peerBotId: "peer", peerBotName: "Researcher" });
+});
+
+it("sends a settings Undo through the chat's space client", async () => {
+  const spaceRpc = { bots: { update: vi.fn(async () => ({})) } };
+  renderView(
+    "bot",
+    [
+      {
+        kind: "ask",
+        text: "Settings updated",
+        status: "answered",
+        settingsUpdate: {
+          botId: "bot-1",
+          before: { modelProvider: null, modelId: null, thinkingLevel: null },
+          after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+        },
+      },
+    ],
+    { rpc: spaceRpc as never },
+  );
+  const undo = [...container.querySelectorAll("button")].find((b) => b.textContent === "Undo");
+  await act(async () => undo?.click());
+  expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
 });

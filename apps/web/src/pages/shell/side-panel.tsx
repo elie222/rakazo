@@ -10,6 +10,7 @@ import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
+import { PagesList } from "../../components/pages/PagesList";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { computerPanelNeedsMaintenance } from "../../lib/thread-events";
@@ -50,6 +51,7 @@ export function ShellSidePanel({
   memoryProviderConfigured,
   setAgentSkills,
   onClearBot,
+  discardChatAttachments,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
@@ -77,11 +79,15 @@ export function ShellSidePanel({
   memoryProviderConfigured: boolean;
   setAgentSkills: (skills: AgentSkillCatalogEntry[]) => void;
   onClearBot: (bot: Bot) => void;
+  /** Drops a deleted chat's pending attachments with their previews. */
+  discardChatAttachments: (threadKey: string) => void;
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
   const botTab =
-    panel === "computer" || panel === "routines" || panel === "settings" ? panel : null;
+    panel === "computer" || panel === "routines" || panel === "pages" || panel === "settings"
+      ? panel
+      : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
     const group = await rpc.groups.create(input);
@@ -103,7 +109,7 @@ export function ShellSidePanel({
           panel !== "import-agent" ? (
             <div className="mb-4 flex items-center justify-between">
               {!active && panel !== "settings" ? (
-                <span className="text-[13.5px] text-muted-foreground">
+                <span className="text-body text-muted-foreground">
                   <Trans>Group</Trans>
                 </span>
               ) : null}
@@ -147,6 +153,7 @@ export function ShellSidePanel({
               key={activeGroup.id}
               group={activeGroup}
               bots={bots}
+              pages={<PagesList groupId={activeGroup.id} />}
               onSave={async (input) => {
                 const updated = await rpc.groups.update({ groupId: activeGroup.id, ...input });
                 setGroups((current) =>
@@ -158,6 +165,7 @@ export function ShellSidePanel({
               }}
               onRemove={async () => {
                 await rpc.groups.remove({ groupId: activeGroup.id });
+                discardChatAttachments(activeGroup.id);
                 const remainingGroups = groups.filter((group) => group.id !== activeGroup.id);
                 setGroups(remainingGroups);
                 setPanel(null);

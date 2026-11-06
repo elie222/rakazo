@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { AGENT_DOCUMENT_MAX_BYTES } from "../../lib/agent-document";
 
 vi.mock("@lingui/react/macro", () => {
@@ -443,5 +443,83 @@ describe("creating a bot", () => {
     await act(async () => button("Back").click());
     expect(onClose).not.toHaveBeenCalled();
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
+  });
+
+  it("does not reopen a copy failure that settled during the preview after Back", async () => {
+    let refuse!: (reason: Error) => void;
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: () => new Promise<void>((_, reject) => (refuse = reject)) },
+      configurable: true,
+    });
+    // The selection fallback fails too, so the attempt settles as a failure.
+    document.execCommand = vi.fn(() => false);
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, "execCommand");
+      Reflect.deleteProperty(navigator, "clipboard");
+    });
+    importPreview.mockResolvedValue(plan);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    await act(async () => button("Copy prompt").click());
+    const archive = container.querySelector<HTMLInputElement>(
+      '[data-testid="agent-import-archive"]',
+    )!;
+    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () => Promise.resolve(new Uint8Array([2]).buffer),
+    });
+    await act(async () => {
+      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
+      archive.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+
+    await act(async () => refuse(new Error("denied")));
+    await act(async () => button("Back").click());
+    expect(container.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+});
+
+describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("previews a pasted document", async () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(3);
+        return bytes;
+      },
+    });
+    importPreview.mockResolvedValue(plan);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const reply = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Paste the reply"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "# Instructions\nBe brief.\n",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...container!.querySelectorAll("button")]
+        .find((button) => button.textContent === "Continue")!
+        .click(),
+    );
+    expect(importPreview).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
   });
 });

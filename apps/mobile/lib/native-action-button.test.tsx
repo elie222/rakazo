@@ -16,6 +16,10 @@ const swiftLabel = vi.hoisted(() => vi.fn());
 const appearance = vi.hoisted(() => ({ value: "light" as "light" | "dark" }));
 const swiftHost = vi.hoisted(() => vi.fn());
 const swiftText = vi.hoisted(() => vi.fn());
+const nativeView = vi.hoisted(() => vi.fn());
+const hapticImpact = vi.hoisted(() => vi.fn());
+
+vi.mock("./haptics", () => ({ hapticImpact }));
 
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ fontScale: 1 }),
@@ -28,20 +32,23 @@ vi.mock("react-native", () => ({
     accessibilityState,
     accessibilityLabel,
     android_ripple,
+    onPress,
   }: {
     children: ReactNode;
     android_ripple?: { color: string; foreground: boolean };
     accessibilityState?: { selected?: boolean; disabled?: boolean };
     accessibilityLabel?: string;
+    onPress?: () => void;
     style: (state: { pressed: boolean }) => CSSProperties[];
   }) => {
-    pressable({ android_ripple });
+    pressable({ android_ripple, onPress });
     return (
       <button
         type="button"
         aria-label={accessibilityLabel}
         aria-pressed={accessibilityState?.selected}
         disabled={accessibilityState?.disabled}
+        onClick={onPress}
         style={Object.assign({}, ...style({ pressed: false }))}
       >
         {children}
@@ -51,6 +58,10 @@ vi.mock("react-native", () => ({
   Text: ({ children, style }: { children: ReactNode; style: CSSProperties }) => (
     <span style={style}>{children}</span>
   ),
+  View: (props: { children: ReactNode }) => {
+    nativeView(props);
+    return <div>{props.children}</div>;
+  },
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => <i /> }));
 vi.mock("./native", () => ({
@@ -89,6 +100,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
     ...Object.fromEntries(
       [
         "accessibilityLabel",
+        "accessibilityHidden",
         "accessibilityAddTraits",
         "accessibilityRemoveTraits",
         "labelStyle",
@@ -117,6 +129,76 @@ beforeEach(() => {
   swiftLabel.mockClear();
   swiftHost.mockClear();
   swiftText.mockClear();
+  nativeView.mockClear();
+  pressable.mockClear();
+  hapticImpact.mockClear();
+});
+
+describe("action haptics", () => {
+  it.each([
+    ["fallback", FallbackButton, pressable],
+    ["iOS", IosButton, swiftButton],
+  ] as const)("emits one impact when an enabled %s action is pressed", (_name, Button, capture) => {
+    const onPress = vi.fn();
+    renderToStaticMarkup(<Button label="Create" onPress={onPress} />);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    capture.mock.lastCall?.[0].onPress();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["fallback", FallbackButton, pressable],
+    ["iOS", IosButton, swiftButton],
+  ] as const)("keeps disabled and busy %s actions silent", (_name, Button, capture) => {
+    const onPress = vi.fn();
+    for (const state of [{ disabled: true }, { busy: true }]) {
+      renderToStaticMarkup(<Button label="Create" onPress={onPress} {...state} />);
+      expect(capture.mock.lastCall?.[0].onPress).toBeUndefined();
+    }
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it("uses one impact for iOS accessibility activation and preserves custom menu actions", () => {
+    const onPress = vi.fn();
+    const onAccessibilityAction = vi.fn();
+    renderToStaticMarkup(
+      <IosButton
+        label="Approve"
+        onPress={onPress}
+        accessibilityActions={[{ name: "menu", label: "More" }]}
+        onAccessibilityAction={onAccessibilityAction}
+      />,
+    );
+    const props = nativeView.mock.lastCall?.[0];
+    expect(props.onAccessibilityAction).toBe(onAccessibilityAction);
+    expect(swiftButton.mock.lastCall?.[0].modifiers).toContainEqual({
+      name: "accessibilityHidden",
+      value: true,
+    });
+    props.onAccessibilityTap();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onAccessibilityAction).not.toHaveBeenCalled();
+  });
+
+  it("keeps disabled and busy iOS accessibility activation silent", () => {
+    const onPress = vi.fn();
+    for (const state of [{ disabled: true }, { busy: true }]) {
+      renderToStaticMarkup(
+        <IosButton
+          label="Approve"
+          onPress={onPress}
+          accessibilityActions={[{ name: "menu", label: "More" }]}
+          {...state}
+        />,
+      );
+      expect(nativeView.mock.lastCall?.[0].onAccessibilityTap).toBeUndefined();
+    }
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(onPress).not.toHaveBeenCalled();
+  });
 });
 
 describe("iOS action styling", () => {
@@ -129,7 +211,6 @@ describe("iOS action styling", () => {
           root.render(
             <IosButton
               label="Set your own key"
-              variant="rectangular"
               fill={fill}
               style={fill ? { width: 280 } : undefined}
               onPress={() => {}}

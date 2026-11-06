@@ -51,7 +51,7 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null },
+  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
 ): McpServer {
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
@@ -71,7 +71,8 @@ export function mcpServerDto(
     fileKeys: keysOf(row.files),
     headerKeys,
     installId: row.installId ?? null,
-    hasSecret: row.secretId !== null,
+    // A lone OAuth generation marker keeps a secret row without holding a credential.
+    hasSecret: row.secretId !== null && oauth.credential,
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
@@ -242,10 +243,12 @@ export function createMcpServers(
       await deps.mcp.probe(server, { spaceId: actor.spaceId, userId: actor.userId });
     } catch {
       getLogger().error("mcp server probe failed", { "mcp.server.id": server.id });
-      await recordMcpServerHealth(deps.prisma, server.id, {
-        status: "error",
-        message: "Could not check this MCP server",
-      });
+      await recordMcpServerHealth(
+        deps.prisma,
+        server.id,
+        { status: "error", message: "Could not check this MCP server" },
+        server.revision,
+      );
     }
   };
   /**
@@ -262,7 +265,7 @@ export function createMcpServers(
       status: "unknown" | "installing",
       message: string | null,
     ): Promise<McpServerRow> => {
-      await recordMcpServerHealth(deps.prisma, row.id, { status, message });
+      await recordMcpServerHealth(deps.prisma, row.id, { status, message }, row.revision);
       return {
         ...row,
         healthStatus: status,

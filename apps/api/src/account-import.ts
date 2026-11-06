@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { WriteStream } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -31,14 +32,15 @@ import {
   InvalidSpaceNameError,
   Prisma,
   parseComputerMode,
-  personalOrganizationIds,
   runAsSystem,
   runAsTenant,
   SpaceLimitError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { Unzip, UnzipInflate } from "fflate";
+import { pageViewerCode } from "@rakazo/page-kit/compile";
+import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
+import { inflateEntry, parseZipArchive, readExact, ZipFormatError } from "./account-zip-reader.js";
 import { cancelBody } from "./http-body.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 import { deleteSpaceWithContent } from "./space-deletion.js";
@@ -57,8 +59,13 @@ export const ACCOUNT_IMPORT_LIMITS = {
 type ArchiveLimits = typeof ACCOUNT_IMPORT_LIMITS & { artifactBytes: number };
 
 /** Bounds what one push can inflate to (deflate expands at most ~1032x). */
-const PUSH_SLICE_BYTES = 16 * 1024;
 const MESSAGE_BATCH_SIZE = 500;
+
+/** Prefix of the private spool files, exposed so tests can assert cleanup. */
+export const SPOOL_PREFIX = "rakazo-account-import-archive-";
+
+/** Slice size for streaming a spilled entry back to its sink. */
+const READ_SPILL_BYTES = 16 * 1024;
 
 export class AccountImportError extends Error {
   constructor(
@@ -128,89 +135,141 @@ export interface ArchiveSink {
 }
 
 /**
- * Streams the zip once. fflate inflates synchronously inside `push`, so input goes in small
- * slices and the queued output is handed to the sink before the next slice is read.
+ * Spools the upload to a private temp file, enforcing the body limit as it
+ * arrives. The spool is deleted on every failure here — a body error, a
+ * limit breach, or a write failure — and the original error is rethrown.
+ */
+async function spoolBody(
+  body: AsyncIterable<Uint8Array>,
+  maxBytes: number,
+  spoolDir = tmpdir(),
+): Promise<{ handle: FileHandle; path: string }> {
+  const spoolPath = path.join(spoolDir, `${SPOOL_PREFIX}${randomUUID()}`);
+  const handle = await open(spoolPath, "w+", 0o600);
+  let size = 0;
+  try {
+    for await (const chunk of body) {
+      size += chunk.byteLength;
+      if (size > maxBytes) throw tooLarge();
+      await handle.write(chunk);
+    }
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(spoolPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  return { handle, path: spoolPath };
+}
+
+/**
+ * Reads the archive from its spooled file. Entries come from the central
+ * directory in local-header order and are inflated incrementally, so a zip
+ * stored inside the export is opaque data — its inner headers are never
+ * mistaken for entries. Each entry inflates into a spill file first, so a
+ * whole entry never sits in memory — and a failed entry never reaches the
+ * sink. The spool and spill are deleted on every path.
  */
 export async function readArchive(
   body: AsyncIterable<Uint8Array>,
   limits: ArchiveLimits,
   sink: ArchiveSink,
+  options?: { spoolDir?: string },
 ): Promise<void> {
-  type Event = { entry: ArchiveEntry } | { data: Uint8Array; final: boolean };
-  const queue: Event[] = [];
-  let failure: unknown;
-  let index = 0;
-  let unpacked = 0;
-  let open = false;
-  const unzip = new Unzip((file) => {
-    try {
-      if (failure) return;
-      if (file.compression !== 0 && file.compression !== 8) throw unreadable();
-      const entry = parseEntryName(file.name, index++);
-      const maxBytes = entryLimit(entry, limits);
-      let size = 0;
-      queue.push({ entry });
-      file.ondata = (error, data, final) => {
-        if (failure) return;
-        if (error) {
-          failure = unreadable();
-          return;
-        }
-        size += data.byteLength;
-        unpacked += data.byteLength;
-        if (size > maxBytes || unpacked > limits.unpackedBytes) {
-          failure =
-            entry.kind === "artifact"
-              ? new AccountImportError(
-                  `An artifact in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
-                )
-              : entry.kind === "home"
+  const spool = await spoolBody(body, limits.bodyBytes, options?.spoolDir);
+  try {
+    const entries = await parseZipArchive(spool.handle);
+    let failure: unknown;
+    let index = 0;
+    let unpacked = 0;
+    let entryOpen = false;
+    for (const zipEntry of entries) {
+      if (failure) break;
+      // The spill holds this entry's inflated bytes until the whole entry
+      // verifies, so a limit breach or corrupt stream discards it before
+      // the sink ever sees the entry — and heap stays bounded no matter
+      // how large the entry is.
+      const spillPath = `${spool.path}.entry`;
+      const spill = await open(spillPath, "w+", 0o600);
+      try {
+        const entry = parseEntryName(zipEntry.name, index++);
+        const maxBytes = entryLimit(entry, limits);
+        let size = 0;
+        const pending: Uint8Array[] = [];
+        const flush = async () => {
+          for (const chunk of pending.splice(0)) await spill.write(chunk);
+        };
+        await inflateEntry(
+          spool.handle,
+          zipEntry,
+          (data) => {
+            size += data.byteLength;
+            unpacked += data.byteLength;
+            if (size > maxBytes || unpacked > limits.unpackedBytes) {
+              // Thrown out of the inflation at once: a bomb stops inflating
+              // here instead of running to the end of the entry.
+              throw entry.kind === "artifact"
                 ? new AccountImportError(
-                    `A workspace file in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
+                    `An artifact in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
                   )
-                : tooLarge();
-          file.terminate();
-          return;
+                : entry.kind === "home"
+                  ? new AccountImportError(
+                      `A workspace file in the export exceeds the ${attachmentSizeLabel(maxBytes)} limit.`,
+                    )
+                  : tooLarge();
+            }
+            pending.push(data);
+          },
+          flush,
+        );
+        await flush();
+        // The whole entry verified: hand it to the sink from the spill.
+        await sink.open(entry);
+        entryOpen = true;
+        let position = 0;
+        while (position < size) {
+          const want = Math.min(READ_SPILL_BYTES, size - position);
+          const chunk = new Uint8Array(want);
+          await readExact(spill, position, chunk);
+          position += want;
+          if (chunk.byteLength) await sink.write(chunk);
         }
-        queue.push({ data, final });
-      };
-      file.start();
-    } catch (error) {
-      failure ??= error;
-    }
-  });
-  unzip.register(UnzipInflate);
-  const drain = async () => {
-    if (failure) throw failure;
-    for (const event of queue.splice(0)) {
-      if ("entry" in event) {
-        await sink.open(event.entry);
-        open = true;
-        continue;
-      }
-      if (event.data.byteLength) await sink.write(event.data);
-      if (event.final) {
-        open = false;
+        entryOpen = false;
         await sink.close();
+      } catch (error) {
+        failure ??= error;
+      } finally {
+        await spill.close().catch(() => undefined);
+        await rm(spillPath, { force: true }).catch(() => undefined);
       }
+      if (failure) throw failure;
     }
-  };
-  const push = (chunk: Uint8Array, final: boolean) => {
-    try {
-      unzip.push(chunk, final);
-    } catch {
-      failure ??= unreadable();
-    }
-  };
-  for await (const chunk of body) {
-    for (let offset = 0; offset < chunk.byteLength; offset += PUSH_SLICE_BYTES) {
-      push(chunk.subarray(offset, offset + PUSH_SLICE_BYTES), false);
-      await drain();
-    }
+    if (index === 0 || entryOpen) throw unreadable();
+  } catch (error) {
+    if (error instanceof ZipFormatError) throw unreadable();
+    throw error;
+  } finally {
+    await spool.handle.close().catch(() => undefined);
+    await rm(spool.path, { force: true }).catch(() => undefined);
   }
-  push(new Uint8Array(0), true);
-  await drain();
-  if (index === 0 || open) throw unreadable();
+}
+
+/**
+ * Bots name pages inside their words as `[title](page:id)`, which whole-value ids miss. Any
+ * block's text can carry one (a reply, an ask, a message to another bot), so every string is
+ * rewritten.
+ */
+function remapPageLinks(value: unknown, ids: ReadonlyMap<string, string>): unknown {
+  if (typeof value === "string")
+    return value.replace(
+      /\(page:([A-Za-z0-9_-]{1,64})\)/g,
+      (_link, id: string) => `(page:${ids.get(id) ?? id})`,
+    );
+  if (Array.isArray(value)) return value.map((item) => remapPageLinks(item, ids));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, remapPageLinks(item, ids)]),
+    );
+  return value;
 }
 
 /** Replaces every string that is exactly a mapped id; ids are random, so text never collides. */
@@ -241,6 +300,9 @@ class SpaceImport {
   >();
   readonly groupThreads = new Map<string, string>();
   readonly threadSeqs = new Map<string, number>();
+  /** Each page's newest version so far, which it opens on; 0 until one arrives. */
+  readonly pageVersions = new Map<string, number>();
+  readonly seenPageVersions = new Set<string>();
   readonly artifacts = new Map<string, PendingArtifact>();
   readonly parentLinks: Array<{ botId: string; parentBotId: string }> = [];
   readonly homes = new Map<string, string>();
@@ -298,7 +360,6 @@ class AccountImporter implements ArchiveSink {
   private decoder = new TextDecoder();
   private lineParts: string[] = [];
   private lineLength = 0;
-  private baseSpaceId: string | null = null;
   private readonly repos;
 
   constructor(
@@ -417,7 +478,7 @@ class AccountImporter implements ArchiveSink {
       await rm(space.tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
     for (const created of [...this.created].reverse()) {
-      const owner = { spaceId: this.baseSpaceId ?? this.actor.spaceId, userId: this.actor.userId };
+      const owner = { spaceId: this.actor.spaceId, userId: this.actor.userId };
       await runAsTenant({ spaceId: created.id, userId: this.actor.userId }, () =>
         deleteSpaceWithContent(this.deps, owner, created.id),
       ).catch((error) => getLogger().error("account import rollback failed", error));
@@ -441,10 +502,9 @@ class AccountImporter implements ArchiveSink {
     const { prisma } = this.deps;
     const userId = this.actor.userId;
     const created = await runAsSystem("create a Space for an account import", async () => {
-      this.baseSpaceId ??= await personalBaseSpace(prisma, this.actor);
       try {
         return await createSpaceForMember(prisma, {
-          currentSpaceId: this.baseSpaceId,
+          currentSpaceId: this.actor.spaceId,
           userId,
           name: space.name,
         });
@@ -477,9 +537,17 @@ class AccountImporter implements ArchiveSink {
     const tail = this.takeLine();
     if (tail) await this.recordLine(tail);
     const space = this.current!;
+    // A page without a version could never open.
+    if ([...space.pageVersions.values()].includes(0)) throw missingRecord();
     await this.tenant(async () => {
       await this.writeMessages(space);
       const { prisma } = this.deps;
+      // The page opens on, and its next save follows, the newest version the archive holds.
+      for (const [sourceId, currentVersion] of space.pageVersions)
+        await prisma.page.update({
+          where: { id: space.mapped(sourceId) },
+          data: { currentVersion },
+        });
       for (const link of space.parentLinks) {
         const parentBotId = space.ids.get(link.parentBotId);
         if (parentBotId)
@@ -568,6 +636,47 @@ class AccountImporter implements ArchiveSink {
         // Blocks may name records later in the file (artifacts), so messages wait for every id.
         space.messages ??= createWriteStream(space.messagesPath);
         await writeLine(space.messages, `${JSON.stringify(record)}\n`);
+        return;
+      }
+      case "page":
+        space.pageVersions.set(record.id, 0);
+        await prisma.page.create({
+          data: {
+            id: newId(),
+            spaceId,
+            userId,
+            botId: space.optional(record.botId),
+            groupId: space.optional(record.groupId),
+            title: record.title,
+            pinnedAt: date(record.pinnedAt),
+            currentVersion: record.currentVersion,
+            createdAt: new Date(record.createdAt),
+            updatedAt: new Date(record.updatedAt),
+          },
+        });
+        return;
+      case "page_version": {
+        const newest = space.pageVersions.get(record.pageId);
+        if (newest === undefined) throw missingRecord();
+        const pageId = space.mapped(record.pageId);
+        const key = `${record.pageId}:${record.version}`;
+        if (space.seenPageVersions.has(key)) throw unreadable();
+        space.seenPageVersions.add(key);
+        space.pageVersions.set(record.pageId, Math.max(newest, record.version));
+        // The checker tightens over time and is not the security boundary (the viewer's sandbox
+        // is), so a version an older release saved still imports and opens on its own error.
+        const check = checkPageSource(record.source);
+        await prisma.pageVersion.create({
+          data: {
+            id: newId(),
+            pageId,
+            version: record.version,
+            title: record.title,
+            source: record.source,
+            code: check.ok ? check.code : pageViewerCode(record.source),
+            createdAt: new Date(record.createdAt),
+          },
+        });
         return;
       }
       case "artifact":
@@ -765,6 +874,7 @@ class AccountImporter implements ArchiveSink {
             teamChatRules: record.teamChatRules,
             crossSpaceCommunication: record.crossSpaceCommunication,
             dailyCheckIns: record.dailyCheckIns,
+            replyMode: record.replyMode,
             createdAt: new Date(record.createdAt),
           },
         });
@@ -819,7 +929,10 @@ class AccountImporter implements ArchiveSink {
         threadId,
         seq: record.seq,
         role: record.role,
-        blocks: remapIds(record.blocks, space.ids) as Prisma.InputJsonValue,
+        blocks: remapPageLinks(
+          remapIds(record.blocks, space.ids),
+          space.ids,
+        ) as Prisma.InputJsonValue,
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
         replyQuote: record.replyQuote,
@@ -951,20 +1064,6 @@ function parseManifest(bytes: Uint8Array): AccountExportManifest {
   if (version !== ACCOUNT_EXPORT_VERSION)
     throw new AccountImportError("This export is from a newer version of Rakazo.");
   throw unreadable();
-}
-
-/** New spaces go in the importer's own organization, beside their first space there. */
-async function personalBaseSpace(
-  prisma: AccountImportDeps["prisma"],
-  actor: Actor,
-): Promise<string> {
-  const organizationIds = await personalOrganizationIds(prisma, actor.userId);
-  const membership = await prisma.spaceMember.findFirst({
-    where: { userId: actor.userId, organizationId: { in: organizationIds } },
-    orderBy: { createdAt: "asc" },
-    select: { spaceId: true },
-  });
-  return membership?.spaceId ?? actor.spaceId;
 }
 
 function date(value: string | null): Date | null {

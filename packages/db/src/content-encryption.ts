@@ -14,7 +14,7 @@ import type { ContentKeyRing, RowContext, SpaceSource } from "./content-keys.js"
 import { ROW_OWNER } from "./content-keys.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { Prisma } from "./generated/prisma/client.js";
-import { historyMessageText } from "./history-text.js";
+import { historySearchText } from "./history-text.js";
 import { createRowId } from "./row-id.js";
 
 /**
@@ -356,7 +356,7 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       else if (plainKeys) {
         if (spec.searchTokens)
           next.searchTokens = searchTokens(key, {
-            words: historyMessageText(value as Prisma.JsonValue),
+            words: historySearchText(value as Prisma.JsonValue),
             strings: stringsIn(value),
           });
         next[field] = sealJson(value, plainKeys, encrypt);

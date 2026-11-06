@@ -15,7 +15,8 @@ instead of adding a second one, and it deletes notes that no longer hold. It kee
 notes in `MEMORY.md`, merging or removing notes to make room. You can still add more by hand.
 
 To see what a bot remembers, click its name at the top of the chat and open **Memory**. Each note can
-be downloaded or deleted.
+be edited, downloaded or deleted. In the mobile app, the notes are in the bot's chat settings, where
+you can edit or delete them.
 
 ## Shared memory
 
@@ -23,7 +24,7 @@ Some things every bot should know, such as your name, your company, or how you l
 written. Those go in **Shared memory**: every bot in the [space](./spaces.md) reads these notes and
 keeps them up to date.
 
-Find it in **Settings → Memory**.
+Find it in **Settings → Memory**, on the web, desktop and mobile apps.
 
 ## Memory providers
 
@@ -32,7 +33,9 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
 
 - **Supermemory**: its cloud service, or your own instance.
 - **Serenity**: choose **Recall and write**, or **Recall only** to keep it read-only.
-- **Honcho**: reads from an existing Honcho peer and never writes to it.
+- **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
+  and **User peer** to also recall what Honcho already knows about you. That existing peer stays
+  read-only; Rakazo writes new facts to its own peers in the same workspace.
 
 Once connected, **Default scope** decides what bots share in the provider:
 

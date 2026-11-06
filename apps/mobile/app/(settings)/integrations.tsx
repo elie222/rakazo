@@ -4,10 +4,16 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
+  McpServerConnection,
   PluginMarketplaceEntry,
   RpcOutput,
 } from "@rakazo/contracts";
-import { CONNECTION_LABEL_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
+import {
+  CONNECTION_LABEL_MAX_LENGTH,
+  mcpServerConnection,
+  mcpServerNeedsSignIn,
+  SUBMIT_PLUGIN_URL,
+} from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
 import {
   buildFeaturedConnectorTiles,
@@ -18,6 +24,7 @@ import {
   EMPTY_PLUGIN_CATALOG_MESSAGE,
   filterConnectionCatalogItems,
   humanizeToolName,
+  integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
   newClientId,
@@ -59,7 +66,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
-import { needsOAuthClient, signInToMcpServer } from "../../lib/mcp-oauth";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -69,7 +76,6 @@ import {
   gitImportParams,
   hasPluginConnector,
   managedPluginParams,
-  mcpServerReady,
   pluginCategories,
   pluginParams,
   pluginSite,
@@ -213,6 +219,12 @@ export default function Integrations() {
     });
   }
 
+  const catalogsReady = integrationCatalogsReady({
+    catalogLoaded: catalogReady,
+    catalogFailed: !!catalogError,
+    pluginsLoaded: pluginsState !== "loading",
+    pluginsUnavailable: pluginsState === "partial",
+  });
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
@@ -265,6 +277,8 @@ export default function Integrations() {
     setCatalogReady(false);
     setSources([]);
     setPluginInstalls([]);
+    setPluginEntries([]);
+    setPluginsState("loading");
     setMcpServers([]);
     setMcpError(null);
     setDetailKey(null);
@@ -292,12 +306,14 @@ export default function Integrations() {
       clearStaleScope();
       return refresh();
     }
+    setPluginsState("loading");
     const previous = cacheScope.current;
     if (previous && (previous.userId !== scope.userId || previous.spaceId !== scope.spaceId)) {
       applySnapshot({ catalog: [], connections: [] });
       setCatalogReady(false);
       setSources([]);
       setPluginInstalls([]);
+      setPluginEntries([]);
       setMcpServers([]);
       setMcpError(null);
       setDetailKey(null);
@@ -507,18 +523,21 @@ export default function Integrations() {
     );
   }
 
-  function serverStatus(server: McpServer) {
-    return !server.enabled
-      ? t("Disabled")
-      : needsOAuthClient(server)
-        ? t("Needs an OAuth client ID")
-        : server.oauthStatus === "reconnect"
-          ? t("OAuth expired")
-          : server.oauthStatus === "connected"
-            ? t("OAuth connected")
-            : server.hasSecret
-              ? t("Credential saved")
-              : t("No auth");
+  function serverStatus(state: McpServerConnection): string {
+    switch (state) {
+      case "disabled":
+        return t("Disabled");
+      case "needs_client":
+        return t("Needs an OAuth client ID");
+      case "needs_sign_in":
+        return t("Needs sign-in");
+      case "not_working":
+        return t("Not working");
+      case "connected":
+        return t("Connected");
+      case "not_connected":
+        return t("Not connected");
+    }
   }
 
   function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
@@ -555,19 +574,51 @@ export default function Integrations() {
 
   /** What this account already has: apps it can reach, then skills it follows. */
   function renderSavedServer(server: McpServer) {
+    const state = mcpServerConnection(server);
+    const tokens = mobileTokens();
+    const warning = state === "needs_sign_in" || state === "needs_client";
+    const color =
+      state === "connected"
+        ? tokens.success
+        : warning
+          ? tokens.warning
+          : state === "not_working"
+            ? tokens.destructive
+            : native.secondaryLabel;
+    const symbol =
+      state === "connected"
+        ? { ios: "checkmark", android: "checkmark" as const }
+        : warning
+          ? { ios: "exclamationmark.triangle", android: "warning-outline" as const }
+          : state === "not_working"
+            ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
+            : null;
     const row = (
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
           {server.name}
         </Text>
-        <Text style={styles.secondary}>{serverStatus(server)}</Text>
+        <View style={styles.connectionStatus}>
+          {symbol ? (
+            <View
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <NativeSymbol {...symbol} size={14} color={color} />
+            </View>
+          ) : null}
+          <Text style={[styles.secondary, { color }]}>{serverStatus(state)}</Text>
+        </View>
         {server.enabled &&
+        state !== "connected" &&
+        state !== "needs_client" &&
         (server.oauthStatus === "reconnect" ||
           server.id === oauthServerId ||
-          (server.oauthClientId && server.oauthStatus !== "connected")) ? (
+          server.oauthClientId) ? (
           <NativeActionButton
-            label={t("Connect OAuth")}
+            label={server.oauthStatus === "reconnect" ? t("Reconnect") : t("Connect")}
             fill={false}
             busy={pending === `oauth:${server.id}`}
             onPress={() => void authorizeMcp(server.id)}
@@ -576,7 +627,7 @@ export default function Integrations() {
         ) : null}
       </View>
     );
-    if (!server.enabled || !needsOAuthClient(server)) return row;
+    if (state !== "needs_client") return row;
     return (
       <View key={server.id} style={styles.catalogStack}>
         {row}
@@ -610,7 +661,7 @@ export default function Integrations() {
                 servers.length === 1
                   ? t("1 connector")
                   : t("{count} connectors", { count: servers.length }),
-                !servers.every(mcpServerReady),
+                servers.some(mcpServerNeedsSignIn),
               );
             })}
             {standaloneServers.map(renderSavedServer)}
@@ -1194,14 +1245,16 @@ export default function Integrations() {
         actions={addOptions.map((option) => ({ id: option.id, title: option.label }))}
         onPressAction={({ nativeEvent }) => startAdding(nativeEvent.event as "github" | SourceKind)}
       >
-        <Pressable
+        {/* A plain view: on Android the menu opens from its own Pressable, which a
+            nested Pressable would take the touch from. */}
+        <View
+          accessible
           accessibilityRole="button"
           accessibilityLabel={t("Add custom")}
-          hitSlop={8}
           style={styles.addCustom}
         >
           <NativeSymbol ios="plus" android="add" size={20} />
-        </Pressable>
+        </View>
       </MenuView>
     );
   }
@@ -1437,7 +1490,7 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogReady && catalog.length === 0 ? (
+                {catalogsReady && catalog.length === 0 && plugins.length === 0 && !filtering ? (
                   <Text style={styles.secondary}>{t(EMPTY_PLUGIN_CATALOG_MESSAGE)}</Text>
                 ) : null}
 
@@ -1479,12 +1532,11 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogReady &&
+                {catalogsReady &&
                 catalogApps.length === 0 &&
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
-                pluginsState !== "loading" &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}
@@ -1523,6 +1575,7 @@ export default function Integrations() {
 function createIntegrationsStyles() {
   const destructive = mobileTokens().destructive;
   return StyleSheet.create({
+    connectionStatus: { flexDirection: "row", alignItems: "center", gap: 4 },
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 14 },
     explanation: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },
@@ -1620,6 +1673,6 @@ function createIntegrationsStyles() {
     },
     toolsBody: { gap: 8, paddingTop: 4 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { alignSelf: "flex-end", padding: 4 },
+    addCustom: { alignSelf: "flex-end", padding: 12 },
   });
 }

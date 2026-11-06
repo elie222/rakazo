@@ -170,7 +170,7 @@ export default function ArchivedBots() {
       Alert.alert(t("Could not load bot"), errorText(cause, t("Try again.")), [
         { text: t("Cancel"), style: "cancel" },
         {
-          text: t("Try again."),
+          text: t("Try again"),
           onPress: () => {
             if (generation === focusGeneration.current) void open(bot);
           },
@@ -186,7 +186,7 @@ export default function ArchivedBots() {
       <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
         {error}
       </Text>
-      <NativeActionButton label={t("Try again.")} onPress={() => void loadChats()} fill={false} />
+      <NativeActionButton label={t("Try again")} onPress={() => void loadChats()} fill={false} />
     </>
   ) : null;
   if (!bots?.length && !groups.length)

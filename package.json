@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "setup:worktree": "node scripts/setup-worktree.mjs",
     "gallery": "pnpm --filter @rakazo/web dev --open /e2e/fixtures/gallery.html",
     "build": "turbo build",
     "check": "turbo check",
@@ -22,7 +23,7 @@
     "sandbox:boxd-snapshot": "tsx packages/adapters/src/cli/build-boxd-snapshot.ts",
     "sandbox:novita-template": "tsx packages/adapters/src/cli/build-novita-template.ts",
     "sandbox:e2b-template": "tsx packages/adapters/src/cli/build-e2b-template.ts",
-    "test": "node --test scripts/pnpm.test.mjs && vitest run",
+    "test": "node --test scripts/pnpm.test.mjs scripts/setup-worktree.test.mjs && vitest run",
     "test:compose-smoke": "bash infra/compose/run-smokes.sh",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",
     "test:e2e": "tsx packages/testkit/src/cli/harness.ts --e2e",
@@ -74,11 +75,13 @@
       "@composio/core>undici": "7.30.1",
       "@electron/get>undici": "7.30.1",
       "e2b>undici": "7.30.1",
-      "e2b>undici8": "npm:undici@8.12.3"
+      "e2b>undici8": "npm:undici@8.12.3",
+      "joi@>=18 <18.3.1": "18.3.2"
     },
     "patchedDependencies": {
       "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
-      "dockerode@5.0.1": "patches/dockerode@5.0.1.patch"
+      "dockerode@5.0.1": "patches/dockerode@5.0.1.patch",
+      "fflate@0.8.3": "patches/fflate@0.8.3.patch"
     }
   }
 }

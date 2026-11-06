@@ -105,6 +105,7 @@ export const GroupAvatar = memo(function GroupAvatar({
       ))}
       {members.length > 3 ? (
         <div
+          // off-scale: count must fit the mini avatar dot
           className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-secondary border border-border text-[10px] font-semibold text-secondary-foreground shadow-md"
           style={{
             width: miniSize,

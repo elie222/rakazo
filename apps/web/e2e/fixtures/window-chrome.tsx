@@ -5,7 +5,10 @@ import { messages } from "../../src/locales/en/messages.po";
 import { WindowChrome } from "../../src/pages/WindowChrome";
 import "../../src/styles.css";
 
-const i18n = setupI18n({ locale: "en", messages: { en: messages } });
+const i18n = setupI18n({
+  locale: "en",
+  messages: { en: messages } as NonNullable<Parameters<typeof setupI18n>[0]>["messages"],
+});
 document.documentElement.dataset.theme = "dark";
 createRoot(document.getElementById("root")!).render(
   <I18nProvider i18n={i18n}>

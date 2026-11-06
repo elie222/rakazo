@@ -55,7 +55,10 @@ describe("built-in tool bridge", () => {
       "web_search",
       "write_file",
     ]);
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(31_200);
+    // request_secret carries the card and contact kinds; update_bot carries instructions paging;
+    // the history tools point at files from earlier messages; a watch says it takes no other timing;
+    // read_file takes a line range; ask_user carries the content being decided about.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_468);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

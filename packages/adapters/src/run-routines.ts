@@ -6,19 +6,21 @@ import {
   runContinueJob,
   TransientModelError,
 } from "@rakazo/adapter-kit";
+import { ROUTINE_WATCH_DEFAULT_MINUTES } from "@rakazo/contracts";
 import {
   displayName,
   expandSkillReferencesInPrompt,
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
+import { accountDeactivated } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
-import { tickRoutineWatch } from "./routine-watch.js";
+import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
 import { isUniqueViolation } from "./run-messages.js";
 import { notifyRun } from "./run-notifications.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
@@ -112,14 +114,51 @@ async function notifyFailedRoutineRun(
   );
 }
 
+/** The occurrence after `scheduledAt` for a timed routine; null once a one-time one has fired. */
+function nextScheduledRunAt(
+  routine: { crons: string[]; timezone: string },
+  scheduledAt: Date,
+): Date | null {
+  return isOneShotRoutineCrons(routine.crons)
+    ? null
+    : nextRoutineRunDateAcross(routine.crons, scheduledAt, new Date(Date.now()), routine.timezone);
+}
+
 export async function wakeRoutine(deps: ExecutorDeps, routineId: string, scheduledFor: string) {
   const scheduledAt = new Date(scheduledFor);
   if (!Number.isFinite(scheduledAt.getTime())) return;
   const routine = await deps.prisma.routine.findUnique({
     where: { id: routineId },
+    include: { space: { select: { deletingAt: true } } },
   });
-  if (!routine?.active || routine.nextRunAt?.getTime() !== scheduledAt.getTime()) return;
+  // A Space being deleted runs nothing; its routines resume if the deletion is called off.
+  if (
+    !routine?.active ||
+    routine.space?.deletingAt ||
+    routine.nextRunAt?.getTime() !== scheduledAt.getTime()
+  )
+    return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
+  if (await accountDeactivated(deps.prisma, routine.userId)) {
+    // A deactivated owner's routine skips this occurrence without running. A recurring or
+    // watching one keeps its schedule, so it runs again once the owner is back; a one-time
+    // one is spent. A watch that no longer parses keeps the default interval, so the normal
+    // path reports it once the owner is back.
+    const nextRunAt =
+      routine.watch == null
+        ? nextScheduledRunAt(routine, scheduledAt)
+        : nextRoutineWatchAt(
+            parseRoutineWatch(routine.watch) ?? { everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES },
+            new Date(Math.max(Date.now(), scheduledAt.getTime())),
+          );
+    const skipped = await deps.prisma.routine.updateMany({
+      where: { id: routine.id, active: true, nextRunAt: scheduledAt },
+      data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
+    });
+    if (skipped.count && nextRunAt)
+      await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+    return;
+  }
   const bot = await deps.prisma.bot.findUnique({
     where: { id: routine.botId },
     include: { thread: true },
@@ -167,27 +206,17 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   // legacy row accepted before cron validation was added) fires the
   // already-due run once, then nextRunAt stays null and the routine
   // pauses rather than crash-looping the wakeup job.
-  const nextRunAt = watchTick?.run
-    ? watchTick.nextRunAt
-    : isOneShotRoutineCrons(routine.crons)
-      ? null
-      : nextRoutineRunDateAcross(
-          routine.crons,
-          scheduledAt,
-          new Date(Date.now()),
-          routine.timezone,
-        );
+  const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);
   const skillRecords = await listAgentSkillRecords(deps.prisma, {
     spaceId: routine.spaceId,
     userId: routine.userId,
   });
-  const routinePrompt =
-    expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
-    (watchTick?.run ? watchTick.note : "");
   const claimed = await deps.prisma.$transaction(async (tx) => {
+    // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
     const updated = await tx.routine.updateMany({
       where: {
         id: routine.id,
+        userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
         bot: { archivedAt: null },
@@ -200,12 +229,18 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       },
     });
     if (updated.count !== 1) return null;
-    // The claim locks the row, so this is the model that was committed when it fired.
-    const currentModel = await tx.routine.findUnique({
+    // The claim locks the row, so the prompt and the model are the versions
+    // committed when it fired; a prompt edit that lands while the tick gathers
+    // its context must not pair with the newer model. Skill expansion runs on
+    // the already-loaded list.
+    const current = await tx.routine.findUnique({
       where: { id: routine.id },
-      select: { modelProvider: true, modelId: true, thinkingLevel: true },
+      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
     });
-    if (!currentModel) return null;
+    if (!current) return null;
+    const routinePrompt =
+      expandSkillReferencesInPrompt(current.prompt, skillRecords) +
+      (watchTick?.run ? watchTick.note : "");
     const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
     const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
     if (timerNonce) {
@@ -216,7 +251,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         threadId: thread.id,
         prompt: routinePrompt,
-        ...routineRunModelPin(currentModel),
+        ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
@@ -247,7 +282,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         trigger: "routine",
         routineId: routine.id,
         clientNonce: timerNonce,
-        ...routineRunModelPin(currentModel),
+        ...routineRunModelPin(current),
       },
     });
     return { ...run, coalesced: false };
@@ -347,6 +382,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       active: true,
       crons: true,
       nextRunAt: true,
+      userId: true,
       bot: { select: { archivedAt: true } },
     },
   });
@@ -361,8 +397,10 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     return;
   }
   // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+  // A routine someone else has since taken over must not retry on its former owner's accounts.
   if (
     !routine ||
+    routine.userId !== failed.userId ||
     (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
     routine.bot.archivedAt
   ) {
@@ -385,6 +423,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       const claimed = await tx.routine.updateMany({
         where: {
           id: failed.routineId!,
+          userId: failed.userId,
           active: routine.active,
           ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
           bot: { archivedAt: null },

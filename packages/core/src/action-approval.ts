@@ -33,11 +33,12 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
-  "delete_bot",
   "archive_bot",
   "secret_request",
   "forget_secret",
   "forget_memory",
+  // Permanent, and only for mail the bot received; its owner may still want it.
+  "delete_email",
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
@@ -48,8 +49,11 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "update_group",
   "create_child_routine",
   "feedback",
+  "send_email",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  // Permanent: the owner sees the exact address before it is theirs for good.
+  "claim_email_address",
   "respond_agent_connection",
   "create_space",
   "set_child_instructions",
@@ -64,6 +68,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_fleet",
   "list_secrets",
   "purchase_status",
+  "read_email",
   "read_file",
   "recall_memory",
   "request_takeover",
@@ -77,6 +82,8 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
+/** App slug before a hyphenated action: letters and digits, with at most one underscore. */
+const PLAIN_CONNECTOR_SLUG = /^[a-z0-9]+(?:_[a-z0-9]+)?$/;
 const MUTATING_CONNECTOR_PATTERN =
   /(^|[_-])(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)([_-]|$)/i;
 const COMPOUND_CONNECTOR_ACTION_PATTERN = /[_-](and|or|then)[_-]/i;
@@ -93,9 +100,19 @@ export function connectorKindFromToolName(toolName: string, connectorKinds: stri
   const normalizedTool = toolName.toLowerCase();
   const matched = connectorKinds
     .map((kind) => kind.toLowerCase())
-    .filter((kind) => normalizedTool === kind || normalizedTool.startsWith(`${kind}_`))
+    .filter(
+      (kind) =>
+        normalizedTool === kind ||
+        normalizedTool.startsWith(`${kind}_`) ||
+        normalizedTool.startsWith(`${kind}-`),
+    )
     .sort((left, right) => right.length - left.length)[0];
   if (matched) return matched;
+  const hyphen = normalizedTool.indexOf("-");
+  if (hyphen > 0) {
+    const slug = normalizedTool.slice(0, hyphen);
+    if (PLAIN_CONNECTOR_SLUG.test(slug)) return slug;
+  }
   const [segment] = toolName.split("_");
   return (segment ?? toolName).toLowerCase();
 }
@@ -206,14 +223,20 @@ export function unattendedTriggerToolRequiresApproval(
 /**
  * Tools whose results bring in nothing from outside during the run: confirmations of the bot's own
  * writes, the owner's answers, and the product's own saved state (memory, skills, history), which
- * is treated like the conversation already in context. Every other result (pages, search hits,
- * files, connector data, the screen, shell output, other bots) can carry text an attacker wrote,
- * and taints the run. New tools taint by default.
+ * is treated like the conversation already in context. save_page confirms the bot's own write; its
+ * read mode returns a page's stored source and taints the run in its handler. Every other result
+ * (pages, search hits, files, connector data, the screen, shell output, other bots) can carry text
+ * an attacker wrote, and taints the run. New tools taint by default.
  */
 const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
+  // Only confirms what the bot itself sent.
+  "send_email",
   "connect_app",
   "attach_file",
+  // Only confirms the bot's own address.
+  "claim_email_address",
+  "delete_email",
   "end_call",
   "feedback",
   "generate_secret",
@@ -226,6 +249,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "render_plot",
   "request_secret",
   "save_memory",
+  "save_page",
   "save_shared_memory",
   "schedule_cancel",
   "schedule_create",
@@ -625,4 +649,22 @@ export function isApprovalAskBlock(block: {
     actionIds.has("deny") &&
     [...actionIds].every((id) => id === "allow" || id === "always" || id === "deny")
   );
+}
+
+/**
+ * A payment receipt's page lines, leaving out any the page named like one of the card's own rows
+ * (`labels`, as the app words them), so merchant text never reads as the card's.
+ */
+export function receiptItems<Item extends { name: string }>(
+  items: readonly Item[],
+  labels: readonly string[],
+): Item[] {
+  const own = labels.map((label) => label.trim().toLocaleLowerCase()).filter(Boolean);
+  return items.filter((item) => {
+    const name = item.name.trim().toLocaleLowerCase();
+    // "Total" and "Total due" pose as the card's row; "Totally Oats" doesn't.
+    return !own.some(
+      (label) => name.startsWith(label) && !/^[\p{L}\p{N}]/u.test(name.slice(label.length)),
+    );
+  });
 }

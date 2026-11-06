@@ -30,7 +30,7 @@ import {
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
-import { modelIdSupportsImages } from "./model-vision.js";
+import { compatibleModelSeesImages } from "./model-vision.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
@@ -42,7 +42,8 @@ import {
   kickModelCredentialRefresh,
   parseModelSecret,
   persistStoredModelSecret,
-  resolveModelAuth,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
   retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
@@ -217,6 +218,7 @@ async function resolveModelKeyMaterial(
   maxImagesPerPrompt?: number;
   oauth?: AgentModelOAuthCredential;
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
+  refreshOAuth?: NonNullable<NonNullable<AgentRunRequest["model"]["oauth"]>["refresh"]>;
   retireOAuth?: (
     reason: ModelCredentialRetireReason,
     detail?: string,
@@ -257,7 +259,14 @@ async function resolveModelKeyMaterial(
         parseModelSecret(plaintext).maxTokens,
       );
       const resolveAuth = () =>
-        resolveModelAuth(plaintext, credential.provider, { persist, retire });
+        resolveStoredModelAuth(
+          deps.prisma,
+          deps.secretStore,
+          { userId, spaceId },
+          credential,
+          plaintext,
+          credential.provider,
+        );
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
       let liveCodex: Awaited<ReturnType<typeof codexLiveModel>> | undefined;
       const authError = validateModelAuthAvailability(provider, modelId, plaintext);
@@ -305,12 +314,7 @@ async function resolveModelKeyMaterial(
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
         resolved.secret.kind === "openai_compatible"
-          ? modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
-            // Legacy secrets have no per-model list, so keep their existing
-            // capability scoped to the model saved in the space preference.
-            (resolved.secret.visionModelIds === undefined &&
-              credential.supportsImages === true &&
-              credential.defaultModel?.trim() === modelId.trim())
+          ? compatibleModelSeesImages(credential, resolved.secret, modelId)
           : liveCodex?.supportsImages;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
@@ -369,6 +373,15 @@ async function resolveModelKeyMaterial(
               });
             }
           : undefined,
+        refreshOAuth: oauth
+          ? refreshStoredModelCredential(
+              deps.prisma,
+              deps.secretStore,
+              { userId, spaceId },
+              credential,
+              credential.provider,
+            )
+          : undefined,
         retireOAuth: retire,
         ownCredential: true,
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
@@ -405,6 +418,7 @@ export function resolvedModelRunFields(
       ? {
           credential: resolved.oauth,
           persist: resolved.persistOAuth,
+          refresh: resolved.refreshOAuth,
           retire: resolved.retireOAuth,
         }
       : undefined,
@@ -433,7 +447,7 @@ export async function resolveConnectedModelKey(
     scope,
     provider,
     modelId,
-    { hostedProvider, credentialId },
+    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
   );
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(
@@ -503,13 +517,10 @@ export async function resolveRunModel(
     botId?: string;
   },
 ): Promise<AgentRunRequest["model"]> {
+  // The bot's model is shared config; the credential that runs it stays the run user's.
   const override = scope.botId
     ? await deps.prisma.bot.findFirst({
-        where: {
-          id: scope.botId,
-          userId: scope.userId,
-          spaceId: scope.spaceId,
-        },
+        where: { id: scope.botId, spaceId: scope.spaceId },
         select: { modelProvider: true, modelId: true, thinkingLevel: true },
       })
     : null;

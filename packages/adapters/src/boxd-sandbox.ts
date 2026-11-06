@@ -38,7 +38,7 @@ import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -825,7 +825,7 @@ function boxdCwd(cwd: string | undefined): string {
 }
 
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */
-const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0%m\\0%s\\0'`;
+const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && ${workspaceSaveFindCommand()} -printf '%P\\0%m\\0%s\\0'`;
 
 function parseWorkspaceListing(
   listing: string,

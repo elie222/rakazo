@@ -36,6 +36,13 @@ import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { neutralizeSpeakerLabels } from "./history-speakers.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
+  COMPUTER_MODE_TOOLS,
+  computerSelection,
+  computerTarget,
+  computerTransitionTool,
+  restoreComputerModels,
+} from "./pi-runtime-computer-mode.js";
+import {
   assistantText,
   messageHasToolCall,
   modelFailure,
@@ -65,7 +72,9 @@ import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.
 import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { EventQueue, ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
 import {
+  agentToolDefinitions,
   describeToolActivity,
+  redactAskUserDetailInMessage,
   releaseToolCallBudget,
   toAgentTools,
   toolCallBudgetExceededMessage,
@@ -79,6 +88,8 @@ import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import { withoutThinkingFrom } from "./thinking-signatures.js";
+import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
@@ -222,6 +233,14 @@ export class PiAgentRuntime implements AgentRuntime {
       let trackedBudget: ToolCallBudget | undefined;
       let resumeHost: ToolHost | undefined;
       try {
+        const savedMode = request.turnCheckpoint
+          ? restoreTurnCheckpoint(request.turnCheckpoint, request.model).computerMode
+          : undefined;
+        // An executor that resolved the pinned models already passes them in.
+        if (savedMode && !request.computerModel) {
+          const pinned = await restoreComputerModels(request, savedMode);
+          request = { ...request, model: pinned.main, computerModel: pinned.computer };
+        }
         const selectedModel = resolveRuntimeModel(request.model);
         if (!selectedModel.model) {
           queue.push({
@@ -244,6 +263,21 @@ export class PiAgentRuntime implements AgentRuntime {
           apiKey,
           credentials: selectedModel.credentials,
         };
+        const computer = request.computerModel ? computerTarget(request.computerModel) : undefined;
+        let mode = savedMode?.mode ?? "main";
+        // Where the current computer-mode span began; a resumed span is not known, so it is all.
+        let computerFrom = 0;
+        // The last finished span, whose reasoning is not the main model's, even on the same model id.
+        let computerSpan: [number, number] | undefined;
+        let mainTarget = initialModelTarget;
+        let computerMode: ComputerModeCheckpoint | undefined = computer
+          ? {
+              version: 1,
+              mode,
+              main: computerSelection(request.model),
+              computer: computerSelection(computer.config),
+            }
+          : undefined;
         const host: ToolHost = {
           queue,
           context,
@@ -251,7 +285,8 @@ export class PiAgentRuntime implements AgentRuntime {
           onContextDecision: this.onContextDecision,
           modelCallObserver: this.modelCallObserver,
           request,
-          activeModel: initialModelTarget,
+          activeModel: mode === "computer" ? computer! : initialModelTarget,
+          computerModeAllowed: computer ? () => mode === "computer" : undefined,
           models,
           model: completionModel,
           apiKey,
@@ -267,7 +302,9 @@ export class PiAgentRuntime implements AgentRuntime {
           modelResponses: 0,
         };
         resumeHost = host;
-        const tools = toAgentTools(toolDefs, host);
+        const allTools = toAgentTools(toolDefs, host);
+        const toolsByAgentName = agentToolDefinitions(toolDefs);
+        let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         let hasCurrentImages = Boolean(
@@ -276,11 +313,12 @@ export class PiAgentRuntime implements AgentRuntime {
             initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
+        // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
-          ? restoreTurnCheckpoint(request.turnCheckpoint, {
-              provider: model.provider,
-              id: model.id,
-            })
+          ? restoreTurnCheckpoint(
+              request.turnCheckpoint,
+              mode === "computer" && computer ? computer.model : model,
+            )
           : undefined;
         const history =
           restored?.messages ??
@@ -336,9 +374,13 @@ export class PiAgentRuntime implements AgentRuntime {
               botId: request.botId,
               userId: context.userId,
               traceId: context?.traceId,
-              provider: model.provider,
-              model: model.id,
-              thinkingLevel,
+              // A resumed computer-mode turn starts on the computer model.
+              provider: host.activeModel.model.provider,
+              model: host.activeModel.model.id,
+              thinkingLevel: thinkingLevelFor(
+                host.activeModel.model,
+                host.activeModel.config.thinkingLevel,
+              ),
               systemPrompt,
               initialMessages: history,
             });
@@ -388,7 +430,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let activeStreamTarget = host.activeModel;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
-        const fallbackState: FallbackStreamState = {
+        let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
           signal,
@@ -447,9 +489,13 @@ export class PiAgentRuntime implements AgentRuntime {
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
             host.activeModel = target;
+            // A backup keeps its own effort.
             const nextThinkingLevel = thinkingLevelFor(
               target.model,
-              target.config.thinkingLevel ?? request.model.thinkingLevel,
+              target.config.thinkingLevel ??
+                (sameModelTarget(target.config, request.model)
+                  ? request.model.thinkingLevel
+                  : undefined),
             );
             agent.state.model = target.model;
             agent.state.thinkingLevel = nextThinkingLevel;
@@ -458,6 +504,96 @@ export class PiAgentRuntime implements AgentRuntime {
             host.apiKey = target.credentials?.accessToken ?? target.apiKey;
           },
         };
+        const mainFallbackState = fallbackState;
+        const computerFallbackState: FallbackStreamState | undefined = computer
+          ? {
+              ...fallbackState,
+              request: { ...request, model: computer.config, fallbackModels: [] },
+              attempted: new Set(),
+              backupOutcomes: new Map(),
+            }
+          : undefined;
+        const setTarget = (target: RuntimeModelTarget) => {
+          // Keep message origin metadata: Pi's per-provider serializers translate foreign
+          // reasoning signatures and tool/result IDs together, including after resume.
+          activeStreamTarget = target;
+          host.activeModel = target;
+          host.models = target.models;
+          host.model = target.model;
+          host.apiKey = target.credentials?.accessToken ?? target.apiKey;
+          contextPolicy = contextPolicyFor(target);
+          if (agent) {
+            agent.state.model = target.model;
+            agent.state.thinkingLevel = thinkingLevelFor(target.model, target.config.thinkingLevel);
+          }
+        };
+        const modeTools = () => {
+          if (!computer) return allTools;
+          const transition = computerTransitionTool(
+            mode,
+            async () => {
+              const next = mode === "main" ? computer : mainTarget;
+              await request.onModelChange?.(
+                next.config.provider,
+                next.config.id,
+                next === computer,
+              );
+              signal.throwIfAborted();
+              if (mode === "main") {
+                mainTarget = {
+                  ...activeStreamTarget,
+                  config: {
+                    ...activeStreamTarget.config,
+                    thinkingLevel: agent.state.thinkingLevel,
+                  },
+                };
+                mode = "computer";
+                computerFrom = agent.state.messages.length;
+                fallbackState = computerFallbackState!;
+                setTarget(computer);
+              } else {
+                mode = "main";
+                computerSpan = [computerFrom, agent.state.messages.length];
+                fallbackState = mainFallbackState;
+                setTarget(mainTarget);
+              }
+              computerMode = {
+                version: 1,
+                mode,
+                main: computerSelection(mainTarget.config),
+                computer: computerSelection(computer.config),
+              };
+              if (mode === "computer")
+                fallbackState.messagesBeforeSwitch = agent.state.messages.length;
+              tools = modeTools();
+              agent.state.tools = tools;
+            },
+            signal,
+          );
+          if (
+            allTools.some((tool) =>
+              ["enter_computer_mode", "leave_computer_mode"].includes(tool.name),
+            )
+          )
+            throw new Error("Computer mode tool name collision");
+          return [
+            ...allTools.filter(
+              (tool) => mode === "computer" || !COMPUTER_MODE_TOOLS.has(tool.label),
+            ),
+            transition,
+          ];
+        };
+        tools = modeTools();
+        if (computer) {
+          fallbackState = mode === "computer" ? computerFallbackState! : mainFallbackState;
+          setTarget(activeStreamTarget);
+          if (savedMode)
+            await request.onModelChange?.(
+              activeStreamTarget.config.provider,
+              activeStreamTarget.config.id,
+              mode === "computer",
+            );
+        }
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
@@ -467,9 +603,10 @@ export class PiAgentRuntime implements AgentRuntime {
               ctx,
               withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
             ),
-          getApiKey: hasBackups
-            ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
-            : async () => apiKey,
+          getApiKey:
+            hasBackups || computer
+              ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
+              : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
               (text) => {
@@ -484,14 +621,31 @@ export class PiAgentRuntime implements AgentRuntime {
               turnSignal,
             );
           },
-          prepareNextTurnWithContext: async () => {
-            if (!request.claimSteering) return undefined;
+          prepareNextTurnWithContext: async (turn) => {
+            const update = computer
+              ? {
+                  context: {
+                    ...turn.context,
+                    tools,
+                    messages:
+                      mode === "main" && computerSpan
+                        ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
+                        : turn.context.messages,
+                  },
+                  model: activeStreamTarget.model,
+                  thinkingLevel: thinkingLevelFor(
+                    activeStreamTarget.model,
+                    activeStreamTarget.config.thinkingLevel,
+                  ),
+                }
+              : undefined;
+            if (!request.claimSteering) return update;
             // The turn is ending at a terminating result that aborted the agent; no
             // model request would answer a follow-up claimed now, and a completed run
             // deletes its claimed steering. Leave the message queued for the next run.
-            if (terminatedReply && !host.pausePending) return undefined;
+            if (terminatedReply && !host.pausePending) return update;
             const steering = await request.claimSteering([...seenSteeringIds]);
-            if (steering.length === 0) return undefined;
+            if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
@@ -516,12 +670,14 @@ export class PiAgentRuntime implements AgentRuntime {
               type: "steered",
               fromRunUser: steering.some((item) => item.origin === "user"),
             });
-            return undefined;
+            return update;
           },
           initialState: {
             systemPrompt,
-            model: completionModel,
-            thinkingLevel,
+            model: activeStreamTarget.model,
+            thinkingLevel: computer
+              ? thinkingLevelFor(activeStreamTarget.model, activeStreamTarget.config.thinkingLevel)
+              : thinkingLevel,
             tools,
             messages: history,
           },
@@ -550,6 +706,16 @@ export class PiAgentRuntime implements AgentRuntime {
               ));
           const checkpoint = {
             version: 1 as const,
+            ...(computerMode
+              ? {
+                  computerMode: {
+                    ...computerMode,
+                    main: computerSelection(
+                      mode === "main" ? activeStreamTarget.config : mainTarget.config,
+                    ),
+                  },
+                }
+              : {}),
             provider: activeStreamTarget.model.provider,
             model: activeStreamTarget.model.id,
             systemPrompt,
@@ -632,6 +798,9 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end") {
             stopThinking();
+            // Before any copy is kept: the recording below, and the checkpoint and provider
+            // payloads that reuse this same message object.
+            redactAskUserDetailInMessage(event.message, request.secrets);
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
@@ -644,7 +813,9 @@ export class PiAgentRuntime implements AgentRuntime {
             toolActivityShowing = true;
             queue.push({
               type: "progress",
-              text: describeToolActivity(event.toolName, event.args),
+              text: describeToolActivity(event.toolName, event.args, (name) =>
+                toolsByAgentName.get(name),
+              ),
               activity: true,
             });
           }
@@ -1125,7 +1296,8 @@ function speakerText(speaker: string, text: string): string {
 /**
  * Replays stored messages with their real roles. This bot's own replies are assistant turns;
  * a message with a `speaker` (another bot, or the human in a group) is a user turn that starts
- * with "[speaker]: ". The label exists only here: it is never stored or shown in the app.
+ * with "[speaker]: ". A system line (a stop or expiry note) is a user turn that starts with
+ * "System note: ". These labels exist only here: they are never stored or shown in the app.
  * Content is a pure function of the message, so replayed history is stable for prompt caching.
  */
 function toHistory(
@@ -1148,41 +1320,45 @@ function toHistory(
     duplicatePromptIndex < 0
       ? history
       : history.filter((_, index) => index !== duplicatePromptIndex);
-  return prior
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .flatMap((m): HistoryMessage[] => {
-      const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
-      const common = {
-        timestamp: Number.isNaN(created) ? 0 : created,
-        rakazoHistory: true as const,
-        rakazoMessageId: m.id,
-        rakazoCreatedAt: m.createdAt,
-      };
-      if (m.role === "assistant" && !m.speaker) {
-        // A reply that holds only tool work has no text to replay.
-        if (!m.content.trim()) return [];
-        return [
-          {
-            role: "assistant" as const,
-            content: [{ type: "text" as const, text: m.content }],
-            ...HISTORY_ASSISTANT,
-            usage: NO_USAGE,
-            stopReason: "stop" as const,
-            ...common,
-          },
-        ];
-      }
-      const text = m.speaker ? speakerText(m.speaker, m.content) : m.content;
-      // Pictures ride on the human's turn only, never on a bot's.
-      const images = m.role === "assistant" ? [] : toPiImages(m.images);
+  return prior.flatMap((m): HistoryMessage[] => {
+    const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
+    const common = {
+      timestamp: Number.isNaN(created) ? 0 : created,
+      rakazoHistory: true as const,
+      rakazoMessageId: m.id,
+      rakazoCreatedAt: m.createdAt,
+    };
+    if (m.role === "assistant" && !m.speaker) {
+      // A reply that holds only tool work has no text to replay.
+      if (!m.content.trim()) return [];
       return [
         {
-          role: "user" as const,
-          content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: m.content }],
+          ...HISTORY_ASSISTANT,
+          usage: NO_USAGE,
+          stopReason: "stop" as const,
           ...common,
         },
       ];
-    });
+    }
+    if (m.role === "system" && !m.content.trim()) return [];
+    const text =
+      m.role === "system"
+        ? `System note: ${neutralizeSpeakerLabels(m.content)}`
+        : m.speaker
+          ? speakerText(m.speaker, m.content)
+          : m.content;
+    // Pictures ride on the human's turn only, never on a bot's.
+    const images = m.role === "assistant" ? [] : toPiImages(m.images);
+    return [
+      {
+        role: "user" as const,
+        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+        ...common,
+      },
+    ];
+  });
 }
 
 function isHistoryReply(message: Message | undefined): boolean {

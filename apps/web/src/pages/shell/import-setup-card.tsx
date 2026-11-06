@@ -79,7 +79,7 @@ export function ImportSetupCard({
       <BuiCard
         data-testid="import-setup-card"
         data-complete="true"
-        className="w-[420px] max-w-full px-[18px] py-[14px] text-[14px] text-foreground"
+        className="w-[420px] max-w-full px-[18px] py-[14px] text-body text-foreground"
       >
         <SuccessPop label={t`Setup complete`} />
       </BuiCard>
@@ -88,7 +88,7 @@ export function ImportSetupCard({
 
   return (
     <BuiCard data-testid="import-setup-card" className="w-[420px] max-w-full px-[18px] py-[14px]">
-      <p className="text-[15.5px] text-foreground/90">
+      <p className="text-body-lg text-foreground/90">
         <Trans>Finish setting up</Trans>
       </p>
       <ul className="mt-2 divide-y divide-border">
@@ -116,13 +116,10 @@ export function ImportSetupCard({
               className="flex min-h-11 items-center gap-3 py-1.5"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] text-foreground" dir="auto">
+                <p className="truncate text-body text-foreground" dir="auto">
                   {name}
                 </p>
-                <p
-                  className="flex flex-wrap gap-x-2 text-[12.5px] text-muted-foreground"
-                  dir="auto"
-                >
+                <p className="flex flex-wrap gap-x-2 text-body-sm text-muted-foreground" dir="auto">
                   <span>{detail}</span>
                   {isVerifiable(item) ? null : <span>{t`Check this yourself`}</span>}
                 </p>

@@ -10,8 +10,39 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class RakazoNotificationsModule : Module() {
+  private var incomingReceiver: android.content.BroadcastReceiver? = null
   override fun definition() = ModuleDefinition {
     Name("RakazoNotifications")
+    Constants("supportsSenderAvatars" to true)
+    Events("onIncomingCallChanged")
+    OnStartObserving {
+      val receiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) { sendEvent("onIncomingCallChanged", emptyMap<String, String>()) }
+      }
+      incomingReceiver = receiver
+      val filter = android.content.IntentFilter(IncomingCalls.CHANGED)
+      if (Build.VERSION.SDK_INT >= 33) context().registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      else context().registerReceiver(receiver, filter)
+    }
+    OnStopObserving {
+      incomingReceiver?.let { context().unregisterReceiver(it) }
+      incomingReceiver = null
+    }
+
+    AsyncFunction("configureIncomingSession") { endpoint: String, headers: Map<String, String> ->
+      if (!isAllowedNotificationEndpoint(endpoint)) throw IllegalArgumentException("Invalid notification endpoint")
+      val storage = NotificationStorage(context())
+      storage.endpoint = endpoint
+      storage.token = headers["authorization"]?.removePrefix("Bearer ") ?: ""
+      storage.headers = org.json.JSONObject(headers.filterKeys { it.lowercase() != "authorization" && it.lowercase() != "x-rakazo-space-id" }).toString()
+    }
+    AsyncFunction("reportIncomingCall") { call: Map<String, String> ->
+      IncomingCalls.report(context(), org.json.JSONObject(call), fromApp = true)
+    }
+    AsyncFunction("endIncomingCall") { id: String -> IncomingCalls.end(context(), id) }
+    AsyncFunction("finishAnswer") { id: String, success: Boolean -> IncomingCalls.end(context(), id) }
+    AsyncFunction("clearIncomingCalls") { IncomingCalls.clear(context()) }
+    AsyncFunction("incomingState") { mapOf("token" to "", "actions" to IncomingCalls.take(context()), "ringing" to IncomingCalls.ringing(context())) }
 
     AsyncFunction("getSettings") {
       NotificationStorage(context()).settings.toMap()

@@ -331,7 +331,8 @@ async function prepareChildRoutine(
   if (hidden) return refuse(hidden);
   const namedRoutine = CreateRoutineInput.shape.name.safeParse(name);
   if (!namedRoutine.success) return refuse(`name: ${issueMessage(namedRoutine.error)}`);
-  const timezone = text(args.timezone) ?? (await userTimeZone(deps.prisma, run.userId));
+  const namedTimezone = text(args.timezone);
+  const timezone = namedTimezone ?? (await userTimeZone(deps.prisma, run.userId));
   if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }
@@ -363,6 +364,10 @@ async function prepareChildRoutine(
       name,
       prompt,
       timezone,
+      // A zone the bot did not name is the account's, re-read when the approved routine
+      // is created, so a zone change between approval and creation does not strand the
+      // routine in the old zone.
+      ...(namedTimezone === undefined ? { timezoneFromAccount: true } : {}),
       // A one-shot keeps its absolute time so a delay is not measured again at approval,
       // and a delayed repeat keeps its first run.
       schedule: resolved.oneShot
@@ -512,7 +517,7 @@ export async function listFleet(
     }),
     visibleGroups(prisma, run),
     prisma.botSection.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId },
+      where: { spaceId: run.spaceId },
       select: { name: true },
       orderBy: { position: "asc" },
       take: FLEET_SECTION_LIMIT + 1,
@@ -522,7 +527,7 @@ export async function listFleet(
   // Only the listed bots need the creator flag, so this read is bounded by the bot cap.
   const children = await prisma.bot.findMany({
     where: {
-      ...createdByWhere({ botId: run.botId, userId: run.userId, spaceId: run.spaceId }),
+      ...createdByWhere({ botId: run.botId, spaceId: run.spaceId }),
       archivedAt: null,
       id: { in: listedBots.map((bot) => bot.id) },
     },
@@ -573,7 +578,7 @@ async function visibleGroups(prisma: PrismaClient, run: FleetRun): Promise<Fleet
   let cursor: string | undefined;
   for (;;) {
     const page = await prisma.chatGroup.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { spaceId: run.spaceId, archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -701,7 +706,7 @@ export async function createFleetGroup(
   const { name, botIds } = parsed.data;
   const wanted = new Set(botIds);
   const sameName = await deps.prisma.chatGroup.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null, name },
+    where: { spaceId: run.spaceId, archivedAt: null, name },
     select: {
       id: true,
       name: true,
@@ -1003,6 +1008,14 @@ export async function createChildRoutine(
   const runAt = text(schedule.runAt);
   const cron = runAt ? ONCE_ROUTINE_CRON : text(schedule.cron);
   if (!cron) return { error: "The approved routine is incomplete." };
+  // A zone that came from the account is re-read under the account lock at creation,
+  // not replayed from the approval. The identical-routine lookup filters on the
+  // account's current zone for such routines — the move keeps them on it — instead of
+  // the approval's zone, which would miss a routine created or moved since, or no zone
+  // at all, which would also match an unrelated pinned routine.
+  const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
+  const replayTimezone =
+    pinnedTimezone === undefined ? await userTimeZone(deps.prisma, run.userId) : pinnedTimezone;
   const existing = await deps.prisma.routine.findFirst({
     where: {
       spaceId: run.spaceId,
@@ -1011,7 +1024,7 @@ export async function createChildRoutine(
       threadId: child.thread.id,
       name,
       prompt,
-      timezone,
+      timezone: replayTimezone,
       crons: { equals: [cron] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
@@ -1038,7 +1051,7 @@ export async function createChildRoutine(
     target: { botId: child.id, threadId: child.thread.id },
     name,
     prompt,
-    timezone,
+    ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
   });
   return "error" in created ? created : { ...created, ...target };
@@ -1151,7 +1164,7 @@ async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<stri
   );
 }
 
-/** One active group of the user, by `group_id` or exact `group_name`. Groups have no creator. */
+/** One active group of the space, by `group_id` or exact `group_name`. Groups have no creator. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);
   const name = text(args.group_name);
@@ -1160,7 +1173,6 @@ async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<st
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: run.spaceId,
-      userId: run.userId,
       archivedAt: null,
       ...(id ? { id } : { name }),
     },
@@ -1310,7 +1322,7 @@ export async function updateOwnBotFromTool(
     loadArtifact: async (id) => {
       if (!deps.artifacts) return null;
       const row = await deps.prisma.artifact.findFirst({
-        where: { id, spaceId: run.spaceId, userId: run.userId },
+        where: { id, spaceId: run.spaceId },
         select: { mimeType: true, storageKey: true },
       });
       if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;

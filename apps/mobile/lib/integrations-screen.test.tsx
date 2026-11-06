@@ -52,7 +52,9 @@ vi.mock("./mcp-oauth", async (importOriginal) => ({
   ...(await importOriginal<typeof McpOAuth>()),
   signInToMcpServer: vi.fn(async () => "connected"),
 }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
+vi.mock("./appearance", () => ({
+  mobileTokens: () => ({ destructive: "red", success: "green", warning: "orange" }),
+}));
 vi.mock("./native", () => ({
   native: {},
   useResolvedAppearance: () => "light",
@@ -83,7 +85,11 @@ vi.mock("@expo/ui/community/menu", () => ({
     </div>
   ),
 }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ ios, color }: { ios: string; color: string }) => (
+    <span data-symbol={ios} data-color={color} />
+  ),
+}));
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   useI18n: () => ({ t: (text: string) => text }),
@@ -491,6 +497,54 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
   );
 });
 
+it("keeps loaded plugins out of a loading state when scope lookup fails on refresh", async () => {
+  await render();
+  await act(async () => resolveCatalog([item]));
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  state.focused = false;
+  await render();
+  state.scope.mockRejectedValue(new Error("Scope unavailable"));
+  state.focused = true;
+  await render();
+  expect(container.textContent).toContain("Scope unavailable");
+  expect(container.textContent).toContain("Retry");
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  expect(state.marketplace).toHaveBeenCalledTimes(1);
+});
+
+it.each([true, false])(
+  "waits for new plugins after a scope switch with a cached empty catalog (stale scope: %s)",
+  async (staleScope) => {
+    const guidance = "Configure a plugin catalog on the server to connect apps.";
+    await render();
+    await act(async () => resolveCatalog([]));
+    expect(container.textContent).toContain(guidance);
+    state.focused = false;
+    await render();
+    state.current = !staleScope;
+    state.scope.mockImplementation(async () => {
+      state.current = true;
+      return { userId: "user-a", spaceId: "space-b" };
+    });
+    state.read.mockReturnValue({ catalog: [], connections: [] });
+    let finishPlugins!: (value: unknown) => void;
+    state.marketplace.mockReturnValue(
+      new Promise((resolve) => {
+        finishPlugins = resolve;
+      }),
+    );
+    state.rpc.mockResolvedValue([]);
+    state.focused = true;
+    await render();
+    expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
+    expect(container.textContent).not.toContain(guidance);
+    await act(async () =>
+      finishPlugins({ entries: [], unavailableRegistries: [], skippedEntries: 0 }),
+    );
+    expect(container.textContent).toContain(guidance);
+  },
+);
+
 it("refreshes a different space on focus return and rejects the blurred refresh", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });
   await render();
@@ -627,7 +681,13 @@ it("shows registered MCP servers with connector initials and sentence case statu
   state.rpc.mockImplementation((proc: string) =>
     proc === "mcp/servers/list"
       ? Promise.resolve([
-          { id: "saved", name: "Saved server", enabled: true, hasSecret: true, health: {} },
+          {
+            id: "saved",
+            name: "Saved server",
+            enabled: true,
+            hasSecret: true,
+            health: { status: "ok" },
+          },
           { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
           {
             id: "client",
@@ -635,18 +695,44 @@ it("shows registered MCP servers with connector initials and sentence case statu
             enabled: true,
             hasSecret: false,
             oauthClientId: null,
+            // Signing in again can't help until a client ID is entered.
+            oauthStatus: "reconnect",
             health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+          },
+          { id: "broken", name: "Broken server", enabled: true, health: { status: "error" } },
+          {
+            id: "expired",
+            name: "Expired server",
+            enabled: true,
+            oauthStatus: "reconnect",
+            health: { status: "ok" },
           },
         ])
       : fallback?.(proc),
   );
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
-  expect(rows).toHaveLength(3);
-  expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
-  expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
-  expect(rows[2]?.textContent).toBe("CClient serverNeeds an OAuth client ID");
-  for (const row of rows) expect(row.querySelector("button")).toBeNull();
+  expect([...rows].map((row) => row.textContent)).toEqual([
+    "SSaved serverConnected",
+    "OOpen serverNot connected",
+    "CClient serverNeeds an OAuth client ID",
+    "BBroken serverNot working",
+    "EExpired serverNeeds sign-inReconnect",
+  ]);
+  for (const row of [...rows].slice(0, 4)) expect(row.querySelector("button")).toBeNull();
+  expect(rows[0]?.querySelector('[data-symbol="checkmark"]')?.getAttribute("data-color")).toBe(
+    "green",
+  );
+  expect(rows[1]?.querySelector("[data-symbol]")).toBeNull();
+  expect(
+    rows[2]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
+  ).toBe("orange");
+  expect(
+    rows[3]?.querySelector('[data-symbol="exclamationmark.circle"]')?.getAttribute("data-color"),
+  ).toBe("red");
+  expect(
+    rows[4]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
+  ).toBe("orange");
 
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
   await act(async () => {
@@ -657,7 +743,7 @@ it("shows registered MCP servers with connector initials and sentence case statu
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
   const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
-  expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverCredential saved"]);
+  expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
   expect(container.textContent).not.toContain("No apps match your search.");
 });
 
@@ -798,6 +884,80 @@ it("lists a plugin connector under Apps, with its servers kept under the plugin"
   expect(container.querySelectorAll('[data-testid="registered-mcp-server"]')).toHaveLength(0);
 });
 
+it.each([
+  ["signed in", { oauthStatus: "connected", health: { status: "ok" } }, ""],
+  ["signed in with a failed check", { oauthStatus: "connected", health: { status: "error" } }, ""],
+  [
+    "never signed in with a failed check",
+    { oauthStatus: "none", health: { status: "error" } },
+    "Sign in",
+  ],
+  ["disabled", { oauthStatus: "connected", enabled: false }, ""],
+  [
+    "signed out after an ok check",
+    { oauthStatus: "reconnect", health: { status: "ok" } },
+    "Sign in",
+  ],
+])(
+  "offers Sign in on a plugin whose connector is %s only when it needs one",
+  async (_, change, action) => {
+    state.marketplace.mockResolvedValue({
+      entries: [plugin],
+      unavailableRegistries: [],
+      skippedEntries: 0,
+    });
+    const fallback = state.rpc.getMockImplementation();
+    state.rpc.mockImplementation((proc: string) =>
+      proc === "capabilities/list"
+        ? Promise.resolve([
+            {
+              id: "install-a",
+              kind: "plugin",
+              name: "calcom",
+              source: plugin.installedSource,
+              config: {
+                format: "grok",
+                name: "calcom",
+                version: null,
+                description: "",
+                author: null,
+                homepage: null,
+                repository: null,
+                license: null,
+                keywords: [],
+                resolvedSha: "a".repeat(40),
+                digest: `sha256:${"b".repeat(64)}`,
+                skills: [
+                  { name: "book", description: "" },
+                  { name: "cancel", description: "" },
+                ],
+                mcpServers: [],
+                skipped: [],
+              },
+            },
+          ])
+        : proc === "mcp/servers/list"
+          ? Promise.resolve([
+              {
+                id: "owned",
+                installId: "install-a",
+                name: "calcom: calcom",
+                enabled: true,
+                hasSecret: false,
+                health: { status: "unknown" },
+                ...change,
+              },
+            ])
+          : fallback?.(proc),
+    );
+    await render();
+    await act(async () => resolveCatalog([item]));
+    expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
+      `AppsCCalcom1 connector${action}`,
+    );
+  },
+);
+
 async function openMcpSource() {
   await render();
   await act(async () => resolveCatalog([]));
@@ -847,9 +1007,24 @@ it("saves native MCP API key auth as a named encrypted header", async () => {
 
 it("registers an OAuth MCP server, signs in, and reads the servers again", async () => {
   const fallback = state.rpc.getMockImplementation();
+  let signedIn = false;
+  vi.mocked(signInToMcpServer).mockImplementationOnce(async () => {
+    signedIn = true;
+    return "connected";
+  });
   state.rpc.mockImplementation((proc: string, args: unknown) => {
     if (proc === "mcp/servers/create")
       return Promise.resolve({ id: "oauth-server", name: "Test", enabled: true });
+    if (proc === "mcp/servers/list")
+      return Promise.resolve([
+        {
+          id: "oauth-server",
+          name: "Test",
+          enabled: true,
+          oauthStatus: signedIn ? "connected" : "none",
+          health: { status: signedIn ? "ok" : "unknown" },
+        },
+      ]);
     return fallback?.(proc, args);
   });
   await openMcpSource();
@@ -871,9 +1046,11 @@ it("registers an OAuth MCP server, signs in, and reads the servers again", async
     }),
   );
   expect(signInToMcpServer).toHaveBeenCalledWith("oauth-server");
+  const row = () => container.querySelector('[data-testid="registered-mcp-server"]');
   expect(
     state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
   ).toBeGreaterThan(initialReads);
+  expect(row()?.textContent).toBe("TTestConnected");
 });
 
 it("finds a server on integrations.sh and connects it by signing in", async () => {
@@ -1169,7 +1346,7 @@ it("shows a saved client as saved when the sign-in after it fails", async () => 
   expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).toBeNull();
   expect(container.textContent).not.toContain("Needs an OAuth client ID");
   const row = container.querySelector('[data-testid="registered-mcp-server"]');
-  expect(row?.querySelector("button")?.textContent).toBe("Connect OAuth");
+  expect(row?.querySelector("button")?.textContent).toBe("Connect");
 });
 
 it("shows a catalog server added before its sign-in was cancelled", async () => {
@@ -1271,7 +1448,7 @@ it("shows the client form when a sign-in finds the provider needs one", async ()
 
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((node) => node.textContent === "Connect OAuth")
+      .find((node) => node.textContent === "Reconnect")
       ?.click(),
   );
 

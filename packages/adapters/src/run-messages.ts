@@ -39,12 +39,15 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
     if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
       return { ...block, text: redactSecrets(block.text, secrets) };
     }
+    if (block.kind === "page") return { ...block, title: redactSecrets(block.title, secrets) };
     if (block.kind === "steps") {
       return {
         ...block,
-        steps: block.steps.map((step) =>
-          step.note === undefined ? step : { ...step, note: redactSecrets(step.note, secrets) },
-        ),
+        steps: block.steps.map((step) => ({
+          ...step,
+          label: redactSecrets(step.label, secrets),
+          ...(step.note === undefined ? {} : { note: redactSecrets(step.note, secrets) }),
+        })),
       };
     }
     return block;

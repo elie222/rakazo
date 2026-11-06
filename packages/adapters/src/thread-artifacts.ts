@@ -13,9 +13,11 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
+  HISTORY_ATTACHMENTS_PER_RESPONSE,
+  MCP_APP_MIME_TYPE,
 } from "@rakazo/contracts";
 import {
-  attachmentExtensionForMimeType,
+  attachmentComputerPath,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
@@ -80,7 +82,6 @@ export async function attachWorkspaceFileToThread(
     deps.prisma,
     {
       spaceId: input.spaceId,
-      userId: input.userId,
       botId: input.botId,
       groupId: input.groupId,
       name,
@@ -131,7 +132,6 @@ async function attachedArtifacts(
     where: {
       id: { in: blocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
   });
   return new Map(rows.map((row) => [row.id, row]));
@@ -144,7 +144,7 @@ function threadFileMetadata(
     name: row.name,
     mimeType: row.mimeType,
     size: row.size,
-    path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
+    path: attachmentComputerPath(row.id, row.mimeType),
   };
 }
 
@@ -245,18 +245,73 @@ export async function materializeRecentThreadFiles(
     maxTurns: number;
   },
 ): Promise<MaterializedThreadFile[]> {
+  // Every computer start copies these again, so they need no checkpoint.
+  return materializeEarlierFiles(
+    deps,
+    recentAttachmentBlocks(history, messages, input),
+    { ...input, markWorkspaceDirty: undefined },
+    ATTACHMENT_MAX_COUNT,
+  );
+}
+
+/** Earlier files waiting to be copied at once: one full history response; older listings give way. */
+export const EARLIER_FILES_PENDING = HISTORY_ATTACHMENTS_PER_RESPONSE;
+
+/**
+ * Files history tools listed since the last computer tool, newest kept. A file copied to the
+ * current computer is not queued again; one whose copy failed is, the next time it is listed.
+ */
+export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
+  type FileBlock = Extract<MessageBlock, { kind: "file" | "image" }>;
+  let pending: FileBlock[] = [];
+  let copied = new Set<string>();
+  return {
+    add(files: ReadonlyArray<FileBlock>) {
+      for (const file of files) {
+        if (copied.has(file.artifactId)) continue;
+        pending = pending.filter((queued) => queued.artifactId !== file.artifactId);
+        pending.push(file);
+      }
+      if (pending.length > limit) {
+        getLogger().warn("earlier files not copied: newer listings replaced them");
+        pending = pending.slice(-limit);
+      }
+    },
+    take() {
+      const taken = pending;
+      pending = [];
+      return taken;
+    },
+    /** Record which taken files reached the computer, by the paths the copy returned. */
+    copiedTo(taken: ReadonlyArray<FileBlock>, files: ReadonlyArray<MaterializedThreadFile>) {
+      const paths = new Set(files.map((file) => file.path));
+      for (const file of taken)
+        if (paths.has(attachmentComputerPath(file.artifactId, file.mimeType)))
+          copied.add(file.artifactId);
+    },
+    /** A newly started computer has none of the earlier copies. */
+    computerStarted() {
+      copied = new Set();
+    },
+  };
+}
+
+/**
+ * Copy files from earlier messages onto the computer, keeping copies already there. Each
+ * file that cannot be copied is logged and skipped so it never blocks the tool that asked.
+ * A new copy marks the workspace dirty when the caller passes markWorkspaceDirty.
+ */
+export async function materializeEarlierFiles(
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0],
+  blocks: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>,
+  input: Parameters<typeof materializeCurrentTurnFiles>[2],
+  limit = Number.POSITIVE_INFINITY,
+): Promise<MaterializedThreadFile[]> {
   const materialized: MaterializedThreadFile[] = [];
-  for (const block of recentAttachmentBlocks(history, messages, input)) {
-    if (materialized.length >= ATTACHMENT_MAX_COUNT) break;
+  for (const block of blocks) {
+    if (materialized.length >= limit) break;
     try {
-      materialized.push(
-        ...(await materializeThreadFiles(
-          deps,
-          [block],
-          { ...input, markWorkspaceDirty: undefined },
-          true,
-        )),
-      );
+      materialized.push(...(await materializeThreadFiles(deps, [block], input, true)));
     } catch (error) {
       if (input.context.signal.aborted) throw error;
       getLogger().warn("earlier thread attachment was not copied to the computer", {
@@ -334,4 +389,65 @@ export function recentThreadFilesInstruction(files: readonly MaterializedThreadF
     "Files attached earlier in this conversation are also on your computer:",
     ...files.map(fileLine),
   ].join("\n");
+}
+
+/**
+ * Keeps an MCP app's HTML as a hidden artifact of the thread's bot or group, so its card can load
+ * it later through the same authorized read as attachments. One copy per document: a later call
+ * with the same app reuses it. The artifact list and search leave this type out.
+ */
+export async function storeMcpAppHtml(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    groupId?: string;
+    runId: string;
+    server: string;
+    html: string;
+    operationId: string;
+  },
+): Promise<string> {
+  const bytes = new TextEncoder().encode(input.html);
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const owner = {
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    groupId: input.groupId ?? null,
+  };
+  const existing = await deps.prisma.artifact.findFirst({
+    where: { ...owner, hash, mimeType: MCP_APP_MIME_TYPE },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const name = `${input.server} app.html`.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const context = {
+    operationId: input.operationId,
+    traceId: input.operationId,
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    signal: new AbortController().signal,
+  };
+  const stored = await deps.artifacts.put({ name, mimeType: MCP_APP_MIME_TYPE, bytes }, context);
+  // Its own one-version family: a file of the same name never versions it, nor it the file.
+  const row = await deps.prisma.artifact
+    .create({
+      data: {
+        ...owner,
+        runId: input.runId,
+        name,
+        mimeType: MCP_APP_MIME_TYPE,
+        size: bytes.byteLength,
+        hash,
+        storageKey: stored.id,
+      },
+    })
+    .catch(async (error) => {
+      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+      throw error;
+    });
+  return row.id;
 }

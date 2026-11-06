@@ -12,6 +12,7 @@ import { identityLabels } from "./identity-display";
 import { reportClientError } from "./monitoring";
 
 const SPACE_STORAGE_KEY = "rakazo:space-id";
+export const ORGANIZATION_SPACES_STORAGE_KEY = "rakazo:org-spaces";
 
 type RpcClientContext = { spaceId?: string | null };
 
@@ -24,23 +25,30 @@ export function selectedSpaceId(): string | null {
   }
 }
 
+/** Fired after the selected Space changes, so per-organization state (billing) can reload. */
+export const SPACE_SELECTED_EVENT = "rakazo:space-selected";
+
 export function selectSpace(id: string): boolean {
+  let selected: boolean;
   try {
     window.localStorage.setItem(SPACE_STORAGE_KEY, id);
-    return true;
+    selected = true;
   } catch {
     try {
       // Write failed but the desired selection is already durable — treat as success.
-      return window.localStorage.getItem(SPACE_STORAGE_KEY) === id;
+      selected = window.localStorage.getItem(SPACE_STORAGE_KEY) === id;
     } catch {
-      return false;
+      selected = false;
     }
   }
+  if (selected) window.dispatchEvent(new Event(SPACE_SELECTED_EVENT));
+  return selected;
 }
 
 export function clearSpaceSelection(): void {
   try {
     window.localStorage.removeItem(SPACE_STORAGE_KEY);
+    window.localStorage.removeItem(ORGANIZATION_SPACES_STORAGE_KEY);
   } catch {
     // Ignore storage failures on sign-out / reset paths.
   }
@@ -114,14 +122,25 @@ let leavingSpace: Promise<void> | null = null;
 /**
  * The server answers 401 when the selected space is no longer one of the user's, for instance
  * after they are removed from it, and every request would keep failing. Ask without a space which
- * spaces the user has; if the selected one is not among them, reload into their default space.
+ * spaces the user has in any organization; if the selected one is not among them, reload into
+ * their default space.
  */
 export function leaveUnavailableSpace(spaceId: string): Promise<void> {
   leavingSpace ??= (async () => {
     try {
-      const { spaces } = await rpc.spaces.list(undefined, { context: { spaceId: null } });
-      if (spaces.some((space) => space.id === spaceId) || selectedSpaceId() !== spaceId) return;
-      clearSpaceSelection();
+      const { organizations } = await rpc.organizations.list(undefined, {
+        context: { spaceId: null },
+      });
+      if (
+        organizations.some((organization) => organization.spaceIds.includes(spaceId)) ||
+        selectedSpaceId() !== spaceId
+      )
+        return;
+      try {
+        window.localStorage.removeItem(SPACE_STORAGE_KEY);
+      } catch {
+        // Without storage the reload keeps asking without a Space.
+      }
       window.location.reload();
     } catch {
       // Signed out or unreachable: leave the selection for the next request to try again.

@@ -23,7 +23,6 @@ import { ThreadReadOnlyContext } from "../../lib/thread-read-only";
 import type { UserBubble } from "../../lib/user-bubble";
 import { BotAvatar } from "../bot-avatar";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { presentMessageMenu } from "../message-action-menu";
 import { MessageContextMenu } from "../message-context-menu";
 import { ReplyLine } from "../reply-line";
@@ -53,7 +52,7 @@ export type MessageRowActions = {
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
-  previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  previewFile: (artifactId: string) => void;
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
@@ -80,6 +79,8 @@ type MessageRowProps = {
   headerAdjacent: boolean;
   unreadDivider: boolean;
   markedUnread: boolean;
+  /** Someone else in a shared space wrote this message. */
+  authorName?: string;
   replyAuthor: string;
   replyFallbackText?: string;
   waitingForUser: boolean;
@@ -117,6 +118,7 @@ export const MessageRow = memo(function MessageRow({
   headerAdjacent,
   unreadDivider,
   markedUnread,
+  authorName,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -434,6 +436,7 @@ export const MessageRow = memo(function MessageRow({
                 botId={bubbleBotId}
                 groupId={groupId}
                 message={message}
+                authorName={authorName}
                 botName={botName}
                 showBotSenderName={showBotSenderName}
                 bots={bots}
@@ -444,7 +447,7 @@ export const MessageRow = memo(function MessageRow({
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}
                 onChoiceDismissed={onChoiceDismissed}
-                onPreviewMarkdown={actions.previewMarkdown}
+                onPreviewFile={actions.previewFile}
                 onPreviewImage={actions.previewImage}
                 peerExchange={peerExchange}
                 onOpenPeerChat={actions.openPeerChat}

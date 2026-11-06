@@ -44,7 +44,10 @@ describe("worker health", () => {
     }
     for (const name of ["images", "prod", "topology", ""]) {
       const suffix = name ? `.${name}` : "";
-      const source = readFileSync(`infra/compose/docker-compose${suffix}.yml`, "utf8");
+      const source = readFileSync(
+        new URL(`../../../infra/compose/docker-compose${suffix}.yml`, import.meta.url),
+        "utf8",
+      );
       expect(source.slice(source.indexOf("\n  worker:"))).toContain(
         'test: ["CMD", "node", "dist/health-check.js"]',
       );

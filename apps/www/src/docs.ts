@@ -11,6 +11,7 @@ export const DOCS_NAV = [
     title: "Get started",
     pages: [
       { slug: "getting-started", label: "Getting started" },
+      { slug: "troubleshooting", label: "Troubleshooting" },
       { slug: "bots-and-chats", label: "Bots and chats" },
       { slug: "import-an-agent", label: "Import an agent" },
     ],
@@ -20,6 +21,7 @@ export const DOCS_NAV = [
     pages: [
       { slug: "integrations", label: "Connect apps" },
       { slug: "routines", label: "Routines" },
+      { slug: "pages", label: "Pages" },
       { slug: "computer", label: "The bot's computer" },
       { slug: "memory", label: "Memory" },
       { slug: "skills", label: "Skills" },
@@ -50,6 +52,7 @@ export const DOCS_NAV = [
     pages: [
       { slug: "fleet-management", label: "Bots that manage bots" },
       { slug: "build-a-plugin", label: "Build a plugin" },
+      { slug: "board", label: "Ticket board" },
     ],
   },
   {
@@ -69,6 +72,7 @@ export const DOCS_NAV = [
       { slug: "self-host-accounts", label: "Sign-in and accounts" },
       { slug: "self-host-models", label: "Models" },
       { slug: "self-host-integrations", label: "Tools and integrations" },
+      { slug: "self-host-inbound-email", label: "Bot email addresses" },
       { slug: "self-host-sandbox-providers", label: "Computer providers" },
       { slug: "self-host-docker-computers", label: "Docker computers" },
       { slug: "computer-runtime", label: "Computer runtime" },
@@ -76,6 +80,7 @@ export const DOCS_NAV = [
       { slug: "self-host-clients", label: "Apps and clients" },
       { slug: "self-host-billing", label: "Billing" },
       { slug: "self-host-observability", label: "Logs and monitoring" },
+      { slug: "self-host-audit-log", label: "Audit log" },
       { slug: "self-host-restricted-network", label: "Restricted networks" },
     ],
   },

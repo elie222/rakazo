@@ -5,6 +5,7 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
 import { transientRunEventsWhere } from "./events.js";
+import { deletePageShareSecrets } from "./page-shares.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
@@ -100,7 +101,7 @@ function hasMinimumActiveMembers(members: readonly unknown[]) {
   return members.length >= GROUP_MEMBER_MIN;
 }
 
-async function assertOwnedBots(
+async function assertSpaceBots(
   prisma: PrismaClient,
   actor: Actor,
   botIds: string[],
@@ -115,7 +116,6 @@ async function assertOwnedBots(
     where: {
       id: { in: unique },
       spaceId: actor.spaceId,
-      userId: actor.userId,
       archivedAt: null,
     },
     select: { id: true, name: true, color: true, avatarSet: true },
@@ -199,7 +199,7 @@ const groupTargetInclude = {
   },
 } as const;
 
-type RunTeardownTarget = {
+export type RunTeardownTarget = {
   id: string;
   homeKey: string;
   kind: string;
@@ -210,7 +210,7 @@ type RunTeardownTarget = {
 };
 
 /** `expiresAfter` keeps leases newer than that instant. Resume passes the cleanup epoch. */
-async function snapshotRunTeardownTargets(
+export async function snapshotRunTeardownTargets(
   tx: Prisma.TransactionClient,
   runIds: string[],
   expiresAfter?: Date,
@@ -296,14 +296,13 @@ async function attachNewestGroupMessage<T extends { thread: { id: string } | nul
 }
 
 export function createGroupRepos(prisma: PrismaClient) {
-  async function listSpaceGroupsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceGroup[]> {
+  async function listSpaceGroupsForSpaces(spaceIds: string[]): Promise<SpaceGroup[]> {
     if (spaceIds.length === 0) return [];
     const groups = await withNewestThreadMessages(
       prisma,
       await prisma.chatGroup.findMany({
         where: {
           spaceId: { in: spaceIds },
-          userId: actor.userId,
           archivedAt: null,
         },
         select: {
@@ -340,7 +339,6 @@ export function createGroupRepos(prisma: PrismaClient) {
       await prisma.chatGroup.findMany({
         where: {
           spaceId: actor.spaceId,
-          userId: actor.userId,
           OR: [
             { archivedAt: { not: null } },
             { members: { some: { bot: { archivedAt: { not: null } } } } },
@@ -368,7 +366,6 @@ export function createGroupRepos(prisma: PrismaClient) {
         await prisma.chatGroup.findMany({
           where: {
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           include: groupInclude,
@@ -388,7 +385,6 @@ export function createGroupRepos(prisma: PrismaClient) {
         where: {
           id: groupId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
         include: groupInclude,
@@ -402,7 +398,6 @@ export function createGroupRepos(prisma: PrismaClient) {
         where: {
           id: groupId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           archivedAt: null,
         },
         include: groupTargetInclude,
@@ -412,7 +407,7 @@ export function createGroupRepos(prisma: PrismaClient) {
     },
 
     async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {
-      const members = await assertOwnedBots(prisma, actor, input.botIds);
+      const members = await assertSpaceBots(prisma, actor, input.botIds);
       const created = await prisma.$transaction(async (tx) => {
         await lockSpaceForContentCreation(tx, {
           spaceId: actor.spaceId,
@@ -458,14 +453,13 @@ export function createGroupRepos(prisma: PrismaClient) {
         sectionId?: string | null;
       },
     ): Promise<{ group: Group; cancelledRunIds: string[]; computers: RunTeardownTarget[] }> {
-      const members = input.botIds ? await assertOwnedBots(prisma, actor, input.botIds) : undefined;
+      const members = input.botIds ? await assertSpaceBots(prisma, actor, input.botIds) : undefined;
       const updated = await prisma.$transaction(async (tx) => {
-        await lockOwnedGroup(tx, actor, input.groupId);
+        await lockSpaceGroup(tx, actor, input.groupId);
         const current = await tx.chatGroup.findFirst({
           where: {
             id: input.groupId,
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           include: {
@@ -559,12 +553,11 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async archiveGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
-        await lockOwnedGroup(tx, actor, groupId);
+        await lockSpaceGroup(tx, actor, groupId);
         const current = await tx.chatGroup.findFirst({
           where: {
             id: groupId,
             spaceId: actor.spaceId,
-            userId: actor.userId,
           },
           select: { archivedAt: true, thread: { select: { id: true } } },
         });
@@ -619,18 +612,21 @@ export function createGroupRepos(prisma: PrismaClient) {
     async restoreGroup(actor: Actor, groupId: string) {
       await withTransactionRetry(() =>
         prisma.$transaction(async (tx) => {
-          await lockOwnedGroup(tx, actor, groupId);
+          await lockSpaceGroup(tx, actor, groupId);
           const archived = await tx.chatGroupMember.findMany({
             where: { groupId, bot: { archivedAt: { not: null } } },
-            select: { bot: { select: { id: true, computerId: true } } },
+            select: {
+              bot: { select: { id: true, computer: { select: { id: true, userId: true } } } },
+            },
             orderBy: groupMemberOrder,
           });
           for (const { bot } of archived) {
-            if (bot.computerId) {
+            // The limit is the computer's owner's: a shared Team Computer is the space owner's.
+            if (bot.computer) {
               await restoreBotUnderComputerQuota(tx, {
-                userId: actor.userId,
+                userId: bot.computer.userId,
                 botId: bot.id,
-                computerId: bot.computerId,
+                computerId: bot.computer.id,
               });
             } else {
               await tx.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
@@ -643,7 +639,7 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async removeGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
-        await lockOwnedGroup(tx, actor, groupId);
+        await lockSpaceGroup(tx, actor, groupId);
         const group = await tx.chatGroup.findUnique({
           where: { id: groupId },
           select: {
@@ -666,12 +662,14 @@ export function createGroupRepos(prisma: PrismaClient) {
           (run) => run.id,
         );
         const { targets } = await snapshotRunTeardownTargets(tx, runIds);
+        const pageShareSecrets = await deletePageShareSecrets(tx, { groupId });
         await tx.chatGroup.delete({ where: { id: groupId } });
         return {
           contextBotId,
           artifactStorageKeys: group.artifacts.map((artifact) => artifact.storageKey),
           cancelledRunIds: runIds,
           computers: targets,
+          pageShareSecrets,
         };
       });
     },
@@ -680,9 +678,10 @@ export function createGroupRepos(prisma: PrismaClient) {
   };
 }
 
-export async function lockOwnedGroup(
+/** Lock a group in the actor's space; every member of the space may change it. */
+export async function lockSpaceGroup(
   prisma: Pick<Prisma.TransactionClient, "$queryRaw">,
-  actor: Pick<Actor, "spaceId" | "userId">,
+  actor: Pick<Actor, "spaceId">,
   groupId: string,
 ) {
   const locked = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -690,7 +689,6 @@ export async function lockOwnedGroup(
     FROM chat_groups
     WHERE id = ${groupId}
       AND "spaceId" = ${actor.spaceId}
-      AND "userId" = ${actor.userId}
     FOR UPDATE
   `;
   if (locked.length !== 1) throw new IsolationError();

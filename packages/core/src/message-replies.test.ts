@@ -1,8 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { ReplyPreviewSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { messageReplyPreview } from "./message-quote.js";
 import {
   channelMessageSender,
+  isPageOriginReply,
+  otherAuthor,
+  payloadAuthor,
   previewMessageText,
   replyAttachment,
   replyLabel,
@@ -112,6 +116,25 @@ it("localizes legacy image-only quotes while retaining real selected caption tex
   ).toBe("photo.png");
 });
 
+describe("message authors", () => {
+  const ana = { id: "user-a", name: "Ana" };
+
+  it("names only someone other than me", () => {
+    expect(otherAuthor(ana, "user-b")).toEqual(ana);
+    expect(otherAuthor(ana, "user-a")).toBeUndefined();
+    expect(otherAuthor(undefined, "user-b")).toBeUndefined();
+    // Before the session loads, nobody is named rather than everyone.
+    expect(otherAuthor(ana, undefined)).toBeUndefined();
+  });
+
+  it("reads a live event's author and keeps the known one across updates", () => {
+    expect(payloadAuthor({ author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({}, { author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({ author: { id: "user-a" } })).toEqual({});
+    expect(payloadAuthor({})).toEqual({});
+  });
+});
+
 describe("channelMessageSender", () => {
   const channel = {
     kind: "channel_message" as const,
@@ -185,5 +208,20 @@ describe("previewMessageText", () => {
       "Attachment",
     );
     expect(previewMessageText({ role: "bot", blocks: [] }, labels)).toBe("Message");
+  });
+});
+
+describe("page card replies", () => {
+  it("marks a page card parent so a reply sent from the open page shows no quote", () => {
+    const card = messageReplyPreview(
+      [{ kind: "page", pageId: "p1", version: 2, title: "Q3 plan" }],
+      "bot",
+    );
+    expect(ReplyPreviewSchema.parse(card)).toMatchObject({ page: true, text: "Q3 plan" });
+    expect(isPageOriginReply({ replyPreview: card })).toBe(true);
+    expect(isPageOriginReply({ replyPreview: card, replyQuote: "Q3 plan" })).toBe(false);
+    const text = messageReplyPreview([{ kind: "text", text: "hi" }], "bot");
+    expect(text.page).toBeUndefined();
+    expect(isPageOriginReply({ replyPreview: text })).toBe(false);
   });
 });

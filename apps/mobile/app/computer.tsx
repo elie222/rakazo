@@ -4,7 +4,6 @@ import {
   createScreenReconnect,
   displayName,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -17,6 +16,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   useWindowDimensions,
   View,
@@ -83,6 +83,7 @@ export default function Computer() {
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -109,12 +110,19 @@ export default function Computer() {
   const [screenReload, setScreenReload] = useState(0);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
-  useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // Every screen URL read rotates its token, so only a different stream earns a fresh load.
+  // Clearing on a rotated token reloaded a screen this device cannot reach every few seconds,
+  // and each reload blanked the preview in place of the error.
+  const embeddedScreenStream = embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null;
+  useEffect(() => setScreenError(null), [embeddedScreenStream]);
   // Without a WebView a dropped URL never fails on its own, so say so instead of a dead preview.
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
+  const hasControl =
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
@@ -287,14 +295,21 @@ export default function Computer() {
 
   // A screen that drops after connecting loads again by itself now and then; the load goes
   // through the screen's full authorization, so a revoked one stays closed.
-  const screenReconnect = useRef(createScreenReconnect());
+  // One reconnect at a time: once its reload is on its way, the same drop's further reports
+  // must not start another.
+  const screenReconnecting = useRef(false);
+  // Each bot's screen has its own reconnect budget, so a committed switch of bots starts a
+  // fresh one. useMemo ties the new budget to a committed render: a render that never
+  // commits, such as a suspended transition toward another bot that is then cancelled,
+  // leaves the screen on screen with its budget.
+  const screenReconnect = useMemo(() => createScreenReconnect(), [botId]);
   const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const screenReconnectWait = useRef<AbortController | null>(null);
   const currentScreenUrl = useRef<string | null>(null);
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
-      const next = screenReconnect.current.report(state);
+      const next = screenReconnect.report(state);
       if (next !== "reconnect") {
         // A drop that won't reconnect by itself shows why, with Retry.
         const failed = next === "error";
@@ -308,11 +323,16 @@ export default function Computer() {
         );
         return;
       }
+      // One reconnect at a time: while its reload is still on its way, further reports of the
+      // same drop only describe it again and must not start a second reload.
+      if (screenReconnecting.current) return;
+      screenReconnecting.current = true;
       clearTimeout(screenReconnectTimer.current);
       screenReconnectWait.current?.abort();
       const wait = new AbortController();
       screenReconnectWait.current = wait;
       const url = currentScreenUrl.current;
+      const delay = screenReconnect.delayMs();
       screenReconnectTimer.current = setTimeout(() => {
         // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
         // reload then shows whatever the page answers.
@@ -322,22 +342,35 @@ export default function Computer() {
           async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
           { signal: wait.signal },
         ).then((outcome) => {
-          if (outcome !== "cancelled") void reloadScreen();
+          if (outcome === "cancelled") {
+            screenReconnecting.current = false;
+            return;
+          }
+          void reloadScreen();
         });
-      }, SCREEN_RECONNECT_DELAY_MS);
+      }, delay);
     },
-    [reloadScreen, t],
+    [reloadScreen, screenReconnect, t],
   );
-  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
-  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
-  // cancels a pending reconnect.
+  const onScreenLoadStart = useCallback(() => {
+    screenReconnecting.current = false;
+    screenReconnect.loaded();
+  }, [screenReconnect]);
+  // Closing the screen, leaving the app, switching bots or a new screen URL (taking or
+  // releasing control) cancels a pending reconnect.
   useEffect(
     () => () => {
       screenReconnectWait.current?.abort();
       clearTimeout(screenReconnectTimer.current);
+      screenReconnecting.current = false;
     },
     // A renewed link for the same screen keeps the page and the pending reconnect.
-    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+    [
+      botId,
+      computerOpen,
+      foreground,
+      embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null,
+    ],
   );
 
   useEffect(() => {
@@ -379,6 +412,28 @@ export default function Computer() {
       setScreenError(null);
     } catch {
       // error already set
+    }
+  }
+
+  function dismissDiskWarning() {
+    setComputer((current) => current && { ...current, diskFullPercent: undefined });
+    void rpc("computer/dismissDiskWarning", { botId: botId ?? "" }).catch(() => undefined);
+  }
+
+  async function cleanUpDisk() {
+    setCleaningUp(true);
+    try {
+      await rpc("threads/send", {
+        botId: botId ?? "",
+        text: t(
+          "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.",
+        ),
+      });
+      dismissDiskWarning();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCleaningUp(false);
     }
   }
 
@@ -455,7 +510,11 @@ export default function Computer() {
       label={t("Retry screen")}
       prominence="primary"
       size="default"
-      onPress={() => void reloadScreen()}
+      onPress={() => {
+        // A pressed retry starts the screen's reconnects over, with their whole budget.
+        screenReconnect.reset();
+        void reloadScreen();
+      }}
     />
   ) : null;
 
@@ -585,6 +644,33 @@ export default function Computer() {
           />
         )}
       </View>
+      {computer?.diskFullPercent !== undefined ? (
+        <View
+          style={{
+            marginTop: 16,
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "flex-start" : "center",
+            gap: 12,
+          }}
+        >
+          <Text
+            style={{ color: tokens.warning, ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }) }}
+          >
+            {t("Computer is {percent}% full", { percent: computer.diskFullPercent })}
+          </Text>
+          <NativeActionButton
+            label={t("Dismiss")}
+            prominence="plain"
+            onPress={dismissDiskWarning}
+          />
+          <NativeActionButton
+            label={t("Clean up")}
+            prominence="secondary"
+            busy={cleaningUp}
+            onPress={() => void cleanUpDisk()}
+          />
+        </View>
+      ) : null}
       {computer ? (
         <ComputerMaintenanceActions
           botId={botId ?? ""}
@@ -690,6 +776,14 @@ export default function Computer() {
                 />
               </View>
             </SafeAreaView>
+            {hasControl && computer?.shared ? (
+              <Text
+                testID="computer-shared-browser"
+                style={[styles.sharedBrowser, { color: tokens.mutedForeground }]}
+              >
+                {t("Sites you sign in to stay signed in for everyone in this space")}
+              </Text>
+            ) : null}
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView
@@ -870,3 +964,7 @@ function ScreenWebView({
     />
   );
 }
+
+const styles = StyleSheet.create({
+  sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+});

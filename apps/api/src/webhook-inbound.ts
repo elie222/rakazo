@@ -5,6 +5,7 @@ import { inboundRoutineModelPin } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { accountDeactivated } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -46,6 +47,8 @@ export type WebhookTarget = {
   threadId: string;
   expected: string;
 };
+
+type InboundSource = "webhook" | "github" | "messaging" | "email";
 
 export type InboundTarget = {
   bot: Pick<WebhookTarget["bot"], "id" | "spaceId" | "userId">;
@@ -200,7 +203,8 @@ export async function loadWebhookTarget(
     },
   });
 
-  if (!bot?.thread || !bot.webhookSecretId) {
+  // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.
+  if (!bot?.thread || !bot.webhookSecretId || (await accountDeactivated(deps.prisma, bot.userId))) {
     cache.delete(botId);
     return null;
   }
@@ -251,7 +255,7 @@ export function messagingWakeIdempotencyKey(provider: string, handle: string): s
 }
 
 export function inboundDeliveryClientNonce(
-  source: "webhook" | "github" | "messaging",
+  source: InboundSource,
   botId: string,
   idempotencyKey: string,
 ): string {
@@ -271,7 +275,7 @@ export async function deliverWebhookEvent(
       modelId: string | null;
       thinkingLevel: string | null;
     }>;
-    source: "webhook" | "github" | "messaging";
+    source: InboundSource;
     idempotencyKey?: string;
     /** Messaging wakes share the live chat thread; keep a separate webhook run. */
     allowParallelRun?: boolean;
@@ -286,7 +290,9 @@ export async function deliverWebhookEvent(
             ? "Inbound GitHub event metadata:"
             : input.source === "messaging"
               ? "Inbound messaging event:"
-              : "Inbound webhook payload:",
+              : input.source === "email"
+                ? "Inbound email:"
+                : "Inbound webhook payload:",
           input.prompt,
         ].join("\n")
       : input.prompt;

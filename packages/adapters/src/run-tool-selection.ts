@@ -9,7 +9,12 @@ import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
-import { filterBuiltinToolsForRun, filterBuiltinToolsForThread } from "./schedule-tools.js";
+import {
+  filterBuiltinToolsForRun,
+  filterBuiltinToolsForThread,
+  SCHEDULE_TOOL_NAMES,
+} from "./schedule-tools.js";
+import { SKILL_TOOL_NAMES } from "./skill-tools.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
@@ -17,6 +22,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "list_fleet",
   "read_file",
   "read_history",
+  "read_email",
   "search_history",
   "request_takeover",
   "run_subagent",
@@ -34,6 +40,9 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "cloud_agent_status",
   "purchase_status",
 ]);
+
+/** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
+const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
@@ -81,9 +90,23 @@ export function selectBuiltinToolsForRun(options: {
   userComputer?: boolean;
   /** That desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
+  /** The bot has an email address and this run is its owner's own, outside any group or channel. */
+  emailInbox?: boolean;
+  /** This server receives email and the bot has no address yet. */
+  emailClaimable?: boolean;
+  /** The inbox may be read and this server can send email. */
+  emailSend?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  // Claiming is offered only in the owner's own chat, so once the bot claims an address there it
+  // can read the mail that follows, such as a sign-up code, in the same run.
+  const emailClaimOffered =
+    Boolean(options.emailClaimable) &&
+    ownerStartedRun &&
+    !options.groupId &&
+    !options.messagingChannelRun;
+  const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -122,6 +145,9 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
+      (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
+      ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
+      (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
       ((options.userComputer && options.userComputerScreen) ||
         !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
@@ -135,15 +161,17 @@ export function selectBuiltinToolsForRun(options: {
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
       (!options.messagingChannelRun ||
-        (![
-          "remember",
-          "save_shared_memory",
-          "save_memory",
-          "recall_memory",
-          "forget_memory",
-          "task_catalog",
-          "board_tickets",
-        ].includes(tool.name) &&
+        (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
+          !SKILL_TOOL_NAMES.has(tool.name) &&
+          ![
+            "remember",
+            "save_shared_memory",
+            "save_memory",
+            "recall_memory",
+            "forget_memory",
+            "task_catalog",
+            "board_tickets",
+          ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),
   );
@@ -166,4 +194,26 @@ export function filterPageBrowserTools<T extends { name: string }>(
 /** The fleet tools this run was offered, the same decision as tool selection. */
 export function offeredFleetTools(tools: readonly { name: string }[]): string[] {
   return tools.map((tool) => tool.name).filter((name) => FLEET_TOOL_NAMES_SET.has(name));
+}
+
+const FOLLOW_UP_TOOL_NAMES = [
+  "scratchpad_add",
+  "scratchpad_complete",
+  "schedule_create",
+  "schedule_cancel",
+];
+
+/**
+ * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
+ * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
+ * are not, and some of them would need approval for every schedule.
+ */
+export function followUpsOffered(
+  tools: readonly { name: string }[],
+  ownerStartedRun: boolean,
+): boolean {
+  return (
+    ownerStartedRun &&
+    FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
+  );
 }

@@ -1,4 +1,4 @@
-type DemoCardLine = {
+export type DemoCardLine = {
   k: string;
   v: string;
 };

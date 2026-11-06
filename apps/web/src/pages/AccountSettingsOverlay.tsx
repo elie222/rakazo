@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
+import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
 import {
   accountDisplay,
   displayName,
@@ -33,7 +33,11 @@ import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
-import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
+import { ComputerProviderSettings } from "../components/ComputerProviderSettings";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
@@ -78,6 +82,9 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
+  /** The icon set new and unpinned bots wear; absent from servers that predate it. */
+  botAvatarSet?: BotAvatarSet;
+  onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
 };
@@ -88,6 +95,8 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
+  botAvatarSet,
+  onBotAvatarSetChange,
   onAccountImported,
   onImportAgent,
 }: SettingsGeneralProps) {
@@ -143,6 +152,8 @@ export function GeneralSettingsPanels({
     () => "comfortable",
   );
   const sidebarDensityLabelId = useId();
+  const botStyleLabelId = useId();
+  const [botStyleError, setBotStyleError] = useState<string | null>(null);
   const [streamReplies, setStreamReplies] = useState(
     () => getResponseStreamingPreference() === "on",
   );
@@ -230,7 +241,7 @@ export function GeneralSettingsPanels({
               />
             </Field>
             {nameError ? (
-              <p role="alert" className="text-[12.5px] text-destructive">
+              <p role="alert" className="text-body-sm text-destructive">
                 {nameError}
               </p>
             ) : null}
@@ -254,7 +265,7 @@ export function GeneralSettingsPanels({
               <>
                 <p className="break-words">{account.label}</p>
                 {email && account.label !== email ? (
-                  <p className="mt-0.5 break-words text-[13px] text-muted-foreground">{email}</p>
+                  <p className="mt-0.5 break-words text-body-sm text-muted-foreground">{email}</p>
                 ) : null}
               </>
             }
@@ -288,6 +299,51 @@ export function GeneralSettingsPanels({
             />
           }
         />
+        {botAvatarSet && onBotAvatarSetChange ? (
+          <SettingsRow
+            label={
+              <span id={botStyleLabelId}>
+                <Trans>Bot style</Trans>
+              </span>
+            }
+            control={
+              <div className="space-y-1">
+                <ToggleGroup
+                  aria-labelledby={botStyleLabelId}
+                  data-testid="bot-style-select"
+                  value={[botAvatarSet]}
+                  onValueChange={([next]) => {
+                    if (!next || next === botAvatarSet) return;
+                    setBotStyleError(null);
+                    onBotAvatarSetChange(next as BotAvatarSet).catch(() =>
+                      setBotStyleError(t`Couldn't update bot style`),
+                    );
+                  }}
+                  spacing={1}
+                  className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+                >
+                  <ToggleGroupItem
+                    value="organic"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                  >
+                    <Trans>Original</Trans>
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="rakazo"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                  >
+                    <Trans>Rakazo</Trans>
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                {botStyleError ? (
+                  <p role="alert" className="text-body-sm text-destructive">
+                    {botStyleError}
+                  </p>
+                ) : null}
+              </div>
+            }
+          />
+        ) : null}
         <SettingsRow
           label={
             <span id={sidebarDensityLabelId}>
@@ -308,14 +364,14 @@ export function GeneralSettingsPanels({
               <ToggleGroupItem
                 value="comfortable"
                 data-testid="bots-sidebar-density-comfortable"
-                className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
               >
                 <Trans>Comfortable</Trans>
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="compact"
                 data-testid="bots-sidebar-density-compact"
-                className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
               >
                 <Trans>Compact</Trans>
               </ToggleGroupItem>
@@ -368,7 +424,7 @@ export function GeneralSettingsPanels({
                 </div>
               ) : null}
               {timezoneError ? (
-                <p role="alert" className="mt-2 text-right text-[12.5px] text-destructive">
+                <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
                   {timezoneError}
                 </p>
               ) : null}
@@ -380,7 +436,7 @@ export function GeneralSettingsPanels({
       <SettingsGroup title={<Trans>Chat</Trans>}>
         <SettingsRow
           label={
-            <Label htmlFor={enterToSendId} className="text-[14px] font-normal text-foreground">
+            <Label htmlFor={enterToSendId} className="text-body font-normal text-foreground">
               <Trans>Send with Enter</Trans>
             </Label>
           }
@@ -395,7 +451,7 @@ export function GeneralSettingsPanels({
         />
         <SettingsRow
           label={
-            <Label htmlFor={streamRepliesId} className="text-[14px] font-normal text-foreground">
+            <Label htmlFor={streamRepliesId} className="text-body font-normal text-foreground">
               <Trans>Stream replies</Trans>
             </Label>
           }
@@ -413,7 +469,7 @@ export function GeneralSettingsPanels({
         />
         <SettingsRow
           label={
-            <Label htmlFor={showToolActivityId} className="text-[14px] font-normal text-foreground">
+            <Label htmlFor={showToolActivityId} className="text-body font-normal text-foreground">
               <Trans>Show tool activity</Trans>
             </Label>
           }
@@ -431,7 +487,7 @@ export function GeneralSettingsPanels({
         />
         <SettingsRow
           label={
-            <Label htmlFor={loadRemoteImagesId} className="text-[14px] font-normal text-foreground">
+            <Label htmlFor={loadRemoteImagesId} className="text-body font-normal text-foreground">
               <Trans>Load web images automatically</Trans>
             </Label>
           }
@@ -495,8 +551,8 @@ export function UsageSettingsPanel({
             { label: t`Cost`, value: cost(usage.costUsd) },
           ].map((stat) => (
             <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
-              <dt className="text-[12.5px] text-muted-foreground">{stat.label}</dt>
-              <dd className="mt-1 text-[18px] font-medium tabular-nums text-foreground">
+              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
+              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
                 {stat.value}
               </dd>
             </div>
@@ -505,7 +561,7 @@ export function UsageSettingsPanel({
       ) : null}
       {models.length > 0 ? (
         <div className="mt-4 rounded-xl border border-border px-2">
-          <Table className="text-[13.5px]">
+          <Table className="text-body">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="text-muted-foreground">
@@ -530,7 +586,7 @@ export function UsageSettingsPanel({
                 <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
                   <TableCell>
                     <div className="text-foreground">{row.model}</div>
-                    <div className="text-[12px] text-muted-foreground">{row.provider}</div>
+                    <div className="text-label text-muted-foreground">{row.provider}</div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {number(row.modelCalls)}
@@ -556,11 +612,19 @@ export function ComputerSettingsPanel({
   sandboxProvider,
   onSandboxProviderChange,
   onRecoveryDismissed,
+  canConfigureComputers = false,
+  computerSettingsEnabled = false,
 }: {
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   onRecoveryDismissed?: () => void;
+  canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
 }) {
+  // Once shown, the hint stays mounted so a successful check can show its confirmation.
+  const unavailable = computersAreUnavailable(sandboxProvider);
+  const [hintShown, setHintShown] = useState(unavailable);
+  if (unavailable && !hintShown) setHintShown(true);
   return (
     <div
       data-testid="computers-setup-settings"
@@ -569,12 +633,21 @@ export function ComputerSettingsPanel({
       <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
-      <ComputersUnavailableHint
-        className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
-        sandboxProvider={sandboxProvider}
-        onRecovered={onSandboxProviderChange}
-        onRecoveryDismissed={onRecoveryDismissed}
-      />
+      {hintShown ? (
+        <ComputersUnavailableHint
+          className="mt-3 text-body-sm leading-relaxed text-muted-foreground"
+          sandboxProvider={sandboxProvider}
+          onRecovered={onSandboxProviderChange}
+          onRecoveryDismissed={onRecoveryDismissed}
+        />
+      ) : null}
+      {/* The server decides what an account may change, including removing keys it saved. */}
+      {computerSettingsEnabled && (canConfigureComputers || sandboxProvider) ? (
+        <ComputerProviderSettings
+          scope={canConfigureComputers ? "deployment" : "account"}
+          onProviderChange={onSandboxProviderChange}
+        />
+      ) : null}
     </div>
   );
 }
@@ -703,7 +776,7 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
             />
           </div>
           {error ? (
-            <p role="alert" className="mt-3 text-[12.5px] text-destructive">
+            <p role="alert" className="mt-3 text-body-sm text-destructive">
               {error}
             </p>
           ) : null}
@@ -782,7 +855,7 @@ function AppearancePicker({
           key={option.value}
           value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+          className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
         >
           {option.label}
         </ToggleGroupItem>

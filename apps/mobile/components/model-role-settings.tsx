@@ -1,4 +1,4 @@
-import type { MenuAction } from "@expo/ui/community/menu";
+import type { MenuAction, MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import type {
   ModelCatalogEntry,
@@ -24,15 +24,16 @@ import {
 import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, Platform, StyleSheet, Text, View } from "react-native";
 import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import type { ModelPickerRequest } from "../lib/model-picker-selection";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { thinkingLevelLabel } from "../lib/thinking-level";
+import { NativeSymbol } from "./native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
@@ -131,7 +132,7 @@ export function ModelRoleSettings({
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider) &&
         entry.id === choice.modelId,
     );
-  const options = connectedBackupOptions(state.catalog, credentials);
+  const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
@@ -219,7 +220,9 @@ export function ModelRoleSettings({
 
   function pickerRequest(slot: Slot, narrowed?: Narrowed): ModelPickerRequest {
     const primarySlot = isPrimarySlot(slot);
-    const all = narrowed ? connectedBackupOptions(narrowed.catalog, narrowed.credentials) : options;
+    const all = narrowed
+      ? connectedBackupOptions(narrowed.catalog, narrowed.credentials, role === "computer")
+      : options;
     const pool = all.filter(
       (option) => !narrowed || option.credentialId === narrowed.choice.credentialId,
     );
@@ -410,23 +413,27 @@ export function ModelRoleSettings({
             : []),
         ].join(", ");
         return (
-          <RowMenu
-            key={modelRoleChoiceKey(choice)}
-            title={name}
-            actions={actions}
-            onAction={(id) => act(index, id)}
-          >
-            <SettingsRow
-              accessibilityRole="button"
-              leading={ordered ? number(index + offset) : undefined}
+          <View key={modelRoleChoiceKey(choice)} style={rowMenuStyles.row}>
+            <View style={rowMenuStyles.content}>
+              <SettingsRow
+                accessibilityRole="button"
+                leading={ordered ? number(index + offset) : undefined}
+                title={name}
+                detail={detail}
+                disabled={busy}
+                onPress={() => pick(index)}
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              />
+            </View>
+            <RowMenuButton
               title={name}
-              detail={detail}
+              connection={connectionName(choice)}
+              actions={actions}
               disabled={busy}
-              onPress={() => pick(index)}
-              accessibilityActions={accessibilityActions}
-              onAccessibilityAction={({ nativeEvent }) => act(index, nativeEvent.actionName)}
+              onAction={(id) => act(index, id)}
             />
-          </RowMenu>
+          </View>
         );
       })}
       {settings && backups.length < MAX_MODEL_BACKUPS ? (
@@ -451,6 +458,65 @@ export function ModelRoleSettings({
         />
       ) : null}
     </SettingsGroup>
+  );
+}
+
+function RowMenuButton({
+  title,
+  connection,
+  actions,
+  onAction,
+  disabled = false,
+}: {
+  title: string;
+  connection: string;
+  actions: MenuAction[];
+  onAction: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const menu = useRef<MenuComponentRef>(null);
+  const { t } = useI18n();
+  const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
+  const button = (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={t("{name} options", { name: withConnectionName(title, connection) })}
+      accessibilityState={{ disabled }}
+      accessibilityActions={
+        Platform.OS === "android" && !disabled ? [{ name: "activate" }] : undefined
+      }
+      onAccessibilityAction={
+        Platform.OS === "android"
+          ? ({ nativeEvent }) => {
+              if (!disabled && nativeEvent.actionName === "activate") menu.current?.show();
+            }
+          : undefined
+      }
+      style={rowMenuStyles.buttonInner}
+    >
+      <NativeSymbol
+        ios="ellipsis"
+        android="ellipsis-horizontal"
+        color={tokens.mutedForeground}
+        size={20}
+      />
+    </View>
+  );
+  return disabled ? (
+    <View style={rowMenuStyles.button}>{button}</View>
+  ) : (
+    <MenuView
+      ref={menu}
+      colorScheme={colorScheme}
+      title={title}
+      actions={actions}
+      onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
+      style={rowMenuStyles.button}
+    >
+      {button}
+    </MenuView>
   );
 }
 
@@ -488,7 +554,13 @@ export function RowMenu({
   );
 }
 
-const rowMenuStyles = StyleSheet.create({ fullWidth: { width: "100%" } });
+const rowMenuStyles = StyleSheet.create({
+  fullWidth: { width: "100%" },
+  row: { flexDirection: "row", alignItems: "center" },
+  content: { flex: 1 },
+  button: { borderRadius: 22, overflow: "hidden", marginEnd: 16 },
+  buttonInner: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+});
 
 function createStyles() {
   const tokens = mobileTokens();

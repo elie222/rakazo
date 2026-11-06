@@ -5,7 +5,7 @@ Chat with your bots, answer their questions, watch their computers and take call
 ## Install
 
 - iPhone: [App Store](https://apps.apple.com/app/rakazo/id6801531099).
-- Android: [download the APK](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk).
+- Android: [Google Play](https://play.google.com/store/apps/details?id=com.rakazo.app).
 
 You can also choose **Get the mobile app** from the account menu in the web or desktop app.
 
@@ -27,6 +27,8 @@ the sign-in screen and enter its address. For a server on your local network, fo
 The first time you send something, the app asks permission to share it with the AI services your
 server uses. Review or withdraw it later in **AI data sharing** in Settings.
 
+Turn off **Haptics** in Settings if you don't want touch feedback.
+
 ## What stays on web and desktop
 
 - Creating or editing [routines](./routines.md). On mobile you can pause, delete and review them, or
@@ -41,6 +43,15 @@ Bots notify you when they finish or need input, controlled per bot with
 
 On Android, **Notifications** in Settings also lets you choose which kinds you get, including a live
 working status while a bot runs.
+
+## Shortcuts and Siri
+
+On iPhone, Rakazo adds actions to Shortcuts, Siri and the Action button:
+
+- **Message Bot** and **Ask Bot**: send a message. Ask Bot also returns the reply.
+- **Record Message**: talk, then pause or press again to send it to the bot whose chat you opened last.
+  Progress shows in the Dynamic Island and on the Lock Screen.
+- **Open Bot**, **Start Voice Chat** and **Run Routine**.
 
 ## Share to a bot
 

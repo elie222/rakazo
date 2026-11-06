@@ -239,6 +239,10 @@ function unScopeHandle(installation: MessagingInstallation, handle: string): str
   if (!handle.startsWith(prefix)) throw new Error("Messaging handle belongs to another workspace");
   return handle.slice(prefix.length);
 }
+/** A workspace user's address as inbound messages from that workspace carry it. */
+export function installationSenderAddress(workspaceId: string, userId: string): string {
+  return `${workspaceId}:${userId}`;
+}
 function scopeMessage(
   installation: MessagingInstallation,
   event: MessagingInboundMessage,
@@ -254,8 +258,10 @@ function scopeMessage(
     installationSpaceId: installation.spaceId,
     installationBotId: installation.botId,
     handle: `${installation.workspaceId}:${event.handle}`,
-    from: `${installation.workspaceId}:${event.from}`,
-    participants: event.participants.map((id) => `${installation.workspaceId}:${id}`),
+    from: installationSenderAddress(installation.workspaceId, event.from),
+    participants: event.participants.map((id) =>
+      installationSenderAddress(installation.workspaceId, id),
+    ),
     threadId: scopeThread(installation, event.threadId),
   };
 }

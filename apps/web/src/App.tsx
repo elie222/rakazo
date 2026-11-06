@@ -29,6 +29,7 @@ import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
 import { QueryUserProvider, setQueryUser } from "./lib/query";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
+import { hasSignedInBefore, rememberSignedIn } from "./lib/returning-user";
 import { rpc } from "./lib/rpc";
 import {
   holdAnonymousGate,
@@ -37,11 +38,18 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import {
+  MCP_OAUTH_CALLBACK_PATH,
+  newAccountDestination,
+  SLACK_INSTALL_CALLBACK_PATH,
+  signInNext,
+} from "./lib/sign-in-next";
 import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
+import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
 
@@ -51,9 +59,6 @@ const PasswordResetPage = lazyComponent(() =>
 );
 const OnboardingPage = lazyComponent(() =>
   import("./pages/Onboarding").then((module) => module.OnboardingPage),
-);
-const WelcomePage = lazyComponent(() =>
-  import("./pages/Welcome").then((module) => module.WelcomePage),
 );
 const NotFoundPage = lazyComponent(() =>
   import("./pages/NotFound").then((module) => module.NotFoundPage),
@@ -70,6 +75,9 @@ const AdminAccessPage = lazyComponent(() =>
 );
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
+);
+const InvitePage = lazyComponent(() =>
+  import("./pages/Invite").then((module) => module.InvitePage),
 );
 
 function SsoCallbackPage() {
@@ -107,21 +115,9 @@ export function App() {
   );
 }
 
-const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
-const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
-
 function SessionApp() {
   const [searchParams] = useSearchParams();
-  const next = searchParams.get("next") ?? "";
-  // A connector sign-in started on another device lands here signed out; finish it after sign-in.
-  const signInDestination =
-    next === "/integrations/setup" ||
-    next === "/admin/plugins" ||
-    next === "/admin/access" ||
-    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
-    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
-      ? next
-      : "/app";
+  const next = signInNext(searchParams.get("next"));
   const ticketBoardEnabled = useSyncExternalStore(
     subscribeTicketBoardEnabled,
     getTicketBoardEnabled,
@@ -156,6 +152,7 @@ function SessionApp() {
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
+    if (gate === "authenticated") rememberSignedIn();
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
@@ -187,21 +184,29 @@ function SessionApp() {
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
             <Routes>
-              <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+              <Route
+                path="/"
+                element={
+                  <Navigate
+                    to={user ? "/app" : hasSignedInBefore() ? "/sign-in" : "/sign-up"}
+                    replace
+                  />
+                }
+              />
               <Route
                 path="/sign-in"
                 element={
-                  user ? (
-                    <Navigate to={signInDestination} replace />
-                  ) : (
-                    <AuthPage key="in" mode="in" />
-                  )
+                  user ? <Navigate to={next ?? "/app"} replace /> : <AuthPage key="in" mode="in" />
                 }
               />
               <Route
                 path="/sign-up"
                 element={
-                  user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />
+                  user ? (
+                    <Navigate to={newAccountDestination(next)} replace />
+                  ) : (
+                    <AuthPage key="up" mode="up" />
+                  )
                 }
               />
               <Route
@@ -211,6 +216,7 @@ function SessionApp() {
                 }
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
+              <Route path="/p/:slugToken" element={<SharedPagePage />} />
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
@@ -255,6 +261,16 @@ function SessionApp() {
                     <AdminPluginsPage />
                   ) : (
                     <Navigate to="/sign-in?next=/admin/plugins" replace />
+                  )
+                }
+              />
+              <Route
+                path="/invite/:token"
+                element={
+                  user ? (
+                    <InvitePage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
                   )
                 }
               />
@@ -327,7 +343,7 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
     <div className="grid h-full place-items-center bg-background px-6 text-center">
       <div className="flex flex-col items-center">
         <LoadingState label={t`Reconnecting`} />
-        <p className="mt-3 text-[13.5px] text-muted-foreground/80">
+        <p className="mt-3 text-body text-muted-foreground/80">
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
@@ -355,7 +371,7 @@ function AppFailed() {
       data-rakazo-app-state="failed"
     >
       <div className="flex flex-col items-center">
-        <p className="text-[13.5px] text-muted-foreground/80">
+        <p className="text-body text-muted-foreground/80">
           <Trans>Something went wrong. Try again.</Trans>
         </p>
         <div className="mt-4">

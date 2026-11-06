@@ -6,6 +6,7 @@ import type {
   ThreadMessage,
   VoiceStatus,
 } from "@rakazo/contracts";
+import { DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
   answerableAskMessageIds,
   channelMessageSender,
@@ -16,13 +17,16 @@ import {
   isActive,
   isRunWorking,
   memberName,
+  newClientId,
+  otherAuthor,
+  workingRoutineName,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
+import { Keyboard, Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -38,6 +42,7 @@ import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { PageLoading } from "../components/PageLoading";
+import { PageViewHost } from "../components/pages/PageViewHost";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
@@ -55,6 +60,7 @@ import {
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
+import { PagesProvider, usePagesForChat } from "../lib/pages";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -67,11 +73,13 @@ import { getToolActivityEnabled, subscribeToolActivity } from "../lib/tool-activ
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
+import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineEditor";
 import { useSettingsNavItems } from "./settings-nav";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
+import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import type { CommandPaletteAction } from "./shell/command-palette";
@@ -80,9 +88,10 @@ import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
 import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/import-setup-card";
+import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import { cycleBotId, useShellShortcuts } from "./shell/shell-shortcuts";
+import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
 import { ShellSidePanel } from "./shell/side-panel";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
@@ -193,7 +202,7 @@ function SpaceShell() {
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const lastBotTab = useRef<Panel>("routines");
-  if (panel === "routines" || panel === "computer" || panel === "settings")
+  if (panel === "routines" || panel === "computer" || panel === "pages" || panel === "settings")
     lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
@@ -244,6 +253,7 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
@@ -265,7 +275,11 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
-    : panel === "computer" || panel === "routines" || panel === "settings" || panel === "routine";
+    : panel === "computer" ||
+      panel === "routines" ||
+      panel === "pages" ||
+      panel === "settings" ||
+      panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -290,12 +304,29 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const [cleaningUpDisk, setCleaningUpDisk] = useState(false);
+  const dismissDiskWarning = (botId: string) => {
+    const current = computerState.computerRef.current;
+    if (current?.botId === botId) commitComputer({ ...current, diskFullPercent: undefined });
+    const cached = computerState.computerCacheRef.current.get(botId)?.computer;
+    if (cached)
+      computerState.cacheComputerFor(botId, {
+        computer: { ...cached, diskFullPercent: undefined },
+      });
+    return rpc.computer.dismissDiskWarning({ botId }).catch(() => undefined);
+  };
   useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
     () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
     [bots, botSections],
   );
   const dialogs = useShellDialogs();
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  const chatColumnRef = useRef<HTMLDivElement>(null);
+  // Matches belong to the chat they were found in.
+  useEffect(() => setFindOpen(false), [botId, groupId]);
   useShellShortcuts({
     run: (shortcut) => {
       switch (shortcut.type) {
@@ -304,6 +335,9 @@ function SpaceShell() {
           return true;
         case "new":
           setCreateMenuOpen(true);
+          return true;
+        case "shortcuts":
+          setShortcutsOpen((open) => !open);
           return true;
         case "back":
         case "forward":
@@ -320,12 +354,44 @@ function SpaceShell() {
       if (shortcut.type === "search") {
         if (isMobileSidebar) setMobileSidebarOpen(true);
         else if (botsSidebarCollapsed) setBotsSidebarCollapsedPref(false);
-        if (!search.activityMode) search.setSearchOpen(true);
+        search.setSearchOpen(true);
         focusSidebarSearch();
         return true;
       }
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
       if (hasOpenDialog(document, true)) return false;
+      switch (shortcut.type) {
+        case "new-group":
+          // A space without bots has nobody to add, and the side panel needs a chat to open in.
+          if (!active && !activeGroup) return false;
+          setPanel("create-group");
+          return true;
+        case "integrations":
+          setOverlay({ kind: "integrations" });
+          return true;
+        case "chat-panel":
+          // A form in the side panel (a new group, an import) keeps its unsaved input.
+          if (panel && !chatPanelOpen) return false;
+          return toggleChatPanel();
+        case "focus-composer":
+          return focusComposer();
+        case "find":
+          if (!active && !activeGroup) return false;
+          // On a narrow window the drawer makes the chat inert and a side panel covers it, so
+          // either would hide the bar. A panel holding a form keeps its input instead.
+          if (isMobileSidebar && panel) {
+            if (!chatPanelOpen) return false;
+            setPanel(null);
+          }
+          setMobileSidebarOpen(false);
+          setFindOpen(true);
+          // A bar already open may have lost focus; a new one focuses itself as it mounts.
+          requestAnimationFrame(() => {
+            findInputRef.current?.focus();
+            findInputRef.current?.select();
+          });
+          return true;
+      }
       const botId =
         shortcut.type === "bot"
           ? cycleBots[shortcut.index]?.id
@@ -336,11 +402,27 @@ function SpaceShell() {
     },
     onTyping: () => {
       if (computerOpen || hasOpenDialog(document, true)) return;
-      document
-        .querySelector<HTMLTextAreaElement>('textarea[name="chat-message"]:not(:disabled)')
-        ?.focus();
+      focusComposer();
     },
   });
+  function focusComposer() {
+    const composer = document.querySelector<HTMLTextAreaElement>(
+      'textarea[name="chat-message"]:not(:disabled)',
+    );
+    composer?.focus();
+    return Boolean(composer);
+  }
+  function toggleChatPanel() {
+    if (chatPanelOpen) setPanel(null);
+    else if (inGroup) setPanel("group-settings");
+    else if (active) {
+      setPanel(lastBotTab.current);
+      // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
+      void refreshThread(active.id).catch(() => undefined);
+    } else return false;
+    return true;
+  }
+  const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   useSpaceBootstrap({
     rpc,
     roster,
@@ -355,9 +437,21 @@ function SpaceShell() {
     chat: groupId ? { groupId } : active ? { botId: active.id } : undefined,
     navigate,
     redirectKeepingOverlay,
+    openSpaceChat: openSpaceChatRef,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications } =
-    useBrowserNotifications(botsRef);
+  const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
+    bots,
+    botsRef,
+    {
+      rpc,
+      activeBotId,
+      activeGroupId,
+      openChat: (alert) => {
+        setMobileSidebarOpen(false);
+        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+      },
+    },
+  );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
     snapshot,
@@ -475,6 +569,9 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
   });
+  useLayoutEffect(() => {
+    openSpaceChatRef.current = openSpaceChat;
+  }, [openSpaceChat]);
 
   const activeSnapshot = inGroup
     ? snapshot?.groupId === groupId
@@ -590,6 +687,7 @@ function SpaceShell() {
   const { computerBot, openComputer } = computerControls;
   const composer = useComposerActions({
     rpc,
+    pageSession: pages.session,
     activeId: active?.id,
     inGroup,
     groupId,
@@ -622,7 +720,9 @@ function SpaceShell() {
 
   const replyTargetName = composer.replyTarget
     ? composer.replyTarget.role === "user"
-      ? (channelMessageSender(composer.replyTarget.blocks) ?? t`You`)
+      ? (otherAuthor(composer.replyTarget.author, userId)?.name ??
+        channelMessageSender(composer.replyTarget.blocks) ??
+        t`You`)
       : (resolveTranscriptMemberName(composer.replyTarget.botId) ?? active?.name ?? t`Bot`)
     : undefined;
   useRightPanelRestore({
@@ -755,7 +855,9 @@ function SpaceShell() {
   const settingsNavItems = useSettingsNavItems({
     messaging: messagingSurfaceEnabled,
     wallet: Boolean(bootstrapMe?.paymentWalletProvider),
-    computer: computersAreUnavailable(bootstrapMe?.sandboxProvider),
+    computer:
+      bootstrapMe?.computerSettingsEnabled === true &&
+      computersAreUnavailable(bootstrapMe?.sandboxProvider),
     billing: bootstrapMe?.billingEnabled === true,
     updates: Boolean(desktopBridge()?.update),
   });
@@ -783,6 +885,12 @@ function SpaceShell() {
       label: t`Connect apps`,
       icon: Plug,
       onSelect: () => setOverlay({ kind: "integrations" }),
+    },
+    {
+      id: "keyboard-shortcuts",
+      label: t`Keyboard shortcuts`,
+      icon: Keyboard,
+      onSelect: () => setShortcutsOpen(true),
     },
     {
       id: "skills",
@@ -836,6 +944,16 @@ function SpaceShell() {
         window.location.assign("/app");
         return;
       }
+    }
+    await refreshBots(true);
+  }
+
+  async function leftSpace(spaceId: string, activeSpaceId: string) {
+    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+    // Leaving the open space changes the auth boundary, so reload like a space switch.
+    if (effectiveSpaceId === spaceId && selectSpace(activeSpaceId)) {
+      window.location.assign("/app");
+      return;
     }
     await refreshBots(true);
   }
@@ -907,6 +1025,9 @@ function SpaceShell() {
         setCreateMenuOpen={setCreateMenuOpen}
         search={search}
         bots={bots}
+        groups={groups}
+        collapsedSidebarSections={collapsedSidebarSections}
+        toggleSidebarSection={toggleSidebarSection}
         setPanel={setPanel}
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}
@@ -962,6 +1083,7 @@ function SpaceShell() {
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
         openSkills={() => setOverlay({ kind: "skills" })}
+        openSpaceChat={openSpaceChat}
       />
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
@@ -981,9 +1103,21 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
+          {findOpen ? (
+            <div className="absolute end-3 top-14 z-20">
+              <ChatFindBar
+                scope={chatColumnRef}
+                inputRef={findInputRef}
+                onClose={() => {
+                  setFindOpen(false);
+                  focusComposer();
+                }}
+              />
+            </div>
+          ) : null}
           <ChatHeader
             inGroup={inGroup}
             active={active}
@@ -994,15 +1128,7 @@ function SpaceShell() {
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
-            onTogglePanel={() => {
-              if (chatPanelOpen) setPanel(null);
-              else if (inGroup) setPanel("group-settings");
-              else if (active) {
-                setPanel(lastBotTab.current);
-                // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
-                void refreshThread(active.id).catch(() => undefined);
-              }
-            }}
+            onTogglePanel={toggleChatPanel}
             onCall={(bot) => {
               if (call?.botId === bot.id) {
                 setCallMinimized(false);
@@ -1021,6 +1147,7 @@ function SpaceShell() {
           ) : (
             <Transcript
               key={activeSnapshot?.threadId}
+              meId={userId}
               scrollRef={thread.messageScroll}
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
@@ -1036,6 +1163,7 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
+              workingRoutine={workingRoutineName(workingRuns)}
               userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active
@@ -1061,6 +1189,7 @@ function SpaceShell() {
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
               onOpenImportSetup={openImportSetup}
+              rpc={rpc}
             />
           )}
         </div>
@@ -1068,7 +1197,7 @@ function SpaceShell() {
           // Let messages continue behind the composer's rounded top corners.
           <div className="pointer-events-none relative z-30 -mt-7">
             {recordingSkill ? (
-              <div className="pointer-events-auto bg-background px-6 pb-2 text-center text-[13px] text-destructive">
+              <div className="pointer-events-auto bg-background px-6 pb-2 text-center text-body-sm text-destructive">
                 <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
               </div>
             ) : null}
@@ -1135,6 +1264,7 @@ function SpaceShell() {
         ) : null}
       </main>
 
+      <PageViewHost />
       <CallCard onSettings={() => openSettings("voice")} />
       <IncomingCall
         bots={bootstrapMe?.phoneCallsEnabled ? bots : []}
@@ -1156,6 +1286,7 @@ function SpaceShell() {
         refreshBots={refreshBots}
         refreshThread={refreshThread}
         refreshGroupThread={refreshGroupThread}
+        discardChatAttachments={composer.discardThreadAttachments}
         computer={computer}
         computerOpen={computerOpen}
         booting={booting}
@@ -1179,8 +1310,31 @@ function SpaceShell() {
                 computerControls.holdComputerRecovery();
               }}
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
-              onOpenComputerSettings={() => openSettings("computer")}
+              onOpenComputerSettings={
+                bootstrapMe?.computerSettingsEnabled === true
+                  ? () => openSettings("computer")
+                  : undefined
+              }
               onOpen={() => void openComputer()}
+              cleaningUpDisk={cleaningUpDisk}
+              onCleanUpDisk={() => {
+                const botId = active.id;
+                setCleaningUpDisk(true);
+                void rpc.threads
+                  .send({
+                    botId,
+                    clientNonce: newClientId(),
+                    text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
+                  })
+                  .then(async () => {
+                    // The refresh must read the dismissal, or it would paint the warning again.
+                    await dismissDiskWarning(botId);
+                    void refreshThread(botId);
+                  })
+                  .catch((error: unknown) => composer.setSendError(errorText(error)))
+                  .finally(() => setCleaningUpDisk(false));
+              }}
+              onDismissDiskWarning={() => void dismissDiskWarning(active.id)}
             />
           ) : null
         }
@@ -1223,6 +1377,8 @@ function SpaceShell() {
           openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
+          botAvatarSet={bootstrapMe?.botAvatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET}
+          discardChatAttachments={composer.discardThreadAttachments}
           clearOpenThread={() => {
             thread.resetHistory();
             thread.updateSnapshot((current) =>
@@ -1252,6 +1408,7 @@ function SpaceShell() {
           spaces={spaces}
           renameSpace={renameSpace}
           removeSpace={removeSpace}
+          leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
           openAgentImport={() => setPanel("import-agent")}
           alive={alive}
@@ -1267,6 +1424,13 @@ function SpaceShell() {
           peerBot={resolveTranscriptBot}
         />
       </Suspense>
+
+      <KeyboardShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
+        dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+      />
 
       {computerOpen && computerBot ? (
         <ComputerOverlay
@@ -1302,5 +1466,9 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded || initialLoadFailed ? shell : <PageLoading />;
+  return initialBotsLoaded || initialLoadFailed ? (
+    <PagesProvider value={pages}>{shell}</PagesProvider>
+  ) : (
+    <PageLoading />
+  );
 }

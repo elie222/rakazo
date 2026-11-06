@@ -16,8 +16,15 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-const rpc = vi.hoisted(() => ({ bots: { update: vi.fn(async () => ({})) } }));
+const { rpc, spaceRpc } = vi.hoisted(() => {
+  const client = () => ({
+    bots: { update: vi.fn(async () => ({})), restoreInstructions: vi.fn(async () => ({})) },
+  });
+  return { rpc: client(), spaceRpc: client() };
+});
 vi.mock("../lib/rpc", () => ({ rpc }));
+// A card's editor lists the vault's saved contacts; these cards need none.
+vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
 
 import { ChoiceCard } from "../pages/shell/message-cards";
 import type { AskBlock } from "./AskCard";
@@ -146,46 +153,26 @@ it("styles dismissed secrets like denied approvals, apart from the destination",
     (item) => item.textContent === "Dismissed",
   )!;
   expect(dismissed.classList.contains("font-medium")).toBe(true);
-  expect(dismissed.classList.contains("mt-3.5")).toBe(true);
   expect(dismissed.classList.contains("text-muted-foreground")).toBe(true);
 });
 
-for (const input of ["secret", "login"]) {
-  it.each([true, false])(`gates only ${input} dismissal: %s`, async (canDismiss) => {
-    const block = {
-      kind: "ask" as const,
-      text: "Secret",
-      input: "secret" as const,
-      status: "pending" as const,
-      ...(input === "login"
-        ? {
-            credential: {
-              name: "example",
-              origin: "https://example.test",
-              auth: { type: "login" as const },
-            },
-          }
-        : {}),
-    };
-    await act(async () =>
-      root.render(
-        <AskCard
-          block={block}
-          canAnswer
-          canDismiss={canDismiss}
-          onAnswer={async () => {}}
-          onDismiss={async () => {}}
-        />,
-      ),
-    );
-    const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-    expect(labels.includes("Dismiss")).toBe(canDismiss);
-    // A login is filled in only by the run's user; see the credential card test below.
-    if (input === "login" && !canDismiss) return;
-    expect(labels.includes("Save")).toBe(true);
-    expect(button("Save")?.classList.contains("h-8")).toBe(true);
-  });
-}
+it.each([true, false])("gates secret dismissal: %s", async (canDismiss) => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={{ kind: "ask", text: "Secret", input: "secret", status: "pending" }}
+        canAnswer
+        canDismiss={canDismiss}
+        onAnswer={async () => {}}
+        onDismiss={async () => {}}
+      />,
+    ),
+  );
+  const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
+  expect(labels.includes("Dismiss")).toBe(canDismiss);
+  expect(labels.includes("Save")).toBe(true);
+  expect(button("Save")?.classList.contains("h-8")).toBe(true);
+});
 
 it("keeps an accepted secret Save answered without a block update", async () => {
   const onAnswer = vi.fn(async () => undefined);
@@ -194,7 +181,7 @@ it("keeps an accepted secret Save answered without a block update", async () => 
 
   await act(async () => button("Save")!.click());
 
-  expect(onAnswer).toHaveBeenCalledWith("example-key", undefined);
+  expect(onAnswer).toHaveBeenCalledWith("example-key");
   expect(container.textContent).toContain("Saved");
   expect(container.textContent).not.toContain("example-key");
   expect(container.querySelector("input")).toBeNull();
@@ -215,19 +202,46 @@ const loginCard: AskBlock = {
   status: "pending",
 };
 
+/** The dialog a login, card or contact card opens; it renders outside the card. */
+function dialog() {
+  return document.querySelector<HTMLElement>('[data-testid="vault-editor"]');
+}
+
+function dialogButton(name: string) {
+  return [...(dialog()?.querySelectorAll("button") ?? [])].find(
+    (item) => item.textContent === name,
+  );
+}
+
+async function openEditor() {
+  await act(async () => button("Add")!.click());
+  expect(dialog()).not.toBeNull();
+}
+
 function loginInput(label: string) {
-  return container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const labelled = [...(dialog()?.querySelectorAll("label") ?? [])].find(
+    (item) => item.textContent === label,
+  )!;
+  return document.getElementById(labelled.htmlFor) as HTMLInputElement;
+}
+
+async function typeIn(field: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 function hiddenSwitch(label: string) {
-  return [...container.querySelectorAll('[data-testid="login-field-value"]')]
-    .find((row) => row.querySelector(`input[aria-label="${label}"]`))!
-    .querySelector<HTMLElement>('[role="switch"]')!;
+  return [...(dialog()?.querySelectorAll('[data-testid="login-field"]') ?? [])]
+    .find((row) => row.querySelector("label")?.textContent === label)!
+    .querySelector<HTMLElement>('[data-testid="login-field-hidden"]')!;
 }
 
 it("starts an ID and a phone visible and a PIN hidden, and the person can flip each", async () => {
   const onAnswer = vi.fn(async () => undefined);
   await render(loginCard, undefined, onAnswer);
+  await openEditor();
 
   for (const [label, hidden] of [
     ["ID number", false],
@@ -235,20 +249,21 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
     ["PIN", true],
   ] as const) {
     expect(loginInput(label).type).toBe(hidden ? "password" : "text");
-    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe(String(hidden));
+    expect(hiddenSwitch(label).getAttribute("aria-pressed")).toBe(String(hidden));
+    expect(hiddenSwitch(label).getAttribute("aria-label")).toBe("Hidden");
     const description = hiddenSwitch(label).getAttribute("aria-describedby")!;
     expect(document.getElementById(description)?.textContent).toBe(label);
   }
-  await type("ID number", " fake-id-123 ");
-  await type("Phone number", "+1 555 0100");
-  expect(button("Save")!.disabled).toBe(true);
-  await type("PIN", "0000");
+  await typeIn(loginInput("ID number"), " fake-id-123 ");
+  await typeIn(loginInput("Phone number"), "+1 555 0100");
+  expect(dialogButton("Save")!.disabled).toBe(true);
+  await typeIn(loginInput("PIN"), "0000");
   await act(async () => hiddenSwitch("Phone number").click());
   expect(loginInput("Phone number").type).toBe("password");
   await act(async () => hiddenSwitch("PIN").click());
   expect(loginInput("PIN").type).toBe("text");
 
-  await act(async () => button("Save")!.click());
+  await act(async () => dialogButton("Save")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("", [
     { label: "ID number", value: " fake-id-123 ", hidden: false },
@@ -256,16 +271,25 @@ it("starts an ID and a phone visible and a PIN hidden, and the person can flip e
     { label: "PIN", value: "0000", hidden: false },
   ]);
   expect(container.textContent).toContain("Saved");
-  expect(container.textContent).not.toContain("fake-id-123");
-  expect(container.querySelector("input")).toBeNull();
+  expect(document.body.textContent).not.toContain("fake-id-123");
+  expect(dialog()).toBeNull();
+});
+
+it("says the bot's browser stays signed in for everyone in a shared space", async () => {
+  const line = "The bot's browser stays signed in for everyone in this space";
+  await render({ ...loginCard, sharedBrowser: true });
+  expect(container.textContent).toContain(line);
+  await render(loginCard);
+  expect(container.textContent).not.toContain(line);
 });
 
 it("starts every field hidden when no label names an identifier", async () => {
   await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
+  await openEditor();
 
   for (const label of ["Memorable word", "Card number"]) {
     expect(loginInput(label).type).toBe("password");
-    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe("true");
+    expect(hiddenSwitch(label).getAttribute("aria-pressed")).toBe("true");
   }
 });
 
@@ -273,17 +297,20 @@ it("asks for a visible username and a hidden password when the bot names no fiel
   const onAnswer = vi.fn(async () => undefined);
   const { loginFields: _, ...defaultLogin } = loginCard;
   await render(defaultLogin, undefined, onAnswer);
+  await openEditor();
 
   expect(
-    [...container.querySelectorAll("input[aria-label]")].map((input) => input.ariaLabel),
+    [...dialog()!.querySelectorAll('[data-testid="login-field"] label')].map(
+      (label) => label.textContent,
+    ),
   ).toEqual(["Username", "Password"]);
   expect(loginInput("Username").type).toBe("text");
-  expect(hiddenSwitch("Username").getAttribute("aria-checked")).toBe("false");
+  expect(hiddenSwitch("Username").getAttribute("aria-pressed")).toBe("false");
   expect(loginInput("Password").type).toBe("password");
-  expect(hiddenSwitch("Password").getAttribute("aria-checked")).toBe("true");
-  await type("Username", "fake-user");
-  await type("Password", "fake-password");
-  await act(async () => button("Save")!.click());
+  expect(hiddenSwitch("Password").getAttribute("aria-pressed")).toBe("true");
+  await typeIn(loginInput("Username"), "fake-user");
+  await typeIn(loginInput("Password"), "fake-password");
+  await act(async () => dialogButton("Save")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("", [
     { label: "Username", value: "fake-user", hidden: false },
@@ -306,7 +333,7 @@ it("keeps an accepted question choice answered until the block updates", async (
 
   await act(async () => button("AParis")!.click());
 
-  expect(onAnswer).toHaveBeenCalledWith("paris", undefined);
+  expect(onAnswer).toHaveBeenCalledWith("paris");
   expect(container.textContent).not.toContain("Answered");
   expect(button("AParis")!.getAttribute("aria-pressed")).toBe("true");
   expect(button("BLondon")!.disabled).toBe(true);
@@ -372,6 +399,25 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("offers Always allow only when the approval card does", async () => {
+  const card: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Review before schedule_create",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow this tool" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const labels = () => [...container.querySelectorAll("button")].map((item) => item.textContent);
+  await render(card);
+  expect(labels()).toEqual(["Allow once", "Always allow this tool", "Deny"]);
+  await render({ ...card, actions: card.actions!.filter((action) => action.id !== "always") });
+  expect(labels()).toEqual(["Allow once", "Deny"]);
+});
+
 it.each(["Allow in this space", "Allow for this chat"])(
   "says a user's-computer approval labelled %s allows the whole space",
   async (label) => {
@@ -397,6 +443,26 @@ it.each(["Allow in this space", "Allow for this chat"])(
     expect(container.textContent).toContain("Allowed in this space");
   },
 );
+
+it("shows a question's detail as plain text above its options", async () => {
+  await render({
+    kind: "ask",
+    text: "Send this email to Ana?",
+    detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ],
+  });
+  const detail = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(detail.textContent).toBe("To: ana@example.test\nSubject: Demo\n\nThe draft body.");
+  // Plain text sits on the card like the question, not in a code snippet box.
+  expect(detail.classList.contains("font-sans")).toBe(true);
+  expect(detail.classList.contains("bg-background")).toBe(false);
+  expect(button("ASend it")).toBeDefined();
+});
 
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
@@ -443,12 +509,15 @@ it.each([
     await render(false);
     expect(container.querySelector("input")).toBeNull();
     expect(container.querySelectorAll("button")).toHaveLength(0);
-    expect(container.textContent).toContain(credential.origin);
+    // A login names its site; an API credential shows the address it is sent to.
+    expect(container.textContent).toContain(
+      credential.auth.type === "login" ? new URL(credential.origin).host : credential.origin,
+    );
     expect(container.textContent).not.toContain("No longer active");
 
     await render(true);
-    expect(container.querySelectorAll("input").length).toBeGreaterThan(0);
-    expect(button("Save")).toBeDefined();
+    if (credential.auth.type === "login") expect(button("Add")).toBeDefined();
+    else expect(button("Save")).toBeDefined();
   },
 );
 
@@ -470,20 +539,23 @@ it("keeps a connector code card open to others in the chat, without Dismiss", as
 });
 
 function saveToVault() {
-  return container.querySelector<HTMLElement>('[role="switch"]:not([aria-describedby])');
+  return dialog()?.querySelector<HTMLElement>('[role="switch"]') ?? null;
 }
 
 it("saves a login by default, with Save to Vault on and named by its label", async () => {
   const onAnswer = vi.fn(async () => undefined);
   await render(loginCard, undefined, onAnswer);
+  await openEditor();
   const toggle = saveToVault()!;
   expect(toggle.getAttribute("aria-checked")).toBe("true");
-  const label = toggle.getAttribute("aria-labelledby")!;
-  expect(container.querySelector(`[id="${label}"]`)?.textContent).toBe("Save to Vault");
-  await type("ID number", "fake-id-123");
-  await type("Phone number", "+1 555 0100");
-  await type("PIN", "1234");
-  await act(async () => button("Save")!.click());
+  const label = [...dialog()!.querySelectorAll("label")].find(
+    (item) => item.textContent === "Save to Vault",
+  )!;
+  expect(toggle.parentElement?.contains(label) || label.htmlFor !== "").toBe(true);
+  await typeIn(loginInput("ID number"), "fake-id-123");
+  await typeIn(loginInput("Phone number"), "+1 555 0100");
+  await typeIn(loginInput("PIN"), "1234");
+  await act(async () => dialogButton("Save")!.click());
 
   // Nothing extra is sent, so the answer is saved as it always was.
   expect(onAnswer).toHaveBeenCalledWith("", [
@@ -497,15 +569,16 @@ it("saves a login by default, with Save to Vault on and named by its label", asy
 it("sends a login for this run only when Save to Vault is off, and reads Sent", async () => {
   const onAnswer = vi.fn(async () => undefined);
   await render(loginCard, undefined, onAnswer);
-  await type("ID number", "fake-id-123");
+  await openEditor();
+  await typeIn(loginInput("ID number"), "fake-id-123");
   await act(async () => saveToVault()!.click());
   expect(saveToVault()!.getAttribute("aria-checked")).toBe("false");
   // Turning it off keeps what was typed and says the login is only sent on.
   expect(loginInput("ID number").value).toBe("fake-id-123");
-  expect(button("Save")).toBeUndefined();
-  await type("Phone number", "+1 555 0100");
-  await type("PIN", "1234");
-  await act(async () => button("Continue")!.click());
+  expect(dialogButton("Save")).toBeUndefined();
+  await typeIn(loginInput("Phone number"), "+1 555 0100");
+  await typeIn(loginInput("PIN"), "1234");
+  await act(async () => dialogButton("Continue")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith(
     "",
@@ -518,6 +591,79 @@ it("sends a login for this run only when Save to Vault is off, and reads Sent", 
   );
   expect(container.textContent).toContain("Sent");
   expect(container.textContent).not.toContain("Saved");
+});
+
+it("dismisses a login card from its form, sending nothing typed", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  const onDismiss = vi.fn(async () => undefined);
+  await render(loginCard, onDismiss, onAnswer);
+  await openEditor();
+  await typeIn(loginInput("PIN"), "1234");
+  await act(async () => dialogButton("Dismiss")!.click());
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+  expect(onAnswer).not.toHaveBeenCalled();
+  expect(dialog()).toBeNull();
+  expect(container.textContent).toContain("Dismissed");
+});
+
+it("keeps the form open with a generic error when a login fails to save", async () => {
+  await render(loginCard, undefined, async () => {
+    throw new Error("server echoed fake-id-123");
+  });
+  await openEditor();
+  await typeIn(loginInput("ID number"), "fake-id-123");
+  await typeIn(loginInput("Phone number"), "+1 555 0100");
+  await typeIn(loginInput("PIN"), "1234");
+  await act(async () => dialogButton("Save")!.click());
+  expect(dialog()?.textContent).toContain("Could not submit this answer");
+  expect(document.body.textContent).not.toContain("server echoed");
+  // The values are cleared as the save starts, so nothing typed is left behind.
+  expect(loginInput("PIN").value).toBe("");
+});
+
+const cardAsk: AskBlock = {
+  kind: "ask",
+  text: "Your card",
+  input: "secret",
+  credential: { name: "visa", origin: "", auth: { type: "card" } },
+  status: "pending",
+};
+
+it("saves a card from its form as one encoded value", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(cardAsk, undefined, onAnswer);
+  await openEditor();
+  await typeIn(loginInput("Card number"), "4242 4242 4242 4242");
+  expect(dialog()?.querySelector('[data-testid="vault-card-brand"]')?.textContent).toBe("Visa");
+  await typeIn(loginInput("Expiry"), "0830");
+  expect(loginInput("Expiry").value).toBe("08/30");
+  await typeIn(loginInput("Security code"), "123");
+  await act(async () => dialogButton("Save")!.click());
+  expect(onAnswer).toHaveBeenCalledWith(
+    JSON.stringify({ number: "4242424242424242", expMonth: 8, expYear: 2030, cvc: "123" }),
+  );
+  expect(container.textContent).toContain("Saved");
+});
+
+it("saves a contact from its form, without empty fields", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(
+    {
+      ...cardAsk,
+      text: "Home address",
+      credential: { name: "home", origin: "", auth: { type: "contact" } },
+    },
+    undefined,
+    onAnswer,
+  );
+  await openEditor();
+  expect(dialogButton("Save")!.disabled).toBe(true);
+  await typeIn(loginInput("Full name"), "Alex Rivera");
+  await typeIn(loginInput("City"), "Springfield");
+  await act(async () => dialogButton("Save")!.click());
+  expect(onAnswer).toHaveBeenCalledWith(
+    JSON.stringify({ name: "Alex Rivera", city: "Springfield" }),
+  );
 });
 
 it("reads Sent on a login card answered without saving it, after a reload", async () => {
@@ -626,7 +772,7 @@ it("asks for a one-time code in a masked field, with the site and no Save to Vau
   expect(button("Continue")!.disabled).toBe(true);
   await type("Code", "123 456");
   await act(async () => button("Continue")!.click());
-  expect(onAnswer).toHaveBeenCalledWith("123 456", undefined);
+  expect(onAnswer).toHaveBeenCalledWith("123 456");
 });
 
 it("leaves a one-time code to the run's user, and reads Sent once answered", async () => {
@@ -668,4 +814,118 @@ it("shows the bot's label on a code card as plain text beneath the site's own ti
 it("keeps one-time-code autofill off the other secret cards", async () => {
   await render(secretCard);
   expect(container.querySelector<HTMLInputElement>("input")!.autocomplete).toBe("off");
+});
+
+it("shows the site a replace card moves the login from only to the person answering it", async () => {
+  const replaced = "https://www.example.test";
+  const render = (canDismiss: boolean, status: AskBlock["status"] = "pending") =>
+    act(async () =>
+      root.render(
+        <AskCard
+          block={{ ...loginCard, status, replaces: { id: "saved-login-1", origin: replaced } }}
+          canAnswer
+          canDismiss={canDismiss}
+          onAnswer={async () => {}}
+          onDismiss={async () => {}}
+        />,
+      ),
+    );
+
+  await render(true);
+  expect(container.textContent).toContain(`Replaces the login saved for ${replaced}`);
+  await render(false);
+  expect(container.textContent).not.toContain(replaced);
+  await render(true, "answered");
+  expect(container.textContent).not.toContain(replaced);
+});
+
+it("sends Undo to the chat's space, not the one selected in another tab", async () => {
+  vi.clearAllMocks();
+  const card = (block: AskBlock) =>
+    act(async () =>
+      root.render(
+        <AskCard
+          key={block.text}
+          block={block}
+          canAnswer
+          canDismiss
+          onAnswer={async () => undefined}
+          onDismiss={async () => undefined}
+          rpc={spaceRpc as never}
+        />,
+      ),
+    );
+  await card({
+    kind: "ask",
+    text: "Instructions updated",
+    status: "answered",
+    instructionUpdate: {
+      botId: "bot-1",
+      undoVersionId: "version-1",
+      before: "Old",
+      after: "New",
+      reason: "Asked",
+    },
+  });
+  await act(async () => button("Undo")?.click());
+  await card({
+    kind: "ask",
+    text: "Settings updated",
+    status: "answered",
+    settingsUpdate: {
+      botId: "bot-1",
+      before: { modelProvider: null, modelId: null, thinkingLevel: null },
+      after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+    },
+  });
+  await act(async () => button("Undo")?.click());
+  expect(spaceRpc.bots.restoreInstructions).toHaveBeenCalledTimes(1);
+  expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
+  expect(rpc.bots.restoreInstructions).not.toHaveBeenCalled();
+  expect(rpc.bots.update).not.toHaveBeenCalled();
+});
+
+it("draws a payment's order as a receipt in place of the text detail", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Pay on freshcart.test?",
+    detail: "Bananas × 6: $3.00",
+    detailFormat: "text",
+    receipt: {
+      button: "Place order",
+      items: [
+        { name: "Bananas × 6", amount: "$3.00" },
+        { name: "Delivery", amount: "$6.00" },
+        // A page line named like the card's own row is left out.
+        { name: "On the button", amount: "$1.00" },
+      ],
+      more: { count: 23, atLeast: true },
+      amount: "$20.00",
+      amountSource: "button",
+      total: "$17.40",
+    },
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render(block);
+  const receipt = container.querySelector('[data-testid="ask-receipt"]');
+  expect([...receipt!.querySelectorAll("li")].map((row) => row.textContent)).toEqual([
+    "Bananas × 6$3.00",
+    "Delivery$6.00",
+    "23+ more",
+    "Total$17.40",
+    "On the button$20.00",
+  ]);
+  expect(receipt?.textContent).toContain("Button “Place order” · read from the page, not checked");
+  expect(container.querySelector('[data-testid="ask-detail"]')).toBeNull();
+
+  await render({ ...block, receipt: { items: [], amount: "$20.00", amountSource: "page" } });
+  expect(
+    [...container.querySelectorAll('[data-testid="ask-receipt"] li')].map((row) => row.textContent),
+  ).toEqual(["Total$20.00"]);
+  expect(container.textContent).toContain("Read from the page, not checked");
 });

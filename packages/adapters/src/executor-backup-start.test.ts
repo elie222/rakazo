@@ -110,8 +110,13 @@ async function runTurn({
       count: vi.fn(async () => 0),
     },
     userVoiceCredential: { count: vi.fn(async () => 0) },
+    $executeRaw: vi.fn(async () => 0),
     secret: {
       findFirst: vi.fn(
+        async (args: { where: { id: string } }) =>
+          state.secrets.find((row) => row.id === args.where.id) ?? null,
+      ),
+      findUnique: vi.fn(
         async (args: { where: { id: string } }) =>
           state.secrets.find((row) => row.id === args.where.id) ?? null,
       ),
@@ -131,6 +136,7 @@ async function runTurn({
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => run),

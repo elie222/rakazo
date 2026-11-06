@@ -19,8 +19,18 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
-import type { ClipboardEvent, DragEvent, RefObject } from "react";
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent, ComponentProps, DragEvent, RefObject } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   HoldToTalkControls,
   HoldToTalkStrip,
@@ -32,12 +42,18 @@ import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import {
   beginComposerDraftSubmission,
+  keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerRetryNonce,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
+  subscribeComposerOffer,
   writeComposerDraft,
+  writeComposerRetryNonce,
 } from "../../lib/composer-draft";
+import { hasOpenDialog } from "../../lib/has-open-dialog";
+import { usePageSession } from "../../lib/pages";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
@@ -49,11 +65,12 @@ import {
   MentionOptionIcon,
   slashActionLabel,
 } from "./composer-mentions";
+import { isApplePlatform, isEditableTarget, primaryModifier } from "./shell-shortcuts";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
-const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body1";
-export const Composer = memo(function Composer({
+const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body-lg";
+const ComposerBody = memo(function Composer({
   artifactTarget,
   activeName,
   running,
@@ -87,6 +104,7 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  docked = false,
 }: {
   activeName?: string;
   running: boolean;
@@ -127,6 +145,8 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** Floating over an open page instead of sitting under the chat. */
+  docked?: boolean;
 }) {
   const { t } = useLingui();
   const [composition, setComposition] = useState(() => ({
@@ -175,13 +195,19 @@ export const Composer = memo(function Composer({
     transcribe: dictationTranscribe,
     disabled: disabled || onCall || !phoneCallsEnabled,
     onText: (text) => {
-      // A refused send keeps the words: they land in the field to edit or retry.
-      void onSend(text, [], newClientId())
-        .then((accepted) => {
-          if (accepted === false) appendDictation(text);
-          else recordMessageSent();
-        })
-        .catch(() => appendDictation(text));
+      // Dictation rides the typed-message path: the words land in the draft and
+      // the normal send carries them, with its nonce, edit guards and recovery.
+      // Words added to a draft, a skill or attachments wait for the user to review
+      // and send; an armed reply or an open page is context and still sends.
+      const reviewFirst =
+        compositionRef.current.text.trim().length > 0 ||
+        selectedSkill !== null ||
+        pendingAttachments.length > 0;
+      appendDictation(text);
+      if (reviewFirst) return;
+      const clientNonce = newClientId();
+      retryNonce.current = clientNonce;
+      setDictationSendDue(editRevision.current);
     },
   });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
@@ -196,18 +222,47 @@ export const Composer = memo(function Composer({
       }),
     [draftKey],
   );
-  const retryNonce = useRef<string | null>(null);
+  // An open page rewrites what this chat sends (pageReply), so it is part of the payload.
+  const pageSession = usePageSession();
+  const dock = pageSession?.dock ?? noDock;
+  const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
+  // A draft reloaded without edits may still belong to a send whose answer never
+  // came; its nonce is stored beside it. Anything that would change the next
+  // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
+  const [storedRetryNonce] = useState(() =>
+    pendingAttachments.length === 0 && !replyTarget && openPageId === null
+      ? readComposerRetryNonce(draftKey)
+      : null,
+  );
+  const retryNonce = useRef(storedRetryNonce);
+  // Opening or closing a page counts as an edit, like a reply change.
+  const previousPageId = useRef(openPageId);
+  useEffect(() => {
+    if (previousPageId.current === openPageId) return;
+    previousPageId.current = openPageId;
+    markEdited();
+  }, [openPageId]);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
   const previousReply = useRef({ id: replyId, quote });
   useEffect(() => {
     if (previousReply.current.id !== replyId || previousReply.current.quote !== quote) {
-      editRevision.current += 1;
-      retryNonce.current = null;
+      markEdited();
       previousReply.current = { id: replyId, quote };
-      onDraftEdited?.();
     }
   }, [replyId, quote, onDraftEdited]);
+  // The words must reach the committed draft before send() reads it, so the
+  // send waits one render for the state appendDictation just queued.
+  // The due send holds the edit revision the dictation left.
+  const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
+  // A dictation that finishes while an earlier send is in flight waits for it;
+  // any edit in the meantime cancels the automatic send. It runs after the
+  // reply effect above, so a reply armed in the same commit counts as an edit.
+  useEffect(() => {
+    if (dictationSendDue === null || sending) return;
+    setDictationSendDue(null);
+    if (editRevision.current === dictationSendDue) void send();
+  }, [dictationSendDue, sending]);
   const {
     textareaRef,
     mirrorRef,
@@ -217,6 +272,34 @@ export const Composer = memo(function Composer({
     composerFieldRef,
     expanded,
   } = useComposerLayout(draft, selectedSkill !== null);
+  // Cmd/Ctrl+D in the message field dictates hands-free, like a keyboard press on the mic button,
+  // and sends once pressed again. The field hides while recording, so the key is heard window-wide.
+  const dictateKey = useRef({ talk, available: false });
+  dictateKey.current = {
+    talk,
+    available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
+  };
+  useEffect(() => {
+    const apple = isApplePlatform();
+    function onKey(event: KeyboardEvent) {
+      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
+        return;
+      if (!primaryModifier(event, apple)) return;
+      const { talk, available } = dictateKey.current;
+      if (talk.recording) {
+        // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+        if (!talk.recording.locked || talk.transcribing) return;
+        if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+        event.preventDefault();
+        talk.submit();
+      } else if (available && document.activeElement === textareaRef.current) {
+        event.preventDefault();
+        talk.startHandsFree();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [textareaRef]);
   const pendingCaret = useRef<ComposerMentionRange | null>(null);
   const completedSelection = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -227,6 +310,28 @@ export const Composer = memo(function Composer({
     textareaRef.current?.setSelectionRange(selection.start, selection.end);
     textareaRef.current?.focus();
   });
+  // A reply button on the open page adds its text here for the user to send, about that page
+  // rather than a message picked before it.
+  const clearReply = useRef(onClearReply);
+  clearReply.current = onClearReply;
+  const appendOffered = useRef((_text: string) => {});
+  appendOffered.current = (text: string) => {
+    clearReply.current?.();
+    const current = compositionRef.current.text;
+    editSelections.current = [{ start: current.length, end: current.length }];
+    const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
+    updateDraft(next);
+    pendingCaret.current = { start: next.length, end: next.length };
+  };
+  useEffect(
+    () => pageSession?.subscribeReply((text) => appendOffered.current(text)),
+    [pageSession],
+  );
+  // An app card in this chat offers its text the same way.
+  useEffect(
+    () => subscribeComposerOffer(draftKey, (text) => appendOffered.current(text)),
+    [draftKey],
+  );
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -272,6 +377,7 @@ export const Composer = memo(function Composer({
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
+    writeComposerRetryNonce(draftKey, null);
   }
 
   const draftKeyRef = useRef(draftKey);
@@ -419,7 +525,20 @@ export const Composer = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
-    const clientNonce = retryNonce.current ?? newClientId();
+    // Recovery rebuilds the draft from text alone, so only a plain-text send —
+    // no reply target, no attachments, no skill, no open page — can share its
+    // nonce with a retry. Anything else keeps the words without a nonce.
+    const nonceRecoverable =
+      !replyTarget &&
+      pendingAttachments.length === 0 &&
+      selectedSkill === null &&
+      openPageId === null;
+    const clientNonce =
+      retryNonce.current ??
+      // A chat reopened before its unsettled send failed has not edited since
+      // mount, so the nonce stored beside the saved draft is still this draft's.
+      (revision === 0 && nonceRecoverable ? readComposerRetryNonce(draftKey) : null) ??
+      newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
     const text = serializeComposerPrompt(submitted.text, selectedSkill);
@@ -442,12 +561,19 @@ export const Composer = memo(function Composer({
       }
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
-      // A rejected callback leaves acceptance unknown; do not restore a possible send.
+      // A rejected callback leaves acceptance unknown; do not restore a possible
+      // send. The saved draft still holds the words; only a recoverable plain
+      // text send keeps its nonce with them, so the retry is not mistaken for
+      // a reply-linked or otherwise different message.
+      if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
+    // This composer still carries the reply and attachments the send carried, so
+    // the in-memory nonce is safe here; the stored one is only for plain text.
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
+    if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }
@@ -567,7 +693,7 @@ export const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -603,7 +729,7 @@ export const Composer = memo(function Composer({
         />
       ) : null}
       {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
+        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-body-sm text-warning">
           {attachmentNotice}
         </div>
       ) : null}
@@ -612,7 +738,7 @@ export const Composer = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[13px] text-foreground/75"
+              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-body-sm text-foreground/75"
             >
               {attachment.previewUrl ? (
                 <img
@@ -670,11 +796,11 @@ export const Composer = memo(function Composer({
               >
                 <MentionOptionIcon mention={mention} />
                 <span className="min-w-0">
-                  <span dir="auto" className="block text-[14px] text-foreground">
+                  <span dir="auto" className="block text-body text-foreground">
                     @{mention.name}
                   </span>
                   {mention.subtitle ? (
-                    <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
+                    <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
                       {mention.subtitle}
                     </span>
                   ) : null}
@@ -699,10 +825,10 @@ export const Composer = memo(function Composer({
             >
               <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-foreground">
+                <span dir="auto" className="block text-body text-foreground">
                   {skill.name}
                 </span>
-                <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
+                <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
                   {truncateSlashDescription(skill.description)}
                 </span>
               </span>
@@ -719,7 +845,7 @@ export const Composer = memo(function Composer({
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
               >
                 <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
-                <span className="text-[14px] text-foreground">{label}</span>
+                <span className="text-body text-foreground">{label}</span>
               </button>
             );
           })}
@@ -729,8 +855,14 @@ export const Composer = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-input ${
-          expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+          docked ? "bg-card" : "bg-background dark:bg-card"
+        } ${
+          expanded
+            ? "gap-x-2 gap-y-2 pb-[9px] pt-3"
+            : docked
+              ? "gap-x-3 py-[5px] ps-2 pe-2"
+              : "gap-x-3.5 py-[9px]"
         }`}
       >
         <input
@@ -955,3 +1087,35 @@ export const Composer = memo(function Composer({
     </fieldset>
   );
 });
+
+const noDockState = { node: null, page: null };
+const noDock = { subscribe: () => () => {}, get: () => noDockState };
+
+/**
+ * The chat's composer, floated over the open page while one is open. It stays one mount: its
+ * element moves between the chat and the page, so a draft's chips, focus and dictation carry over.
+ */
+export function Composer(props: Omit<ComponentProps<typeof ComposerBody>, "docked">) {
+  const dock = usePageSession()?.dock ?? noDock;
+  const { node: dockNode } = useSyncExternalStore(dock.subscribe, dock.get);
+  const [host] = useState(() => {
+    const element = document.createElement("div");
+    element.style.display = "contents";
+    return element;
+  });
+  const slot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = dockNode ?? slot.current;
+    if (!target || host.parentNode === target) return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
+    target.append(host);
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+  }, [dockNode, host]);
+  useEffect(() => () => host.remove(), [host]);
+  return (
+    <>
+      <div ref={slot} className="contents" />
+      {createPortal(<ComposerBody {...props} docked={dockNode !== null} />, host)}
+    </>
+  );
+}

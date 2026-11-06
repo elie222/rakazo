@@ -3,10 +3,9 @@ import { formatCron } from "@rakazo/core";
 import { cronLabels } from "./cron";
 import { t } from "./i18n";
 
-function routineTriggers(routine: Routine): string {
-  const labels = cronLabels();
+/** The triggers that aren't schedules, by name. */
+export function routineTriggerNames(routine: Routine): string[] {
   return [
-    ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...(routine.webhookEnabled ? [t("Webhook")] : []),
     ...(routine.githubEnabled ? [t("Git event")] : []),
     ...(routine.messageProvider === "slack"
@@ -16,7 +15,16 @@ function routineTriggers(routine: Routine): string {
         : routine.messageProvider
           ? [t("Message event")]
           : []),
+    ...(routine.emailSenders ? [t("When an email arrives")] : []),
     ...(routine.watch ? [t("When something changes")] : []),
+  ];
+}
+
+function routineTriggers(routine: Routine): string {
+  const labels = cronLabels();
+  return [
+    ...routine.crons.map((cron) => formatCron(cron, labels)),
+    ...routineTriggerNames(routine),
   ].join(", ");
 }
 
@@ -26,17 +34,21 @@ function routineSchedule(routine: Routine, zone: string | undefined): string {
   return triggers && zone ? `${triggers} (${zone})` : triggers || zone || "";
 }
 
-export function routineStatusLine(routine: Routine): string {
-  return [routine.active ? t("Active") : t("Paused"), routineSchedule(routine, routine.timezone)]
-    .filter(Boolean)
-    .join(", ");
+/** One line per trigger for a routine's detail; schedules name their zone when it isn't the device's. */
+export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {
+  const labels = cronLabels();
+  const zone = routine.timezone === deviceTimeZone ? "" : ` (${routine.timezone})`;
+  return [
+    ...routine.crons.map((cron) => `${formatCron(cron, labels)}${zone}`),
+    ...routineTriggerNames(routine),
+  ];
 }
 
 /** A list row: the schedule, its zone only when it isn't the device's, and "Paused" only when paused. */
 export function routineRowDetail(routine: Routine, deviceTimeZone: string | undefined): string {
   return [
     routineSchedule(routine, routine.timezone === deviceTimeZone ? undefined : routine.timezone),
-    routine.active ? "" : t("Paused"),
+    routine.active ? (routine.scheduleDelayed ? t("Schedule delayed") : "") : t("Paused"),
   ]
     .filter(Boolean)
     .join(", ");
