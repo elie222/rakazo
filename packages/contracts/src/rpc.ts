@@ -96,6 +96,7 @@ import {
   IntegrationCatalogResultSchema,
   McpServerConfigInput,
   McpServerSchema,
+  McpSourcePresetSchema,
   MemoryDocumentSchema,
   MemoryPromptBudgetSchema,
   MemoryScopeSchema,
@@ -1052,6 +1053,7 @@ export const appContract = {
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
+    sourcePresets: oc.output(z.array(McpSourcePresetSchema)),
     catalogSearch: oc
       .input(
         z.object({

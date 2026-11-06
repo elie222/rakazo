@@ -1109,6 +1109,16 @@ export const IntegrationCatalogResultSchema = z.object({
 });
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
 
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
+
 export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({

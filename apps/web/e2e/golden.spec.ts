@@ -289,7 +289,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const toolSources = page.getByTestId("tool-sources");
 
   await addSource("Treg");
-  await form.getByLabel("Treg token", { exact: true }).fill("fake-treg-browser-credential");
+  await form.getByLabel("Bearer token", { exact: true }).fill("fake-treg-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/MCP\s*https:\/\/treg\.to\/mcp\//)).toBeVisible();
 
