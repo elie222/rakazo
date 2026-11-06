@@ -1355,8 +1355,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 // answers fails the provision the same way, so the next one probes again.
 let autoEgressSettled: Promise<void> | undefined;
 // One in-flight verification shared by concurrent provisions, never cached
-// after it settles: each start is still covered by a check that finished after
-// it arrived, without one probe network per start in a burst.
+// after it settles. The check is a precondition of every restricted start, so
+// it cannot be bypassed; sharing it limits the one resource that needs
+// limiting — each probe holds a network from the engine's small address pools —
+// and each start is still covered by a check that finished after it arrived.
 let egressVerification: Promise<void> | undefined;
 async function verifyEgressNow() {
   egressVerification ??= verifyRestrictedEgress(

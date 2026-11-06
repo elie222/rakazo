@@ -206,12 +206,21 @@ function chainHasPrefix(rules: string[], wanted: string[], chain: string) {
   }
   for (let i = 0; i < wanted.length; i += 1) {
     if (normalized[i] !== wanted[i]) {
+      // All managed rules are present (checked above), so the prefix is merely
+      // displaced: name the rules sitting above wherever it starts. If the
+      // managed rules are interleaved rather than displaced, name the foreign
+      // rules in the head instead.
+      const start = normalized.findIndex(
+        (_, index) =>
+          index + wanted.length <= normalized.length &&
+          wanted.every((rule, j) => normalized[index + j] === rule),
+      );
+      const above =
+        start > 0
+          ? rules.slice(0, start)
+          : rules.slice(0, wanted.length).filter((_rule, j) => !wanted.includes(normalized[j]!));
       throw new Error(
-        `cannot verify restricted egress: ${chain} rule ${i + 1} precedes the managed rule (${rules
-          .slice(0, i)
-          .join(
-            "; ",
-          )}); re-run infra/compose/restrict-computer-egress.sh to put the managed rules back on top (see docs/self-host-docker-computers.md)`,
+        `cannot verify restricted egress: ${chain} rules above the managed prefix (${above.join("; ")}) could bypass them; re-run infra/compose/restrict-computer-egress.sh to put the managed rules back on top (see docs/self-host-docker-computers.md)`,
       );
     }
   }
@@ -411,11 +420,12 @@ async function attestOnce(docker: Docker, image: string) {
       HostConfig: {
         NetworkMode: "host",
         CapDrop: ["ALL"],
-        CapAdd: ["NET_ADMIN"],
+        // iptables-legacy needs both: it takes /run/xtables.lock even to list
+        // rules (which a read-only rootfs cannot provide) and opens a raw
+        // socket for libiptc, which the kernel gates on CAP_NET_RAW.
+        CapAdd: ["NET_ADMIN", "NET_RAW"],
         SecurityOpt: ["no-new-privileges:true"],
         ReadonlyRootfs: true,
-        // iptables-legacy takes /run/xtables.lock even to list rules, which a
-        // read-only rootfs cannot provide.
         Tmpfs: { "/run": "rw" },
         Memory: 64 * 1024 * 1024,
         PidsLimit: 32,

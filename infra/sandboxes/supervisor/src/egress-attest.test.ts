@@ -74,7 +74,11 @@ describe("egress attestation", () => {
       "==RAKAZO-V4USER==\n",
       "==RAKAZO-V4USER==\n-A DOCKER-USER -j ACCEPT\n",
     );
-    expect(() => verifyAttestation(withForeign)).toThrow(/cannot verify restricted egress/);
+    // The error must name the rule found above the managed prefix, even when
+    // it sits at index 0 and displaces the whole prefix.
+    expect(() => verifyAttestation(withForeign)).toThrow(
+      /rules above the managed prefix \(-j ACCEPT\)/,
+    );
     expect(() => verifyAttestation(withForeign)).not.toThrow(EgressNotEnforced);
   });
 
@@ -85,7 +89,9 @@ describe("egress attestation", () => {
       "==RAKAZO-V4INPUT==\n",
       "==RAKAZO-V4INPUT==\n-A INPUT -i tailscale0 -j ACCEPT\n",
     );
-    expect(() => verifyAttestation(withForeign)).toThrow(/precedes the managed rule/);
+    expect(() => verifyAttestation(withForeign)).toThrow(
+      /rules above the managed prefix \(-i tailscale0 -j ACCEPT\)/,
+    );
     expect(() => verifyAttestation(withForeign)).not.toThrow(EgressNotEnforced);
   });
 
@@ -374,7 +380,7 @@ describe("egress attestation", () => {
       expect.objectContaining({
         NetworkMode: "host",
         CapDrop: ["ALL"],
-        CapAdd: ["NET_ADMIN"],
+        CapAdd: ["NET_ADMIN", "NET_RAW"],
         ReadonlyRootfs: true,
         Tmpfs: { "/run": "rw" },
       }),
