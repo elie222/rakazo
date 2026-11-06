@@ -5,6 +5,7 @@ import {
   applyMcpSourcePreset,
   createPluginMarketplace,
   isTransientFetchError,
+  lockMcpOAuthMaterial,
   MCP_SOURCE_PRESETS,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
@@ -513,7 +514,7 @@ export function mcpRoutes(ctx: RouterContext) {
                   // so this takes it first too and the two can never wait on each other.
                   if (config.slug !== existing.slug)
                     await lockOwner(tx, context.actor.userId, "names:mcpServer");
-                  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${input.id}))`;
+                  await lockMcpOAuthMaterial(tx, input.id);
                   const current = await tx.mcpServer.findFirst({
                     where: {
                       id: input.id,

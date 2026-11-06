@@ -559,7 +559,7 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "いろいろ少しずつ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "コマンドの出力"
 
@@ -597,7 +597,7 @@ msgstr ""
 msgid "Access key secret"
 msgstr ""
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "アクセストークン（任意）"
 
@@ -652,7 +652,7 @@ msgstr "アクティビティ"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
@@ -663,11 +663,11 @@ msgstr "追加"
 msgid "Add {0} to the group"
 msgstr "{0}をグループに追加"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "実行するコマンドを追加"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "監視するファイルまたはフォルダーを追加"
 
@@ -757,7 +757,6 @@ msgstr "プロバイダーを追加"
 msgid "Add rule"
 msgstr ""
 
-#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "サーバーを追加"
@@ -774,7 +773,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "ルーティンに追加"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "トリガーを追加"
 
@@ -788,7 +787,7 @@ msgid "Added"
 msgstr "追加済み"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
 msgstr "追加中…"
@@ -806,17 +805,17 @@ msgstr ""
 msgid "Adds"
 msgstr "追加されるもの"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "詳細設定"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "詳細設定..."
 
@@ -939,7 +938,7 @@ msgstr "インポートしたAPIキーを確認できませんでした。もう
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "インポートしたAPIキーを使用できませんでした。チェックを外してもう一度お試しください。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "連携ツール"
 
@@ -980,7 +979,7 @@ msgstr ""
 msgid "Any model, with your own key"
 msgstr "自分のキーで、あらゆるモデルを"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "@{ownerDomain} の全員"
 
@@ -1083,7 +1082,7 @@ msgstr "アーカイブ済み"
 msgid "Archived"
 msgstr "アーカイブ済み"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "引数"
 
@@ -1139,11 +1138,11 @@ msgstr "認証に失敗しました。"
 msgid "Authorization code"
 msgstr "認証コード"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
 msgstr "認証パラメーター（任意）"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "認証サーバー"
 
@@ -1167,7 +1166,7 @@ msgstr "自動"
 msgid "Automated senders"
 msgstr "自動送信者"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "ルーティンの保存後に利用可能"
 
@@ -1196,7 +1195,7 @@ msgstr "Avatar Studio"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1312,7 +1311,7 @@ msgstr ""
 msgid "Bot templates"
 msgstr "ボットのテンプレート"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "ボットのモデル"
 
@@ -1534,12 +1533,12 @@ msgstr "チャット"
 msgid "Check again"
 msgstr "再確認"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "確認間隔"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "確認に失敗しました: {0}"
 
@@ -1783,8 +1782,8 @@ msgstr "列 {index}"
 msgid "Comfortable"
 msgstr "ゆったり"
 
-#: src/pages/McpServerForm.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "コマンド"
 
@@ -2762,7 +2761,7 @@ msgstr "グループを作成"
 msgid "Create organization"
 msgstr "組織を作成"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "ルーティンを作成"
 
@@ -2893,7 +2892,7 @@ msgid "Default"
 msgstr "デフォルト"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "デフォルト（{0}）"
@@ -3195,7 +3194,7 @@ msgstr "画像をドラッグ＆ドロップまたは貼り付け"
 msgid "Duplicate"
 msgstr "複製"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Each name can be used once."
 msgstr "各名前は一度だけ使用できます。"
 
@@ -3226,7 +3225,8 @@ msgstr "プロフィールを編集"
 msgid "Email"
 msgstr "メールアドレス"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "メール"
@@ -3295,7 +3295,7 @@ msgstr "テストする前にAPIキーを入力してください。"
 msgid "Environment ID"
 msgstr ""
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "環境変数"
 
@@ -3337,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "このスペースのすべてのボットがこのメモを読み、最新の状態に保ちます。"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "毎日"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "毎時"
@@ -3361,12 +3361,12 @@ msgstr "すべてのメッセージ"
 msgid "Every Monday"
 msgstr "毎週月曜日"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "毎月"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "毎週"
@@ -3462,24 +3462,24 @@ msgstr "失敗しました。"
 msgid "Failure handling"
 msgstr "失敗時の対応"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "変更とみなすフィールド"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "比較するフィールド（例: id, modifiedTime）（任意）"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "ファイル"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "コンピューター上のファイルまたはフォルダ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "ファイルまたはフォルダ（1行に1つ）"
 
@@ -3632,7 +3632,9 @@ msgstr "モバイルアプリを入手"
 msgid "Getting ready"
 msgstr "準備中"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "Gitイベント"
 
@@ -3684,7 +3686,7 @@ msgstr "先に通話を終了してから、画面に表示されたコードを
 msgid "Hang up, then enter the code on screen."
 msgstr "通話を終了してから、画面に表示されたコードを入力してください。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "ヘッダー"
 
@@ -3694,13 +3696,13 @@ msgstr "ヘッダー「{header}」"
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Header name"
 msgstr "ヘッダー名"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "ヘッダー値"
 
@@ -3926,7 +3928,7 @@ msgstr "連携ドメイン"
 msgid "Integrations"
 msgstr "連携"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "間隔"
@@ -4013,11 +4015,11 @@ msgstr "たった今"
 msgid "Keep memories"
 msgstr "メモリを保持"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Keep tool results whole"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "キー"
 
@@ -4040,12 +4042,12 @@ msgid "Language"
 msgstr "言語"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "前回の確認 {0}: 変更あり"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "前回の確認 {0}: 変更なし"
 
@@ -4386,7 +4388,8 @@ msgstr "{activeName}にメッセージを送信"
 msgid "Message composer"
 msgstr "メッセージ入力欄"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "メッセージイベント"
 
@@ -4446,7 +4449,7 @@ msgid "minute"
 msgstr "分"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "分"
 
@@ -4461,7 +4464,7 @@ msgstr "モード"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
@@ -4578,7 +4581,7 @@ msgstr ""
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4861,7 +4864,7 @@ msgstr ""
 msgid "No tickets yet"
 msgstr "チケットはまだありません"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "トリガーなし"
 
@@ -4938,11 +4941,11 @@ msgstr ""
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth認証がキャンセルされました。"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth client ID (optional)"
 msgstr "OAuthクライアントID（任意）"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth client secret (optional)"
 msgstr "OAuthクライアントシークレット（任意）"
 
@@ -4954,7 +4957,7 @@ msgstr "OAuth接続に失敗しました"
 msgid "Offline"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "スケジュール"
 
@@ -4983,7 +4986,7 @@ msgstr "1回限りの購入です。クレジットは失効しません。"
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "自分のみ"
 
@@ -5083,7 +5086,7 @@ msgstr "ブラウザの印刷ダイアログを開きます。送信先に「PDF
 msgid "Optional"
 msgstr "任意"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Optional header value"
 msgstr "ヘッダー値（任意）"
 
@@ -5246,7 +5249,7 @@ msgstr "APIキーを貼り付け"
 msgid "Paste your API key, then test again."
 msgstr "APIキーを貼り付けてから、もう一度テストしてください。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "一時停止中"
@@ -5295,7 +5298,7 @@ msgstr "カタログからモデルを選択してください。"
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "一覧からモデルを選択するか、このエンドポイントで提供されているモデルIDを入力してください。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "確認するツールを選択"
 
@@ -5338,11 +5341,11 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "チャットに「変更なし」と投稿"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "POST先"
 
@@ -5570,7 +5573,7 @@ msgstr "コンピューターを再作成中"
 msgid "Recruiting & HR"
 msgstr ""
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Redirect URI"
 msgstr "リダイレクトURI"
 
@@ -5632,7 +5635,7 @@ msgstr "再読み込み"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5667,11 +5670,11 @@ msgstr "{secretName}を削除しますか？ボットはこれを使用できな
 msgid "Remove {site}"
 msgstr "{site} を削除"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "変更トリガーを削除"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "メールトリガーを削除"
 
@@ -5682,7 +5685,7 @@ msgstr "メールトリガーを削除"
 msgid "Remove from every space?"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "Gitイベントを削除"
 
@@ -5690,7 +5693,7 @@ msgstr "Gitイベントを削除"
 msgid "Remove header"
 msgstr "ヘッダーを削除"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "メッセージトリガーを削除"
 
@@ -5707,7 +5710,7 @@ msgstr "スキル{0}を削除"
 msgid "Remove skills"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Webhookを削除"
 
@@ -5920,7 +5923,7 @@ msgstr ""
 msgid "Root filesystem"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "キーをローテーション"
 
@@ -5962,7 +5965,7 @@ msgstr "実行中"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "実行中"
 
@@ -5978,7 +5981,7 @@ msgstr "実行中…"
 msgid "Runs"
 msgstr "実行"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "このボットがこのプロバイダーから検証済みのメッセージを受信したときに実行されます。"
 
@@ -6009,7 +6012,7 @@ msgstr "土曜日"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6042,7 +6045,7 @@ msgstr "保存しましたが、一覧を更新できませんでした"
 msgid "Saved."
 msgstr "保存しました。"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "保存しました。表示するにはローテーションしてください。"
 
@@ -6058,7 +6061,7 @@ msgstr "保存中..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6079,7 +6082,7 @@ msgstr "予定の実行が遅れています"
 msgid "Scheduled routines"
 msgstr "スケジュール済みのルーティン"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "スコープ（任意）"
 
@@ -6245,12 +6248,12 @@ msgstr ""
 msgid "Serenity endpoint is required."
 msgstr "Serenityのエンドポイントは必須です。"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Server name"
 msgstr "サーバー名"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6472,11 +6475,13 @@ msgstr ""
 msgid "Skipped {0}"
 msgstr "{0}をスキップしました"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "Slackメッセージ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slackが有効になっていません"
 
@@ -6632,7 +6637,7 @@ msgstr "ステータス"
 msgid "Steps"
 msgstr "手順"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6660,7 +6665,7 @@ msgstr "停止しました。"
 msgid "Stopping…"
 msgstr ""
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "暗号化して保存済み"
 
@@ -6773,7 +6778,8 @@ msgstr "チーム"
 msgid "Team Computer"
 msgstr "チームのコンピューター"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "Teamsメッセージ"
 
@@ -6901,7 +6907,7 @@ msgstr "友だちは{weeks}週間無料で使えます。"
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -7126,19 +7132,19 @@ msgstr "サイドバーの表示切り替え"
 msgid "Tokens"
 msgstr "トークン"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "ツールの引数（JSON）"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "ツールの引数はJSONオブジェクトである必要があります"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "ツールの引数はJSONである必要があります"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "ツール名"
 
@@ -7361,7 +7367,7 @@ msgstr "{0}を使用"
 msgid "Use {hostLabel}"
 msgstr "{hostLabel}を使用"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "アクセストークンには{oauthEnvReference}を使用してください。"
 
@@ -7447,7 +7453,7 @@ msgstr "自分の API キーを使用中。無料プランは{freeUntil}に終�
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Value"
 msgstr "値"
 
@@ -7528,7 +7534,7 @@ msgstr "Web、デスクトップ、モバイル"
 msgid "Web, desktop and mobile apps"
 msgstr "Web、デスクトップ、モバイルアプリ"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -7541,7 +7547,7 @@ msgid "week"
 msgstr "週"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "平日"
@@ -7590,7 +7596,7 @@ msgstr "このボットの用途"
 msgid "What to return"
 msgstr "返す内容"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "監視する対象"
 
@@ -7598,11 +7604,12 @@ msgstr "監視する対象"
 msgid "What your bots remember between chats."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "Webhookが呼び出されたとき"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "メールを受信したとき"
 
@@ -7614,7 +7621,9 @@ msgstr ""
 msgid "When it finishes or needs input"
 msgstr "完了時または入力が必要なとき"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "変更があったとき"
 
@@ -7644,7 +7653,7 @@ msgstr ""
 msgid "Who can open this page"
 msgstr "このページを開けるユーザー"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "開始できる人"
 

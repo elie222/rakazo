@@ -152,7 +152,8 @@ export function BotTemplatesDialog({
       <DialogContent
         showCloseButton={false}
         data-testid="bot-templates-dialog"
-        className="flex h-[680px] max-h-[calc(100%-2rem)] w-[760px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[760px]"
+        size="lg"
+        className="bg-card"
       >
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">

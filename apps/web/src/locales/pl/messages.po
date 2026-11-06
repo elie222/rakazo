@@ -559,7 +559,7 @@ msgstr "1 przestrzeń"
 msgid "A bit of everything"
 msgstr "Po trochu wszystkiego"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "A command's output"
 msgstr "Wynik polecenia"
 
@@ -597,7 +597,7 @@ msgstr "Identyfikator klucza dostępu"
 msgid "Access key secret"
 msgstr "Sekret klucza dostępu"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "Token dostępu (opcjonalnie)"
 
@@ -652,7 +652,7 @@ msgstr "Aktywność"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SecretAskCard.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
@@ -663,11 +663,11 @@ msgstr "Dodaj"
 msgid "Add {0} to the group"
 msgstr "Dodaj bota {0} do grupy"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a command to run"
 msgstr "Dodaj polecenie do uruchomienia"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Add a file or folder to watch"
 msgstr "Dodaj plik lub folder do obserwowania"
 
@@ -757,7 +757,6 @@ msgstr "Dodaj dostawcę"
 msgid "Add rule"
 msgstr "Dodaj regułę"
 
-#: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "Dodaj serwer"
@@ -774,7 +773,7 @@ msgstr "Dodaj umiejętności"
 msgid "Add to routine"
 msgstr "Dodaj do rutyny"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Add trigger"
 msgstr "Dodaj wyzwalacz"
 
@@ -788,7 +787,7 @@ msgid "Added"
 msgstr "Dodano"
 
 #: src/components/integrations/plugin-marketplace.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
 msgstr "Dodawanie…"
@@ -806,17 +805,17 @@ msgstr "Druga linia adresu"
 msgid "Adds"
 msgstr "Zawiera"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "Zaawansowane"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Advanced..."
 msgstr "Zaawansowane..."
 
@@ -939,7 +938,7 @@ msgstr "Nie udało się sprawdzić zaimportowanego klucza API. Spróbuj ponownie
 msgid "An imported API key could not be used. Untick it and try again."
 msgstr "Nie można użyć zaimportowanego klucza API. Odznacz go i spróbuj ponownie."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "An integration tool"
 msgstr "Narzędzie integracji"
 
@@ -980,7 +979,7 @@ msgstr "Anthropic Messages"
 msgid "Any model, with your own key"
 msgstr "Dowolny model z własnym kluczem"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
 msgstr "Każdy z @{ownerDomain}"
 
@@ -1083,7 +1082,7 @@ msgstr "zarchiwizowane"
 msgid "Archived"
 msgstr "Zarchiwizowane"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "Argumenty"
 
@@ -1139,11 +1138,11 @@ msgstr "Uwierzytelnianie nie powiodło się."
 msgid "Authorization code"
 msgstr "Kod autoryzacji"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
 msgstr "Parametry autoryzacji (opcjonalnie)"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "Serwer autoryzacji"
 
@@ -1167,7 +1166,7 @@ msgstr "Automatycznie"
 msgid "Automated senders"
 msgstr "Automatyczni nadawcy"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Available after the routine is saved"
 msgstr "Dostępne po zapisaniu rutyny"
 
@@ -1196,7 +1195,7 @@ msgstr "Studio awatara"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1312,7 +1311,7 @@ msgstr "Styl bota"
 msgid "Bot templates"
 msgstr "Szablony botów"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 msgid "Bot's model"
 msgstr "Model bota"
 
@@ -1534,12 +1533,12 @@ msgstr "Czaty"
 msgid "Check again"
 msgstr "Sprawdź ponownie"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check every"
 msgstr "Sprawdzaj co"
 
 #. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Check failed: {0}"
 msgstr "Sprawdzanie nie powiodło się: {0}"
 
@@ -1783,8 +1782,8 @@ msgstr "kolumna {index}"
 msgid "Comfortable"
 msgstr "Przestronny"
 
-#: src/pages/McpServerForm.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Command"
 msgstr "Polecenie"
 
@@ -2762,7 +2761,7 @@ msgstr "Utwórz grupę"
 msgid "Create organization"
 msgstr "Utwórz organizację"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Create Routine"
 msgstr "Utwórz rutynę"
 
@@ -2893,7 +2892,7 @@ msgid "Default"
 msgstr "Domyślne"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Domyślne ({0})"
@@ -3195,7 +3194,7 @@ msgstr "Przeciągnij, upuść lub wklej obraz"
 msgid "Duplicate"
 msgstr "Duplikuj"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Each name can be used once."
 msgstr "Każdej nazwy można użyć raz."
 
@@ -3226,7 +3225,8 @@ msgstr "Edytuj profil"
 msgid "Email"
 msgstr "E-mail"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/RoutineList.tsx
 msgctxt "routine trigger"
 msgid "Email"
 msgstr "E-mail"
@@ -3295,7 +3295,7 @@ msgstr "Przed testem wpisz klucz API."
 msgid "Environment ID"
 msgstr "Identyfikator środowiska"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Zmienne środowiskowe"
 
@@ -3337,13 +3337,13 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Każdy bot w tej przestrzeni czyta te notatki i je aktualizuje."
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Codziennie"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Co godzinę"
@@ -3361,12 +3361,12 @@ msgstr "Każda wiadomość"
 msgid "Every Monday"
 msgstr "Co poniedziałek"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "Co miesiąc"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "Co tydzień"
@@ -3462,24 +3462,24 @@ msgstr "Niepowodzenie."
 msgid "Failure handling"
 msgstr "Obsługa błędów"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields that mark a change"
 msgstr "Pola wskazujące zmianę"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Pola do porównania, np. id, modifiedTime (opcjonalnie)"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "Plik"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
 msgstr "Pliki lub foldery na komputerze"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Files or folders, one per line"
 msgstr "Pliki lub foldery, po jednym w wierszu"
 
@@ -3632,7 +3632,9 @@ msgstr "Pobierz aplikację mobilną"
 msgid "Getting ready"
 msgstr "Przygotowywanie"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Git event"
 msgstr "Zdarzenie Git"
 
@@ -3684,7 +3686,7 @@ msgstr "Najpierw zakończ rozmowę, a potem wpisz kod na ekranie."
 msgid "Hang up, then enter the code on screen."
 msgstr "Zakończ rozmowę, a potem wpisz kod na ekranie."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "header"
 msgstr "nagłówek"
 
@@ -3694,13 +3696,13 @@ msgstr "Nagłówek \"{header}\""
 
 #: src/components/ModelHeadersEditor.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Header name"
 msgstr "Nazwa nagłówka"
 
 #: src/components/ModelHeadersEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Wartość nagłówka"
 
@@ -3926,7 +3928,7 @@ msgstr "Domena integracji"
 msgid "Integrations"
 msgstr "Integracje"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "Interwał"
@@ -4013,11 +4015,11 @@ msgstr "przed chwilą"
 msgid "Keep memories"
 msgstr "Zachowaj wspomnienia"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Keep tool results whole"
 msgstr "Zachowuj pełne wyniki narzędzi"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "key"
 msgstr "klucz"
 
@@ -4040,12 +4042,12 @@ msgid "Language"
 msgstr "Język"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
 msgstr "Ostatnie sprawdzenie {0}: zmiana"
 
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "Ostatnie sprawdzenie {0}: bez zmian"
 
@@ -4386,7 +4388,8 @@ msgstr "Napisz do {activeName}"
 msgid "Message composer"
 msgstr "Edytor wiadomości"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Message event"
 msgstr "Zdarzenie wiadomości"
 
@@ -4446,7 +4449,7 @@ msgid "minute"
 msgstr "minuta"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "minutes"
 msgstr "min"
 
@@ -4461,7 +4464,7 @@ msgstr "Tryb"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
@@ -4578,7 +4581,7 @@ msgstr "Moje komputery"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4861,7 +4864,7 @@ msgstr "Brak zgłoszeń"
 msgid "No tickets yet"
 msgstr "Brak zgłoszeń"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "No trigger"
 msgstr "Brak wyzwalacza"
 
@@ -4938,11 +4941,11 @@ msgstr "Numer"
 msgid "OAuth authorization was cancelled."
 msgstr "Anulowano autoryzację OAuth."
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth client ID (optional)"
 msgstr "Identyfikator klienta OAuth (opcjonalnie)"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth client secret (optional)"
 msgstr "Sekret klienta OAuth (opcjonalnie)"
 
@@ -4954,7 +4957,7 @@ msgstr "Połączenie OAuth nie powiodło się"
 msgid "Offline"
 msgstr "Offline"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "On a schedule"
 msgstr "Według harmonogramu"
 
@@ -4983,7 +4986,7 @@ msgstr "Zakup jednorazowy. Środki nie wygasają."
 msgid "Only enter a code {codeHost} sent you."
 msgstr "Wpisz tylko kod wysłany przez {codeHost}."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Tylko ja"
 
@@ -5083,7 +5086,7 @@ msgstr "Otwiera okno drukowania przeglądarki. Jako drukarkę wybierz Zapisz jak
 msgid "Optional"
 msgstr "Opcjonalne"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Optional header value"
 msgstr "Opcjonalna wartość nagłówka"
 
@@ -5246,7 +5249,7 @@ msgstr "Wklej swój klucz API"
 msgid "Paste your API key, then test again."
 msgstr "Wklej swój klucz API, a potem ponów test."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Wstrzymano"
@@ -5295,7 +5298,7 @@ msgstr "Wybierz model z katalogu."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Wybierz model z listy lub wpisz identyfikator modelu obsługiwanego przez ten punkt końcowy."
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Pick a tool to check"
 msgstr "Wybierz narzędzie do sprawdzenia"
 
@@ -5338,11 +5341,11 @@ msgstr "Zgłoszenia wtyczek"
 msgid "Plugins"
 msgstr "Wtyczki"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "Publikuj \"Bez zmian\" w czacie"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "POST to"
 msgstr "POST na adres"
 
@@ -5570,7 +5573,7 @@ msgstr "Odtwarzanie komputera"
 msgid "Recruiting & HR"
 msgstr "Rekrutacja i HR"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Redirect URI"
 msgstr "Adres URI przekierowania"
 
@@ -5632,7 +5635,7 @@ msgstr "Wczytaj ponownie"
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5667,11 +5670,11 @@ msgstr "Usunąć {secretName}? Boty nie będą już mogły z tego korzystać."
 msgid "Remove {site}"
 msgstr "Usuń {site}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "Usuń wyzwalacz zmiany"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove email trigger"
 msgstr "Usuń wyzwalacz e-mail"
 
@@ -5682,7 +5685,7 @@ msgstr "Usuń wyzwalacz e-mail"
 msgid "Remove from every space?"
 msgstr "Usunąć ze wszystkich przestrzeni?"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove Git event"
 msgstr "Usuń zdarzenie Git"
 
@@ -5690,7 +5693,7 @@ msgstr "Usuń zdarzenie Git"
 msgid "Remove header"
 msgstr "Usuń nagłówek"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "Usuń wyzwalacz wiadomości"
 
@@ -5707,7 +5710,7 @@ msgstr "Usuń umiejętność {0}"
 msgid "Remove skills"
 msgstr "Usuń umiejętności"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Usuń webhook"
 
@@ -5920,7 +5923,7 @@ msgstr "Cofnięto"
 msgid "Root filesystem"
 msgstr "Główny system plików"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
 msgstr "Wygeneruj nowy klucz"
 
@@ -5962,7 +5965,7 @@ msgstr "działa"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 msgid "Running"
 msgstr "Działa"
 
@@ -5978,7 +5981,7 @@ msgstr "Działa…"
 msgid "Runs"
 msgstr "Uruchomienia"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Uruchamia się, gdy bot otrzyma zweryfikowaną wiadomość od tego dostawcy."
 
@@ -6009,7 +6012,7 @@ msgstr "sobota"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6042,7 +6045,7 @@ msgstr "Zapisano, ale nie udało się odświeżyć listy"
 msgid "Saved."
 msgstr "Zapisano."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Zapisano. Wygeneruj nowy klucz, aby go wyświetlić."
 
@@ -6058,7 +6061,7 @@ msgstr "Zapisywanie..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -6079,7 +6082,7 @@ msgstr "Harmonogram jest opóźniony"
 msgid "Scheduled routines"
 msgstr "Zaplanowane rutyny"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "Zakresy (opcjonalnie)"
 
@@ -6245,12 +6248,12 @@ msgstr "Wysłano"
 msgid "Serenity endpoint is required."
 msgstr "Punkt końcowy Serenity jest wymagany."
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Server name"
 msgstr "Nazwa serwera"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6472,11 +6475,13 @@ msgstr "Pominięto"
 msgid "Skipped {0}"
 msgstr "Pominięto {0}"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Slack message"
 msgstr "Wiadomość Slack"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Slack not enabled"
 msgstr "Slack nie jest włączony"
 
@@ -6632,7 +6637,7 @@ msgstr "Status"
 msgid "Steps"
 msgstr "Kroki"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineList.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -6660,7 +6665,7 @@ msgstr "Zatrzymano."
 msgid "Stopping…"
 msgstr "Zatrzymywanie…"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "Zapisane w postaci zaszyfrowanej"
 
@@ -6773,7 +6778,8 @@ msgstr "Zespół"
 msgid "Team Computer"
 msgstr "Komputer zespołu"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "Teams message"
 msgstr "Wiadomość Teams"
 
@@ -6901,7 +6907,7 @@ msgstr "Otrzymają {weeks} tyg. za darmo."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/ModelRoleSettings.tsx
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Rozumowanie"
@@ -7126,19 +7132,19 @@ msgstr "Pokaż lub ukryj pasek boczny"
 msgid "Tokens"
 msgstr "Tokeny"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Argumenty narzędzia (JSON)"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be a JSON object"
 msgstr "Argumenty narzędzia muszą być obiektem JSON"
 
-#: src/pages/RoutineEditor.tsx
+#: src/lib/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "Argumenty narzędzia muszą być w formacie JSON"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool name"
 msgstr "Nazwa narzędzia"
 
@@ -7361,7 +7367,7 @@ msgstr "Użyj {0}"
 msgid "Use {hostLabel}"
 msgstr "Użyj {hostLabel}"
 
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Użyj {oauthEnvReference} jako tokenu dostępu."
 
@@ -7447,7 +7453,7 @@ msgstr "Korzystasz z własnego klucza API. Bezpłatny plan kończy się {freeUnt
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
-#: src/pages/McpServerForm.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Value"
 msgstr "Wartość"
 
@@ -7528,7 +7534,7 @@ msgstr "Web, komputer i urządzenia mobilne"
 msgid "Web, desktop and mobile apps"
 msgstr "Aplikacje webowa, komputerowa i mobilna"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -7541,7 +7547,7 @@ msgid "week"
 msgstr "tydzień"
 
 #: src/lib/cron.ts
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Dni robocze"
@@ -7590,7 +7596,7 @@ msgstr "Do czego służy ten bot"
 msgid "What to return"
 msgstr "Co zwrócić"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "What to watch"
 msgstr "Co obserwować"
 
@@ -7598,11 +7604,12 @@ msgstr "Co obserwować"
 msgid "What your bots remember between chats."
 msgstr "Co boty pamiętają między czatami."
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When a webhook fires"
 msgstr "Gdy zadziała webhook"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "When an email arrives"
 msgstr "Gdy przyjdzie e-mail"
 
@@ -7614,7 +7621,9 @@ msgstr "Kiedy boty pytają cię przed działaniem."
 msgid "When it finishes or needs input"
 msgstr "Gdy skończy lub potrzebuje danych"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/add-trigger-menu.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
+#: src/pages/RoutineList.tsx
 msgid "When something changes"
 msgstr "Gdy coś się zmieni"
 
@@ -7644,7 +7653,7 @@ msgstr "Których LLM używają boty."
 msgid "Who can open this page"
 msgstr "Kto może otworzyć tę stronę"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/routine-editor/trigger-cards.tsx
 msgid "Who can start it"
 msgstr "Kto może uruchomić"
 

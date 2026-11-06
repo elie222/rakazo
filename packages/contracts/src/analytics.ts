@@ -1,9 +1,6 @@
 import { z } from "zod";
-import {
-  BILLING_CANCELLATION_REASONS,
-  SIGNUP_SURVEY_TEAM_SIZES,
-  SIGNUP_SURVEY_USES,
-} from "./domain.js";
+import { BILLING_CANCELLATION_REASONS } from "./billing.js";
+import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./domain.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "./runs.js";
 
 // No free-form properties: this is also the final allowlist at the external boundary.
