@@ -53,7 +53,8 @@ jobs:
           github_token: ${{ github.token }}
           prompt: Follow .github/prompts/issue-triage.md.
           claude_args: >-
-            --model claude-sonnet-5-5
+            --model claude-haiku-5-5
+            --effort high
             --max-turns 25
             --allowedTools Read,Grep,Glob
             --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task
