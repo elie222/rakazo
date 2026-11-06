@@ -1390,6 +1390,9 @@ export async function reactToThreadMessage(
   releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   const committed = await deps.prisma.$transaction(async (tx) => {
+    // Group before thread, the order every group writer uses.
+    const members =
+      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const parent = await tx.message.findFirst({
       where: { id: input.messageId, threadId: target.threadId },
@@ -1413,8 +1416,6 @@ export async function reactToThreadMessage(
       const run = steering?.run;
       return { eventSeq: null, runs: run?.status === "waiting_takeover" ? [run] : [] };
     }
-    const members =
-      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
     const currentTarget = members
       ? { ...target, memberBotIds: members.map((member) => member.botId) }
       : target;
