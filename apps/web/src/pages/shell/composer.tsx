@@ -1124,25 +1124,40 @@ const ComposerBody = memo(function Composer({
               {phoneCallsEnabled && draft.trim().length === 0 ? (
                 <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
               ) : null}
+              {/* While a bot works, Send and Stop share one button: Stop, which turns into Send
+                  once there is something to steer the bot with, and back after it is sent. It
+                  stays one element, so keyboard focus stays on it as it switches. */}
               <Button
+                variant={canSend ? "default" : "outline"}
                 size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={() => void send()}
-                style={sendStyle}
-                className={sendClassName}
+                aria-label={canSend ? t`Send` : t`Stop`}
+                disabled={canSend ? sending || disabled : sending}
+                onClick={
+                  canSend
+                    ? () => {
+                        void send();
+                        // The button turns back into Stop; keep typing where the words were.
+                        textareaRef.current?.focus({ preventScroll: true });
+                      }
+                    : () => void onStop()
+                }
+                style={canSend ? sendStyle : undefined}
+                className={
+                  canSend
+                    ? sendClassName
+                    : "size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                }
               >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t`Stop`}
-                disabled={sending}
-                onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <Square size={11} strokeWidth={0} fill="currentColor" />
+                <span
+                  key={canSend ? "send" : "stop"}
+                  className="grid place-items-center animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce:animate-none"
+                >
+                  {canSend ? (
+                    <ArrowUp size={16} strokeWidth={2.2} />
+                  ) : (
+                    <Square size={11} strokeWidth={0} fill="currentColor" />
+                  )}
+                </span>
               </Button>
             </>
           ) : (
