@@ -90,6 +90,13 @@ const block = () => ({
 const tick = async () => {
   for (let i = 0; i < 15; i++) await Promise.resolve();
 };
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 let stop: (() => void) | undefined;
 beforeEach(() => {
   vi.useFakeTimers();
@@ -269,6 +276,78 @@ describe("mobile incoming calls", () => {
     expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b"));
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
     expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-b", false);
+  });
+  it("answers a pending native call before loading the roster for another ringing call", async () => {
+    const expiresAt = new Date(Date.now() + 3000).toISOString();
+    const answer = fake.rpc.getMockImplementation()!;
+    let lists = 0;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      // The refresh's roster load is quick; the ringing call's own load outlasts the answer's ring.
+      if (path === "spaces/list" && ++lists > 1)
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+      return answer(path, ...rest);
+    });
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      ringing: [{ callId: "call-x", botId: "bot-unknown", expiresAt: block().expiresAt }],
+      actions: [{ action: "answer", callId: "call-b", botId: orgBot.id, expiresAt }],
+    });
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b", expiresAt } }]);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b"));
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+    expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-b", false);
+  });
+  it("does not bring back a ringing call a newer snapshot ended while an answer joins", async () => {
+    const answering = deferred<{ opening: string }>();
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path === "threads/answerCall") return answering.promise;
+      return answer(path, ...rest);
+    });
+    const other = { ...block(), callId: "call-x" };
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      ringing: [{ callId: "call-x", botId: bot.id, expiresAt: other.expiresAt }],
+      actions: [
+        { action: "answer", callId: "call-b", botId: orgBot.id, expiresAt: block().expiresAt },
+      ],
+    });
+    stop = startIncomingCalls();
+    await tick();
+    fake.onEvent?.([
+      { ...orgBot, incomingCall: { ...block(), callId: "call-b" } },
+      { ...bot, incomingCall: other },
+    ]);
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b")));
+    // Another phone answers the other call; the stream's next snapshot no longer lists it.
+    fake.onEvent?.([{ ...orgBot, incomingCall: { ...block(), callId: "call-b" } }]);
+    answering.resolve({ opening: "Hello" });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
+    expect(getIncomingCall()).toBeNull();
+  });
+  it("shares one roster request between a refresh and a ringing call", async () => {
+    const answer = fake.rpc.getMockImplementation()!;
+    let inFlight = 0;
+    let most = 0;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) => {
+      if (path !== "spaces/list") return answer(path, ...rest);
+      most = Math.max(most, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      inFlight -= 1;
+      return answer(path, ...rest);
+    });
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      ringing: [{ callId: "call-x", botId: "bot-unknown", expiresAt: block().expiresAt }],
+      actions: [],
+    });
+    stop = startIncomingCalls();
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(most).toBe(1);
   });
   it("fails one native answer whose caller cannot be found and still answers the next", async () => {
     const answer = fake.rpc.getMockImplementation()!;

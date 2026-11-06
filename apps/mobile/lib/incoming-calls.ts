@@ -58,6 +58,10 @@ let responding = false;
 let activeNativeCall: string | undefined;
 /** Native calls that ended while their answer was still joining. */
 let nativeEnded = new Set<string>();
+/** Counts account stream snapshots, so a native state read before the latest one can be told apart. */
+let streamSnapshots = 0;
+/** The calls the latest snapshot lists as ringing; a ring it leaves out has ended. */
+let streamCallIds = new Set<string>();
 /** Resolves when the account stream has delivered its first snapshot, which covers every organization. */
 let streamSnapshot: Promise<void> | undefined;
 let snapshotArrived: (() => void) | undefined;
@@ -125,6 +129,8 @@ async function follow(controller: AbortController) {
       await subscribeIncomingCallEvents((incoming) => {
         // Ignore events from an aborted feed so a late callback cannot resolve a newer wait.
         if (controller.signal.aborted || feed !== controller) return;
+        streamSnapshots += 1;
+        streamCallIds = new Set(incoming.map((call) => call.incomingCall.callId));
         snapshotArrived?.();
         for (const previous of calls) {
           if (!incoming.some((call) => call.incomingCall.callId === previous.incomingCall.callId))
@@ -148,11 +154,21 @@ function setIncomingCallRoster(navigation: SpaceNavigation) {
   const bots = [...navigation.spaces.flatMap((space) => space.bots), ...navigation.current.bots];
   roster = new Map(bots.map((bot) => [bot.id, bot]));
 }
-async function loadRoster() {
+async function fetchRoster() {
   const generation = currentSessionGeneration();
   if (!(await loadSessionToken())) return;
   const navigation = await rpc("spaces/list");
   if (running && generation === currentSessionGeneration()) setIncomingCallRoster(navigation);
+}
+/** The roster request in flight; callers that arrive meanwhile share it instead of starting another. */
+let rosterLoad: Promise<void> | undefined;
+function loadRoster(): Promise<void> {
+  if (rosterLoad) return rosterLoad;
+  const load = fetchRoster().finally(() => {
+    if (rosterLoad === load) rosterLoad = undefined;
+  });
+  rosterLoad = load;
+  return load;
 }
 
 /**
@@ -292,17 +308,12 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
 
 async function drainNative() {
   const generation = currentSessionGeneration();
+  const snapshotsBefore = streamSnapshots;
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
   if (!state || !running || generation !== currentSessionGeneration()) return;
   if (state.token) await registerCallPushToken({ voipToken: state.token }).catch(() => undefined);
-  for (const ring of state.ringing ?? []) {
-    if (!callIsRinging(ring)) continue;
-    // A failed roster load only leaves this ring unshown; it must not drop the actions below.
-    if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
-    const bot = roster.get(ring.botId);
-    if (bot) update(bot, { ...ring, reason: "", opening: "" });
-  }
+  // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
   for (const action of state.actions) {
     if (action.action === "end") {
       nativeEnded.add(action.callId);
@@ -324,6 +335,16 @@ async function drainNative() {
       { ...bot, incomingCall: { ...action, reason: "", opening: "" } },
       "answer",
     ).catch(() => undefined);
+  }
+  for (const ring of state.ringing ?? []) {
+    if (!callIsRinging(ring)) continue;
+    // A failed roster load only leaves this ring unshown.
+    if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
+    // A snapshot newer than this read is the server's word: a ring it no longer lists has ended,
+    // for example answered on another phone while the answers above were joining.
+    if (streamSnapshots !== snapshotsBefore && !streamCallIds.has(ring.callId)) continue;
+    const bot = roster.get(ring.botId);
+    if (bot) update(bot, { ...ring, reason: "", opening: "" });
   }
 }
 
@@ -367,10 +388,13 @@ export function stopIncomingCalls() {
   feed = undefined;
   streamSnapshot = undefined;
   snapshotArrived = undefined;
+  streamCallIds = new Set();
   // Cancel cold-start waits now; a continuation from this feed must not resume later.
   for (const stopWaiting of snapshotWaiters) stopWaiting();
   snapshotWaiters.clear();
   roster.clear();
+  // A load in flight belongs to the stopped feed; the next one starts its own.
+  rosterLoad = undefined;
   notificationActions.clear();
   calls = [];
   handled = new Set();
