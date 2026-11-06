@@ -197,7 +197,7 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   }
   const { deps, bot, run } = ctx;
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
-  // Only mail it received.
+  // Only mail it received: what the bot sent counts toward the daily sending limit.
   const { count } = await deps.prisma.botEmailMessage.deleteMany({
     where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
   });
@@ -289,10 +289,10 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
   }
   const name = await deps.prisma.botEmailAddress.findUnique({
     where: { botId: bot.id },
-    select: { localPart: true },
+    select: { name: true },
   });
   if (!name) return call.finish({ error: "You don't have an email address yet." });
-  const address = `${name.localPart}@${domain}`;
+  const address = `${name.name}@${domain}`;
 
   const original = input.inReplyTo
     ? await deps.prisma.botEmailMessage.findFirst({

@@ -143,7 +143,7 @@ send as the bot domain:
 
 Replies go to the bot's address and land in its inbox. Each send follows the bot's usual
 [approval](./approvals.md) settings. A bot sends at most 50 emails a day, and one owner's bots 200
-between them, each to at most 10 people, and never includes a secret the run has used. What it sends stays in its inbox.
+between them, each to at most 10 people, and never includes a secret the run has used. What it sends stays in its inbox, and deleting mail never removes it.
 
 ## Who can start work
 

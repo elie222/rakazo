@@ -1091,7 +1091,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "delete_email",
     description:
-      "Delete emails from your inbox for good, by the ids read_email gives. Their saved files stay in your files.",
+      "Delete emails you received from your inbox for good, by the ids read_email gives; emails you sent stay. Their saved files stay in your files.",
     inputSchema: {
       type: "object",
       properties: {

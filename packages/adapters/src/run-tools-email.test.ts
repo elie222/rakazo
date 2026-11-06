@@ -371,16 +371,20 @@ describe("delete_email", () => {
 
 describe("botEmailInstruction", () => {
   it("names only the inbox tools the run has", () => {
-    const both = botEmailInstruction("scout@bots.test", { read: true, delete: true });
-    const readOnly = botEmailInstruction("scout@bots.test", { read: true, delete: false });
+    const all = botEmailInstruction("scout@bots.test", { read: true, send: true, delete: true });
+    const readOnly = botEmailInstruction("scout@bots.test", {
+      read: true,
+      send: false,
+      delete: false,
+    });
 
-    expect(both).toContain("read_email");
-    expect(both).toContain("delete_email");
+    for (const tool of ["read_email", "send_email", "delete_email"]) expect(all).toContain(tool);
     expect(readOnly).toContain("read_email");
+    expect(readOnly).not.toContain("send_email");
     expect(readOnly).not.toContain("delete_email");
-    expect(botEmailInstruction("scout@bots.test", { read: false, delete: false })).toBe(
-      "Your email address is scout@bots.test.",
-    );
+    expect(
+      botEmailInstruction("scout@bots.test", { read: false, send: false, delete: false }),
+    ).toBe("Your email address is scout@bots.test.");
   });
 });
 
@@ -541,7 +545,7 @@ describe("send_email", () => {
         inboundEmailDomain: "bots.test",
         email: { send },
         prisma: {
-          botEmailAddress: { findUnique: async () => ({ localPart: "scout" }) },
+          botEmailAddress: { findUnique: async () => ({ name: "scout" }) },
           botEmailMessage: {
             findFirst: async ({ where }: { where: { id: string } }) =>
               where.id === "in-1" ? (options.original ?? null) : null,
