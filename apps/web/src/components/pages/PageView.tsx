@@ -120,12 +120,10 @@ export function PageView({
           {/* The desktop app's window drags by the strip above the page, as by the chat's header.
               The page itself is no-drag, so the drag areas of the window under it don't take its
               clicks: Electron honors them through anything drawn on top. */}
-          {compact ? null : (
-            <div
-              aria-hidden="true"
-              className={`app-drag absolute inset-x-0 top-0 print:hidden ${macChrome ? "h-[70px]" : "h-[34px]"}`}
-            />
-          )}
+          <div
+            aria-hidden="true"
+            className={`app-drag absolute inset-x-0 top-0 print:hidden ${compact ? "h-[50px]" : macChrome ? "h-[70px]" : "h-[34px]"}`}
+          />
           <DialogClose
             ref={closeButton}
             aria-label={t`Close page`}
