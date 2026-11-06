@@ -15,8 +15,8 @@ type LinkifiedTextProps = {
   color: string;
   linkColor: string;
   palette: ColorTokens;
-  /** Renders the runs between links, which are plain strings by default. */
-  renderText?: (text: string) => ReactNode;
+  /** Renders the runs between links (and where each starts in the text); plain strings by default. */
+  renderText?: (text: string, start: number) => ReactNode;
   onOpenPage?: (pageId: string) => void;
 };
 
@@ -41,7 +41,7 @@ export const LinkifiedText = memo(function LinkifiedText({
       {plainTextLinkParts(children).map((part, index) => {
         if (part.type === "text") {
           return renderText ? (
-            <Fragment key={index}>{renderText(part.value)}</Fragment>
+            <Fragment key={index}>{renderText(part.value, part.start)}</Fragment>
           ) : (
             part.value
           );

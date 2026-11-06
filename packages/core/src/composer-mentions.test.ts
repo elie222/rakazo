@@ -336,4 +336,12 @@ describe("splitMentionText", () => {
       { text: "mail ada@example.test or @Adam" },
     ]);
   });
+
+  it("reads mentions the way group messages wake bots", () => {
+    expect(splitMentionText("请@Ada看下", targets)).toEqual([
+      { text: "请" },
+      { text: "@Ada", target: targets[0] },
+      { text: "看下" },
+    ]);
+  });
 });

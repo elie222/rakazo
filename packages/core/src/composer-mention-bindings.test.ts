@@ -222,6 +222,23 @@ describe("completed mention occurrence bindings", () => {
     expect(validateComposerMentionBindings("changed", bindings)).toEqual([]);
     expect(validateComposerMentionBindings(text, { name: "Bob" })).toEqual([]);
   });
+
+  it("keeps a chip that Chinese or Japanese text runs straight into", () => {
+    const chip = (value: string) => {
+      const start = value.indexOf("@Bob");
+      return [{ start, end: start + 4, mention: bot }];
+    };
+    for (const value of ["请@Bob看下", "@Bobさん", "@Bob你好"])
+      expect(validateComposerMentionBindings(value, chip(value))).toEqual(chip(value));
+    for (const value of ["x@Bob", "@Bobby", "@Bob_2"])
+      expect(validateComposerMentionBindings(value, chip(value))).toEqual([]);
+  });
+
+  it("offers the picker while a name is typed right after Chinese text", () => {
+    expect(composerMentionQuery("请@Bo", 4)).toEqual({ start: 1, end: 4, query: "Bo" });
+    expect(composerMentionQuery("请@", 2)).toEqual({ start: 1, end: 2, query: "" });
+    expect(composerMentionQuery("mail@Bo", 7)).toBeNull();
+  });
 });
 
 describe("two-step mention delete", () => {
