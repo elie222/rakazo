@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus, Me } from "@rakazo/contracts";
 import { Dialog, DialogContent } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
-import { createContext, Suspense, useContext, useEffect, useState } from "react";
+import { createContext, Suspense, useContext, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
@@ -60,6 +60,9 @@ export function SubscriptionGate({
   fallback: ReactNode;
 }) {
   const [state, setState] = useState<GateState>({ kind: "loading" });
+  // This tab's organization. Another tab can select another one at any time; only a switch made
+  // here (SPACE_SELECTED_EVENT) moves billing with it.
+  const tabSpaceId = useRef<string | null>(null);
   const [supportChat, setSupportChat] = useState<SupportChat | null>(null);
   const { t } = useLingui();
   // `?plans` links straight to the plan choice.
@@ -79,7 +82,8 @@ export function SubscriptionGate({
         if (!capabilities.billing) return { kind: "open" };
         const me = await loadMe();
         if (!me.billingEnabled) return { kind: "open" };
-        const client = createSpaceRpc(selectedSpaceId());
+        tabSpaceId.current = selectedSpaceId();
+        const client = createSpaceRpc(tabSpaceId.current);
         const status = await loadBillingStatus(client);
         if (active && capabilities.crispWebsiteId) {
           setSupportChat({
@@ -113,7 +117,7 @@ export function SubscriptionGate({
     const recheck = (onFailure?: () => void) => {
       if (document.visibilityState === "hidden") return;
       const read = ++latest;
-      const client = createSpaceRpc(selectedSpaceId());
+      const client = createSpaceRpc(tabSpaceId.current);
       client.billing
         .status()
         .then((status) => {
@@ -129,6 +133,7 @@ export function SubscriptionGate({
     // If the new Space's read fails, nothing of the previous one stays: the app opens without a
     // status, as on any failed lookup, since the API enforces access.
     const spaceSelected = () => {
+      tabSpaceId.current = selectedSpaceId();
       setState((current) =>
         current.kind !== "loading" && current.status
           ? { ...current, status: { ...current.status, referral: null } }
