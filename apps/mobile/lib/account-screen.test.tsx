@@ -116,7 +116,10 @@ vi.mock("expo-router", () => {
     useRouter: () => router,
   };
 });
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: element("div"),
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
 vi.mock("../components/app-mark", () => ({ AppMark: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({

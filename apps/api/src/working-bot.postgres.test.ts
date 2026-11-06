@@ -76,16 +76,15 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
             status,
           );
           expect(
-            (await repos.listSpaceBotsForSpaces(actor, [actor.spaceId])).find(
-              (row) => row.id === bot.id,
-            )?.status,
+            (await repos.listSpaceBotsForSpaces([actor.spaceId])).find((row) => row.id === bot.id)
+              ?.status,
           ).toBe(status);
           expect(
             (await groups.listGroups(actor))[0]?.members.find((row) => row.botId === bot.id)
               ?.status,
           ).toBe(status);
           expect(
-            (await groups.listSpaceGroupsForSpaces(actor, [actor.spaceId]))[0]?.members.find(
+            (await groups.listSpaceGroupsForSpaces([actor.spaceId]))[0]?.members.find(
               (row) => row.botId === bot.id,
             )?.status,
           ).toBe(status);

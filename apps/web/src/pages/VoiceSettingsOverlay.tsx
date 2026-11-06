@@ -102,6 +102,9 @@ export function VoiceSettingsOverlay({
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
+  // The connection fields as last rendered, read when a connect finishes.
+  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, sttApiKey };
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -242,6 +245,7 @@ export function VoiceSettingsOverlay({
     // What this connect carries; anything typed after this point was not saved.
     const sentApiKey = apiKey;
     const sentSttApiKey = sttApiKey;
+    const sent = connection.current;
     markPending("connect");
     try {
       await rpc.voice.connect({
@@ -250,7 +254,7 @@ export function VoiceSettingsOverlay({
         apiKey: sentApiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
-        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
+        ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
         ...(selfHosted
           ? {
               baseUrl: baseUrl.trim(),
@@ -267,7 +271,13 @@ export function VoiceSettingsOverlay({
       // The connect saved the voice the server kept for these values, and the
       // disabled field cannot hold a newer edit, so the voice follows the saved one.
       edited.current.delete("voiceId");
-      // The connect saved the values it carried; fields typed meanwhile keep theirs.
+      // The connect saved the values it carried, which the server may have normalized or
+      // filled in; fields typed meanwhile keep theirs.
+      for (const field of CONNECTION_FIELDS) {
+        if (connection.current[field] === sent[field]) edited.current.delete(field);
+      }
+      // A transcription key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
       await refresh(selected.id, { keepForm: true });
       setNotice(t`Connected ${selected.name}.`);
     } catch (err) {
@@ -311,7 +321,7 @@ export function VoiceSettingsOverlay({
   }
 
   async function saveSpeechModel() {
-    if (!credential || selected?.id !== "fish-audio") return;
+    if (!credential || !selected?.speechModel) return;
     const next = speechModel.trim();
     if (next === credential.speechModel) return;
     if (speechModelSave.current === next) return;
@@ -370,8 +380,8 @@ export function VoiceSettingsOverlay({
           />
         </div>
       ) : null}
-      {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-      {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+      {error ? <p className="mb-4 text-body text-destructive">{error}</p> : null}
+      {notice ? <p className="mb-4 text-body text-success">{notice}</p> : null}
       {catalog.length ? (
         <Field>
           <FieldLabel htmlFor={providerSelectId}>
@@ -614,7 +624,7 @@ export function VoiceSettingsOverlay({
                   </NativeSelect>
                 )}
               </Field>
-              {selected.id === "fish-audio" ? (
+              {selected.speechModel ? (
                 <Field className="mt-6">
                   <FieldLabel htmlFor={speechModelId}>
                     <Trans>Speech model</Trans>
@@ -707,4 +717,6 @@ function selectedProvider(
 
 const NO_VOICES: VoiceInfo[] = [];
 
-type EditableField = "voiceId" | "speechModel" | "baseUrl" | "sttBaseUrl" | "ttsModel" | "sttModel";
+const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+
+type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];

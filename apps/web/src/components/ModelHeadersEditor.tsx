@@ -18,7 +18,7 @@ export function ModelHeadersEditor({
   const visible = rows ?? savedNames.map((name) => ({ name, value: "" }));
   return (
     <fieldset className="mt-4 space-y-2" disabled={disabled}>
-      <legend className="text-sm">
+      <legend className="text-body">
         <Trans>Headers</Trans>
       </legend>
       {visible.map((row, index) => (

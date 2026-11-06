@@ -794,6 +794,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",
   "Replaces the login saved for {site}": "Vervangt de opgeslagen login voor {site}",
+  "Cancel open invites": "Openstaande uitnodigingen intrekken",
+  "Could not cancel invites": "Uitnodigingen konden niet worden ingetrokken",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Iedereen in de ruimte van deze bot kan de chats lezen die hij via {app} krijgt.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Sites waarop je inlogt, blijven ingelogd voor iedereen in deze ruimte",
+  "The bot's browser stays signed in for everyone in this space":
+    "De browser van de bot blijft ingelogd voor iedereen in deze ruimte",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",
@@ -1048,10 +1056,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "The server had a problem": "Er is een probleem met de server",
   "Could not load MCP servers": "MCP-servers laden mislukt",
   Disabled: "Uitgeschakeld",
-  "OAuth connected": "OAuth verbonden",
-  "OAuth expired": "OAuth verlopen",
+  "Needs sign-in": "Aanmelden vereist",
+  "Not connected": "Niet gekoppeld",
+  "Not working": "Werkt niet",
   "Needs an OAuth client ID": "OAuth-client-ID nodig",
-  "Credential saved": "Inloggegevens opgeslagen",
   Authentication: "Authenticatiemethode",
   "No auth": "Geen authenticatie",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1180,6 +1188,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} vragen aandacht",
   "{label}, above": "{label}, boven",
   "{label}, below": "{label}, onder",
+  Invite: "Uitnodigen",
+  "Leave space": "Space verlaten",
+  "Leave {name}?": "{name} verlaten?",
+  "Could not load members": "Kan leden niet laden",
+  "Could not create invite link": "Kan uitnodigingslink niet maken",
+  "Could not remove member": "Kan lid niet verwijderen",
+  "Could not leave space": "Kan space niet verlaten",
   Work: "Werk",
   Both: "Allebei",
   "How will you use Rakazo?": "Hoe ga je Rakazo gebruiken?",
@@ -1253,7 +1268,6 @@ export const NL_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "Naam van API-sleutelheader",
   Bearer: "Bearer",
-  "Connect OAuth": "Verbinden via OAuth",
   "Could not start MCP OAuth": "Kan MCP OAuth niet starten",
   OAuth: "OAuth",
   "Always open {site}": "{site} altijd openen",
@@ -1407,6 +1421,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "On the button": "Op de knop",
   "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
   Total: "Totaal",
+  "{name} options": "Opties voor {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

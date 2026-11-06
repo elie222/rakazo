@@ -38,7 +38,6 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
-    userId: run.userId,
     threadId: run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,

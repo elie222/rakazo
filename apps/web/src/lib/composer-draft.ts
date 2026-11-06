@@ -3,6 +3,7 @@ import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/c
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
+const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
 
 type ComposerDraftSubmission = { text: string; bindingRecord: string | null };
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
@@ -13,6 +14,8 @@ export function beginComposerDraftSubmission(
   text: string,
 ): ComposerDraftSubmission {
   writeComposerDraft(threadKey, text);
+  // The send that begins now carries its own nonce; a stored one is consumed.
+  writeComposerRetryNonce(threadKey, null);
   const submission = { text, bindingRecord: readBindingRecord(threadKey) };
   pendingSubmissions.set(threadKey, submission);
   return submission;
@@ -33,6 +36,23 @@ export function settleComposerDraftSubmission(
     return;
   writeComposerDraft(threadKey, "");
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
+}
+
+/**
+ * Keeps a failed send's nonce beside the saved draft only while that draft is
+ * still the one it sent, mentions included, so a retry cannot reuse it for a
+ * different payload.
+ */
+export function keepComposerRetryNonce(
+  threadKey: string,
+  submission: ComposerDraftSubmission,
+  nonce: string,
+): void {
+  if (
+    readComposerDraft(threadKey) === submission.text &&
+    readBindingRecord(threadKey) === submission.bindingRecord
+  )
+    writeComposerRetryNonce(threadKey, nonce);
 }
 
 let sendingWork = false;
@@ -73,14 +93,15 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
   return false;
 }
 
-/** Signing out leaves no saved draft, or its mentions, for whoever uses this browser next. */
+/** Signing out leaves no saved draft, its mentions or its retry nonce for whoever uses this browser next. */
 export function clearComposerDrafts(): void {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
     for (const key of keys) {
       if (
         key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) ||
-        key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX)
+        key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX) ||
+        key?.startsWith(COMPOSER_NONCE_STORAGE_PREFIX)
       )
         localStorage.removeItem(key);
     }
@@ -121,6 +142,42 @@ export function composerDraftStorageKey(threadKey: string): string {
 
 export function composerDraftBindingsKey(threadKey: string): string {
   return `${COMPOSER_BINDINGS_STORAGE_PREFIX}${threadKey}`;
+}
+
+function composerNonceStorageKey(threadKey: string): string {
+  return `${COMPOSER_NONCE_STORAGE_PREFIX}${threadKey}`;
+}
+
+/**
+ * The nonce of a send that ended without its answer, kept beside a draft the
+ * user has not touched, so an unchanged retry is recognized as the same
+ * message instead of creating a duplicate.
+ */
+export function readComposerRetryNonce(
+  threadKey: string,
+  storage: DraftStorage | null = getLocalStorage(),
+): string | null {
+  if (!storage || !threadKey) return null;
+  try {
+    return storage.getItem(composerNonceStorageKey(threadKey));
+  } catch {
+    return null;
+  }
+}
+
+/** A null nonce clears it; writes are best-effort, like the draft itself. */
+export function writeComposerRetryNonce(
+  threadKey: string,
+  nonce: string | null,
+  storage: DraftStorage | null = getLocalStorage(),
+): void {
+  if (!storage || !threadKey) return;
+  try {
+    if (nonce === null) storage.removeItem(composerNonceStorageKey(threadKey));
+    else storage.setItem(composerNonceStorageKey(threadKey), nonce);
+  } catch {
+    // The in-memory nonce still covers the retry while this chat stays open.
+  }
 }
 
 function readBindingRecord(threadKey: string, storage = getLocalStorage()): string | null {
@@ -180,9 +237,11 @@ export function writeComposerDraft(
   if (!storage || !threadKey) return;
   try {
     // Plain-text callers preserve bindings only when they are resubmitting the
-    // unchanged draft. New text without bindings cannot inherit old identities.
+    // unchanged draft. New text without bindings cannot inherit old identities,
+    // and a changed draft no longer matches the nonce its predecessor left.
     if (bindings !== undefined || draft !== readComposerDraft(threadKey, storage) || !draft) {
       storage.removeItem(composerDraftBindingsKey(threadKey));
+      storage.removeItem(composerNonceStorageKey(threadKey));
     }
     if (draft.length === 0) storage.removeItem(composerDraftStorageKey(threadKey));
     else storage.setItem(composerDraftStorageKey(threadKey), draft);

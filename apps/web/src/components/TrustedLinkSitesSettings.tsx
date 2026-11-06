@@ -41,7 +41,7 @@ export function TrustedLinkSitesSettings() {
         />
       ))}
       {error ? (
-        <p role="alert" className="px-4 py-3 text-[13px] text-destructive">
+        <p role="alert" className="px-4 py-3 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}

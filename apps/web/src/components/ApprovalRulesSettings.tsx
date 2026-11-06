@@ -18,7 +18,7 @@ import { SettingsGroup, SettingsRow } from "./SettingsRows";
 import { SpendingLimitSettings } from "./SpendingLimitSettings";
 
 const segmented = "rounded-lg bg-muted p-1";
-const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
+const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
 
 /** Approvals for the account, or for the bound Space when it customizes them. */
 export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
@@ -144,7 +144,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           }
         >
           {autoReview?.mode === "auto" && !autoReview.checkerAvailable ? (
-            <p className="mt-1 text-[13px] text-muted-foreground">
+            <p className="mt-1 text-body-sm text-muted-foreground">
               <Trans>Add a model in Settings to use this.</Trans>
             </p>
           ) : null}
@@ -191,7 +191,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
               control={
                 <>
                   {rule.matchKind === "category" ? (
-                    <span className="text-[13px] text-muted-foreground">
+                    <span className="text-body-sm text-muted-foreground">
                       {rule.effect === "always_allow" ? (
                         <Trans>Allow</Trans>
                       ) : rule.effect === "deny" ? (
@@ -244,7 +244,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           ))}
         </SettingsGroup>
       ) : null}
-      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
     </div>
   );
 }
