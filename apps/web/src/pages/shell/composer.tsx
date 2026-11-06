@@ -591,7 +591,8 @@ const ComposerBody = memo(function Composer({
       queuedDictation.current = null;
       setDictationSendDue(null);
       retryNonce.current = null;
-      const words = compositionRef.current.text;
+      const queued = compositionRef.current;
+      const words = queued.text;
       const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
       if (mountedRef.current && draftKeyRef.current === draftKey) {
         commitComposition(restored);
@@ -599,9 +600,12 @@ const ComposerBody = memo(function Composer({
         return;
       }
       // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
-      // still holding just these words is this send's to restore, and the reopened field
-      // follows it.
-      if (readComposerDraft(draftKey) === words)
+      // still holding just these words, mentions included, is this send's to restore, and the
+      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
+      if (
+        readComposerDraft(draftKey) === words &&
+        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
+      )
         replaceComposerDraft(draftKey, restored.text, restored.bindings);
       return;
     }
