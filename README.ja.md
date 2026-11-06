@@ -24,7 +24,7 @@ Rakazo は現在ベータ版です。詳しくは [rakazo.com](https://rakazo.co
 ## 機能
 
 - それぞれに会話、メモリ、ルーティン、履歴を持つ常駐型ボット
-- 音声モード：返信の読み上げ、音声入力、ボットとの通話。ElevenLabs、OpenAI、Cartesia、Fish Audio の自分のキーを使えます
+- 音声モード：返信の読み上げ、音声入力、ボットとの通話。ElevenLabs、OpenAI、Cartesia、Fish Audio、xAI の自分のキーを使えます
 - 共有の Team Computers と、分離された Private computers
 - ブラウザー、ターミナル、ファイル、グラフィカルなデスクトップへのアクセス
 - 他のボットや一時的なサブエージェントに仕事を任せられるボット

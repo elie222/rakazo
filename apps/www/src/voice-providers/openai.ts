@@ -25,7 +25,7 @@ const COMPARED = ["openai", "openaiTts1", "elevenlabs", "cartesia", "fish", "dee
 const TRANSCRIBE = RATES.openaiTranscribeMinute;
 const MINI_TTS_HOUR = RATES.openaiMiniTtsMinute * 60;
 /** Whether OpenAI is the cheapest hosted option in Rakazo for the worked example. */
-const CHEAPEST_HOSTED = (["elevenlabs", "cartesia", "fish"] as const).every(
+const CHEAPEST_HOSTED = (["elevenlabs", "cartesia", "fish", "xai"] as const).every(
   (other) =>
     WORKLOAD_COST.openai.speech + WORKLOAD_COST.openai.transcription <
     WORKLOAD_COST[other].speech + WORKLOAD_COST[other].transcription,

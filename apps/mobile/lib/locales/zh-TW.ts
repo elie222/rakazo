@@ -390,8 +390,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Configured by deployment": "由部署設定",
   Connect: "連線",
   "Connect a voice provider first.": "請先連線語音供應商。",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "請在「設定」中允許語音辨識，或連線 ElevenLabs、OpenAI 或 Fish Audio。",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "請在「設定」中允許語音辨識，或連線支援轉錄的語音供應商。",
   "Use your own key": "使用自己的金鑰",
   "Uses this server's own {source} credentials to access {provider}.":
     "使用此伺服器自己的 {source} 憑證存取 {provider}。",

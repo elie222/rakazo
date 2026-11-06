@@ -231,7 +231,7 @@ export function useThreadVoiceCall({
       if (plan.kind === "dictation") {
         Alert.alert(
           t("Calls need transcription"),
-          t("Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."),
+          t("Allow speech recognition in Settings, or connect a voice provider that transcribes."),
           [
             { text: t("Not now"), style: "cancel" },
             { text: t("Open Voice"), onPress: () => router.push("/voice") },

@@ -40,7 +40,7 @@ Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 
 ## 功能
 
 - 可长期运行的机器人，各自拥有对话、记忆、例行任务和历史记录
-- 语音模式：朗读回复、语音输入和机器人通话；可接入自己的 ElevenLabs、OpenAI、Cartesia 或 Fish Audio 密钥
+- 语音模式：朗读回复、语音输入和机器人通话；可接入自己的 ElevenLabs、OpenAI、Cartesia、Fish Audio 或 xAI 密钥
 - 共享的团队计算机（Team Computers）和隔离的私有计算机（Private computers）
 - 浏览器、终端、文件和图形桌面访问
 - 机器人可将任务委派给其他机器人或临时子智能体

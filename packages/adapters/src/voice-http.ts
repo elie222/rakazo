@@ -139,10 +139,14 @@ export function voiceHttpError(
     const reason = reasonCode(body);
     if (reason === "missing_permissions")
       return theirs || `That ${provider} key is missing a permission this needs.`;
+    // xAI refuses spent credit with 403; its own words say what to top up.
+    if (!reason && BILLING_MESSAGE.test(theirs)) return theirs;
     if (!reason || reason === "invalid_api_key" || !theirs)
       return `${provider} rejected that key. Check the key and that it has speech permissions.`;
     return theirs;
   }
+  if (status === 400 && REJECTED_KEY_MESSAGE.test(theirs))
+    return `${provider} rejected that key. Check the key and that it has speech permissions.`;
   if (status === 429)
     return theirs || `${provider} is rate-limiting this account. Wait a moment and try again.`;
   if (status === 402) return theirs || `${provider} says this account is out of credit.`;
@@ -161,11 +165,14 @@ function openAiErrorCode(body: unknown): string | undefined {
 /** OpenAI also answers 429 for billing with other codes; only the message tells them apart. */
 const BILLING_MESSAGE =
   /\bcredits?\b|billing|exceeded your current quota|paid subscription|account is not active/i;
+/** xAI answers a wrong key with 400 rather than 401. */
+const REJECTED_KEY_MESSAGE = /\b(?:incorrect|invalid) api key\b/i;
 
 /**
  * A failure the user fixes in their provider account. 402 is spent credit (Fish Audio,
- * Cartesia), OpenAI sends 429 `insufficient_quota` or a billing message, and ElevenLabs
- * sends 401 `quota_exceeded`. Other 401s and 403s are a rejected key.
+ * Cartesia), OpenAI sends 429 `insufficient_quota` or a billing message, ElevenLabs
+ * sends 401 `quota_exceeded`, and xAI sends 403 with a credit message. Other 401s and 403s,
+ * and a 400 that names the key, are a rejected key.
  */
 export function voiceAccountIssue(
   status: number,
@@ -177,9 +184,13 @@ export function voiceAccountIssue(
       ? "VOICE_OUT_OF_CREDIT"
       : undefined;
   }
+  if (status === 400) {
+    return REJECTED_KEY_MESSAGE.test(detail(body)) ? "VOICE_KEY_REJECTED" : undefined;
+  }
   if (status !== 401 && status !== 403) return undefined;
   const reason = reasonCode(body);
   if (reason === "quota_exceeded") return "VOICE_OUT_OF_CREDIT";
+  if (!reason && BILLING_MESSAGE.test(detail(body))) return "VOICE_OUT_OF_CREDIT";
   return !reason || reason === "invalid_api_key" ? "VOICE_KEY_REJECTED" : undefined;
 }
 

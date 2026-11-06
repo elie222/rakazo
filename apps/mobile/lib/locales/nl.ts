@@ -981,8 +981,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Wachten op aanmelding — de link verloopt over ongeveer {minutes} minuten.",
   "Allow microphone access to call a bot.": "Sta microfoontoegang toe om een bot te bellen.",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "Sta spraakherkenning toe in Instellingen, of koppel ElevenLabs, OpenAI of Fish Audio.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Sta spraakherkenning toe in Instellingen, of koppel een spraakanbieder die transcribeert.",
   Call: "Bellen",
   "Calls need transcription": "Gesprekken hebben transcriptie nodig",
   "Could not hear that.": "Dat kon niet gehoord worden.",

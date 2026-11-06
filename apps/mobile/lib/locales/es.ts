@@ -931,8 +931,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Esperando el inicio de sesión. El enlace vence en unos {minutes} minutos.",
   "Allow microphone access to call a bot.": "Permite el acceso al micrófono para llamar a un bot.",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "Permite el reconocimiento de voz en Configuración o conecta ElevenLabs, OpenAI o Fish Audio.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Permite el reconocimiento de voz en Configuración o conecta un proveedor de voz que transcriba.",
   Call: "Llamar",
   "Calls need transcription": "Las llamadas necesitan transcripción",
   "Could not hear that.": "No se pudo escuchar eso.",

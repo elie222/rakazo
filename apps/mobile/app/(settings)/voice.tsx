@@ -350,7 +350,16 @@ export default function VoiceSettings() {
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  // Until connected, the account's model connection can stand in for a key; once it does, there
+  // is no key to show or replace.
+  const keyOptional = Boolean(selected?.modelConnection) && !credential;
+  const linked = credential?.hasKey === false;
+  const typedKey = apiKey.trim();
+  const canConnect =
+    keyless ||
+    (selfHosted
+      ? Boolean(baseUrl.trim())
+      : typedKey.length >= 8 || (keyOptional && typedKey === ""));
 
   async function connect() {
     if (!selected || !canConnect) return;
@@ -559,7 +568,7 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            {keyless ? null : (
+            {keyless || linked ? null : (
               <TextInput
                 accessibilityLabel={t("API key")}
                 autoCapitalize="none"
@@ -569,7 +578,7 @@ export default function VoiceSettings() {
                 value={apiKey}
                 onChangeText={setApiKey}
                 placeholder={
-                  selfHosted
+                  selfHosted || keyOptional
                     ? t("Optional")
                     : credential
                       ? t("Paste a replacement key")
@@ -607,7 +616,7 @@ export default function VoiceSettings() {
                 />
               </>
             ) : null}
-            {keyless && credential ? null : (
+            {(keyless && credential) || linked ? null : (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={

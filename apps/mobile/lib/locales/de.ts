@@ -989,8 +989,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Warte auf Anmeldung — der Link läuft in etwa {minutes} Minuten ab.",
   "Allow microphone access to call a bot.": "Erlaube den Mikrofonzugriff, um einen Bot anzurufen.",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "Erlaube die Spracherkennung in den Einstellungen oder verbinde ElevenLabs, OpenAI oder Fish Audio.",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "Erlaube die Spracherkennung in den Einstellungen oder verbinde einen Sprachanbieter, der transkribiert.",
   Call: "Anrufen",
   "Calls need transcription": "Anrufe brauchen eine Transkription",
   "Could not hear that.": "Das war nicht zu verstehen.",

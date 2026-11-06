@@ -968,8 +968,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "ログインを待機中です。リンクの有効期限は約{minutes}分です。",
   "Allow microphone access to call a bot.":
     "ボットと通話するにはマイクへのアクセスを許可してください。",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "設定で音声認識を許可するか、ElevenLabs、OpenAI、Fish Audioのいずれかを接続してください。",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "設定で音声認識を許可するか、文字起こしに対応した音声プロバイダーを接続してください。",
   Call: "通話",
   "Calls need transcription": "通話には文字起こしが必要です",
   "Could not hear that.": "聞き取れませんでした。",

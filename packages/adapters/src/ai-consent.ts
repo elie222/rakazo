@@ -15,6 +15,7 @@ const PRIVACY_URLS: Record<string, string> = {
   elevenlabs: "https://elevenlabs.io/privacy-policy",
   cartesia: "https://cartesia.ai/legal/privacy",
   "fish-audio": "https://fish.audio/privacy/",
+  xai: "https://x.ai/legal/privacy-policy",
   supermemory: "https://supermemory.ai/privacy",
   honcho: "https://app.honcho.dev/privacy",
 };

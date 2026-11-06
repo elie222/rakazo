@@ -415,8 +415,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Configured by deployment": "由部署配置",
   Connect: "连接",
   "Connect a voice provider first.": "请先连接语音提供商。",
-  "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
-    "请在“设置”中允许语音识别，或连接 ElevenLabs、OpenAI 或 Fish Audio。",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "请在“设置”中允许语音识别，或连接支持转写的语音提供商。",
   "Use your own key": "使用自己的密钥",
   "Uses this server's own {source} credentials to access {provider}.":
     "使用此服务器自己的 {source} 凭据访问 {provider}。",

@@ -230,7 +230,13 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  // The account's model connection can stand in for a key; once linked there is no key to manage.
+  const keyOptional = Boolean(selected?.modelConnection) && !credential;
+  const linked = credential?.hasKey === false;
+  const typedKey = apiKey.trim();
+  const canConnect =
+    keyless ||
+    (selfHosted ? Boolean(baseUrl.trim()) : typedKey.length >= 8 || (keyOptional && !typedKey));
 
   async function connectKey() {
     if (!selected || !canConnect) return;
@@ -446,7 +452,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless ? null : (
+              {keyless || linked ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -458,7 +464,7 @@ export function VoiceSettingsOverlay({
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={
-                      selfHosted
+                      selfHosted || keyOptional
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -505,7 +511,7 @@ export function VoiceSettingsOverlay({
                   </Field>
                 </>
               ) : null}
-              {keyless && credential ? null : (
+              {(keyless && credential) || linked ? null : (
                 <Button
                   type="button"
                   className="mt-3"

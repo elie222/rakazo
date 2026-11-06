@@ -10,6 +10,7 @@ import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from ".
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
 import { createVoiceProvider } from "./voice-factory.js";
+import { resolveVoiceKey } from "./voice-model-connection.js";
 
 export type OwnBotSettingsRow = {
   name: string;
@@ -130,7 +131,7 @@ export async function readOwnBotSettings(
 export async function listDefaultVoices(
   deps: {
     prisma: PrismaClient;
-    secretStore: Pick<SecretStore, "load">;
+    secretStore: Pick<SecretStore, "load" | "put" | "delete">;
     mcpAllowPrivateEndpoint?: boolean;
   },
   scope: Pick<Actor, "userId" | "spaceId">,
@@ -148,7 +149,15 @@ export async function listDefaultVoices(
       credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
       deps.mcpAllowPrivateEndpoint === true,
   });
-  return provider.listVoices(await deps.secretStore.load(secret.ciphertext, secret.id), context);
+  const plaintext = await deps.secretStore.load(secret.ciphertext, secret.id);
+  const apiKey = await resolveVoiceKey(
+    deps,
+    { userId: scope.userId, spaceId: scope.spaceId },
+    credential.provider,
+    plaintext,
+    context.signal,
+  );
+  return provider.listVoices(apiKey, context);
 }
 
 const VOICES_SHOWN = 10;

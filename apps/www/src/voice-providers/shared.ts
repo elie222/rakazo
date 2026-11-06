@@ -43,6 +43,7 @@ export const PRICING_SOURCES = {
     href: "https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits",
   },
   fishPlans: { label: "Fish Audio, plans", href: "https://fish.audio/plan" },
+  xai: { label: "xAI, models and pricing", href: "https://docs.x.ai/developers/models" },
   deepgram: { label: "Deepgram, pricing", href: "https://deepgram.com/pricing" },
   google: {
     label: "Google Cloud, Text-to-Speech pricing",
@@ -158,6 +159,9 @@ export const RATES = {
   fish: 15,
   fishDrama3: 50,
   fishTranscribeHour: 0.36,
+  xai: 15,
+  xaiSttHour: 0.1,
+  xaiSttStreamHour: 0.2,
   /** Fish Audio app plans: price, yearly price per month, credits, and the minutes its plan page says they buy. */
   fishPlans: {
     free: { price: 0, yearly: 0, credits: 8_000, minutes: 7 },
@@ -297,6 +301,16 @@ const PRICE_ROWS = {
       "Built in, speaks and transcribes",
     ],
   },
+  xai: {
+    topic: "xAI Grok text to speech",
+    cells: [
+      usd(RATES.xai),
+      perHourOfSpeech(RATES.xai),
+      `${usd(RATES.xaiSttHour)} batch, ${usd(RATES.xaiSttStreamHour)} streaming`,
+      "Pay as you go",
+      "Built in, speaks and transcribes, with a key or a Grok sign-in",
+    ],
+  },
   selfHosted: {
     topic: "[Kokoro and Whisper](/voice-providers/self-hosted/) on your hardware",
     cells: [
@@ -401,6 +415,7 @@ const PRICE_ROW_SOURCES: Record<VoicePriceRow, readonly SourceLink[]> = {
   openaiTts1: [S.openai],
   cartesia: [S.cartesia],
   fish: [S.fish, S.fishPlans],
+  xai: [S.xai],
   selfHosted: [],
   hostedKokoro: [S.deepinfra, S.together],
   macos: [],
@@ -453,6 +468,10 @@ export const WORKLOAD_COST = {
     speech: workloadSpeech(RATES.fish),
     transcription: workloadTranscription(RATES.fishTranscribeHour),
   },
+  xai: {
+    speech: workloadSpeech(RATES.xai),
+    transcription: workloadTranscription(RATES.xaiSttHour),
+  },
   deepgram: {
     speech: workloadSpeech(RATES.deepgram),
     transcription: workloadTranscription(RATES.deepgramBatchHour),
@@ -474,6 +493,7 @@ export const WORKLOAD_NAMES: Record<WorkloadOption, string> = {
   openai: "OpenAI",
   cartesia: "Cartesia",
   fish: "Fish Audio",
+  xai: "xAI",
   deepgram: "Deepgram",
   google: "Google",
   azure: "Azure",
@@ -503,6 +523,7 @@ export const TRANSCRIPTION_HOURLY: Record<string, readonly number[]> = {
   OpenAI: Object.values(RATES.openaiTranscribeMinute).map((minute) => minute * 60),
   ElevenLabs: [RATES.elevenlabsScribeHour, RATES.elevenlabsScribeRealtimeHour],
   "Fish Audio": [RATES.fishTranscribeHour],
+  xAI: [RATES.xaiSttHour, RATES.xaiSttStreamHour],
   Deepgram: [RATES.deepgramBatchHour, RATES.deepgramStreamHour],
   AssemblyAI: [RATES.assemblyaiHour.low, RATES.assemblyaiHour.high],
   Groq: [RATES.groqWhisperHour],
@@ -550,6 +571,10 @@ const WORKLOAD_ROWS = {
     topic: "[Fish Audio](/voice-providers/fish-audio/)",
     cells: [usd(cost.fish.speech), usd(cost.fish.transcription), aboutTotal("fish")],
   },
+  xai: {
+    topic: "xAI",
+    cells: [usd(cost.xai.speech), usd(cost.xai.transcription), aboutTotal("xai")],
+  },
   selfHosted: {
     topic: "[Self-hosted](/voice-providers/self-hosted/) on a computer you own",
     cells: ["Electricity", "Electricity", "About $0"],
@@ -594,6 +619,7 @@ const WORKLOAD_ROW_SOURCES: Record<VoiceWorkloadRow, readonly SourceLink[]> = {
   openai: [S.openai],
   cartesia: [S.cartesia],
   fish: [S.fish],
+  xai: [S.xai],
   selfHosted: [],
   selfHostedCloud: [S.hetzner],
   macos: [],
