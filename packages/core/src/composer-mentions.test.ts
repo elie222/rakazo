@@ -310,9 +310,16 @@ describe("filterComposerMentionTargets", () => {
     expect(names("chef bot")).toEqual([]);
   });
 
-  it("answers to all and everyone for the everyone row only", () => {
+  it("answers to all, 所有人 and everyone for the everyone row only", () => {
     expect(names("al")).toEqual(["everyone"]);
     expect(names("every")).toEqual(["everyone"]);
+    expect(names("所有")).toEqual(["everyone"]);
+  });
+
+  it("leaves all to a member named All", () => {
+    const withAll = [...targets, { kind: "bot", name: "All" } as const];
+    expect(filterComposerMentionTargets(withAll, "al").map((t) => t.name)).toEqual(["All"]);
+    expect(filterComposerMentionTargets(withAll, "every").map((t) => t.name)).toEqual(["everyone"]);
   });
 });
 
@@ -334,6 +341,14 @@ describe("splitMentionText", () => {
   it("leaves text without a known name, an email address and a longer word alone", () => {
     expect(splitMentionText("mail ada@example.test or @Adam", targets)).toEqual([
       { text: "mail ada@example.test or @Adam" },
+    ]);
+  });
+
+  it("reads mentions the way group messages wake bots", () => {
+    expect(splitMentionText("请@Ada看下", targets)).toEqual([
+      { text: "请" },
+      { text: "@Ada", target: targets[0] },
+      { text: "看下" },
     ]);
   });
 });
