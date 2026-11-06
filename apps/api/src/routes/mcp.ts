@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import {
+  applyMcpSourcePreset,
   createPluginMarketplace,
   isTransientFetchError,
+  MCP_SOURCE_PRESETS,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
   pluginPreviewDto,
@@ -162,6 +164,7 @@ export function mcpRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
+      sourcePresets: authed.capabilities.sourcePresets.handler(() => MCP_SOURCE_PRESETS),
       catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
         const baseUrl =
           deps.env.integrationsCatalogUrl ??
@@ -222,10 +225,7 @@ export function mcpRoutes(ctx: RouterContext) {
         }
         try {
           if (input.kind === "mcp") {
-            if (config.preset === "treg") {
-              source = "https://treg.to/mcp/";
-              config = { ...config, preset: "treg", auth: { type: "bearer" } };
-            }
+            ({ source, config } = applyMcpSourcePreset(source, config));
             const verified = await verifyMcpInstall({
               source,
               config,
