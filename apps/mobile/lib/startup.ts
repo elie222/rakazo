@@ -1,7 +1,14 @@
 import { AppState } from "react-native";
 import { reportMobileError } from "./monitoring";
 
-type StartupStep = "server" | "appearance" | "streaming" | "images" | "inbox" | "language";
+type StartupStep =
+  | "server"
+  | "appearance"
+  | "streaming"
+  | "images"
+  | "tool-activity"
+  | "inbox"
+  | "language";
 
 const STARTUP_TIMEOUT_MS = 20_000;
 const pending = new Set<StartupStep>();

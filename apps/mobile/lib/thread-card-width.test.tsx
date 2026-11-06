@@ -109,6 +109,16 @@ vi.mock("../components/native-action-button", () => ({
 }));
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
+const toolActivityEnabled = vi.hoisted(() => ({ value: false }));
+vi.mock("./tool-activity-preference", () => ({
+  getCachedToolActivityEnabled: () => toolActivityEnabled.value,
+  subscribeToolActivity: () => () => {},
+}));
+vi.mock("../components/thread/tool-activity-card", () => ({
+  ToolActivityCard: ({ block }: { block: { steps: { label: string }[] } }) => (
+    <section data-testid="tool-activity">{block.steps.map((step) => step.label).join(",")}</section>
+  ),
+}));
 vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
@@ -617,5 +627,31 @@ describe("thread cards", () => {
     act(() => (card() as HTMLElement).click());
     expect(card()?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toContain("A long report");
+  });
+  it("shows tool activity above a reply that ends in a file", () => {
+    const steps: MessageBlock = {
+      kind: "steps",
+      steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls", outcome: "ok" }],
+    };
+    const file: MessageBlock = {
+      kind: "file",
+      artifactId: "a1",
+      mimeType: "text/csv",
+      name: "report.csv",
+      size: 12,
+    };
+    toolActivityEnabled.value = true;
+    try {
+      renderBlocks([steps, text("Here is the file."), file]);
+      const card = container.querySelector('[data-testid="tool-activity"]');
+      expect(card?.textContent).toBe("Shell");
+      expect(container.textContent).toContain("report.csv");
+      // The card comes first, the bubble with the file after it.
+      expect(container.firstElementChild?.firstElementChild).toBe(card);
+    } finally {
+      toolActivityEnabled.value = false;
+    }
+    renderBlocks([steps, text("Here is the file."), file]);
+    expect(container.querySelector('[data-testid="tool-activity"]')).toBeNull();
   });
 });

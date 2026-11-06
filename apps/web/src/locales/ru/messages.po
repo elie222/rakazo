@@ -2706,6 +2706,10 @@ msgstr ""
 msgid "Couldn't load this page. Try again."
 msgstr "Не удалось загрузить страницу. Попробуйте ещё раз."
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Couldn’t load this step."
+msgstr ""
+
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr ""
@@ -3378,6 +3382,11 @@ msgstr ""
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
+#. placeholder {0}: record.exitCode
+#: src/components/ToolActivityDisclosure.tsx
+msgid "exit {0}"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Развернуть"
@@ -3440,6 +3449,7 @@ msgid "failed"
 msgstr "неуспешный"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Ошибка"
@@ -4158,6 +4168,7 @@ msgstr "Загрузка поставщиков голосовой связи…
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4812,6 +4823,10 @@ msgstr "Модели не перечислены."
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Не найдено файлов OpenClaw, Hermes или документа агента."
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "No output recorded."
+msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -5960,6 +5975,7 @@ msgid "running"
 msgstr "выполняется"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Running"

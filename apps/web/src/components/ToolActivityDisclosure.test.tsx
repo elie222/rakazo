@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The macro compiles away in the app build; tests run the source, so expand the
 // plural by hand to assert the singular vs plural English forms.
@@ -11,6 +11,17 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: unknown }) => children,
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
     (value === 1 ? one : other).replace("#", String(value)),
+}));
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((text, part, i) => `${text}${part}${values[i] ?? ""}`, ""),
+}));
+// A row's panel reads records the thread's events already delivered; nothing to fetch here.
+vi.mock("../lib/query", () => ({
+  useSpaceQueries: () => ({ threads: { toolCalls: { queryOptions: () => ({}) } } }),
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: () => ({ data: undefined, isPending: false, isError: false }),
 }));
 
 /** The words a reader sees, with each element's text as its own word. */
@@ -20,13 +31,17 @@ const visibleText = (html: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+import { LIVE_TOOL_STEP_WINDOW } from "@rakazo/core";
+import { clearToolCallRecords } from "../lib/tool-call-records";
+import { replayToolCallRecords } from "../lib/tool-call-records.fixture";
 import {
-  LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
   ToolActivityDisclosure,
   ToolOnlyNarration,
   ToolSteps,
 } from "./ToolActivityDisclosure";
+
+const MESSAGE = { threadId: "thread-1", runId: "run-1", createdAt: "2026-08-16T00:00:01.000Z" };
 
 function markup(props: {
   live: boolean;
@@ -45,8 +60,13 @@ function markup(props: {
   );
 }
 
-function stepsOf(n: number) {
-  return Array.from({ length: n }, (_, i) => ({ label: `step-${i}`, count: 1 }));
+/** Finished steps; while live, only the last one is still running. */
+function stepsOf(n: number, live = false) {
+  return Array.from({ length: n }, (_, i) => ({
+    label: `step-${i}`,
+    count: 1,
+    ...(live && i === n - 1 ? {} : { outcome: "ok" as const }),
+  }));
 }
 
 const OPEN_TRIGGER = /aria-expanded="true"/;
@@ -142,17 +162,241 @@ describe("ToolActivityDisclosure", () => {
 });
 
 describe("ToolSteps", () => {
+  // Each test replays its own calls into the shared live store.
+  beforeEach(() => clearToolCallRecords());
+
   it("lists only the last steps and counts the earlier ones when limited", () => {
-    const steps = stepsOf(LIVE_TOOL_STEP_WINDOW + 3);
+    const steps = stepsOf(LIVE_TOOL_STEP_WINDOW + 3, true);
     const html = renderToStaticMarkup(
-      <ToolSteps steps={steps} currentIndex={steps.length - 1} limit={LIVE_TOOL_STEP_WINDOW} />,
+      <ToolSteps steps={steps} live limit={LIVE_TOOL_STEP_WINDOW} />,
     );
     expect(html).toContain("+3 earlier steps");
     for (const hidden of ["step-0<", "step-1<", "step-2<"]) expect(html).not.toContain(hidden);
     for (let i = 3; i < steps.length; i++) expect(html).toContain(`step-${i}<`);
-    // The pulsing marker stays on the latest step after the window shifts the indexes.
+    // The pulsing marker stays on the step without a result after the window shifts the indexes.
     expect(html).toMatch(/◷<\/span><span[^>]*>step-8</);
     expect(html.match(/◷/g)).toHaveLength(1);
+  });
+
+  it("shows each call's detail, duration and outcome on its row", () => {
+    const html = renderToStaticMarkup(
+      <ToolSteps
+        live={false}
+        steps={[
+          { label: "Shell", count: 1, detail: "pnpm test", outcome: "ok", durationMs: 2500 },
+          { label: "Read file", count: 1, detail: "missing.txt", outcome: "error", durationMs: 8 },
+        ]}
+      />,
+    );
+    expect(visibleText(html)).toBe("✓ Shell pnpm test 2.5s ✕ Read file missing.txt 8ms");
+    expect(html).toContain('aria-label="Failed"');
+    expect(html).toContain('title="pnpm test"');
+  });
+
+  it("opens a row to its command and output, which follow the run's records", () => {
+    replayToolCallRecords("run-1", [
+      {
+        executionId: "x1",
+        name: "shell",
+        status: "running",
+        command: "pnpm test --filter web",
+        output: "RUN v4\n",
+      },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const steps = [
+      { label: "Shell", count: 1, executionId: "x1", detail: "pnpm test --filter web" },
+    ];
+    flushSync(() => root.render(<ToolSteps steps={steps} live source={MESSAGE} />));
+    const row = container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]');
+    expect(row?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).toBeNull();
+
+    flushSync(() => row?.click());
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+    // The chat's own code block draws the command and its output as one console block.
+    const code = () => container.querySelector('[data-testid="tool-step-code"] pre')?.textContent;
+    expect(code()).toBe("$ pnpm test --filter web\nRUN v4\n");
+    expect(container.querySelector('[data-testid="tool-step-exit"]')).toBeNull();
+
+    // The command finishes: its exit code and final output land without reopening the row.
+    flushSync(() =>
+      replayToolCallRecords("run-1", [
+        {
+          executionId: "x1",
+          name: "shell",
+          status: "done",
+          outcome: "error",
+          command: "pnpm test --filter web",
+          output: "RUN v4\n1 failed",
+          exitCode: 1,
+          durationMs: 4200,
+        },
+      ]),
+    );
+    expect(code()).toBe("$ pnpm test --filter web\nRUN v4\n1 failed\n");
+    expect(container.querySelector('[data-testid="tool-step-exit"]')?.textContent).toBe("exit 1");
+
+    flushSync(() => row?.click());
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).toBeNull();
+    root.unmount();
+  });
+
+  it("shows a structured call's arguments and indents its JSON result", () => {
+    replayToolCallRecords("run-1", [
+      {
+        executionId: "x1",
+        name: "web_search",
+        status: "done",
+        outcome: "succeeded",
+        input: '{\n  "query": "weather"\n}',
+        output: '{"results":[{"title":"Sunny"}]}',
+      },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Web search", count: 1, executionId: "x1", detail: "weather" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    const blocks = [...container.querySelectorAll('[data-testid="tool-step-code"] pre')].map(
+      (pre) => pre.textContent,
+    );
+    expect(blocks).toEqual([
+      '{\n  "query": "weather"\n}\n',
+      '{\n  "results": [\n    {\n      "title": "Sunny"\n    }\n  ]\n}\n',
+    ]);
+    expect(container.textContent).not.toContain("$ ");
+    root.unmount();
+  });
+
+  it("shows only the exit code for a call that ran and printed nothing", () => {
+    replayToolCallRecords("run-1", [
+      { executionId: "x1", name: "write_file", status: "done", exitCode: 0, durationMs: 12 },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Write file", count: 1, executionId: "x1", detail: "/tmp/a.py" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    expect(container.querySelector('[data-testid="tool-step-exit"]')?.textContent).toBe("exit 0");
+    root.unmount();
+  });
+
+  it("keeps a row open when a repeated call joins it under a new call id", () => {
+    replayToolCallRecords("run-1", [
+      { executionId: "x1", name: "shell", status: "done", command: "ls", output: "a" },
+      { executionId: "x2", name: "shell", status: "running", command: "ls", output: "" },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (executionId: string, count: number) =>
+      flushSync(() =>
+        root.render(
+          <ToolSteps
+            live
+            source={MESSAGE}
+            steps={[{ label: "Shell", count, executionId, detail: "ls" }]}
+          />,
+        ),
+      );
+    render("x1", 1);
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    render("x2", 2);
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="tool-step"]')?.textContent).toContain("Shell ×2");
+    root.unmount();
+  });
+
+  it("shows nothing but the running mark for a call that has not printed yet", () => {
+    replayToolCallRecords("run-1", [{ executionId: "x1", name: "shell", status: "running" }]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live
+          source={MESSAGE}
+          steps={[{ label: "Shell", count: 1, executionId: "x1", detail: "sleep 9" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    root.unmount();
+  });
+
+  it("says nothing about output that is only withheld from this reader", () => {
+    replayToolCallRecords("run-1", [
+      { executionId: "x1", name: "read_history", status: "done", withheld: true },
+    ]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[{ label: "Read history", count: 1, executionId: "x1", outcome: "ok" }]}
+        />,
+      ),
+    );
+    flushSync(() =>
+      container.querySelector<HTMLButtonElement>('[data-testid="tool-step"]')?.click(),
+    );
+    expect(container.querySelector('[data-testid="tool-step-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="tool-step-empty"]')).toBeNull();
+    root.unmount();
+  });
+
+  it("says when a call left no output and keeps rows without a call id plain", () => {
+    replayToolCallRecords("run-1", [{ executionId: "x1", name: "remember", status: "done" }]);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() =>
+      root.render(
+        <ToolSteps
+          live={false}
+          source={MESSAGE}
+          steps={[
+            { label: "Remember", count: 1, executionId: "x1" },
+            { label: "Old step", count: 1 },
+          ]}
+        />,
+      ),
+    );
+    const rows = container.querySelectorAll('[data-testid="tool-step"]');
+    expect(rows[0]?.tagName).toBe("BUTTON");
+    expect(rows[1]?.tagName).toBe("DIV");
+    flushSync(() => (rows[0] as HTMLButtonElement).click());
+    expect(container.querySelector('[data-testid="tool-step-empty"]')?.textContent).toBe(
+      "No output recorded.",
+    );
+    root.unmount();
   });
 
   it("uses the singular for one hidden step", () => {
@@ -205,7 +449,9 @@ describe("StandaloneToolActivity", () => {
 
   it("is open with a windowed list while live, and lists every step once done", () => {
     const steps = stepsOf(9);
-    const live = renderToStaticMarkup(<StandaloneToolActivity live steps={steps} stepCount={9} />);
+    const live = renderToStaticMarkup(
+      <StandaloneToolActivity live steps={stepsOf(9, true)} stepCount={9} />,
+    );
     expect(live).toMatch(OPEN_TRIGGER);
     expect(live).toContain("+3 earlier steps");
 
@@ -221,10 +467,14 @@ describe("StandaloneToolActivity", () => {
 describe("ToolOnlyNarration", () => {
   it("renders a live tools-only message as an open slim line, not a bubble", () => {
     const html = renderToStaticMarkup(
-      <ToolOnlyNarration live blocks={[{ kind: "steps", steps: stepsOf(2) }]} />,
+      <ToolOnlyNarration
+        live
+        blocks={[{ kind: "steps", steps: stepsOf(2, true) }]}
+        message={MESSAGE}
+      />,
     );
     expect(html).toContain('data-testid="tool-activity-line"');
-    expect(visibleText(html)).toContain("Working… 2 tools");
+    expect(visibleText(html)).toMatch(/Working… 2 tools \d+/);
     expect(html).toMatch(OPEN_TRIGGER);
     expect(html).not.toContain("bg-muted");
   });
@@ -237,6 +487,7 @@ describe("ToolOnlyNarration", () => {
           { kind: "steps", steps: stepsOf(3), durationMs: 12_000 },
           { kind: "steps", steps: stepsOf(1) },
         ]}
+        message={MESSAGE}
       />,
     );
     expect(html.match(/data-testid="tool-activity-line"/g)).toHaveLength(2);

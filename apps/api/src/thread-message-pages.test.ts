@@ -2,11 +2,13 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   isBackgroundRun,
+  isOthersRun,
   isPeerRun,
   loadAllMessages,
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
+  withoutToolCallContent,
 } from "./thread-message-pages.js";
 
 describe("thread message pages", () => {
@@ -1034,4 +1036,41 @@ it("derives attachment metadata from a validated parent outside the loaded page"
   } as unknown as PrismaClient;
   const page = await loadMessagePage(prisma, "thread", undefined, 1);
   expect(page.messages[0]?.replyPreview).toEqual({ role: "user", text: "", attachment: image });
+});
+
+describe("tool call content for other viewers", () => {
+  it("keeps a call's step but drops its arguments, returned text and error, and says so", () => {
+    const called = {
+      type: "agent.tool.called",
+      payload: { name: "read_history", executionId: "x1", detail: "q", input: "{}" },
+    };
+    expect(withoutToolCallContent(called).payload).toEqual({
+      name: "read_history",
+      executionId: "x1",
+      detail: "q",
+      withheld: true,
+    });
+    const completed = {
+      type: "agent.tool.completed",
+      payload: { executionId: "x1", outcome: "error", preview: "private", error: "No mail for q" },
+    };
+    expect(withoutToolCallContent(completed).payload).toEqual({
+      executionId: "x1",
+      outcome: "error",
+      withheld: true,
+    });
+    const progress = { type: "thread.progress", payload: { text: "hi", input: "kept" } };
+    expect(withoutToolCallContent(progress)).toBe(progress);
+  });
+
+  it("tells whether someone else started the run, reading each run once", async () => {
+    const findUnique = vi.fn(async () => ({ userId: "user-a" }));
+    const prisma = { run: { findUnique } } as unknown as PrismaClient;
+    const cache = new Map<string, Promise<boolean>>();
+    expect(await isOthersRun(prisma, "run-1", "user-b", cache)).toBe(true);
+    expect(await isOthersRun(prisma, "run-1", "user-b", cache)).toBe(true);
+    expect(findUnique).toHaveBeenCalledOnce();
+    expect(await isOthersRun(prisma, "run-1", "user-a", new Map())).toBe(false);
+    expect(await isOthersRun(prisma, undefined, "user-a", new Map())).toBe(false);
+  });
 });

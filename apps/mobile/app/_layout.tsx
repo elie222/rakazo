@@ -92,6 +92,7 @@ import {
   trackMobileStartup,
 } from "../lib/startup";
 import { capTextScaling } from "../lib/text-scale";
+import { loadToolActivityPreference } from "../lib/tool-activity-preference";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
@@ -358,6 +359,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("tool-activity", loadToolActivityPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),

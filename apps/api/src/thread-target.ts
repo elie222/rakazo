@@ -510,26 +510,7 @@ export async function threadSnapshot(
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
           const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
-          const liveEvents =
-            liveRuns.length > 0
-              ? await tx.event.findMany({
-                  where: {
-                    threadId: target.threadId,
-                    runId: { in: liveRuns.map((run) => run.id) },
-                    type: {
-                      in: [
-                        "thread.progress",
-                        "thread.subagent",
-                        "run.waiting_input",
-                        "computer.takeover.requested",
-                        "agent.tool.called",
-                        "agent.tool.completed",
-                      ],
-                    },
-                  },
-                  orderBy: { seq: "asc" },
-                })
-              : [];
+          const liveEvents = await loadLiveRunEvents(tx, target.threadId, liveRuns);
           return { messagePage, last, run: currentRun, activeRuns, liveEvents, shared };
         },
         { timeout: 15_000, maxWait: 5_000 },
@@ -589,26 +570,7 @@ export async function threadSnapshot(
           take: 50,
         }),
       ]);
-      const liveEvents =
-        activeRuns.length > 0
-          ? await tx.event.findMany({
-              where: {
-                threadId: target.threadId,
-                runId: { in: activeRuns.map((run) => run.id) },
-                type: {
-                  in: [
-                    "thread.progress",
-                    "thread.subagent",
-                    "run.waiting_input",
-                    "computer.takeover.requested",
-                    "agent.tool.called",
-                    "agent.tool.completed",
-                  ],
-                },
-              },
-              orderBy: { seq: "asc" },
-            })
-          : [];
+      const liveEvents = await loadLiveRunEvents(tx, target.threadId, activeRuns);
       return {
         messagePage,
         last,
@@ -672,6 +634,48 @@ function pickLatestTerminalRun<T extends { id: string; createdAt: Date; complete
       return run.createdAt > best.createdAt ? run : best;
     }
     return run.id > best.id ? run : best;
+  });
+}
+
+type LiveRunEvent = Parameters<typeof projectMessages>[0][number];
+
+/**
+ * The events that draw a live run's progress, steps and helpers, read through the client so
+ * encrypted payloads come back open. A tool event also carries the call's arguments and result
+ * for the activity view; those are dropped here, since the view reads them on demand and a long
+ * run would otherwise make every open of the thread carry them.
+ */
+export async function loadLiveRunEvents(
+  tx: Pick<Prisma.TransactionClient, "event">,
+  threadId: string,
+  runs: readonly { id: string }[],
+): Promise<LiveRunEvent[]> {
+  if (runs.length === 0) return [];
+  const events = await tx.event.findMany({
+    where: {
+      threadId,
+      runId: { in: runs.map((run) => run.id) },
+      type: {
+        in: [
+          "thread.progress",
+          "thread.subagent",
+          "run.waiting_input",
+          "computer.takeover.requested",
+          "agent.tool.called",
+          "agent.tool.completed",
+        ],
+      },
+    },
+    orderBy: { seq: "asc" },
+  });
+  return events.map((event) => {
+    if (event.type !== "agent.tool.called" && event.type !== "agent.tool.completed") return event;
+    const {
+      input: _input,
+      preview: _preview,
+      ...payload
+    } = (event.payload ?? {}) as Record<string, unknown>;
+    return { ...event, payload };
   });
 }
 

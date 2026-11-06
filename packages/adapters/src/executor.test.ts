@@ -1,7 +1,7 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { FLEET_TOOL_NAMES, TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
 import { isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
@@ -53,6 +53,7 @@ import {
   toolCompletionAuditPayload,
   toolCompletionFromResult,
 } from "./tool-completion-audit.js";
+import { toolCallFailed } from "./tool-result-error.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
@@ -112,7 +113,7 @@ describe("bot tool permissions", () => {
 });
 
 describe("tool completion audit", () => {
-  it("records result metadata without persisting tool contents", () => {
+  it("records result metadata and the text a tool returned, never image bytes or details", () => {
     const payload = toolCompletionAuditPayload({
       name: "computer_observe",
       executionId: "call-1",
@@ -138,6 +139,7 @@ describe("tool completion audit", () => {
       executionId: "call-1",
       durationMs: 13,
       outcome: "succeeded",
+      preview: "Visible window",
       contentTypes: ["text", "image"],
       frameId: "frame-1",
       capturedAt: "2026-09-07T00:00:00.000Z",
@@ -271,6 +273,128 @@ describe("tool completion audit", () => {
       error: "destination rejected the record",
     });
     expect(completion).not.toHaveProperty("result");
+  });
+
+  it("keeps a bounded, redacted preview of the text a tool returned", () => {
+    const secret = "FAKE_TOKEN_4431";
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "shell",
+        executionId: "call-1",
+        durationMs: 9,
+        result: {
+          kind: "agent_tool_result",
+          content: [
+            { type: "text", text: `token=${secret}\n${"x".repeat(TOOL_RESULT_PREVIEW_MAX_CHARS)}` },
+            { type: "image", data: "", mimeType: "image/png" },
+          ],
+          details: {},
+        },
+      },
+      [secret],
+    );
+    expect(payload.preview).toMatch(/^token=\[redacted\]\n/);
+    expect(payload.preview).toHaveLength(TOOL_RESULT_PREVIEW_MAX_CHARS + 1);
+    expect(payload.preview).toMatch(/…$/);
+    expect(payload.contentTypes).toEqual(["text", "image"]);
+    expect(
+      toolCompletionAuditPayload({
+        name: "shell",
+        executionId: "c",
+        durationMs: 1,
+        result: { content: [] },
+      }),
+    ).not.toHaveProperty("preview");
+    // A scripted file action returns a plain object, shown as JSON.
+    expect(
+      toolCompletionAuditPayload({
+        name: "write_file",
+        executionId: "w",
+        durationMs: 1,
+        result: { path: "/tmp/a.py", bytes: 12 },
+      }).preview,
+    ).toBe('{\n  "path": "/tmp/a.py",\n  "bytes": 12\n}');
+  });
+
+  it("audits a shell command that exited nonzero as an error", () => {
+    expect(
+      toolCompletionAuditPayload({
+        name: "shell",
+        executionId: "c",
+        durationMs: 1,
+        result: { stdout: "", stderr: "boom", code: 1 },
+      }).outcome,
+    ).toBe("error");
+  });
+
+  it("redacts a secret inside structured results before JSON escapes it", () => {
+    const secret = 'pa"ss\\word\nline';
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "read_file",
+        executionId: "r",
+        durationMs: 1,
+        result: { content: `token=${secret}`, nested: [{ note: `again ${secret}` }] },
+      },
+      [secret],
+    );
+    expect(String(payload.preview)).not.toContain("pa");
+    expect(String(payload.preview)).toContain("token=[redacted]");
+    expect(String(payload.preview)).toContain("again [redacted]");
+  });
+
+  it("records a shell's exit code and the end of what it printed", () => {
+    const payload = toolCompletionAuditPayload(
+      {
+        name: "shell",
+        executionId: "s",
+        durationMs: 1,
+        result: {
+          content: [{ type: "text", text: "ignored" }],
+          details: {
+            stdout: `${"x".repeat(TOOL_RESULT_PREVIEW_MAX_CHARS)}tail\n`,
+            stderr: "boom",
+            code: 3,
+          },
+        },
+      },
+      [],
+    );
+    expect(payload.exitCode).toBe(3);
+    expect(String(payload.preview).endsWith("tail\nboom")).toBe(true);
+    expect(String(payload.preview)).toHaveLength(TOOL_RESULT_PREVIEW_MAX_CHARS);
+    const running = toolCompletionAuditPayload({
+      name: "shell",
+      executionId: "s",
+      durationMs: 1,
+      result: { details: { stdout: "Code: 1", stderr: "", code: null, running: true } },
+    });
+    expect(running.exitCode).toBeNull();
+    expect(
+      toolCompletionAuditPayload({
+        name: "read_file",
+        executionId: "r",
+        durationMs: 1,
+        result: { code: 200 },
+      }).exitCode,
+    ).toBeUndefined();
+  });
+
+  it("reads an exit code only from a shell result, not a connector's status code", () => {
+    expect(toolCallFailed(undefined, { code: 200, data: [] })).toBe(false);
+    expect(toolCallFailed(undefined, { details: { code: 201, id: "x" } })).toBe(false);
+    expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "x", code: 1 } })).toBe(true);
+  });
+
+  it("counts a shell command that exited nonzero as failed, but not one still running", () => {
+    expect(toolCallFailed(undefined, { stdout: "", stderr: "boom", code: 1 })).toBe(true);
+    expect(toolCallFailed(undefined, { details: { stdout: "", stderr: "", code: 2 } })).toBe(true);
+    expect(toolCallFailed(undefined, { stdout: "ok", stderr: "", code: 0 })).toBe(false);
+    expect(toolCallFailed(undefined, { stdout: "", stderr: "", code: null, running: true })).toBe(
+      false,
+    );
+    expect(toolCallFailed(new Error("x"), { code: 0 })).toBe(true);
+    expect(toolCallFailed(undefined, { error: "nope" })).toBe(true);
   });
 
   it("records an MCP tool result flagged isError as an error", () => {

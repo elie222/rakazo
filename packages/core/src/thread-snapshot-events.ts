@@ -8,6 +8,8 @@ import {
   settleRunSubagents,
   stopsRunHelpers,
   subagentBlockFromPayload,
+  toolCalledUpdate,
+  toolCompletedUpdate,
 } from "./events.js";
 import { mergeThreadHistory, upsertMessageById } from "./message-pages.js";
 import { payloadAuthor, replyMetadata } from "./message-replies.js";
@@ -282,17 +284,32 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
     const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
     const blocks = reduceLiveMessageBlocks(
       previous?.blocks ?? [],
-      event.type === "thread.progress"
-        ? { type: "progress", payload }
-        : { type: "tool", name: String(payload.name ?? "") },
+      event.type === "thread.progress" ? { type: "progress", payload } : toolCalledUpdate(payload),
     );
+    const row = liveRow(prev, event, liveId, blocks);
     return {
       ...prev,
       cursor,
-      messages: [...remaining, liveRow(prev, event, liveId, blocks)],
+      // The run's first activity stays the row's start, so its tool card counts up from it.
+      messages: [
+        ...remaining,
+        previous?.createdAt ? { ...row, createdAt: previous.createdAt } : row,
+      ],
     };
   }
-  if (event.type === "agent.tool.completed") return advanced();
+  if (event.type === "agent.tool.completed") {
+    // A finished call marks its step; a result for a step the view never saw changes nothing.
+    const update = toolCompletedUpdate(payload);
+    const liveId = progressMessageId(event);
+    const live = update ? prev.messages.find((message) => message.id === liveId) : undefined;
+    if (!update || !live) return advanced();
+    const blocks = reduceLiveMessageBlocks(live.blocks, update);
+    return {
+      ...prev,
+      cursor,
+      messages: prev.messages.map((message) => (message === live ? { ...live, blocks } : message)),
+    };
+  }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(payload);
     const next = liveRow(prev, event, `subagent:${block.agentId}`, [block]);

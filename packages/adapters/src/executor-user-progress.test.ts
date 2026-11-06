@@ -682,7 +682,9 @@ describe("notes that can't be posted as messages", () => {
     expect(finalText(finalizeRun)).toBe("Saved.");
     expect(finalizeRun.mock.calls[0]![0].blocks).toContainEqual({
       kind: "steps",
-      steps: [{ label: "Save event", count: 1, note: "The meeting is with Anna." }],
+      steps: [
+        { label: "Save event", count: 1, executionId: "call-1", note: "The meeting is with Anna." },
+      ],
     });
   });
 

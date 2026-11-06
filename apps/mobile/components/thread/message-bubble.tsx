@@ -10,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
-import { memo, useContext, useMemo, useState } from "react";
+import { memo, useContext, useMemo, useState, useSyncExternalStore } from "react";
 import type { TextProps } from "react-native";
 import { Alert, Pressable, Text, View } from "react-native";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
@@ -31,6 +31,10 @@ import {
 import { messagePresentationSegments } from "../../lib/message-presentation";
 import { useResolvedAppearance } from "../../lib/native";
 import { speakerColorFor } from "../../lib/thread-message-text";
+import {
+  getCachedToolActivityEnabled,
+  subscribeToolActivity,
+} from "../../lib/tool-activity-preference";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
@@ -54,6 +58,7 @@ import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
+import { ToolActivityCard } from "./tool-activity-card";
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
 
@@ -252,6 +257,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
+  const showToolActivity = useSyncExternalStore(
+    subscribeToolActivity,
+    getCachedToolActivityEnabled,
+    () => false,
+  );
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -521,6 +531,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     })
     .join("\n");
   if (attachments.length > 0) {
+    // A reply that ends in a file still ran tools; its activity card goes above the bubble.
+    const stepBlocks = showToolActivity
+      ? message.blocks.filter(
+          (block): block is Extract<MessageBlock, { kind: "steps" }> => block.kind === "steps",
+        )
+      : [];
     const speaker =
       message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
     const speakerColor =
@@ -534,7 +550,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       paddingVertical: 12,
       gap: 8,
     } as const;
-    return (
+    const bubble = (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
         {((showBotSenderName || authorName) && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
@@ -678,8 +694,24 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         ))}
       </View>
     );
+    if (stepBlocks.length === 0) return bubble;
+    return (
+      <View style={{ gap: 8, width: "100%" }}>
+        {stepBlocks.map((block, index) => (
+          <ToolActivityCard
+            key={`${message.id}-steps-${index}`}
+            block={block}
+            live={message.id.startsWith("progress:")}
+            threadId={message.threadId}
+            runId={message.runId}
+            startedAt={message.createdAt}
+          />
+        ))}
+        {bubble}
+      </View>
+    );
   }
-  const segments = messagePresentationSegments(message.blocks);
+  const segments = messagePresentationSegments(message.blocks, showToolActivity);
   const speaker =
     message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
   const speakerColor =
@@ -698,18 +730,29 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   );
   return (
     <View style={{ gap: 8, width: "100%" }}>
-      {segments.map((segment, index) => (
-        <MessageTextCard
-          key={`${message.id}-content-${index}`}
-          message={{ ...message, blocks: segment.blocks }}
-          outgoing={outgoing}
-          speaker={showSpeaker && index === firstContent ? speaker : undefined}
-          speakerColor={showSpeaker && index === firstContent ? speakerColor : undefined}
-          actionProps={actionProps}
-          doubleTapSurface={doubleTapSurface}
-          userBubble={userBubble}
-        />
-      ))}
+      {segments.map((segment, index) =>
+        segment.kind === "steps" ? (
+          <ToolActivityCard
+            key={`${message.id}-steps-${index}`}
+            block={segment.block}
+            live={message.id.startsWith("progress:")}
+            threadId={message.threadId}
+            runId={message.runId}
+            startedAt={message.createdAt}
+          />
+        ) : (
+          <MessageTextCard
+            key={`${message.id}-content-${index}`}
+            message={{ ...message, blocks: segment.blocks }}
+            outgoing={outgoing}
+            speaker={showSpeaker && index === firstContent ? speaker : undefined}
+            speakerColor={showSpeaker && index === firstContent ? speakerColor : undefined}
+            actionProps={actionProps}
+            doubleTapSurface={doubleTapSurface}
+            userBubble={userBubble}
+          />
+        ),
+      )}
       {choiceBlocks.map((block, index) => (
         <ChoiceCard
           key={`choice-${index}`}

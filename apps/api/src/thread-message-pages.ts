@@ -181,6 +181,43 @@ export async function isPeerRun(
   return peerRun;
 }
 
+/**
+ * Whether a run was started by someone other than this viewer. A tool call's arguments and
+ * result can carry that person's own data, so only they see it; others see the step itself.
+ */
+export async function isOthersRun(
+  prisma: MessageDb,
+  runId: string | undefined,
+  userId: string,
+  cache: Map<string, Promise<boolean>>,
+): Promise<boolean> {
+  if (!runId) return false;
+  let others = cache.get(runId);
+  if (!others) {
+    others = prisma.run
+      .findUnique({ where: { id: runId }, select: { userId: true } })
+      .then((run) => run?.userId !== userId);
+    cache.set(runId, others);
+  }
+  return others;
+}
+
+/**
+ * A tool event without the call's arguments, result and error text, for a viewer who did not
+ * start the run. It says so, so the view does not read the gap as a call that printed nothing.
+ */
+export function withoutToolCallContent<E extends { type: string; payload: unknown }>(event: E): E {
+  if (event.type !== "agent.tool.called" && event.type !== "agent.tool.completed") return event;
+  if (!event.payload || typeof event.payload !== "object") return event;
+  const {
+    input: _input,
+    preview: _preview,
+    error: _error,
+    ...payload
+  } = event.payload as Record<string, unknown>;
+  return { ...event, payload: { ...payload, withheld: true } };
+}
+
 export async function isBackgroundRun(
   prisma: MessageDb,
   runId: string | undefined,

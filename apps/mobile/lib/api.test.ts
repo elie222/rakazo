@@ -5449,7 +5449,7 @@ describe("mobile thread event reduction", () => {
       {
         kind: "progress",
         text: "Let me check ",
-        pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        pendingTools: [{ name: "SLACK_FIND_CHANNELS" }],
       },
     ]);
     expect(completed?.messages[0]?.blocks).toEqual([
@@ -5459,6 +5459,28 @@ describe("mobile thread event reduction", () => {
     expect(blockText(completed?.messages[0] as MobileMessage)).toBe(
       "Let me check now.\nSlack find channels",
     );
+  });
+
+  it("keeps the thread and first activity time on a live message for its tool card", () => {
+    const started = reduceThreadSnapshot(snapshot(), {
+      type: "thread.progress",
+      runId: "run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:01.000Z",
+      payload: { text: "Running: ls", activity: true },
+    });
+    const called = reduceThreadSnapshot(started, {
+      type: "agent.tool.called",
+      runId: "run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:09.000Z",
+      payload: { name: "shell", executionId: "x1" },
+    });
+    expect(called?.messages[0]).toMatchObject({
+      id: "progress:run-1",
+      threadId: "thread-1",
+      createdAt: "2026-08-16T00:00:01.000Z",
+    });
   });
 
   it("formats channel messages with their platform attribution", () => {

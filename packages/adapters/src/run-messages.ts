@@ -1,5 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { callIdFromClientNonce, isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import {
+  boundToolStepDetail,
+  callIdFromClientNonce,
+  isBackgroundRunTrigger,
+  redactSecrets,
+} from "@rakazo/core";
 import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -48,6 +53,10 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
           ...step,
           label: redactSecrets(step.label, secrets),
           ...(step.note === undefined ? {} : { note: redactSecrets(step.note, secrets) }),
+          // A later secret's replacement can lengthen the line, so it is bounded again.
+          ...(step.detail === undefined
+            ? {}
+            : { detail: boundToolStepDetail(redactSecrets(step.detail, secrets)) }),
         })),
       };
     }

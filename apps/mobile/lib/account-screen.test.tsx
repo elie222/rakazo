@@ -313,6 +313,11 @@ vi.mock("./remote-images-preference", () => ({
   setRemoteImagesPreference: vi.fn(),
   subscribeRemoteImages: () => () => undefined,
 }));
+vi.mock("./tool-activity-preference", () => ({
+  getCachedToolActivityEnabled: () => false,
+  setToolActivityPreference: vi.fn(),
+  subscribeToolActivity: () => () => {},
+}));
 vi.mock("./response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => true,
   setResponseStreamingPreference: vi.fn(),

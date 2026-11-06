@@ -1,0 +1,46 @@
+appId: com.rakazo.app
+name: Tool activity
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+# The switch lives under Advanced and is off until this device turns it on.
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Advanced"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Advanced"
+- extendedWaitUntil:
+    visible: "Show tool activity"
+    timeout: 10000
+- tapOn: "Show tool activity"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-tool-activity-switch
+# The scripted model runs this as a shell call on the fake computer, which echoes it back.
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*The fixture workspace is ready.*"
+    timeout: 20000
+- tapOn: "Message Researcher"
+- inputText: "run the shell command echo hello from the fixture"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: ".*Done.*1 tool.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-tool-activity-folded
+- tapOn: ".*Done.*1 tool.*"
+- extendedWaitUntil:
+    visible: ".*Shell.*"
+    timeout: 10000
+- tapOn: ".*Shell.*"
+- extendedWaitUntil:
+    visible: ".*hello from the fixture.*"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-tool-activity-open

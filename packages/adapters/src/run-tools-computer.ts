@@ -58,6 +58,7 @@ import {
 import { recordPagePayment } from "./spending-gate.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
+import { redactToolActivityLine } from "./tool-activity-redaction.js";
 import { vaultCardUseOf } from "./vault-card-use.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
@@ -395,7 +396,8 @@ export const computerTools: ToolHandlers = {
     const commandEvent = {
       executionId,
       kind: "shell" as const,
-      command: redactSecrets(command, ctx.secrets),
+      // Shown as the step's command line, so redacted the way its step line is.
+      command: redactToolActivityLine(command, ctx.secrets),
       cwd: redactSecrets(cwd ?? ".", ctx.secrets),
     };
     await appendComputerCommand(ctx, {

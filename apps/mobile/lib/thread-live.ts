@@ -15,6 +15,7 @@ import { getHapticsEnabled, hapticSuccess } from "./haptics";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
+import { toolCallRecords } from "./tool-call-records";
 import { errorText } from "./user-error";
 
 type FeedbackBoundary = {
@@ -244,6 +245,7 @@ export function useThreadLiveSubscription({
                   jumpAnchor.current.release();
                   historyEpoch.current += 1;
                 }
+                toolCallRecords.record(event);
                 const previous = snapRef.current;
                 const reduced = reduceThreadSnapshot(previous, event);
                 if (reduced !== previous) commitSnap(reduced);

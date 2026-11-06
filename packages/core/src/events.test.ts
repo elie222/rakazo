@@ -3,12 +3,15 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  boundToolStepDetail,
+  completeToolStep,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
   liveActivityLine,
+  liveMessageComposing,
   normalizeResponseStreamingPreference,
   noteLastToolStep,
   projectMessages,
@@ -20,6 +23,10 @@ import {
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
   stripLiveStreamingProgress,
+  toolCallDetail,
+  toolCallDetailLine,
+  toolCalledUpdate,
+  toolCompletedUpdate,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
@@ -136,15 +143,24 @@ describe("reduceLiveMessageBlocks", () => {
     ).toEqual([{ kind: "progress", text: "Using browser", activity: true }]);
   });
 
-  it("replaces punctuated activity text with its tool step", () => {
+  it("shows a tool step at once behind a status line, which stays as the working label", () => {
+    // A status line is not prose: "Running: ls -la" never ends a sentence, yet the step must show.
     const activity = reduceLiveMessageBlocks([], {
       type: "progress",
-      payload: { text: "Running: echo done.", activity: true },
+      payload: { text: "Running: ls -la", activity: true },
     });
-
-    expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
-      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+    const blocks = reduceLiveMessageBlocks(activity, {
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+      detail: "ls -la",
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls -la" }] },
+      { kind: "progress", text: "Running: ls -la", activity: true },
     ]);
+    expect(liveActivityLine([{ id: "progress:run-1", blocks }])).toBe("Running: ls -la");
+    expect(liveMessageComposing(blocks)).toBe(false);
   });
 
   it("keeps a tool waiting on an unfinished sentence when a reset drops the text", () => {
@@ -531,7 +547,7 @@ describe("projectMessages", () => {
       {
         kind: "progress",
         text: "Let me check what I have locally and try the GitHub API",
-        pendingToolNames: ["shell"],
+        pendingTools: [{ name: "shell" }],
       },
     ]);
   });
@@ -653,6 +669,44 @@ describe("humanizeToolName", () => {
 });
 
 describe("appendToolStep", () => {
+  it("keeps the call's id and detail on its row, and the newest result on a repeat", () => {
+    const first = appendToolStep([], { name: "shell", executionId: "x1", detail: "ls" });
+    expect(first).toEqual([{ label: "Shell", count: 1, executionId: "x1", detail: "ls" }]);
+    const done = completeToolStep([{ kind: "steps", steps: first }], "x1", "ok", 40);
+    expect(done).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "ls",
+            outcome: "ok",
+            durationMs: 40,
+          },
+        ],
+      },
+    ]);
+    const steps = done[0]?.kind === "steps" ? done[0].steps : [];
+    expect(appendToolStep(steps, { name: "shell", executionId: "x2", detail: "ls" })).toEqual([
+      { label: "Shell", count: 2, executionId: "x2", detail: "ls" },
+    ]);
+  });
+
+  it("starts a new row when the same tool runs with a different detail", () => {
+    const first = appendToolStep([], { name: "shell", executionId: "x1", detail: "ls" });
+    expect(appendToolStep(first, { name: "shell", executionId: "x2", detail: "pwd" })).toEqual([
+      { label: "Shell", count: 1, executionId: "x1", detail: "ls" },
+      { label: "Shell", count: 1, executionId: "x2", detail: "pwd" },
+    ]);
+  });
+
+  it("leaves blocks alone when a result names a call they never saw", () => {
+    const blocks = [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }];
+    expect(completeToolStep(blocks, "missing", "error")).toEqual(blocks);
+  });
+
   it("starts a new step for the first call", () => {
     expect(appendToolStep([], "SLACK_FIND_CHANNELS")).toEqual([
       { label: "Slack find channels", count: 1 },
@@ -791,6 +845,115 @@ describe("appendTextSegment", () => {
     expect(appendTextSegment(segments, "done")).toEqual([
       { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
       { kind: "text", text: "done" },
+    ]);
+  });
+});
+
+describe("toolCallDetail", () => {
+  it("prefers the command, path or query, on one bounded line", () => {
+    expect(toolCallDetail({ command: "ls -la\n  apps", cwd: "." })).toBe("ls -la apps");
+    expect(toolCallDetail({ path: "apps/web/package.json" })).toBe("apps/web/package.json");
+    expect(toolCallDetail({ query: "weather tomorrow", limit: 5 })).toBe("weather tomorrow");
+    expect(toolCallDetail({ command: "x".repeat(400) })).toHaveLength(200);
+  });
+
+  it("gives the whole line for a caller to redact before it bounds it", () => {
+    const command = `curl -u ${"x".repeat(199)}SECRET`;
+    expect(toolCallDetailLine({ command })).toBe(command);
+    expect(boundToolStepDetail(command.replace("SECRET", "[redacted]"))).toHaveLength(200);
+    expect(boundToolStepDetail("  a  \n b ")).toBe("a b");
+  });
+
+  it("falls back to the scalar arguments and gives nothing for nested or empty ones", () => {
+    expect(toolCallDetail({ limit: 5, archived: false, cursor: "" })).toBe(
+      "limit: 5, archived: false",
+    );
+    expect(toolCallDetail({ items: [{ action: "a" }] })).toBeUndefined();
+    expect(toolCallDetail({})).toBeUndefined();
+    expect(toolCallDetail("ls")).toBeUndefined();
+  });
+});
+
+describe("reduceLiveMessageBlocks tool results", () => {
+  it("marks a step done, and a call still waiting on a sentence once it shows", () => {
+    let blocks = reduceLiveMessageBlocks([], { type: "progress", payload: { text: "Checking" } });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+      detail: "ls",
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "tool_done",
+      executionId: "x1",
+      outcome: "error",
+      durationMs: 12,
+    });
+    expect(blocks).toEqual([
+      {
+        kind: "progress",
+        text: "Checking",
+        pendingTools: [
+          { name: "shell", executionId: "x1", detail: "ls", outcome: "error", durationMs: 12 },
+        ],
+      },
+    ]);
+    blocks = reduceLiveMessageBlocks(blocks, { type: "progress", payload: { delta: " totals." } });
+    expect(blocks).toEqual([
+      { kind: "text", text: "Checking totals." },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "ls",
+            outcome: "error",
+            durationMs: 12,
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("projectMessages tool results", () => {
+  it("applies a completion to the live step it belongs to", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", detail: "pnpm test" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "agent.tool.completed",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 2500 },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+    ]);
+    expect(messages[0]?.blocks).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: 1,
+            executionId: "x1",
+            detail: "pnpm test",
+            outcome: "ok",
+            durationMs: 2500,
+          },
+        ],
+      },
     ]);
   });
 });
@@ -1102,5 +1265,136 @@ describe("liveActivityLine", () => {
     expect(
       liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     ).toBeUndefined();
+  });
+});
+
+describe("toolCalledUpdate", () => {
+  it("carries the result of a call that finished before its own event", () => {
+    expect(
+      toolCalledUpdate({ name: "shell", executionId: "x1", outcome: "error", durationMs: 12.4 }),
+    ).toEqual({ type: "tool", name: "shell", executionId: "x1", outcome: "error", durationMs: 12 });
+    expect(toolCalledUpdate({ name: "shell", executionId: "x1", outcome: "paused" })).toEqual({
+      type: "tool",
+      name: "shell",
+      executionId: "x1",
+    });
+  });
+
+  it("marks the step done from the called event alone", () => {
+    const blocks = reduceLiveMessageBlocks(
+      [],
+      toolCalledUpdate({ name: "shell", executionId: "x1", detail: "ls", outcome: "ok" }),
+    );
+    expect(blocks).toEqual([
+      {
+        kind: "steps",
+        steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls", outcome: "ok" }],
+      },
+    ]);
+  });
+});
+
+describe("projectMessages live timing", () => {
+  it("keeps the run's first activity as the live message's start", () => {
+    const [live] = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "Looking." },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1" },
+        createdAt: "2026-01-01T00:00:09.000Z",
+      },
+    ]);
+    expect(live).toMatchObject({ seq: 2, createdAt: "2026-01-01T00:00:01.000Z" });
+  });
+});
+
+describe("reduceLiveMessageBlocks status lines", () => {
+  it("replaces a status line with the bot's next words instead of joining them", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Running: ls -la", activity: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell", executionId: "x1" });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1" }] },
+      { kind: "progress", text: "Running: ls -la", activity: true },
+    ]);
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: "Found it.", streaming: true },
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1" }] },
+      { kind: "progress", text: "Found it." },
+    ]);
+  });
+
+  it("never builds the bot's text on a status line", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking ", streaming: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { text: "Running: ls", activity: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: "the files", streaming: true },
+    });
+    expect(blocks.at(-1)).toEqual({ kind: "progress", text: "the files" });
+  });
+});
+
+describe("toolCompletedUpdate", () => {
+  it("leaves a paused call unmarked and marks a finished one", () => {
+    expect(toolCompletedUpdate({ executionId: "s1", outcome: "paused" })).toBeUndefined();
+    expect(toolCompletedUpdate({ executionId: "s1", outcome: "error", durationMs: 3 })).toEqual({
+      type: "tool_done",
+      executionId: "s1",
+      outcome: "error",
+      durationMs: 3,
+    });
+  });
+});
+
+describe("projectMessages tool results", () => {
+  it("marks the step without moving the live row", () => {
+    const [live] = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 1,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1" },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 5,
+        type: "agent.tool.completed",
+        runId: "r1",
+        payload: { name: "shell", executionId: "x1", outcome: "error" },
+        createdAt: "2026-01-01T00:00:05.000Z",
+      },
+    ]);
+    expect(live).toMatchObject({ seq: 1 });
+    expect(live?.blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, executionId: "x1", outcome: "error" }] },
+    ]);
   });
 });

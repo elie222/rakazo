@@ -37,6 +37,35 @@ describe("mobile message presentation", () => {
     expect(isCenteredAgentEvent([{ kind: "text", text: "Hello" }])).toBe(false);
   });
 
+  it("shows tool cards between text bubbles, in order, only when tool activity is on", () => {
+    const steps: MessageBlock = {
+      kind: "steps",
+      steps: [{ label: "Shell", count: 1, executionId: "x1", detail: "ls", outcome: "ok" }],
+    };
+    const blocks: MessageBlock[] = [
+      { kind: "text", text: "Checking." },
+      steps,
+      { kind: "progress", text: "Using shell", activity: true },
+      { kind: "text", text: "Done." },
+    ];
+    expect(messagePresentationSegments(blocks, true)).toEqual([
+      { kind: "content", blocks: [{ kind: "text", text: "Checking." }] },
+      { kind: "steps", block: steps },
+      { kind: "content", blocks: [{ kind: "text", text: "Done." }] },
+    ]);
+    expect(messagePresentationSegments(blocks)).toEqual([
+      {
+        kind: "content",
+        blocks: [
+          { kind: "text", text: "Checking." },
+          { kind: "text", text: "Done." },
+        ],
+      },
+    ]);
+    expect(hasVisibleMessagePresentation([steps], true)).toBe(true);
+    expect(hasVisibleMessagePresentation([steps])).toBe(false);
+  });
+
   it("hides completed tool activity", () => {
     const blocks = [
       {
@@ -73,7 +102,7 @@ describe("mobile message presentation", () => {
     const mixed: Extract<MessageBlock, { kind: "progress" }> = {
       kind: "progress",
       text: "Let me check",
-      pendingToolNames: ["browser"],
+      pendingTools: [{ name: "browser" }],
     };
     expect(messagePresentationSegments([mixed])).toEqual([{ kind: "content", blocks: [mixed] }]);
   });

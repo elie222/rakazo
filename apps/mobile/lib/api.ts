@@ -1876,7 +1876,10 @@ export function blockText(message: MobileMessage) {
       }
       if (block.kind === "steps") {
         return (block.steps ?? [])
-          .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
+          .map(
+            (step) =>
+              `${step.label}${step.detail ? `: ${step.detail}` : ""}${step.count > 1 ? ` ×${step.count}` : ""}`,
+          )
           .join(", ");
       }
       return ("text" in block ? block.text : "state" in block ? block.state : "") ?? "";

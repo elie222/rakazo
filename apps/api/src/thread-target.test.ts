@@ -8,6 +8,7 @@ import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
   latestWaitingRun,
+  loadLiveRunEvents,
   reactToThreadMessage,
   replyParentBotId,
   sendTargetBotIds,
@@ -5148,5 +5149,34 @@ describe("latestWaitingRun", () => {
     const tied = [run("x", "waiting_input", 3), run("y", "waiting_input", 3)];
     expect(latestWaitingRun(tied)?.id).toBe("y");
     expect(latestWaitingRun([...tied].reverse())?.id).toBe("y");
+  });
+});
+
+describe("loadLiveRunEvents", () => {
+  it("reads through the client and leaves a call's arguments and result out", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "e1",
+        type: "agent.tool.called",
+        payload: { name: "shell", input: "{}", detail: "ls" },
+      },
+      { id: "e2", type: "agent.tool.completed", payload: { executionId: "x1", preview: "secret" } },
+      { id: "e3", type: "thread.progress", payload: { text: "Hi", input: "kept" } },
+    ]);
+    const events = await loadLiveRunEvents({ event: { findMany } } as never, "thread-1", [
+      { id: "run-1" },
+    ]);
+    expect(events.map((event) => event.payload)).toEqual([
+      { name: "shell", detail: "ls" },
+      { executionId: "x1" },
+      { text: "Hi", input: "kept" },
+    ]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ runId: { in: ["run-1"] } }) }),
+    );
+    await expect(
+      loadLiveRunEvents({ event: { findMany } } as never, "thread-1", []),
+    ).resolves.toEqual([]);
+    expect(findMany).toHaveBeenCalledOnce();
   });
 });

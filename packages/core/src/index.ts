@@ -112,6 +112,7 @@ export * from "./thread-snapshot-events.js";
 export * from "./thread-subscription.js";
 export * from "./time-separators.js";
 export * from "./tool-activity.js";
+export * from "./tool-call-records.js";
 export * from "./translate.js";
 export * from "./ui-locale.js";
 export * from "./unread-divider.js";

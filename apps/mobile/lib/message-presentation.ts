@@ -23,10 +23,9 @@ export function messageHasInlineControls(blocks: readonly MessageBlock[]): boole
   );
 }
 
-export type MessagePresentationSegment = {
-  kind: "content";
-  blocks: MessageBlock[];
-};
+export type MessagePresentationSegment =
+  | { kind: "content"; blocks: MessageBlock[] }
+  | { kind: "steps"; block: Extract<MessageBlock, { kind: "steps" }> };
 
 /** Blocks the thread draws as their own native card instead of inside the text bubble. */
 function isCardBlock(block: MessageBlock): boolean {
@@ -38,17 +37,40 @@ function isCardBlock(block: MessageBlock): boolean {
   );
 }
 
+/**
+ * The text bubbles and, when tool activity is shown, the tool cards between them, in order.
+ * With it off every tool block is left out and the text stays one bubble.
+ */
 export function messagePresentationSegments(
   blocks: readonly MessageBlock[],
+  showToolActivity = false,
 ): MessagePresentationSegment[] {
-  const content = blocks.filter((block) => !isCardBlock(block) && !isToolActivityBlock(block));
-  return content.length > 0 ? [{ kind: "content", blocks: content }] : [];
+  const segments: MessagePresentationSegment[] = [];
+  let content: MessageBlock[] = [];
+  const flush = () => {
+    if (content.length > 0) segments.push({ kind: "content", blocks: content });
+    content = [];
+  };
+  for (const block of blocks) {
+    if (block.kind === "steps" && showToolActivity) {
+      flush();
+      segments.push({ kind: "steps", block });
+      continue;
+    }
+    if (!isCardBlock(block) && !isToolActivityBlock(block)) content.push(block);
+  }
+  flush();
+  return segments;
 }
 
-export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
+export function hasVisibleMessagePresentation(
+  blocks: readonly MessageBlock[],
+  showToolActivity = false,
+): boolean {
   return blocks.some(
     (block) =>
-      !isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block),
+      (showToolActivity && block.kind === "steps") ||
+      (!isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block)),
   );
 }
 

@@ -1,4 +1,11 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type {
+  MessageBlock,
+  ThreadMessage,
+  ToolCallRef,
+  ToolStep,
+  ToolStepOutcome,
+} from "@rakazo/contracts";
+import { TOOL_STEP_DETAIL_MAX_CHARS } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
 import { payloadAuthor } from "./message-replies.js";
@@ -101,26 +108,21 @@ export function projectMessages(
     if (event.type === "thread.progress") {
       const live = liveProjection(event, createdAt);
       live.blocks = reduceLiveMessageBlocks(live.blocks, { type: "progress", payload });
-      live.meta = {
-        ...live.meta,
-        seq: event.seq,
-        botId: event.botId ?? undefined,
-        createdAt,
-      };
+      // The run's first activity stays its start, so the live card counts up from it.
+      live.meta = { ...live.meta, seq: event.seq, botId: event.botId ?? undefined };
       continue;
     }
     if (event.type === "agent.tool.called") {
       const live = liveProjection(event, createdAt);
-      live.blocks = reduceLiveMessageBlocks(live.blocks, {
-        type: "tool",
-        name: String(payload.name ?? ""),
-      });
-      live.meta = {
-        ...live.meta,
-        seq: event.seq,
-        botId: event.botId ?? undefined,
-        createdAt,
-      };
+      live.blocks = reduceLiveMessageBlocks(live.blocks, toolCalledUpdate(payload));
+      live.meta = { ...live.meta, seq: event.seq, botId: event.botId ?? undefined };
+      continue;
+    }
+    if (event.type === "agent.tool.completed") {
+      const update = toolCompletedUpdate(payload);
+      const live = event.runId ? liveById.get(progressMessageId(event)) : undefined;
+      // Only the step's mark changes; the row keeps its place, as it does in a live client.
+      if (update && live) live.blocks = reduceLiveMessageBlocks(live.blocks, update);
       continue;
     }
     if (event.type === "thread.cleared") {
@@ -300,7 +302,42 @@ function clampRunFailure(message: string): string {
 
 export type LiveMessageUpdate =
   | { type: "progress"; payload: Record<string, unknown> | undefined }
-  | { type: "tool"; name: string };
+  | ({ type: "tool" } & ToolCallRef)
+  | { type: "tool_done"; executionId: string; outcome: ToolStepOutcome; durationMs?: number };
+
+/** The live update an `agent.tool.called` event carries. */
+export function toolCalledUpdate(payload: Record<string, unknown>): LiveMessageUpdate {
+  return {
+    type: "tool",
+    name: String(payload.name ?? ""),
+    ...(typeof payload.executionId === "string" ? { executionId: payload.executionId } : {}),
+    ...(typeof payload.detail === "string" ? { detail: payload.detail } : {}),
+    // A call that finished before its own event was written carries its result with it.
+    ...(payload.outcome === "ok" || payload.outcome === "error"
+      ? { outcome: payload.outcome }
+      : {}),
+    ...(typeof payload.durationMs === "number" && payload.durationMs >= 0
+      ? { durationMs: Math.round(payload.durationMs) }
+      : {}),
+  };
+}
+
+/** The live update an `agent.tool.completed` event carries; none while the call only paused. */
+export function toolCompletedUpdate(
+  payload: Record<string, unknown>,
+): Extract<LiveMessageUpdate, { type: "tool_done" }> | undefined {
+  if (typeof payload.executionId !== "string" || payload.outcome === "paused") return undefined;
+  const durationMs =
+    typeof payload.durationMs === "number" && payload.durationMs >= 0
+      ? Math.round(payload.durationMs)
+      : undefined;
+  return {
+    type: "tool_done",
+    executionId: payload.executionId,
+    outcome: payload.outcome === "error" ? "error" : "ok",
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
+}
 
 export function reduceLiveMessageBlocks(
   current: readonly MessageBlock[],
@@ -308,37 +345,45 @@ export function reduceLiveMessageBlocks(
 ): MessageBlock[] {
   // A reset drops the text streamed so far (it will not be in the reply) and keeps the steps,
   // including tools still waiting on that text to finish its sentence.
+  if (update.type === "tool_done") return completeToolCall(current, update);
   let blocks = current;
   if (update.type === "progress" && update.payload?.reset === true) {
     const waiting = current.at(-1)?.kind === "progress" ? current.at(-1) : undefined;
     blocks = current.filter((block) => block.kind !== "text" && block.kind !== "progress");
-    for (const name of waiting?.kind === "progress" ? (waiting.pendingToolNames ?? []) : []) {
-      blocks = appendToolCallSegment(blocks, name);
+    for (const call of waiting?.kind === "progress" ? (waiting.pendingTools ?? []) : []) {
+      blocks = appendToolCallSegment(blocks, call);
     }
   }
   const tail = blocks.at(-1);
   const segments = tail?.kind === "progress" ? blocks.slice(0, -1) : blocks;
-  const priorText = liveMessageText(blocks);
-  const flushedLength =
-    tail?.kind === "progress" ? priorText.length - tail.text.length : priorText.length;
-  const tailText =
-    update.type === "progress"
-      ? progressMessageText(update.payload, priorText).slice(flushedLength)
-      : tail?.kind === "progress"
-        ? tail.text
-        : "";
-  const pendingToolNames = [
-    ...(tail?.kind === "progress" ? (tail.pendingToolNames ?? []) : []),
-    ...(update.type === "tool" ? [update.name] : []),
-  ];
   const activity =
     update.type === "progress"
       ? update.payload?.activity === true
       : tail?.kind === "progress" && tail.activity === true;
+  // A status line labels the work; it is not the bot's prose. The bot's text continues from
+  // what it wrote before, so a status line is never part of what a delta builds on.
+  const priorText = liveMessageText(blocks);
+  const narrationTail = tail?.kind === "progress" && tail.activity !== true ? tail.text : "";
+  const flushedLength = priorText.length - narrationTail.length;
+  const tailText =
+    update.type === "progress"
+      ? activity
+        ? String(update.payload?.text ?? "")
+        : progressMessageText(update.payload, priorText).slice(flushedLength)
+      : tail?.kind === "progress"
+        ? tail.text
+        : "";
+  const pendingTools: ToolCallRef[] = [
+    ...(tail?.kind === "progress" ? (tail.pendingTools ?? []) : []),
+    ...(update.type === "tool" ? [toolCallRef(update)] : []),
+  ];
 
-  if (pendingToolNames.length > 0 && endsSentence(tailText)) {
+  // A tool status line is not the bot's prose, so a call never waits behind it: the step shows
+  // at once and the line stays after it as the working label.
+  if (pendingTools.length > 0 && (activity || endsSentence(tailText))) {
     let next = activity ? [...segments] : appendTextSegment(segments, tailText);
-    for (const name of pendingToolNames) next = appendToolCallSegment(next, name);
+    for (const call of pendingTools) next = appendToolCallSegment(next, call);
+    if (activity && tailText) next.push({ kind: "progress", text: tailText, activity: true });
     return next;
   }
   if (!tailText) return [...segments];
@@ -348,15 +393,77 @@ export function reduceLiveMessageBlocks(
       kind: "progress",
       text: tailText,
       ...(activity ? { activity: true as const } : {}),
-      ...(pendingToolNames.length > 0 ? { pendingToolNames } : {}),
+      ...(pendingTools.length > 0 ? { pendingTools } : {}),
     },
   ];
 }
 
+function toolCallRef(update: Extract<LiveMessageUpdate, { type: "tool" }>): ToolCallRef {
+  const { type: _type, ...call } = update;
+  return call;
+}
+
+/**
+ * A finished call marks its step, or the pending call still waiting to become one. Returns
+ * the same array when nothing matched, so a result for a call the view never saw is a no-op.
+ */
+function completeToolCall(
+  blocks: readonly MessageBlock[],
+  done: Extract<LiveMessageUpdate, { type: "tool_done" }>,
+): MessageBlock[] {
+  const outcome = {
+    outcome: done.outcome,
+    ...(done.durationMs === undefined ? {} : { durationMs: done.durationMs }),
+  };
+  let changed = false;
+  const next = blocks.map((block) => {
+    if (
+      block.kind === "progress" &&
+      block.pendingTools?.some((call) => call.executionId === done.executionId)
+    ) {
+      changed = true;
+      return {
+        ...block,
+        pendingTools: block.pendingTools.map((call) =>
+          call.executionId === done.executionId ? { ...call, ...outcome } : call,
+        ),
+      };
+    }
+    if (
+      block.kind === "steps" &&
+      block.steps.some((step) => step.executionId === done.executionId)
+    ) {
+      changed = true;
+      return {
+        ...block,
+        steps: block.steps.map((step) =>
+          step.executionId === done.executionId ? { ...step, ...outcome } : step,
+        ),
+      };
+    }
+    return block;
+  });
+  return changed ? next : [...blocks];
+}
+
+/** Marks the step a finished call belongs to; see completeToolCall. */
+export function completeToolStep(
+  segments: readonly MessageBlock[],
+  executionId: string,
+  outcome: ToolStepOutcome,
+  durationMs?: number,
+): MessageBlock[] {
+  return completeToolCall(segments, { type: "tool_done", executionId, outcome, durationMs });
+}
+
+/** The bot's own text in a live message: its narration, without tool status lines. */
 function liveMessageText(blocks: readonly MessageBlock[]): string {
   return blocks
-    .filter((block) => block.kind === "text" || block.kind === "progress")
-    .map((block) => block.text)
+    .flatMap((block) =>
+      block.kind === "text" || (block.kind === "progress" && block.activity !== true)
+        ? [block.text]
+        : [],
+    )
     .join("");
 }
 
@@ -369,7 +476,7 @@ export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
   return (
     tail?.kind === "progress" &&
     !tail.activity &&
-    !tail.pendingToolNames?.length &&
+    !tail.pendingTools?.length &&
     tail.text.trim().length > 0
   );
 }
@@ -383,15 +490,79 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
-export type ToolStep = { label: string; count: number; note?: string };
-
-export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
-  const label = humanizeToolName(toolName);
+/**
+ * Adds a call to the step rows. A call that repeats the previous row's tool and detail joins
+ * it as a count; the row then stands for its newest call, so a retry shows the latest result.
+ */
+export function appendToolStep(steps: readonly ToolStep[], call: ToolCallRef | string): ToolStep[] {
+  const ref = typeof call === "string" ? { name: call } : call;
+  const label = humanizeToolName(ref.name);
+  const facts: Omit<ToolStep, "label" | "count"> = {
+    ...(ref.executionId === undefined ? {} : { executionId: ref.executionId }),
+    ...(ref.detail === undefined ? {} : { detail: ref.detail }),
+    ...(ref.outcome === undefined ? {} : { outcome: ref.outcome }),
+    ...(ref.durationMs === undefined ? {} : { durationMs: ref.durationMs }),
+  };
   const last = steps.at(-1);
-  if (last && last.label === label) {
-    return [...steps.slice(0, -1), { ...last, count: last.count + 1 }];
+  if (last && last.label === label && last.detail === ref.detail) {
+    const { executionId: _id, outcome: _outcome, durationMs: _duration, ...kept } = last;
+    return [...steps.slice(0, -1), { ...kept, ...facts, count: last.count + 1 }];
   }
-  return [...steps, { label, count: 1 }];
+  return [...steps, { label, count: 1, ...facts }];
+}
+
+const DETAIL_KEYS = [
+  "command",
+  "query",
+  "path",
+  "url",
+  "file",
+  "name",
+  "app",
+  "title",
+  "text",
+  "prompt",
+  "task",
+];
+
+/**
+ * One line that says what a call is about: its command, path, query or similar argument, else
+ * its scalar arguments. Nested or empty arguments give nothing. The line is whole, so a caller
+ * can redact it before bounding it with boundToolStepDetail; a secret cut in half would escape.
+ */
+export function toolCallDetailLine(args: unknown): string | undefined {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
+  const record = args as Record<string, unknown>;
+  for (const key of DETAIL_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return oneLine(value);
+  }
+  const scalars = Object.entries(record).filter(
+    ([, value]) =>
+      (typeof value === "string" && value.trim()) ||
+      typeof value === "number" ||
+      typeof value === "boolean",
+  );
+  if (scalars.length === 0) return undefined;
+  return oneLine(scalars.map(([key, value]) => `${key}: ${String(value)}`).join(", "));
+}
+
+/** The bounded detail line of a call that carries no secrets. */
+export function toolCallDetail(args: unknown): string | undefined {
+  const line = toolCallDetailLine(args);
+  return line === undefined ? undefined : boundToolStepDetail(line);
+}
+
+/** Cuts a detail to what a step may carry. Always the last step, after any redaction. */
+export function boundToolStepDetail(text: string): string {
+  const line = oneLine(text);
+  return line.length > TOOL_STEP_DETAIL_MAX_CHARS
+    ? `${line.slice(0, TOOL_STEP_DETAIL_MAX_CHARS - 1).trimEnd()}…`
+    : line;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */
@@ -401,9 +572,11 @@ export function noteLastToolStep(segments: readonly MessageBlock[], note: string
   const last = block?.kind === "steps" ? block.steps.at(-1) : undefined;
   if (block?.kind !== "steps" || !last) return [...segments];
   const steps = block.steps.slice(0, -1);
-  if (last.count > 1)
-    steps.push({ ...last, count: last.count - 1 }, { label: last.label, count: 1, note });
-  else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
+  if (last.count > 1) {
+    // The row's call facts belong to its newest call, which the note goes with.
+    const { executionId: _id, outcome: _outcome, durationMs: _duration, ...earlier } = last;
+    steps.push({ ...earlier, count: last.count - 1 }, { ...last, count: 1, note });
+  } else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
   const next = [...segments];
   next[index] = { ...block, steps };
   return next;
@@ -478,11 +651,11 @@ export function appendTextSegment(segments: readonly MessageBlock[], text: strin
 
 export function appendToolCallSegment(
   segments: readonly MessageBlock[],
-  toolName: string,
+  call: ToolCallRef | string,
 ): MessageBlock[] {
   const last = segments.at(-1);
   const priorSteps = last?.kind === "steps" ? last.steps : [];
-  const steps = appendToolStep(priorSteps, toolName);
+  const steps = appendToolStep(priorSteps, call);
   if (last?.kind === "steps") {
     return [...segments.slice(0, -1), { kind: "steps", steps }];
   }

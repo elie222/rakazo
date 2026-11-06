@@ -1,12 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { settleCallRequest } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, RunStatus } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
   expandSkillReferencesInPrompt,
+  isActive,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -30,10 +31,12 @@ import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "..
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
+  isOthersRun,
   isPeerRun,
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
+  withoutToolCallContent,
 } from "../thread-message-pages.js";
 import type { ThreadTarget } from "../thread-target.js";
 import {
@@ -50,6 +53,11 @@ import {
   threadHead,
   threadSnapshot,
 } from "../thread-target.js";
+import {
+  loadToolCallRecords,
+  settledToolCallRecord,
+  withheldToolCallRecord,
+} from "../tool-call-records.js";
 import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
@@ -184,6 +192,7 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const backgroundRunCache = new Map<string, Promise<boolean>>();
+        const othersRunCache = new Map<string, Promise<boolean>>();
         const events = withHeartbeats(context, (signal) =>
           deps.events.follow(target.threadId, input.cursor, signal),
         );
@@ -206,6 +215,13 @@ export function threadsRoutes(ctx: RouterContext) {
             if (!shouldForwardPeerThreadEvent(event)) continue;
           } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
             if (!shouldForwardBackgroundThreadEvent(event)) continue;
+          }
+          if (
+            (event.type === "agent.tool.called" || event.type === "agent.tool.completed") &&
+            (await isOthersRun(deps.prisma, event.runId, context.actor.userId, othersRunCache))
+          ) {
+            yield withoutToolCallContent(event);
+            continue;
           }
           yield event;
         }
@@ -306,6 +322,36 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      toolCalls: authed.threads.toolCalls.handler(async ({ context, input }) => {
+        // Whoever can read the chat can read its steps: the thread's bot or group resolves for
+        // the actor the same way every other thread read does.
+        const thread = await deps.prisma.thread.findFirst({
+          where: { id: input.threadId, spaceId: context.actor.spaceId },
+          select: { id: true, botId: true, groupId: true },
+        });
+        if (!thread || (!thread.botId && !thread.groupId)) throw new IsolationError();
+        const target = await resolveThreadTarget(
+          deps.prisma,
+          context.actor,
+          thread.botId ? { botId: thread.botId } : { groupId: thread.groupId ?? undefined },
+          { includeArchived: true },
+        );
+        if (target.threadId !== thread.id) throw new IsolationError();
+        const [run, records] = await Promise.all([
+          deps.prisma.run.findFirst({
+            where: { id: input.runId, threadId: thread.id },
+            select: { userId: true, status: true },
+          }),
+          loadToolCallRecords(deps.prisma, thread.id, input.runId),
+        ]);
+        if (!run) return [];
+        const finished = !isActive(run.status as RunStatus);
+        return records.map((record) => {
+          const settled = finished ? settledToolCallRecord(record) : record;
+          // A call's arguments, result and error go only to the person who started the run.
+          return run.userId === context.actor.userId ? settled : withheldToolCallRecord(settled);
+        });
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

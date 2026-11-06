@@ -2706,6 +2706,10 @@ msgstr ""
 msgid "Couldn't load this page. Try again."
 msgstr "לא ניתן היה לטעון את הדף. נסו שוב."
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "Couldn’t load this step."
+msgstr ""
+
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr ""
@@ -3378,6 +3382,11 @@ msgstr ""
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr ""
 
+#. placeholder {0}: record.exitCode
+#: src/components/ToolActivityDisclosure.tsx
+msgid "exit {0}"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "הרחבה"
@@ -3440,6 +3449,7 @@ msgid "failed"
 msgstr "נכשל"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "נכשל"
@@ -4158,6 +4168,7 @@ msgstr "טוען ספקי קול…"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4812,6 +4823,10 @@ msgstr "לא נמצאו מודלים ברשימה."
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "לא נמצאו קבצי OpenClaw, Hermes או מסמך סוכן."
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "No output recorded."
+msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -5960,6 +5975,7 @@ msgid "running"
 msgstr "פועל"
 
 #: src/components/SubagentCard.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Running"
