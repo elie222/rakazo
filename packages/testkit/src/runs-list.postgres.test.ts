@@ -150,7 +150,8 @@ describeRunsList("runs.list activity tracker", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await seedRun(prisma, quiet.id, "completed", "quiet run", new Date(Date.now() - 86_400_000));
+    const now = Date.now();
+    await seedRun(prisma, quiet.id, "completed", "quiet run", new Date(now - 86_400_000));
     for (let i = 0; i < 21; i += 1) {
       // Bridged team-chat conversations get their own threads but are still the bot's chat.
       const thread = await bridgedThread(prisma, busy.id, `busy-${stamp}-${i}`);
@@ -159,7 +160,7 @@ describeRunsList("runs.list activity tracker", () => {
         busy.id,
         "completed",
         `busy ${i}`,
-        new Date(Date.now() - i * 1_000),
+        new Date(now - i * 1_000),
         thread.id,
       );
     }
