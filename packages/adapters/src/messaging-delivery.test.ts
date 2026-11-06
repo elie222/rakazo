@@ -34,6 +34,7 @@ const identity = {
 const messagingRun = {
   id: "run-1",
   botId: "bot-1",
+  userId: "user-1",
   trigger: "messaging",
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
@@ -482,6 +483,15 @@ describe("deliverMessagingOutbound", () => {
       await deliverMessagingOutbound(mirrored, { runId: "run-1" }, context);
       expect(mirrored.sendToThread).toHaveBeenCalledTimes(2);
     }
+  });
+
+  it("keeps another member's bot_message run out of the linked person's DM", async () => {
+    const deps = createDeps({
+      run: { ...messagingRun, trigger: "bot_message", userId: "user-2" },
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.rows).toHaveLength(0);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {

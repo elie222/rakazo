@@ -50,6 +50,13 @@ x-app-environment: &app-environment
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
+  # The worker names each bot's address to it and sends its email; the API receives the mail.
+  INBOUND_EMAIL_DOMAIN:
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -330,9 +337,9 @@ services:
   # encrypted copies over its own `backup` network. infra/compose/pitr.sh enable turns it on.
   pitr:
     profiles: [pitr]
-    # Tagged with a hash of Dockerfile.pitr and pitr-agent.sh, so a deploy builds it once per change
-    # instead of on every run (compose-service.test.ts checks the hash).
-    image: rakazo-pitr:aa7cf1bde2aa8051
+    # Tagged with a hash of Dockerfile.pitr, pitr-agent.sh, and apt-security.sh, so a deploy
+    # builds it once per change instead of on every run (compose-service.test.ts checks the hash).
+    image: rakazo-pitr:01b2ca5aac855fdd
     build:
       context: .
       dockerfile: Dockerfile.pitr
@@ -453,6 +460,7 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
+      COMPUTER_SETTINGS_ENABLED:
       # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-caddy}
       CLIENT_IP_HEADER:
@@ -470,11 +478,7 @@ services:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
+      INBOUND_EMAIL_SECRET:
       WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:

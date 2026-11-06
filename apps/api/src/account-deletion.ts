@@ -7,7 +7,7 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import { anySignal, requestDeadline, withAbort } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
+import type { Prisma, ThreadEvents } from "@rakazo/db";
 import {
   claimOrganizationForDeletion,
   claimSpacesLeavingWithAccount,
@@ -15,6 +15,7 @@ import {
   deleteEmptyOrganization,
   deletePageShareSecrets,
   keepOrganizationTrialUse,
+  leaveInvitedSpaces,
   listStalledOrganizationDeletions,
   recordAuditEvent,
   recordComputerRunEnd,
@@ -27,6 +28,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
+import { afterSpaceDeparture } from "./space-departure.js";
 
 /**
  * In shared spaces, the account's bot folders also live on the space's Team Computer from before
@@ -34,7 +36,10 @@ import type { SpaceDeletionDeps } from "./space-deletion.js";
  * failure keeps the handle and deleting again resumes from what is left.
  */
 export async function deleteAccountContent(
-  deps: SpaceDeletionDeps & { billing?: Pick<BillingService, "cancelForDeletedUser"> },
+  deps: SpaceDeletionDeps & {
+    events: ThreadEvents;
+    billing?: Pick<BillingService, "cancelForDeletedUser">;
+  },
   userId: string,
 ): Promise<void> {
   const { claimId, spaceIds, takenOver } = await claimSpacesLeavingWithAccount(deps.prisma, userId);
@@ -48,6 +53,13 @@ export async function deleteAccountContent(
     await restoreSpaceDeletionClaims(deps.prisma, claimId, takenOver);
     throw error;
   }
+  // Then leave other people's Spaces, so what this account made there passes to their owners
+  // instead of being torn down with it. None of them is claimed above: each keeps another full
+  // member. As after leaving: tell members, stop the cancelled runs' work, free held screens,
+  // and start others' waiting follow-ups.
+  await leaveInvitedSpaces(deps.prisma, userId, (departure) =>
+    afterSpaceDeparture(deps, { spaceId: departure.spaceId, userId }, departure),
+  );
   const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
   await deleteClaimedSpaces(deps, {
     userId,

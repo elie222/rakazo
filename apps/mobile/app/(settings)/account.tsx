@@ -52,6 +52,12 @@ import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { endCallBeforeSessionEnd } from "../../lib/call-session";
+import {
+  getHapticsEnabled,
+  loadHapticsPreference,
+  setHapticsEnabled,
+  subscribeHaptics,
+} from "../../lib/haptics";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
@@ -96,7 +102,10 @@ import {
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
+import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
+
+let hapticsSaveVersion = 0;
 
 export default function Account() {
   const sideInsets = useSideInsets();
@@ -137,6 +146,8 @@ export default function Account() {
   const deletion = useAccountDeletion({ onSecurity: setSecurity });
   const { run: securityAction } = deletion;
   const [signingOut, setSigningOut] = useState(false);
+  // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+  const signOutStarted = useRef(false);
   const pending = deletion.pending || signingOut;
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
@@ -181,6 +192,28 @@ export default function Account() {
     getCachedRemoteImagesEnabled,
     () => false,
   );
+  const hapticsEnabled = useSyncExternalStore(
+    subscribeHaptics,
+    getHapticsEnabled,
+    getHapticsEnabled,
+  );
+  function updateHaptics(value: boolean) {
+    const version = ++hapticsSaveVersion;
+    const isCurrent = () => version === hapticsSaveVersion && getHapticsEnabled() === value;
+    void setHapticsEnabled(value).catch(() => {
+      if (!isCurrent()) return;
+      Alert.alert(t("Haptics"), t("Could not save"), [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Retry"),
+          onPress: () => {
+            if (isCurrent()) updateHaptics(value);
+          },
+        },
+      ]);
+    });
+  }
+
   const loadRemoteImagesLabel = t("Load web images automatically");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const stackOptions = useStackedSettings();
@@ -280,6 +313,7 @@ export default function Account() {
 
   useFocusEffect(
     useCallback(() => {
+      void loadHapticsPreference();
       void loadTrustedLinkSites().catch(() => undefined);
     }, []),
   );
@@ -324,6 +358,12 @@ export default function Account() {
   );
 
   async function handleSignOut() {
+    if (signOutStarted.current) return;
+    signOutStarted.current = true;
+    if (!(await confirmUnsentSendLoss("sign-out"))) {
+      signOutStarted.current = false;
+      return;
+    }
     setSigningOut(true);
     setSignOutError(null);
     try {
@@ -334,6 +374,7 @@ export default function Account() {
     } catch (err) {
       setSignOutError(errorText(err, t("Could not sign out")));
       setSigningOut(false);
+      signOutStarted.current = false;
     }
   }
 
@@ -629,6 +670,7 @@ export default function Account() {
             title={t("Language")}
             value={UI_LOCALE_LABELS[locale]}
           />
+          <SettingsSwitch label={t("Haptics")} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
         {Platform.OS === "android" ? (
@@ -695,6 +737,21 @@ export default function Account() {
               title={t("Billing")}
               chevron="right"
               onPress={() => router.push("/billing")}
+            />
+          ) : null}
+          {me ? (
+            <SettingsRow
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // The space header holds Members too, but a single space has no header.
+              onPress={() =>
+                openFromSettingsSheet(router, {
+                  pathname: "/space-members",
+                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
+                })
+              }
+              title={t("Members")}
             />
           ) : null}
           {(

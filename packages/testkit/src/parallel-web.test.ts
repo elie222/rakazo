@@ -42,6 +42,7 @@ function executorFixture(
         (args: { select?: Record<string, boolean> }) => Promise<{ timezone: string } | null>
       >(async () => null),
     },
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     run: {
       findUnique: async () => run,
       findUniqueOrThrow: async () => run,

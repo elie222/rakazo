@@ -151,7 +151,9 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
-  if (!identity) return;
+  // The linked DM is one person's chat. In a shared Space another member's run on this bot, such
+  // as a reply to their message_bot, stays in the app instead of reaching that person's chat app.
+  if (!identity || identity.userId !== run.userId) return;
 
   // Replies to another bot stay in the app; only what the bot sent with notify_owner leaves.
   const answersBot = answersAnotherBot(

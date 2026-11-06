@@ -4,6 +4,8 @@ Run the API, worker, web app, database and bot computers on a machine you contro
 
 The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
+English | [简体中文](./zh-CN/self-host.md)
+
 ## What you need
 
 - Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. Nothing else is needed for
@@ -111,6 +113,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
   voice.
 - [Tools and integrations](./self-host-integrations.md): web search, memory, MCP servers,
   messaging apps, cloud coding agents and payments.
+- [Bot email addresses](./self-host-inbound-email.md): an address for each bot, so mail you
+  forward or CC to it starts its routines.
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.

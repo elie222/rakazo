@@ -14,9 +14,9 @@ import { ArrowUpRight, Check, Globe, Lock, Share } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCopyText } from "../../lib/copy-text";
 
-const TILE = "grid size-8 shrink-0 place-items-center rounded-[8px] bg-foreground/[0.04]";
+const TILE = "grid size-8 shrink-0 place-items-center rounded-sm bg-foreground/[0.04]";
 const LINK_PILL =
-  "flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded-full ring-[0.5px] ring-border px-3 text-[14px] leading-5 font-normal text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded-full ring-[0.5px] ring-border px-3 text-body font-normal text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Two overlapping rounded squares: the Copy link glyph. */
 function CopyGlyph() {
@@ -38,7 +38,7 @@ function CopyGlyph() {
 function OwnerImage({ initial, image }: { initial: string | null; image: string | null }) {
   if (image) return <img src={image} alt="" className="size-8 rounded-full object-cover" />;
   return (
-    <span className="grid size-8 place-items-center rounded-full bg-foreground/[0.08] text-[12px] font-medium text-foreground/60">
+    <span className="grid size-8 place-items-center rounded-full bg-foreground/[0.08] text-label font-medium text-foreground/60">
       {initial}
     </span>
   );
@@ -99,7 +99,7 @@ export function SharePopover({
         className={
           compact
             ? "relative grid size-11 place-items-center rounded-full border border-foreground/[0.06] text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-foreground/[0.06]"
-            : "flex h-[35px] items-center gap-1.5 rounded-full border border-foreground/[0.06] px-[15px] text-[14px] leading-5 text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring data-popup-open:border-foreground/[0.1] data-popup-open:bg-foreground/[0.06] data-shared:pl-3"
+            : "flex h-[35px] items-center gap-1.5 rounded-full border border-foreground/[0.06] px-[15px] text-body text-foreground outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-ring data-popup-open:border-foreground/[0.1] data-popup-open:bg-foreground/[0.06] data-shared:pl-3"
         }
       >
         {compact ? (
@@ -122,9 +122,9 @@ export function SharePopover({
         align="end"
         sideOffset={7.5}
         data-testid="page-share"
-        className="w-[360px] max-w-[calc(100vw-32px)] gap-3 rounded-[16px] ring-[0.5px] ring-border px-0 pt-[17px] pb-4 shadow-lg"
+        className="w-[360px] max-w-[calc(100vw-32px)] gap-3 rounded-xl ring-[0.5px] ring-border px-0 pt-[17px] pb-4 shadow-lg"
       >
-        <PopoverTitle className="truncate px-4 text-[16px] leading-[22px] font-medium tracking-[-0.44px]">
+        <PopoverTitle className="truncate px-4 text-body-lg font-medium tracking-[-0.44px]">
           <Trans>Share “{title}”</Trans>
         </PopoverTitle>
         <div className="flex flex-col gap-[11px] px-4">
@@ -132,10 +132,10 @@ export function SharePopover({
             <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full">
               <OwnerImage initial={shownOwner.initial} image={shownOwner.image} />
             </span>
-            <span className="min-w-0 flex-1 truncate text-[14px] leading-5 tracking-[0.14px]">
+            <span className="min-w-0 flex-1 truncate text-body tracking-[0.14px]">
               {shownOwner.label}
             </span>
-            <span className="px-2 text-[12px] leading-4 text-foreground/60">
+            <span className="px-2 text-label text-foreground/60">
               <Trans>Owner</Trans>
             </span>
           </div>
@@ -150,20 +150,16 @@ export function SharePopover({
               // biome-ignore lint/a11y/noLabelWithoutControl: the radio inside is the control.
               <label
                 key={option.value}
-                className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[10px] px-1.5 py-[5px] hover:bg-foreground/[0.04] has-data-checked:bg-foreground/[0.06] has-disabled:cursor-default"
+                className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-[5px] hover:bg-foreground/[0.04] has-data-checked:bg-foreground/[0.06] has-disabled:cursor-default"
               >
                 <span className={TILE}>{option.icon}</span>
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[14px] leading-5 tracking-[0.14px]">
-                    {option.title}
-                  </span>
+                  <span className="truncate text-body tracking-[0.14px]">{option.title}</span>
                   {option.detail ? (
-                    <span className="truncate text-[12px] leading-4 text-foreground/60">
-                      {option.detail}
-                    </span>
+                    <span className="truncate text-label text-foreground/60">{option.detail}</span>
                   ) : null}
                 </span>
-                <RadioGroupItem value={option.value} className="mr-1.5" />
+                <RadioGroupItem value={option.value} className="me-1.5" />
               </label>
             ))}
           </RadioGroup>
@@ -195,7 +191,7 @@ export function SharePopover({
           </div>
         ) : null}
         {error ? (
-          <p role="alert" className="px-4 text-[12px] leading-4 text-destructive">
+          <p role="alert" className="px-4 text-label text-destructive">
             {error}
           </p>
         ) : null}
@@ -208,7 +204,7 @@ export function SharePopover({
 export function ManualCopy({ url }: { url: string }) {
   const { t } = useLingui();
   return (
-    <label className="flex flex-col gap-1 text-[12px] leading-4 text-foreground/70">
+    <label className="flex flex-col gap-1 text-label text-foreground/70">
       <span role="alert">
         <Trans>Couldn't copy. Select the link and copy it.</Trans>
       </span>
@@ -219,7 +215,7 @@ export function ManualCopy({ url }: { url: string }) {
         // biome-ignore lint/a11y/noAutofocus: shown only once copying failed, to copy by hand
         autoFocus
         onFocus={(event) => event.currentTarget.select()}
-        className="h-8 w-full min-w-0 rounded-[8px] bg-foreground/[0.04] px-2.5 text-[13px] text-foreground ring-[0.5px] ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-8 w-full min-w-0 rounded-sm bg-foreground/[0.04] px-2.5 text-body-sm text-foreground ring-[0.5px] ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
     </label>
   );

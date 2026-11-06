@@ -491,6 +491,29 @@ describe("thread event reduction", () => {
     expect(isThreadSnapshotEvent(event({ type: "agent.tool.completed" }))).toBe(true);
   });
 
+  it("keeps the routine name from run.started so the working line can name it", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        seq: 3,
+        runId: "run-1",
+        payload: { trigger: "routine", routineId: "routine-1", routineName: "Daily check" },
+      }),
+    );
+    expect(started?.run).toMatchObject({
+      trigger: "routine",
+      routineId: "routine-1",
+      routineName: "Daily check",
+    });
+
+    const resumed = reduceThreadSnapshot(
+      started,
+      event({ type: "run.started", seq: 4, runId: "run-1", payload: { trigger: "routine" } }),
+    );
+    expect(resumed?.run?.routineName).toBe("Daily check");
+  });
+
   it("event-sources the active run on run.started so Stop does not wait on threads.get", () => {
     const initial = snapshot([]);
     const started = reduceThreadSnapshot(
@@ -1777,6 +1800,21 @@ describe("computer event reduction", () => {
     });
     expect(userHoldsComputerControl(granted, "bot-1")).toBe(true);
     expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
+  });
+
+  it("leaves another person's control to them until it is released", () => {
+    const watching = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlledByOther: true,
+    });
+    expect(userHoldsComputerControl(watching, "bot-1")).toBe(false);
+    const released = reduceComputerStatus(
+      watching,
+      event({ type: "computer.takeover.released", payload: { holder: "none" } }),
+    );
+    expect(released?.controlledByOther).toBeUndefined();
   });
 
   it("treats a busy bot name as a blocked takeover", () => {

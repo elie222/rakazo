@@ -3,6 +3,8 @@
 Move a deployment to a new release, handle one-time migrations, and let the updater sidecar do it
 for you.
 
+English | [简体中文](./zh-CN/self-host-upgrading.md)
+
 ## Upgrade
 
 A Compose deployment on a published release tag upgrades by moving that tag:
@@ -24,7 +26,7 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 
 `up --wait` does not report success until the new API is healthy and the worker and web containers
 are running. Compose stops the old worker before it starts the new one, and the stop waits for the
-jobs it is running to finish, for up to 45 minutes, instead of cutting them off; new jobs start once
+jobs it is running to finish, for up to 50 minutes, instead of cutting them off; new jobs start once
 the new worker is up. The API starts only after the `migrate` container finishes, so a migration failure keeps the new API
 from starting. A failed CLI recreate does not auto-roll back; recover with the previous
 `RAKAZO_IMAGE_TAG` (or rebuild `local`) and `up -d --wait --pull never`.
@@ -90,8 +92,9 @@ with `pg_dumpall`, and compares roles, memberships, ownership, grants, row-level
 policies, sequences and the row count of every table. It also checks that `rakazo_app` signs in
 with `POSTGRES_APP_PASSWORD` and does not bypass row-level security. Only then does it switch
 Postgres 18 over and restart the services that were running. The site is down for the whole copy,
-which takes about as long as dumping and restoring the database: a few minutes for a small one. It needs free disk for one more copy of the
-database plus 1 GiB. Running it again after it succeeded does nothing. If any step fails, it stops
+which takes about as long as dumping and restoring the database: a few minutes for a small one.
+It needs free disk equal to 125% of the old database data directory's size, plus 1 GiB.
+Running it again after it succeeded does nothing. If any step fails, it stops
 with the stack down and the Postgres 16 data unchanged; fix the error and run it again. On the
 production host, then rerun the deploy that stopped.
 

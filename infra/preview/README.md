@@ -6,9 +6,14 @@ linked from a comment on the pull request and updated on each push. Sign in with
 
 A preview is one Fly.io machine holding Postgres and the whole app, with every outside service
 emulated: scripted model replies, fake computers, and emulated billing and cloud agents. Fly's
-proxy stops the machine a few minutes after the last visit and starts it on the next one; waking
-takes about 20 seconds. Data survives sleeps and is deleted with the preview when the pull request
-closes, or by a daily sweep.
+proxy suspends the machine a few minutes after the last visit and resumes it on the next one.
+Resuming normally avoids restarting the app. A new image or a lost snapshot needs a cold start;
+migrations and demo-account setup run once per image on each database. Data survives sleeps and
+is deleted with the preview when the pull request closes, or by a daily sweep. A deleted demo
+account is recreated on the next cold boot.
+
+Idle machines incur storage charges, including the root filesystem and the data volume; compute
+is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricing/).
 
 ## How it stays safe for forks
 
@@ -25,7 +30,7 @@ closes, or by a daily sweep.
 ## Setup
 
 1. Create a Fly.io organization only for previews, and a token for it:
-   `fly tokens create org <org> --expiry 8760h`.
+   `fly tokens create org --org <org>`.
 2. In the repository's Actions settings, add the secret `FLY_PREVIEW_TOKEN` and the variable
    `FLY_PREVIEW_ORG` (the organization's slug). Optional variables: `FLY_PREVIEW_REGION`
    (default `iad`) and `FLY_PREVIEW_APP_PREFIX` (default `rakazo-pr`; app names are global).

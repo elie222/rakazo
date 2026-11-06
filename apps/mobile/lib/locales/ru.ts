@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Haptics: "Тактильный отклик",
   "Add rule": "Добавить правило",
   "Tool name": "Название инструмента",
   Address: "Адрес",
@@ -133,6 +134,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
   "Manage other bots": "Управлять другими ботами",
+  Replies: "Ответы",
+  Chat: "Чат",
+  Messages: "Сообщения",
   "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
@@ -223,6 +227,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Couldn't refresh — showing the last loaded messages.":
     "Не удалось обновить — показаны последние загруженные сообщения.",
   "Too many unsent messages": "Слишком много неотправленных сообщений",
+  "Unsent messages": "Неотправленные сообщения",
   "Not sent": "Не отправлено",
   "Not sent. Tap to retry": "Не отправлено. Нажмите, чтобы повторить",
   Photo: "Фото",
@@ -350,6 +355,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always allow this tool": "Всегда разрешать этот инструмент",
   "Always allow {site}": "Всегда разрешать {site}",
   "Replaces the login saved for {site}": "Заменяет сохранённый вход для {site}",
+  "Cancel open invites": "Отменить открытые приглашения",
+  "Could not cancel invites": "Не удалось отменить приглашения",
+  "Everyone in this bot's space can read the chats it gets from {app}.":
+    "Все в пространстве этого бота могут читать чаты, которые он получает из {app}.",
+  "Sites you sign in to stay signed in for everyone in this space":
+    "Сайты, на которых вы входите, остаются в аккаунте для всех в этом пространстве",
+  "The bot's browser stays signed in for everyone in this space":
+    "Браузер бота остаётся в аккаунте для всех в этом пространстве",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответить",
@@ -479,7 +492,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not delete routine": "Не удалось удалить задачу",
   "Edit routine": "Изменить задачу",
   "Next run": "Следующий запуск",
-  "Add a schedule to run this routine.": "Добавьте расписание для запуска этой задачи.",
   "Add schedule": "Добавить расписание",
   "Could not run routine": "Не удалось запустить задачу",
   "Could not save routine": "Не удалось сохранить задачу",
@@ -605,6 +617,22 @@ export const RU_MESSAGES: Record<string, string> = {
   "Slack message": "Сообщение Slack",
   "Message event": "Событие сообщения",
   "When something changes": "Когда что-то меняется",
+  "When an email arrives": "Когда приходит письмо",
+  "Add email trigger": "Добавить триггер почты",
+  "Add a trigger to run this routine.": "Добавьте триггер, чтобы запускать эту рутину.",
+  "Copy {address}": "Копировать {address}",
+  "Email address": "Адрес почты",
+  "Claim {address}": "Занять {address}",
+  "Who can start it": "Кто может запустить",
+  "Only me": "Только я",
+  "Anyone at @{domain}": "Любой из @{domain}",
+  "Remove email trigger": "Удалить триггер почты",
+  "Get an email address": "Получить адрес почты",
+  "Bot email addresses": "Адреса почты ботов",
+  "Use 2 to 64 characters": "Используйте от 2 до 64 символов",
+  "Use letters, numbers, dots, dashes or underscores":
+    "Используйте буквы, цифры, точки, дефисы или подчёркивания",
+  "That address isn't available": "Этот адрес недоступен",
   "Teams not enabled": "Teams не настроен",
   "Slack not enabled": "Slack не включен",
   "Teams message": "Сообщение Teams",
@@ -776,6 +804,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in": "Войти",
   "Sign in to Rakazo": "Войти в Rakazo",
   "Sign out": "Выйти",
+  "Sign out anyway": "Всё равно выйти",
+  "Signing out deletes unsent messages.": "Выход удалит неотправленные сообщения.",
   "Sign up": "Зарегистрироваться",
   "Sign up for Rakazo": "Зарегистрироваться в Rakazo",
   "Sign-in": "Вход",
@@ -841,6 +871,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "What this bot is for": "Для чего нужен этот бот",
   Working: "Выполняется",
   "Working…": "Выполняется…",
+  "Running {name}…": "Выполняется {name}…",
   "Work stopped, but the thread could not refresh: {detail}":
     "Работа остановлена, но диалог не удалось обновить: {detail}",
   "You have control": "Вы управляете",
@@ -980,6 +1011,9 @@ export const RU_MESSAGES: Record<string, string> = {
 
   Artifact: "Артефакт",
   Artifacts: "Артефакты",
+  "Filter by who made it": "Фильтр по автору",
+  "All files": "Все файлы",
+  "Made by bots": "Созданные ботами",
   "All bots": "Все боты",
   "Search artifacts…": "Поиск артефактов…",
   "No artifacts yet": "Пока нет артефактов",
@@ -1002,6 +1036,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
   "Call sounds": "Звуки звонка",
+  "Call greeting": "Приветствие в звонке",
   "Hello {name}, {bot} here.": "Привет, {name}, это {bot}.",
   "Hello, {bot} here.": "Привет, это {bot}.",
   "OK, switching to {name}.": "Хорошо, переключаю на {name}.",
@@ -1081,10 +1116,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "The server had a problem": "На сервере произошла ошибка",
   "Could not load MCP servers": "Не удалось загрузить серверы MCP",
   Disabled: "Отключено",
-  "OAuth connected": "OAuth подключён",
-  "OAuth expired": "Срок действия OAuth истёк",
+  "Needs sign-in": "Нужен вход",
+  "Not connected": "Не подключено",
+  "Not working": "Не работает",
   "Needs an OAuth client ID": "Нужен идентификатор клиента OAuth",
-  "Credential saved": "Учётные данные сохранены",
   Authentication: "Способ аутентификации",
   "No auth": "Без авторизации",
   "The bot couldn't reply because its provider's daily limit was reached.":
@@ -1141,6 +1176,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Start plan": "Начать тариф",
   "Switch to yearly": "Перейти на годовой план",
   "Switch to yearly?": "Перейти на годовой план?",
+  "Switch anyway": "Всё равно сменить",
+  "Switching servers deletes unsent messages.": "Смена сервера удалит неотправленные сообщения.",
   "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month":
     "{vcpus} vCPU, {memoryGb} ГБ, {hours} часов компьютера в месяц",
   "Switch to {name}?": "Перейти на {name}?",
@@ -1213,6 +1250,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} need attention": "Требуют внимания: {count}",
   "{label}, above": "{label}, выше",
   "{label}, below": "{label}, ниже",
+  Invite: "Пригласить",
+  "Leave space": "Покинуть пространство",
+  "Leave {name}?": "Покинуть {name}?",
+  "Could not load members": "Не удалось загрузить участников",
+  "Could not create invite link": "Не удалось создать ссылку-приглашение",
+  "Could not remove member": "Не удалось удалить участника",
+  "Could not leave space": "Не удалось покинуть пространство",
   Work: "Работа",
   Both: "И то, и другое",
   "How will you use Rakazo?": "Как вы будете использовать Rakazo?",
@@ -1287,7 +1331,6 @@ export const RU_MESSAGES: Record<string, string> = {
   // Native remote MCP authentication controls.
   "API key header name": "Имя заголовка API-ключа",
   Bearer: "Bearer",
-  "Connect OAuth": "Подключить через OAuth",
   "Could not start MCP OAuth": "Не удалось запустить OAuth для MCP",
   OAuth: "OAuth",
   "Always open {site}": "Всегда открывать {site}",
@@ -1442,6 +1485,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "On the button": "На кнопке",
   "Read from the page, not checked": "Прочитано со страницы, не проверено",
   Total: "Итого",
+  "{name} options": "Опции: {name}",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

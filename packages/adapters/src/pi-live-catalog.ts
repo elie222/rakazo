@@ -260,7 +260,7 @@ function readSecretCatalog(
  */
 export type CatalogReads = Map<string, Promise<unknown>>;
 
-function readOnce<T>(
+export function readOnce<T>(
   reads: CatalogReads | undefined,
   key: string,
   read: () => Promise<T>,
