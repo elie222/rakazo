@@ -49,6 +49,9 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 beforeEach(() => {
   vi.clearAllMocks();
   app.token = "session-token";
+  app.generation = 1;
+  app.ready = 1;
+  app.readFails = false;
 });
 
 it("starts the card for the chat just sent to", () => {
@@ -65,6 +68,15 @@ it("ends the card only when the server says nothing would update it", async () =
 
   rpc.mockRejectedValueOnce(new Error("offline"));
   native.token!({ token: "ab" });
+  await settle();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+
+  // A reply that lands after the account changed is ignored.
+  let reply!: (value: { following: boolean }) => void;
+  rpc.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  native.token!({ token: "ab" });
+  app.generation += 1;
+  reply({ following: false });
   await settle();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
 

@@ -63,9 +63,20 @@ function fakeDatabase() {
           })),
     },
     event: {
-      findMany: async ({ where, take }: { where: { runId: string; type: string }; take: number }) =>
+      findMany: async ({
+        where,
+        take,
+      }: {
+        where: { runId: string; type: string; seq?: { lt: number } };
+        take: number;
+      }) =>
         events
-          .filter((event) => event.runId === where.runId && event.type === where.type)
+          .filter(
+            (event) =>
+              event.runId === where.runId &&
+              event.type === where.type &&
+              (!where.seq || event.seq < where.seq.lt),
+          )
           .sort((a, b) => b.seq - a.seq)
           .slice(0, take),
     },
@@ -180,6 +191,34 @@ describe("live status card of the user's bots at work", () => {
     });
     await activities.sync("user-1");
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds the latest step behind a long stream of text", async () => {
+    const { activities, events, send } = await registered();
+    events.push({
+      runId: "1",
+      type: "thread.progress",
+      seq: 1,
+      payload: { text: "Drafting", activity: true },
+    });
+    for (let seq = 2; seq < 120; seq += 1)
+      events.push({
+        runId: "1",
+        type: "thread.progress",
+        seq,
+        payload: { delta: "x", streaming: true },
+      });
+    await activities.sync("user-1");
+    expect(send.mock.lastCall![1].state.rows[0]!.line).toBe("Drafting");
+  });
+
+  it("counts a bot's background helpers as that bot", async () => {
+    const { activities, run, send } = await registered();
+    run("h1", { botId: "bot-1", trigger: "helper" });
+    run("h2", { botId: "bot-1", trigger: "helper" });
+    await activities.sync("user-1");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.lastCall![1].state.count).toBe(1);
   });
 
   it("sums up every bot at work on one card, questions first", async () => {

@@ -39,8 +39,11 @@ export function startWorkActivities(): () => void {
   // The token arrives after the card starts, again whenever iOS changes it, and on each refresh,
   // so the server can say the work the card shows has ended.
   const tokens = card.addListener("onWorkActivityToken", ({ token }) => {
+    const generation = currentSessionGeneration();
     rpc("notifications/followWorkActivity", { token })
       .then(({ following }) => {
+        // A reply for an account signed out since speaks for no card shown now.
+        if (generation !== currentSessionGeneration()) return;
         // Nothing would update it: no bot is at work or this server cannot reach the phone.
         if (!following) return card.endWorkActivity();
       })

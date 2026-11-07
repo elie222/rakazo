@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   displayName,
   isBackgroundRunTrigger,
   isRunWaitingOnUser,
@@ -54,8 +55,9 @@ const MAX_CARDS_PER_USER = 5;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
-/** Progress events read back to find the latest step; streamed text sits between them. */
-const STEP_LOOKBACK = 20;
+/** Progress events read back per page to find the latest step, and the most pages read. */
+const STEP_PAGE_SIZE = 50;
+const STEP_PAGES = 10;
 /** A run that ended this recently may be the change its owner's card has yet to show. */
 const JUST_ENDED_MS = 10 * 60_000;
 /** A busy thread or user is looked at most this often. The last change always goes out. */
@@ -266,7 +268,9 @@ export class WorkActivities {
     // outranks newer work beside it, which a pending question does not hold back.
     const byChat = new Map<string, (typeof runs)[number]>();
     for (const run of runs) {
-      if (isBackgroundRunTrigger(run.trigger)) continue;
+      // Background work, and a bot's helpers working for it in hidden threads, are not more bots.
+      if (isBackgroundRunTrigger(run.trigger) || run.trigger === BACKGROUND_HELPER_TRIGGER)
+        continue;
       const key = `${run.threadId}:${run.botId}`;
       const newest = byChat.get(key);
       if (!newest) byChat.set(key, run);
@@ -291,18 +295,28 @@ export class WorkActivities {
   }
 
   private async latestStep(runId: string): Promise<string> {
-    const progress = await runAsSystem("read a run's latest step", () =>
-      this.prisma.event.findMany({
-        where: { runId, type: "thread.progress" },
-        orderBy: { seq: "desc" },
-        take: STEP_LOOKBACK,
-        select: { payload: true },
-      }),
-    );
-    for (const { payload } of progress) {
-      const step = payload as { activity?: unknown; text?: unknown };
-      if (step.activity === true && typeof step.text === "string" && step.text.trim())
-        return truncatePlainText(step.text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
+    // Streamed text sits between steps, so this pages back, a bounded way, to the last step.
+    let before: number | undefined;
+    for (let page = 0; page < STEP_PAGES; page += 1) {
+      const progress = await runAsSystem("read a run's latest step", () =>
+        this.prisma.event.findMany({
+          where: {
+            runId,
+            type: "thread.progress",
+            ...(before === undefined ? {} : { seq: { lt: before } }),
+          },
+          orderBy: { seq: "desc" },
+          take: STEP_PAGE_SIZE,
+          select: { seq: true, payload: true },
+        }),
+      );
+      for (const { payload } of progress) {
+        const step = payload as { activity?: unknown; text?: unknown };
+        if (step.activity === true && typeof step.text === "string" && step.text.trim())
+          return truncatePlainText(step.text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
+      }
+      if (progress.length < STEP_PAGE_SIZE) break;
+      before = progress.at(-1)!.seq;
     }
     return "";
   }
