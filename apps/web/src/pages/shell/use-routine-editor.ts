@@ -164,7 +164,9 @@ export function useRoutineEditor({
               !active.webhookConfigured &&
               !routineWebhookSecret
             ) {
-              await ensureWebhookSecret(targetBotId);
+              await ensureWebhookSecret(targetBotId).catch((error: unknown) => {
+                throw new Error(webhookErrorText(error, t`Could not create the webhook key`));
+              });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;
@@ -248,7 +250,7 @@ export function useRoutineEditor({
             if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
               return;
             }
-            setRoutineError(webhookErrorText(error, t`Could not save routine`));
+            setRoutineError(errorText(error, t`Could not save routine`));
             return;
           } finally {
             routineSavePending.current = false;
