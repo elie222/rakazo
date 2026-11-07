@@ -833,8 +833,6 @@ describe("graphical computer spec", () => {
       try {
         expect(run(":1")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium`);
         expect(run(":1")).toContain("--restore-last-session");
-        expect(run(":1")).toContain("--disable-gpu");
-        expect(run(":1")).toContain("--enable-unsafe-swiftshader");
         expect(run(":1")).not.toContain("--disable-software-rasterizer");
         expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
@@ -852,6 +850,97 @@ describe("graphical computer spec", () => {
         expect(explicit).not.toContain(
           `--user-data-dir=${home}/.browser-profiles/chromium-screen-3`,
         );
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "renders on a usable render node and in software otherwise",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-gpu-"));
+      const bin = path.join(temp, "bin");
+      const dri = path.join(temp, "dri");
+      const capture = path.join(temp, "args");
+      // The host's own /dev/dri must not decide the result.
+      const script = path.join(temp, "rakazo-browser");
+      writeFileSync(
+        script,
+        readFileSync(path.join(root, "rakazo-browser"), "utf8").replaceAll("/dev/dri/", `${dri}/`),
+      );
+      mkdirSync(bin);
+      mkdirSync(dri);
+      const chromium = path.join(bin, "chromium");
+      writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@" > "$RAKAZO_TEST_ARGS"\n');
+      chmodSync(chromium, 0o755);
+      // vulkaninfo prints what RAKAZO_TEST_VULKAN holds, or fails as on a GPU Mesa cannot drive.
+      const vulkaninfo = path.join(bin, "vulkaninfo");
+      writeFileSync(
+        vulkaninfo,
+        '#!/bin/sh\n[ -n "$RAKAZO_TEST_VULKAN" ] || exit 1\nprintf "%s\\n" "$RAKAZO_TEST_VULKAN"\n',
+      );
+      chmodSync(vulkaninfo, 0o755);
+      const integrated = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU";
+      const cpuOnly = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU";
+      const run = (args: string[] = [], devices = integrated) => {
+        const result = spawnSync("sh", [script, ...args], {
+          env: {
+            ...process.env,
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+            RAKAZO_TEST_VULKAN: devices,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        return readFileSync(capture, "utf8").trim().split(/\r?\n/);
+      };
+      const software = ["--disable-gpu", "--enable-unsafe-swiftshader"];
+      const vulkan = [
+        "--use-angle=vulkan",
+        "--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan",
+      ];
+      // The per-screen launcher's flags, then a URL with a space.
+      const launcher = ["--test-type", ...software, "--no-first-run", "https://example.test/a b"];
+      try {
+        const plain = run();
+        expect(plain).toEqual(expect.arrayContaining(software));
+        for (const flag of [...vulkan, "--disable-software-rasterizer"])
+          expect(plain).not.toContain(flag);
+
+        const card = path.join(dri, "card0");
+        writeFileSync(card, "");
+        expect(run()).toEqual(expect.arrayContaining(software));
+
+        const node = path.join(dri, "renderD128");
+        writeFileSync(node, "");
+        const gpu = run(launcher);
+        expect(gpu).toEqual(expect.arrayContaining(vulkan));
+        for (const flag of software) expect(gpu).not.toContain(flag);
+        expect(gpu.slice(-3)).toEqual([
+          "--test-type",
+          "--no-first-run",
+          "https://example.test/a b",
+        ]);
+
+        // A GPU the image's Mesa cannot drive, or only a software Vulkan device, stays in software.
+        for (const devices of ["", cpuOnly]) {
+          const fallback = run(launcher, devices);
+          expect(fallback).toEqual(expect.arrayContaining(software));
+          expect(fallback).not.toContain(vulkan[0]);
+        }
+
+        // A node the browser user cannot open is no GPU. Root opens any file, so only checked as a user.
+        if (process.getuid?.() !== 0) {
+          chmodSync(node, 0o400);
+          const unusable = run(launcher);
+          expect(unusable).toEqual(expect.arrayContaining(software));
+          expect(unusable).not.toContain(vulkan[0]);
+        }
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }

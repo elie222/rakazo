@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { computerControlEndpoint, controlDesktop } from "./computer-control.js";
+import { computerGpuMatches, resolveComputerGpu } from "./computer-gpu.js";
 import {
   assertComputerMountSources,
   assertVolumeSubpathSupport,
@@ -34,6 +35,7 @@ import {
 } from "./computer-spec.js";
 import {
   computerDns,
+  computerGpu,
   computerMounts,
   controlViaLoopback,
   dataDir,
@@ -156,6 +158,8 @@ app.post("/computers", async (c) => {
     return await withBotLifecycleLock(body.botId, async () => {
       await ensureComputerImage();
       await ensureRestrictedEgressEnforced();
+      // Docker resolves the render node anew on every start, so check it again now.
+      const gpu = computerGpu && resolveComputerGpu();
       const runtimeInfo = await inspectSupervisorContainer();
       // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
       assertComputerMountSources(
@@ -248,6 +252,8 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // So is the render node with its group.
+          computerGpuMatches(info, gpu) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -311,6 +317,7 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          gpu,
         });
         let container: Docker.Container | undefined;
         const removeNamedComputer = () =>

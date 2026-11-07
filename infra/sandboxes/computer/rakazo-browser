@@ -432,10 +432,35 @@ if [ -n "${LD_PRELOAD:-}" ]; then
   unset _kept _rest _entry
 fi
 
-# This container has no GPU. --disable-gpu keeps Chromium from probing one.
-# WebGL still needs SwiftShader: --disable-software-rasterizer blocks it, and
-# current Chromium allows that fallback only with --enable-unsafe-swiftshader.
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
+# Without a GPU, --disable-gpu keeps Chromium from probing one. WebGL still
+# needs SwiftShader: --disable-software-rasterizer blocks it, and current
+# Chromium allows that fallback only with --enable-unsafe-swiftshader.
+# With a render node passed in, ANGLE on Vulkan renders on that GPU; under Xvfb
+# the default and EGL paths fall back to software and lose WebGL. A GPU that
+# the image's Mesa cannot drive would lose WebGL on Vulkan too, so that path
+# needs vulkaninfo to list a real GPU.
+gpu_usable() {
+  for node in /dev/dri/renderD*; do
+    [ -r "$node" ] && [ -w "$node" ] || continue
+    timeout 5 vulkaninfo --summary 2>/dev/null |
+      grep -qE 'deviceType += PHYSICAL_DEVICE_TYPE_(INTEGRATED|DISCRETE)_GPU'
+    return
+  done
+  return 1
+}
+GPU_FLAGS="--disable-gpu --enable-unsafe-swiftshader"
+if gpu_usable; then
+  GPU_FLAGS="--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
+  # Per-screen launchers pass the software flags too; drop them here.
+  for arg in "$@"; do
+    shift
+    case "$arg" in
+      --disable-gpu|--enable-unsafe-swiftshader) ;;
+      *) set -- "$@" "$arg" ;;
+    esac
+  done
+fi
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage $GPU_FLAGS --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

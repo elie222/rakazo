@@ -7,6 +7,8 @@ import {
   screenPorts,
 } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
+import type { ComputerGpu } from "./computer-gpu.js";
+import { computerGpuHostConfig } from "./computer-gpu.js";
 
 /**
  * The computer image. RAKAZO_COMPUTER_IMAGE_TAG is appended the way Compose does, so a
@@ -581,6 +583,7 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
+  gpu?: ComputerGpu;
 }
 
 interface PointerInput {
@@ -651,6 +654,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
       ...(input.dns ? { Dns: input.dns } : {}),
+      ...computerGpuHostConfig(input.gpu),
     },
     WorkingDir: "/home/rakazo",
   };

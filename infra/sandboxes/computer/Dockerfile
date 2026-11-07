@@ -21,6 +21,9 @@ RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
 # with no privilege escalation, so nothing can be installed at runtime.
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
+# mesa-vulkan-drivers lets the browser render on a GPU render node when the
+# deployment passes one in (SANDBOX_COMPUTER_GPU); vulkaninfo tells whether that
+# GPU works. Without a node nothing loads them.
 # The bot browser: chromium by default, or BROWSER=brave (installed below).
 ARG BROWSER=chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -41,6 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     bash \
     $([ "$BROWSER" = chromium ] && echo chromium) \
+    mesa-vulkan-drivers \
+    vulkan-tools \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-noto-cjk \
