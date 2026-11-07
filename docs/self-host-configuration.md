@@ -164,8 +164,23 @@ To send the API and worker's outbound traffic through a corporate proxy, set `HT
 `NO_PROXY` so internal traffic skips the proxy:
 
 ```env
+NODE_USE_ENV_PROXY=1
+HTTP_PROXY=http://proxy.example.com:3128
 HTTPS_PROXY=http://proxy.example.com:3128
 NO_PROXY=localhost,127.0.0.1,postgres,supervisor,api,worker,web
 ```
+
+`NODE_USE_ENV_PROXY=1` enables proxy support in Node's default HTTP clients and `fetch`.
+Recreate the API and worker containers after changing these settings.
+
+If your proxy requires hostnames, also set:
+
+```env
+RAKAZO_PROXY_CONNECT_BY_HOSTNAME=true
+```
+
+The proxy resolves the hostname again.
+Enable this only with a trusted proxy that blocks public requests to private, loopback, link-local and cloud metadata addresses.
+Local DNS checks still apply; `NO_PROXY` connections keep their normal checks.
 
 For mirrors of the installer and images, see [restricted networks](./self-host-restricted-network.md).

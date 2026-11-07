@@ -7,7 +7,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
@@ -156,8 +155,8 @@ export function secureFetch(
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
 ): SafeRemoteFetch {
-  // A local hostname is not authorization: the unguarded loopback fetch below
-  // needs the deployment-owner private-endpoint escape as well.
+  // A local hostname is not authorization: HTTP loopback needs the
+  // deployment-owner private-endpoint escape as well.
   const localOrigin =
     urlPolicy.allowHttpLocalhost === true &&
     urlPolicy.allowPrivateEndpoint === true &&
@@ -235,14 +234,7 @@ export function secureFetch(
             ? input.signal
             : undefined,
     } satisfies RequestInit;
-    const response = localHttp
-      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
-      : await safeRemoteFetch(url, requestInit);
-    if (response.status >= 300 && response.status < 400) {
-      cancelResponseBody(response);
-      throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
-    }
-    return limitMcpResponseBody(response, headers);
+    return limitMcpResponseBody(await safeRemoteFetch(url, requestInit), headers);
   };
   const result = request as SafeRemoteFetch;
   result.close = () => safeRemoteFetch.close();

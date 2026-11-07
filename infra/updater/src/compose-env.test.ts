@@ -98,7 +98,8 @@ const INDIRECT = {
     "AWS_REGION",
     "AWS_DEFAULT_REGION",
     "AWS_ROLE_ARN",
-    // Outbound proxy, read by the HTTP stack.
+    // Outbound proxy, read by Node at startup and by the HTTP stack.
+    "NODE_USE_ENV_PROXY",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",

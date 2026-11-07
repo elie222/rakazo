@@ -65,6 +65,11 @@ const TEST_NETWORK = {
   resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
 };
 
+const LOCAL_TEST_NETWORK = {
+  ...TEST_NETWORK,
+  resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }],
+};
+
 function logicalHref(input: string | URL | Request, init?: RequestInit): string {
   const url = new URL(
     typeof input === "string" || input instanceof URL ? String(input) : input.url,
@@ -759,7 +764,7 @@ describe("MCP connector session cache", () => {
       {
         load: vi.fn().mockReturnValue(JSON.stringify({ headers: { "X-Api-Key": "local-key" } })),
       } as never,
-      { network: TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
+      { network: LOCAL_TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
     );
 
     await expect(
@@ -804,7 +809,7 @@ describe("MCP connector session cache", () => {
       {
         load: vi.fn().mockReturnValue(JSON.stringify({ headers: { "X-Api-Key": "local-key" } })),
       } as never,
-      { network: TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
+      { network: LOCAL_TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
     );
     const context = {
       spaceId: "w1",
@@ -1908,6 +1913,7 @@ describe("MCP connector session cache", () => {
     };
     const connector = new McpConnector(prisma as never, {} as never, {
       allowPrivateEndpoint: true,
+      network: LOCAL_TEST_NETWORK,
     });
 
     const tools = await connector.discoverTools({
@@ -1943,7 +1949,7 @@ describe("MCP connector session cache", () => {
             JSON.stringify({ secret: "local-token", headers: { "X-Api-Key": "local-key" } }),
           ),
       } as never,
-      { allowPrivateEndpoint: true },
+      { allowPrivateEndpoint: true, network: LOCAL_TEST_NETWORK },
     );
 
     await connector.discoverTools({

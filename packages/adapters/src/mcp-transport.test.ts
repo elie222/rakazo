@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { Agent } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
@@ -15,6 +14,7 @@ import {
   validateUrl,
   withEndpointOriginFallback,
 } from "./mcp-transport.js";
+import * as remoteMcp from "./remote-mcp.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -114,7 +114,8 @@ describe("MCP transport seam", () => {
     }
   });
 
-  it("bounds both SDK and dispatcher close, and observes a late cleanup rejection", async () => {
+  it("bounds both SDK and transport close, and observes a late cleanup rejection", async () => {
+    const createFetch = vi.spyOn(remoteMcp, "createSafeRemoteFetch");
     const session = new McpSession();
     await session.connectRemote({
       url: "https://mcp.example.test/mcp",
@@ -135,12 +136,14 @@ describe("MCP transport seam", () => {
         },
       },
     });
+    const transport = createFetch.mock.results[0]!.value;
+    createFetch.mockRestore();
     vi.useFakeTimers();
     const clientClose = vi
       .spyOn(session.client, "close")
       .mockImplementation(() => new Promise(() => {}));
     let rejectClose: ((error: Error) => void) | undefined;
-    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(
+    const transportClose = vi.spyOn(transport, "close").mockImplementation(
       () =>
         new Promise<void>((_resolve, reject) => {
           rejectClose = reject;
@@ -150,7 +153,7 @@ describe("MCP transport seam", () => {
       const closing = session.close();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
       expect(clientClose).toHaveBeenCalledOnce();
-      expect(dispatcherClose).toHaveBeenCalledOnce();
+      expect(transportClose).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
       await closing;
       rejectClose!(new Error("late close failure"));
@@ -158,7 +161,7 @@ describe("MCP transport seam", () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       clientClose.mockRestore();
-      dispatcherClose.mockRestore();
+      transportClose.mockRestore();
       vi.useRealTimers();
       await session.close();
     }
@@ -446,7 +449,7 @@ describe("MCP transport seam", () => {
     async (host) => {
       const origin = `http://${host}:8123`;
       const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
-      const resolveHostname = vi.fn();
+      const resolveHostname = async () => [{ address: "127.0.0.1", family: 4 }];
       const safeFetch = secureFetch(
         new URL(`${origin}/mcp`),
         { allowHttpLocalhost: true, allowPrivateEndpoint: true },
@@ -461,7 +464,6 @@ describe("MCP transport seam", () => {
           safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
         ).resolves.toHaveProperty("ok", true);
         expect(fetchImpl).toHaveBeenCalledTimes(2);
-        expect(resolveHostname).not.toHaveBeenCalled();
       } finally {
         await safeFetch.close();
       }
@@ -482,11 +484,11 @@ describe("MCP transport seam", () => {
       new URL("http://localhost:8123/mcp"),
       { allowHttpLocalhost: true, allowPrivateEndpoint: true },
       {},
-      { fetch: fetchImpl, resolveHostname: vi.fn() },
+      { fetch: fetchImpl, resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }] },
     );
     try {
       await expect(safeFetch("http://localhost:8123/mcp")).rejects.toThrow(
-        "MCP redirects are not permitted",
+        "Connector redirects are not allowed",
       );
       expect(cancels).toBe(1);
     } finally {
@@ -843,6 +845,7 @@ describe("MCP transport seam", () => {
             seen = Object.fromEntries(request.headers.entries());
             return Response.json({ ok: true });
           }),
+          resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }],
         },
       );
 

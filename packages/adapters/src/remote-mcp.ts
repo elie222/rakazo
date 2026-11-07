@@ -23,7 +23,7 @@ import {
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { Dispatcher } from "undici";
-import { Agent, EnvHttpProxyAgent, Pool } from "undici";
+import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
@@ -40,6 +40,7 @@ import {
   egressRefused,
   withPinnedDnsLookup,
 } from "./network-address.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_MAX_MCP_TOOLS = 250;
@@ -637,12 +638,9 @@ async function inspectSafeRemoteUrl(
     throw egressRefused(hostname, new Error("Connector URL targets a private host"));
   }
   const literal = literalAddresses(hostname);
-  if (url.protocol === "http:" && isLocalhostOrLoopbackIp(hostname)) {
-    return { url, addresses: literal ?? [] };
-  }
   const addresses = literal ?? (await resolve(hostname));
   try {
-    assertAllowedAddresses(addresses, policy);
+    assertSafeRemoteAddresses(addresses, hostname, policy);
   } catch (error) {
     throw egressRefused(hostname, error);
   }
@@ -664,83 +662,17 @@ function literalAddresses(hostname: string): ResolvedAddress[] | undefined {
   return [{ address: hostname, family }];
 }
 
-/**
- * Honors HTTP(S)_PROXY / NO_PROXY. Every proxied request is tunneled with CONNECT to the checked
- * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
- */
-function createRemoteDispatcher(resolve: ResolveHostname, policy: RemoteUrlPolicy): Dispatcher {
-  const { env } = process;
-  const proxy = env.http_proxy ?? env.HTTP_PROXY ?? env.https_proxy ?? env.HTTPS_PROXY;
-  if (proxy && !/^https?:\/\//i.test(proxy)) {
-    throw new Error("Only HTTP proxies are supported");
-  }
-  if (!proxy) {
-    return new Agent({ connect: { lookup: createSafeLookup(resolve, policy) } });
-  }
-  return new EnvHttpProxyAgent({
-    connect: { lookup: createSafeLookup(resolve, policy) },
-    proxyTunnel: true,
-    clientFactory: (origin, options) => {
-      const pool = new Pool(origin, options);
-      const connect = pool.connect.bind(pool) as (
-        options: Dispatcher.ConnectOptions,
-      ) => Promise<Dispatcher.ConnectData>;
-      return Object.assign(pool, {
-        connect: async (options: Dispatcher.ConnectOptions) => {
-          const authority = await checkedAuthority(options.path, resolve, policy);
-          return connect({
-            ...options,
-            path: authority,
-            headers: { ...(options.headers as Record<string, string>), host: authority },
-          });
-        },
-      });
-    },
-  });
-}
-
-async function checkedAuthority(
-  authority: string,
-  resolve: ResolveHostname,
-  policy: RemoteUrlPolicy,
-): Promise<string> {
-  const separator = authority.lastIndexOf(":");
-  const [first] = await resolvePublicHost(authority.slice(0, separator), resolve, policy);
-  const address = first?.address ?? "";
-  const host = ipVersion(address) === 6 ? `[${address}]` : address;
-  return `${host}${authority.slice(separator)}`;
-}
-
-async function resolvePublicHost(
-  host: string,
-  resolve: ResolveHostname,
-  policy: RemoteUrlPolicy,
-): Promise<ResolvedAddress[]> {
-  const hostname = host.replace(/^\[|\]$/g, "");
-  const addresses = await resolve(hostname);
-  try {
-    // The CONNECT tunnel bypasses createSafeLookup's own per-address check, so
-    // re-apply the same policy: loopback stays allowed under the private-endpoint escape.
-    if (policy.allowPrivateEndpoint === true && isLocalhostOrLoopbackIp(hostname)) {
-      assertLoopbackAddresses(addresses);
-    } else {
-      assertAllowedAddresses(addresses, policy);
-    }
-  } catch (error) {
-    throw egressRefused(hostname, error);
-  }
-  return addresses;
-}
-
 export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher = createRemoteDispatcher(resolve, policy);
+  const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
+  let proxyDispatcher: Dispatcher | undefined;
+  let privateDispatcher: Agent | undefined;
+  let closed = false;
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
-  const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Connector fetch requires a URL, not a Request");
@@ -748,12 +680,35 @@ export function createSafeRemoteFetch(
     const { url, addresses } = await inspectSafeRemoteUrl(String(input), resolve, policy);
     let response: Response;
     try {
+      if (closed) throw new Error("Connector fetch is closed");
+      let dispatcher: Dispatcher | undefined;
+      if (usePackageFetch) {
+        const privateDestination =
+          isLocalhostOrLoopbackIp(url.hostname) ||
+          addresses.some((entry) => isNonPublicAddress(entry.address));
+        // Route each validated destination independently. A DNS change must not move a
+        // public request onto the private network, or a private request onto the proxy.
+        if (privateDestination) {
+          privateDispatcher ??= new Agent({
+            connect: {
+              lookup: createAddressCheckedLookup(resolve, (answers, hostname) => {
+                assertSafeRemoteAddresses(answers, hostname, policy);
+                assertPrivateAddresses(answers);
+              }),
+            },
+          });
+          dispatcher = privateDispatcher;
+        } else {
+          proxyDispatcher ??= createCheckedProxyDispatcher(resolve, assertPublicAddresses);
+          dispatcher = proxyDispatcher;
+        }
+      }
       const requestInit = { ...init, redirect: "manual" as const };
-      response = usePackageFetch
+      response = dispatcher
         ? await dispatcherFetch(url, {
             ...requestInit,
             dispatcher,
-          } as RequestInit & { dispatcher: Agent })
+          } as RequestInit & { dispatcher: Dispatcher })
         : await withPinnedDnsLookup(url.hostname, addresses, () =>
             baseFetch!(url, requestInitWithHost(url, requestInit)),
           );
@@ -770,7 +725,10 @@ export function createSafeRemoteFetch(
     return response;
   };
   const result = safeFetch as SafeRemoteFetch;
-  result.close = () => dispatcher.close();
+  result.close = async () => {
+    closed = true;
+    await Promise.all([proxyDispatcher?.close(), privateDispatcher?.close()]);
+  };
   return result;
 }
 
@@ -864,16 +822,24 @@ export function createSafeLookup(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): LookupFunction {
-  return createAddressCheckedLookup(resolve, (addresses, hostname) => {
-    if (
-      policy.allowPrivateEndpoint === true &&
-      isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
-    ) {
-      assertLoopbackAddresses(addresses);
-      return;
-    }
-    assertAllowedAddresses(addresses, policy);
-  });
+  return createAddressCheckedLookup(resolve, (addresses, hostname) =>
+    assertSafeRemoteAddresses(addresses, hostname, policy),
+  );
+}
+
+function assertSafeRemoteAddresses(
+  addresses: ResolvedAddress[],
+  hostname: string,
+  policy: RemoteUrlPolicy,
+): void {
+  if (
+    policy.allowPrivateEndpoint === true &&
+    isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
+  ) {
+    assertLoopbackAddresses(addresses);
+    return;
+  }
+  assertAllowedAddresses(addresses, policy);
 }
 
 /** Reserved local names (localhost, .local, .internal, Docker Desktop) and non-public literals. */

@@ -108,6 +108,8 @@ services:
       http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
       https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
       no_proxy: ${no_proxy:-${NO_PROXY:-}}
+      NODE_USE_ENV_PROXY: ${NODE_USE_ENV_PROXY:-0}
+      RAKAZO_PROXY_CONNECT_BY_HOSTNAME: ${RAKAZO_PROXY_CONNECT_BY_HOSTNAME:-false}
       API_PORT: "3100"
       API_HOST: "0.0.0.0"
       # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web

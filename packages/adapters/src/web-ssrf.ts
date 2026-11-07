@@ -8,9 +8,9 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Dispatcher } from "undici";
-import { EnvHttpProxyAgent, Pool } from "undici";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
-import { createAddressCheckedLookup, egressRefused } from "./network-address.js";
+import { egressRefused } from "./network-address.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -172,45 +172,6 @@ export async function fetchSafeHttpRequest(
   });
 }
 
-/**
- * Honors HTTP(S)_PROXY / NO_PROXY. Every proxied request is tunneled with CONNECT to the checked
- * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
- */
-function safeWebDispatcher(resolve: ResolveHostname): Dispatcher {
-  const { env } = process;
-  for (const proxy of [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY]) {
-    if (proxy && !/^https?:\/\//i.test(proxy)) throw new Error("Only HTTP proxies are supported");
-  }
-  return new EnvHttpProxyAgent({
-    connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
-    proxyTunnel: true,
-    clientFactory: (origin, options) => {
-      const pool = new Pool(origin, options);
-      const connect = pool.connect.bind(pool) as (
-        options: Dispatcher.ConnectOptions,
-      ) => Promise<Dispatcher.ConnectData>;
-      return Object.assign(pool, {
-        connect: async (options: Dispatcher.ConnectOptions) => {
-          const authority = await checkedAuthority(options.path, resolve);
-          return connect({
-            ...options,
-            path: authority,
-            headers: { ...(options.headers as Record<string, string>), host: authority },
-          });
-        },
-      });
-    },
-  });
-}
-
-async function checkedAuthority(authority: string, resolve: ResolveHostname): Promise<string> {
-  const separator = authority.lastIndexOf(":");
-  const [first] = await resolvePublicHost(authority.slice(0, separator), resolve);
-  const address = first?.address ?? "";
-  const host = ipVersion(address) === 6 ? `[${address}]` : address;
-  return `${host}${authority.slice(separator)}`;
-}
-
 async function withSafeEgress<T>(
   options: SafeWebFetchOptions,
   run: (egress: {
@@ -223,7 +184,7 @@ async function withSafeEgress<T>(
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const baseFetch = fetchPairedWithDispatcher(options.fetch);
-  const dispatcher = safeWebDispatcher(resolve);
+  const dispatcher = createCheckedProxyDispatcher(resolve, assertPublicAddresses);
   // One deadline for the whole redirect chain + body read + cleanup, not per hop.
   const signal = combineSignals(options.signal, AbortSignal.timeout(timeoutMs));
   const cleanup =
