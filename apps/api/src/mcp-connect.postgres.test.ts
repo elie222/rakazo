@@ -194,9 +194,10 @@ describe.skipIf(!enabled).sequential("MCP catalog connect (PostgreSQL, offline p
   );
 
   it(
-    "reads a refusal at the provider as a cancelled sign-in",
+    "reads a refusal at the provider as a cancelled sign-in, and ends it",
     asActor(async () => {
       const complete = vi.spyOn(mcpOAuth, "complete");
+      const discard = vi.spyOn(mcpOAuth, "discard");
 
       await expect(
         client().mcp.oauth.complete({
@@ -206,6 +207,11 @@ describe.skipIf(!enabled).sequential("MCP catalog connect (PostgreSQL, offline p
         }),
       ).resolves.toEqual({ ok: true, status: "cancelled" });
       expect(complete).not.toHaveBeenCalled();
+      expect(discard).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+      });
     }),
   );
 

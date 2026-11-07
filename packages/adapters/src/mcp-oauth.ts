@@ -1427,6 +1427,17 @@ export class McpOAuthBroker {
     );
   }
 
+  /** Ends this person's sign-in that the provider refused or failed, so it stops counting
+   * against their limit and can no longer complete. */
+  async discard(input: { sessionId: string; spaceId: string; userId: string }): Promise<void> {
+    const pending = this.pending.get(input.sessionId);
+    if (pending?.spaceId === input.spaceId && pending.userId === input.userId)
+      this.discardPending(input.sessionId, pending);
+    await this.prisma.mcpOAuthSession.deleteMany({
+      where: { id: input.sessionId, spaceId: input.spaceId, userId: input.userId },
+    });
+  }
+
   private discardPending(sessionId: string, pending: Pending): void {
     if (pending.expiry) clearTimeout(pending.expiry);
     this.pending.delete(sessionId);

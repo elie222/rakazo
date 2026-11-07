@@ -847,6 +847,32 @@ describe("MCP OAuth", () => {
     ).rejects.toThrow("MCP OAuth session is invalid or expired");
   });
 
+  it("ends a sign-in the provider refused, so it no longer counts or completes", async () => {
+    const shared = sharedCredentials({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+    const { broker } = await shared.startProcess(
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    const session = await shared.beginSession({
+      oauth: { codeVerifier: "verifier", redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback" },
+    });
+
+    await broker.discard({ sessionId: session.id, ...shared.context });
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow("MCP OAuth session is invalid or expired");
+  });
+
   it("keeps a reconnection's client when the earlier flow's tokens land late", async () => {
     const redirectUri = "http://127.0.0.1:5173/mcp/oauth/callback";
     const discoveryState = {
