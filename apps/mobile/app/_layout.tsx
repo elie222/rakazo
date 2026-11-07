@@ -346,8 +346,13 @@ function LayoutContent() {
     return startUnsentSends();
   }, [ready]);
 
+  // Only once the saved server is restored: the card's check sends the session to it.
+  useEffect(() => {
+    if (!ready) return;
+    return startWorkActivities();
+  }, [ready]);
+
   useEffect(() => watchForegroundUpdates(), []);
-  useEffect(() => startWorkActivities(), []);
 
   useEffect(() => {
     markMobileStartupMounted();
