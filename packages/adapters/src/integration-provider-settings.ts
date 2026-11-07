@@ -11,6 +11,8 @@ import { ComposioConnector } from "./composio-connector.js";
 import { credentialDigest } from "./credential-digest.js";
 import { PipedreamConnector } from "./pipedream-connector.js";
 
+const PLUGIN_SLUG_PROVIDER: IntegrationProviderId = "composio";
+
 /** Resolve persisted credentials on every operation so API and workers observe changes.
  * Cache adapters by ciphertext to preserve sessions without retaining old credentials. */
 export class IntegrationProviderSettings {
@@ -106,6 +108,19 @@ export class IntegrationProviderSettings {
     // The store may have expired or invalidated this ref while persistence waited.
     // Re-resolve through it before retaining any provider credentials.
     this.cache.delete(config.provider);
+  }
+
+  /** Connected app slugs from the provider whose app ids match plugin slugs. */
+  async listConnectedPluginSlugs(userId: string): Promise<string[]> {
+    const provider = await this.resolve(PLUGIN_SLUG_PROVIDER);
+    if (!provider) return [];
+    return provider.listConnectedExternalIds({
+      userId,
+      spaceId: "",
+      operationId: "connections.sync",
+      traceId: "connections.sync",
+      signal: AbortSignal.timeout(15_000),
+    });
   }
 
   providers(): ManagedConnectorProvider[] {

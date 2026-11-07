@@ -2,9 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  BoatSandboxProvider,
-  BoxdSandboxProvider,
   CreateOSSandboxProvider,
+  createSandboxProvider,
   E2BSandboxProvider,
   NovitaSandboxProvider,
   PiAgentRuntime,
@@ -61,9 +60,9 @@ describeE2b("live E2B canary", () => {
 
 describeBoat("live Boat canary", () => {
   it("provisions a desktop, observes it, preserves a file across stop/resume, and destroys it", async () => {
-    const sandbox = new BoatSandboxProvider({
-      apiKey: process.env.BOAT_API_KEY!,
-      apiUrl: process.env.BOAT_API_URL,
+    const sandbox = await createSandboxProvider("boat", {
+      boatApiKey: process.env.BOAT_API_KEY,
+      boatApiUrl: process.env.BOAT_API_URL,
     });
     const ctx = {
       operationId: "boat-canary",
@@ -107,9 +106,9 @@ describeBoat("live Boat canary", () => {
 
 describeBoxd("live boxd canary", () => {
   it("provisions a desktop, observes it, keeps a file and a running process across stop/resume, and destroys it", async () => {
-    const sandbox = new BoxdSandboxProvider({
-      apiKey: process.env.BOXD_API_KEY!,
-      org: process.env.BOXD_ORG,
+    const sandbox = await createSandboxProvider("boxd", {
+      boxdApiKey: process.env.BOXD_API_KEY,
+      boxdOrg: process.env.BOXD_ORG,
     });
     const ctx = {
       operationId: "boxd-canary",
@@ -139,8 +138,8 @@ describeBoxd("live boxd canary", () => {
       await run(["bash", "-c", "nohup sleep 600 >/dev/null 2>&1 & echo $! > canary.pid"]);
       expect((await sandbox.observe(computer, ctx)).image.byteLength).toBeGreaterThan(0);
 
-      await sandbox.stop(computer);
-      expect(await sandbox.isStopped(computer)).toBe(true);
+      await sandbox.stop(computer, ctx);
+      expect(await sandbox.isStopped?.(computer, ctx)).toBe(true);
       computer = await sandbox.provision(
         { ...request, providerRef: computer.providerRef, providerKind: computer.kind },
         ctx,

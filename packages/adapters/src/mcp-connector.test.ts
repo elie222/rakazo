@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "./composio-connector.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
@@ -2548,6 +2548,30 @@ describe("MCP connector stdio OAuth", () => {
       await connector.close();
     },
   );
+
+  it("redacts a credential still held in a legacy row's launch arguments", async () => {
+    const token = "FAKE-TOKEN-0000000000000000";
+    vi.spyOn(McpSession.prototype, "connectStdio").mockRejectedValue(
+      new Error(`invalid --api-key ${token}`),
+    );
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    const server = { ...STDIO_SERVER, secretId: null, args: ["--api-key", token] };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, {
+      stdioEnabled: true,
+      allowedCommands: ["mail-mcp"],
+    });
+
+    const tools = await connector.discoverTools(context);
+
+    expect(tools).toEqual(unavailableOnly("mail"));
+    expect(tools[0]?.description).not.toContain(token);
+    expect(tools[0]?.description).toContain("[redacted]");
+    await connector.close();
+  });
 
   it("waits for active calls before replacing an expiring process", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

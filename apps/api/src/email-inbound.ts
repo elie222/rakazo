@@ -11,11 +11,15 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  isUniqueViolation,
+  SpaceDeletionInProgressError,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { cancelBody, readBoundedBytes } from "./http-body.js";
-import { isUniqueViolation } from "./routes/shared.js";
 import type { WebhookDeps } from "./webhook-inbound.js";
 import { deliverWebhookEvent, formatUntrustedDeliveryPayload } from "./webhook-inbound.js";
 
@@ -215,7 +219,10 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
+    throw error;
+  });
 }
 
 /**

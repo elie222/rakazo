@@ -20,7 +20,7 @@ import {
 import { listVaultItems } from "./bot-secrets.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
-import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
+import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
@@ -44,11 +44,12 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
+import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "./skill-tools.js";
-import { argumentGiven } from "./update-bot-patch.js";
+import { argumentGiven, dropUnchangedOwnBotArgs } from "./update-bot-patch.js";
 import type { VaultCardUse } from "./vault-card-use.js";
 import { cardUseSummary, requestedCardUse, vaultCardUseOf } from "./vault-card-use.js";
 
@@ -353,6 +354,11 @@ export async function prepareToolRequest(
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
       };
   }
+  if (name === "save_page") {
+    const refused = await holdSharedPageSave(ctx, request);
+    if (refused) return refused;
+    args = request.args;
+  }
   if (name === "update_bot" && !argumentGiven(args.bot_id)) {
     const refused = await prepareOwnBotUpdate(ctx, request);
     if (refused) return refused;
@@ -489,6 +495,29 @@ const OWN_FIELDS = new Set([
 ]);
 
 /**
+ * Every way an own update_bot call can name the model this bot runs on now: its id,
+ * provider/id, and the label update_bot's read shows. A bot without its own model runs on the
+ * space default, read fresh rather than from this run, which may record an earlier attempt.
+ */
+async function currentModelNames(
+  ctx: RunContext,
+  bot: { modelProvider: string | null; modelId: string | null },
+): Promise<string[]> {
+  const pinned = Boolean(bot.modelProvider && bot.modelId);
+  const { provider, model } = pinned
+    ? { provider: bot.modelProvider, model: bot.modelId }
+    : await (await fleetPrepareDeps(ctx.deps, ctx.run)).modelChange.defaultModel();
+  if (!provider || !model) return pinned ? [] : ["default"];
+  const label = modelLabel(provider, model);
+  return [
+    model,
+    `${provider}/${model}`,
+    label,
+    ...(pinned ? [] : ["default", `${label} (default)`]),
+  ];
+}
+
+/**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
  * they go through approval like any other action, and outside runs cannot change them.
  */
@@ -503,8 +532,35 @@ async function prepareOwnBotUpdate(
     request.heldForApproval = typeof request.args.previousInstructions === "string";
     return undefined;
   }
-  const { previousInstructions: _previous, reason: _reason, ...args } = request.args;
+  const { previousInstructions: _previous, reason: _reason, ...given } = request.args;
+  const current = await ctx.deps.prisma.bot.findUnique({
+    where: { id: run.botId },
+    select: {
+      name: true,
+      description: true,
+      instructions: true,
+      color: true,
+      notifyOnFinish: true,
+      dailyCheckIns: true,
+      modelProvider: true,
+      modelId: true,
+      thinkingLevel: true,
+      autoSpeak: true,
+      voiceId: true,
+    },
+  });
+  const args = current
+    ? dropUnchangedOwnBotArgs(
+        given,
+        current,
+        argumentGiven(given.model) ? await currentModelNames(ctx, current) : [],
+        current.thinkingLevel ? undefined : run.thinkingLevel,
+      )
+    : given;
   request.args = args;
+  // A paged read never writes: the handler answers with the settings and names every other field
+  // it left out, so the write checks below do not apply to those fields.
+  if (argumentGiven(args.instructions_offset ?? args.instructionsOffset)) return undefined;
   const settingsOnly = Object.keys(args).filter(
     (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
   );

@@ -17,12 +17,14 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isUniqueViolation,
   runAsSystem,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { isUniqueViolation, publishMessage, runLeaseFor } from "./run-messages.js";
+import { publishMessage, runLeaseFor } from "./run-messages.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -204,7 +206,7 @@ export async function requestUserCall(
   // write here names the run's own thread.
   const result = await runAsSystem("check the call cooldown across the user's Spaces", () =>
     deps.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`call:${run.userId}`}, 0))::text`;
+      await advisoryLock(tx, "call", run.userId, "joined");
       const target = await tx.thread.findFirst({
         where: {
           id: run.threadId,
@@ -253,7 +255,7 @@ export async function requestUserCall(
         firstResponseRunId: event.firstResponse ? run.id : undefined,
         botName: target.bot.name,
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if ("error" in result) return result;
   await deps.events

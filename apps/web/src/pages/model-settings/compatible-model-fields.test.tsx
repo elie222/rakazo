@@ -43,6 +43,7 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     savedHeaderEndpointMatches: false,
     credential: undefined,
     baseUrl: "http://127.0.0.1:8000/v1",
+    endpointPreset: undefined,
     busy: false,
     cancelOAuthAttempt: () => {},
     compatibleRows,

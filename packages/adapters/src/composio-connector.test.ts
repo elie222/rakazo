@@ -6,13 +6,10 @@ import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  ConnectorRegistry,
   collectLogIds,
-  collectPages,
   composioResultError,
   executeSessionKey,
   expandComposioMultiExecute,
-  filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
   isNoManagedAuthError,
@@ -20,8 +17,10 @@ import {
   needsLivePluginSync,
   pickReusableConnection,
   planLiveConnectionSync,
-  sanitizeComposioError,
+  sanitizeIntegrationError,
 } from "./composio-connector.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
 const composioSdkState = vi.hoisted(() => ({
@@ -257,25 +256,27 @@ describe("composio tool mapping", () => {
   });
 
   it("redacts project keys from errors", () => {
-    expect(sanitizeComposioError("denied ak_secretvaluehere")).toContain("[redacted]");
-    expect(sanitizeComposioError("denied ak_secretvaluehere")).not.toContain("ak_secret");
-    expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
+    expect(sanitizeIntegrationError("denied ak_secretvaluehere")).toContain("[redacted]");
+    expect(sanitizeIntegrationError("denied ak_secretvaluehere")).not.toContain("ak_secret");
+    expect(sanitizeIntegrationError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
       "ak_shouldnotleak",
     );
-    expect(sanitizeComposioError('COMPOSIO_API_KEY="alpha beta"')).toBe(
+    expect(sanitizeIntegrationError('COMPOSIO_API_KEY="alpha beta"')).toBe(
       'COMPOSIO_API_KEY="[redacted]"',
     );
-    expect(sanitizeComposioError("COMPOSIO_API_KEY plain-secret-value")).toBe(
+    expect(sanitizeIntegrationError("COMPOSIO_API_KEY plain-secret-value")).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );
-    expect(sanitizeComposioError('COMPOSIO_API_KEY "alpha beta"')).toBe(
+    expect(sanitizeIntegrationError('COMPOSIO_API_KEY "alpha beta"')).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );
-    expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
-    expect(sanitizeComposioError("denied password=bad;status=failed")).toBe(
+    expect(sanitizeIntegrationError("denied password=p@ss;word")).toBe(
+      'denied password="[redacted]"',
+    );
+    expect(sanitizeIntegrationError("denied password=bad;status=failed")).toBe(
       'denied password="[redacted]";status=failed',
     );
-    expect(sanitizeComposioError('denied password="p\\"secret"')).toBe(
+    expect(sanitizeIntegrationError('denied password="p\\"secret"')).toBe(
       'denied password="[redacted]"',
     );
   });

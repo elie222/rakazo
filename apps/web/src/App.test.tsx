@@ -46,8 +46,7 @@ vi.mock("./pages/Auth", async () => {
 });
 vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
 vi.mock("./lib/remote-images-preference", () => ({
-  getRemoteImagesEnabled: () => false,
-  subscribeRemoteImages: () => () => {},
+  remoteImagesPreference: { use: () => false },
 }));
 vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
 vi.mock("./lib/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));

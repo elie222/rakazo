@@ -26,6 +26,7 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
+import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
@@ -124,15 +125,7 @@ const scheduleCreateProperties = {
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
 
-const scheduleTimingNames = [
-  "cron",
-  "every",
-  "unit",
-  "runAt",
-  "delayMinutes",
-  "delaySeconds",
-  "watch",
-] as const;
+const scheduleTimingNames = [...SCHEDULE_TIMING_FIELDS, "watch"] as const;
 
 /**
  * Model serializers often emit unused optional fields as null or "". Those are
@@ -707,7 +700,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source.',
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
     inputSchema: {
       type: "object",
       properties: {
@@ -1504,7 +1497,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "run_subagent",
     description:
-      "Run a short-lived helper inside this turn only. It is not a bot: no list entry, no thread, no computer of its own, and it disappears when this turn ends. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",
+      "A helper, not a bot: no list entry, thread or computer. It ends with this turn unless background is set. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1525,6 +1518,7 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Optional connected model ID. Set together with model_provider.",
         },
+        background: { type: "boolean" },
       },
       required: ["name", "task"],
     },
@@ -1655,7 +1649,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_fleet",
     description:
-      "List the bots and groups in this space with their ids, sections and pinned state. You can manage every bot listed; createdByMe only says which ones you created. Pass bot_id of a bot in this space to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the bots you manage.",
+      "List the bots and groups in this space with their ids, sections, pinned state and models. You can manage every bot listed; createdByMe only says which ones you created. Pass bot_id of a bot in this space to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the bots you manage.",
     inputSchema: {
       type: "object",
       properties: {

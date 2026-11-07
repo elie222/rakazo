@@ -2,7 +2,11 @@ import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
 import { cloudAgentPollJob } from "@rakazo/adapter-kit";
 import { cloudAgentBlockFromPayload } from "@rakazo/core";
 import type { CloudAgent, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
@@ -95,7 +99,7 @@ export async function executeCloudAgentTool(
         seq: event.seq,
         firstResponseRunId: event.firstResponse ? run.id : undefined,
       };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
     agent = result.agent;
     if (result.seq !== undefined)
       await deps.events

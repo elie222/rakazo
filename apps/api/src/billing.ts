@@ -23,7 +23,7 @@ import {
   sandboxAllowanceHours,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
-import type { BillingAccount, PrismaClient } from "@rakazo/db";
+import type { BillingAccount, Prisma, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
@@ -35,6 +35,8 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isLockTimeout,
+  lockCheckoutLease,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
@@ -62,6 +64,9 @@ const CHECKOUT_LEASE_MS = 120_000;
 const CHECKOUT_LEASE_POLL_MS = 250;
 /** Keeps a held lease valid through a provider operation longer than one lease period. */
 const CHECKOUT_LEASE_RENEW_MS = CHECKOUT_LEASE_MS / 4;
+/** Runs `write` in one transaction while this request still holds the checkout lease. */
+type UnderLease = <R>(write: (tx: Prisma.TransactionClient) => Promise<R>) => Promise<R>;
+
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 
@@ -326,21 +331,27 @@ export function createBillingService(deps: {
   async function openCheckout(
     actor: Actor,
     account: BillingAccount,
-    call: (customerId: string) => Promise<{ url: string }>,
+    call: (customerId: string, underLease: UnderLease) => Promise<{ url: string }>,
   ) {
     // Opening another recurring checkout expires the old one.
-    return withCheckoutLease(account.organizationId, async () => {
+    return withCheckoutLease(account.organizationId, async (underLease) => {
       // The entry check ran before this request waited for the lease, and a deletion's
       // cancellation holds the same lease: re-check, so no session opens that the
       // cancellation cannot see and the organization cannot outlive.
       if (await organizationBeingDeleted(account.organizationId))
         throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
-      return withLiveCustomer(actor, account, call);
+      return withLiveCustomer(actor, account, (customerId) => call(customerId, underLease));
     });
   }
 
-  /** Runs `work` holding the organization's checkout lease, one at a time across API instances. */
-  async function withCheckoutLease<T>(organizationId: string, work: () => Promise<T>) {
+  /**
+   * Runs `work` holding the organization's checkout lease, one at a time across API instances.
+   * `underLease` runs writes that must not outlive the lease.
+   */
+  async function withCheckoutLease<T>(
+    organizationId: string,
+    work: (underLease: UnderLease) => Promise<T>,
+  ) {
     const deadline = Date.now() + CHECKOUT_LEASE_MS;
     let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
     while (!leaseId) {
@@ -357,8 +368,21 @@ export function createBillingService(deps: {
       CHECKOUT_LEASE_RENEW_MS,
     );
     renew.unref();
+    // The lease row stays locked until the writes commit, so no claimant takes it meanwhile.
+    const busy = () => new ORPCError("CONFLICT", { message: "Billing is busy; try again shortly" });
+    const underLease: UnderLease = (write) =>
+      prisma
+        .$transaction(async (tx) => {
+          if (!(await lockCheckoutLease(tx, organizationId, leaseId))) throw busy();
+          return write(tx);
+        })
+        .catch((error: unknown) => {
+          // A write that waited too long on another lock rolled back: busy, like a lost lease.
+          if (isLockTimeout(error)) throw busy();
+          throw error;
+        });
     try {
-      const result = await work();
+      const result = await work(underLease);
       // Renewal keeps the lease unless the database refused every attempt for a whole lease
       // period. A cancellation that still took the lease over expired the sessions open at
       // that moment, so a session created after it must not be handed back.
@@ -401,13 +425,24 @@ export function createBillingService(deps: {
       organizationOwnerHadTrial(prisma, organizationId, "byok"),
     ]);
     try {
-      return await openCheckout(actor, account, async (customerId) => {
-        // One trial per owner: reserve inside the organization's checkout lease, so overlapping
-        // requests of the same organization cannot interleave their holds; the lease already
-        // serializes their provider calls.
-        const hold = byokTrialAvailable(account, credits, hadTrial)
-          ? await reserveByokTrialCheckout(prisma, organizationId)
-          : null;
+      return await openCheckout(actor, account, async (customerId, underLease) => {
+        // Expire the open sessions first: once none is payable none holds the trial, so a
+        // failure after this step gives this attempt's hold back in full. A failure while
+        // expiring keeps the earlier hold, since its session may still be payable.
+        await provider.expireOpenCheckouts(customerId);
+        // A session paid before it could be expired leaves a subscription whose webhook may
+        // not have arrived: record it, using up the owners' trial, while the earlier hold
+        // still protects it. A failed sync keeps that hold.
+        await sync(customerId);
+        // One trial per owner: the sync can outlast the lease, after which a newer request
+        // may hold a newer session's hold, so release and reserve only while the lease is
+        // still this request's and its row stays locked.
+        const hold = await underLease(async (tx) => {
+          await releaseByokTrialCheckouts(tx, organizationId);
+          return byokTrialAvailable(account, credits, hadTrial)
+            ? reserveByokTrialCheckout(tx, organizationId)
+            : null;
+        });
         let session: { url: string };
         try {
           session = await provider.createByokCheckout!({
@@ -420,8 +455,8 @@ export function createBillingService(deps: {
             cancelUrl: client === "mobile" ? mobileReturnUrl : appUrl,
           });
         } catch (error) {
-          // No session came out of this attempt, so its hold goes back; an earlier or newer
-          // payable session's hold keeps its own expiry and survives.
+          // No session came out of this attempt, so its hold goes back; a newer payable
+          // session's hold keeps its own expiry and survives.
           if (hold && !(error instanceof BillingCheckoutCompletedError))
             await releaseByokTrialCheckout(prisma, organizationId, hold);
           throw error;

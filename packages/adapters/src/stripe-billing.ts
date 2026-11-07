@@ -708,7 +708,7 @@ export class StripeBillingProvider implements BillingProvider {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
 
-  private async expireOpenCheckouts(customerId: string): Promise<void> {
+  async expireOpenCheckouts(customerId: string): Promise<void> {
     const seen = new Set<string>();
     for (;;) {
       const query = encodeStripeForm({ customer: customerId, status: "open", limit: 100 });

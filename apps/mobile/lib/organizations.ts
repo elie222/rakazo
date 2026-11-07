@@ -3,13 +3,13 @@ import type { OrganizationList } from "@rakazo/contracts";
 import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
+import { selectedSpaceId } from "./api";
 import {
   adoptDeletedSpaceFallback,
   loadOrganizationSpaces,
   rememberOrganizationSpace,
-  selectedSpaceId,
   selectSpace,
-} from "./api";
+} from "./api-server";
 import { t } from "./i18n";
 import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 

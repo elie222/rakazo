@@ -7,7 +7,8 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
+import type * as Api from "./api";
+import type { MobileMessage } from "./mobile-types";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -105,13 +106,18 @@ vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
 }));
 vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label }: { label: string }) => <button type="button">{label}</button>,
+  NativeActionButton: ({ label, onPress }: { label: string; onPress?: () => void }) => (
+    <button type="button" onClick={onPress}>
+      {label}
+    </button>
+  ),
 }));
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
 vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
@@ -125,8 +131,14 @@ vi.mock("../components/change-undo", () => ({
   isUndoableChange: () => false,
 }));
 
+vi.mock("./api", async (original) => ({
+  ...(await original<typeof Api>()),
+  rpc: vi.fn(async () => ({ ok: true })),
+}));
+
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import { MessageBubble } from "../components/thread/message-bubble";
+import { rpc } from "./api";
 
 type BubbleProps = ComponentProps<typeof MessageBubble>;
 
@@ -559,6 +571,32 @@ describe("thread cards", () => {
     } as MobileMessage;
     act(() => root.render(<Bubble botId="bot-1" bots={[]} message={message} actionProps={{}} />));
     expect(container.textContent).toContain("Running");
+  });
+
+  it("stops a background helper from its saved card, and shows it as stopped", () => {
+    const helper = (id: string, status: "running" | "failed", result?: string) =>
+      ({
+        id,
+        role: "bot",
+        botId: "bot-1",
+        blocks: [{ kind: "subagent", agentId: id, name: "scout", task: "venues", status, result }],
+      }) as MobileMessage;
+    const stopButton = () =>
+      [...container.querySelectorAll("button")].find((node) => node.textContent === "Stop");
+    const show = (message: MobileMessage) =>
+      act(() => root.render(<Bubble botId="bot-1" bots={[]} message={message} actionProps={{}} />));
+    show(helper("subagent:live", "running"));
+    expect(stopButton()).toBeUndefined();
+    show(helper("card-1", "running"));
+    act(() => stopButton()?.click());
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("threads/stopHelper", {
+      botId: "bot-1",
+      messageId: "card-1",
+    });
+    show(helper("card-1", "failed", "stopped"));
+    expect(container.textContent).toContain("Stopped");
+    expect(container.textContent).not.toContain("Failed");
+    expect(stopButton()).toBeUndefined();
   });
 
   it("folds a helper card to one line of the task until it is pressed, across its saved message", () => {

@@ -296,6 +296,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/importCreate"],
       ["bots/importSetupState"],
+      ["bots/templates"],
+      ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
       ["bots/reorder"],
       ["bots/restoreInstructions"],
       ["bots/setComputer"],
@@ -327,6 +329,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         { botId: "missing-bot", clientNonce: "nope", routineIds: ["missing-routine"] },
       ],
       ["threads/stop", { botId: "missing-bot" }],
+      ["threads/stopHelper", { botId: "missing-bot", messageId: "missing-message" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
       [
@@ -414,6 +417,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["agentSkills/update", { skillId: "missing-skill", description: "Nope" }],
       ["agentSkills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
+      ["capabilities/sourcePresets"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
       ["capabilities/catalogSearch"],
@@ -699,6 +703,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
+      ["threads/stopHelper", { botId: ownerBot.id, messageId: "missing-message" }],
       ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
       [

@@ -7,6 +7,7 @@ import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted, refuseOwnerSettingsChange } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 
 /** Longest a read_email call waits for mail to arrive, well inside a run's lease renewal. */
 export const READ_EMAIL_MAX_WAIT_SECONDS = 120;
@@ -34,13 +35,6 @@ const DeleteEmailSchema = z
     ids: z.array(z.string().trim().min(1).max(100)).min(1).max(DELETE_EMAIL_MAX_IDS),
   })
   .strict();
-
-/** A tool call's argument problems, on one line. */
-function argsError(error: z.ZodError): string {
-  return error.issues
-    .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
-    .join(" ");
-}
 
 function sender(email: { fromName: string; fromAddress: string }): string {
   return email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress;

@@ -44,7 +44,7 @@ In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't 
 
 - Changing a bot's instructions or model, and creating a space.
 - Actions that text you didn't write could be steering, such as changes in a run started by a
-  webhook.
+  webhook. When it asks despite an Always allow, its card says so.
 - A routine that watches a command, or that names a site the run found in outside content.
 
 **Never ask** runs all of them. The one exception is accepting another owner's bot connection, which

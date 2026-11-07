@@ -526,6 +526,8 @@ export interface BillingProvider {
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
   createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  /** Expires every open checkout session of the customer; resolves once none can be paid. */
+  expireOpenCheckouts(customerId: string): Promise<void>;
   createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
@@ -544,7 +546,12 @@ export interface ExecutionRunner {
 export interface VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
-  listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
+  /** `options.language` narrows the listing for providers that advertise `languages`. */
+  listVoices(
+    apiKey: string,
+    context: AdapterContext,
+    options?: { language?: string },
+  ): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
 }

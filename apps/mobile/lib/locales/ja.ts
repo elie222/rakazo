@@ -1,4 +1,13 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "No matches": "一致するものはありません",
+  "Always ask": "常に確認",
+  "Search tools": "ツールを検索",
+  "A model approves routine actions and asks you about the rest.":
+    "定型的な操作はモデルが承認し、それ以外はあなたに確認します。",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "購入時とコンピューターの初回使用時にのみ確認します。適用されるのはブロックのルールだけです。",
+  "Asks before sending, spending or changing anything in your apps.":
+    "アプリでの送信、支払い、変更の前に確認します。",
   Haptics: "触覚フィードバック",
   "Add rule": "ルールを追加",
   "Tool name": "ツール名",
@@ -118,8 +127,6 @@ export const JA_MESSAGES: Record<string, string> = {
 
   "Use 80 characters or fewer": "80文字以内で入力してください",
   "Could not update name": "名前を更新できませんでした",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "OllamaのAPIキー",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを非表示",
   Export: "エクスポート",
@@ -434,6 +441,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "このアーティファクトの全{count}個のバージョンを削除します。この操作は元に戻せません。",
   Versions: "バージョン",
   Stop: "停止",
+  Stopped: "停止済み",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "すべてのメッセージを削除し、現在の作業を停止します。ボット、コンピューター、メモリ、ルーティンは保持されます。",
   "Type your answer": "回答を入力",
@@ -664,8 +672,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Added: "追加済み",
   Back: "戻る",
   "Bearer token": "Bearerトークン",
-  "Connect Executor": "Executorに接続",
-  "Connect Treg": "Tregに接続",
   "Connection pending": "接続待ち",
   "Could not add source": "ソースを追加できませんでした",
   "Could not approve this server": "このサーバーを承認できませんでした",
@@ -675,7 +681,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "接続を取り消せませんでした",
   "Custom connector": "カスタムコネクタ",
   "Display name": "表示名",
-  "Executor token": "Executorトークン",
   "Finish connecting in the browser, then refresh this page.":
     "ブラウザで接続を完了してから、このページを更新してください。",
   "GraphQL endpoint": "GraphQLエンドポイント",
@@ -692,7 +697,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Search integrations.sh": "integrations.sh で検索",
   "Show more": "さらに表示",
   Tools: "ツール",
-  "Treg token": "Tregトークン",
   Uninstall: "アンインストール",
   "Verify and add": "確認して追加",
   "Working…": "処理中…",
@@ -700,7 +704,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count}個のツール",
   "API key": "APIキー",
   "Account ID": "アカウントID",
@@ -900,6 +903,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not clear the local session": "ローカルセッションをクリアできませんでした",
   "Could not clear the previous server session": "以前のサーバーセッションをクリアできませんでした",
   "Could not clear the previous space": "以前のスペースをクリアできませんでした",
+  "Could not save the previous server session": "前のサーバーのセッションを保存できませんでした",
   "Could not save the server URL": "サーバーURLを保存できませんでした",
   "Could not send reset email": "リセット用メールを送信できませんでした",
   "The server changed while starting the request": "リクエストの開始中にサーバーが変更されました",
@@ -972,6 +976,9 @@ export const JA_MESSAGES: Record<string, string> = {
   Call: "通話",
   "Calls need transcription": "通話には文字起こしが必要です",
   "Could not hear that.": "聞き取れませんでした。",
+  "Approve or deny it on screen.": "画面で承認または拒否してください。",
+  "Hang up, then enter the code on screen.":
+    "通話を終了してから、画面に表示されたコードを入力してください。",
   "Could not speak that.": "読み上げできませんでした。",
   "Could not transcribe that.": "文字起こしできませんでした。",
   "Hang up": "通話を終了",
@@ -1115,6 +1122,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  Upgrade: "アップグレード",
+  "Cancelled trials have no computer hours.":
+    "キャンセルしたトライアルにはコンピューター時間がありません。",
+  "Renew plan": "プランを更新",
   "Trials get fewer hours to prevent abuse.":
     "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
   "Start plan now": "今すぐプランを開始",
@@ -1459,6 +1470,44 @@ export const JA_MESSAGES: Record<string, string> = {
   "Discard changes?": "変更を破棄しますか？",
   Discard: "破棄",
   "Could not delete note": "メモを削除できませんでした",
+  "Morning briefing": "朝のブリーフィング",
+  "Your day at a glance, every weekday morning": "平日の朝ごとに、1日の予定をひと目で",
+  "**Thursday**\n\n**Calendar**\n- 10:00 Design review, moved to 11:30\n- 14:00 Call with Dana\n\n**Needs you**\n- Alex asked for the Q4 numbers by noon\n- A contract is waiting for your signature\n\n**Worth knowing**\n- Light rain after 4pm\n- Two stories on the topics you follow":
+    "**木曜日**\n\n**カレンダー**\n- 10:00 デザインレビュー（11:30に変更）\n- 14:00 Danaさんと通話\n\n**対応が必要**\n- AlexさんがQ4の数字を正午までに求めています\n- 契約書があなたの署名を待っています\n\n**知っておくと便利**\n- 16時以降は小雨\n- フォロー中のトピックに関する記事が2件",
+  "Inbox triage": "受信トレイの仕分け",
+  "Sorts new email and drafts the replies": "新着メールを仕分けて返信の下書きを作成",
+  '**12 new since 8:00**\n\n**Reply needed**\n1. Priya wants to move Friday\'s review. Draft: "Friday works if we start at 2."\n2. Your card expires on the 30th. Draft ready.\n3. Sam asked about the API limits. Draft ready.\n\n**For your information**: a shipping update and a calendar change\n\n**Low priority**: 7 newsletters and notifications':
+    "**8:00以降の新着12件**\n\n**返信が必要**\n1. Priyaさんが金曜のレビューの日程変更を希望しています。下書き:「14時開始なら金曜で大丈夫です。」\n2. カードの有効期限が30日に切れます。下書きを用意しました。\n3. SamさんからAPIの上限について質問がありました。下書きを用意しました。\n\n**参考**: 配送の更新とカレンダーの変更\n\n**優先度低**: ニュースレターと通知が7件",
+  "PR reviewer": "PRレビュアー",
+  "Reviews pull requests waiting on you": "あなた待ちのプルリクエストをレビュー",
+  "**2 pull requests are waiting on you**\n\n**#482 Add retry to webhook delivery**\n- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n- No test for the backoff cap.\n\nSuggested review: request changes.\n\n**#479 Fix date parsing in reports**\nLooks good. Suggested review: approve.":
+    "**あなたのレビュー待ちのプルリクエストが2件あります**\n\n**#482 Webhook配信にリトライを追加**\n- 404でもリトライするため、削除済みのエンドポイントに5回再試行します。5xxとタイムアウトだけリトライしますか？\n- バックオフ上限のテストがありません。\n\n推奨レビュー: 変更をリクエスト。\n\n**#479 レポートの日付解析を修正**\n問題なさそうです。推奨レビュー: 承認。",
+  "Topic watch": "トピックの追跡",
+  "A weekly digest of what changed on topics you follow":
+    "フォロー中のトピックの変化を毎週まとめてお届け",
+  "**This week**\n\n**Open-source AI agents**\n- A major release adds scheduled tasks (3 days ago)\n- Two new comparisons; both call memory the main gap\n\n**competitor.example**\n- Pricing: the Team plan went from $20 to $25 per seat\n\nNothing new on battery recycling.":
+    "**今週**\n\n**オープンソースのAIエージェント**\n- 大型リリースで予約タスクが追加（3日前）\n- 新しい比較記事が2本。どちらもメモリを最大の弱点に挙げています\n\n**competitor.example**\n- 料金: Teamプランが1シートあたり$20から$25に値上げ\n\nバッテリーのリサイクルについては新しい情報はありません。",
+  "API key for {provider}": "{provider}のAPIキー",
+  "Credentials: {names}": "認証情報: {names}",
+  "Environment variables: {names}": "環境変数: {names}",
+  "Program: {name}": "プログラム: {name}",
+  "Uses paths on your computer": "お使いのコンピューター上のパスを使用しています",
+  "Needs: {names}": "必要: {names}",
+  "Uses files that are not imported": "インポートされないファイルを使用しています",
+  "Setup complete": "セットアップ完了",
+  "Finish setting up": "セットアップを完了",
+  "Check this yourself": "ご自身で確認してください",
+  "Could not load templates": "テンプレートを読み込めませんでした",
+  Skill: "スキル",
+  "{schedule}, paused until you turn it on": "{schedule}、オンにするまで一時停止中",
+  "This template was just updated. Check it again.":
+    "このテンプレートはたった今更新されました。もう一度確認してください。",
+  "Could not create the bot": "ボットを作成できませんでした",
+  "Create bot": "ボットを作成",
+  Adds: "追加されるもの",
+  "Works with": "連携するアプリ",
+  "Bot templates": "ボットのテンプレート",
+  Templates: "テンプレート",
   "Recent payments": "最近の支払い",
   "Spending limit": "支出上限",
   Amount: "金額",

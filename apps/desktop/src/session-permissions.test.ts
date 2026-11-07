@@ -164,6 +164,34 @@ describe("desktop session permissions", () => {
     expect(policy.check("media", { isMainFrame: undefined })).toBe(false);
   });
 
+  it("lets the computer screen frame sync the host clipboard", () => {
+    const policy = policyFixture();
+    for (const path of ["/novnc/embed.html?path=x", "/computer-screen/screen.html"]) {
+      const requestingUrl = new URL(path, appUrl).href;
+      expect(policy.request("clipboard-read", { requestingUrl, isMainFrame: false })).toBe(true);
+    }
+  });
+
+  it.each([
+    ["the main frame", appUrl, true],
+    ["another app path", new URL("/chat/frame", appUrl).href, false],
+    ["another origin", "https://provider.example.test/novnc/embed.html", false],
+    ["an insecure origin", "http://app.example.test/novnc/embed.html", false],
+  ])("denies clipboard reads from %s", (_name, requestingUrl, isMainFrame) => {
+    const policy = policyFixture();
+    expect(policy.request("clipboard-read", { requestingUrl, isMainFrame })).toBe(false);
+    expect(policy.check("clipboard-read", { requestingUrl, isMainFrame })).toBe(false);
+  });
+
+  it("denies screen clipboard reads to a popup", () => {
+    const policy = policyFixture();
+    const popup = { ...policy.contents, getURL: () => providerUrl } as WebContents;
+    const requestingUrl = new URL("/novnc/embed.html", appUrl).href;
+    expect(policy.request("clipboard-read", { requestingUrl, isMainFrame: false }, popup)).toBe(
+      false,
+    );
+  });
+
   it.each([
     "clipboard-read",
     "display-capture",

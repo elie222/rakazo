@@ -19,7 +19,7 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -546,7 +546,7 @@ async function deleteArtifactRootIfChildless(
     try {
       await tx.artifact.delete({ where: { id: root.id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (isRecordNotFound(error)) {
         outcome = "gone";
         return;
       }
@@ -593,7 +593,7 @@ async function deleteArtifactRowIfPresent(
   try {
     await prisma.artifact.delete({ where: { id } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return;
+    if (isRecordNotFound(error)) return;
     throw error;
   }
 }

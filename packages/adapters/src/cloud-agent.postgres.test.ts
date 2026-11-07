@@ -179,6 +179,66 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     };
   }
 
+  it("launches an agent whose card waited behind a long thread read", async () => {
+    const { thread, launch, state } = await setup();
+    // A thread snapshot read holds the row FOR SHARE past Prisma's default five seconds.
+    const holdMs = 6_000;
+    let locked!: (xactId: string) => void;
+    const lockTaken = new Promise<string>((resolve) => {
+      locked = resolve;
+    });
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const reader = asSystem(prisma).$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR SHARE`;
+        const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
+            SELECT pg_current_xact_id()::text AS "xactId"`;
+        locked(rows[0]?.xactId ?? "");
+        await opened;
+      },
+      { timeout: 30_000 },
+    );
+    const xactId = await lockTaken;
+    const probe = await runAsSystem("lock probe", () => db.pool.connect());
+    let launched: Promise<string> = Promise.resolve("");
+    try {
+      launched = launch();
+      launched.catch(() => undefined);
+      await vi.waitFor(
+        async () => {
+          const result = await probe.query(
+            "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+            [xactId],
+          );
+          expect(result.rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 5_000, interval: 20 },
+      );
+      await new Promise((resolve) => setTimeout(resolve, holdMs));
+      // On Prisma's default budget the launch has already expired here.
+      const settled = await Promise.race([
+        launched.then(
+          () => "committed",
+          (error: Error) =>
+            `failed: ${error.message.split("\n").find((line) => /expired|timeout/i.test(line)) ?? error.message}`,
+        ),
+        new Promise((resolve) => setTimeout(() => resolve("waiting"), 75)),
+      ]);
+      expect(settled).toBe("waiting");
+      open();
+      const agentId = await launched;
+      expect(await state(agentId)).toMatchObject({ threadId: thread.id });
+    } finally {
+      open();
+      await reader.catch(() => undefined);
+      await launched.catch(() => undefined);
+      probe.release();
+    }
+  }, 30_000);
+
   it("forwards first-response timing when its cloud-agent card is the first output", async () => {
     const h = await setup();
     await h.launch();

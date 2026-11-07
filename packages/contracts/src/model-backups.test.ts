@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
 import {
   connectedBackupOptions,
   connectionDisplayName,
@@ -8,6 +7,7 @@ import {
   sameBackupChoices,
   withConnectionName,
 } from "./model-backups.js";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
 
 const catalog: ModelCatalogEntry[] = [
   {

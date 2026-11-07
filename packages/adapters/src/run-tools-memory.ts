@@ -11,6 +11,7 @@ import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 
 /** Cross-chat history requires a surviving direct human request in this app thread. */
 export function historyMyChatsAllowed(
@@ -23,6 +24,18 @@ export function historyMyChatsAllowed(
     (run.trigger === "user" || run.trigger === "follow_up") &&
     source?.role === "user" &&
     source.threadId === run.threadId
+  );
+}
+
+/**
+ * Models often fill optional fields they do not use with "" or null (botId: "", linkedRunId: "").
+ * No history field means anything when blank, so a blank field counts as not given.
+ */
+export function withoutBlankFields(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(
+      ([, value]) => value !== null && !(typeof value === "string" && !value.trim()),
+    ),
   );
 }
 
@@ -45,10 +58,17 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     allowMyChats,
     searchAt: run.createdAt,
   };
-  const response =
-    name === "search_history"
-      ? await searchHistory(deps.prisma, scope, HistorySearchInputSchema.parse(args))
-      : await readHistory(deps.prisma, scope, HistoryReadInputSchema.parse(args));
+  const given = withoutBlankFields(args);
+  let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
+  if (name === "search_history") {
+    const parsed = HistorySearchInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await searchHistory(deps.prisma, scope, parsed.data);
+  } else {
+    const parsed = HistoryReadInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await readHistory(deps.prisma, scope, parsed.data);
+  }
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {

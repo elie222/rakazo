@@ -120,7 +120,9 @@ test("an owner invites someone by link and both see the space's members", async 
   await expect(inviteePage.getByText("Planner", { exact: true }).last()).toBeVisible();
   await captureScreenshot(inviteePage, testInfo, "shared-group-invitee");
 
-  // The link was single use.
+  // The link was single use. Leave the chat first: its open streams react to the session
+  // change and navigate the page, which aborts the next sign-up navigation.
+  await inviteePage.goto("about:blank");
   await invitee.clearCookies();
   await signup(inviteePage, `share-late-${stamp}@rakazo.test`, "password12", "Late Invitee");
   await completeOnboarding(inviteePage);

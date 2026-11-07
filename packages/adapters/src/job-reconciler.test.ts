@@ -2,12 +2,14 @@ import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import type { ReconciliationLeadership } from "./job-reconciler.js";
 import { createJobReconciler, createPostgresReconciliationLeadership } from "./job-reconciler.js";
 import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
+vi.mock("./background-helpers.js", () => ({ returnHelperOutcome: vi.fn() }));
 
 function publisher() {
   const enqueue = vi.fn(async (_job: BackgroundJob): Promise<void> => undefined);
@@ -773,6 +775,31 @@ describe("createJobReconciler", () => {
       }),
     );
     expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
+  });
+
+  it("moves a helper whose result cannot go back yet behind the others", async () => {
+    const stuck = { id: "helper-stuck", status: "completed", error: null };
+    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
+      args.where?.trigger === "helper" ? [stuck] : [],
+    );
+    const prisma = {
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnHelperOutcome).mockRejectedValueOnce(new Error("deadlock"));
+
+    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+
+    expect(returnHelperOutcome).toHaveBeenCalledOnce();
+    expect(prisma.run.updateMany).toHaveBeenCalledWith({
+      where: { id: "helper-stuck", botOutcomeReturnedAt: null },
+      data: { updatedAt: expect.any(Date) },
+    });
   });
 
   it("prefers the latest final reply over earlier untagged narration", async () => {

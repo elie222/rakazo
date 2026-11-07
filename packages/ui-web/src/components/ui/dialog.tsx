@@ -4,6 +4,8 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Button } from "@rakazo/ui-web/components/ui/button";
 
 import { cn } from "@rakazo/ui-web/lib/utils";
+import type { VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
 import { XIcon } from "lucide-react";
 import type * as React from "react";
 
@@ -23,12 +25,14 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
+// The backdrop stays faded out once its exit ends: a dialog that takes longer to leave would
+// otherwise show it again at full strength until the dialog is gone.
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-overlay duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-overlay duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards",
         className,
       )}
       {...props}
@@ -36,23 +40,44 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   );
 }
 
+// Larger sizes are full overlays: a fixed-size panel whose children lay out and scroll
+// their own panes.
+const largeDialog = "flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0";
+
+const dialogContentVariants = cva(
+  "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-dialog p-6 text-body text-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+  {
+    variants: {
+      size: {
+        default: "",
+        md: `${largeDialog} w-[600px] sm:max-w-[600px]`,
+        lg: `${largeDialog} h-[680px] w-[760px] sm:max-w-[760px]`,
+        xl: `${largeDialog} h-[680px] w-[920px] sm:max-w-[920px]`,
+        "2xl": `${largeDialog} h-[760px] w-[1080px] sm:max-w-[1080px]`,
+      },
+    },
+    defaultVariants: { size: "default" },
+  },
+);
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  overlayClassName,
+  size,
   ...props
-}: DialogPrimitive.Popup.Props & {
-  showCloseButton?: boolean;
-}) {
+}: DialogPrimitive.Popup.Props &
+  VariantProps<typeof dialogContentVariants> & {
+    showCloseButton?: boolean;
+    overlayClassName?: string;
+  }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
-        className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-dialog p-6 text-body text-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          className,
-        )}
+        className={cn(dialogContentVariants({ size }), className)}
         {...props}
       >
         {children}

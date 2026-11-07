@@ -28,7 +28,7 @@ import { identifyMonitoringUser } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
 import { QueryUserProvider, setQueryUser } from "./lib/query";
-import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
+import { remoteImagesPreference } from "./lib/remote-images-preference";
 import { hasSignedInBefore, rememberSignedIn } from "./lib/returning-user";
 import { rpc } from "./lib/rpc";
 import {
@@ -93,11 +93,7 @@ const linkFavicons: LinkFavicons = {
 };
 
 export function App() {
-  const loadRemoteImages = useSyncExternalStore(
-    subscribeRemoteImages,
-    getRemoteImagesEnabled,
-    () => false,
-  );
+  const loadRemoteImages = remoteImagesPreference.use();
   return (
     <RemoteImagesContext.Provider value={loadRemoteImages}>
       <LinkFaviconsContext.Provider value={linkFavicons}>

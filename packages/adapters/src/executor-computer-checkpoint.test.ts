@@ -226,6 +226,8 @@ function fixture(runId = "run-1") {
   };
   const choice = { modelId: "main-a" };
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    space: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     usageRecord: {
