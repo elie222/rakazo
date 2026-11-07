@@ -1,9 +1,15 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
-import type { ModelApiProtocol, ModelContextLimits, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelAuthMode,
+  ModelContextLimits,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelApiProtocolSchema,
+  ModelAuthModeSchema,
   ModelContextLimitsSchema,
   parseModelHeaders,
   ThinkingLevelSchema,
@@ -37,6 +43,7 @@ export type StoredModelSecret =
       kind: "openai_compatible";
       baseUrl: string;
       apiProtocol?: ModelApiProtocol;
+      authMode?: ModelAuthMode;
       headers?: Record<string, string>;
       apiKey?: string;
       reasoning?: boolean;
@@ -103,6 +110,12 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       parsed.apiProtocol === undefined
         ? undefined
         : ModelApiProtocolSchema.parse(parsed.apiProtocol);
+    const authMode =
+      parsed.authMode === undefined
+        ? undefined
+        : ModelAuthModeSchema.safeParse(parsed.authMode).success
+          ? (parsed.authMode as ModelAuthMode)
+          : undefined;
     const headers = parsed.headers === undefined ? undefined : parseModelHeaders(parsed.headers);
     const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
     const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
@@ -128,6 +141,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       kind: "openai_compatible",
       baseUrl: parsed.baseUrl.trim(),
       ...(apiProtocol !== undefined ? { apiProtocol } : {}),
+      ...(authMode !== undefined ? { authMode } : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
@@ -199,6 +213,9 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       baseUrl: secret.baseUrl,
       ...(secret.apiProtocol !== undefined
         ? { apiProtocol: ModelApiProtocolSchema.parse(secret.apiProtocol) }
+        : {}),
+      ...(secret.authMode !== undefined
+        ? { authMode: ModelAuthModeSchema.parse(secret.authMode) }
         : {}),
       ...(secret.headers !== undefined ? { headers: parseModelHeaders(secret.headers) } : {}),
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),

@@ -1,5 +1,6 @@
 import type {
   ModelApiProtocol,
+  ModelAuthMode,
   ModelCredential,
   ModelHeaderRow,
   ThinkingLevel,
@@ -59,6 +60,8 @@ export function useModelConnectionForm({
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
+  const [authMode, setAuthMode] = useState<ModelAuthMode>("bearer");
+  const [label, setLabel] = useState("");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -95,6 +98,8 @@ export function useModelConnectionForm({
     setEnabledModelIds(fields.enabledModelIds);
     setBaseUrl(fields.baseUrl);
     setApiProtocol(fields.apiProtocol);
+    setAuthMode(fields.authMode);
+    setLabel(fields.label);
     setReasoning(fields.reasoning);
     setThinkingLevel(fields.thinkingLevel);
     setMaxTokens(fields.maxTokens);
@@ -155,6 +160,12 @@ export function useModelConnectionForm({
     invalidatePreflight();
   }
 
+  function updateAuthMode(nextAuthMode: ModelAuthMode) {
+    setAuthMode(nextAuthMode);
+    resetOpenAiCompatibleProbe();
+    invalidatePreflight();
+  }
+
   function stageCompatibleModelId(nextModelId: string) {
     setModelId(nextModelId);
     setThinkingLevel(
@@ -181,6 +192,7 @@ export function useModelConnectionForm({
         rpc.models.probeOpenAiCompatible({
           ...input,
           apiProtocol,
+          authMode,
           headers: modelHeadersInput(headerRows),
           credentialId: credential?.id,
         }),
@@ -251,6 +263,7 @@ export function useModelConnectionForm({
     apiKey,
     apiProtocol,
     applyFields,
+    authMode,
     baseUrl,
     routingReady,
     contextWindow,
@@ -259,6 +272,7 @@ export function useModelConnectionForm({
     gatewayId,
     headerRows,
     invalidatePreflight,
+    label,
     needsRouting,
     needsGateway,
     isOpenAiCompatible,
@@ -288,6 +302,7 @@ export function useModelConnectionForm({
     setError,
     setGatewayId,
     setHeaderRows,
+    setLabel,
     setMaxImagesPerPrompt,
     setMaxTokens,
     setModelId,
@@ -302,6 +317,7 @@ export function useModelConnectionForm({
     thinkingLevel,
     updateApiKey,
     updateApiProtocol,
+    updateAuthMode,
     updateBaseUrl,
   };
 }

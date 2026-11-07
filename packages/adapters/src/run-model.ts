@@ -204,6 +204,7 @@ async function resolveModelKeyMaterial(
   gatewayId?: string;
   baseUrl?: string;
   apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
+  authMode?: AgentRunRequest["model"]["authMode"];
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
@@ -323,6 +324,8 @@ async function resolveModelKeyMaterial(
         baseUrl,
         apiProtocol:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
+        authMode:
+          resolved.secret.kind === "openai_compatible" ? resolved.secret.authMode : undefined,
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
@@ -403,6 +406,7 @@ export function resolvedModelRunFields(
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
     baseUrl: resolved.baseUrl,
     apiProtocol: resolved.apiProtocol,
+    authMode: resolved.authMode,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,

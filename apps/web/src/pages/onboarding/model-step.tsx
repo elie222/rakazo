@@ -4,6 +4,8 @@ import {
   Button,
   Input,
   ModelThinkingOptions,
+  NativeSelect,
+  NativeSelectOption,
   Select,
   SelectContent,
   SelectGroup,
@@ -254,10 +256,13 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
 function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
   const { t } = useLingui();
   const {
+    apiProtocol,
+    authMode,
     baseUrl,
     contextWindow,
     headerRows,
     invalidatePreflight,
+    label,
     manualModelId,
     maxImagesPerPrompt,
     maxTokens,
@@ -271,6 +276,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     resetOpenAiCompatibleProbe,
     setContextWindow,
     setHeaderRows,
+    setLabel,
     setManualModelId,
     setMaxImagesPerPrompt,
     setMaxTokens,
@@ -280,12 +286,27 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     setThinkingLevel,
     supportsImages,
     thinkingLevel,
+    updateApiProtocol,
+    updateAuthMode,
     updateBaseUrl,
   } = model;
 
   return (
     <div className="mt-6 block text-body text-foreground">
-      <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
+      <label htmlFor={`${fieldId}-name`} className="block font-medium">
+        <Trans>Name</Trans>
+        <Input
+          id={`${fieldId}-name`}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          aria-label={t`Connection name`}
+          placeholder={t`My subscription`}
+          autoComplete="off"
+          maxLength={80}
+          className="mt-2"
+        />
+      </label>
+      <label htmlFor={`${fieldId}-base-url`} className="mt-4 block font-medium">
         <Trans>Server URL</Trans>
         <Input
           id={`${fieldId}-base-url`}
@@ -308,6 +329,53 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
         {preflightTarget === "compatible" ? (
           <ModelPreflightFeedback success={null} failure={preflightFailure} />
         ) : null}
+      </div>
+      <div className="mt-4 block">
+        <label className="block font-medium" htmlFor={`${fieldId}-protocol`}>
+          <Trans>Protocol</Trans>
+          <NativeSelect
+            id={`${fieldId}-protocol`}
+            className="mt-2 w-full"
+            value={apiProtocol}
+            onChange={(event) => {
+              updateApiProtocol(event.target.value as typeof apiProtocol);
+            }}
+            aria-label={t`Protocol`}
+          >
+            <NativeSelectOption value="chat-completions">
+              <Trans>Chat Completions</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="responses">
+              <Trans>Responses</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="anthropic-messages">
+              <Trans>Anthropic Messages</Trans>
+            </NativeSelectOption>
+          </NativeSelect>
+        </label>
+      </div>
+      <div className="mt-4 block">
+        <label className="block font-medium" htmlFor={`${fieldId}-auth-mode`}>
+          <Trans>Auth method</Trans>
+          <NativeSelect
+            id={`${fieldId}-auth-mode`}
+            className="mt-2 w-full"
+            value={authMode}
+            onChange={(event) => {
+              updateAuthMode(event.target.value as typeof authMode);
+            }}
+            aria-label={t`Auth method`}
+          >
+            <NativeSelectOption value="bearer">Authorization: Bearer</NativeSelectOption>
+            <NativeSelectOption value="x-api-key">x-api-key</NativeSelectOption>
+            <NativeSelectOption value="both">
+              <Trans>Both</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="none">
+              <Trans>None</Trans>
+            </NativeSelectOption>
+          </NativeSelect>
+        </label>
       </div>
       <div className="mt-4 block">
         <span className="font-medium">

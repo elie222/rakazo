@@ -84,6 +84,23 @@ export const ModelApiProtocolSchema = z.enum([
 ]);
 export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
 
+/** How an OpenAI-compatible connection authenticates each request. */
+export const ModelAuthModeSchema = z.enum(["bearer", "x-api-key", "both", "none"]);
+export type ModelAuthMode = z.infer<typeof ModelAuthModeSchema>;
+
+/**
+ * The auth mode a connection actually uses. An unset mode keeps the protocol's
+ * historical behavior: Anthropic Messages sends `x-api-key`, everything else
+ * sends a Bearer token.
+ */
+export function effectiveAuthMode(
+  authMode: ModelAuthMode | undefined,
+  apiProtocol: ModelApiProtocol | undefined,
+): ModelAuthMode {
+  if (authMode !== undefined) return authMode;
+  return apiProtocol === "anthropic-messages" ? "x-api-key" : "bearer";
+}
+
 export const ModelCredentialSchema = z.object({
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
@@ -98,6 +115,8 @@ export const ModelCredentialSchema = z.object({
   /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
   endpointName: z.string().optional(),
   apiProtocol: ModelApiProtocolSchema.optional(),
+  /** How the connection authenticates; unset keeps the protocol's historical behavior. */
+  authMode: ModelAuthModeSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
   modelId: z.string().optional(),
@@ -205,6 +224,7 @@ export const ModelConnectInputSchema = z
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),
+    authMode: ModelAuthModeSchema.optional(),
     label: z.string().optional(),
     /**
      * The connection this save updates; null adds another connection for the provider.

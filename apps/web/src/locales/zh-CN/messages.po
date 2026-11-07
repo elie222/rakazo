@@ -1124,6 +1124,11 @@ msgstr "附加文件"
 msgid "Attachment"
 msgstr "附件"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Auth method"
+msgstr "认证方式"
+
 #: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "认证"
@@ -1992,6 +1997,11 @@ msgstr "正在连接…"
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Connection"
 msgstr "连接"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Connection name"
+msgstr "连接名称"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
@@ -4582,6 +4592,11 @@ msgstr "已静音"
 #: src/components/ComputerProviderSettings.tsx
 msgid "My computers"
 msgstr "我的电脑"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "My subscription"
+msgstr "我的订阅"
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx

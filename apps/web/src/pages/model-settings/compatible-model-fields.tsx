@@ -25,6 +25,8 @@ export function CompatibleModelFields({
   savedHeaderEndpointMatches,
   credential,
   apiProtocol,
+  authMode,
+  label,
   baseUrl,
   busy,
   cancelOAuthAttempt,
@@ -48,6 +50,7 @@ export function CompatibleModelFields({
   setContextWindow,
   setEnabledModelIds,
   setError,
+  setLabel,
   setMaxImagesPerPrompt,
   setMaxTokens,
   setNotice,
@@ -58,6 +61,7 @@ export function CompatibleModelFields({
   supportsImages,
   thinkingLevel,
   updateApiProtocol,
+  updateAuthMode,
   updateBaseUrl,
 }: Pick<
   ModelSettingsState,
@@ -67,6 +71,8 @@ export function CompatibleModelFields({
   | "savedHeaderEndpointMatches"
   | "credential"
   | "apiProtocol"
+  | "authMode"
+  | "label"
   | "baseUrl"
   | "busy"
   | "cancelOAuthAttempt"
@@ -90,6 +96,7 @@ export function CompatibleModelFields({
   | "setContextWindow"
   | "setEnabledModelIds"
   | "setError"
+  | "setLabel"
   | "setMaxImagesPerPrompt"
   | "setMaxTokens"
   | "setNotice"
@@ -100,6 +107,7 @@ export function CompatibleModelFields({
   | "supportsImages"
   | "thinkingLevel"
   | "updateApiProtocol"
+  | "updateAuthMode"
   | "updateBaseUrl"
 >) {
   const { t } = useLingui();
@@ -125,7 +133,20 @@ export function CompatibleModelFields({
   const hasSearchQuery = query.trim().length > 0;
   return (
     <div className="block text-body text-muted-foreground">
-      <label className="block" htmlFor="model-base-url">
+      <label className="block" htmlFor="model-name">
+        <Trans>Name</Trans>
+        <Input
+          id="model-name"
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          aria-label={t`Connection name`}
+          placeholder={t`My subscription`}
+          autoComplete="off"
+          maxLength={80}
+          className="mt-2 h-10 text-foreground"
+        />
+      </label>
+      <label className="mt-4 block" htmlFor="model-base-url">
         <Trans>Server URL</Trans>
         <Input
           id="model-base-url"
@@ -182,6 +203,33 @@ export function CompatibleModelFields({
             </NativeSelectOption>
             <NativeSelectOption value="anthropic-messages">
               <Trans>Anthropic Messages</Trans>
+            </NativeSelectOption>
+          </NativeSelect>
+        </label>
+      </div>
+      <div className="mt-4 block">
+        <label className="block" htmlFor="model-auth-mode">
+          <Trans>Auth method</Trans>
+          <NativeSelect
+            id="model-auth-mode"
+            className="mt-2 w-full text-foreground"
+            value={authMode}
+            disabled={busy}
+            onChange={(event) => {
+              selectionRevisionRef.current += 1;
+              updateAuthMode(event.target.value as ModelSettingsState["authMode"]);
+              setError(null);
+              setNotice(null);
+            }}
+            aria-label={t`Auth method`}
+          >
+            <NativeSelectOption value="bearer">Authorization: Bearer</NativeSelectOption>
+            <NativeSelectOption value="x-api-key">x-api-key</NativeSelectOption>
+            <NativeSelectOption value="both">
+              <Trans>Both</Trans>
+            </NativeSelectOption>
+            <NativeSelectOption value="none">
+              <Trans>None</Trans>
             </NativeSelectOption>
           </NativeSelect>
         </label>

@@ -170,6 +170,7 @@ import {
 } from "./mcp.js";
 import {
   ModelApiProtocolSchema,
+  ModelAuthModeSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
@@ -528,6 +529,7 @@ export const appContract = {
           headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
           apiProtocol: ModelApiProtocolSchema.optional(),
+          authMode: ModelAuthModeSchema.optional(),
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),

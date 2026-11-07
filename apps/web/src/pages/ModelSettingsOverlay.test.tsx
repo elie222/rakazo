@@ -1117,6 +1117,7 @@ it("probes with the editing credential id without sending saved header values", 
       apiKey: undefined,
       headers: undefined,
       apiProtocol: "chat-completions",
+      authMode: "bearer",
       credentialId: compatibleCredential.id,
     });
   } finally {

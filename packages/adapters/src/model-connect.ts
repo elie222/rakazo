@@ -1,5 +1,10 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelAuthMode,
+  ModelConnectInput,
+  ModelCredential,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
@@ -65,6 +70,21 @@ export function storedOpenAiCompatibleProbeKey(
     return undefined;
   }
   return previous.apiKey;
+}
+
+/** Reuse a saved probe auth mode only for the endpoint it was saved for. */
+export function storedOpenAiCompatibleProbeAuthMode(
+  baseUrl: string,
+  storedPlaintext?: string,
+): ModelAuthMode | undefined {
+  const previous = tryParseModelSecret(storedPlaintext);
+  if (
+    previous?.kind !== "openai_compatible" ||
+    previous.baseUrl !== normalizeOpenAiCompatibleBaseUrl(baseUrl)
+  ) {
+    return undefined;
+  }
+  return previous.authMode;
 }
 
 export function buildModelConnectPlaintext(
@@ -143,6 +163,9 @@ export function buildModelConnectPlaintext(
       baseUrl: prepared.baseUrl,
       ...(input.apiProtocol !== undefined || compatiblePrevious?.apiProtocol !== undefined
         ? { apiProtocol: input.apiProtocol ?? compatiblePrevious?.apiProtocol }
+        : {}),
+      ...(input.authMode !== undefined || compatiblePrevious?.authMode !== undefined
+        ? { authMode: input.authMode ?? compatiblePrevious?.authMode }
         : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(compatibleCacheCapabilities !== undefined
@@ -343,6 +366,7 @@ export function modelCredentialDto(
     baseUrl: parsed.baseUrl,
     ...endpointName(parsed.baseUrl),
     ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
+    ...(parsed.authMode !== undefined ? { authMode: parsed.authMode } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
     ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined

@@ -82,11 +82,13 @@ export function useOnboardingModel({
     accountId,
     apiKey,
     apiProtocol,
+    authMode,
     baseUrl,
     routingReady,
     contextWindow,
     gatewayId,
     headerRows,
+    label,
     needsRouting,
     isOpenAiCompatible,
     maxImagesPerPrompt,
@@ -279,6 +281,7 @@ export function useOnboardingModel({
           provider,
           baseUrl: baseUrl.trim(),
           apiProtocol,
+          authMode,
           headers: modelHeadersInput(headerRows),
           modelId: modelId.trim(),
           reasoning,
@@ -288,7 +291,7 @@ export function useOnboardingModel({
           supportsImages,
           maxImagesPerPrompt: maxImagesPerPromptInput,
           apiKey: apiKey.trim() || undefined,
-          label: selected?.providerName ?? provider,
+          label: label.trim() || selected?.providerName || provider,
         });
       } else if (apiKey) {
         await rpc.models.connect({

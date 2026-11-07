@@ -77,6 +77,10 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     updateBaseUrl: () => {},
     apiProtocol: "chat-completions" as const,
     updateApiProtocol: () => {},
+    authMode: "bearer" as const,
+    updateAuthMode: () => {},
+    label: "",
+    setLabel: () => {},
   };
 }
 

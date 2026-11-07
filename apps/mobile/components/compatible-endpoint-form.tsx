@@ -1,4 +1,9 @@
-import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelAuthMode,
+  ModelHeaderRow,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -24,6 +29,8 @@ import { SettingsRow } from "./settings-group";
 type CompatibleEndpointFormProps = {
   busy: boolean;
   probing: boolean;
+  label: string;
+  onChangeLabel: (next: string) => void;
   baseUrl: string;
   onChangeBaseUrl: (next: string) => void;
   onFindModels: () => void;
@@ -33,6 +40,8 @@ type CompatibleEndpointFormProps = {
   onToggleEndpointHelp: () => void;
   apiProtocol: ModelApiProtocol;
   onChangeProtocol: (next: ModelApiProtocol) => void;
+  authMode: ModelAuthMode;
+  onChangeAuthMode: (next: ModelAuthMode) => void;
   /** The result of finding models, shown under the protocol. */
   probeFeedback: ReactNode;
   search: ReturnType<typeof useListSearch<string>>;
@@ -65,6 +74,8 @@ type CompatibleEndpointFormProps = {
 export function CompatibleEndpointForm({
   busy,
   probing,
+  label,
+  onChangeLabel,
   baseUrl,
   onChangeBaseUrl,
   onFindModels,
@@ -73,6 +84,8 @@ export function CompatibleEndpointForm({
   onToggleEndpointHelp,
   apiProtocol,
   onChangeProtocol,
+  authMode,
+  onChangeAuthMode,
   probeFeedback,
   search,
   compatibleRows,
@@ -109,9 +122,29 @@ export function CompatibleEndpointForm({
     { key: "anthropic-messages", label: t("Anthropic Messages") },
   ];
   const apiProtocolLabel = protocolChoices.find((choice) => choice.key === apiProtocol)?.label;
+  const authModeChoices: { key: ModelAuthMode; label: string }[] = [
+    { key: "bearer", label: "Authorization: Bearer" },
+    { key: "x-api-key", label: "x-api-key" },
+    { key: "both", label: t("Both") },
+    { key: "none", label: t("None") },
+  ];
+  const authModeLabel = authModeChoices.find((choice) => choice.key === authMode)?.label;
 
   return (
     <>
+      <Text style={styles.sectionTitle}>{t("Name")}</Text>
+      <TextInput
+        accessibilityLabel={t("Connection name")}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!busy}
+        onChangeText={onChangeLabel}
+        placeholder={t("My subscription")}
+        placeholderTextColor={native.tertiaryLabel}
+        style={styles.keyInput}
+        value={label}
+        maxLength={80}
+      />
       <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
       <TextInput
         accessibilityLabel={t("OpenAI-compatible server URL")}
@@ -163,6 +196,28 @@ export function CompatibleEndpointForm({
             accessibilityLabel={t("Protocol")}
             accessibilityState={{ disabled: busy }}
             accessibilityValue={{ text: apiProtocolLabel }}
+          />
+        </View>
+      </MenuPickerMenu>
+      <MenuPickerMenu
+        label={t("Auth method")}
+        choices={authModeChoices}
+        value={authMode}
+        disabled={busy}
+        onChange={(value) => {
+          onChangeAuthMode(value as ModelAuthMode);
+        }}
+      >
+        <View>
+          <SettingsRow
+            title={t("Auth method")}
+            value={authModeLabel}
+            chevron="down"
+            accessibilityRole="button"
+            accessible
+            accessibilityLabel={t("Auth method")}
+            accessibilityState={{ disabled: busy }}
+            accessibilityValue={{ text: authModeLabel }}
           />
         </View>
       </MenuPickerMenu>

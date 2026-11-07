@@ -6,10 +6,11 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelApiProtocol } from "@rakazo/contracts";
+import type { ModelApiProtocol, ModelAuthMode } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  effectiveAuthMode,
   ipVersion,
   isCloudMetadataAddress,
   isLinkLocalAddress,
@@ -144,7 +145,13 @@ function anthropicMessagesBaseUrl(baseUrl: string): string {
 
 function openAiCompatibleProvider(
   models: Model<"openai-completions" | "openai-responses" | "anthropic-messages">[],
-  policy: { allowPrivate?: boolean; headers?: Record<string, string> } = {},
+  policy: {
+    allowPrivate?: boolean;
+    headers?: Record<string, string>;
+    apiProtocol?: ModelApiProtocol;
+    authMode?: ModelAuthMode;
+    apiKey?: string;
+  } = {},
 ): Provider {
   const api = (protocol: string) =>
     protocol === "openai-responses"
@@ -229,6 +236,25 @@ function headersCarryAuthorization(headers: HeadersInit): boolean {
   return entries.some(([name, value]) => isAuthHeader(name, value));
 }
 
+/**
+ * Rewrites the outgoing auth headers for the connection's auth mode. The SDK
+ * may have set a placeholder header; the mode decides what actually goes out.
+ * Without an explicit mode or a key, the caller's headers are left alone.
+ */
+function applyAuthMode(
+  headers: Headers,
+  opts: { authMode?: ModelAuthMode; apiProtocol?: ModelApiProtocol; apiKey?: string },
+): void {
+  if (opts.authMode === undefined && opts.apiKey === undefined) return;
+  const mode = effectiveAuthMode(opts.authMode, opts.apiProtocol);
+  const key = opts.apiKey?.trim();
+  headers.delete("authorization");
+  headers.delete("x-api-key");
+  if (mode === "none" || !key) return;
+  if (mode === "bearer" || mode === "both") headers.set("Authorization", `Bearer ${key}`);
+  if (mode === "x-api-key" || mode === "both") headers.set("x-api-key", key);
+}
+
 /** Matches fetch: when init.headers is set it replaces Request headers entirely. */
 function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
   if (init?.headers !== undefined) return headersCarryAuthorization(init.headers);
@@ -238,7 +264,12 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
-  opts?: OpenAiCompatibleUrlPolicy & { headers?: Record<string, string> },
+  opts?: OpenAiCompatibleUrlPolicy & {
+    headers?: Record<string, string>;
+    apiProtocol?: ModelApiProtocol;
+    authMode?: ModelAuthMode;
+    apiKey?: string;
+  },
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
@@ -270,6 +301,15 @@ export function createOpenAiCompatibleFetch(
         const merged = new Headers(headers);
         for (const [name, value] of Object.entries(customHeaders)) merged.set(name, value);
         headers = merged;
+      }
+      if (opts?.authMode !== undefined || opts?.apiKey !== undefined) {
+        const normalized = new Headers(headers);
+        applyAuthMode(normalized, {
+          authMode: opts.authMode,
+          apiProtocol: opts.apiProtocol,
+          apiKey: opts.apiKey,
+        });
+        headers = normalized;
       }
       const response = await transport(url, {
         ...requestInit,
@@ -382,6 +422,8 @@ export function registerOpenAiCompatibleRuntime(
     modelId: string;
     baseUrl: string;
     apiProtocol?: ModelApiProtocol;
+    authMode?: ModelAuthMode;
+    apiKey?: string;
     headers?: Record<string, string>;
     reasoning?: boolean;
     acceptsImages?: boolean;
@@ -407,7 +449,13 @@ export function registerOpenAiCompatibleRuntime(
           opts.apiProtocol,
         ),
       ],
-      { allowPrivate: opts.allowPrivate, headers: opts.headers },
+      {
+        allowPrivate: opts.allowPrivate,
+        headers: opts.headers,
+        apiProtocol: opts.apiProtocol,
+        authMode: opts.authMode,
+        apiKey: opts.apiKey,
+      },
     ),
   );
   return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
@@ -553,6 +601,7 @@ export async function probeOpenAiCompatibleModels(
     apiKey?: string;
     headers?: Record<string, string>;
     apiProtocol?: ModelApiProtocol;
+    authMode?: ModelAuthMode;
   },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
@@ -574,9 +623,12 @@ export async function probeOpenAiCompatibleModels(
     // the version header is required even when the endpoint needs no key.
     if (input.apiProtocol === "anthropic-messages") {
       headers["anthropic-version"] = ANTHROPIC_MESSAGES_VERSION;
-      if (input.apiKey?.trim()) headers["x-api-key"] = input.apiKey.trim();
-    } else if (input.apiKey?.trim()) {
-      headers.Authorization = `Bearer ${input.apiKey.trim()}`;
+    }
+    const mode = effectiveAuthMode(input.authMode, input.apiProtocol);
+    const key = input.apiKey?.trim();
+    if (key && mode !== "none") {
+      if (mode === "bearer" || mode === "both") headers.Authorization = `Bearer ${key}`;
+      if (mode === "x-api-key" || mode === "both") headers["x-api-key"] = key;
     }
     const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
       ...opts,

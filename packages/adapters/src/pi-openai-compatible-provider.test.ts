@@ -522,6 +522,61 @@ describe("openai-compatible provider", () => {
     expect(Buffer.from(seen?.init?.body as ArrayBuffer).toString()).toBe("payload");
   });
 
+  it.each([
+    ["bearer", "chat-completions", "Bearer real-key", null],
+    ["x-api-key", "chat-completions", null, "real-key"],
+    ["both", "chat-completions", "Bearer real-key", "real-key"],
+    ["none", "chat-completions", null, null],
+    ["bearer", "anthropic-messages", "Bearer real-key", null],
+    ["x-api-key", "anthropic-messages", null, "real-key"],
+    ["both", "anthropic-messages", "Bearer real-key", "real-key"],
+    ["none", "anthropic-messages", null, null],
+  ] as const)(
+    "rewrites the outgoing auth headers for auth mode %s on %s",
+    async (authMode, apiProtocol, authorization, xApiKey) => {
+      let seen: RequestInit | undefined;
+      const safeFetch = createOpenAiCompatibleFetch(
+        async (_input, init) => {
+          seen = init;
+          return new Response("{}", { status: 200 });
+        },
+        undefined,
+        { ...OWNER, apiProtocol, authMode, apiKey: "real-key" },
+      );
+      // The SDK may have set a placeholder header; the mode decides what goes out.
+      await safeFetch(
+        new Request("http://127.0.0.1:8000/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: "Bearer local", "x-api-key": "local" },
+          body: "{}",
+        }),
+      );
+      const headers = new Headers(seen?.headers);
+      expect(headers.get("authorization")).toBe(authorization);
+      expect(headers.get("x-api-key")).toBe(xApiKey);
+    },
+  );
+
+  it("leaves headers alone without a mode or a key", async () => {
+    let seen: RequestInit | undefined;
+    const safeFetch = createOpenAiCompatibleFetch(
+      async (_input, init) => {
+        seen = init;
+        return new Response("{}", { status: 200 });
+      },
+      undefined,
+      OWNER,
+    );
+    await safeFetch(
+      new Request("http://127.0.0.1:8000/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: "Bearer local" },
+        body: "{}",
+      }),
+    );
+    expect(new Headers(seen?.headers).get("authorization")).toBe("Bearer local");
+  });
+
   it("rejects public hostnames that resolve to private addresses", async () => {
     const lookup = createOpenAiCompatibleLookup(
       new URL("https://models.example.test/v1"),
@@ -706,6 +761,64 @@ describe("openai-compatible provider", () => {
         OWNER,
       ),
     ).resolves.toEqual(["a", "b"]);
+  });
+
+  it.each([
+    ["bearer", "chat-completions", "Bearer real-key", null],
+    ["x-api-key", "chat-completions", null, "real-key"],
+    ["both", "chat-completions", "Bearer real-key", "real-key"],
+    ["none", "chat-completions", null, null],
+    ["bearer", "anthropic-messages", "Bearer real-key", null],
+    ["x-api-key", "anthropic-messages", null, "real-key"],
+    ["both", "anthropic-messages", "Bearer real-key", "real-key"],
+    ["none", "anthropic-messages", null, null],
+  ] as const)(
+    "probes with the auth mode %s on %s",
+    async (authMode, apiProtocol, authorization, xApiKey) => {
+      let seen: RequestInit | undefined;
+      const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
+        seen = init;
+        return new Response(JSON.stringify({ object: "list", data: [{ id: "a" }] }), {
+          status: 200,
+        });
+      };
+      await expect(
+        probeOpenAiCompatibleModels(
+          { baseUrl: "http://127.0.0.1:8000/v1", apiKey: "real-key", apiProtocol, authMode },
+          fetchImpl,
+          undefined,
+          OWNER,
+        ),
+      ).resolves.toEqual(["a"]);
+      const headers = new Headers(seen?.headers);
+      expect(headers.get("authorization")).toBe(authorization);
+      expect(headers.get("x-api-key")).toBe(xApiKey);
+      if (apiProtocol === "anthropic-messages") {
+        expect(headers.get("anthropic-version")).toBe("2023-06-01");
+      }
+    },
+  );
+
+  it("probes an Anthropic endpoint without a key but with its version header", async () => {
+    let seen: RequestInit | undefined;
+    const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen = init;
+      return new Response(JSON.stringify({ object: "list", data: [{ id: "a" }] }), {
+        status: 200,
+      });
+    };
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1", apiProtocol: "anthropic-messages" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).resolves.toEqual(["a"]);
+    const headers = new Headers(seen?.headers);
+    expect(headers.get("authorization")).toBeNull();
+    expect(headers.get("x-api-key")).toBeNull();
+    expect(headers.get("anthropic-version")).toBe("2023-06-01");
   });
 
   it("still accepts legacy models[] probe responses", async () => {

@@ -37,6 +37,8 @@ function draft(overrides: Partial<ConnectionFormDraft> = {}): ConnectionFormDraf
     enabledModelIds: [],
     baseUrl: "",
     apiProtocol: "chat-completions",
+    authMode: "bearer",
+    label: "",
     headerRows: null,
     reasoning: false,
     thinkingLevel: null,
@@ -111,6 +113,8 @@ describe("connectionFormFields", () => {
       enabledModelIds: [],
       baseUrl: "https://ollama.com/v1",
       apiProtocol: "chat-completions",
+      authMode: "bearer",
+      label: "",
       reasoning: false,
       thinkingLevel: null,
       maxTokens: "4096",
@@ -120,6 +124,38 @@ describe("connectionFormFields", () => {
       accountId: "",
       gatewayId: "",
     });
+  });
+
+  it("keeps a saved auth mode and label, defaulting the mode from the protocol", () => {
+    const saved = credential({
+      provider: COMPATIBLE,
+      baseUrl: "http://127.0.0.1:8000/v1",
+      modelId: "local",
+      apiProtocol: "anthropic-messages",
+      authMode: "both",
+      label: "My relay",
+    });
+    const fields = connectionFormFields({
+      catalog,
+      provider: COMPATIBLE,
+      modelId: "local",
+      credential: saved,
+    });
+    expect(fields.authMode).toBe("both");
+    expect(fields.label).toBe("My relay");
+    // No saved mode: Anthropic Messages defaults to x-api-key, the rest to bearer.
+    const anthropicDefault = connectionFormFields({
+      catalog,
+      provider: COMPATIBLE,
+      modelId: "local",
+      credential: credential({
+        provider: COMPATIBLE,
+        modelId: "local",
+        apiProtocol: "anthropic-messages",
+      }),
+    });
+    expect(anthropicDefault.authMode).toBe("x-api-key");
+    expect(anthropicDefault.label).toBe("Anthropic");
   });
 
   it("shows a saved OpenAI-compatible connection, with effort only for its saved model", () => {
@@ -378,6 +414,7 @@ describe("modelConnectRequest", () => {
         provider: COMPATIBLE,
         baseUrl: "http://h/v1",
         apiProtocol: "chat-completions",
+        authMode: "bearer",
         headers: { "X-Team": "v" },
         modelId: "m",
         enabledModelIds: ["n"],
@@ -392,5 +429,47 @@ describe("modelConnectRequest", () => {
         credentialId: "credential-fixture",
       },
     });
+  });
+
+  it("sends a typed name and auth mode instead of the provider default", () => {
+    const request = modelConnectRequest({
+      form: draft({
+        apiKey: " key ",
+        baseUrl: "http://h/v1",
+        modelId: "m",
+        apiProtocol: "anthropic-messages",
+        authMode: "x-api-key",
+        label: "  My relay  ",
+        maxTokens: "4096",
+      }),
+      selected: {
+        provider: COMPATIBLE,
+        id: "openai-compatible",
+        providerName: "OpenAI-compatible",
+      },
+      credentialId: null,
+    });
+    expect(request.status === "ready" && request.input).toMatchObject({
+      apiProtocol: "anthropic-messages",
+      authMode: "x-api-key",
+      label: "My relay",
+    });
+    // A blank name falls back to the provider name.
+    const unnamed = modelConnectRequest({
+      form: draft({
+        apiKey: " key ",
+        baseUrl: "http://h/v1",
+        modelId: "m",
+        label: "   ",
+        maxTokens: "4096",
+      }),
+      selected: {
+        provider: COMPATIBLE,
+        id: "openai-compatible",
+        providerName: "OpenAI-compatible",
+      },
+      credentialId: null,
+    });
+    expect(unnamed.status === "ready" && unnamed.input.label).toBe("OpenAI-compatible");
   });
 });

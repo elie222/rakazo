@@ -13,6 +13,7 @@ import {
   resolveMemberMainModel,
   selectDefaultCredentialId,
   serializeModelSecret,
+  storedOpenAiCompatibleProbeAuthMode,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
@@ -218,7 +219,8 @@ export function modelsRoutes(ctx: RouterContext) {
         async ({ context, input }) => {
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          let authMode = input.authMode;
+          if (!apiKey?.trim() || headers === undefined || authMode === undefined) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -253,11 +255,17 @@ export function modelsRoutes(ctx: RouterContext) {
                   const plaintext = await deps.secrets.load(ciphertext, credential.secretId);
                   const savedKey = storedOpenAiCompatibleProbeKey(input.baseUrl, plaintext);
                   const savedHeaders = storedOpenAiCompatibleProbeHeaders(input.baseUrl, plaintext);
-                  if (!savedKey && savedHeaders === undefined) continue;
+                  const savedAuthMode = storedOpenAiCompatibleProbeAuthMode(
+                    input.baseUrl,
+                    plaintext,
+                  );
+                  if (!savedKey && savedHeaders === undefined && savedAuthMode === undefined)
+                    continue;
                   // A saved key and its routing headers are one credential. Explicit
                   // replacements may override either field, but never borrow from another row.
                   if (!apiKey?.trim()) apiKey = savedKey;
                   headers ??= savedHeaders;
+                  authMode ??= savedAuthMode;
                   break;
                 } catch {
                   // An unreadable secret must not prevent trying the remaining credentials.
@@ -269,7 +277,7 @@ export function modelsRoutes(ctx: RouterContext) {
           }
           try {
             const models = await probeOpenAiCompatibleModels(
-              { ...input, apiKey, headers },
+              { ...input, apiKey, headers, authMode },
               compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },

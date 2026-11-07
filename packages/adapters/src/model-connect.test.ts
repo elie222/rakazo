@@ -688,6 +688,65 @@ describe("compatible connection updates", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("saves the auth mode and label round-trips through the credential", () => {
+    const plaintext = connectAsOwner({
+      provider: "openai-compatible",
+      baseUrl: "https://relay.example.test/v1",
+      modelId: "relay-model",
+      apiKey: "fake-relay-key",
+      apiProtocol: "anthropic-messages",
+      authMode: "both",
+      label: "My relay",
+    });
+    expect(parseModelSecret(plaintext)).toMatchObject({
+      kind: "openai_compatible",
+      baseUrl: "https://relay.example.test/v1",
+      apiProtocol: "anthropic-messages",
+      authMode: "both",
+    });
+    expect(
+      modelCredentialDto(
+        {
+          id: "cred-auth",
+          provider: "openai-compatible",
+          label: "My relay",
+          isDefault: true,
+          defaultModel: "relay-model",
+        },
+        plaintext,
+      ),
+    ).toMatchObject({ authMode: "both", apiProtocol: "anthropic-messages" });
+  });
+
+  it("keeps the saved auth mode on an update that does not name one", () => {
+    const saved = connectAsOwner({
+      provider: "openai-compatible",
+      baseUrl: "https://relay.example.test/v1",
+      modelId: "relay-model",
+      apiKey: "fake-relay-key",
+      authMode: "none",
+    });
+    const updated = connectAsOwner(
+      {
+        provider: "openai-compatible",
+        baseUrl: "https://relay.example.test/v1",
+        modelId: "relay-model",
+      },
+      saved,
+    );
+    expect(parseModelSecret(updated)).toMatchObject({ authMode: "none" });
+    const switched = connectAsOwner(
+      {
+        provider: "openai-compatible",
+        baseUrl: "https://relay.example.test/v1",
+        modelId: "relay-model",
+        authMode: "x-api-key",
+      },
+      saved,
+    );
+    expect(parseModelSecret(switched)).toMatchObject({ authMode: "x-api-key" });
+  });
+
   it("preserves a saved key on a capability-only update to the same normalized URL", () => {
     expect(
       parseModelSecret(connectAsOwner({ ...input, baseUrl: "http://localhost:8000" }, previous)),

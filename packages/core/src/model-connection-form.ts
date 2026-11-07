@@ -1,5 +1,6 @@
 import type {
   ModelApiProtocol,
+  ModelAuthMode,
   ModelCatalogEntry,
   ModelConnectInput,
   ModelCredential,
@@ -9,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
+  effectiveAuthMode,
   ModelHeaderRowsSchema,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -33,6 +35,9 @@ export type ConnectionFormFields = {
   enabledModelIds: string[];
   baseUrl: string;
   apiProtocol: ModelApiProtocol;
+  authMode: ModelAuthMode;
+  /** A name the user typed for this connection; empty means the provider name. */
+  label: string;
   reasoning: boolean;
   thinkingLevel: ThinkingLevel | null;
   maxTokens: string;
@@ -82,6 +87,8 @@ export function connectionFormFields(input: {
     | "enabledModelIds"
     | "baseUrl"
     | "apiProtocol"
+    | "authMode"
+    | "label"
     | "reasoning"
     | "thinkingLevel"
     | "maxTokens"
@@ -105,6 +112,8 @@ export function connectionFormFields(input: {
     enabledModelIds: credential?.enabledModelIds ?? [],
     baseUrl: compatible ? (credential?.baseUrl ?? presetBaseUrl ?? "") : "",
     apiProtocol: credential?.apiProtocol ?? "chat-completions",
+    authMode: effectiveAuthMode(credential?.authMode, credential?.apiProtocol),
+    label: credential?.label ?? "",
     reasoning: credential?.reasoning ?? false,
     thinkingLevel: clampCatalogThinkingLevel(
       credential?.modelId === modelId ? credential.thinkingLevel : null,
@@ -224,7 +233,7 @@ export function modelConnectRequest(input: {
         : []
       : selected.thinkingLevels,
   ) as ThinkingLevel | null;
-  const label = selected.providerName ?? selected.provider;
+  const label = form.label.trim() || selected.providerName || selected.provider;
   if (compatible) {
     return {
       status: "ready",
@@ -234,6 +243,7 @@ export function modelConnectRequest(input: {
         provider: selected.provider,
         baseUrl,
         apiProtocol: form.apiProtocol,
+        authMode: form.authMode,
         headers: modelHeadersInput(form.headerRows),
         modelId,
         // The server adds the default itself.

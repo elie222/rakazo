@@ -164,6 +164,8 @@ export function modelsForRequest(
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,
       apiProtocol: request.model.apiProtocol,
+      authMode: request.model.authMode,
+      apiKey: request.model.apiKey,
       headers: request.model.headers,
       allowPrivate: request.model.allowPrivateEndpoint,
       reasoning: request.model.reasoning,

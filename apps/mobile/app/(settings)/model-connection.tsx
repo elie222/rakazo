@@ -1,4 +1,9 @@
-import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelApiProtocol,
+  ModelAuthMode,
+  ModelHeaderRow,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
   connectionDisplayName,
@@ -91,6 +96,8 @@ export default function ModelConnection() {
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
+  const [authMode, setAuthMode] = useState<ModelAuthMode>("bearer");
+  const [label, setLabel] = useState("");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -168,6 +175,8 @@ export default function ModelConnection() {
       setEnabledModelIds(fields.enabledModelIds);
       setBaseUrl(fields.baseUrl);
       setApiProtocol(fields.apiProtocol);
+      setAuthMode(fields.authMode);
+      setLabel(fields.label);
       setReasoning(fields.reasoning);
       setThinkingLevel(fields.thinkingLevel);
       setMaxTokens(fields.maxTokens);
@@ -304,6 +313,12 @@ export default function ModelConnection() {
     clearFeedback();
   }
 
+  function updateAuthMode(nextAuthMode: ModelAuthMode) {
+    setAuthMode(nextAuthMode);
+    resetOpenAiCompatibleProbe();
+    clearFeedback();
+  }
+
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
     resetOpenAiCompatibleProbe();
@@ -323,6 +338,7 @@ export default function ModelConnection() {
           {
             ...input,
             apiProtocol,
+            authMode,
             headers: modelHeadersInput(headerRows),
             credentialId: credential?.id,
           },
@@ -388,6 +404,8 @@ export default function ModelConnection() {
         enabledModelIds,
         baseUrl,
         apiProtocol,
+        authMode,
+        label,
         headerRows,
         reasoning,
         thinkingLevel,
@@ -501,6 +519,10 @@ export default function ModelConnection() {
       onToggleEndpointHelp={() => setShowEndpointHelp((visible) => !visible)}
       apiProtocol={apiProtocol}
       onChangeProtocol={updateApiProtocol}
+      authMode={authMode}
+      onChangeAuthMode={updateAuthMode}
+      label={label}
+      onChangeLabel={setLabel}
       probeFeedback={feedbackAnchor === "probe" ? feedback : null}
       search={search}
       compatibleRows={compatibleRows}

@@ -4,6 +4,7 @@ import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   ModelApiProtocol,
+  ModelAuthMode,
   PurchaseCardField,
   SandboxKind,
 } from "@rakazo/contracts";
@@ -508,6 +509,8 @@ export interface AgentRunModel {
   gatewayId?: string;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
+  /** How the connection authenticates; unset keeps the protocol's historical behavior. */
+  authMode?: ModelAuthMode;
   headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
