@@ -561,7 +561,7 @@ msgstr "De uitvoer van een commando"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
-msgstr "Een model keurt routinematige acties goed en vraagt jou om de rest."
+msgstr "Een model keurt routinematige acties goed en vraagt jou om toestemming voor de rest."
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
