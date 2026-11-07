@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../lib/rpc";
 import { DeleteBotDialog, DeleteItemDialog } from "./shell/dialogs";
 
@@ -20,22 +20,35 @@ export function ArchivedChatsSettings({
   const [failed, setFailed] = useState(false);
   const [deleteBot, setDeleteBot] = useState<Bot | null>(null);
   const [deleteGroup, setDeleteGroup] = useState<Group | null>(null);
+  // Only the newest load lands, so an older answer can't bring back a chat already handled.
+  const loads = useRef(0);
   const load = useCallback(async () => {
+    const request = ++loads.current;
     try {
       const [bots, groups] = await Promise.all([
         rpc.bots.listArchived(),
         rpc.groups.listArchived(),
       ]);
+      if (request !== loads.current) return;
       setChats({ bots, groups });
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (request === loads.current) setFailed(true);
     }
   }, [rpc]);
   useEffect(() => {
     void load();
   }, [load]);
-  const changed = async (deletedId?: string) => {
+  // The chat leaves the list as soon as it is handled, even if the reload after fails.
+  const changed = async (id: string, deleted = false) => {
+    setChats(
+      (current) =>
+        current && {
+          bots: current.bots.filter((bot) => bot.id !== id),
+          groups: current.groups.filter((group) => group.id !== id),
+        },
+    );
+    const deletedId = deleted ? id : undefined;
     await load();
     await onChange(deletedId).catch(() => undefined);
   };
@@ -56,6 +69,7 @@ export function ArchivedChatsSettings({
     );
   }
   const row = (
+    id: string,
     key: string,
     name: string,
     avatar: ReactNode,
@@ -67,7 +81,7 @@ export function ArchivedChatsSettings({
       <span className="min-w-0 flex-1 truncate text-body text-foreground" dir="auto">
         {name}
       </span>
-      <Button variant="ghost" size="sm" onClick={() => void restore().then(() => changed())}>
+      <Button variant="ghost" size="sm" onClick={() => void restore().then(() => changed(id))}>
         <Trans>Restore</Trans>
       </Button>
       <Button
@@ -86,6 +100,7 @@ export function ArchivedChatsSettings({
       <ul className="flex flex-col divide-y divide-border">
         {chats.bots.map((bot) =>
           row(
+            bot.id,
             `bot:${bot.id}`,
             bot.name,
             <BotAvatar
@@ -101,6 +116,7 @@ export function ArchivedChatsSettings({
         )}
         {chats.groups.map((group) =>
           row(
+            group.id,
             `group:${group.id}`,
             group.name,
             <GroupAvatar members={group.members} size={32} />,
@@ -116,7 +132,7 @@ export function ArchivedChatsSettings({
           onConfirm={async (deleteMemories) => {
             await rpc.bots.remove({ botId: deleteBot.id, deleteMemories });
             setDeleteBot(null);
-            await changed(deleteBot.id);
+            await changed(deleteBot.id, true);
           }}
         />
       ) : null}
@@ -128,7 +144,7 @@ export function ArchivedChatsSettings({
           onConfirm={async () => {
             await rpc.groups.remove({ groupId: deleteGroup.id });
             setDeleteGroup(null);
-            await changed(deleteGroup.id);
+            await changed(deleteGroup.id, true);
           }}
         />
       ) : null}
