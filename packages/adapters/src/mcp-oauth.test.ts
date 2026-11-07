@@ -1591,6 +1591,60 @@ describe("MCP OAuth", () => {
     expect(persisted.at(-1)?.oauth?.tokens).toBeUndefined();
   });
 
+  describe("client registration metadata", () => {
+    function providerWith(methods?: string[]): StoredMcpOAuthProvider {
+      const material: OAuthMaterial = {
+        oauth: {
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              registration_endpoint: "https://auth.example.test/register",
+              response_types_supported: ["code"],
+              ...(methods ? { token_endpoint_auth_methods_supported: methods } : {}),
+            },
+          },
+        },
+      };
+      return new StoredMcpOAuthProvider("server-1", material, async () => undefined, {
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+    }
+
+    it.each([
+      // A public client is preferred wherever the server offers it.
+      [["none", "client_secret_post", "client_secret_basic"], "none"],
+      [["client_secret_basic", "none"], "none"],
+      // Otherwise take a method this client can actually perform.
+      [["client_secret_basic", "client_secret_post"], "client_secret_post"],
+      [["client_secret_basic"], "client_secret_basic"],
+    ])("registers with %j as %s", (advertised, expected) => {
+      expect(providerWith(advertised).clientMetadata).toMatchObject({
+        token_endpoint_auth_method: expected,
+      });
+    });
+
+    it.each([
+      // RFC 8414 S2: omitted means client_secret_basic, which is the server's to apply.
+      ["advertises no methods", undefined],
+      // Needs key material this client does not hold.
+      ["offers only methods this client cannot perform", ["private_key_jwt", "tls_client_auth"]],
+    ])("omits the method when the server %s", (_label, advertised) => {
+      expect(providerWith(advertised).clientMetadata).not.toHaveProperty(
+        "token_endpoint_auth_method",
+      );
+    });
+
+    it("omits the method before discovery has run", () => {
+      const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+      expect(provider.clientMetadata).not.toHaveProperty("token_endpoint_auth_method");
+    });
+  });
+
   it.each(["https://mcp.example.test", "http://127.0.0.1:8080"])(
     "drives discovery, registration, PKCE, redirect, and token exchange for %s",
     async (mcpOrigin) => {
@@ -1739,6 +1793,152 @@ describe("MCP OAuth", () => {
       });
     },
   );
+
+  it("registers and authenticates as a confidential client when the server offers no public method", async () => {
+    // The shape of an authorization server that publishes no
+    // `token_endpoint_auth_methods_supported` and refuses a `none` registration:
+    // the method must be left unsaid and the issued secret used for the token call.
+    const requests: string[] = [];
+    let registration: Record<string, unknown> | undefined;
+    let tokenAuthorization: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(logicalHref(input, init));
+        requests.push(`${request.method} ${url.toString()}`);
+
+        if (url.href === "https://mcp.example.test/mcp" && request.method === "POST") {
+          return new Response(null, {
+            status: 401,
+            headers: {
+              "WWW-Authenticate":
+                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+            },
+          });
+        }
+        if (url.href === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp") {
+          return Response.json({
+            resource: "https://mcp.example.test/mcp",
+            authorization_servers: ["https://auth.example.test"],
+          });
+        }
+        if (url.href === "https://auth.example.test/.well-known/oauth-authorization-server") {
+          return Response.json({
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            registration_endpoint: "https://auth.example.test/register",
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+          });
+        }
+        if (url.href === "https://auth.example.test/register" && request.method === "POST") {
+          registration = (await request.json()) as Record<string, unknown>;
+          if ("token_endpoint_auth_method" in registration) {
+            return Response.json(
+              { error: "invalid_client_metadata", error_description: "unsupported method" },
+              { status: 400 },
+            );
+          }
+          return Response.json(
+            {
+              client_id: "confidential-client-id",
+              client_secret: "issued-client-secret",
+              redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"],
+            },
+            { status: 201 },
+          );
+        }
+        if (url.href === "https://auth.example.test/token" && request.method === "POST") {
+          tokenAuthorization = request.headers.get("authorization");
+          return Response.json({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            token_type: "bearer",
+            expires_in: 3600,
+          });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
+      }),
+    );
+
+    const storedPayloads: string[] = [];
+    let secretCounter = 0;
+    const put = vi.fn(async (plaintext: string) => {
+      storedPayloads.push(plaintext);
+      secretCounter += 1;
+      return { id: `secret-${secretCounter}`, ciphertext: `encrypted-${secretCounter}` };
+    });
+    const server = { id: "server-1", endpoint: "https://mcp.example.test/mcp", secretId: null };
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(server),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn(),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(server),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn(),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      mcpOAuthSession: oauthSessionStore(),
+      deploymentSettings: deploymentOwner("user-1"),
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
+
+    const started = await broker.begin({
+      serverId: "server-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+    });
+    expect(started.status).toBe("authorization_required");
+    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+
+    expect(registration).toMatchObject({ client_name: "Rakazo" });
+    expect(registration).not.toHaveProperty("token_endpoint_auth_method");
+    expect(new URL(started.authorizationUrl).searchParams.get("client_id")).toBe(
+      "confidential-client-id",
+    );
+
+    await broker.complete({
+      sessionId: started.sessionId,
+      code: "authorization-code",
+      state: started.sessionId,
+      spaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    expect(requests).toContain("POST https://auth.example.test/token");
+    // RFC 8414 S2's default, applied by the SDK from the same metadata.
+    expect(tokenAuthorization).toBe(
+      `Basic ${Buffer.from("confidential-client-id:issued-client-secret").toString("base64")}`,
+    );
+    const persisted = storedPayloads.map((value) => JSON.parse(value));
+    expect(persisted.some((value) => value.oauth?.tokens?.access_token === "access-token")).toBe(
+      true,
+    );
+    // The issued secret has to survive, or the next refresh cannot authenticate.
+    expect(
+      persisted.some(
+        (value) => value.oauth?.clientInformation?.client_secret === "issued-client-secret",
+      ),
+    ).toBe(true);
+  });
 
   it("applies the transport URL policy to OAuth traffic: no plain-HTTP endpoints, no redirects", async () => {
     const fetchCalls: string[] = [];

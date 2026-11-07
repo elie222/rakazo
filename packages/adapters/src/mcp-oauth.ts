@@ -507,6 +507,33 @@ function requestOfflineAccess(
   authorizationUrl.searchParams.set("scope", [...scopes, OFFLINE_ACCESS].join(" "));
 }
 
+/**
+ * The client-authentication method to register with (RFC 7591).
+ *
+ * A public client -- `none`, holding no secret and proving itself with PKCE -- is
+ * the right shape here, but asserting it unconditionally breaks registration
+ * outright on an authorization server that does not offer it: the server rejects
+ * the whole document with `invalid_client_metadata` rather than registering us
+ * with a method it prefers. So the choice follows what the server advertises
+ * (RFC 8414), narrowed to the methods this client can actually perform.
+ *
+ * When the server advertises nothing, the field is omitted so the server applies
+ * its own default -- `client_secret_basic` per RFC 8414 S2 -- instead of being
+ * told a method it never claimed to support. A registration that comes back with
+ * a client secret is stored and used like any other; the SDK picks the matching
+ * method for the token request from the same metadata.
+ */
+function registrationAuthMethod(discovery: OAuthDiscoveryState | undefined): string | undefined {
+  const advertised = discovery?.authorizationServerMetadata?.token_endpoint_auth_methods_supported;
+  if (!Array.isArray(advertised) || advertised.length === 0) return undefined;
+  // Most preferred first: a public client, then a secret in the body, then in a
+  // Basic header. Anything else (private_key_jwt, mTLS) needs key material this
+  // client does not hold, so it is left to the server's default.
+  return ["none", "client_secret_post", "client_secret_basic"].find((method) =>
+    advertised.includes(method),
+  );
+}
+
 function applyGrant(oauth: OAuthState, grant: TokenGrant): void {
   if (grant.tokens) oauth.tokens = grant.tokens;
   else delete oauth.tokens;
@@ -546,12 +573,13 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     if (!redirectUri) throw new McpReauthorizationRequiredError(this.serverId);
     const hostname = new URL(redirectUri).hostname;
     const applicationType = hostname === "localhost" || hostname === "127.0.0.1" ? "native" : "web";
+    const authMethod = registrationAuthMethod(this.material.oauth?.discoveryState);
     return {
       redirect_uris: [redirectUri],
       client_name: "Rakazo",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      token_endpoint_auth_method: "none",
+      ...(authMethod ? { token_endpoint_auth_method: authMethod } : {}),
       application_type: applicationType,
       ...(this.configuredScope ? { scope: this.configuredScope } : {}),
     } as OAuthClientMetadata;
