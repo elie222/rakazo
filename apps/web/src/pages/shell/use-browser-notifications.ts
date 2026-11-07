@@ -122,21 +122,42 @@ export function useBrowserNotifications(
       for (const notification of shown.current) notification.close();
     };
   }, [rpc]);
-  // Notifications while the desktop app is closed: register its token, and open the chat a
-  // click launched it for. A server that cannot send them answers NOT_FOUND.
+  // Notifications while the desktop app is closed: open the chat a click launched the app for,
+  // then register its token. A server that cannot send them answers NOT_FOUND.
   useEffect(() => {
     const push = desktopBridge()?.push;
     if (!push) return;
     let active = true;
+    let cancelRetry: (() => void) | undefined;
+    // First and on its own: a slow token or server must not hold up the clicked chat.
+    void push
+      .takeOpened()
+      .then((opened) => {
+        if (opened && active) openChatRef.current(opened);
+      })
+      .catch(() => undefined);
     void (async () => {
       const token = await push.token().catch(() => null);
-      if (token && active)
-        await rpc.notifications.registerDesktopPush({ token }).catch(() => undefined);
-      const opened = await push.takeOpened().catch(() => null);
-      if (opened && active) openChatRef.current(opened);
+      for (let attempt = 0; token && active && attempt < 5; attempt++) {
+        try {
+          await rpc.notifications.registerDesktopPush({ token });
+          return;
+        } catch (error) {
+          if (!isRetryableError(error)) return;
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, retryDelayMs(error, 2_000 * 2 ** attempt));
+            cancelRetry = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+          });
+          cancelRetry = undefined;
+        }
+      }
     })();
     return () => {
       active = false;
+      cancelRetry?.();
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());

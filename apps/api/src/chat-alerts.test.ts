@@ -71,12 +71,20 @@ describe("desktop push", () => {
     );
     const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
     await iterator.next();
-    expect(markDesktopLive).toHaveBeenCalledWith("user-1", "session-1", {
-      spaceId: "space-1",
-      until: expect.any(Date),
-    });
+    expect(markDesktopLive).toHaveBeenCalledWith(
+      "user-1",
+      "session-1",
+      { spaceId: "space-1", until: expect.any(Date) },
+      undefined,
+    );
     await iterator.return?.(undefined);
-    expect(markDesktopLive).toHaveBeenLastCalledWith("user-1", "session-1", null);
+    // Clearing names the mark this stream wrote, so it cannot clear a newer stream's.
+    const [, , liveMark] = markDesktopLive.mock.calls[0] as unknown as [
+      string,
+      string,
+      { until: Date },
+    ];
+    expect(markDesktopLive).toHaveBeenLastCalledWith("user-1", "session-1", null, liveMark.until);
     controller.abort();
   });
 

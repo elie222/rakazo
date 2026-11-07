@@ -89,21 +89,19 @@ and offline unit tests cannot validate APNs delivery or operating-system push th
 ## Desktop notifications while the app is closed
 
 The desktop app shows your server's alerts while it is running, even with its window closed.
-On macOS it can also get them after you quit it, through APNs. This needs a desktop build
-signed by the team whose key the server holds, with Push Notifications enabled on its App ID
-and in its provisioning profile. Configure on both the API and worker:
+On macOS it can also get them after you quit it, through APNs. It signs with the same team key
+as [iOS VoIP ringing](#mobile-incoming-calls) (`APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID`,
+`APNS_VOIP_PRIVATE_KEY`), so the desktop app must belong to that team, with Push Notifications
+enabled on its App ID and in its provisioning profile. Optionally set, on both the API and worker:
 
 | Setting | Value |
 | --- | --- |
-| `APNS_DESKTOP_KEY_ID` | `<APNS_KEY_ID>` |
-| `APNS_DESKTOP_TEAM_ID` | `<APPLE_TEAM_ID>` |
-| `APNS_DESKTOP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted |
 | `APNS_DESKTOP_ENVIRONMENT` | `sandbox` for development signing, `production` for Developer ID (default) |
 | `APNS_DESKTOP_BUNDLE_ID` | Your desktop bundle identifier; defaults to `dev.rakazo.desktop` |
 
-Build the app with `RAKAZO_DESKTOP_PUSH=1` so it carries the push entitlement. An app that is
-open never gets a push for the Space it shows: it alerts for that Space itself. Signing out
-removes the app's registration.
+Build the app with `RAKAZO_DESKTOP_PUSH=production` (or `development` for a development-signed
+build) so it carries the matching push entitlement. An app that is open never gets a push for the
+Space it shows: it alerts for that Space itself. Signing out removes the app's registration.
 
 ## Client updates
 

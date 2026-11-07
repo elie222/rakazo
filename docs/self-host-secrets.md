@@ -92,7 +92,7 @@ From `.env.images.example` (images installer). Leave blank if unused:
 
 Optional `APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID`, and `APNS_VOIP_PRIVATE_KEY` enable
 [iOS VoIP ringing](./self-host-clients.md#mobile-incoming-calls). Keep the `.p8` contents in the secret manager.
-The `APNS_DESKTOP_*` keys do the same for [desktop notifications while the app is closed](./self-host-clients.md#desktop-notifications-while-the-app-is-closed).
+The same key also signs [desktop notifications while the app is closed](./self-host-clients.md#desktop-notifications-while-the-app-is-closed).
 
 Blank optional keys are normal for a minimal published-images boot. Pipedream
 Connect keys appear only in source/Compose `.env.example`, not the images

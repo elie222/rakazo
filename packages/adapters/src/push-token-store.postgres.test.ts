@@ -204,8 +204,26 @@ suite("database push registrations", () => {
     expect(ciphertext?.ciphertext).not.toContain(desktopToken);
     await api.endSession(user("b"), session("b"));
     expect(await worker.desktopTargets(user("b"), "space-1")).toEqual([]);
-    // A session that expires while the app is closed stops its pushes too.
+    // An older stream ending after a newer one wrote its mark leaves the newer mark alone.
     await api.saveDesktop(user("a"), desktopToken, session("a"));
+    const newer = new Date(Date.now() + 60_000);
+    await api.markDesktopLive(user("a"), session("a"), { spaceId: "space-1", until: newer });
+    await worker.markDesktopLive(user("a"), session("a"), null, new Date(Date.now() - 5_000));
+    expect(await api.desktopTargets(user("a"), "space-1")).toEqual([]);
+    // Registering again from the same app keeps the mark its open stream set.
+    await worker.saveDesktop(user("a"), desktopToken, session("a"));
+    expect(await api.desktopTargets(user("a"), "space-1")).toEqual([]);
+    expect(await api.hasDesktopTarget(user("a"), "space-1")).toBe(false);
+    expect(await api.hasDesktopTarget(user("a"), "space-2")).toBe(true);
+    await worker.markDesktopLive(user("a"), session("a"), null, newer);
+    expect(await api.hasDesktopTarget(user("a"), "space-1")).toBe(true);
+    // A new token from the same signed-in app replaces its old one.
+    const rotated = "cd".repeat(32);
+    await api.saveDesktop(user("a"), rotated, session("a"));
+    expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([
+      { id: credentialDigest(rotated), token: rotated },
+    ]);
+    // A session that expires while the app is closed stops its pushes too.
     expect(await worker.desktopTargets(user("a"), "space-1")).toHaveLength(1);
     await runAsSystem("expire the desktop's session", () =>
       a.prisma.session.update({ where: { id: session("a") }, data: { expiresAt: new Date(0) } }),

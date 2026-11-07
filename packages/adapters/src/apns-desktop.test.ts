@@ -80,32 +80,34 @@ describe("APNs desktop alerts", () => {
 });
 
 describe("APNs desktop configuration", () => {
-  it("is off without keys and requires them together", () => {
-    expect(apnsDesktopConfig({})).toBeUndefined();
-    expect(() => apnsDesktopConfig({ APNS_DESKTOP_KEY_ID: "key" })).toThrow(/together/);
-    expect(() =>
-      apnsDesktopConfig({
-        APNS_DESKTOP_KEY_ID: "key",
-        APNS_DESKTOP_TEAM_ID: "team",
-        APNS_DESKTOP_PRIVATE_KEY: "pem",
-        APNS_DESKTOP_ENVIRONMENT: "staging",
-      }),
-    ).toThrow(/sandbox or production/);
+  const key = {
+    APNS_VOIP_KEY_ID: "key",
+    APNS_VOIP_TEAM_ID: "team",
+    APNS_VOIP_PRIVATE_KEY: "line1\\nline2",
+    APNS_VOIP_ENVIRONMENT: "sandbox",
+  };
+
+  it("is off without the team's APNs key", () => {
+    expect(apnsDesktopConfig({ APNS_DESKTOP_BUNDLE_ID: "test.desktop" })).toBeUndefined();
   });
 
-  it("defaults to production and the published desktop bundle", () => {
-    expect(
-      apnsDesktopConfig({
-        APNS_DESKTOP_KEY_ID: "key",
-        APNS_DESKTOP_TEAM_ID: "team",
-        APNS_DESKTOP_PRIVATE_KEY: "line1\\nline2",
-      }),
-    ).toEqual({
+  it("signs with the shared key, in its own environment and topic", () => {
+    expect(apnsDesktopConfig(key)).toEqual({
       keyId: "key",
       teamId: "team",
       privateKey: "line1\nline2",
       environment: "production",
       bundleId: "dev.rakazo.desktop",
     });
+    expect(
+      apnsDesktopConfig({
+        ...key,
+        APNS_DESKTOP_ENVIRONMENT: "sandbox",
+        APNS_DESKTOP_BUNDLE_ID: "test.desktop",
+      }),
+    ).toMatchObject({ environment: "sandbox", bundleId: "test.desktop" });
+    expect(() => apnsDesktopConfig({ ...key, APNS_DESKTOP_ENVIRONMENT: "staging" })).toThrow(
+      /sandbox or production/,
+    );
   });
 });

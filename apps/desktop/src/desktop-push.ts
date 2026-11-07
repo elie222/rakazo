@@ -2,11 +2,16 @@ import type { IpcMainInvokeEvent } from "electron";
 import type { AppTarget } from "./app-frame.js";
 import { fromAppFrame } from "./app-frame.js";
 
+/** The APNs environment a build's push entitlement names, from `RAKAZO_DESKTOP_PUSH`. */
+export function desktopPushEnvironment(value: string | undefined) {
+  return value === "production" || value === "development" ? value : undefined;
+}
+
 /**
- * Builds with `RAKAZO_DESKTOP_PUSH=1` carry the push entitlement and the bundler inlines it, so
+ * Builds with `RAKAZO_DESKTOP_PUSH` set carry the push entitlement and the bundler inlines it, so
  * other builds never ask macOS for a token they cannot get.
  */
-export const DESKTOP_PUSH_BUILD = process.env.RAKAZO_DESKTOP_PUSH === "1";
+export const DESKTOP_PUSH_BUILD = Boolean(desktopPushEnvironment(process.env.RAKAZO_DESKTOP_PUSH));
 
 /** The chat a notification click opened the app for. */
 export type DesktopPushChat = {

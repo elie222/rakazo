@@ -19,6 +19,9 @@ export class MemoryPushTokenStore implements PushTokenStore {
       )
       .map(([id, row]) => ({ id, token: row.token }));
   }
+  async hasDesktopTarget(userId: string, spaceId: string) {
+    return (await this.desktopTargets(userId, spaceId)).length > 0;
+  }
   async removeDesktop(userId: string, id: string) {
     if (this.desktop.get(id)?.userId === userId) this.desktop.delete(id);
   }
@@ -26,9 +29,15 @@ export class MemoryPushTokenStore implements PushTokenStore {
     userId: string,
     sessionId: string,
     live: { spaceId: string; until: Date } | null,
+    written?: Date,
   ) {
     for (const row of this.desktop.values())
-      if (row.userId === userId && row.sessionId === sessionId) row.live = live ?? undefined;
+      if (
+        row.userId === userId &&
+        row.sessionId === sessionId &&
+        (!written || row.live?.until.getTime() === written.getTime())
+      )
+        row.live = live ?? undefined;
   }
   async load(userId: string) {
     return this.rows.get(userId);

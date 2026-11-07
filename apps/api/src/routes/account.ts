@@ -340,14 +340,20 @@ export function accountRoutes(ctx: RouterContext) {
         // A desktop app on this stream shows the Space's alerts, so it gets no push for them.
         const sessionId = deps.env?.desktopPushEnabled ? context.sessionId : undefined;
         let markedAt = 0;
+        let written: Date | undefined;
         const markLive = (live: boolean) => {
           if (!sessionId) return undefined;
           markedAt = Date.now();
+          // Clearing names this stream's own mark: after a reload or Space switch, a newer
+          // stream of the same session may have written its own since.
+          const previous = written;
+          written = live ? new Date(markedAt + DESKTOP_LIVE_MS) : undefined;
           return deps.pushTokens
             .markDesktopLive?.(
               userId,
               sessionId,
-              live ? { spaceId, until: new Date(markedAt + DESKTOP_LIVE_MS) } : null,
+              written ? { spaceId, until: written } : null,
+              written ? undefined : previous,
             )
             .catch((error) => getLogger().warn("desktop live mark failed", { error }));
         };

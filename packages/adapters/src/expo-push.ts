@@ -194,10 +194,11 @@ export class ExpoPushProvider implements NotificationProvider {
     };
   }
 
-  async hasPushRecipient(userId: string): Promise<boolean> {
+  /** With a Space, a desktop app already showing that Space's alerts does not count. */
+  async hasPushRecipient(userId: string, spaceId = ""): Promise<boolean> {
     if (await this.deliverableToken(userId)) return true;
     if (!this.desktop) return false;
-    return ((await this.tokens.desktopTargets?.(userId, "")) ?? []).length > 0;
+    return (await this.tokens.hasDesktopTarget?.(userId, spaceId)) ?? false;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {

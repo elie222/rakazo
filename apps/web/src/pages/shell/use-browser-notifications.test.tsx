@@ -321,4 +321,31 @@ describe("useBrowserNotifications desktop push", () => {
     expect(registerDesktopPush).not.toHaveBeenCalled();
     expect(openChat).not.toHaveBeenCalled();
   });
+
+  it("retries a registration the server could not take, and stops at a permanent refusal", async () => {
+    vi.useFakeTimers();
+    registerDesktopPush.mockReset();
+    registerDesktopPush
+      .mockRejectedValueOnce(Object.assign(new Error("unavailable"), { status: 503 }))
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal("rakazoDesktop", {
+      push: { token: async () => "d".repeat(64), takeOpened: async () => null },
+    });
+    await open({ botId: "bot-a" });
+    expect(registerDesktopPush).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(registerDesktopPush).toHaveBeenCalledTimes(2);
+
+    act(() => root.unmount());
+    root = createRoot(document.createElement("div"));
+    registerDesktopPush.mockReset();
+    registerDesktopPush.mockRejectedValue(Object.assign(new Error("not found"), { status: 404 }));
+    await open({ botId: "bot-a" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(registerDesktopPush).toHaveBeenCalledTimes(1);
+  });
 });

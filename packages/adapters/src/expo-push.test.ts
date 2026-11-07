@@ -959,6 +959,7 @@ describe("desktop push", () => {
     });
     const desktop = desktopSender();
     const push = new ExpoPushProvider(tokens, { desktop });
+    await expect(push.hasPushRecipient("user-1", "w")).resolves.toBe(false);
     await expect(push.deliver(message, notifyContext)).resolves.toBe("undeliverable");
     expect(desktop.send).not.toHaveBeenCalled();
     await push.deliver(message, { ...notifyContext, spaceId: "other" });

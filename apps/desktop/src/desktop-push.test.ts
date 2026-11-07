@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 import { describe, expect, it, vi } from "vitest";
-import { chatFromLaunch, createDesktopPush } from "./desktop-push.js";
+import { chatFromLaunch, createDesktopPush, desktopPushEnvironment } from "./desktop-push.js";
 
 function setup(register: () => Promise<string>, enabled = true) {
   const frame = { url: "https://app.example.com/app/bot" };
@@ -58,5 +58,12 @@ describe("desktop push", () => {
     const { event, push } = setup(register, false);
     expect(await push.token(event)).toBeNull();
     expect(register).not.toHaveBeenCalled();
+  });
+
+  it("reads the build's push environment and nothing else", () => {
+    expect(desktopPushEnvironment("production")).toBe("production");
+    expect(desktopPushEnvironment("development")).toBe("development");
+    expect(desktopPushEnvironment("1")).toBeUndefined();
+    expect(desktopPushEnvironment(undefined)).toBeUndefined();
   });
 });
