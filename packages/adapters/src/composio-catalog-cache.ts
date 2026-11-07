@@ -16,11 +16,16 @@ export const COMPOSIO_DIRECTORY_TTL_MS = 60 * 60 * 1000;
 export function mergeCatalogWithConnected(
   directory: ToolkitDirectoryEntry[],
   connectedSlugs: Iterable<string>,
+  /** Slugs with any account, active or not; these stay listed even when sign-in needs setup. */
+  accountSlugs: Iterable<string> = [],
 ): ToolkitCatalogEntry[] {
-  const connected = new Set([...connectedSlugs].map((slug) => slug.trim().toLowerCase()));
+  const key = (slug: string) => slug.trim().toLowerCase();
+  const connected = new Set([...connectedSlugs].map(key));
+  const withAccount = new Set([...accountSlugs].map(key));
   return directory.flatMap(({ needsSignInSetup, ...item }) => {
-    const isConnected = connected.has(item.slug.trim().toLowerCase());
-    return needsSignInSetup && !isConnected ? [] : [{ ...item, connected: isConnected }];
+    const isConnected = connected.has(key(item.slug));
+    if (needsSignInSetup && !isConnected && !withAccount.has(key(item.slug))) return [];
+    return [{ ...item, connected: isConnected }];
   });
 }
 

@@ -132,6 +132,14 @@ export interface ComposioProvider extends ManagedConnectorProvider {
   listConnectedSlugs(userId: string): Promise<string[]>;
 }
 
+type ToolkitConnection = Awaited<ReturnType<ComposioSession["toolkits"]>>["items"][number];
+
+function activeSlugs(toolkits: ToolkitConnection[]): string[] {
+  return toolkits
+    .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
+    .map((toolkit) => toolkit.slug);
+}
+
 function composioSlugKey(slug: string): string {
   return slug.trim().toLowerCase();
 }
@@ -479,13 +487,16 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
-    const [directory, connected] = await Promise.all([
+    const [directory, toolkits] = await Promise.all([
       this.directory(),
-      this.listConnectedSlugs(context.userId),
+      this.connectedToolkits(context.userId),
     ]);
-    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "").map(
-      (item) => ({ ...item, connectorId: "composio" }),
-    );
+    // An expired account keeps its app listed so the user can still reconnect or remove it.
+    const withAccount = toolkits.map((toolkit) => toolkit.slug);
+    return filterCatalog(
+      mergeCatalogWithConnected(directory, activeSlugs(toolkits), withAccount),
+      query ?? "",
+    ).map((item) => ({ ...item, connectorId: "composio" }));
   }
 
   async warmDirectory(): Promise<void> {
@@ -559,13 +570,12 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async listConnectedSlugs(userId: string): Promise<string[]> {
+    return activeSlugs(await this.connectedToolkits(userId));
+  }
+
+  private async connectedToolkits(userId: string): Promise<ToolkitConnection[]> {
     const session = await this.sessionFor(userId);
-    const connected = await collectPages((cursor) =>
-      session.toolkits({ isConnected: true, limit: 50, cursor }),
-    );
-    return connected
-      .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
-      .map((toolkit) => toolkit.slug);
+    return collectPages((cursor) => session.toolkits({ isConnected: true, limit: 50, cursor }));
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
