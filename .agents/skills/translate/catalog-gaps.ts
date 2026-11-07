@@ -18,21 +18,31 @@ export type Gap = { key: string; msgctxt: string | null; msgid: string; notes: s
 
 type Entry = Gap & { msgstr: string; msgstrAt: [number, number] };
 
+// A field is its keyword line plus any quoted continuation lines, joined.
+function readField(block: string, keyword: string) {
+  const match = new RegExp(`^${keyword} ".*"$(?:\\n^".*"$)*`, "m").exec(block);
+  if (!match) return null;
+  const value = match[0]
+    .slice(keyword.length + 1)
+    .split("\n")
+    .map((line) => JSON.parse(line) as string)
+    .join("");
+  return { value, at: [match.index, match.index + match[0].length] as [number, number] };
+}
+
 function parseEntry(block: string): Entry | null {
-  const context = /^msgctxt (".*")$/m.exec(block);
-  const id = /^msgid (".*")$/m.exec(block);
-  const str = /^msgstr (".*")$/m.exec(block);
-  if (!id || !str) return null;
-  const msgid = JSON.parse(id[1]) as string;
-  if (msgid === "") return null;
-  const msgctxt = context ? (JSON.parse(context[1]) as string) : null;
+  const context = readField(block, "msgctxt");
+  const id = readField(block, "msgid");
+  const str = readField(block, "msgstr");
+  if (!id || !str || id.value === "") return null;
+  const msgctxt = context?.value ?? null;
   return {
-    key: msgctxt ? `${msgctxt}\u0004${msgid}` : msgid,
+    key: msgctxt ? `${msgctxt}\u0004${id.value}` : id.value,
     msgctxt,
-    msgid,
+    msgid: id.value,
     notes: block.split("\n").filter((line) => line.startsWith("#.") || line.startsWith("#:")),
-    msgstr: JSON.parse(str[1]) as string,
-    msgstrAt: [str.index, str.index + str[0].length],
+    msgstr: str.value,
+    msgstrAt: str.at,
   };
 }
 
@@ -58,6 +68,10 @@ export function applyTranslations(po: string, translations: Record<string, unkno
   return { po: blocks.join("\n\n"), filled };
 }
 
+// A plural shows its number through `#`; a translation may add one but must not drop it.
+const showsCount = (text: string) =>
+  /\{\w+,\s*(?:plural|selectordinal)\b/.test(text) && text.includes("#");
+
 function tokens(text: string) {
   const names = new Set([
     ...[...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]),
@@ -67,7 +81,7 @@ function tokens(text: string) {
   return JSON.stringify([[...names].sort(), tags.sort()]);
 }
 
-// Returns one line per translation that drops or adds a placeholder or tag.
+// Returns one line per translation that drops or adds a placeholder or tag, or drops a plural `#`.
 export function findMismatches(po: string): string[] {
   return po
     .split("\n\n")
@@ -75,7 +89,9 @@ export function findMismatches(po: string): string[] {
     .filter((entry): entry is Entry => entry !== null && entry.msgstr !== "")
     .filter(
       ({ msgid, msgstr }) =>
-        tokens(msgid) !== tokens(msgstr) || msgstr.split("{").length !== msgstr.split("}").length,
+        tokens(msgid) !== tokens(msgstr) ||
+        (showsCount(msgid) && !showsCount(msgstr)) ||
+        msgstr.split("{").length !== msgstr.split("}").length,
     )
     .map(({ key, msgstr }) => `${JSON.stringify(key)} -> ${JSON.stringify(msgstr)}`);
 }
