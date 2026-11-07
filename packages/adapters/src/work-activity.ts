@@ -58,6 +58,8 @@ const LINE_MAX_CHARS = 120;
 /** Progress events read back per page to find the latest step, and the most pages read. */
 const STEP_PAGE_SIZE = 50;
 const STEP_PAGES = 10;
+/** Runs whose latest step this process remembers. */
+const STEP_CACHE_SIZE = 1_000;
 /** A run that ended this recently may be the change its owner's card has yet to show. */
 const JUST_ENDED_MS = 10 * 60_000;
 /** A busy thread or user is looked at most this often. The last change always goes out. */
@@ -74,6 +76,8 @@ const EMPTY_STATE: WorkActivityState = { count: 0, waiting: 0, rows: [] };
 export class WorkActivities {
   private readonly encryption: EncryptedSecretStore;
   private readonly pending = new Map<string, { again: boolean }>();
+  /** Each run's newest progress read and the step it showed, so later updates read only what is new. */
+  private readonly steps = new Map<string, { seq: number; line: string }>();
   /** Retries already scheduled per user since their last push went through. */
   private readonly retries = new Map<string, number>();
 
@@ -93,30 +97,38 @@ export class WorkActivities {
   async register(userId: string, sessionId: string, token: string): Promise<boolean> {
     if ((await this.state(userId)).count === 0) return false;
     const tokenDigest = credentialDigest(token);
-    const sealed = await this.encryption.put(
-      token,
-      {
-        operationId: "work-activity.register",
-        traceId: "work-activity.register",
-        spaceId: "",
-        userId,
-        signal: new AbortController().signal,
-      },
-      { recordId: recordId(tokenDigest) },
-    );
     // A card another account registered on this phone starts over, with nothing of that account's.
     await runAsSystem("drop a live status card another account registered", () =>
       this.prisma.workActivityToken.deleteMany({ where: { tokenDigest, userId: { not: userId } } }),
     );
-    // A token the card already had keeps its last state, so nothing is sent twice.
-    await runAsSystem("register a live status card", () =>
-      this.prisma.workActivityToken.upsert({
-        where: { tokenDigest },
-        create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
-        // Re-registering counts as recent, so the cap below drops cards no phone still uses.
-        update: { userId, sessionId, createdAt: new Date() },
+    // Re-registering, as each app open does, counts as recent so the cap below keeps the card,
+    // and keeps its last state so nothing is sent twice. Only a new card seals its token.
+    const { count } = await runAsSystem("refresh a live status card", () =>
+      this.prisma.workActivityToken.updateMany({
+        where: { tokenDigest, userId },
+        data: { sessionId, createdAt: new Date() },
       }),
     );
+    if (!count) {
+      const sealed = await this.encryption.put(
+        token,
+        {
+          operationId: "work-activity.register",
+          traceId: "work-activity.register",
+          spaceId: "",
+          userId,
+          signal: new AbortController().signal,
+        },
+        { recordId: recordId(tokenDigest) },
+      );
+      await runAsSystem("register a live status card", () =>
+        this.prisma.workActivityToken.upsert({
+          where: { tokenDigest },
+          create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
+          update: { userId, sessionId, createdAt: new Date() },
+        }),
+      );
+    }
     // A user's phones are few; the oldest cards beyond that end, so each update fans out a little.
     const extra = await runAsSystem("find a user's oldest live status cards", () =>
       this.prisma.workActivityToken.findMany({
@@ -326,7 +338,11 @@ export class WorkActivities {
   }
 
   private async latestStep(runId: string): Promise<string> {
-    // Streamed text sits between steps, so this pages back, a bounded way, to the last step.
+    // Only progress newer than the step last found is read again: a long stream of text would
+    // otherwise be decrypted on every update.
+    const known = this.steps.get(runId);
+    let line = known?.line ?? "";
+    let newest = known?.seq;
     let before: number | undefined;
     for (let page = 0; page < STEP_PAGES; page += 1) {
       const progress = await runAsSystem("read a run's latest step", () =>
@@ -334,23 +350,37 @@ export class WorkActivities {
           where: {
             runId,
             type: "thread.progress",
-            ...(before === undefined ? {} : { seq: { lt: before } }),
+            seq: {
+              ...(known ? { gt: known.seq } : {}),
+              ...(before === undefined ? {} : { lt: before }),
+            },
           },
           orderBy: { seq: "desc" },
           take: STEP_PAGE_SIZE,
           select: { seq: true, payload: true },
         }),
       );
-      for (const { payload } of progress) {
-        const step = payload as { activity?: unknown; text?: unknown };
+      if (newest === known?.seq && progress[0]) newest = progress[0].seq;
+      const step = progress.find(({ payload }) => {
+        const event = payload as { activity?: unknown; text?: unknown };
+        return event.activity === true && typeof event.text === "string";
+      });
+      if (step) {
         // An empty step is the bot clearing its last one.
-        if (step.activity === true && typeof step.text === "string")
-          return truncatePlainText(step.text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
+        const text = (step.payload as { text: string }).text;
+        line = truncatePlainText(text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
+        break;
       }
       if (progress.length < STEP_PAGE_SIZE) break;
       before = progress.at(-1)!.seq;
     }
-    return "";
+    if (newest !== undefined) {
+      this.steps.delete(runId);
+      this.steps.set(runId, { seq: newest, line });
+      // Oldest first: the runs least recently shown go once the cache is full.
+      if (this.steps.size > STEP_CACHE_SIZE) this.steps.delete(this.steps.keys().next().value!);
+    }
+    return line;
   }
 }
 

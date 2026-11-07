@@ -67,7 +67,7 @@ function fakeDatabase() {
         where,
         take,
       }: {
-        where: { runId: string; type: string; seq?: { lt: number } };
+        where: { runId: string; type: string; seq?: { lt?: number; gt?: number } };
         take: number;
       }) =>
         events
@@ -75,7 +75,8 @@ function fakeDatabase() {
             (event) =>
               event.runId === where.runId &&
               event.type === where.type &&
-              (!where.seq || event.seq < where.seq.lt),
+              (where.seq?.lt === undefined || event.seq < where.seq.lt) &&
+              (where.seq?.gt === undefined || event.seq > where.seq.gt),
           )
           .sort((a, b) => b.seq - a.seq)
           .slice(0, take),
@@ -114,12 +115,17 @@ function fakeDatabase() {
         if (card && matches) cards.delete(where.tokenDigest);
       },
       updateMany: async (input: { where: Partial<Card>; data: Partial<Card> }) => {
+        let count = 0;
         for (const card of cards.values()) {
           const matches = Object.entries(input.where).every(
             ([key, value]) => card[key as keyof Card] === value,
           );
-          if (matches) Object.assign(card, input.data);
+          if (matches) {
+            Object.assign(card, input.data);
+            count += 1;
+          }
         }
+        return { count };
       },
     },
   } as unknown as PrismaClient;
@@ -318,6 +324,40 @@ describe("live status card of the user's bots at work", () => {
     // The cards dropped are ended, not left on their phones without updates.
     for (const phone of ["0", "1"])
       expect(send).toHaveBeenCalledWith(phone.repeat(64), expect.objectContaining({ ended: true }));
+  });
+
+  it("re-registers a card without sealing its token again", async () => {
+    const { activities, cards } = await registered();
+    const sealed = [...cards.values()][0]!.ciphertext;
+    await activities.register("user-1", "session-2", TOKEN);
+    expect([...cards.values()][0]).toMatchObject({ ciphertext: sealed, sessionId: "session-2" });
+  });
+
+  it("keeps a found step through later streamed text without reading it again", async () => {
+    const { activities, events, send, prisma } = await registered();
+    events.push({
+      runId: "1",
+      type: "thread.progress",
+      seq: 1,
+      payload: { text: "Drafting", activity: true },
+    });
+    await activities.sync("user-1");
+    for (let seq = 2; seq < 300; seq += 1)
+      events.push({
+        runId: "1",
+        type: "thread.progress",
+        seq,
+        payload: { delta: "x", streaming: true },
+      });
+    const read = vi.spyOn(prisma.event, "findMany");
+    await activities.sync("user-1");
+    expect(send.mock.lastCall![1].state.rows[0]!.line).toBe("Drafting");
+    // Only progress newer than the step already found.
+    expect(
+      read.mock.calls.every(
+        ([args]) => (args as { where: { seq: { gt?: number } } }).where.seq.gt !== undefined,
+      ),
+    ).toBe(true);
   });
 
   it("ends a deleted account's cards on their phones", async () => {
