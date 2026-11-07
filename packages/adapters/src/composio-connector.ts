@@ -358,13 +358,15 @@ export function planLiveConnectionSync(
 export class ComposioConnector implements ComposioProvider {
   private client: ComposioClient | undefined;
   private readonly apiKey: string | undefined;
-  /** An injected client has its own catalog, so it must not share the process-wide cache. */
+  /** Only the keyless default connector shares the process-wide directory cache. */
   private readonly directoryCache: typeof composioToolkitDirectory;
 
   constructor(options: { apiKey?: string; client?: ComposioClient } = {}) {
     this.apiKey = options.apiKey;
     this.client = options.client;
-    this.directoryCache = options.client ? createToolkitDirectoryCache() : composioToolkitDirectory;
+    // The directory records which apps this project can sign in to, so each key needs its own.
+    this.directoryCache =
+      options.client || options.apiKey ? createToolkitDirectoryCache() : composioToolkitDirectory;
   }
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
@@ -513,7 +515,12 @@ export class ComposioConnector implements ComposioProvider {
     const [toolkits, needsSetup] = await Promise.all([
       collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
       // Without this lookup every app stays listed, as before.
-      this.toolkitsNeedingSignInSetup().catch(() => new Set<string>()),
+      this.toolkitsNeedingSignInSetup().catch((error: unknown) => {
+        getLogger().warn("composio sign-in setup lookup failed", {
+          error: sanitizeIntegrationError(error),
+        });
+        return new Set<string>();
+      }),
     ]);
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
