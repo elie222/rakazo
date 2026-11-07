@@ -5773,7 +5773,7 @@ msgstr "替換金鑰"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
-msgstr "取代為 {0} 儲存的登入資訊"
+msgstr "取代 {0} 已儲存的登入資訊"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
