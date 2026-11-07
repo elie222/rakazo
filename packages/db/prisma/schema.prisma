@@ -165,7 +165,7 @@ model WorkActivityToken {
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   ciphertext String
-  /// The last state sent, so unchanged work sends nothing.
+  /// The last state sent, sealed, so unchanged work sends nothing.
   lastState String?
   createdAt DateTime @default(now())
 

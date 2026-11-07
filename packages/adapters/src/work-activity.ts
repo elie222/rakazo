@@ -57,6 +57,9 @@ const STEP_LOOKBACK = 20;
 const JUST_ENDED_MS = 10 * 60_000;
 /** A busy thread or user is looked at most this often. The last change always goes out. */
 const UPDATE_WINDOW_MS = 3_000;
+/** A push that did not go through is tried again this much later, a few times, with backoff. */
+const RETRY_MS = 30_000;
+const MAX_RETRIES = 4;
 const EMPTY_STATE: WorkActivityState = { count: 0, waiting: 0, rows: [] };
 
 /**
@@ -66,6 +69,8 @@ const EMPTY_STATE: WorkActivityState = { count: 0, waiting: 0, rows: [] };
 export class WorkActivities {
   private readonly encryption: EncryptedSecretStore;
   private readonly pending = new Map<string, { again: boolean }>();
+  /** Retries already scheduled per user since their last push went through. */
+  private readonly retries = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -156,11 +161,16 @@ export class WorkActivities {
     if (!cards.length) return;
     const state = await this.state(userId);
     const json = JSON.stringify(state);
-    await Promise.all(
+    const ended = state.count === 0;
+    const retried = this.retries.get(userId) ?? 0;
+    const results = await Promise.all(
       cards.map(async (card) => {
-        if (json === card.lastState) return;
-        const last: WorkActivityState = card.lastState ? JSON.parse(card.lastState) : EMPTY_STATE;
-        const ended = state.count === 0;
+        // Sealed like the push token: the rows hold chat content.
+        const lastJson = card.lastState
+          ? await this.encryption.load(card.lastState, stateRecordId(card.tokenDigest))
+          : undefined;
+        if (json === lastJson) return "sent";
+        const last: WorkActivityState = lastJson ? JSON.parse(lastJson) : EMPTY_STATE;
         const token = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
         const result = await this.provider.send(token, {
           // The card keeps its last rows while it leaves.
@@ -169,21 +179,39 @@ export class WorkActivities {
           urgent: ended || state.waiting > last.waiting,
           at,
         });
-        // An ended card is not retried: no work is left to change and retry it.
-        if (ended || result === "invalid") {
+        if (result === "invalid" || (ended && (result === "sent" || retried >= MAX_RETRIES))) {
           await runAsSystem("drop a live status card", () =>
             this.prisma.workActivityToken.deleteMany({ where: { tokenDigest: card.tokenDigest } }),
           );
         } else if (result === "sent") {
+          const sealed = await this.encryption.put(
+            json,
+            {
+              operationId: "work-activity.update",
+              traceId: "work-activity.update",
+              spaceId: "",
+              userId,
+              signal: new AbortController().signal,
+            },
+            { recordId: stateRecordId(card.tokenDigest) },
+          );
           await runAsSystem("record a live status card update", () =>
             this.prisma.workActivityToken.updateMany({
               where: { tokenDigest: card.tokenDigest },
-              data: { lastState: json },
+              data: { lastState: sealed.ciphertext },
             }),
           );
         }
+        return result;
       }),
     );
+    // Nothing else may change to send it again, so a push that did not go through is retried.
+    if (!results.includes("unavailable") || retried >= MAX_RETRIES) {
+      this.retries.delete(userId);
+      return;
+    }
+    this.retries.set(userId, retried + 1);
+    setTimeout(() => this.userChanged(userId), RETRY_MS * 2 ** retried).unref?.();
   }
 
   private async state(userId: string): Promise<WorkActivityState> {
@@ -247,4 +275,8 @@ export class WorkActivities {
 
 function recordId(tokenDigest: string): string {
   return `work-activity:${tokenDigest}`;
+}
+
+function stateRecordId(tokenDigest: string): string {
+  return `work-activity-state:${tokenDigest}`;
 }

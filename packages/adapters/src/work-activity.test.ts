@@ -99,7 +99,7 @@ function setup(reply: "sent" | "invalid" | "unavailable" = "sent", windowMs = 20
   return { ...db, send, activities, run };
 }
 
-async function registered(reply?: "sent" | "invalid", windowMs?: number) {
+async function registered(reply?: "sent" | "invalid" | "unavailable", windowMs?: number) {
   const context = setup(reply, windowMs);
   expect(await context.activities.register("user-1", TOKEN)).toBe(true);
   await vi.waitFor(() => expect(context.send).toHaveBeenCalledTimes(1));
@@ -130,6 +130,9 @@ describe("live status card of the user's bots at work", () => {
     // The token is stored encrypted.
     expect([...cards.values()][0]!.ciphertext).not.toContain(TOKEN);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    // So is the state, which holds chat content.
+    await vi.waitFor(() => expect([...cards.values()][0]!.lastState).toBeTruthy());
+    expect([...cards.values()][0]!.lastState).not.toContain("Reading");
     expect(send).toHaveBeenCalledWith(TOKEN, {
       state: {
         count: 1,
@@ -187,6 +190,25 @@ describe("live status card of the user's bots at work", () => {
       state: { count: 1, rows: [{ title: "Planner" }] },
     });
     expect(cards.size).toBe(0);
+  });
+
+  it("tries again a push that did not go through, ending the card only once it does", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { activities, cards, runs, send } = await registered("unavailable");
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      runs[0]!.status = "completed";
+      send.mockResolvedValue("unavailable");
+      await activities.sync("user-1");
+      expect(send.mock.lastCall![1].ended).toBe(true);
+      expect(cards.size).toBe(1);
+      send.mockResolvedValue("sent");
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await vi.waitFor(() => expect(cards.size).toBe(0));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("forgets a card Apple no longer knows", async () => {

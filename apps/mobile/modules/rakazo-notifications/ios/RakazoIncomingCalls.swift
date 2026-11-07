@@ -258,8 +258,12 @@ public class RakazoNotificationsModule: Module {
     AsyncFunction("clearIncomingCalls") { IncomingCalls.shared.clear() }.runOnQueue(.main)
     AsyncFunction("startWorkActivity") { (title: String, spaceId: String, botId: String?, groupId: String?) in
       if #available(iOS 18.0, *) {
+        // A group's bot is known only once the server's first update names it.
+        let name = title.isEmpty
+          ? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? ""
+          : title
         WorkActivities.shared.start(.init(
-          status: .working, title: title, line: "", spaceId: spaceId, botId: botId, groupId: groupId))
+          status: .working, title: name, line: "", spaceId: spaceId, botId: botId, groupId: groupId))
       }
     }.runOnQueue(.main)
     AsyncFunction("refreshWorkActivity") {

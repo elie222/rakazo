@@ -36,7 +36,8 @@ export class ApnsActivityProvider implements WorkActivityPushProvider {
         status: reply.status,
         reason: reply.reason,
       });
-      return reply.reason === "BadDeviceToken" ? "invalid" : "unavailable";
+      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the card.
+      return "unavailable";
     } catch (error) {
       getLogger().warn("thread_activity.push_failed", { error });
       return "unavailable";

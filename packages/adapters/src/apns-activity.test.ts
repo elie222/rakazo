@@ -69,7 +69,7 @@ describe("APNs work activity", () => {
     reply.mockResolvedValueOnce({ status: 410, reason: "Unregistered" });
     expect(await send()).toBe("invalid");
     reply.mockResolvedValueOnce({ status: 400, reason: "BadDeviceToken" });
-    expect(await send()).toBe("invalid");
+    expect(await send()).toBe("unavailable");
     reply.mockResolvedValueOnce({ status: 503, reason: "ServiceUnavailable" });
     expect(await send()).toBe("unavailable");
     reply.mockRejectedValueOnce(new Error("offline"));
