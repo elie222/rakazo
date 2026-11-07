@@ -125,6 +125,10 @@ describe("normalizeRunError", () => {
       "Your model provider took too long to respond. Try again.",
     ],
     [
+      '403: {"message":"This model requires you to upgrade to a paid plan"}',
+      "Your model provider denied access to this model.",
+    ],
+    [
       '403: {"message":"Policy blocked the request"}',
       "Your model provider denied access to this model.",
     ],
