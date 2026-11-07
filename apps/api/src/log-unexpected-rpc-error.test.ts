@@ -11,7 +11,7 @@ import {
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { IsolationError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { requestLogging } from "@rakazo/logging/hono";
+import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { handleRpcError, logUnexpectedRpcError } from "./rpc-errors.js";
@@ -75,6 +75,40 @@ describe("logUnexpectedRpcError", () => {
     expect(response.status).toBe(503);
     expect(sink.events.map((event) => [event.level, event.message])).toEqual([
       ["warn", "rpc boot computer unavailable"],
+      ["warn", "http.request.completed"],
+    ]);
+  });
+
+  it("leaves a 5xx out of error reports when the procedure marked its outage expected", async () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    installLogger(logger);
+    const rpc = new RPCHandler(
+      {
+        begin: os.handler(() => {
+          logger.warn("provider sign-in unavailable");
+          markExpectedFailure();
+          throw new ORPCError("SERVICE_UNAVAILABLE");
+        }),
+      },
+      { clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))] },
+    );
+    const app = new Hono();
+    app.use("*", requestLogging(logger));
+    app.post("/rpc/*", async (c) => {
+      const { response } = await rpc.handle(c.req.raw, { prefix: "/rpc", context: {} });
+      return response ?? c.notFound();
+    });
+
+    const response = await app.request("/rpc/begin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(503);
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "provider sign-in unavailable"],
       ["warn", "http.request.completed"],
     ]);
   });
