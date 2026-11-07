@@ -1,1 +1,1 @@
-@/tmp/pages_content_only.txt
+FILE:/home/rakazo/bots/cmw67irie4agdfm9sz7yy7b5d/FULL_CONTENT.txt
