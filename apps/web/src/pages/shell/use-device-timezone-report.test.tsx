@@ -12,7 +12,8 @@ type AdoptTimezone = (input: { timezone: string }) => Promise<Me>;
 
 // A zone the device never runs in, so the saved one always differs from it.
 const savedZone = localTimezone() === "Pacific/Auckland" ? "Europe/London" : "Pacific/Auckland";
-const me = (timezone: string | null) => ({ timezone }) as unknown as Me;
+const me = (timezone: string | null, source?: Me["timezoneSource"]) =>
+  ({ timezone, timezoneSource: source }) as unknown as Me;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -23,22 +24,22 @@ function deferred<T>() {
 }
 
 /** Mounts the hook with a stubbed report call; `manualSave` runs the marker it returns. */
-async function mountReport(adoptTimezone: AdoptTimezone, saved: string | null) {
+async function mountReport(adoptTimezone: AdoptTimezone, saved: Me) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const apply = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   let bump: () => void = () => {};
-  function Harness({ saved }: { saved: string | null }) {
+  function Harness({ saved }: { saved: Me }) {
     bump = useDeviceTimezoneReport(
       { preferences: { adoptTimezone } } as unknown as Rpc,
-      me(saved),
+      saved,
       apply,
     );
     return null;
   }
-  const rerender = async (nextSaved: string | null) => {
+  const rerender = async (nextSaved: Me) => {
     await act(async () => root.render(<Harness saved={nextSaved} />));
   };
   await rerender(saved);
@@ -57,7 +58,7 @@ async function mountReport(adoptTimezone: AdoptTimezone, saved: string | null) {
 it("reports the device zone while the saved one differs and applies the answer", async () => {
   const answer = deferred<Me>();
   const adoptTimezone = vi.fn(() => answer.promise);
-  const harness = await mountReport(adoptTimezone, savedZone);
+  const harness = await mountReport(adoptTimezone, me(savedZone));
   try {
     expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
     await act(async () => answer.resolve(me(localTimezone())));
@@ -69,7 +70,7 @@ it("reports the device zone while the saved one differs and applies the answer",
 
 it("stays quiet while the saved zone equals the device's", async () => {
   const adoptTimezone = vi.fn(async () => me(savedZone));
-  const harness = await mountReport(adoptTimezone, localTimezone());
+  const harness = await mountReport(adoptTimezone, me(localTimezone()));
   try {
     expect(adoptTimezone).not.toHaveBeenCalled();
     expect(harness.apply).not.toHaveBeenCalled();
@@ -81,7 +82,7 @@ it("stays quiet while the saved zone equals the device's", async () => {
 it("a delayed report answer never repaints a newer manual save", async () => {
   const answer = deferred<Me>();
   const adoptTimezone = vi.fn(() => answer.promise);
-  const harness = await mountReport(adoptTimezone, savedZone);
+  const harness = await mountReport(adoptTimezone, me(savedZone));
   try {
     // The report is in flight when the user's manual save commits and paints Settings.
     await act(async () => harness.manualSave());
@@ -97,14 +98,41 @@ it("a fresh bootstrap zone after a matching cached seed still reports", async ()
   const answer = deferred<Me>();
   const adoptTimezone = vi.fn(() => answer.promise);
   // The cached seed paints this device's zone, so the shell starts quiet.
-  const harness = await mountReport(adoptTimezone, localTimezone());
+  const harness = await mountReport(adoptTimezone, me(localTimezone()));
   try {
     expect(adoptTimezone).not.toHaveBeenCalled();
     // Another device moved the account; the fresh bootstrap brings that zone.
-    await harness.rerender(savedZone);
+    await harness.rerender(me(savedZone));
     expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
     await act(async () => answer.resolve(me(localTimezone())));
     expect(harness.apply).toHaveBeenCalledWith(me(localTimezone()));
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("reports again once a hand-picked zone returns to the device", async () => {
+  // "Use device timezone" answers with the device source, and the helper that lands
+  // a timezone answer on the cached me carries the source along, so the report guard
+  // never trusts a stale "manual".
+  const { withServerTimezone } = await import("./use-device-timezone-report");
+  const answer = deferred<Me>();
+  const adoptTimezone = vi.fn(() => answer.promise);
+  const harness = await mountReport(adoptTimezone, me(savedZone, "manual"));
+  try {
+    expect(adoptTimezone).not.toHaveBeenCalled();
+
+    // The user takes the hand-picked zone back to the device; the settings save
+    // applies the answer through the same helper.
+    const returned = withServerTimezone(me(savedZone, "manual"), me(localTimezone(), "device"));
+    expect(returned.timezoneSource).toBe("device");
+    await harness.rerender(returned);
+    expect(adoptTimezone).not.toHaveBeenCalled();
+
+    // The device then moves away from that zone: the report goes out again.
+    await harness.rerender(me(savedZone, returned.timezoneSource));
+    expect(adoptTimezone).toHaveBeenCalledTimes(1);
+    expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
   } finally {
     await harness.cleanup();
   }

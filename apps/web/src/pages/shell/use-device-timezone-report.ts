@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef } from "react";
 import type { createSpaceRpc } from "../../lib/rpc";
 
 /**
+ * Carries a timezone answer onto the locally cached `me`: the zone and who chose it,
+ * so a choice that returns the account to the device also ends the manual source. Both
+ * the settings save and a report's answer land through it.
+ */
+export function withServerTimezone(me: Me, answer: Me): Me {
+  return { ...me, timezone: answer.timezone, timezoneSource: answer.timezoneSource };
+}
+
+/**
  * Reports the device's zone for the account whenever the shell's `me` arrives, its saved
  * zone changes under it (a cached seed replaced by the fresh bootstrap), or the tab
  * returns to the foreground, while the saved zone differs from the device's. The server

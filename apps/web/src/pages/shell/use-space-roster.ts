@@ -22,7 +22,7 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
-import { useDeviceTimezoneReport } from "./use-device-timezone-report";
+import { useDeviceTimezoneReport, withServerTimezone } from "./use-device-timezone-report";
 import type { useShellNavigation } from "./use-shell-navigation";
 import { firstThreadRoute } from "./use-shell-navigation";
 import type { ThreadState } from "./use-thread-state";
@@ -198,8 +198,9 @@ export function useSpaceRoster({
   const applyReportedTimezone = useCallback(
     (nextMe: Me) => {
       setBootstrapMe((current) =>
-        current && current.timezone !== nextMe.timezone
-          ? { ...current, timezone: nextMe.timezone }
+        current &&
+        (current.timezone !== nextMe.timezone || current.timezoneSource !== nextMe.timezoneSource)
+          ? withServerTimezone(current, nextMe)
           : (current ?? nextMe),
       );
     },

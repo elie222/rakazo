@@ -17,6 +17,7 @@ import { queryClient } from "../../lib/query";
 import type { createSpaceRpc } from "../../lib/rpc";
 import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
+import { withServerTimezone } from "./use-device-timezone-report";
 
 const SettingsOverlay = lazyOverlay(() =>
   import("../SettingsOverlay").then((module) => module.SettingsOverlay),
@@ -203,7 +204,7 @@ export function SettingsOverlays({
               ? await rpc.preferences.adoptTimezone({ timezone, switchTo: true })
               : await rpc.preferences.update({ timezone });
             noteTimezoneChoice();
-            setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+            setBootstrapMe((prev) => (prev ? withServerTimezone(prev, nextMe) : nextMe));
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {
