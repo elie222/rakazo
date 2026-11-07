@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chatSnoozed,
   chatWoke,
+  createSnoozeQueue,
   nextChatWake,
   snoozePresetTime,
   snoozeWakeDay,
@@ -59,5 +60,64 @@ describe("chat snooze", () => {
       month: "short",
       day: "numeric",
     });
+  });
+});
+
+describe("snooze queue", () => {
+  const tomorrow = "2026-11-08T09:00:00.000Z";
+  function setup() {
+    const requests: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+    const shown: Array<string | null> = [];
+    const settled: Array<boolean> = [];
+    const queue = createSnoozeQueue();
+    const change = {
+      send: () =>
+        new Promise<void>((resolve, reject) => {
+          requests.push({ resolve, reject });
+        }),
+      apply: (until: string | null) => shown.push(until),
+      settled: (failed: { error: unknown } | null) => settled.push(failed !== null),
+    };
+    return { requests, shown, settled, queue, change };
+  }
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("goes back to what the server has when a snooze and its quick undo both fail", async () => {
+    const { requests, shown, settled, queue, change } = setup();
+    queue("bot:a", tomorrow, null, change);
+    queue("bot:a", null, tomorrow, change);
+    await flush();
+    requests[0]!.reject(new Error("offline"));
+    await flush();
+    requests[1]!.reject(new Error("offline"));
+    await flush();
+    expect(shown.at(-1)).toBeNull();
+    expect(settled).toEqual([true]);
+  });
+
+  it("keeps a saved snooze when the undo after it fails", async () => {
+    const { requests, shown, settled, queue, change } = setup();
+    queue("bot:a", tomorrow, null, change);
+    queue("bot:a", null, tomorrow, change);
+    await flush();
+    requests[0]!.resolve();
+    await flush();
+    requests[1]!.reject(new Error("offline"));
+    await flush();
+    expect(shown.at(-1)).toBe(tomorrow);
+    expect(settled).toEqual([true]);
+  });
+
+  it("settles once, after the newest choice is saved", async () => {
+    const { requests, settled, queue, change } = setup();
+    queue("bot:a", tomorrow, null, change);
+    queue("bot:a", null, tomorrow, change);
+    await flush();
+    requests[0]!.resolve();
+    await flush();
+    expect(settled).toEqual([]);
+    requests[1]!.resolve();
+    await flush();
+    expect(settled).toEqual([false]);
   });
 });

@@ -860,7 +860,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           }}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
           snoozed={chatSnoozed(organizeChat, Date.now())}
-          onSnooze={(until) => snoozeChat(organizeTarget.kind, organizeChat, until)}
+          onSnooze={async (until) => snoozeChat(organizeTarget.kind, organizeChat, until)}
           onCreateSection={(name) =>
             createSection(organizeTarget.kind, organizeChat.id, name, organizeTarget.spaceId)
           }

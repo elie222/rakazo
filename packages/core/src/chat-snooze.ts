@@ -1,3 +1,5 @@
+import { createChatQueues } from "./unread-divider.js";
+
 /**
  * A snoozed chat leaves the viewer's list until its wake time, then returns marked as woken
  * until they open it. A bot waiting on an answer stays snoozed: its question was usually there
@@ -63,4 +65,46 @@ export function snoozeWakeDay(wake: Date, now: Date): Intl.DateTimeFormatOptions
   const days = Math.round((startOfDay(wake).getTime() - startOfDay(now).getTime()) / DAY_MS);
   if (days === 0) return null;
   return days < 7 ? { weekday: "short" } : { month: "short", day: "numeric" };
+}
+
+type SnoozeChange = {
+  /** Saves the choice; a rejection rolls it back if no newer choice followed. */
+  send: (until: string | null) => Promise<unknown>;
+  /** Shows a wake time in the list at once. */
+  apply: (until: string | null) => void;
+  /** After this chat's newest choice settles: reload the list, and say so if it failed. */
+  settled: (failed: { error: unknown } | null) => void;
+};
+
+/**
+ * Snooze changes for each chat, sent one at a time in the order chosen. Only the newest choice
+ * rolls back or reloads, and a rollback restores what the server last saved, so a quick undo
+ * can't be covered by an earlier answer.
+ */
+export function createSnoozeQueue() {
+  const inOrder = createChatQueues();
+  const latest = new Map<string, string | null>();
+  const saved = new Map<string, string | null>();
+  const pending = new Map<string, number>();
+  return (key: string, until: string | null, current: string | null, change: SnoozeChange) => {
+    const waiting = pending.get(key) ?? 0;
+    if (waiting === 0) saved.set(key, current);
+    pending.set(key, waiting + 1);
+    latest.set(key, until);
+    change.apply(until);
+    void inOrder(key, () => change.send(until))
+      .then(
+        () => {
+          saved.set(key, until);
+          return null;
+        },
+        (error: unknown) => ({ error }),
+      )
+      .then((failed) => {
+        pending.set(key, (pending.get(key) ?? 1) - 1);
+        if (latest.get(key) !== until) return;
+        if (failed) change.apply(saved.get(key) ?? null);
+        change.settled(failed);
+      });
+  };
 }
