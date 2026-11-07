@@ -24,9 +24,10 @@ export async function signInToMcpServer(serverId: string): Promise<McpSignIn> {
   if (result.type !== "success") return "cancelled";
   const params = new URL(result.url).searchParams;
   const code = params.get("code");
-  if (params.get("state") !== started.sessionId) throw new Error(t("Could not continue"));
+  const state = params.get("state");
+  if (state !== started.sessionId) throw new Error(t("Could not continue"));
   if (params.get("error") === "access_denied") return "cancelled";
   if (!code) throw new Error(params.get("error_description") || t("Could not continue"));
-  await rpc("mcp/oauth/complete", { sessionId: started.sessionId, code, state: started.sessionId });
+  await rpc("mcp/oauth/complete", { sessionId: started.sessionId, code, state });
   return "connected";
 }
