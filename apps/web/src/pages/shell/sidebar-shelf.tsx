@@ -8,7 +8,7 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-/** A folded list pinned to the bottom of the sidebar, such as Snoozed; it grows upwards when open. */
+/** A folded list pinned to the bottom of the sidebar, such as Snoozed; it grows upwards when open. The sidebar caps all shelves together. */
 export function SidebarShelf({
   title,
   count,
@@ -33,9 +33,7 @@ export function SidebarShelf({
           </span>
         </CollapsibleTrigger>
       </SectionHeading>
-      <CollapsibleContent className="rk-scroll flex max-h-[40vh] flex-col overflow-y-auto">
-        {children}
-      </CollapsibleContent>
+      <CollapsibleContent className="flex flex-col">{children}</CollapsibleContent>
     </Collapsible>
   );
 }
