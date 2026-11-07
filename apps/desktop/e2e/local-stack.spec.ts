@@ -260,11 +260,23 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
   await expect(setup.getByRole("button", { name: "Check connection" })).toBeVisible();
 
-  // Main process still finishes the install; setup.json must stay untouched.
+  // Main process still finishes the install; setup.json must stay untouched. Wait for the
+  // stack to be ready, not for a fixed time: a health probe that misses once retries later.
+  // How the window handles readiness after the switch is pinned in setup.test.ts.
   await expect
-    .poll(async () => (await readLog()).some((line) => line.includes(" up -d")), AFTER_PULL)
-    .toBe(true);
-  await new Promise((resolve) => setTimeout(resolve, 2500));
+    .poll(
+      () =>
+        setup.evaluate(async () => {
+          const { stack } = (
+            window as unknown as {
+              rakazoSetup: { stack: { state: () => Promise<{ phase: string } | null> } };
+            }
+          ).rakazoSetup;
+          return (await stack.state())?.phase;
+        }),
+      AFTER_PULL,
+    )
+    .toBe("ready");
   expect(await savedSetup()).toBeNull();
   expect(app.windows()).toHaveLength(1);
 
