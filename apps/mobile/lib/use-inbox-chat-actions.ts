@@ -184,7 +184,13 @@ export function useInboxChatActions({
           notifyArchivedChatsChanged();
           void loadBots();
         };
-        const requestContext = await chatRequestContext(chat.spaceId);
+        // Capture fails only when the session or server changed; the delete is dropped quietly.
+        let requestContext: ApiRequestContext | undefined;
+        try {
+          requestContext = await chatRequestContext(chat.spaceId);
+        } catch {
+          return;
+        }
         if (kind === "bot") {
           confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
         } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);

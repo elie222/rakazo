@@ -3,7 +3,7 @@
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { rpc } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import type { InboxRowAction } from "./inbox-swipe";
@@ -21,11 +21,11 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
-  captureApiRequestContext: async () => ({
+  captureApiRequestContext: vi.fn(async () => ({
     apiBase: "",
     headers: { authorization: "Bearer token", "x-rakazo-space-id": session.space },
     sessionGeneration: session.generation,
-  }),
+  })),
   currentApiBase: () => "",
   rpc: vi.fn(),
   selectedSpaceId: () => session.space,
@@ -293,6 +293,15 @@ it.each([
   expect(vi.mocked(confirm).mock.calls[0]!.at(-1)).toMatchObject({
     headers: { "x-rakazo-space-id": "space-b" },
   });
+});
+
+it("drops a delete from another space when the session changes before it asks", async () => {
+  const h = await handlers(async () => ({ ok: true }));
+  vi.mocked(captureApiRequestContext).mockRejectedValueOnce(new Error("session changed"));
+  await expect(
+    h.runRowAction("bot", { id: "x", name: "Ada", spaceId: "space-b" }, "delete"),
+  ).resolves.toBeUndefined();
+  expect(confirmDeleteBot).not.toHaveBeenCalled();
 });
 
 it("creates and renames a section from the row menu in the chat's own space", async () => {
