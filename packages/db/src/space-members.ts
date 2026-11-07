@@ -4,7 +4,7 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { computerScopeKey, userControlHeldBy } from "./computers.js";
-import { appendEventInTransaction, createPendingSteeringRun } from "./events.js";
+import { appendEventInTransaction } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
 import { runAsSystem } from "./row-security.js";
@@ -15,6 +15,7 @@ import {
   SpaceNotFoundError,
 } from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
+import { createPendingSteeringRun } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export const SPACE_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;

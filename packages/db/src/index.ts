@@ -25,6 +25,7 @@ export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
 export * from "./database-access.js";
 export * from "./deferred-migrations.js";
+export { eventsAfter, followThreadEvents, notifyRealtime } from "./event-stream.js";
 export * from "./events.js";
 export * from "./expire-stuck-run.js";
 export * from "./external-conversations.js";
@@ -53,8 +54,16 @@ export * from "./space-members.js";
 export * from "./space-settings.js";
 export * from "./spaces.js";
 export * from "./spending.js";
+export * from "./thread-ask.js";
 export { primaryActiveRun } from "./thread-listing.js";
 export * from "./thread-reads.js";
+export type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
+export {
+  claimSteering,
+  createPendingSteeringRun,
+  discardAnsweredSteering,
+} from "./thread-steering.js";
+export * from "./thread-takeover.js";
 export * from "./transaction-retry.js";
 export * from "./unread-inbox-chats.js";
 export * from "./usage.js";

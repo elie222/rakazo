@@ -1,4 +1,8 @@
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingPaymentNotCompletedError,
+} from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import {
   encodeStripeForm,
@@ -260,6 +264,26 @@ describe("Stripe billing HTTP boundary", () => {
     await provider.cancelCustomerSubscriptions(customerId);
     expect(wire.sessions.map((session) => session.status)).toEqual(["expired"]);
     expect(() => wire.completeCheckout(customerId)).toThrow(/open checkout/);
+  });
+
+  it("keeps the trial when the early charge is declined or needs confirming", async () => {
+    for (const failure of [
+      { status: 402, type: "invalid_request_error", message: "requires additional user action" },
+      { status: 402, type: "card_error", code: "card_declined", message: "declined" },
+    ]) {
+      const { wire, provider } = setup((wire) => async (input, init) => {
+        if (init?.method === "POST" && String(init.body).includes("trial_end=now"))
+          wire.failures.push(failure);
+        return wire.fetch(input, init);
+      });
+      const { customerId } = await provider.createCustomer(owner);
+      await provider.createCheckout({ customerId, seats: 1, trialDays: 7, ...urls });
+      wire.completeCheckout(customerId);
+      await expect(provider.endTrial(customerId)).rejects.toBeInstanceOf(
+        BillingPaymentNotCompletedError,
+      );
+      expect(wire.subscriptions[0]!.status).toBe("trialing");
+    }
   });
 
   it("maps Stripe statuses onto the neutral set", () => {

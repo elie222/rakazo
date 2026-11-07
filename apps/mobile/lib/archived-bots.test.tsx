@@ -8,8 +8,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchivedBots from "../app/(settings)/archived-bots";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
-import type { MobileBot, MobileGroup } from "./api";
 import { onArchivedChatsChanged } from "./archived-chats";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 import { registerSettingsSheet } from "./settings-sheet";
 
 const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selectSpace } =
@@ -27,15 +27,19 @@ const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selec
 const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
 const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
-  selectSpace,
   rpc: (procedure: string, ...args: unknown[]) =>
     procedure === "spaces/list"
       ? Promise.resolve({ spaces: [{ id: "space-a" }] })
       : procedure.startsWith("groups/")
         ? groupRpc(procedure, ...args)
         : rpc(procedure, ...args),
+}));
+vi.mock("./api-server", () => ({
+  selectSpace,
 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),

@@ -30,6 +30,7 @@ import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
@@ -166,21 +167,29 @@ function isLaunchSecret(name: string, value: string): boolean {
 }
 
 /** A flag, query, or header value under a credential name. Only explicit credential names
- * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
+ * (`api_key`, `password`, `access_key`) take numeric values, so `?key=0` cannot redact every zero. */
 function isCredentialArg(name: string, value: string): boolean {
   const normalized = snakeName(name);
   return (
     isCredentialName(normalized) &&
-    looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
+    looksLikeSecretValue(value, {
+      allowNumeric: isExplicitCredentialKey(normalized) || NAMED_KEY.test(normalized),
+    })
   );
 }
 
-/** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
+/** Key names that say which credential they hold (`access_key`, not a bare `key`). */
+const NAMED_KEY = /(?:^|_)(access_key|private_key|secret_key)$/;
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `client_auth`, `pat`). */
 function isCredentialName(normalized: string): boolean {
   return (
     isExplicitCredentialKey(normalized) ||
     isAmbiguousCredentialKey(normalized) ||
-    /(?:^|_)(access_key|private_key|secret_key)$|^(key|pat|auth)$/.test(normalized)
+    NAMED_KEY.test(normalized) ||
+    /^(key|pat|auth)$/.test(normalized) ||
+    // `--client-auth <token>`, but not a switch such as `--no-auth`, whose next argument is not its value.
+    (/_auth$/.test(normalized) && !/^(no|disable|enable|skip|use|require)_/.test(normalized))
   );
 }
 
@@ -1010,8 +1019,12 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+/** Serializes changes to one MCP server's stored credential across the API and worker. */
+export function lockMcpOAuthMaterial(
+  tx: Prisma.TransactionClient,
+  serverId: string,
+): Promise<unknown> {
+  return advisoryLock(tx, "mcp-oauth-material", serverId);
 }
 
 /** One refresh-token grant against the stored authorization server. */
@@ -1382,7 +1395,7 @@ export class McpOAuthBroker {
     // default transaction timeout.
     const { revision } = await withRefreshLock(
       this.prisma,
-      (tx) => lockMaterial(tx, pending.serverId),
+      (tx) => lockMcpOAuthMaterial(tx, pending.serverId),
       async (tx) => {
         const endpoint = pending.stdio ? null : pending.endpoint;
         const snapshot = await this.snapshot(tx, pending.serverId, input, endpoint);
@@ -1546,7 +1559,7 @@ export class McpOAuthBroker {
         () =>
           withRefreshLock(
             this.prisma,
-            (tx) => lockMaterial(tx, serverId),
+            (tx) => lockMcpOAuthMaterial(tx, serverId),
             async (tx) => {
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
@@ -1704,7 +1717,7 @@ export class McpOAuthBroker {
         stored,
         () =>
           this.prisma.$transaction(async (tx) => {
-            await lockMaterial(tx, serverId);
+            await lockMcpOAuthMaterial(tx, serverId);
             return this.commitMaterial(
               tx,
               serverId,

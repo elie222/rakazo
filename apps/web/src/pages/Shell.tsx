@@ -22,23 +22,12 @@ import {
   otherAuthor,
   workingRoutineName,
 } from "@rakazo/core";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Keyboard,
-  LayoutTemplate,
-  Lock,
-  Monitor,
-  Moon,
-  Plug,
-  Plus,
-  ScrollText,
-  Sun,
-  Users,
-} from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -70,22 +59,18 @@ import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
 import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
-import { createSpaceRpc, selectedSpaceId, selectSpace } from "../lib/rpc";
+import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
-import type { AppearancePreference } from "../lib/ui-appearance";
-import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineEditor";
-import { useSettingsNavItems } from "./settings-nav";
+import { RoutineList } from "./RoutineList";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
-import type { CommandPaletteAction } from "./shell/command-palette";
 import { Composer } from "./shell/composer";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
@@ -99,7 +84,7 @@ import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
 import { ShellSidePanel } from "./shell/side-panel";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar-roster";
-import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
+import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { useChatRead } from "./shell/use-chat-read";
@@ -108,6 +93,7 @@ import { useComposerMentions } from "./shell/use-composer-mentions";
 import { useComputerControls, useComputerState } from "./shell/use-computer";
 import { useMessageJump } from "./shell/use-message-jump";
 import { useMobileSidebar } from "./shell/use-mobile-sidebar";
+import { usePaletteActions } from "./shell/use-palette-actions";
 import { useReadAloud } from "./shell/use-read-aloud";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
@@ -115,8 +101,10 @@ import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
 import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/use-sidebar-search";
+import { useSpaceActions } from "./shell/use-space-actions";
 import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
+import { useTeaching } from "./shell/use-teaching";
 import { useThreadState } from "./shell/use-thread-state";
 import { useThreadSync } from "./shell/use-thread-sync";
 import type { SettingsSection } from "./shell-overlay";
@@ -209,7 +197,7 @@ function SpaceShell() {
   const refreshAgentSkills = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queries.agentSkills.list.queryKey() });
   }, [queries]);
-  const [teachBusy, setTeachBusy] = useState(false);
+
   const messagingStatus = useQuery({
     ...queries.messaging.status.queryOptions(),
     enabled: Boolean(session.data?.user),
@@ -799,37 +787,14 @@ function SpaceShell() {
     },
     [setSearchParams],
   );
-  const stopTeaching = useCallback(async () => {
-    const id = activeBotId.current;
-    if (!id || teachBusy) return;
-    const recording = thread.taughtSkills.find(
-      (skill) => skill.status === "recording" && thread.taughtSkillsBotId === id,
-    );
-    if (!recording) return;
-    setTeachBusy(true);
-    try {
-      await rpc.skills.stop({ skillId: recording.id });
-      await refreshThreadRef.current(id);
-      setComputerOpen(false);
-    } finally {
-      setTeachBusy(false);
-    }
-  }, [teachBusy, thread.taughtSkills, thread.taughtSkillsBotId]);
-  // Teach chrome needs skills applied before this resolves — refreshThread only
-  // kicks skills.list off in the background, so Stop teaching would never mount
-  // if that background call failed or lagged behind local recovery.
-  const refreshActiveTeaching = useCallback(async () => {
-    const id = activeBotId.current;
-    if (!id) return;
-    await refreshThreadRef.current(id);
-    const skills = await fetchFresh(
-      queryClient,
-      queries.skills.list.queryOptions({ input: { botId: id } }),
-    );
-    if (activeBotId.current !== id) return;
-    thread.setTaughtSkills(skills);
-    thread.setTaughtSkillsBotId(id);
-  }, []);
+  const { teachBusy, stopTeaching, refreshActiveTeaching } = useTeaching({
+    rpc,
+    queries,
+    thread,
+    activeBotId,
+    refreshThreadRef,
+    closeComputer: () => setComputerOpen(false),
+  });
 
   function setBotsSidebarCollapsedPref(collapsed: boolean) {
     setBotsSidebarCollapsed(collapsed);
@@ -846,117 +811,31 @@ function SpaceShell() {
     openSettings("space", spaceId);
   }
 
-  const settingsNavItems = useSettingsNavItems({
-    messaging: messagingSurfaceEnabled,
-    wallet: Boolean(bootstrapMe?.paymentWalletProvider),
-    computer:
-      bootstrapMe?.computerSettingsEnabled === true &&
-      computersAreUnavailable(bootstrapMe?.sandboxProvider),
-    billing: bootstrapMe?.billingEnabled === true,
-    updates: Boolean(desktopBridge()?.update),
+  const paletteActions = usePaletteActions({
+    settingsAvailable: {
+      messaging: messagingSurfaceEnabled,
+      wallet: Boolean(bootstrapMe?.paymentWalletProvider),
+      computer:
+        bootstrapMe?.computerSettingsEnabled === true &&
+        computersAreUnavailable(bootstrapMe?.sandboxProvider),
+      billing: bootstrapMe?.billingEnabled === true,
+      updates: Boolean(desktopBridge()?.update),
+    },
+    onNewBot: () => dialogs.setCreateBotOpen(true),
+    onNewGroup: () => setPanel("create-group"),
+    onNewSpace: () => dialogs.setNewSpaceOpen(true),
+    onShortcuts: () => setShortcutsOpen(true),
+    setOverlay,
+    openSettings,
   });
-  const paletteActions: CommandPaletteAction[] = [
-    {
-      id: "new-bot",
-      label: t`New bot`,
-      icon: Plus,
-      onSelect: () => dialogs.setCreateBotOpen(true),
-    },
-    {
-      id: "new-group",
-      label: t`New group chat`,
-      icon: Users,
-      onSelect: () => setPanel("create-group"),
-    },
-    {
-      id: "new-space",
-      label: t`New private space`,
-      icon: Lock,
-      onSelect: () => dialogs.setNewSpaceOpen(true),
-    },
-    {
-      id: "integrations",
-      label: t`Connect apps`,
-      icon: Plug,
-      onSelect: () => setOverlay({ kind: "integrations" }),
-    },
-    {
-      id: "bot-templates",
-      label: t`Bot templates`,
-      icon: LayoutTemplate,
-      onSelect: () => setOverlay({ kind: "templates" }),
-    },
-    {
-      id: "keyboard-shortcuts",
-      label: t`Keyboard shortcuts`,
-      icon: Keyboard,
-      onSelect: () => setShortcutsOpen(true),
-    },
-    {
-      id: "skills",
-      label: t`Skills`,
-      icon: ScrollText,
-      onSelect: () => setOverlay({ kind: "skills" }),
-    },
-    ...settingsNavItems.map(({ id, label, icon }) => ({
-      id: `settings-${id}`,
-      label: t`Settings: ${label}`,
-      icon,
-      onSelect: () => openSettings(id),
-    })),
-    ...(
-      [
-        { value: "system", label: t`System`, icon: Monitor },
-        { value: "light", label: t`Light`, icon: Sun },
-        { value: "dark", label: t`Dark`, icon: Moon },
-      ] satisfies { value: AppearancePreference; label: string; icon: typeof Sun }[]
-    ).map(({ value, label, icon }) => ({
-      id: `appearance-${value}`,
-      label: t`Appearance: ${label}`,
-      icon,
-      checked: getUiAppearancePreference() === value,
-      onSelect: () => setUiAppearance(value),
-    })),
-  ];
-
-  async function renameSpace(spaceId: string, name: string) {
-    await commitSpaceRename({
-      rename: async () => {
-        await rpc.spaces.rename({ spaceId, name });
-      },
-      apply: () => {
-        setSpaces((current) =>
-          current.map((space) => (space.id === spaceId ? { ...space, name } : space)),
-        );
-      },
-      refresh: () => refreshBots(),
-    });
-  }
-
-  async function removeSpace(spaceId: string) {
-    const result = await rpc.spaces.remove({ spaceId });
-    if (!alive.current) return;
-    setPanel(null);
-    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
-    if (effectiveSpaceId === spaceId) {
-      // The auth boundary changed, so reload like a space switch.
-      if (selectSpace(result.activeSpaceId)) {
-        window.location.assign("/app");
-        return;
-      }
-    }
-    await refreshBots(true);
-  }
-
-  async function leftSpace(spaceId: string, activeSpaceId: string) {
-    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
-    // Leaving the open space changes the auth boundary, so reload like a space switch.
-    if (effectiveSpaceId === spaceId && selectSpace(activeSpaceId)) {
-      window.location.assign("/app");
-      return;
-    }
-    await refreshBots(true);
-  }
+  const { renameSpace, removeSpace, leftSpace } = useSpaceActions({
+    rpc,
+    alive,
+    setSpaces,
+    refreshBots,
+    bootstrapMe,
+    closePanel: () => setPanel(null),
+  });
 
   function openCreatedBot(bot: Bot) {
     roster.addCreatedBot(bot);
@@ -1300,6 +1179,7 @@ function SpaceShell() {
               computerOpen={computerOpen}
               embeddedScreenUrl={computerControls.embeddedScreenUrl}
               screenFrameKey={computerState.screenFrameKey}
+              heldScreen={computerState.heldScreen}
               screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
@@ -1450,6 +1330,7 @@ function SpaceShell() {
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
           screenFrameKey={computerState.screenFrameKey}
+          heldScreen={computerState.heldScreen}
           screenFrameRef={computerState.setScreenFrame}
           computerScreenError={computerControls.computerScreenError}
           computerBooting={computerControls.computerBooting}

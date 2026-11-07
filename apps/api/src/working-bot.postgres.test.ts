@@ -11,14 +11,14 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { threadSnapshot } from "./thread-snapshot.js";
 import {
   cancelThreadRuns,
-  resolveThreadTarget,
   STOPPED_BY_MESSAGE_NOTE,
   stoppedRoutineNote,
   stopThreadRuns,
-  threadSnapshot,
-} from "./thread-target.js";
+} from "./thread-stop.js";
+import { resolveThreadTarget } from "./thread-target.js";
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 

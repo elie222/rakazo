@@ -14,12 +14,8 @@ import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
-import {
-  aiConsentCoalesceKey,
-  captureApiRequestContext,
-  rpc,
-  subscribeConfirmedSpaceSwitch,
-} from "./api";
+import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";

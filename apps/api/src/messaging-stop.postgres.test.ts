@@ -10,7 +10,7 @@ import {
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
-import { STOPPED_BY_MESSAGE_NOTE } from "./thread-target.js";
+import { STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);

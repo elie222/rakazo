@@ -160,6 +160,31 @@ function sourceRecords(): AccountExportRecord[] {
       createdAt: at,
     },
     {
+      type: "thread",
+      id: "src-thread-helper",
+      botId: null,
+      groupId: null,
+      helperBotId: "src-bot-child",
+      historyCompactedUpToSeq: null,
+      historyCompactionSummary: null,
+      createdAt: at,
+    },
+    {
+      type: "message",
+      id: "src-msg-helper",
+      threadId: "src-thread-helper",
+      seq: 0,
+      role: "bot",
+      blocks: [
+        { kind: "text", text: "helper found the venue" },
+        { kind: "subagent", agentId: "a1", name: "Scout", task: "venues", status: "running" },
+      ],
+      botId: "src-bot-child",
+      replyToMessageId: null,
+      replyQuote: null,
+      createdAt: at,
+    },
+    {
       type: "artifact",
       id: "src-art-1",
       botId: "src-bot-child",
@@ -507,6 +532,27 @@ describePostgres("account import (PostgreSQL)", () => {
     );
     expect(group.thread?.messages.map((message) => message.blocks)).toEqual([
       [{ kind: "text", text: "hello crew" }],
+    ]);
+    const helperThread = await system.thread.findFirstOrThrow({
+      where: { spaceId, helperBotId: child.id },
+      include: { messages: true },
+    });
+    expect(helperThread).toMatchObject({ botId: null, groupId: null, nextMessageSeq: 1 });
+    expect(helperThread.messages.map((message) => [message.botId, message.blocks])).toEqual([
+      [
+        child.id,
+        [
+          { kind: "text", text: "helper found the venue" },
+          {
+            kind: "subagent",
+            agentId: "a1",
+            name: "Scout",
+            task: "venues",
+            status: "failed",
+            result: "stopped",
+          },
+        ],
+      ],
     ]);
     expect(
       await system.routine.findFirstOrThrow({

@@ -1,6 +1,7 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   displayName,
   isBackgroundRunTrigger,
   plainTextFromMarkdown,
@@ -13,6 +14,7 @@ import { countUnreadInboxChats } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
+import { messageBlocksText } from "./run-replies.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 const NOTIFY_RECIPIENTS_AT_ONCE = 5;
@@ -247,16 +249,18 @@ export function publishChatAlert(
 }
 
 export function runSendsFinishNotification(trigger: string): boolean {
-  return trigger !== "created" && !isBackgroundRunTrigger(trigger);
+  // A background helper's result is announced by the turn that passes it on.
+  return (
+    trigger !== "created" &&
+    trigger !== BACKGROUND_HELPER_TRIGGER &&
+    !isBackgroundRunTrigger(trigger)
+  );
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */
 export function completionNotificationBody(assembled: string, blocks: MessageBlock[]): string {
   if (assembled) return assembled;
-  return blocks
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("");
+  return messageBlocksText(blocks);
 }
 
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */

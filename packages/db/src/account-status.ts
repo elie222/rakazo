@@ -4,11 +4,8 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import type { ThreadEvents } from "./events.js";
-import {
-  appendEventInTransaction,
-  createPendingSteeringRun,
-  transientRunEventsWhere,
-} from "./events.js";
+import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
+import { createPendingSteeringRun } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Whether the account may not sign in or run work. A missing account counts as active. */

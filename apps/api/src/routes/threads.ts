@@ -25,6 +25,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -35,23 +36,23 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../thread-message-pages.js";
-import type { ThreadTarget } from "../thread-target.js";
+import { reactToThreadMessage } from "../thread-reactions.js";
 import {
-  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
-  reactToThreadMessage,
+  setThreadUnreadState,
+} from "../thread-read-state.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
+import type { ThreadTarget } from "../thread-target.js";
+import {
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
-  setThreadUnreadState,
-  stopThreadRuns,
   threadHead,
-  threadSnapshot,
 } from "../thread-target.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -305,6 +306,11 @@ export function threadsRoutes(ctx: RouterContext) {
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
+        return { ok: true as const };
+      }),
+      stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await stopThreadRuns(deps, context.actor, target, input.messageId);
         return { ok: true as const };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {

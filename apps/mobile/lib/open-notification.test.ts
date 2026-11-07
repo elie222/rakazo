@@ -10,7 +10,7 @@ vi.mock("expo-notifications", () => ({
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
 }));
-vi.mock("./api", () => ({
+vi.mock("./session", () => ({
   loadSessionToken: vi.fn(),
 }));
 vi.mock("./settings-sheet", () => ({
@@ -19,9 +19,9 @@ vi.mock("./settings-sheet", () => ({
 
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { loadSessionToken } from "./api";
 import { threadRouteId } from "./notification-open";
 import { openNotificationResponse } from "./open-notification";
+import { loadSessionToken } from "./session";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";

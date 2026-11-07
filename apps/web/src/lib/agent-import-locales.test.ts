@@ -6,9 +6,11 @@ import { UI_LOCALES } from "./ui-locale";
 /** Agent import's own files; a string used only by these belongs to import. */
 const IMPORT_FILES = [
   "src/lib/agent-import-errors.ts",
+  "src/pages/shell/agent-import-plan.tsx",
   "src/pages/shell/agent-import.tsx",
   "src/pages/shell/import-setup-card.tsx",
   "src/pages/shell/import-status.ts",
+  "src/pages/shell/use-agent-import-source.ts",
 ];
 /** Import strings that live in shared files. */
 const SHARED_IMPORT_STRINGS = ["Import an agent"];
@@ -38,7 +40,10 @@ const catalog = (locale: string) =>
 
 describe("agent import translations", () => {
   it("covers every catalog the app ships", () => {
-    const shipped = readdirSync(fileURLToPath(localesDir)).sort();
+    const shipped = readdirSync(fileURLToPath(localesDir), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
     expect(shipped).toEqual([...UI_LOCALES].sort());
   });
 

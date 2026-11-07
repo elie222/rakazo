@@ -7,6 +7,10 @@ export const COMPUTER_RATE_LIMIT_ERROR = "Too many computer requests. Try again 
 /** The organization spent this period's computer allowance; computers start again at renewal. */
 export const COMPUTER_ALLOWANCE_USED_ERROR = "No computer hours left.";
 
+/** The deployment's computer provider account cannot start computers, such as when it is unpaid. */
+export const COMPUTER_PROVIDER_UNAVAILABLE_ERROR =
+  "Computers are unavailable right now. Try again later.";
+
 /** Whether an error says the computer hours are spent, which only a plan change can fix. */
 export function isComputerAllowanceUsed(message: string | null | undefined): boolean {
   return message?.startsWith(COMPUTER_ALLOWANCE_USED_ERROR) ?? false;
@@ -29,6 +33,8 @@ export const RUN_TRIGGERS = [
   "media",
   "created",
   "tickets",
+  "helper",
+  "helper_result",
 ] as const;
 export const RunTriggerSchema = z.enum(RUN_TRIGGERS);
 export type RunTrigger = z.infer<typeof RunTriggerSchema>;

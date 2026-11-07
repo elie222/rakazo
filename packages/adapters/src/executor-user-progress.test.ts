@@ -15,6 +15,8 @@ import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
 import type * as ModelVisionModule from "./model-vision.js";
+import type * as RunNotificationsModule from "./run-notifications.js";
+import { notifyRun } from "./run-notifications.js";
 import { GROUP_UNADDRESSED_REPLY_GUIDANCE, messagesModeReplyGuidance } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { MID_TURN_PROGRESS_MIN_TURN_AGE_MS, userProgressClientNonce } from "./user-progress.js";
@@ -29,6 +31,11 @@ const vision = vi.hoisted(() => ({ seesImages: false }));
 vi.mock("./model-vision.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelVisionModule>()),
   modelAcceptsImageInput: () => vision.seesImages,
+}));
+
+vi.mock("./run-notifications.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof RunNotificationsModule>()),
+  notifyRun: vi.fn(async () => undefined),
 }));
 
 vi.mock("./bot-messages.js", () => ({
@@ -78,6 +85,8 @@ async function runTurn(
     priorBotMessage?: boolean;
     /** A messaging run from a 1:1 chat instead of a group channel. */
     directChat?: boolean;
+    /** The peer message answers a request this bot sent, so the user reads the reply. */
+    repliesToRequest?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -87,7 +96,7 @@ async function runTurn(
     text: "Look again",
     intent,
     hop: 1,
-    repliesToRequest: false,
+    repliesToRequest: options.repliesToRequest ?? false,
   });
   const run = {
     id: "run-1",
@@ -2144,5 +2153,34 @@ describe("a group member the message named nobody for", () => {
     });
     expect(result.finalizeRun.mock.calls[0]![0].blocks).not.toEqual([]);
     expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+});
+
+describe("completion pushes", () => {
+  const completionPushes = () =>
+    vi.mocked(notifyRun).mock.calls.filter(([, , message]) => message.kind === "completion");
+
+  it("sends none for an agent-to-agent turn that leaves the chat read", async () => {
+    vi.mocked(notifyRun).mockClear();
+    const { finalizeRun } = await runTurn("Pinned.", true, "I will pin it.", [], "request", {
+      trigger: "bot_message",
+    });
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: false }));
+    expect(completionPushes()).toEqual([]);
+  });
+
+  it("sends one for the answer to a request the bot made for the user", async () => {
+    vi.mocked(notifyRun).mockClear();
+    await runTurn("Both bots are pinned.", true, "I will check.", [], "fyi", {
+      trigger: "bot_message",
+      repliesToRequest: true,
+    });
+    expect(completionPushes()).toHaveLength(1);
+  });
+
+  it("sends one for a reply to the user", async () => {
+    vi.mocked(notifyRun).mockClear();
+    await runTurn("Done.", false, "I will check.", [], "fyi", { trigger: "user" });
+    expect(completionPushes()).toHaveLength(1);
   });
 });

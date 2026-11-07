@@ -47,6 +47,7 @@ import {
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
+import { providerScopeKey } from "./connection-flows.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -55,7 +56,6 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
-import { providerScopeKey } from "./routes/connections.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
@@ -5789,6 +5789,19 @@ describe("model credential persistence", () => {
     // A new account stays a new account.
     await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("answers a provider sign-in outage as a retryable 503", async () => {
+    const { deps, handler } = persistDeps();
+    Object.assign(deps.oauthLogins, {
+      begin: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Device code request failed with status 503: {"error":{"code":503}}'),
+        ),
+    });
+    const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
+    expect(response.status).toBe(503);
   });
 
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {

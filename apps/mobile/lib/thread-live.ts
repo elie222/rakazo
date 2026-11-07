@@ -10,9 +10,10 @@ import {
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
-import type { MobileSnapshot } from "./api";
-import { rpc, subscribeThread } from "./api";
+import { rpc } from "./api";
+import { subscribeThread } from "./api-live";
 import { getHapticsEnabled, hapticSuccess } from "./haptics";
+import type { MobileSnapshot } from "./mobile-types";
 import { currentSessionGeneration } from "./session";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
