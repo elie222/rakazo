@@ -832,47 +832,37 @@ app.whenReady().then(async () => {
 
   if (target.kind === "setup") {
     showSetupWindow();
-  } else if (target.source === "saved") {
-    if (desktop.currentSetup?.mode === "new") {
-      const managedUrl = managedLocalOpenUrl(target.url, desktop.localStack.webUrl());
-      const managedStackReady =
-        managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
-      if (managedStackReady && managedUrl !== null) {
-        if (await appOpener.open(managedUrl)) {
-          commitPendingAppSwitch();
-          destroySetupWindow();
-        }
-      } else {
-        // Missing, stale, foreign, or owned by another process: reconcile the
-        // app-managed stack before any API or computer traffic is allowed.
-        void desktop.localStack.start();
-        showSetupWindow();
+  } else if (target.source === "saved" && desktop.currentSetup?.mode === "new") {
+    const managedUrl = managedLocalOpenUrl(target.url, desktop.localStack.webUrl());
+    const managedStackReady =
+      managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
+    if (managedStackReady && managedUrl !== null) {
+      if (await appOpener.open(managedUrl)) {
+        commitPendingAppSwitch();
+        destroySetupWindow();
       }
     } else {
-      const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
-      if (reachability.ok) {
-        if (await appOpener.open(target.url)) {
-          commitPendingAppSwitch();
-          destroySetupWindow();
-        }
-      } else {
-        showSetupWindow(
-          t("Could not reconnect to the saved server. {detail}", {
-            detail: reachability.error ?? "",
-          }),
-        );
-      }
+      // Missing, stale, foreign, or owned by another process: reconcile the
+      // app-managed stack before any API or computer traffic is allowed.
+      void desktop.localStack.start();
+      showSetupWindow();
     }
-  } else if (target.source === "cloud") {
-    // Offline on a first launch: setup offers the other servers alongside the reason.
-    const reachability = await probeServer(target.url);
+  } else if (target.source !== "env") {
+    const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
     if (reachability.ok) {
       if (await appOpener.open(target.url)) {
         commitPendingAppSwitch();
         destroySetupWindow();
       }
     } else {
-      showSetupWindow(reachability.error ?? null);
+      // An unreachable first-launch Cloud lands in setup, where the other servers are.
+      showSetupWindow(
+        target.source === "saved"
+          ? t("Could not reconnect to the saved server. {detail}", {
+              detail: reachability.error ?? "",
+            })
+          : (reachability.error ?? null),
+      );
     }
   } else {
     if (await appOpener.open(target.url)) {
