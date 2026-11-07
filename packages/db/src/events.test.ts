@@ -539,7 +539,10 @@ describe("thread lock transaction budget", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
@@ -5220,7 +5223,10 @@ describe("clearThread", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5272,7 +5278,10 @@ describe("clearThread", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5365,7 +5374,10 @@ describe("clearThread", () => {
     const fanout = new TestFanout();
     const tx = {
       $executeRaw: vi.fn(async () => 0),
-      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      threadRead: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => [{ id: "group-1" }]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
