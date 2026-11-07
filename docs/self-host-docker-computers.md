@@ -196,4 +196,5 @@ supervisor sets `TZ` and `LANGUAGE` on the container, and the browser offers pag
 (`Accept-Language` and `navigator.languages`), also for a browser profile saved earlier. Without
 them, the computer stays on UTC and the browser's default language. A changed time zone or
 language replaces the computer on its next start, so after upgrading, each computer whose owner
-has either set is replaced once. The home and saved browser profiles are kept.
+has either set is replaced once. The home and saved browser profiles are kept. A custom computer
+image should not set `TZ` or `LANGUAGE`: the computer gets them from the account.

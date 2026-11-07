@@ -12,14 +12,17 @@ describe("computer time zone and language", () => {
     });
     expect(
       resolveComputerLocale({ timezone: "America/Argentina/Buenos_Aires", language: "pt_br" }),
-    ).toEqual({ timezone: "America/Argentina/Buenos_Aires", language: "pt-BR" });
-    // The zone files are case-sensitive: fix the case, but keep the name the account gave, since
-    // the runtime's preferred spelling (Asia/Calcutta) may be a link the image does not ship.
+    ).toEqual({ timezone: "America/Buenos_Aires", language: "pt-BR" });
+    // The zone files are case-sensitive, so the computer gets Intl's spelling, also for an alias
+    // the account saved in another case.
     expect(resolveComputerLocale({ timezone: "europe/warsaw" })).toEqual({
       timezone: "Europe/Warsaw",
     });
+    expect(resolveComputerLocale({ timezone: "europe/kyiv" })).toEqual({
+      timezone: "Europe/Kiev",
+    });
     expect(resolveComputerLocale({ timezone: "Asia/Kolkata" })).toEqual({
-      timezone: "Asia/Kolkata",
+      timezone: "Asia/Calcutta",
     });
     expect(resolveComputerLocale({ timezone: "Etc/GMT+3", language: "zh-Hant-TW" })).toEqual({
       timezone: "Etc/GMT+3",

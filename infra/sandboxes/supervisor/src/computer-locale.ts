@@ -25,11 +25,11 @@ export function resolveComputerLocale(input: {
   const timezone = input.timezone?.trim();
   if (timezone && /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/.test(timezone)) {
     try {
-      // Zone files are case-sensitive, so take the runtime's spelling when it differs only in
-      // case; an alias keeps the given name, as the runtime may name a link the image lacks.
-      const resolved = new Intl.DateTimeFormat("en", { timeZone: timezone }).resolvedOptions()
-        .timeZone;
-      locale.timezone = resolved.toLowerCase() === timezone.toLowerCase() ? resolved : timezone;
+      // Intl accepts any case, but zone files are case-sensitive, so use Intl's spelling. It may
+      // be a legacy link (Asia/Calcutta for Asia/Kolkata); the image's tzdata ships those too.
+      locale.timezone = new Intl.DateTimeFormat("en", {
+        timeZone: timezone,
+      }).resolvedOptions().timeZone;
     } catch {}
   }
   const language = input.language?.trim().replaceAll("_", "-");
