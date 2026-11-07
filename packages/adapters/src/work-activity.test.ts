@@ -303,11 +303,14 @@ describe("live status card of the user's bots at work", () => {
     });
   });
 
-  it("keeps a few cards per user, dropping the oldest", async () => {
-    const { activities, cards } = setup();
+  it("keeps a few cards per user, ending the oldest", async () => {
+    const { activities, cards, send } = setup();
     for (let phone = 0; phone < 7; phone += 1)
       await activities.register("user-1", "session-1", String(phone).repeat(64));
     expect(cards.size).toBe(5);
+    // The cards dropped are ended, not left on their phones without updates.
+    for (const phone of ["0", "1"])
+      expect(send).toHaveBeenCalledWith(phone.repeat(64), expect.objectContaining({ ended: true }));
   });
 
   it("forgets a card Apple no longer knows", async () => {

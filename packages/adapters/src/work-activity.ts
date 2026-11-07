@@ -113,21 +113,25 @@ export class WorkActivities {
         update: { userId, sessionId, createdAt: new Date() },
       }),
     );
-    // A user's phones are few; the oldest cards beyond that go, so each update fans out a little.
+    // A user's phones are few; the oldest cards beyond that end, so each update fans out a little.
     const extra = await runAsSystem("find a user's oldest live status cards", () =>
       this.prisma.workActivityToken.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
         skip: MAX_CARDS_PER_USER,
-        select: { tokenDigest: true },
+        select: { tokenDigest: true, ciphertext: true },
       }),
     );
-    if (extra.length)
-      await runAsSystem("drop a user's oldest live status cards", () =>
-        this.prisma.workActivityToken.deleteMany({
-          where: { tokenDigest: { in: extra.map((card) => card.tokenDigest) } },
-        }),
-      );
+    await Promise.all(
+      extra.map(async (card) => {
+        const old = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
+        const at = Math.floor(Date.now() / 1000);
+        await this.provider.send(old, { state: EMPTY_STATE, ended: true, urgent: true, at });
+        await runAsSystem("drop a user's oldest live status card", () =>
+          this.prisma.workActivityToken.deleteMany({ where: { tokenDigest: card.tokenDigest } }),
+        );
+      }),
+    );
     // The work may have moved on before the card registered.
     this.userChanged(userId);
     return true;
