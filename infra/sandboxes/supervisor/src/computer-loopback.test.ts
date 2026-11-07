@@ -76,6 +76,55 @@ afterEach(async () => {
   });
 });
 
+function setupContainerFixture() {
+  const network = { remove: vi.fn().mockResolvedValue(undefined) };
+  const container = {
+    id: "new-container-id",
+    start: vi.fn().mockResolvedValue(undefined),
+    inspect: vi.fn().mockResolvedValue({
+      State: { Running: true },
+      HostConfig: { PortBindings: {} },
+    }),
+    remove: vi.fn().mockResolvedValue(undefined),
+  };
+  mocks.docker.getImage.mockReturnValue({ inspect: vi.fn().mockResolvedValue({ Id: "image" }) });
+  mocks.docker.createNetwork.mockResolvedValue(network);
+  mocks.docker.createContainer.mockResolvedValue(container);
+  return { network, container };
+}
+
+async function provisionBot(
+  botId = "bot-new",
+  spaceId = "space-1",
+  homePath = path.join(process.env.DATA_DIR!, "homes", botId),
+) {
+  const { supervisorApp } = await import("./index.js");
+  return supervisorApp.request("/computers", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": botId,
+      "x-rakazo-space-id": spaceId,
+    },
+    body: JSON.stringify({ botId, spaceId, homePath }),
+  });
+}
+
+async function provision(homePath = path.join(process.env.DATA_DIR!, "homes", "bot")) {
+  const { supervisorApp } = await import("./index.js");
+  return supervisorApp.request("/computers", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+    },
+    body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
+  });
+}
+
 describe("computer loopback provision lifecycle", () => {
   it.each([
     { error: new Error("daemon unavailable"), status: 500 },
@@ -336,20 +385,6 @@ describe("provisioning network rollback", () => {
     return { network, container };
   }
 
-  async function provision(homePath = path.join(process.env.DATA_DIR!, "homes", "bot")) {
-    const { supervisorApp } = await import("./index.js");
-    return supervisorApp.request("/computers", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
-        "content-type": "application/json",
-        "x-rakazo-bot-id": "bot",
-        "x-rakazo-space-id": "space",
-      },
-      body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
-    });
-  }
-
   it.each(["1.44", "1.45"])(
     "provisions named-volume homes only with subpath support (%s)",
     async (apiVersion) => {
@@ -570,21 +605,6 @@ describe("restricted egress rekeying", () => {
     return { homePath, existing, replacement };
   }
 
-  async function provision() {
-    const { supervisorApp } = await import("./index.js");
-    const homePath = path.join(process.env.DATA_DIR!, "homes", "bot");
-    return supervisorApp.request("/computers", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
-        "content-type": "application/json",
-        "x-rakazo-bot-id": "bot",
-        "x-rakazo-space-id": "space",
-      },
-      body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
-    });
-  }
-
   it("replaces a computer whose network lacks the named bridge", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
     const botNet = computerNetworkNameFor("bot");
@@ -614,7 +634,28 @@ describe("restricted egress rekeying", () => {
       expect.anything(),
       COMPUTER_IMAGE,
       ["1.1.1.1", "9.9.9.9"],
+      expect.any(Function),
     );
+  });
+
+  it("rechecks restricted egress before every provision", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const { existing } = setupExisting(computerNetworkNameFor("bot"));
+    mocks.verifyRestrictedEgress
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("firewall missing"));
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({
+        Id: "bot-network",
+        Options: { "com.docker.network.bridge.name": computerBridgeNameFor("bot") },
+      }),
+    });
+    expect((await provision()).status).toBe(200);
+    const rejected = await provision();
+    expect(rejected.status).toBe(500);
+    expect(await rejected.json()).toEqual({ error: "firewall missing" });
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+    expect(existing.remove).not.toHaveBeenCalled();
   });
 
   it("refuses restricted computers until the host ruleset is verified", async () => {
@@ -656,6 +697,65 @@ describe("restricted egress rekeying", () => {
     // The completed answer is kept: no third probe.
     await provision();
     expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+  });
+
+  // Concurrency tests need three distinct bots (the lifecycle lock serializes
+  // same-bot provisions) and the plain create-path mocks.
+  async function concurrentProvisionFixture() {
+    setupContainerFixture();
+    mocks.docker.listContainers.mockResolvedValue([]);
+    return {
+      provisions: () => [
+        provisionBot("bot-one"),
+        provisionBot("bot-two"),
+        provisionBot("bot-three"),
+      ],
+    };
+  }
+
+  it("shares one re-check among provisions that waited on the first probe", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "auto");
+    const { provisions } = await concurrentProvisionFixture();
+    // The first probe settles auto mode to restricted; the re-check it triggers
+    // is held open so both waiters must share it instead of each probing again.
+    let releaseRecheck: () => void = () => {};
+    const recheck = new Promise<void>((resolve) => {
+      releaseRecheck = resolve;
+    });
+    mocks.verifyRestrictedEgress.mockResolvedValueOnce(undefined).mockReturnValueOnce(recheck);
+    const requests = provisions();
+    await vi.waitFor(() => expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2));
+    // Give any straggler request time to reach the gate while the re-check is
+    // still held: a waiter that failed to share would add a third call here.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+    releaseRecheck();
+    for (const response of await Promise.all(requests)) {
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one in-flight verification among concurrent restricted provisions", async () => {
+    // Each start must be covered by a verification that finishes after it
+    // arrives, but a burst of starts shares one probe instead of creating a
+    // network per start from the engine's small address pools.
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const { provisions } = await concurrentProvisionFixture();
+    let releaseProbe: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    mocks.verifyRestrictedEgress.mockReturnValueOnce(held);
+    const requests = provisions();
+    await vi.waitFor(() => expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(1);
+    releaseProbe();
+    for (const response of await Promise.all(requests)) {
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(1);
   });
 
   it("resumes a computer whose network has the named bridge", async () => {
@@ -766,41 +866,6 @@ describe("restricted egress rekeying", () => {
 });
 
 describe("space computer limit enforcement", () => {
-  function setupContainerFixture() {
-    const network = { remove: vi.fn().mockResolvedValue(undefined) };
-    const container = {
-      id: "new-container-id",
-      start: vi.fn().mockResolvedValue(undefined),
-      inspect: vi.fn().mockResolvedValue({
-        State: { Running: true },
-        HostConfig: { PortBindings: {} },
-      }),
-      remove: vi.fn().mockResolvedValue(undefined),
-    };
-    mocks.docker.getImage.mockReturnValue({ inspect: vi.fn().mockResolvedValue({ Id: "image" }) });
-    mocks.docker.createNetwork.mockResolvedValue(network);
-    mocks.docker.createContainer.mockResolvedValue(container);
-    return { network, container };
-  }
-
-  async function provisionBot(
-    botId = "bot-new",
-    spaceId = "space-1",
-    homePath = path.join(process.env.DATA_DIR!, "homes", botId),
-  ) {
-    const { supervisorApp } = await import("./index.js");
-    return supervisorApp.request("/computers", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
-        "content-type": "application/json",
-        "x-rakazo-bot-id": botId,
-        "x-rakazo-space-id": spaceId,
-      },
-      body: JSON.stringify({ botId, spaceId, homePath }),
-    });
-  }
-
   it("rejects new container creation with 429 when space container limit is reached", async () => {
     setupContainerFixture();
     vi.stubEnv("SANDBOX_MAX_COMPUTERS_PER_SPACE", "2");

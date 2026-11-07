@@ -15,6 +15,7 @@ import {
   resolveScreenNetworkMode,
   resolveTeamScreenLimit,
 } from "./computer-spec.js";
+import { ATTEST_CONTEXT, attestImageEnsurer } from "./egress-attest.js";
 
 loadRootEnv();
 
@@ -26,6 +27,9 @@ const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
 export const ensureComputerImage = computerImageEnsurer(docker, COMPUTER_IMAGE, computerContext);
+// The supervisor builds the attestation probe image from the bundled context
+// when restricted egress is first used (see egress-attest.ts).
+export const ensureAttestImage = attestImageEnsurer(docker, ATTEST_CONTEXT);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 export const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 export let supervisorInfo: Docker.ContainerInspectInfo | undefined;

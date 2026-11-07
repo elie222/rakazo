@@ -4,8 +4,14 @@ import { serve } from "@hono/node-server";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { computerResourceLimits } from "./computer-spec.js";
-import { computerEgressSetting, ensureComputerImage, screenNetworkMode } from "./context.js";
+import {
+  computerEgressSetting,
+  docker,
+  ensureComputerImage,
+  screenNetworkMode,
+} from "./context.js";
 import { computerEgressMode, ensureRestrictedEgressEnforced } from "./egress.js";
+import { cleanupAbandonedProbeNetworks } from "./egress-probe.js";
 import { reclaimIdleComputerNetworks } from "./networks.js";
 import { supervisorApp } from "./routes.js";
 
@@ -33,6 +39,17 @@ async function startSupervisor() {
   void reclaimIdleComputerNetworks().catch((error) => {
     logger.error("computer network reclaim failed", error);
   });
+  // A crashed supervisor leaves its probe network behind; remove those (never an
+  // active concurrent probe — see cleanupAbandonedProbeNetworks). Long-lived
+  // peers keep crashing occasionally, so the cleanup also runs on a timer; it
+  // holds no lock and is safe to race against itself and other supervisors.
+  const cleanupProbes = () =>
+    void cleanupAbandonedProbeNetworks(docker).catch((error) => {
+      logger.error("egress probe network cleanup failed", error);
+    });
+  cleanupProbes();
+  const probeCleanupTimer = setInterval(cleanupProbes, 10 * 60_000);
+  probeCleanupTimer.unref();
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
   const server = serve({ fetch: supervisorApp.fetch, hostname, port }, () => {
