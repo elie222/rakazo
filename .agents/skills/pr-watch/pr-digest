@@ -132,7 +132,8 @@ findings() {
           startswith("<h3>Greptile Summary</h3>") or startswith("<!-- greptile_summary -->")))
         or ((.user.login | startswith("qodo-")) and (.body | ltrimstr("\n") |
           startswith("<h3>PR Summary by Qodo</h3>") or startswith("<h3>Code Review by Qodo</h3>")
-            or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")))
+            or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")
+            or test("^\\[Code review\\]\\([^)]*\\) by qodo was updated up to the latest commit ")))
         or (.user.login == "github-actions[bot]" and (.body |
           startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")
             or startswith("<!-- rakazo-preview -->")
