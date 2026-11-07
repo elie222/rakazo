@@ -1929,6 +1929,7 @@ describe("answerRunInput", () => {
       opener: { trigger: string; clientNonce?: string } = { trigger: "created" },
     ) => {
       const tx = {
+        user: { findMany: vi.fn().mockResolvedValue([]) },
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
           findFirst: vi.fn().mockResolvedValue({
@@ -1945,6 +1946,7 @@ describe("answerRunInput", () => {
               },
             ],
           }),
+          create: vi.fn().mockResolvedValue({ id: "user-answer" }),
           update: vi.fn().mockResolvedValue({ id: "message-1" }),
         },
         run: {
@@ -2101,6 +2103,99 @@ describe("answerRunInput", () => {
     });
   });
 
+  it.each([
+    ["Reykjavik instead", true],
+    ["paris", false],
+    ["London", false],
+  ])(
+    "records an answer typed into an option card as the user's message (%s: %s)",
+    async (answer, recorded) => {
+      const tx = {
+        user: { findMany: vi.fn().mockResolvedValue([]) },
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        message: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "message-1",
+            blocks: [
+              {
+                kind: "ask",
+                text: "Which city?",
+                status: "pending",
+                actions: [
+                  { id: "paris", label: "Paris" },
+                  { id: "london", label: "London" },
+                ],
+              },
+            ],
+          }),
+          create: vi.fn().mockResolvedValue({ id: "user-answer" }),
+          update: vi.fn().mockResolvedValue({ id: "message-1" }),
+        },
+        run: {
+          findFirst: vi.fn().mockResolvedValue({ botId: "bot-2", userId: "user-1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({
+            status: "queued",
+            startedAt: new Date("2026-08-16T12:00:00.000Z"),
+            threadId: "thread-1",
+          }),
+        },
+        task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
+        event: {
+          create: vi.fn(
+            async ({ data }: { data: { seq: number; type: string; payload: unknown } }) => ({
+              ...event(data.seq),
+              type: data.type,
+              payload: data.payload,
+            }),
+          ),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+
+      await expect(
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "user-1",
+            answer,
+          },
+          new TestFanout(),
+        ),
+      ).resolves.toBe(true);
+
+      // A chosen option already shows on the card; only text it does not carry needs a message.
+      if (!recorded) {
+        expect(tx.message.create).not.toHaveBeenCalled();
+        return;
+      }
+      expect(tx.message.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          threadId: "thread-1",
+          role: "user",
+          authorUserId: "user-1",
+          runId: "run-1",
+          blocks: [{ kind: "text", text: answer }],
+        }),
+      });
+      expect(tx.event.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: "thread.message.created",
+            payload: expect.objectContaining({ messageId: "user-answer", role: "user" }),
+          }),
+        }),
+      );
+    },
+  );
+
   it.each([undefined, "call:call-1:choice-1"])(
     "resumes with the full offered choice label (call nonce: %s)",
     async (clientNonce) => {
@@ -2208,6 +2303,7 @@ describe("answerRunInput", () => {
   it("answers a custom free-text reply that is not an offered choice", async () => {
     const fanout = new TestFanout();
     const tx = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
         findFirst: vi.fn().mockResolvedValue({
@@ -2224,6 +2320,7 @@ describe("answerRunInput", () => {
             },
           ],
         }),
+        create: vi.fn().mockResolvedValue({ id: "user-answer" }),
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
       run: {

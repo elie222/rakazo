@@ -659,8 +659,9 @@ it("stacks option buttons in a non-wrapping full-width column and keeps approval
         <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
       ),
     );
-    const buttons = [...container.querySelectorAll("button")];
-    const row = buttons[0]!.parentElement!;
+    // An option card also offers typing its own answer below the option row.
+    const row = [...container.querySelectorAll("button")][0]!.parentElement!;
+    const buttons = [...row.querySelectorAll("button")];
     expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
       approval ? ["false", "false"] : ["true", "true"],
     );

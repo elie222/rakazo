@@ -34,6 +34,7 @@ export function AskActions({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
+  const [typed, setTyped] = useState("");
   const submitting = pendingAction !== null;
   const displayActions =
     instructions !== undefined
@@ -58,7 +59,7 @@ export function AskActions({
 
   return (
     <View style={{ marginTop: 12, gap: 6 }}>
-      {editing ? (
+      {instructions !== undefined && editing ? (
         <TextInput
           accessibilityLabel={t("Instructions")}
           multiline
@@ -120,6 +121,45 @@ export function AskActions({
           );
         })}
       </View>
+      {!approval && instructions === undefined ? (
+        editing ? (
+          <>
+            <TextInput
+              accessibilityLabel={t("Type your answer")}
+              value={typed}
+              onChangeText={setTyped}
+              editable={!submitting}
+              onSubmitEditing={() => {
+                if (typed.trim()) void submit(typed.trim());
+              }}
+              style={{ color: tokens.foreground, backgroundColor: native.fill, padding: 12 }}
+            />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+              <NativeActionButton
+                label={t("Send answer")}
+                disabled={disabled || !typed.trim() || submitting}
+                onPress={() => void submit(typed.trim())}
+              />
+              <NativeActionButton
+                label={t("Cancel")}
+                disabled={submitting}
+                prominence="secondary"
+                onPress={() => {
+                  setTyped("");
+                  setEditing(false);
+                }}
+              />
+            </View>
+          </>
+        ) : (
+          <NativeActionButton
+            label={t("Type your answer")}
+            disabled={disabled || submitting}
+            prominence="plain"
+            onPress={() => setEditing(true)}
+          />
+        )
+      ) : null}
     </View>
   );
 }

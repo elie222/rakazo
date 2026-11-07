@@ -183,6 +183,8 @@ async function commitAnswerRunInput(
   tx: Prisma.TransactionClient,
   input: AnswerRunInput,
   runSecretWriter?: RunSecretWriter,
+  /** Answered on the card itself, so no chat message of the user's carries the text. */
+  onCard = false,
 ): Promise<{
   threadId: string;
   seq: number;
@@ -332,10 +334,13 @@ async function commitAnswerRunInput(
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
+  // Text typed into an option card that names none of its options shows nowhere else: the card
+  // marks only a chosen option, and a reply typed in the chat box is already the user's message.
+  const recordsTypedAnswer = onCard && choiceAsk && !selectedChoice;
 
   // Give spoken answers the same durable, call-scoped user utterance as other voice turns.
   // Secret asks stay out of message history; the call UI requires those answers on screen.
-  if (recordsCallUtterance) {
+  if (recordsCallUtterance || recordsTypedAnswer) {
     const blocks = [{ kind: "text" as const, text: input.answer }];
     const utterance = await createThreadMessageInTransaction(tx, {
       threadId: input.threadId,
@@ -494,7 +499,7 @@ export async function answerRunInput(
 ): Promise<boolean> {
   const commit = (writer = runSecretWriter) =>
     prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => commitAnswerRunInput(tx, input, writer),
+      async (tx: Prisma.TransactionClient) => commitAnswerRunInput(tx, input, writer, true),
       THREAD_LOCK_TRANSACTION_OPTIONS,
     );
   // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
