@@ -871,6 +871,11 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
+  const marksUnread = completionMarksUnread(
+    run.trigger,
+    text,
+    ctx.source.peerMessage?.repliesToRequest === true,
+  );
   await ctx.settleRunningHelpers();
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -883,9 +888,7 @@ export async function completeRun(ctx: RunContext) {
     leaseFence: ctx.fence,
     outcome: "completed",
     blocks,
-    markUnread:
-      !groupSilentEnd &&
-      completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true),
+    markUnread: !groupSilentEnd && marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
@@ -914,7 +917,13 @@ export async function completeRun(ctx: RunContext) {
     );
   }
   const notifyBody = completionNotificationPreview(text);
-  if (runSendsFinishNotification(run.trigger) && notifyBody && !completed.continuationRunId) {
+  // Agent-to-agent work the chat stays read for is not news to the user either.
+  if (
+    runSendsFinishNotification(run.trigger) &&
+    marksUnread &&
+    notifyBody &&
+    !completed.continuationRunId
+  ) {
     await notifyRun(deps, run, {
       kind: "completion",
       title: `${displayName(bot.name, "Bot")} finished`,

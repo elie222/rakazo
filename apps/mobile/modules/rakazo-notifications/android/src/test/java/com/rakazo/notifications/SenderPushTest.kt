@@ -40,11 +40,12 @@ class SenderPushTest {
   }
 
   @Test
-  fun `a Rakazo push missing a title is dropped to avoid blank tray spam`() {
+  fun `a plain push, whose title Expo renders, still goes to Expo`() {
+    // Registrations without sender support get Expo's own title and text beside this data.
     assertEquals(
-      PushDisposition.DROP,
+      PushDisposition.EXPO,
       SenderPush.disposition(
-        JSONObject(mapOf("notificationTitle" to "", "botId" to "bot", "threadId" to "thread", "kind" to "completion")),
+        JSONObject(mapOf("botId" to "bot", "threadId" to "thread", "kind" to "completion")),
         hasSession = { true },
         openThread = { false },
         foreground = { false },
