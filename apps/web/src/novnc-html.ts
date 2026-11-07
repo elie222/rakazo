@@ -1,6 +1,9 @@
 import type { IncomingHttpHeaders } from "node:http";
 import type { Readable } from "node:stream";
-import { SCREEN_ASSET_BASE_PARAM } from "@rakazo/contracts/content-security-policy";
+import {
+  SCREEN_ASSET_BASE_PARAM,
+  screenAssetBase,
+} from "@rakazo/contracts/content-security-policy";
 
 export const MAX_NOVNC_HTML_BYTES = 1024 * 1024;
 
@@ -68,7 +71,6 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
   return { ...rest, "cache-control": "no-store, no-transform" };
 }
 
-const NOVNC_ASSET_BASE = /^\/novnc\/session\/view\/(\d+)\.[A-Za-z0-9_-]+\/$/;
 // The page loads its modules right after this answer; a nearly spent watch screen is left out.
 const NOVNC_ASSET_BASE_MIN_REMAINING_MS = 60_000;
 
@@ -80,8 +82,10 @@ const NOVNC_ASSET_BASE_MIN_REMAINING_MS = 60_000;
 export function novncAssetBase(url: string | undefined, now = Date.now()): string | undefined {
   if (!url) return undefined;
   const value = new URL(url, "http://screen.invalid").searchParams.get(SCREEN_ASSET_BASE_PARAM);
-  const match = value ? NOVNC_ASSET_BASE.exec(value) : null;
-  return match && Number(match[1]) - now > NOVNC_ASSET_BASE_MIN_REMAINING_MS ? value! : undefined;
+  const named = value ? screenAssetBase(value) : undefined;
+  // The whole value must be the directory itself, nothing before or after it.
+  if (!named || named.base !== value) return undefined;
+  return named.expiresAt - now > NOVNC_ASSET_BASE_MIN_REMAINING_MS ? value : undefined;
 }
 
 /** The request without the asset parameter, which the authority and the computer never see. */
@@ -202,7 +206,8 @@ export function injectNovncStorageShim(
 </script>`;
   // Relative module and style URLs resolve under the watch screen; the socket URL is built from
   // the page's own location or an absolute path, so it stays on the control capability.
-  const head = `${assetBase && NOVNC_ASSET_BASE.test(assetBase) ? `<base href="${assetBase}">` : ""}${shim}`;
+  const safeBase = assetBase && screenAssetBase(assetBase)?.base === assetBase;
+  const head = `${safeBase ? `<base href="${assetBase}">` : ""}${shim}`;
   return html.includes("<head>")
     ? html.replace("<head>", `<head>${head}`)
     : html.replace(/<script\b/i, `${head}<script`);

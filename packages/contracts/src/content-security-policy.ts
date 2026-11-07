@@ -16,6 +16,14 @@ export const MCP_APP_VIEWER_PATH = "/mcp-app-viewer.html";
 export const COMPUTER_SCREEN_PATH = "/computer-screen/screen.html";
 /** The query parameter with which a control screen page names its bot's watch screen for files. */
 export const SCREEN_ASSET_BASE_PARAM = "assets";
+const SCREEN_ASSET_BASE = /^\/novnc\/session\/view\/(\d+)\.[A-Za-z0-9_-]+\//;
+
+/** The watch screen directory a proxied screen path sits under, with that capability's expiry. */
+export function screenAssetBase(path: string): { base: string; expiresAt: number } | undefined {
+  const match = SCREEN_ASSET_BASE.exec(path);
+  return match ? { base: match[0], expiresAt: Number(match[1]) } : undefined;
+}
+
 export const COMPUTER_SCREEN_PREFIX = "/computer-screen/";
 export const COMPUTER_SCREEN_RUNTIME_PATH = "/computer-screen/sdk/ASP/container.html";
 

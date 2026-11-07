@@ -8,7 +8,10 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
-import { SCREEN_ASSET_BASE_PARAM } from "@rakazo/contracts/content-security-policy";
+import {
+  SCREEN_ASSET_BASE_PARAM,
+  screenAssetBase,
+} from "@rakazo/contracts/content-security-policy";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -467,9 +470,7 @@ export function useComputerState({
   function withViewAssets(url: string | null, botId: string) {
     if (!url || proxiedScreenCapability(url)?.policy !== "control") return url;
     const view = viewScreenUrlFor(botId);
-    const base =
-      view &&
-      /^\/novnc\/session\/view\/[^/]+\//.exec(new URL(view, window.location.href).pathname)?.[0];
+    const base = view && screenAssetBase(new URL(view, window.location.href).pathname)?.base;
     if (!base) return url;
     return `${url}${url.includes("?") ? "&" : "?"}${SCREEN_ASSET_BASE_PARAM}=${encodeURIComponent(base)}`;
   }

@@ -11,6 +11,7 @@ import {
   MCP_APP_VIEWER_PATH,
   parseContentSecuritySources,
   parseCrispWebsiteId,
+  screenAssetBase,
 } from "./content-security-policy.js";
 
 function directives(policy: string) {
@@ -206,5 +207,19 @@ describe("Crisp chat widget", () => {
     for (const value of ["nope", 'c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec"; alert(1)//']) {
       expect(() => parseCrispWebsiteId(value)).toThrow("CRISP_WEBSITE_ID");
     }
+  });
+});
+
+describe("watch screen directory", () => {
+  it("finds the directory and expiry of a watch screen path, and nothing else", () => {
+    expect(
+      screenAssetBase("/novnc/session/view/1700000000000.abc_DEF-1/embed.html?path=x"),
+    ).toEqual({
+      base: "/novnc/session/view/1700000000000.abc_DEF-1/",
+      expiresAt: 1700000000000,
+    });
+    expect(screenAssetBase("/novnc/session/control/1700000000000.abc/embed.html")).toBeUndefined();
+    expect(screenAssetBase("/x/novnc/session/view/1700000000000.abc/")).toBeUndefined();
+    expect(screenAssetBase("/novnc/session/view/1700000000000.a%2Fb/")).toBeUndefined();
   });
 });
