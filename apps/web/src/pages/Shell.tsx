@@ -13,6 +13,7 @@ import {
   channelMessageSender,
   chatSnoozed,
   chatUserBubbleColors,
+  chatWoke,
   dismissableAskMessageIds,
   foldPeerReplies,
   groupBotsForSidebar,
@@ -460,6 +461,17 @@ function SpaceShell() {
     activeBotId,
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
+  // A chat that wakes while it is open is already seen: read it, which ends the snooze.
+  const openChatWoke = active
+    ? chatWoke(active, snoozeNow)
+    : activeGroup
+      ? chatWoke(activeGroup, snoozeNow)
+      : false;
+  useEffect(() => {
+    if (!openChatWoke) return;
+    if (groupId) read.markGroupReadOnReply(groupId);
+    else if (active) read.markBotReadIfVisible(active.id);
+  }, [openChatWoke]);
   const {
     refreshThread,
     refreshGroupThread,

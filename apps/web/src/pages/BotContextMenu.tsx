@@ -132,7 +132,11 @@ export function BotContextMenu({
             {SNOOZE_PRESETS.map((preset) => {
               const wake = snoozePresetTime(preset, now);
               return (
-                <ContextMenuItem key={preset} onClick={() => onSnooze(wake.toISOString())}>
+                <ContextMenuItem
+                  key={preset}
+                  // From the click, so a menu left open still snoozes from now.
+                  onClick={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
+                >
                   {presetLabels[preset]}
                   {PRESET_DAYS.has(preset) ? (
                     <span className="ms-auto text-label text-muted-foreground">
