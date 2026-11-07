@@ -37,6 +37,10 @@ export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before runni
 export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
   "Connect your own API key in Models or choose Rakazo credits in Billing.";
 
+/** A metered model call the organization's Rakazo credits cannot cover. */
+export const MODEL_CREDITS_EXHAUSTED_ERROR =
+  "Not enough model credits. Add credits in Billing or connect your own API key.";
+
 /** A run in a billing organization without a paid plan, credits, or free period. */
 export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
 
@@ -193,7 +197,7 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -208,7 +212,7 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model)\b|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
 
 /**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
@@ -282,6 +286,9 @@ export function normalizeRunError(
       : MODEL_CONNECTION_RUN_ERRORS.has(trimmed)
         ? { summary: translate(trimmed), details, recovery: "connection" }
         : { summary: details, details };
+  }
+  if (trimmed === MODEL_CREDITS_EXHAUSTED_ERROR) {
+    return { summary: translate(trimmed), details, recovery: "connection", kind: "credit" };
   }
   if (trimmed === MODEL_OUTPUT_CUT_ERROR) {
     return {
@@ -384,7 +391,7 @@ export function normalizeRunError(
   } else if (
     status === 402 ||
     quotaResetAt !== undefined ||
-    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
+    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)|\bupgrade to a paid (?:account|plan)\b/i.test(
       signals,
     )
   ) {
