@@ -44,13 +44,9 @@ internal object SenderPush {
     openThread: () -> Boolean,
     foreground: () -> Boolean,
   ): PushDisposition {
-    val botId = data.optString("botId")
-    val threadId = data.optString("threadId")
-    if (data.optString("notificationTitle").isBlank()) {
-      return if (botId.isNotBlank() && threadId.isNotBlank()) PushDisposition.DROP else PushDisposition.EXPO
-    }
-    if (botId.isBlank()) return PushDisposition.EXPO
-    if (threadId.isBlank()) return PushDisposition.EXPO
+    if (data.optString("notificationTitle").isBlank()) return PushDisposition.EXPO
+    if (data.optString("botId").isBlank()) return PushDisposition.EXPO
+    if (data.optString("threadId").isBlank()) return PushDisposition.EXPO
     if (!hasSession()) return PushDisposition.DROP
     if (openThread()) return PushDisposition.DROP
     // Matches the app's foreground handler: finished work is already on screen.

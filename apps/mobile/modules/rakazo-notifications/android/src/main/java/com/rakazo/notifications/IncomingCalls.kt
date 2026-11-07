@@ -21,7 +21,6 @@ import java.util.concurrent.Executors
 class RakazoMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(message: RemoteMessage) {
     val call = runCatching { JSONObject(message.data["body"] ?: "{}") }.getOrNull() ?: JSONObject()
-    for ((key, value) in message.data) if (key != "body") call.put(key, value)
     when (call.optString("kind")) {
       "incoming_call" -> IncomingCalls.report(this, call)
       "incoming_call_ended" -> IncomingCalls.settled(this, call)
