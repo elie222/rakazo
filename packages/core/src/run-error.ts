@@ -113,6 +113,7 @@ const MODEL_OUTPUT_RUN_ERRORS = new Set([
 const MODEL_CONNECTION_RUN_ERRORS = new Set([
   MISSING_MODEL_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
 ]);
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
@@ -286,9 +287,6 @@ export function normalizeRunError(
       : MODEL_CONNECTION_RUN_ERRORS.has(trimmed)
         ? { summary: translate(trimmed), details, recovery: "connection" }
         : { summary: details, details };
-  }
-  if (trimmed === MODEL_CREDITS_EXHAUSTED_ERROR) {
-    return { summary: translate(trimmed), details, recovery: "connection", kind: "credit" };
   }
   if (trimmed === MODEL_OUTPUT_CUT_ERROR) {
     return {

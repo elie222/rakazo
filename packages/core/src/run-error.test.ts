@@ -470,7 +470,6 @@ describe("normalizeRunError", () => {
         summary: MODEL_CREDITS_EXHAUSTED_ERROR,
         details: MODEL_CREDITS_EXHAUSTED_ERROR,
         recovery: "connection",
-        kind: "credit",
       });
     });
 
