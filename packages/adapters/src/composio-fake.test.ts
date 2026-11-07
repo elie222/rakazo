@@ -79,9 +79,11 @@ describe("ComposioConnector over the fake Composio client", () => {
       { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
       { slug: "SHOPIFY", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
     ]);
-    await expect(new ComposioConnector({ client: fake }).catalog(context())).resolves.toEqual([
+    const hidden = new ComposioConnector({ client: fake });
+    await expect(hidden.catalog(context())).resolves.toEqual([
       expect.objectContaining({ slug: "GMAIL" }),
     ]);
+    await expect(connect(hidden, "SHOPIFY")).rejects.toBeInstanceOf(ConnectorAuthUnavailableError);
 
     fake.authConfigs.list = async () => ({
       items: [{ toolkit: { slug: "shopify" }, status: "ENABLED" }],
@@ -91,6 +93,9 @@ describe("ComposioConnector over the fake Composio client", () => {
       expect.objectContaining({ slug: "GMAIL" }),
       expect.objectContaining({ slug: "SHOPIFY" }),
     ]);
+    await expect(connect(new ComposioConnector({ client: fake }), "SHOPIFY")).resolves.toMatch(
+      /^ca_/,
+    );
   });
 
   it("lists every app when the sign-in lookup fails", async () => {

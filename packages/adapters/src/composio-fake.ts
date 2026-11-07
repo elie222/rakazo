@@ -360,6 +360,14 @@ export class FakeComposioClient implements ComposioClient {
     if (!toolkit) throw notFound(`Toolkit ${slug} not found`);
     if (toolkit.noAuth)
       throw new Error(`ToolkitsIsNoAuth: ${toolkit.slug} does not require authentication`);
+    if (toolkit.needsSignInSetup) {
+      const { items } = await this.authConfigs.list({});
+      const configured = items.some(
+        (config) =>
+          config.status === "ENABLED" && config.toolkit.slug.toLowerCase() === slug.toLowerCase(),
+      );
+      if (!configured) throw new Error(`ToolRouterV2_NoManagedAuth: no auth for ${toolkit.slug}`);
+    }
     // Connects instantly, the way an API-key or already-consented toolkit does.
     const id = this.connect(userId, toolkit.slug);
     const state = { id, status: "ACTIVE" as const, redirectUrl: null };
