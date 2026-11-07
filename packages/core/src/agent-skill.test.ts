@@ -468,6 +468,9 @@ describe("skill prompt helpers", () => {
     expect(line).toContain("- Daily standup: Prepare standup notes");
     expect(line).toContain("skill_read");
     expect(line).toContain("Prefer matching skills");
+    expect(line).toContain("One skill per kind of work");
+    expect(line).toContain("verify its steps by re-running them");
+    expect(line).toContain("When a step in a skill goes stale, correct it with skill_update");
   });
 });
 

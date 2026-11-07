@@ -3,7 +3,7 @@ import { settleRunSubagents } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
+import { resultPrompt, returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
 import type { RunContext } from "./run-context.js";
 
 vi.mock("@rakazo/db", async (original) => ({
@@ -114,6 +114,22 @@ describe("starting a background helper", () => {
       startBackgroundHelper(half.ctx, { ...START, modelProvider: "openai" }),
     ).resolves.toEqual({ error: "model_provider and model_id must both be set" });
     expect(half.prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("helper result prompt", () => {
+  it("nudges the bot to distill a completed helper into a skill when worth repeating", () => {
+    const prompt = resultPrompt("scout", "completed", "Found three venues.");
+    expect(prompt).toContain("Pass it on to the user now");
+    expect(prompt).toContain("distill it into a skill with skill_create");
+    expect(prompt).toContain("verify the steps by re-running them first");
+    expect(prompt).toContain("update it with skill_update instead of creating a duplicate");
+  });
+
+  it("does not nudge distillation when the helper failed", () => {
+    const prompt = resultPrompt("scout", "failed", "Timed out.");
+    expect(prompt).toContain("could not finish");
+    expect(prompt).not.toContain("distill it into a skill");
   });
 });
 

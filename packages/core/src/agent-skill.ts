@@ -132,6 +132,7 @@ export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): st
     "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
     "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
     "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
+    "One skill per kind of work: if a similar skill already exists, update it with skill_update instead of creating a duplicate. Before saving a new skill, verify its steps by re-running them, so the skill records what actually works. When a step in a skill goes stale, correct it with skill_update.",
   ].join("\n");
 }
 

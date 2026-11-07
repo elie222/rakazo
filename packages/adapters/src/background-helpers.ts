@@ -316,5 +316,10 @@ export function resultPrompt(name: string, status: "completed" | "failed", resul
     failed
       ? "Tell the user briefly that it could not finish and why."
       : "Pass it on to the user now with its actual substance. If it says memory, skills or routines should change, make that change yourself only when the user asked for it.",
-  ].join("\n");
+    failed
+      ? undefined
+      : "If this task's approach is worth repeating and no skill covers it, distill it into a skill with skill_create: verify the steps by re-running them first, and if a similar skill already exists, update it with skill_update instead of creating a duplicate.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
