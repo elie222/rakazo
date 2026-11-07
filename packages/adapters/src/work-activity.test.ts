@@ -12,7 +12,13 @@ type Run = {
   trigger: string;
   groupId?: string;
 };
-type Card = { tokenDigest: string; userId: string; ciphertext: string; lastState: string | null };
+type Card = {
+  tokenDigest: string;
+  userId: string;
+  sessionId: string;
+  ciphertext: string;
+  lastState: string | null;
+};
 
 const TOKEN = "ab".repeat(32);
 
@@ -21,6 +27,8 @@ function fakeDatabase() {
   const runs: Run[] = [];
   const events: Array<{ runId: string; type: string; seq: number; payload: unknown }> = [];
   const cards = new Map<string, Card>();
+  /** Sessions still signed in. */
+  const sessions = new Set(["session-1", "session-2"]);
   const newestFirst = (list: Run[]) => [...list].reverse();
   const prisma = {
     run: {
@@ -60,6 +68,10 @@ function fakeDatabase() {
           .sort((a, b) => b.seq - a.seq)
           .slice(0, take),
     },
+    session: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.filter((id) => sessions.has(id)).map((id) => ({ id })),
+    },
     workActivityToken: {
       upsert: async (input: {
         where: { tokenDigest: string };
@@ -73,12 +85,17 @@ function fakeDatabase() {
       deleteMany: async ({ where }: { where: { tokenDigest: string } }) => {
         cards.delete(where.tokenDigest);
       },
-      updateMany: async (input: { where: { tokenDigest: string }; data: Partial<Card> }) => {
-        Object.assign(cards.get(input.where.tokenDigest)!, input.data);
+      updateMany: async (input: { where: Partial<Card>; data: Partial<Card> }) => {
+        for (const card of cards.values()) {
+          const matches = Object.entries(input.where).every(
+            ([key, value]) => card[key as keyof Card] === value,
+          );
+          if (matches) Object.assign(card, input.data);
+        }
       },
     },
   } as unknown as PrismaClient;
-  return { prisma, runs, events, cards };
+  return { prisma, runs, events, cards, sessions };
 }
 
 function setup(reply: "sent" | "invalid" | "unavailable" = "sent", windowMs = 20) {
@@ -101,7 +118,7 @@ function setup(reply: "sent" | "invalid" | "unavailable" = "sent", windowMs = 20
 
 async function registered(reply?: "sent" | "invalid" | "unavailable", windowMs?: number) {
   const context = setup(reply, windowMs);
-  expect(await context.activities.register("user-1", TOKEN)).toBe(true);
+  expect(await context.activities.register("user-1", "session-1", TOKEN)).toBe(true);
   await vi.waitFor(() => expect(context.send).toHaveBeenCalledTimes(1));
   return context;
 }
@@ -109,9 +126,9 @@ async function registered(reply?: "sent" | "invalid" | "unavailable", windowMs?:
 describe("live status card of the user's bots at work", () => {
   it("follows only while one of the user's bots is at work", async () => {
     const { activities, cards, runs } = setup();
-    expect(await activities.register("user-2", TOKEN)).toBe(false);
+    expect(await activities.register("user-2", "session-2", TOKEN)).toBe(false);
     runs[0]!.status = "completed";
-    expect(await activities.register("user-1", TOKEN)).toBe(false);
+    expect(await activities.register("user-1", "session-1", TOKEN)).toBe(false);
     expect(cards.size).toBe(0);
   });
 
@@ -126,7 +143,7 @@ describe("live status card of the user's bots at work", () => {
       },
       { runId: "1", type: "thread.progress", seq: 2, payload: { delta: "Here", streaming: true } },
     );
-    await activities.register("user-1", TOKEN);
+    await activities.register("user-1", "session-1", TOKEN);
     // The token is stored encrypted.
     expect([...cards.values()][0]!.ciphertext).not.toContain(TOKEN);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -209,6 +226,21 @@ describe("live status card of the user's bots at work", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("ends a card once the session that registered it ends, and follows a replacement", async () => {
+    const { activities, cards, send, sessions } = await registered();
+    await activities.endSession("user-1", "session-1", "session-2");
+    expect([...cards.values()][0]!.sessionId).toBe("session-2");
+    sessions.delete("session-2");
+    await activities.endSession("user-1", "session-2");
+    await vi.waitFor(() => expect(cards.size).toBe(0));
+    // It leaves with what it already showed; nothing newer reaches the signed-out phone.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.lastCall![1]).toMatchObject({
+      ended: true,
+      state: send.mock.calls[0]![1].state,
+    });
   });
 
   it("forgets a card Apple no longer knows", async () => {

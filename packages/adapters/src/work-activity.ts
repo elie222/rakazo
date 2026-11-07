@@ -81,8 +81,11 @@ export class WorkActivities {
     this.encryption = new EncryptedSecretStore(encryptionKey);
   }
 
-  /** Follows the user's work with this card. False when none of their bots is at work. */
-  async register(userId: string, token: string): Promise<boolean> {
+  /**
+   * Follows the user's work with this card for as long as `sessionId` lasts. False when none of
+   * their bots is at work.
+   */
+  async register(userId: string, sessionId: string, token: string): Promise<boolean> {
     if ((await this.state(userId)).count === 0) return false;
     const tokenDigest = credentialDigest(token);
     const sealed = await this.encryption.put(
@@ -100,8 +103,8 @@ export class WorkActivities {
     await runAsSystem("register a live status card", () =>
       this.prisma.workActivityToken.upsert({
         where: { tokenDigest },
-        create: { tokenDigest, userId, ciphertext: sealed.ciphertext },
-        update: { userId },
+        create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
+        update: { userId, sessionId },
       }),
     );
     // The work may have moved on before the card registered.
@@ -127,6 +130,18 @@ export class WorkActivities {
       );
       for (const { userId } of runs) this.userChanged(userId);
     });
+  }
+
+  /** A session ended or was replaced: its cards end, or move to the session that replaced it. */
+  async endSession(userId: string, sessionId: string, nextSessionId?: string): Promise<void> {
+    if (nextSessionId)
+      await runAsSystem("move live status cards to a replacement session", () =>
+        this.prisma.workActivityToken.updateMany({
+          where: { userId, sessionId },
+          data: { sessionId: nextSessionId },
+        }),
+      );
+    else this.userChanged(userId);
   }
 
   userChanged(userId: string): void {
@@ -159,17 +174,29 @@ export class WorkActivities {
       this.prisma.workActivityToken.findMany({ where: { userId } }),
     );
     if (!cards.length) return;
+    const sessions = await runAsSystem("check the sessions behind a user's cards", () =>
+      this.prisma.session.findMany({
+        where: {
+          id: { in: [...new Set(cards.map((card) => card.sessionId))] },
+          userId,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      }),
+    );
+    const live = new Set(sessions.map((session) => session.id));
     const state = await this.state(userId);
     const json = JSON.stringify(state);
-    const ended = state.count === 0;
     const retried = this.retries.get(userId) ?? 0;
     const results = await Promise.all(
       cards.map(async (card) => {
+        // A signed-out, expired or revoked session's card ends with what it already shows.
+        const ended = state.count === 0 || !live.has(card.sessionId);
         // Sealed like the push token: the rows hold chat content.
         const lastJson = card.lastState
           ? await this.encryption.load(card.lastState, stateRecordId(card.tokenDigest))
           : undefined;
-        if (json === lastJson) return "sent";
+        if (json === lastJson && !ended) return "sent";
         const last: WorkActivityState = lastJson ? JSON.parse(lastJson) : EMPTY_STATE;
         const token = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
         const result = await this.provider.send(token, {

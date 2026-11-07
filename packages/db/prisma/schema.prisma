@@ -164,12 +164,15 @@ model WorkActivityToken {
   tokenDigest String @id
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the card; the card ends with it. No FK, as for push tokens.
+  sessionId String
   ciphertext String
   /// The last state sent, sealed, so unchanged work sends nothing.
   lastState String?
   createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([sessionId])
   @@map("work_activity_tokens")
 }
 

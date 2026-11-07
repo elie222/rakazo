@@ -427,10 +427,16 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       followWorkActivity: authed.notifications.followWorkActivity.handler(
-        async ({ context, input }) => ({
-          following:
-            (await deps.workActivities?.register(context.actor.userId, input.token)) ?? false,
-        }),
+        async ({ context, input }) => {
+          // The card ends with the session that registered it.
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          const following = await deps.workActivities?.register(
+            context.actor.userId,
+            context.sessionId,
+            input.token,
+          );
+          return { following: following ?? false };
+        },
       ),
     },
     voice: {
