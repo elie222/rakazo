@@ -16,7 +16,7 @@ If an open pull request from `i18n/catalog-sync` exists (`gh pr list --head i18n
 3. Fill in anything main translated that the branch had not, for each locale: `git show origin/main:apps/web/src/locales/<locale>/messages.po > /tmp/main-<locale>.po`, then `node .agents/skills/translate/catalog-gaps.ts apply <locale> /tmp/main-<locale>.po`.
 4. Commit the result.
 
-Run `node .agents/skills/translate/catalog-gaps.ts check`. If every locale shows 0 untranslated, stop.
+Run `node .agents/skills/translate/catalog-gaps.ts check`. If it exits 0, push what step 1 committed if you are on `i18n/catalog-sync` (your own branch needs no pull request when nothing changed), and stop. Otherwise translate the gaps and fix any reported mismatch.
 
 ## 2. Translate
 
