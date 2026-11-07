@@ -261,7 +261,12 @@ export function PluginsOverlay({
     surface: IntegrationCatalogSurface,
   ) {
     if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
-    if (surface.kind === "mcp" && surface.auth?.type === "oauth") {
+    // Plain HTTP needs the form, where the address can be corrected before it is saved.
+    if (
+      surface.kind === "mcp" &&
+      surface.auth?.type === "oauth" &&
+      surface.source.startsWith("https://")
+    ) {
       void signInCatalogSurface(result.name, surface.source);
       return;
     }

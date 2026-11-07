@@ -94,6 +94,7 @@ vi.mock("@rakazo/ui-web", async () => {
     [
       "Input",
       (props: {
+        id?: string;
         value?: string;
         disabled?: boolean;
         placeholder?: string;
@@ -101,6 +102,7 @@ vi.mock("@rakazo/ui-web", async () => {
         "aria-label"?: string;
       }) =>
         createElement("input", {
+          id: props.id,
           value: props.value,
           disabled: props.disabled,
           placeholder: props.placeholder,
@@ -213,6 +215,57 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(host.textContent).toContain("Add MCP server");
   expect(searchBox().value).toBe("canva");
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+});
+
+async function addFromDomainSearch(source: string) {
+  api.capabilities.catalogSearch.mockImplementation(async () => ({
+    enabled: true,
+    results: [
+      {
+        domain: "tracker.example.test",
+        name: "Tracker",
+        description: "",
+        pageUrl: null,
+        surfaces: [
+          {
+            kind: "mcp",
+            slug: "tracker",
+            source,
+            auth: { type: "oauth", headerName: null, note: null },
+          },
+        ],
+      },
+    ],
+  }));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  const button = (label: string) =>
+    Array.from(host.querySelectorAll("button")).find((node) => node.textContent === label);
+  await vi.waitFor(() => expect(button("Search by domain")).toBeDefined());
+  await act(async () => button("Search by domain")?.click());
+  await type(
+    host.querySelector<HTMLInputElement>('input[aria-label="Integration domain"]')!,
+    "tracker",
+  );
+  await act(async () => button("Search")?.click());
+  await vi.waitFor(() => expect(button("MCPAdd")).toBeDefined());
+  await act(async () => button("MCPAdd")?.click());
+}
+
+it("opens the editable form for a plain HTTP server instead of signing in", async () => {
+  connectMcpEndpoint.mockReset();
+
+  await addFromDomainSearch("http://mcp.tracker.example.test/mcp");
+
+  expect(connectMcpEndpoint).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLInputElement>("#source-url")?.value).toBe(
+    "http://mcp.tracker.example.test/mcp",
+  );
 });
 
 it("reloads the servers after a catalog sign-in fails, so the added server shows", async () => {
