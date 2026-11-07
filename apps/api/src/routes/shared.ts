@@ -187,12 +187,6 @@ export async function* withHeartbeats<T>(
   const source = follow(
     context.signal ? AbortSignal.any([context.signal, controller.signal]) : controller.signal,
   );
-  // A source that ignores the abort would otherwise keep the loop, and its session re-checks,
-  // running after shutdown has closed the database pool.
-  const ended = new Promise<typeof ENDED>((resolve) => {
-    if (context.signal?.aborted) resolve(ENDED);
-    context.signal?.addEventListener("abort", () => resolve(ENDED), { once: true });
-  });
   let pending: Promise<IteratorResult<T>> | undefined;
   let authorizedAt = Date.now();
   try {
@@ -200,13 +194,22 @@ export async function* withHeartbeats<T>(
       // A heartbeat keeps `pending`, so the in-flight read stays the next event in order.
       pending ??= source.next();
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
       const next = await Promise.race([
         pending,
-        ended,
-        new Promise<typeof HEARTBEAT>((resolve) => {
+        // Racing the abort ends a source that ignores it, so its session re-checks can't run after
+        // shutdown has closed the database pool. The waiter is per read so a settled race, and the
+        // event it carried, isn't retained until disconnect.
+        new Promise<typeof HEARTBEAT | typeof ENDED>((resolve) => {
           timer = setTimeout(() => resolve(HEARTBEAT), HEARTBEAT_MS);
+          if (context.signal?.aborted) return resolve(ENDED);
+          onAbort = () => resolve(ENDED);
+          context.signal?.addEventListener("abort", onAbort, { once: true });
         }),
-      ]).finally(() => clearTimeout(timer));
+      ]).finally(() => {
+        clearTimeout(timer);
+        if (onAbort) context.signal?.removeEventListener("abort", onAbort);
+      });
       if (next === ENDED || context.signal?.aborted) return;
       if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
         if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");

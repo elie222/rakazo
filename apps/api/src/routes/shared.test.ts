@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HEARTBEAT, HEARTBEAT_MS, withHeartbeats } from "./shared.js";
 
@@ -29,6 +30,18 @@ describe("withHeartbeats", () => {
     await expect(first).resolves.toEqual({ done: false, value: "first" });
     await expect(stream.next()).resolves.toEqual({ done: false, value: "second" });
     expect(reads).toHaveBeenCalledOnce();
+    await stream.return(undefined);
+  });
+
+  it("holds no abort listener once each event is delivered", async () => {
+    const request = new AbortController();
+    const stream = withHeartbeats({ signal: request.signal }, async function* () {
+      for (let i = 0; i < 50; i++) yield i;
+    });
+
+    for (let i = 0; i < 50; i++) await stream.next();
+
+    expect(getEventListeners(request.signal, "abort")).toHaveLength(0);
     await stream.return(undefined);
   });
 
