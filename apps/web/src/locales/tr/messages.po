@@ -219,7 +219,7 @@ msgstr "{hours} sa önce"
 
 #: src/pages/Invite.tsx
 msgid "{inviterName} invited you"
-msgstr ""
+msgstr "{inviterName} seni davet etti"
 
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
@@ -262,11 +262,11 @@ msgstr "{name} durduruldu"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keep their own model"
-msgstr ""
+msgstr "{names} kendi modellerini kullanmaya devam ediyor"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keeps its own model"
-msgstr ""
+msgstr "{names} kendi modelini kullanmaya devam ediyor"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -561,7 +561,7 @@ msgstr "Bir komutun çıktısı"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
-msgstr ""
+msgstr "Bir model rutin işlemleri onaylar, geri kalanını sana sorar."
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -631,7 +631,7 @@ msgstr "{0} için işlemler"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Actions for {name}"
-msgstr ""
+msgstr "{name} için işlemler"
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
@@ -855,7 +855,7 @@ msgstr "Tüm zamanlar"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr ""
+msgstr "İzin ver"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
@@ -899,7 +899,7 @@ msgstr "Her zaman işlem yap"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always allow"
-msgstr ""
+msgstr "Her zaman izin ver"
 
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
@@ -915,7 +915,7 @@ msgstr "Her zaman izinli"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always ask"
-msgstr ""
+msgstr "Her zaman sor"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -1096,11 +1096,11 @@ msgstr "Sor"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks before sending, spending or changing anything in your apps."
-msgstr ""
+msgstr "Uygulamalarında bir şey göndermeden, harcamadan veya değiştirmeden önce sorar."
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
-msgstr ""
+msgstr "Yalnızca satın almalardan ve bilgisayarının ilk kullanımından önce sorar. Yalnızca Engelle kuralları geçerlidir."
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1250,7 +1250,7 @@ msgstr "Fatura dönemi"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr ""
+msgstr "Engelle"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
@@ -1325,7 +1325,7 @@ msgstr "Botlar ve tarayıcı otomasyonu"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
-msgstr ""
+msgstr "Botlar kendilerine mesaj gönderen kişinin hesaplarını kullanır"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1333,7 +1333,7 @@ msgstr "Kendi bilgisayarı ve tarayıcısı olan botlar"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bots with their own model"
-msgstr ""
+msgstr "Kendi modeli olan botlar"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1384,7 +1384,7 @@ msgstr "Çağrılar"
 
 #: src/pages/settings-nav.ts
 msgid "Calls, dictation, and replies read aloud."
-msgstr ""
+msgstr "Aramalar, dikte ve sesli okunan yanıtlar."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
@@ -1429,7 +1429,7 @@ msgstr "Yeni grubu iptal et"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Cancel open invites"
-msgstr ""
+msgstr "Açık davetleri iptal et"
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1519,7 +1519,7 @@ msgstr "Slack üzerinden botunuzla sohbet edin."
 
 #: src/pages/settings-nav.ts
 msgid "Chat with your bots from other apps."
-msgstr ""
+msgstr "Botlarınla diğer uygulamalardan sohbet et."
 
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
@@ -1597,7 +1597,7 @@ msgstr "Bir model seçin"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose a model that can see the screen"
-msgstr ""
+msgstr "Ekranı görebilen bir model seç"
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1856,7 +1856,7 @@ msgstr "Bilgisayar kullanım modeli"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
-msgstr ""
+msgstr "Bilgisayar kullanım modeli…"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2089,7 +2089,7 @@ msgstr "Diyagram kaynağını kopyala"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Copy invite link"
-msgstr ""
+msgstr "Davet bağlantısını kopyala"
 
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -2135,7 +2135,7 @@ msgstr "Bu uygulama yetkilendirilemedi"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not cancel invites"
-msgstr ""
+msgstr "Davetler iptal edilemedi"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -2225,7 +2225,7 @@ msgstr "Grup oluşturulamadı"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not create invite link"
-msgstr ""
+msgstr "Davet bağlantısı oluşturulamadı"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2330,7 +2330,7 @@ msgstr "Eklenti kurulamadı"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not leave space"
-msgstr ""
+msgstr "Alandan ayrılınamadı"
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
@@ -2379,7 +2379,7 @@ msgstr "MCP sunucuları yüklenemedi"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not load members"
-msgstr ""
+msgstr "Üyeler yüklenemedi"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2482,7 +2482,7 @@ msgstr "Bağlayıcı kaldırılamadı"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not remove member"
-msgstr ""
+msgstr "Üye çıkarılamadı"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -3057,7 +3057,7 @@ msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
 
 #: src/lib/dictation.ts
 msgid "Didn't catch that."
-msgstr ""
+msgstr "Anlaşılamadı."
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
@@ -3377,11 +3377,11 @@ msgstr "Her hafta"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
-msgstr ""
+msgstr "Buradaki herkes sohbetlerini, botlarını ve hafızasını görür"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr ""
+msgstr "Bu botun alanındaki herkes, botun {linkApp} üzerinden aldığı sohbetleri okuyabilir."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -3952,7 +3952,7 @@ msgstr "Geçersiz kod"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Invite"
-msgstr ""
+msgstr "Davet et"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Invite a friend"
@@ -3969,7 +3969,7 @@ msgstr "Davet bağlantısı"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Invite link copied"
-msgstr ""
+msgstr "Davet bağlantısı kopyalandı"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -3998,11 +3998,11 @@ msgstr "Paylaşılan bağlantısı çalışmayı durdurur ve sohbetteki kartlar�
 
 #: src/pages/Invite.tsx
 msgid "Join"
-msgstr ""
+msgstr "Katıl"
 
 #: src/pages/Invite.tsx
 msgid "Join {spaceName}"
-msgstr ""
+msgstr "{spaceName} alanına katıl"
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -4068,11 +4068,11 @@ msgstr "Ayrıl"
 #. placeholder {0}: space.name
 #: src/components/SpaceMembersSettings.tsx
 msgid "Leave {0}?"
-msgstr ""
+msgstr "{0} alanından ayrılınsın mı?"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Leave space"
-msgstr ""
+msgstr "Alandan ayrıl"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -4200,7 +4200,7 @@ msgstr "Girişler"
 
 #: src/pages/settings-nav.ts
 msgid "Logins and keys your bots can use."
-msgstr ""
+msgstr "Botlarının kullanabileceği girişler ve anahtarlar."
 
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
@@ -4334,7 +4334,7 @@ msgstr "Üye"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Members"
-msgstr ""
+msgstr "Üyeler"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4418,7 +4418,7 @@ msgstr "{peer} botuna mesaj gönderildi"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
-msgstr ""
+msgstr "Mesajlar"
 
 #: src/pages/settings-nav.ts
 msgid "Messaging"
@@ -5666,11 +5666,11 @@ msgstr "{0} kişisini gruptan çıkar"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
-msgstr ""
+msgstr "{label} öğesini kaldır"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Remove {memberName}?"
-msgstr ""
+msgstr "{memberName} çıkarılsın mı?"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5776,7 +5776,7 @@ msgstr "{0} için kayıtlı girişin yerini alır"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
-msgstr ""
+msgstr "Yanıtlar"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
@@ -6170,7 +6170,7 @@ msgstr "Beceri ara"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search tools"
-msgstr ""
+msgstr "Araç ara"
 
 #: src/components/VaultSettings.tsx
 msgid "Search Vault"
@@ -6445,7 +6445,7 @@ msgstr "Site"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Sites you sign in to stay signed in for everyone in this space"
-msgstr ""
+msgstr "Oturum açtığın sitelerde bu alandaki herkes için oturum açık kalır"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Skill"
@@ -6846,7 +6846,7 @@ msgstr "Bot dosyayı kullanabilir ama resmi göremez."
 
 #: src/components/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
-msgstr ""
+msgstr "Botun tarayıcısı bu alandaki herkes için oturumu açık tutar"
 
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -6854,7 +6854,7 @@ msgstr "Tarayıcı mikrofonu sürekli bırakıyor. Tekrar denemek için dikteyi 
 
 #: src/pages/settings-nav.ts
 msgid "The computer your bots work on."
-msgstr ""
+msgstr "Botlarının üzerinde çalıştığı bilgisayar."
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -7009,7 +7009,7 @@ msgstr "Bu içe aktarma zaten kullanıldı. Dosyaları yeniden seç."
 
 #: src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
-msgstr ""
+msgstr "Bu davet bağlantısı artık geçerli değil."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -7244,11 +7244,11 @@ msgstr "Salı"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"
-msgstr ""
+msgstr "Kapat"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn on"
-msgstr ""
+msgstr "Aç"
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -7421,7 +7421,7 @@ msgstr "Harf, rakam, nokta, tire veya alt çizgi kullanın"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use main model"
-msgstr ""
+msgstr "Ana modeli kullan"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7621,7 +7621,7 @@ msgstr "İzlenecek öğe"
 
 #: src/pages/settings-nav.ts
 msgid "What your bots remember between chats."
-msgstr ""
+msgstr "Botlarının sohbetler arasında hatırladıkları."
 
 #: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/RoutineList.tsx
@@ -7634,7 +7634,7 @@ msgstr "E-posta geldiğinde"
 
 #: src/pages/settings-nav.ts
 msgid "When bots check with you before acting."
-msgstr ""
+msgstr "Botların harekete geçmeden önce sana ne zaman danışacağı."
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
@@ -7662,11 +7662,11 @@ msgstr "Botlar nerede çalışsın?"
 
 #: src/pages/settings-nav.ts
 msgid "Where your bots pay from."
-msgstr ""
+msgstr "Botlarının ödemeyi nereden yaptığı."
 
 #: src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
-msgstr ""
+msgstr "Botlarının hangi LLM'leri kullandığı."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
@@ -7811,7 +7811,7 @@ msgstr "OpenRouter sağlayıcınız"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Your other spaces stay private"
-msgstr ""
+msgstr "Diğer alanların gizli kalır"
 
 #: src/components/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
