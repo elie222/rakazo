@@ -271,6 +271,19 @@ export class FakeComposioClient implements ComposioClient {
     },
   };
 
+  readonly toolkits: ComposioClient["toolkits"] = {
+    get: async () =>
+      this.directory.map((entry) => ({
+        slug: entry.slug,
+        noAuth: entry.noAuth,
+        composioManagedAuthSchemes: entry.needsSignInSetup || entry.noAuth ? [] : ["OAUTH2"],
+      })),
+  };
+
+  readonly authConfigs: ComposioClient["authConfigs"] = {
+    list: async () => ({ items: [], nextCursor: null }),
+  };
+
   async create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession> {
     this.created.push({ userId, config });
     const toolkits = Array.isArray(config.toolkits) ? config.toolkits : [];

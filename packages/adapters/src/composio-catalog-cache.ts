@@ -3,9 +3,13 @@ export type ToolkitDirectoryEntry = {
   name: string;
   logo: string | null;
   noAuth: boolean;
+  /** No shared sign-in and no project setup for this app, so connecting it can only fail. */
+  needsSignInSetup?: boolean;
 };
 
-export type ToolkitCatalogEntry = ToolkitDirectoryEntry & { connected: boolean };
+export type ToolkitCatalogEntry = Omit<ToolkitDirectoryEntry, "needsSignInSetup"> & {
+  connected: boolean;
+};
 
 export const COMPOSIO_DIRECTORY_TTL_MS = 60 * 60 * 1000;
 
@@ -14,10 +18,10 @@ export function mergeCatalogWithConnected(
   connectedSlugs: Iterable<string>,
 ): ToolkitCatalogEntry[] {
   const connected = new Set([...connectedSlugs].map((slug) => slug.trim().toLowerCase()));
-  return directory.map((item) => ({
-    ...item,
-    connected: connected.has(item.slug.trim().toLowerCase()),
-  }));
+  return directory.flatMap(({ needsSignInSetup, ...item }) => {
+    const isConnected = connected.has(item.slug.trim().toLowerCase());
+    return needsSignInSetup && !isConnected ? [] : [{ ...item, connected: isConnected }];
+  });
 }
 
 /**

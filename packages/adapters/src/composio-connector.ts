@@ -37,6 +37,17 @@ export type ComposioClient = {
   create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession>;
   sessions: { use(sessionId: string): Promise<ComposioSession> };
   connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
+  toolkits: {
+    get(query: {
+      limit?: number;
+    }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
+  };
+  authConfigs: {
+    list(query: { limit?: number; cursor?: string }): Promise<{
+      items: Array<{ toolkit: { slug: string }; status: string }>;
+      nextCursor: string | null;
+    }>;
+  };
 };
 
 /** Account states the user can only leave by reconnecting. */
@@ -499,13 +510,45 @@ export class ComposioConnector implements ComposioProvider {
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
     const session = await this.sessionFor("__rakazo_catalog__");
-    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
+    const [toolkits, needsSetup] = await Promise.all([
+      collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
+      // Without this lookup every app stays listed, as before.
+      this.toolkitsNeedingSignInSetup().catch(() => new Set<string>()),
+    ]);
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
       name: toolkit.name,
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
+      ...(needsSetup.has(composioSlugKey(toolkit.slug)) ? { needsSignInSetup: true } : {}),
     }));
+  }
+
+  /**
+   * Apps Composio has no managed sign-in for (Shopify, Twitter) connect only
+   * once this project has its own auth config for them; until then hide them.
+   */
+  private async toolkitsNeedingSignInSetup(): Promise<Set<string>> {
+    const composio = await this.sdk();
+    const [toolkits, authConfigs] = await Promise.all([
+      composio.toolkits.get({ limit: 1000 }),
+      collectPages(async (cursor) => {
+        const page = await composio.authConfigs.list({ limit: 100, cursor });
+        return { items: page.items, cursor: page.nextCursor ?? undefined };
+      }),
+    ]);
+    const configured = new Set(
+      authConfigs
+        .filter((config) => config.status === "ENABLED")
+        .map((config) => composioSlugKey(config.toolkit.slug)),
+    );
+    return new Set(
+      toolkits
+        // A missing field is unknown, not "no managed sign-in".
+        .filter((toolkit) => !toolkit.noAuth && toolkit.composioManagedAuthSchemes?.length === 0)
+        .map((toolkit) => composioSlugKey(toolkit.slug))
+        .filter((slug) => !configured.has(slug)),
+    );
   }
 
   async listConnectedSlugs(userId: string): Promise<string[]> {
