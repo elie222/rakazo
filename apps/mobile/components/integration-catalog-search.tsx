@@ -9,19 +9,19 @@ import { signInToMcpServer } from "../lib/mcp-oauth";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { ConnectorIcon } from "./connector-icon";
+import { LOGO_SIZE } from "./integrations-styles";
 import { NativeActionButton } from "./native-action-button";
-
-const LOGO_SIZE = 32;
 
 /** Looks the search up on integrations.sh when asked, and connects a server by signing in. */
 export function IntegrationCatalogSearch({
   query,
   onConnected,
-  onFound,
+  onSearched,
 }: {
   query: string;
-  onConnected: () => Promise<void>;
-  onFound: (found: boolean) => void;
+  /** Called with the server that was added, whether or not its sign-in finished. */
+  onConnected: (serverId: string) => Promise<void>;
+  onSearched: (searched: boolean) => void;
 }) {
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
@@ -38,9 +38,9 @@ export function IntegrationCatalogSearch({
   }, [trimmed]);
 
   useEffect(() => {
-    onFound(Boolean(servers?.length));
-    return () => onFound(false);
-  }, [servers, onFound]);
+    onSearched(servers !== null);
+    return () => onSearched(false);
+  }, [servers, onSearched]);
 
   if (!trimmed) return null;
 
@@ -73,7 +73,7 @@ export function IntegrationCatalogSearch({
         await signInToMcpServer(row.id);
       } finally {
         // The server is added whether or not sign-in finishes; show it, with any client it needs.
-        await onConnected().catch(() => undefined);
+        await onConnected(row.id).catch(() => undefined);
       }
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));

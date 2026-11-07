@@ -1289,7 +1289,7 @@ it("shows a catalog server that still needs a client after its sign-in fails", a
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
       search,
-      "tracker",
+      "tracker.example",
     );
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -1298,11 +1298,34 @@ it("shows a catalog server that still needs a client after its sign-in fails", a
   await act(async () => button("Search integrations.sh")?.click());
   await act(async () => button("Sign in")?.click());
 
+  // The domain search doesn't match the server's name; it shows anyway, with its client form.
+  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
+});
+
+it("says no apps match once when integrations.sh finds nothing either", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/catalogSearch"
+      ? Promise.resolve({ enabled: true, results: [] })
+      : fallback?.(proc, args),
+  );
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      search,
+      "nothing-here",
+    );
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === "Search integrations.sh",
+  );
+
+  await act(async () => button?.click());
+
+  expect(container.textContent?.split("No apps match your search.")).toHaveLength(2);
 });
 
 it("shows a saved client as saved when the sign-in after it fails", async () => {

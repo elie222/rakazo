@@ -113,7 +113,10 @@ export default function Integrations() {
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState<string | null>(null);
-  const [catalogFound, setCatalogFound] = useState(false);
+  const [catalogSearched, setCatalogSearched] = useState(false);
+  const [catalogAdded, setCatalogAdded] = useState<{ serverId: string; query: string } | null>(
+    null,
+  );
   const [signInError, setSignInError] = useState<{ serverId: string; message: string } | null>(
     null,
   );
@@ -251,8 +254,11 @@ export default function Integrations() {
   const standaloneServers = mcpServers.filter((server) => !server.installId);
   const savedServerMatches =
     query.trim() && !category
-      ? standaloneServers.filter((server) =>
-          matchesWordPrefixes(`${server.name} ${server.description}`, query),
+      ? standaloneServers.filter(
+          (server) =>
+            // A server just added from integrations.sh stays, with any client it needs.
+            (catalogAdded?.serverId === server.id && catalogAdded.query === query) ||
+            matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
@@ -1215,7 +1221,7 @@ export default function Integrations() {
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
-                !catalogFound &&
+                !catalogSearched &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}
@@ -1231,8 +1237,11 @@ export default function Integrations() {
                 {!category ? (
                   <IntegrationCatalogSearch
                     query={query}
-                    onConnected={() => retryRefresh()}
-                    onFound={setCatalogFound}
+                    onConnected={(serverId) => {
+                      setCatalogAdded({ serverId, query });
+                      return retryRefresh();
+                    }}
+                    onSearched={setCatalogSearched}
                   />
                 ) : null}
                 <PluginSection
