@@ -1133,6 +1133,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
   Upgrade: "Upgraden",
+  "Your trial's computer hours are used up.": "De computeruren van je proefperiode zijn op.",
+  "This month's computer hours are used up.": "De computeruren van deze maand zijn op.",
   "Cancelled trials have no computer hours.": "Opgezegde proefperiodes hebben geen computeruren.",
   "Renew plan": "Abonnement verlengen",
   "Trials get fewer hours to prevent abuse.":
