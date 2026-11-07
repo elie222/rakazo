@@ -49,7 +49,7 @@ import type { TileContext } from "./plugins/parts";
 import { ViewTitle } from "./plugins/parts";
 import { PluginBrowse } from "./plugins/plugin-browse";
 import type { SourceKind } from "./plugins/source-form";
-import { SourceFormView, useSourceForm } from "./plugins/source-form";
+import { SourceFormView, takesCredential, useSourceForm } from "./plugins/source-form";
 import { PLUGIN_PAGE_SIZE, useCatalogBrowse } from "./plugins/use-catalog-browse";
 import { usePluginConnections } from "./plugins/use-plugin-connections";
 
@@ -261,12 +261,8 @@ export function PluginsOverlay({
     surface: IntegrationCatalogSurface,
   ) {
     if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
-    // Plain HTTP needs the form, where the address can be corrected before it is saved.
-    if (
-      surface.kind === "mcp" &&
-      surface.auth?.type === "oauth" &&
-      surface.source.startsWith("https://")
-    ) {
+    // The catalog reports OAuth only for a server that can sign in.
+    if (!takesCredential(surface)) {
       void signInCatalogSurface(result.name, surface.source);
       return;
     }

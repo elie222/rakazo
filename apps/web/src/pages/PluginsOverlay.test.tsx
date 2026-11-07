@@ -217,7 +217,7 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
 });
 
-async function addFromDomainSearch(source: string) {
+async function addFromDomainSearch(source: string, auth: "oauth" | "bearer" = "oauth") {
   api.capabilities.catalogSearch.mockImplementation(async () => ({
     enabled: true,
     results: [
@@ -231,7 +231,7 @@ async function addFromDomainSearch(source: string) {
             kind: "mcp",
             slug: "tracker",
             source,
-            auth: { type: "oauth", headerName: null, note: null },
+            auth: { type: auth, headerName: null, note: null },
           },
         ],
       },
@@ -257,15 +257,29 @@ async function addFromDomainSearch(source: string) {
   await act(async () => button("MCPAdd")?.click());
 }
 
-it("opens the editable form for a plain HTTP server instead of signing in", async () => {
+it("signs in to a server the catalog says can sign in", async () => {
+  connectMcpEndpoint.mockReset().mockResolvedValue("connected");
+
+  await addFromDomainSearch("https://mcp.tracker.example.test/mcp");
+
+  expect(connectMcpEndpoint).toHaveBeenCalledWith({
+    name: "Tracker",
+    endpoint: "https://mcp.tracker.example.test/mcp",
+    botId: undefined,
+  });
+  expect(host.querySelector("#source-credential")).toBeNull();
+});
+
+it("opens the editable form for a server that takes a token", async () => {
   connectMcpEndpoint.mockReset();
 
-  await addFromDomainSearch("http://mcp.tracker.example.test/mcp");
+  await addFromDomainSearch("http://mcp.tracker.example.test/mcp", "bearer");
 
   expect(connectMcpEndpoint).not.toHaveBeenCalled();
   expect(host.querySelector<HTMLInputElement>("#source-url")?.value).toBe(
     "http://mcp.tracker.example.test/mcp",
   );
+  expect(host.querySelector("#source-credential")).not.toBeNull();
 });
 
 it("reloads the servers after a catalog sign-in fails, so the added server shows", async () => {

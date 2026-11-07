@@ -90,6 +90,19 @@ describe("searchIntegrationCatalog", () => {
                 url: "https://mcp.linear.example/mcp",
                 auth: { kind: "oauth" },
               },
+              // Only an MCP server over HTTPS can sign in; the others take a token, as before.
+              {
+                kind: "mcp",
+                slug: "linear-plain",
+                url: "http://mcp.linear.example/mcp",
+                auth: { kind: "oauth" },
+              },
+              {
+                kind: "openapi",
+                slug: "linear-api",
+                url: "https://api.linear.example/openapi.json",
+                auth: { kind: "oauth2" },
+              },
             ],
           },
         ],
@@ -103,7 +116,11 @@ describe("searchIntegrationCatalog", () => {
       fetch,
     });
 
-    expect(result?.surfaces[0]?.auth).toEqual({ type: "oauth", headerName: null, note: null });
+    expect(result?.surfaces.map((surface) => surface.auth?.type)).toEqual([
+      "oauth",
+      "bearer",
+      "bearer",
+    ]);
   });
 
   it("does not contact the feed for an empty query", async () => {
