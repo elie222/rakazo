@@ -1,4 +1,4 @@
-import { ORPCError } from "@orpc/server";
+import { ORPCError, ValidationError } from "@orpc/server";
 import {
   SandboxAllowanceUsedError,
   SandboxDamagedError,
@@ -102,5 +102,15 @@ export function logUnexpectedRpcError(error: unknown, path: readonly string[]): 
   // only as an anonymous failed request; report it under the procedure with its cause.
   if (error instanceof ORPCError && error.status < 500) return;
   const where = `rpc ${path.join("/")} failed`;
+  const cause = error instanceof ORPCError ? error.cause : undefined;
+  if (cause instanceof ValidationError) {
+    // Paths and schema messages only: the rejected data can hold message content.
+    const issues = cause.issues.slice(0, 10).map((issue) => {
+      const keys = (issue.path ?? []).map((key) => String(typeof key === "object" ? key.key : key));
+      return `${keys.join(".")}: ${issue.message}`;
+    });
+    getLogger().error(where, error, { "validation.issues": issues.join("; ") });
+    return;
+  }
   getLogger().error(where, error);
 }
