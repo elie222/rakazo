@@ -121,9 +121,14 @@ export function useRoutineEditor({
         onBack: () => setPanel("routines"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
+          const targetBotId = active.id;
+          const request = routineSaveRequest.current;
           try {
-            await ensureWebhookSecret(active.id);
+            await ensureWebhookSecret(targetBotId);
           } catch (error) {
+            if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) {
+              return;
+            }
             setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
           }
         },
