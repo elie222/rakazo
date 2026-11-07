@@ -123,7 +123,7 @@ policy.
 signing key by fingerprint. Google publishes Chrome for amd64 only, so the build fails on other
 platforms; build those with the default. Chrome identifies itself as Google Chrome and ships the
 Widevine module that some sites expect, where Debian's Chromium reports a plain Chromium brand and
-has no Widevine. Some payment and sign-in risk checks treat that profile as a test browser.
+has no Widevine. Some payment and sign-in risk checks may count that profile against the device.
 
 Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
