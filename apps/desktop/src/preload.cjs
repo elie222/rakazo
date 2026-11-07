@@ -87,4 +87,13 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
       return () => ipcRenderer.off("desktop.oauth.callback", handler);
     },
   },
+  mcpBrowser: {
+    clear: (serverId) => ipcRenderer.invoke("desktop.mcpBrowser.clear", serverId),
+    onOAuthCallback: (listener) => {
+      // The IpcRendererEvent stays in the preload: the renderer only sees the code.
+      const handler = (_event, callback) => listener(callback);
+      ipcRenderer.on("desktop.mcpBrowser.callback", handler);
+      return () => ipcRenderer.off("desktop.mcpBrowser.callback", handler);
+    },
+  },
 });

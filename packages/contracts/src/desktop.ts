@@ -36,6 +36,12 @@ export interface RakazoDesktopOAuthCallback {
   state?: string;
 }
 
+/** A code the app's own MCP callback page carried, captured before that page loads. */
+export type RakazoDesktopMcpOAuthCallback =
+  | { serverId: string; code: string; state: string }
+  /** The provider refused or the user cancelled; the text is the provider's own. */
+  | { serverId: string; error: string };
+
 export interface RakazoDesktopDevice {
   /** Null until paired. */
   deviceId: string | null;
@@ -134,6 +140,20 @@ export interface RakazoDesktop {
     stop: (session: number) => Promise<void>;
     abort: (session: number) => Promise<void>;
     onEvent: (listener: (event: RakazoDesktopSpeechEvent) => void) => () => void;
+  };
+  /**
+   * The browser each MCP server signs in through. Every server gets its own
+   * cookie jar, so one provider account never leaks into another server's
+   * sign-in. Absent on older desktop releases, which share the app's session.
+   */
+  mcpBrowser?: {
+    /** Empties that jar, cache included, so the next sign-in looks like a first visit. */
+    clear: (serverId: string) => Promise<void>;
+    /**
+     * Codes captured from that browser's redirect to the app callback, which has
+     * no app session of its own. Returns an unsubscribe function.
+     */
+    onOAuthCallback: (listener: (callback: RakazoDesktopMcpOAuthCallback) => void) => () => void;
   };
   platform: string;
   /** Absent on older frameless releases, which still need in-app controls. */
