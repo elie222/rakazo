@@ -30,7 +30,7 @@ const DNS_UNREACHABLE = 5;
 const DNS_SECONDS = 3;
 
 const EGRESS_NOT_ENFORCED =
-  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host (see docs/self-host-docker-computers.md)";
+  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open and recreate the supervisor (see docs/self-host-docker-computers.md)";
 
 /**
  * A completed probe that shows the rules are missing, as opposed to a probe that could not finish

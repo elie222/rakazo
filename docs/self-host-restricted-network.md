@@ -78,13 +78,13 @@ and load it on the offline host. The exact tag is printed by
 from the Dockerfile's hash:
 
 ```bash
-docker build --platform linux/amd64 --tag "rakazo/egress-attest:$(sha256sum infra/sandboxes/egress-attest/Dockerfile | cut -d' ' -f1 | cut -c1-16)" infra/sandboxes/egress-attest
+# On the offline host, find its architecture: docker info --format '{{.Architecture}}'
+docker build --platform linux/THAT-ARCHITECTURE --tag "rakazo/egress-attest:$(sha256sum infra/sandboxes/egress-attest/Dockerfile | cut -d' ' -f1 | cut -c1-16)" infra/sandboxes/egress-attest
 docker save rakazo/egress-attest --output egress-attest.tar
 ```
 
-Build for the offline Docker host's architecture, not the building machine's: query it on that
-host with `docker info --format '{{.Architecture}}'` and pass it to `--platform`. A
-wrong-architecture image makes every attestation probe exit non-zero. On macOS, replace
+Build for the offline Docker host's architecture (`amd64`, `arm64`, …), not the building
+machine's: a wrong-architecture image makes every attestation probe exit non-zero. On macOS, replace
 `sha256sum` with `shasum -a 256`. On the offline host: `docker load --input egress-attest.tar`.
 The tag must match the hash of the Dockerfile shipped with the supervisor you deploy; if it
 does not, the supervisor reports the exact image name it expects in its log when the build
