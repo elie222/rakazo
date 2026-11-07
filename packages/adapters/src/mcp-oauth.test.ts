@@ -10,7 +10,7 @@ import {
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
-import { recordMcpServerHealth } from "./mcp-server-health.js";
+import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { MAX_AUTHORIZATION_URL_LENGTH, McpSession } from "./mcp-transport.js";
 
 afterEach(() => {
@@ -1626,15 +1626,53 @@ describe("MCP OAuth", () => {
       });
     });
 
-    it.each([
+    it("omits the method when the server advertises none, leaving it to its own default", () => {
       // RFC 8414 S2: omitted means client_secret_basic, which is the server's to apply.
-      ["advertises no methods", undefined],
-      // Needs key material this client does not hold.
-      ["offers only methods this client cannot perform", ["private_key_jwt", "tls_client_auth"]],
-    ])("omits the method when the server %s", (_label, advertised) => {
-      expect(providerWith(advertised).clientMetadata).not.toHaveProperty(
+      expect(providerWith(undefined).clientMetadata).not.toHaveProperty(
         "token_endpoint_auth_method",
       );
+    });
+
+    it("asks for a pre-registered client when no advertised method can be performed", () => {
+      // Omitting here would register for client_secret_basic, which this server never
+      // offered, leaving a client that cannot authenticate. private_key_jwt and mTLS
+      // both need key material this client does not hold.
+      const provider = providerWith(["private_key_jwt", "tls_client_auth"]);
+      let thrown: unknown;
+      try {
+        void provider.clientMetadata;
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("private_key_jwt, tls_client_auth");
+      // Routes to the same "enter an OAuth client" state as a server without registration.
+      expect(needsMcpOAuthClient(thrown)).toBe(true);
+    });
+
+    it("reads a pre-registered client's document for its scope without judging the method", () => {
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauthClient: { client_id: "configured", scope: "read" },
+          oauth: {
+            discoveryState: {
+              authorizationServerUrl: "https://auth.example.test",
+              authorizationServerMetadata: {
+                issuer: "https://auth.example.test",
+                authorization_endpoint: "https://auth.example.test/authorize",
+                token_endpoint: "https://auth.example.test/token",
+                response_types_supported: ["code"],
+                token_endpoint_auth_methods_supported: ["private_key_jwt"],
+              },
+            },
+          },
+        },
+        async () => undefined,
+        { redirectUri: "https://app.example.test/mcp/oauth/callback" },
+      );
+      expect(provider.clientMetadata).toMatchObject({ scope: "read" });
+      expect(provider.clientMetadata).not.toHaveProperty("token_endpoint_auth_method");
     });
 
     it("omits the method before discovery has run", () => {

@@ -508,6 +508,14 @@ function requestOfflineAccess(
 }
 
 /**
+ * Client-authentication methods this client can perform, most preferred first: a
+ * public client proving itself with PKCE, then a secret in the body, then one in
+ * a Basic header. Anything else (`private_key_jwt`, mTLS) needs key material
+ * this client does not hold.
+ */
+const REGISTRATION_AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"];
+
+/**
  * The client-authentication method to register with (RFC 7591).
  *
  * A public client -- `none`, holding no secret and proving itself with PKCE -- is
@@ -515,23 +523,28 @@ function requestOfflineAccess(
  * outright on an authorization server that does not offer it: the server rejects
  * the whole document with `invalid_client_metadata` rather than registering us
  * with a method it prefers. So the choice follows what the server advertises
- * (RFC 8414), narrowed to the methods this client can actually perform.
+ * (RFC 8414), narrowed to the methods above.
  *
  * When the server advertises nothing, the field is omitted so the server applies
- * its own default -- `client_secret_basic` per RFC 8414 S2 -- instead of being
- * told a method it never claimed to support. A registration that comes back with
- * a client secret is stored and used like any other; the SDK picks the matching
- * method for the token request from the same metadata.
+ * its own default -- `client_secret_basic` per RFC 8414 S2. A registration that
+ * comes back with a client secret is stored and used like any other; the SDK
+ * picks the matching method for the token request from the same metadata.
+ *
+ * A server that advertises methods but none this client can perform is a
+ * different case, and omitting the field there would quietly register for
+ * `client_secret_basic` -- a method it never offered -- leaving a client that
+ * cannot authenticate. Only a client registered out of band can sign in to such
+ * a server, which is what the pre-registered client exists for.
  */
 function registrationAuthMethod(discovery: OAuthDiscoveryState | undefined): string | undefined {
   const advertised = discovery?.authorizationServerMetadata?.token_endpoint_auth_methods_supported;
   if (!Array.isArray(advertised) || advertised.length === 0) return undefined;
-  // Most preferred first: a public client, then a secret in the body, then in a
-  // Basic header. Anything else (private_key_jwt, mTLS) needs key material this
-  // client does not hold, so it is left to the server's default.
-  return ["none", "client_secret_post", "client_secret_basic"].find((method) =>
-    advertised.includes(method),
-  );
+  const usable = REGISTRATION_AUTH_METHODS.find((method) => advertised.includes(method));
+  if (!usable)
+    throw new Error(
+      `${MCP_DYNAMIC_REGISTRATION_UNSUPPORTED} with a client-authentication method this client can perform; it accepts only ${advertised.join(", ")}`,
+    );
+  return usable;
 }
 
 function applyGrant(oauth: OAuthState, grant: TokenGrant): void {
@@ -573,7 +586,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     if (!redirectUri) throw new McpReauthorizationRequiredError(this.serverId);
     const hostname = new URL(redirectUri).hostname;
     const applicationType = hostname === "localhost" || hostname === "127.0.0.1" ? "native" : "web";
-    const authMethod = registrationAuthMethod(this.material.oauth?.discoveryState);
+    // Only a registration this client is about to make has to match the server; a
+    // pre-registered client was given its method out of band, and this document is
+    // then read for its scope alone.
+    const authMethod = this.material.oauthClient
+      ? undefined
+      : registrationAuthMethod(this.material.oauth?.discoveryState);
     return {
       redirect_uris: [redirectUri],
       client_name: "Rakazo",
