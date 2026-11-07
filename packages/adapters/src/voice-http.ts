@@ -9,6 +9,11 @@ export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
 export const MAX_SPEAK_CHARS = 2000;
 export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
 
+/** Header-safe speech model id. A connection override wins over the deployment default. */
+export function isSpeechModelId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
+}
+
 /** Client disconnect plus a hard deadline — `context.signal` is always set. */
 export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);

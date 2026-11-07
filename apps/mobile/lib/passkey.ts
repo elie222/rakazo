@@ -4,13 +4,9 @@ import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Alert, Platform } from "react-native";
 import type * as NativePasskeys from "react-native-passkeys";
-import {
-  authHeaders,
-  clearSpace,
-  currentApiBase,
-  fetchMobileJson,
-  passwordResetCapabilities,
-} from "./api";
+import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
+import { passwordResetCapabilities } from "./api-auth";
+import { clearSpace } from "./api-server";
 import { t } from "./i18n";
 import {
   currentSessionGeneration,

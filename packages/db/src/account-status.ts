@@ -5,6 +5,7 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import type { ThreadEvents } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
+import { createPendingSteeringRun } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Whether the account may not sign in or run work. A missing account counts as active. */
@@ -96,6 +97,10 @@ async function cancelInThread(
     });
   }
   await tx.steeringMessage.deleteMany({ where: { userId, message: { threadId } } });
+  // Teammates' follow-ups that waited behind a cancelled run start now, as they would once it
+  // finished; the job reconciler picks the queued run up.
+  for (const botId of new Set(cancelled.map((run) => run.botId)))
+    await createPendingSteeringRun(tx, { spaceId: cancelled[0]!.spaceId, threadId, botId });
   let seq = 0;
   for (const run of cancelled) {
     const event = await appendEventInTransaction(tx, {

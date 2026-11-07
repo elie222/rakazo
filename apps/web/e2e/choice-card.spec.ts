@@ -129,3 +129,38 @@ test("renders tappable choice buttons and submits the offered action id", async 
 
   await captureScreenshot(page, testInfo, "choice-card-answered");
 });
+
+test("shows the content being decided on above the choices", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ask-detail-${stamp}@rakazo.test`, "password12", "Ask Detail");
+  await completeOnboarding(page);
+
+  const botId = activeBotId(page);
+  await page.getByPlaceholder(/Message/).fill("send the draft on the card");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe("waiting_input");
+
+  const question = page.locator("p").filter({ hasText: /^Send this email to Ana\?$/ });
+  if ((await question.count()) === 0) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
+  }
+  const detail = page.getByTestId("ask-detail");
+  await expect(question).toBeVisible({ timeout: 15_000 });
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText("To: ana@example.test");
+  await expect(detail).toContainText("The draft body.");
+  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "ask-detail");
+});

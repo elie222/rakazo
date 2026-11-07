@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
@@ -8,13 +10,49 @@ import {
   createApprovedEffectReplayQueue,
 } from "./approval-effect.js";
 import {
+  applyMcpSourcePreset,
   InstalledConnectorProvider,
   importOpenApiDocument,
+  MCP_SOURCE_PRESETS,
   prepareApiInstall,
   verifyMcpInstall,
 } from "./installed-connectors.js";
 import { parseConnectorToolArgs, SELECTED_SCHEMA_MAX_BYTES } from "./lazy-tool-catalog.js";
 import { parametersFor } from "./pi-runtime-tool-parameters.js";
+
+describe("MCP source presets", () => {
+  it("pins a fixed-URL preset and keeps its id with bearer auth", () => {
+    const fixed = MCP_SOURCE_PRESETS.find((preset) => preset.url)!;
+    expect(
+      applyMcpSourcePreset("https://elsewhere.example/mcp", {
+        preset: fixed.id,
+        auth: { type: "none" },
+      }),
+    ).toEqual({ source: fixed.url, config: { preset: fixed.id, auth: { type: "bearer" } } });
+  });
+
+  it("stores an open-URL preset as a custom bearer source", () => {
+    const open = MCP_SOURCE_PRESETS.find((preset) => !preset.url)!;
+    expect(applyMcpSourcePreset("https://mine.example/mcp", { preset: open.id })).toEqual({
+      source: "https://mine.example/mcp",
+      config: { preset: "custom", auth: { type: "bearer" } },
+    });
+  });
+
+  it("stores an unknown preset id as custom", () => {
+    expect(
+      applyMcpSourcePreset("https://mine.example/mcp", { preset: "not-offered" }).config,
+    ).toEqual({ preset: "custom" });
+  });
+
+  it("leaves custom sources untouched", () => {
+    const config = { preset: "custom", auth: { type: "header", name: "x-api-key" } };
+    expect(applyMcpSourcePreset("https://mine.example/mcp", config)).toEqual({
+      source: "https://mine.example/mcp",
+      config,
+    });
+  });
+});
 
 describe("OpenAPI connector import", () => {
   it("uses the bounded catalog for a real large installed OpenAPI source", async () => {
@@ -668,6 +706,49 @@ describe("OpenAPI connector import", () => {
       }),
     ).toThrow("unsafe header Authorization");
   });
+
+  it.each([
+    { status: 503, size: 1_000_000, error: "OpenAPI document returned HTTP 503" },
+    { status: 200, size: 2_000_001, error: "OpenAPI document is too large" },
+  ])(
+    "releases a rejected OpenAPI response ($status, $size bytes) before closing",
+    async ({ status, size, error }) => {
+      const server = createServer((_request, response) => {
+        response.writeHead(status, { "content-length": String(size) });
+        // Keep the body open so dispatcher cleanup cannot finish without cancellation.
+        response.write("x");
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as AddressInfo;
+      const controller = new AbortController();
+      const prepared = prepareApiInstall({
+        source: `http://127.0.0.1:${port}/openapi`,
+        config: { openApi: true, auth: { type: "none" } },
+        signal: controller.signal,
+        allowPrivateEndpoint: true,
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await expect(
+          Promise.race([
+            prepared,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new Error("OpenAPI rejection did not settle")),
+                2_000,
+              );
+            }),
+          ]),
+        ).rejects.toThrow(error);
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+        server.closeAllConnections();
+        await prepared.catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
 
   const prepareOpenApiFrom = (body: string) => {
     const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {

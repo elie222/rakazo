@@ -19,6 +19,9 @@ vi.mock("./routine-store", () => ({
   setRoutineActive: vi.fn(),
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./i18n", () => {
   const t = (message: string) => message;
@@ -42,6 +45,11 @@ vi.mock("../components/settings-group", () => ({
   SettingsSwitch: () => null,
 }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
+}));
 vi.mock("../components/routine-schedule-editor", () => ({ RoutineScheduleEditor: () => null }));
 vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));

@@ -26,6 +26,11 @@ export const SECURITY_EVENT_TYPES = [
   "deployment.settings.changed",
   "approval.decided",
   "approval.policy.changed",
+  "space.invite.created",
+  "space.invites.cancelled",
+  "space.member.joined",
+  "space.member.removed",
+  "space.member.left",
   "egress.refused",
   "rate_limit.hit",
 ] as const;

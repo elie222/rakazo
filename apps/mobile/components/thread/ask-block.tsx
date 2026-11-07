@@ -4,9 +4,9 @@ import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import type { MobileMessage } from "../../lib/api";
 import { plainAskTitle } from "../../lib/ask-title";
 import { useI18n } from "../../lib/i18n";
+import type { MobileMessage } from "../../lib/mobile-types";
 import { useMobileTokens } from "../../lib/native";
 import { secretDestinationLabel, siteHost } from "../../lib/secret-destination";
 import { secretFieldTraits } from "../../lib/secret-field-traits";
@@ -257,6 +257,11 @@ export function AskBlock({
       </Text>
       {secretInput && destination ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{destination}</Text>
+      ) : null}
+      {secretInput && ask.sharedBrowser && !ownerOnly && !answered ? (
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
+          {t("The bot's browser stays signed in for everyone in this space")}
+        </Text>
       ) : null}
       {secretInput && ask.replaces && !ownerOnly && !answered ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>

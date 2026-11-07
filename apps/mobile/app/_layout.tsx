@@ -38,18 +38,18 @@ import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
-  loadApiBase,
-  loadSessionToken,
   rpc,
   selectedSpaceId,
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
+import { loadApiBase } from "../lib/api-server";
 import { clearAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { AvatarScreenFocus } from "../lib/avatar-life";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
 import { clearLastBot } from "../lib/last-bot";
@@ -73,6 +73,7 @@ import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
+  loadSessionToken,
   registerSessionDiskCache,
   subscribeSessionGeneration,
 } from "../lib/session";
@@ -348,6 +349,7 @@ function LayoutContent() {
 
   useEffect(() => {
     markMobileStartupMounted();
+    void loadHapticsPreference();
     void Promise.all([
       Promise.all([
         trackMobileStartup("server", loadApiBase()),
@@ -468,6 +470,15 @@ function LayoutContent() {
                       name="new-space"
                       options={{
                         title: t("New private space"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="space-members"
+                      options={{
+                        title: t("Members"),
                         presentation: "modal",
                         gestureEnabled: true,
                         headerBackVisible: false,

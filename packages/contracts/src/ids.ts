@@ -48,6 +48,10 @@ export const ThinkingLevelSchema = z.enum([
 ]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
+/** How a bot talks to people while it works: its written text, or only the messages it sends. */
+export const ReplyModeSchema = z.enum(["chat", "messages"]);
+export type ReplyMode = z.infer<typeof ReplyModeSchema>;
+
 export const MemoryScope = z.enum(["bot", "user"]);
 export type MemoryScope = z.infer<typeof MemoryScope>;
 

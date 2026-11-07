@@ -68,7 +68,15 @@ export function AskActions({
           style={{ color: tokens.foreground, backgroundColor: native.fill, padding: 12 }}
         />
       ) : null}
-      <View style={{ flexDirection: approval ? "row" : "column", flexWrap: "wrap", gap: 6 }}>
+      <View
+        style={{
+          flexDirection: approval ? "row" : "column",
+          // Option buttons stack full width; a wrapping column sizes its line to the
+          // widest button's own width, which collapses stretched buttons.
+          flexWrap: approval ? "wrap" : "nowrap",
+          gap: 6,
+        }}
+      >
         {displayActions.map((action) => {
           const emphasized = action.id === "allow" || action.id === "always";
           if (instructions !== undefined)

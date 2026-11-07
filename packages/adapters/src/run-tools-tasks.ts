@@ -14,6 +14,7 @@ import {
   listSchedulesFromTool,
   scheduleCreateError,
   scheduleCreateFields,
+  scheduleTimingArgs,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 import {
@@ -76,7 +77,7 @@ export const taskTools: ToolHandlers = {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
   },
@@ -234,15 +235,7 @@ export const taskTools: ToolHandlers = {
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
-        schedule: compactScheduleInput({
-          cron: args.cron,
-          every: args.every,
-          unit: args.unit,
-          runAt: args.runAt,
-          delayMinutes: args.delayMinutes,
-          delaySeconds: args.delaySeconds,
-          startAt: args.startAt,
-        }),
+        schedule: compactScheduleInput(scheduleTimingArgs(args)),
       }),
     );
   },
@@ -251,8 +244,7 @@ export const taskTools: ToolHandlers = {
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
     });
   },
   async schedule_cancel(ctx, call) {
@@ -261,7 +253,6 @@ export const taskTools: ToolHandlers = {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
       ...(thread.groupId ? { threadId: thread.id } : {}),
       routineId: args.routineId ? String(args.routineId) : undefined,
       name: args.name ? String(args.name) : undefined,

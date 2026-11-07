@@ -52,7 +52,11 @@ function fixture(
     startedAt: options.startedAt ?? null,
   };
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     user: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run, status: "leased" })),

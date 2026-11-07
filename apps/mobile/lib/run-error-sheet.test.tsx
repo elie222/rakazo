@@ -11,6 +11,12 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../components/thread-
 import { runErrorActionLabel } from "./run-error-presentation";
 import { liveEndRunError } from "./thread-window";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 402, fontScale: 1 }),
@@ -44,6 +50,9 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => null }));

@@ -182,16 +182,19 @@ describe("mobile message presentation", () => {
     ]);
   });
 
-  it("leaves out an agent import's setup checklist, which only the web app draws", () => {
+  it("draws a setup checklist as its own card and hides a retired one", () => {
     const checklist: MessageBlock = {
       kind: "import_setup",
       items: [{ kind: "routine", routineId: "routine-1", name: "morning" }],
     };
-    expect(hasVisibleMessagePresentation([checklist])).toBe(false);
+    expect(hasVisibleMessagePresentation([checklist])).toBe(true);
     expect(messagePresentationSegments([checklist])).toEqual([]);
     expect(messagePresentationSegments([{ kind: "text", text: "Imported." }, checklist])).toEqual([
       { kind: "content", blocks: [{ kind: "text", text: "Imported." }] },
     ]);
+    expect(messageHasInlineControls([checklist])).toBe(true);
+    expect(hasVisibleMessagePresentation([{ ...checklist, undone: true }])).toBe(false);
+    expect(hasVisibleMessagePresentation([{ kind: "import_setup", items: [] }])).toBe(false);
   });
 });
 

@@ -18,6 +18,7 @@ import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
+import { BotEmailAddresses } from "./vault/BotEmailAddresses";
 import { useVaultKindLabels, useVaultSubtitle, VaultTile } from "./vault/kinds";
 import { VaultItemDetail } from "./vault/VaultItemDetail";
 import type { VaultEditorInitial, VaultEditorResult } from "./vault/VaultItemEditor";
@@ -286,7 +287,7 @@ export function VaultSettings({
         </DropdownMenu>
       </div>
       {listQuery.isError ? (
-        <p className="text-[13px] text-destructive">
+        <p className="text-body-sm text-destructive">
           <Trans>Could not load credentials.</Trans>
         </p>
       ) : null}
@@ -309,19 +310,19 @@ export function VaultSettings({
                 >
                   <VaultTile kind={kind} title={item.title} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] font-medium text-foreground">
+                    <span className="block truncate text-body font-medium text-foreground">
                       {item.title}
                     </span>
                     {item.auth ? (
                       line ? (
                         <span
-                          className={`block truncate text-[12.5px] text-muted-foreground ${kind === "variable" ? "font-mono" : ""}`}
+                          className={`block truncate text-body-sm text-muted-foreground ${kind === "variable" ? "font-mono" : ""}`}
                         >
                           {line}
                         </span>
                       ) : null
                     ) : (
-                      <span className="block truncate text-[12.5px] text-destructive">
+                      <span className="block truncate text-body-sm text-destructive">
                         <Trans>
                           These saved settings can't be read. Remove it and add it again.
                         </Trans>
@@ -335,15 +336,16 @@ export function VaultSettings({
           })}
         </ul>
       ) : needle && items?.length ? (
-        <p className="py-6 text-center text-[13px] text-muted-foreground">
+        <p className="py-6 text-center text-body-sm text-muted-foreground">
           <Trans>No matches</Trans>
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-[13px] text-destructive">
+        <p role="alert" className="text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
+      {scope === "account" ? <BotEmailAddresses /> : null}
       {identityDialog}
     </section>
   );

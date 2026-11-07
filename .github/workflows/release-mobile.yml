@@ -1,13 +1,18 @@
 name: release-mobile
 
 # Ships the app version in apps/mobile/app.json: iOS goes to App Store review and is released
-# when Apple approves it; Android replaces the rolling APK release.
+# when Apple approves it; Android goes to Google Play review and refreshes the rolling APK.
 on:
   workflow_dispatch:
     inputs:
       notes:
         description: What's New on the App Store
         required: true
+        type: string
+      ios_build_id:
+        description: Retry App Review for an already uploaded EAS iOS build; skips all builds and uploads
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -16,6 +21,7 @@ permissions:
 concurrency:
   group: release-mobile
   cancel-in-progress: false
+  queue: max
 
 jobs:
   ios:
@@ -45,7 +51,7 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
@@ -58,14 +64,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify mobile project
+        if: inputs.ios_build_id == ''
         run: pnpm --filter @rakazo/mobile check
 
-      - name: Build iOS on EAS
+      - name: Build iOS or reuse an uploaded build
         id: build
         working-directory: apps/mobile
+        env:
+          EXISTING_BUILD_ID: ${{ inputs.ios_build_id }}
         run: |
           set -euo pipefail
-          eas build --platform ios --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          if [[ -n "$EXISTING_BUILD_ID" ]]; then
+            eas build:view "$EXISTING_BUILD_ID" --json | jq '[.]' > "$RUNNER_TEMP/build.json"
+            jq -e \
+              --arg project "$(node -p 'require("./app.json").expo.extra.eas.projectId')" \
+              --arg identifier "$(node -p 'require("./app.json").expo.ios.bundleIdentifier')" \
+              '.[0] | .status == "FINISHED" and .platform == "IOS" and .buildProfile == "production" and .app.id == $project and .appIdentifier == $identifier' \
+              "$RUNNER_TEMP/build.json" > /dev/null
+          else
+            eas build --platform ios --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          fi
           {
             echo "id=$(jq -r '.[0].id' "$RUNNER_TEMP/build.json")"
             echo "version=$(jq -r '.[0].appVersion' "$RUNNER_TEMP/build.json")"
@@ -74,6 +92,7 @@ jobs:
 
       # The App Store app ID stays out of the public eas.json; it is added only for this upload.
       - name: Upload to App Store Connect
+        if: inputs.ios_build_id == ''
         working-directory: apps/mobile
         env:
           ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
@@ -97,7 +116,14 @@ jobs:
 
   android:
     name: Android APK
+    if: inputs.ios_build_id == ''
     uses: ./.github/workflows/release-android-apk.yml
     permissions:
       contents: write
+    secrets: inherit
+
+  google-play:
+    name: Google Play
+    if: inputs.ios_build_id == ''
+    uses: ./.github/workflows/release-google-play.yml
     secrets: inherit

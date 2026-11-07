@@ -355,10 +355,7 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     const failure =
       expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
-    if (failure) {
-      getLogger().error(failure);
-      throw new Error(failure);
-    }
+    if (failure) throw new Error(failure);
     if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
     return "delivered";
   }

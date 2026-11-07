@@ -10,7 +10,9 @@ import {
   memberName,
   newClientId,
   newestPageCards,
+  otherAuthor,
   displayName as safeDisplayName,
+  workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -259,6 +261,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
   const activityLine = liveActivityLine(snap?.messages ?? []);
+  const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
     () =>
       !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
@@ -340,7 +343,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     messageId,
     readOnly,
     foreground,
+    focused,
     sessionEpoch,
+    userId,
     activeBotId,
     activeGroupId,
     readVisibleTarget,
@@ -520,7 +525,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing: composingBots.split(",").includes(bot.id),
       }))}
       atBottom={!scroll.state.detached}
-      label={activityLine ?? t("Working…")}
+      label={
+        activityLine ??
+        (workingRoutine ? t("Running {name}…", { name: workingRoutine }) : t("Working…"))
+      }
     />
   );
 
@@ -602,7 +610,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             replyTarget={replyTarget}
             replyAuthor={
               replyTarget?.role === "user"
-                ? (channelMessageSender(replyTarget.blocks) ?? t("You"))
+                ? (otherAuthor(replyTarget.author, userId)?.name ??
+                  channelMessageSender(replyTarget.blocks) ??
+                  t("You"))
                 : (memberName(snap?.members, replyTarget?.botId) ?? displayName ?? t("Bot"))
             }
             replyQuote={replyQuote}

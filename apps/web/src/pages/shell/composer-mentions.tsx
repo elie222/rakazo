@@ -27,14 +27,20 @@ export function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   }
   if (mention.kind === "group") {
     return (
-      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
+      <span
+        // off-scale: glyph must fit the small icon dot
+        className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75"
+      >
         G
       </span>
     );
   }
   if (mention.kind === "everyone") {
     return (
-      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
+      <span
+        // off-scale: glyph must fit the small icon dot
+        className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75"
+      >
         @
       </span>
     );
@@ -58,7 +64,10 @@ function MentionCardIcon({ mention }: { mention: ComposerMention }) {
   }
   if (mention.kind === "group" || mention.kind === "everyone") {
     return (
-      <span className="grid size-3 place-items-center rounded-full bg-accent text-[9px] leading-none text-foreground/75">
+      <span
+        // off-scale: glyph must fit the small icon dot
+        className="grid size-3 place-items-center rounded-full bg-accent text-[9px] leading-none text-foreground/75"
+      >
         {mention.kind === "group" ? "G" : "@"}
       </span>
     );
@@ -136,7 +145,7 @@ export function ComposerChip({
   return (
     <span
       {...props}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
+      className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-body-sm text-foreground"
     >
       {icon}
       <span dir="auto" className="truncate">

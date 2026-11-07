@@ -7,6 +7,8 @@ import {
   screenPorts,
 } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
+import type { ComputerLocale } from "./computer-locale.js";
+import { computerLocaleEnv } from "./computer-locale.js";
 
 /**
  * The computer image. RAKAZO_COMPUTER_IMAGE_TAG is appended the way Compose does, so a
@@ -30,6 +32,7 @@ export const COMPUTER_IMAGE = resolveComputerImage();
 /** The files from infra/sandboxes/computer the supervisor sends when it builds the image locally. */
 export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "Dockerfile",
+  "apt-security.sh",
   "start.sh",
   "user-env.sh",
   "control.py",
@@ -580,6 +583,7 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
+  locale?: ComputerLocale;
 }
 
 interface PointerInput {
@@ -611,6 +615,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
+      ...computerLocaleEnv(input.locale),
     ],
     Labels: {
       "rakazo.managed": "true",

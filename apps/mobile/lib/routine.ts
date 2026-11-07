@@ -15,6 +15,7 @@ export function routineTriggerNames(routine: Routine): string[] {
         : routine.messageProvider
           ? [t("Message event")]
           : []),
+    ...(routine.emailSenders ? [t("When an email arrives")] : []),
     ...(routine.watch ? [t("When something changes")] : []),
   ];
 }

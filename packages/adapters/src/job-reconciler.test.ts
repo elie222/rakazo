@@ -2,12 +2,14 @@ import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import type { ReconciliationLeadership } from "./job-reconciler.js";
 import { createJobReconciler, createPostgresReconciliationLeadership } from "./job-reconciler.js";
 import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
+vi.mock("./background-helpers.js", () => ({ returnHelperOutcome: vi.fn() }));
 
 function publisher() {
   const enqueue = vi.fn(async (_job: BackgroundJob): Promise<void> => undefined);
@@ -80,6 +82,66 @@ describe("createJobReconciler", () => {
     expect(prisma.routine.findMany).toHaveBeenCalled();
     expect(prisma.computer.findMany).toHaveBeenCalled();
     expect(prisma.messagingOutbound.findFirst).toHaveBeenCalled();
+  });
+
+  it("keeps recovering due work while an auxiliary reconciler hangs", async () => {
+    const prisma = fakePrisma([], [{ id: "routine-due", nextRunAt: new Date() }]);
+    const { jobs, enqueue } = publisher();
+    const storage = deferred();
+    const reconcileHomeStorage = vi.fn(() => storage.promise);
+    const reconciler = createJobReconciler({ prisma, jobs, reconcileHomeStorage });
+
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+
+    const wakeups = enqueue.mock.calls.filter(([job]) => job.name === "routine.wakeup");
+    expect(wakeups).toHaveLength(2);
+    // A pass still running is not started again.
+    expect(reconcileHomeStorage).toHaveBeenCalledOnce();
+    let stopped = false;
+    const stopping = reconciler.stop().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+    storage.resolve();
+    await stopping;
+  });
+
+  it("waits for housekeeping a pass starts after stop was called", async () => {
+    const { jobs } = publisher();
+    const acquired = deferred();
+    const storage = deferred();
+    const leadership: ReconciliationLeadership = {
+      tryAcquire: vi.fn(async () => {
+        await acquired.promise;
+        return true;
+      }),
+      release: vi.fn(async () => undefined),
+    };
+    const reconcileHomeStorage = vi.fn(() => storage.promise);
+    const reconciler = createJobReconciler({
+      prisma: fakePrisma(),
+      jobs,
+      leadership,
+      reconcileHomeStorage,
+    });
+
+    const pass = reconciler.reconcileOnce();
+    let stopped = false;
+    const stopping = reconciler.stop().then(() => {
+      stopped = true;
+    });
+    acquired.resolve();
+    await pass;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reconcileHomeStorage).toHaveBeenCalledOnce();
+    expect(stopped).toBe(false);
+    expect(leadership.release).not.toHaveBeenCalled();
+    storage.resolve();
+    await stopping;
+    expect(leadership.release).toHaveBeenCalledOnce();
   });
 
   it("restores a due pending messaging outbox drain", async () => {
@@ -713,6 +775,31 @@ describe("createJobReconciler", () => {
       }),
     );
     expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
+  });
+
+  it("moves a helper whose result cannot go back yet behind the others", async () => {
+    const stuck = { id: "helper-stuck", status: "completed", error: null };
+    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
+      args.where?.trigger === "helper" ? [stuck] : [],
+    );
+    const prisma = {
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnHelperOutcome).mockRejectedValueOnce(new Error("deadlock"));
+
+    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+
+    expect(returnHelperOutcome).toHaveBeenCalledOnce();
+    expect(prisma.run.updateMany).toHaveBeenCalledWith({
+      where: { id: "helper-stuck", botOutcomeReturnedAt: null },
+      data: { updatedAt: expect.any(Date) },
+    });
   });
 
   it("prefers the latest final reply over earlier untagged narration", async () => {

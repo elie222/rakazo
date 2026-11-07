@@ -2,7 +2,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
+import { serializeModelSecret } from "./model-secret.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
 import { withModelRoles } from "./testing/model-roles.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -136,6 +137,7 @@ async function runTurn({
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
       user: { findUnique: vi.fn(async () => null) },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => run),
@@ -220,6 +222,12 @@ async function runTurn({
       { userId: USER_ID, role: "main", position: 1, thinkingLevel: null, ...BACKUP },
     ],
   );
+  // The run's lease runs in a transaction too.
+  Object.assign(tx, {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    run: prisma.run,
+  });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     prisma,

@@ -44,7 +44,7 @@ In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't 
 
 - Changing a bot's instructions or model, and creating a space.
 - Actions that text you didn't write could be steering, such as changes in a run started by a
-  webhook.
+  webhook. When it asks despite an Always allow, its card says so.
 - A routine that watches a command, or that names a site the run found in outside content.
 
 **Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
@@ -65,6 +65,9 @@ you are asked, and the bot tells you. While a limit is set, a checkout whose tot
 is in another currency, is refused too. A wallet purchase that is denied, expires or fails stops
 counting, and so does a press the page refused because it changed. A press that went through still
 counts if the shop later declines it.
+
+Below the limit, **Recent payments** lists the latest payments that count, with the site, the bot,
+when and how much, whether or not a limit is set.
 
 A page in another dollar or pound currency is counted as if it were in US dollars or pounds. That
 is more than it costs for nearly all of them; a Cayman Islands dollar is worth a little more than a US

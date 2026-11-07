@@ -357,7 +357,12 @@ describe("Pi usage accounting", () => {
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
     );
   });
   it("does not derive an unsafe integer total from valid component counts", () => {
@@ -408,11 +413,78 @@ describe("Pi usage accounting", () => {
       expect(events).toHaveLength(1);
       expect(afterCall).toHaveBeenCalledWith(
         "reservation",
-        expect.objectContaining({ costUsd: 0, usageSource: "provider-rejected" }),
+        expect.objectContaining({
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cacheWrite1hTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+          pricingVersion: null,
+          usageSource: "provider-rejected",
+        }),
       );
-      expect(events[0]).toMatchObject({ costUsd: 0, costSource: "provider-rejection" });
+      expect(events[0]).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheWrite1hTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        costUsd: 0,
+        costSource: "provider-rejection",
+      });
     },
   );
+  it("records zero usage for a rejected call at the normalizer", async () => {
+    const fields = new Set<keyof AgentUsage>();
+    const wrapped = usageReportingFetch(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "Synthetic rejection" } }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
+      fields,
+    );
+    await wrapped("https://model.example.test/v1");
+    // Bogus token values attached to a rejected response must lose to the
+    // rejected classification; nothing is generated, so nothing was spent.
+    expect(
+      normalizePiUsage(
+        {
+          input: 12,
+          output: 5,
+          cacheRead: 3,
+          cacheWrite: 2,
+          cacheWrite1h: 1,
+          reasoning: 4,
+          totalTokens: 25,
+        },
+        model,
+        fields,
+      ),
+    ).toMatchObject({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cacheWrite1hTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      costSource: "provider-rejection",
+      pricingVersion: null,
+      usageSource: "provider-rejected",
+    });
+  });
+  it("keeps a reported zero on a successful call instead of unknown", async () => {
+    const { events } = await run({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+  });
   it.each([408, 500, 503])("retains uncertainty for HTTP %s", async (status) => {
     const afterCall = vi.fn();
     const stream = await observedPiStream(
@@ -430,7 +502,12 @@ describe("Pi usage accounting", () => {
     }
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
     );
   });
   it("prepares context before budget reservation and provider execution", async () => {

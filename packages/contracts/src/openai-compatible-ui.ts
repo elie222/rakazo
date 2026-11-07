@@ -1,31 +1,42 @@
-/** UI preset only; saved connections use the OpenAI-compatible provider. */
-export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
 
-export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
-  try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === OLLAMA_CLOUD_BASE_URL;
-  } catch {
-    return false;
-  }
+/** Every hosted service the catalog offers for compatible connections. */
+export function compatibleEndpointPresets(
+  catalog: readonly Pick<ModelCatalogEntry, "endpointPresets">[],
+): CompatibleEndpointPreset[] {
+  // Every compatible catalog entry carries the same presets: offer each address once.
+  const presets = catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  return presets.filter(
+    (preset, index) => presets.findIndex((other) => other.baseUrl === preset.baseUrl) === index,
+  );
 }
 
-export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
+/** The offered hosted service at this address, if any. */
+export function matchCompatibleEndpointPreset(
+  presets: readonly CompatibleEndpointPreset[],
+  baseUrl: string | undefined,
+): CompatibleEndpointPreset | undefined {
+  let normalized: string;
+  try {
+    normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
+  } catch {
+    return undefined;
+  }
+  return presets.find((preset) => preset.baseUrl === normalized);
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
-/** Connect when base URL and model id are set. */
+/** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
+  keyRequired?: boolean;
 }): boolean {
   return Boolean(
-    input.baseUrl.trim() &&
-      input.modelId.trim() &&
-      (!isOllamaCloudBaseUrl(input.baseUrl) || input.apiKey?.trim()),
+    input.baseUrl.trim() && input.modelId.trim() && (!input.keyRequired || input.apiKey?.trim()),
   );
 }
 

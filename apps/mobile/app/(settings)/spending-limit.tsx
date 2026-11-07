@@ -1,6 +1,7 @@
 import type {
   SpendingCurrency,
   SpendingLimit,
+  SpendingPayment,
   SpendingPeriod,
   SpendingStatus,
 } from "@rakazo/contracts";
@@ -14,6 +15,7 @@ import { MenuPickerMenu } from "../../components/menu-picker";
 import { TextFieldDialog } from "../../components/name-dialog";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
+import { formatActivityRelativeTime } from "../../lib/activity";
 import { rpc } from "../../lib/api";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import { native } from "../../lib/native";
@@ -27,15 +29,19 @@ export default function SpendingLimitSettings() {
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
   const [status, setStatus] = useState<SpendingStatus | null>(null);
+  const [payments, setPayments] = useState<SpendingPayment[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // The Android field's text while it is open; iOS uses the system prompt.
   const [draft, setDraft] = useState<string | null>(null);
   // Bumped by saves, so a read started before one cannot overwrite its result.
   const generation = useRef(0);
+  // Bumped by each read, so a slower earlier list cannot replace a newer one.
+  const listReads = useRef(0);
 
   const reload = useCallback(() => {
     const started = generation.current;
+    const read = ++listReads.current;
     void rpc("spendingLimit/get")
       .then((next) => {
         if (started !== generation.current) return;
@@ -43,6 +49,12 @@ export default function SpendingLimitSettings() {
         setLoadError(null);
       })
       .catch((err) => setLoadError(errorText(err, t("Something went wrong. Try again."))));
+    // The list is extra: without it the limit can still be set.
+    void rpc("spendingLimit/payments")
+      .then((next) => {
+        if (read === listReads.current) setPayments(next);
+      })
+      .catch(() => undefined);
   }, [t]);
   useFocusEffect(reload);
 
@@ -180,6 +192,20 @@ export default function SpendingLimitSettings() {
               onPress={() => void save(null)}
               title={t("Remove")}
             />
+          </SettingsGroup>
+        ) : null}
+        {status && payments.length ? (
+          <SettingsGroup label={t("Recent payments")}>
+            {payments.map((payment) => (
+              <SettingsRow
+                key={payment.id}
+                detail={[payment.botName, formatActivityRelativeTime(payment.createdAt)]
+                  .filter(Boolean)
+                  .join(" · ")}
+                title={payment.site}
+                value={formatMinorAmount(payment.amount, payment.currency, dateLocaleForUi(locale))}
+              />
+            ))}
           </SettingsGroup>
         ) : null}
       </ScrollView>

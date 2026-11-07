@@ -1,4 +1,10 @@
-import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -46,6 +52,7 @@ function fixture(status = "queued") {
   };
   const computerUpdate = {
     create: vi.fn(async () => row),
+    findUnique: vi.fn(async () => row),
     findUniqueOrThrow: vi.fn(async () => row),
     findMany: vi.fn(async ({ where, take }: { where: Where; take: number }) =>
       rows
@@ -78,6 +85,7 @@ function fixture(status = "queued") {
   };
   const prisma = {
     $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     computer,
     bot: { findFirst: vi.fn(async () => ({ userId: "user" })) },
     computerUpdate,
@@ -116,15 +124,21 @@ describe("background computer maintenance", () => {
     await performComputerUpdate(deps, row.id);
     expect(replacement).toHaveBeenCalledOnce();
   });
-  it("records a spent computer allowance as a warning, not an error report", async () => {
+  it.each([
+    ["a spent computer allowance", new SandboxAllowanceUsedError(), "warn"],
+    ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
+    ["a provider rate limit", new SandboxRateLimitError(), "warn"],
+    ["a computer that did not start", new SandboxUnavailableError(), "warn"],
+    ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
+  ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     const { row, deps } = fixture();
-    replacement.mockRejectedValueOnce(new SandboxAllowanceUsedError());
+    replacement.mockRejectedValueOnce(error);
     await performComputerUpdate(deps, row.id);
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
-    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+    expect(logged.map((event) => event.level)).toEqual([level]);
   });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();
@@ -454,6 +468,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -573,6 +588,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -610,6 +626,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
@@ -689,6 +706,7 @@ describe("background computer maintenance", () => {
         maintenanceId: null,
         controlHolder: "none",
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,

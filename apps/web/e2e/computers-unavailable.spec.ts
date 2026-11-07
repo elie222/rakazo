@@ -30,12 +30,16 @@ test("unavailable computers say so plainly and link setup help", async ({ page }
     return patchJson(route, (body) => {
       if (!body.json) return;
       body.json.sandboxProvider = sandboxProvider;
+      body.json.computerSettingsEnabled = true;
     });
   });
   await page.route("**/rpc/bootstrap", (route) =>
     patchJson(route, (body) => {
       const me = asRecord(body.json?.me);
-      if (me) me.sandboxProvider = sandboxProvider;
+      if (me) {
+        me.sandboxProvider = sandboxProvider;
+        me.computerSettingsEnabled = true;
+      }
       const thread = asRecord(body.json?.thread);
       stopComputer(thread?.computer);
     }),

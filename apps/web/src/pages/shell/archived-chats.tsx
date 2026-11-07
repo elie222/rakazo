@@ -36,7 +36,7 @@ export function ArchivedChats({
       onOpenChange={setArchivedOpen}
       className="mt-2 border-t border-border pt-2"
     >
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-muted-foreground hover:bg-sidebar-accent">
+      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-body text-muted-foreground hover:bg-sidebar-accent">
         <span>
           <Trans>Archived</Trans>
         </span>
@@ -52,7 +52,7 @@ export function ArchivedChats({
               size={28}
               status={bot.status}
             />
-            <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75" dir="auto">
+            <span className="min-w-0 flex-1 truncate text-body text-foreground/75" dir="auto">
               {bot.name}
             </span>
             <Button
@@ -76,7 +76,7 @@ export function ArchivedChats({
         {archivedGroups.map((group) => (
           <div key={group.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
             <GroupAvatar members={group.members} size={28} />
-            <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75" dir="auto">
+            <span className="min-w-0 flex-1 truncate text-body text-foreground/75" dir="auto">
               {group.name}
             </span>
             <Button

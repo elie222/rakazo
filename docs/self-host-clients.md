@@ -143,6 +143,54 @@ Browsers report what the policy blocks to `/api/csp-report`. The API writes one 
 warning per violation, with the directive, the blocked origin and the page path, so search your logs
 for it to find the origins to add.
 
+## Colors and fonts
+
+`RAKAZO_THEME` points the web service at a JSON file that overrides the web app's colors and fonts,
+including in desktop apps connected to the instance as an **Existing instance**. Leave it unset to
+keep the default look. The mobile apps, and the desktop app's **This computer** server, keep the
+default look either way.
+
+```json
+{
+  "dark": { "background": "#1A1714", "sidebar": "#14110F", "primary": "#E8B26A" },
+  "light": { "background": "#FBF7F0", "primary": "#8A4B12" },
+  "radius": "6px",
+  "fonts": {
+    "sans": "Onest, system-ui, sans-serif",
+    "mono": "ui-monospace, monospace",
+    "files": [{ "family": "Onest", "file": "fonts/Onest.woff2", "weight": "100 900" }]
+  }
+}
+```
+
+`dark` and `light` take any of the color names in
+[`packages/ui-tokens/src/index.ts`](../packages/ui-tokens/src/index.ts) (`ColorTokens` and
+`WebColorTokens`) with a hex value; anything you leave out keeps its default. `sans` and `mono` are
+font-family lists. `radius` is the base corner size in `px` or `rem` (default `0.75rem`); smaller
+and larger corners scale from it. A font that isn't installed on every device needs its file listed under `files`
+(`.woff2`, `.woff`, `.ttf` or `.otf`, relative to the theme file); the web service serves it from
+your own domain. The web service re-reads the file on each page load, so a reload shows your edits.
+Font files must sit inside the theme's folder. A file it can't use is skipped with a
+`web.instance_theme_ignored` warning naming the problem.
+
+With Docker Compose, mount the folder into the web service:
+
+```yaml
+# docker-compose.override.yml
+services:
+  web:
+    volumes:
+      - ./theme:/theme:ro
+```
+
+```bash
+RAKAZO_THEME=/theme/theme.json
+```
+
+`install-images.sh` layers that override file automatically. Where you run Compose yourself, as in
+[Production deployment](./self-host-production.md), add `-f docker-compose.override.yml` after the
+base file, or the web service won't find the theme and serves the default look.
+
 ## Menu links
 
 `RAKAZO_NAV_LINKS` adds items to the account menu that open a page from the same domain inside the

@@ -567,7 +567,10 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
-  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  /**
+   * Group threads and shared spaces: the label the model sees on the prompt, the same as on
+   * history ("User", or the person's name in a space several people share).
+   */
   promptSpeaker?: string;
   instructions: string;
   history: Array<{
@@ -576,9 +579,10 @@ export interface AgentRunRequest {
     role: "user" | "assistant" | "system";
     content: string;
     /**
-     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
-     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
-     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     * Who wrote this message when it is neither this bot nor the human of a personal direct chat:
+     * another bot's current name, or the person: "User", or their name in a space several people
+     * share. The runtime shows such a message to the model as a user turn that starts with
+     * "[speaker]: ".
      */
     speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
@@ -632,6 +636,12 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /**
+   * Known run secret values, live for the run. The runtime redacts them from a tool
+   * argument that is kept outside the tool call itself (the ask card's detail) before
+   * any copy of it is stored, recorded or replayed.
+   */
+  secrets?: readonly string[];
 }
 
 export interface ScriptedTurn {
@@ -764,6 +774,8 @@ export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+  /** The provider can filter its listed voices by language. */
+  languages?: boolean;
 }
 
 export interface VoiceVerifyResult {
@@ -775,7 +787,10 @@ export interface VoiceSynthesizeRequest {
   text: string;
   voiceId: string;
   apiKey: string;
-  /** Connection speech model. Fish uses this, then `FISH_TTS_MODEL`, then s2.1-pro. */
+  /**
+   * Connection speech model, for providers whose catalog entry sets `speechModel`. Without
+   * one, each adapter uses its own default.
+   */
   model?: string;
   signal?: AbortSignal;
 }
@@ -804,8 +819,10 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
+  /** A running chat-app run's interim messages; the run is not marked mirrored. */
+  "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
@@ -890,7 +907,12 @@ export interface NotificationMessage {
 
 /** A product-authored transactional email, independent of its delivery vendor. */
 export interface TransactionalEmail {
-  to: string;
+  to: string | string[];
+  /** Sends as this address, such as a bot's own, instead of the provider's configured one. */
+  from?: string;
+  cc?: string[];
+  /** Where replies go, instead of the provider's configured reply-to address. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -1256,6 +1278,14 @@ export interface BrowserPurchase {
   amountSource?: "button" | "page";
   /** The total the page shows beside a button that names its own amount; older computers omit it. */
   total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
 }
 
 export interface BrowserPurchaseCheckRequest {

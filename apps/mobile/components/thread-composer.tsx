@@ -192,6 +192,9 @@ export function ThreadComposer({
       attachmentIds,
     }),
     reset: () => {
+      // Empty the native field as well. It measures its height from the text it last reported,
+      // so clearing only the draft would leave it as tall as the message just sent.
+      inputRef.current?.clear();
       draftRef.current = "";
       setDraft("");
       nativeSelection.current = { start: 0, end: 0 };

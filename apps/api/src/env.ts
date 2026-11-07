@@ -72,6 +72,8 @@ export interface AppEnv {
   ticketBoardEnabled: boolean;
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
+  /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
+  computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
   navLinks?: NavLink[];
   /** Verified accounts that review plugin submissions, add stdio MCP servers, and grant access
@@ -129,6 +131,8 @@ export interface AppEnv {
   emailApiKey?: string;
   emailFrom: string | undefined;
   emailReplyTo?: string;
+  /** Mail to bots' addresses, posted by a relay; off unless the domain and secret are both set. */
+  inboundEmail?: { domain: string; secret: string };
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
@@ -266,6 +270,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
@@ -314,6 +319,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
     emailReplyTo: optional(source.EMAIL_REPLY_TO),
+    inboundEmail: inboundEmailFromEnv(source),
     welcomeEmailEnabled: source.WELCOME_EMAIL_ENABLED === "true",
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
@@ -402,6 +408,20 @@ function voiceSummaryMinCharsFromEnv(value: string | undefined): number | undefi
     throw new Error("VOICE_SUMMARY_MIN_CHARS must be a positive whole number of characters");
   }
   return Number(raw);
+}
+
+function inboundEmailFromEnv(source: NodeJS.ProcessEnv): AppEnv["inboundEmail"] {
+  const domain = optional(source.INBOUND_EMAIL_DOMAIN)?.toLowerCase();
+  const secret = optional(source.INBOUND_EMAIL_SECRET);
+  if (!domain && !secret) return undefined;
+  if (!domain || !secret) {
+    throw new Error("Set INBOUND_EMAIL_DOMAIN and INBOUND_EMAIL_SECRET together");
+  }
+  if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
+    throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name such as bots.example.com");
+  }
+  if (secret.length < 32) throw new Error("INBOUND_EMAIL_SECRET must be at least 32 characters");
+  return { domain, secret };
 }
 
 function optional(value: string | undefined): string | undefined {

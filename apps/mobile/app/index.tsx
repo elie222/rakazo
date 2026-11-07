@@ -1,5 +1,5 @@
-import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay, isRetryableError, reportUiLocale } from "@rakazo/core";
+import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import { accountDisplay } from "@rakazo/core";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -16,6 +16,7 @@ import {
   Alert,
   AppState,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   Text,
@@ -33,34 +34,21 @@ import { CompactRowsContext, SelectedChatContext } from "../components/inbox-row
 import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
-import { fetchSpaceActivity } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutters } from "../lib/adaptive-layout";
-import type { MobileBot, MobileBotSection, MobileGroup, MobileMe, MobileSpace } from "../lib/api";
-import {
-  currentApiBase,
-  loadSessionToken,
-  rpc,
-  selectedSpaceId,
-  selectInitialSpace,
-  selectSpace,
-  signOut,
-} from "../lib/api";
-import {
-  appBadgeGeneration,
-  forgetAppBadge,
-  syncInboxAppBadge,
-  unreadChatCount,
-} from "../lib/app-badge";
+import { currentApiBase } from "../lib/api";
+import { signOut } from "../lib/api-auth";
+import { selectSpace } from "../lib/api-server";
+import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
-import { isPaywallShown } from "../lib/billing";
 import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
-import { getActiveUiLocale, t, useI18n } from "../lib/i18n";
+import { hapticImpact, hapticSelection } from "../lib/haptics";
+import { t, useI18n } from "../lib/i18n";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -77,10 +65,10 @@ import {
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
-  ensureOrganizations,
   organizationSwitchActions,
   organizationSwitchEpoch,
   subscribeOrganizationSwitch,
@@ -89,25 +77,27 @@ import {
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
-import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
+import { INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
-import { forgetReferrals, rememberReferral } from "../lib/referral";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
-import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
+import { loadSavedInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
+  loadSessionToken,
   subscribeSessionGeneration,
 } from "../lib/session";
 import { useSplitView } from "../lib/split-view";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { useArchivedCount } from "../lib/use-archived-count";
 import { useCollapsedSections } from "../lib/use-collapsed-sections";
 import { useHomeHeader } from "../lib/use-home-header";
+import { useHomeInbox } from "../lib/use-home-inbox";
 import { chatRpc, useInboxChatActions } from "../lib/use-inbox-chat-actions";
 import { useInboxDay } from "../lib/use-inbox-day";
 import { usePublishSearchInbox } from "../lib/use-publish-search-inbox";
-import type { LoadFailureKind } from "../lib/user-error";
-import { errorText, loadFailureKind } from "../lib/user-error";
+import { useSpaceActivity } from "../lib/use-space-activity";
+import { errorText } from "../lib/user-error";
 
 /** A row counts as on screen as soon as any of it shows. */
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
@@ -121,9 +111,6 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   }
   open();
 }
-
-/** The account this launch has saved its language to (see the inbox load). */
-let localeReportedFor: string | null = null;
 
 export default function HomeRoute() {
   const { split } = useSplitView();
@@ -168,36 +155,39 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const { t, locale } = useI18n();
   const isFocused = useIsFocused();
   const day = useInboxDay();
-  const [bots, setBots] = useState<MobileBot[]>([]);
-  const [groups, setGroups] = useState<MobileGroup[]>([]);
-  const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
-  const [spaces, setSpaces] = useState<MobileSpace[]>([]);
-  const [me, setMe] = useState<Pick<MobileMe, "userId" | "spaceId" | "name"> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Kept apart from action errors so a failed action never borrows the load's title.
-  const [inboxLoading, setInboxLoading] = useState(false);
-  const [loadFailure, setLoadFailure] = useState<{ kind: LoadFailureKind; message: string } | null>(
-    null,
-  );
-  const [sessionLoaded, setSessionLoaded] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
-  const [returningUser, setReturningUser] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
-  const organizeRequestId = useRef(0);
-  const [activityMode, setActivityMode] = useState(false);
-  const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
-    active: [],
-    recent: [],
-  });
-  const activityRequestId = useRef(0);
-  const inboxRequestId = useRef(0);
-  const inboxLoaded = useRef(false);
-  const creatingBotRef = useRef(false);
   const spaceActionRef = useRef<{ busy: boolean; recoveryId: string | null }>({
     busy: false,
     recoveryId: null,
   });
+  const {
+    bots,
+    setBots,
+    groups,
+    setGroups,
+    botSections,
+    setBotSections,
+    spaces,
+    setSpaces,
+    me,
+    setMe,
+    error,
+    setError,
+    inboxLoading,
+    loadFailure,
+    refreshing,
+    badgeLoad,
+    inboxRequestId,
+    inboxLoaded,
+    loadBots,
+    refreshBots,
+  } = useHomeInbox(spaceActionRef);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
+  const [returningUser, setReturningUser] = useState(false);
+  const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
+  const organizeRequestId = useRef(0);
+  const [activityMode, setActivityMode] = useState(false);
+  const creatingBotRef = useRef(false);
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
@@ -222,6 +212,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const toggleActivityMode = useCallback(() => {
+    hapticSelection();
     setActivityMode((on) => {
       const next = !on;
       void saveActivityMode(next);
@@ -229,115 +220,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     });
   }, []);
 
-  const [badgeLoad, setBadgeLoad] = useState<{ generation: number } | null>(null);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") forgetAppBadge();
     });
     return () => subscription.remove();
   }, []);
-
-  const loadBots = useCallback(async () => {
-    const badgeGeneration = appBadgeGeneration();
-    if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-    const requestId = ++inboxRequestId.current;
-    const apiBase = currentApiBase();
-    const generation = currentSessionGeneration();
-    setError(null);
-    setInboxLoading(true);
-    try {
-      const [navigation, nextMe] = await Promise.all([rpc("spaces/list"), rpc("me")]);
-      if (
-        requestId !== inboxRequestId.current ||
-        generation !== currentSessionGeneration() ||
-        apiBase !== currentApiBase()
-      )
-        return;
-      if (!(await selectInitialSpace(nextMe.spaceId))) {
-        throw new Error(t("Could not save the default space"));
-      }
-      if (
-        requestId !== inboxRequestId.current ||
-        generation !== currentSessionGeneration() ||
-        apiBase !== currentApiBase()
-      )
-        return;
-      if (!nextMe.billingEnabled) forgetReferrals();
-      else {
-        // Filed under the Space it was fetched for, so a late answer never shows in another.
-        const spaceId = selectedSpaceId();
-        void rpc("billing/status")
-          .then((billing) => {
-            const current =
-              requestId === inboxRequestId.current &&
-              generation === currentSessionGeneration() &&
-              apiBase === currentApiBase();
-            // Only while this session is still the live one: a reply after sign-out must not
-            // restore the previous owner's link.
-            if (current) rememberReferral(spaceId, billing.referral);
-            if (current && billing.funding !== undefined && !billing.access && !isPaywallShown())
-              router.push("/paywall");
-          })
-          .catch(() => undefined);
-      }
-      setBots((current) => retainInboxValue(current, navigation.current.bots));
-      setBotSections((current) => retainInboxValue(current, navigation.current.botSections));
-      setGroups((current) => retainInboxValue(current, navigation.current.groups));
-      setSpaces((current) => retainInboxValue(current, navigation.spaces));
-      setMe((current) => retainInboxValue(current, nextMe));
-      // Emails follow the app's language, so the account keeps the one this app runs in. Once
-      // per account and launch: polls must not undo a language picked on another device since.
-      // A server that predates it leaves `locale` out.
-      if (localeReportedFor !== nextMe.userId && nextMe.locale !== undefined) {
-        localeReportedFor = nextMe.userId;
-        if (nextMe.locale !== getActiveUiLocale()) {
-          void reportUiLocale(getActiveUiLocale, (locale) =>
-            rpc("preferences/update", { locale }),
-          ).catch(() => undefined);
-        }
-      }
-      inboxLoaded.current = true;
-      void ensureOrganizations();
-      setBadgeLoad({ generation: badgeGeneration });
-      setLoadFailure(null);
-      saveInbox(
-        {
-          apiBase,
-          userId: nextMe.userId,
-          spaceId: navigation.current.id,
-          sessionGeneration: generation,
-          selectionId: selectedSpaceId(),
-        },
-        navigation,
-        nextMe,
-      );
-      return true;
-    } catch (err) {
-      if (
-        requestId !== inboxRequestId.current ||
-        generation !== currentSessionGeneration() ||
-        apiBase !== currentApiBase()
-      )
-        return;
-      setLoadFailure({
-        kind: loadFailureKind(err),
-        message: errorText(err, t("Could not load bots")),
-      });
-      // False when the server refused rather than failed: asking again only polls it.
-      return isRetryableError(err);
-    } finally {
-      if (requestId === inboxRequestId.current) setInboxLoading(false);
-    }
-  }, []);
-
-  const refreshBots = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await loadBots();
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadBots]);
 
   useEffect(() => {
     void Promise.all([loadSessionToken(), hasSignedInBefore()]).then(([token, before]) => {
@@ -387,40 +275,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, botSections });
+  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
 
-  const loadActivity = useCallback(async () => {
-    if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-    if (!hasSession || !activityMode) {
-      activityRequestId.current += 1;
-      setActivity({ active: [], recent: [] });
-      return;
-    }
-    const requestId = ++activityRequestId.current;
-    try {
-      const next = await fetchSpaceActivity();
-      if (requestId !== activityRequestId.current) return;
-      setActivity(next);
-    } catch (error) {
-      // Keep the last good snapshot on transient RPC failures; only drop stale responses.
-      if (requestId !== activityRequestId.current) return;
-      // False when the server refused rather than failed: asking again only polls it.
-      return isRetryableError(error);
-    }
-  }, [activityMode, hasSession]);
-
-  useForegroundPoll(
-    loadActivity,
-    ACTIVITY_POLL_INTERVAL_MS,
-    hasSession && activityMode && (embedded || isFocused),
-  );
-
-  useEffect(
-    () => () => {
-      activityRequestId.current += 1;
-    },
-    [activityMode, hasSession],
-  );
+  const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
+    hasSession,
+    activityMode,
+    inSight: embedded || isFocused,
+    spaceActionRef,
+  });
 
   const visible = useMemo(
     () => withoutArchiving("bot", applyUnreadOverrides("bot", bots, unreadOverrides), archiving),
@@ -466,6 +328,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   usePublishSearchInbox(inboxSpaces, me !== null);
+  // Rows read only each space's sections; keeping the list while they are unchanged keeps the row
+  // renderer, so a new preview doesn't re-render every row.
+  const [keptSections, setKeptSections] = useState<Pick<InboxSpace, "id" | "botSections">[]>([]);
+  const spaceSections = retainInboxValue(
+    keptSections,
+    inboxSpaces.map(({ id, botSections }) => ({ id, botSections })),
+  );
+  if (spaceSections !== keptSections) setKeptSections(spaceSections);
   const listData = useMemo((): InboxItem[] => {
     // Only bot threads support importing shares; use the same rows for every target.
     if (onShareSelect)
@@ -582,10 +452,20 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     },
     [embedded, pathname, router],
   );
+  // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+  const signingInAgain = useRef(false);
   const signInAgain = useCallback(async () => {
-    // A rejected session cannot sign out on the server; clearing it here is what matters.
-    await signOut().catch(() => undefined);
-    router.replace("/sign-in");
+    if (signingInAgain.current) return;
+    signingInAgain.current = true;
+    try {
+      // Signing out deletes the unsent queue, which an expired session is most likely to hold.
+      if (!(await confirmUnsentSendLoss("sign-out"))) return;
+      // A rejected session cannot sign out on the server; clearing it here is what matters.
+      await signOut().catch(() => undefined);
+      router.replace("/sign-in");
+    } finally {
+      signingInAgain.current = false;
+    }
   }, [router]);
 
   const chooseInboxSpace = useCallback(
@@ -685,18 +565,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(async () => {
-    if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
-      return;
-    creatingBotRef.current = true;
-    try {
-      await createInboxBot({ refreshBots, openChat });
-    } catch (err) {
-      setError(errorText(err, t("Could not create bot")));
-    } finally {
-      creatingBotRef.current = false;
-    }
-  }, [openChat, refreshBots, t]);
+  const createQuickBot = useCallback(
+    async (spaceId?: string) => {
+      if (
+        creatingBotRef.current ||
+        spaceActionRef.current.busy ||
+        spaceActionRef.current.recoveryId
+      )
+        return;
+      creatingBotRef.current = true;
+      try {
+        await createInboxBot({ refreshBots, openChat, spaceId });
+      } catch (err) {
+        setError(errorText(err, t("Could not create bot")));
+      } finally {
+        creatingBotRef.current = false;
+      }
+    },
+    [openChat, refreshBots, t],
+  );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
@@ -767,6 +654,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         return;
       }
       if (!target) return;
+      if (Platform.OS === "android") hapticImpact();
       setOrganizeTarget(target);
       void loadBots();
     },
@@ -792,9 +680,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const renderItem = useInboxRenderItem({
     appearance,
     botAction,
-    botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
+    createBotInSpace: createQuickBot,
     day,
     deleteSection,
     editSectionFromMenu,
@@ -808,6 +696,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
+    spaces: spaceSections,
     toggleCollapsed,
   });
 
@@ -892,6 +781,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         toggledSections={collapsed}
                         onToggleSection={toggleCollapsed}
                         openChat={openChat}
+                        swipe={
+                          SWIPE_ROWS
+                            ? {
+                                botAction,
+                                groupAction,
+                                sections: botSections,
+                                onOrganize: organizeFromMenu,
+                                onEditSection: editSectionFromMenu,
+                              }
+                            : undefined
+                        }
                       />
                     ) : null}
                   </>

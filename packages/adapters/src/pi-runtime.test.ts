@@ -4,6 +4,7 @@ import {
   agentToolDefinitions,
   connectorStepNames,
   describeToolActivity,
+  redactAskUserDetailInMessage,
 } from "./pi-runtime-tools.js";
 
 describe("connector tool labels", () => {
@@ -138,5 +139,39 @@ describe("describeToolActivity", () => {
 
   it("falls back to the tool name", () => {
     expect(describeToolActivity("destination_write", undefined)).toBe("Using destination_write");
+  });
+});
+
+describe("redactAskUserDetailInMessage", () => {
+  it("leaves malformed ask_user arguments for argument preparation to reject", () => {
+    const content = [
+      { type: "toolCall", name: "ask_user", arguments: "detail" },
+      { type: "toolCall", name: "ask_user", arguments: 7 },
+      { type: "toolCall", name: "use_tool", arguments: { name: "ask_user", arguments: "detail" } },
+      { type: "toolCall", name: "ask_user", arguments: { detail: "token sk-test-1" } },
+    ];
+    expect(() =>
+      redactAskUserDetailInMessage({ role: "assistant", content }, ["sk-test-1"]),
+    ).not.toThrow();
+    expect(content.map((part) => part.arguments)).toEqual([
+      "detail",
+      7,
+      { name: "ask_user", arguments: "detail" },
+      { detail: "token [redacted]" },
+    ]);
+  });
+
+  it("redacts secrets in ask_user arguments a use_tool wrapper carries as a bare string", () => {
+    const content = [
+      {
+        type: "toolCall",
+        name: "use_tool",
+        arguments: { name: "ask_user", arguments: "send sk-test-1?" },
+      },
+    ];
+    redactAskUserDetailInMessage({ role: "assistant", content }, ["sk-test-1"]);
+    expect(content.map((part) => part.arguments)).toEqual([
+      { name: "ask_user", arguments: "send [redacted]?" },
+    ]);
   });
 });

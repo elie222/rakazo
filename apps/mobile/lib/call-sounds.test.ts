@@ -1,7 +1,14 @@
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
-import { getItemAsync } from "expo-secure-store";
+import { deleteItemAsync, getItemAsync, setItemAsync } from "expo-secure-store";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
-import { playCallCue, releaseWaitSound, startWaitSound } from "./call-sounds";
+import {
+  CALL_GREETING_KEY,
+  loadCallGreetingEnabled,
+  playCallCue,
+  releaseWaitSound,
+  saveCallGreetingEnabled,
+  startWaitSound,
+} from "./call-sounds";
 
 // Metro resolves bundled audio assets to numeric IDs.
 const assets = await vi.hoisted(async () => {
@@ -13,7 +20,11 @@ const assets = await vi.hoisted(async () => {
   };
   return { require, originalLoader };
 });
-vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(async () => null) }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async () => null),
+  setItemAsync: vi.fn(async () => undefined),
+  deleteItemAsync: vi.fn(async () => undefined),
+}));
 vi.mock("expo-audio", () => ({
   createAudioPlayer: vi.fn(),
   setAudioModeAsync: vi.fn(),
@@ -43,6 +54,16 @@ afterEach(() => {
 afterAll(() => {
   if (assets.originalLoader) assets.require.extensions[".m4a"] = assets.originalLoader;
   else delete assets.require.extensions[".m4a"];
+});
+
+it("greets on calls until the greeting is turned off on this device", async () => {
+  expect(await loadCallGreetingEnabled()).toBe(true);
+  await saveCallGreetingEnabled(false);
+  expect(setItemAsync).toHaveBeenCalledWith(CALL_GREETING_KEY, "0");
+  vi.mocked(getItemAsync).mockResolvedValue("0");
+  expect(await loadCallGreetingEnabled()).toBe(false);
+  await saveCallGreetingEnabled(true);
+  expect(deleteItemAsync).toHaveBeenCalledWith(CALL_GREETING_KEY);
 });
 
 it.each(["start", "end"] as const)(

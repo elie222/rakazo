@@ -1,4 +1,6 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+import { humanizeToolName } from "./events.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
@@ -37,6 +39,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "secret_request",
   "forget_secret",
   "forget_memory",
+  // Permanent, and only for mail the bot received; its owner may still want it.
+  "delete_email",
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
@@ -47,8 +51,11 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "update_group",
   "create_child_routine",
   "feedback",
+  "send_email",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  // Permanent: the owner sees the exact address before it is theirs for good.
+  "claim_email_address",
   "respond_agent_connection",
   "create_space",
   "set_child_instructions",
@@ -63,6 +70,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_fleet",
   "list_secrets",
   "purchase_status",
+  "read_email",
   "read_file",
   "recall_memory",
   "request_takeover",
@@ -224,8 +232,13 @@ export function unattendedTriggerToolRequiresApproval(
  */
 const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
+  // Only confirms what the bot itself sent.
+  "send_email",
   "connect_app",
   "attach_file",
+  // Only confirms the bot's own address.
+  "claim_email_address",
+  "delete_email",
   "end_call",
   "feedback",
   "generate_secret",
@@ -638,4 +651,76 @@ export function isApprovalAskBlock(block: {
     actionIds.has("deny") &&
     [...actionIds].every((id) => id === "allow" || id === "always" || id === "deny")
   );
+}
+
+/**
+ * A payment receipt's page lines, leaving out any the page named like one of the card's own rows
+ * (`labels`, as the app words them), so merchant text never reads as the card's.
+ */
+export function receiptItems<Item extends { name: string }>(
+  items: readonly Item[],
+  labels: readonly string[],
+): Item[] {
+  const own = labels.map((label) => label.trim().toLocaleLowerCase()).filter(Boolean);
+  return items.filter((item) => {
+    const name = item.name.trim().toLocaleLowerCase();
+    // "Total" and "Total due" pose as the card's row; "Totally Oats" doesn't.
+    return !own.some(
+      (label) => name.startsWith(label) && !/^[\p{L}\p{N}]/u.test(name.slice(label.length)),
+    );
+  });
+}
+
+/** The order rule lists group by: what goes through, what asks, what is refused. */
+export const APPROVAL_RULE_EFFECTS = ["always_allow", "require_approval", "deny"] as const;
+
+/** Whether a rule with this effect does anything in this mode: Never ask honours only blocks. */
+export function approvalRuleApplies(
+  mode: ApprovalMode | null | undefined,
+  effect: ActionApprovalRule["effect"],
+): boolean {
+  return mode !== "never" || effect === "deny";
+}
+
+/**
+ * The effects a person can switch a rule to. An older category rule can only be removed, and a tool
+ * a person approves every time cannot be allowed, though it can still be blocked.
+ */
+export function approvalRuleEffectChoices(
+  rule: ActionApprovalRule,
+): ReadonlyArray<ActionApprovalRule["effect"]> {
+  if (rule.matchKind === "category") return [];
+  if (rule.matchKind === "tool" && toolRequiresExplicitApproval(rule.matchValue)) {
+    return APPROVAL_RULE_EFFECTS.filter((effect) => effect !== "always_allow");
+  }
+  return APPROVAL_RULE_EFFECTS;
+}
+
+/** A site reads as itself; a tool, app or older category by its name. */
+export function approvalRuleLabel(rule: ActionApprovalRule): string {
+  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+}
+
+/** A built-in tool a person can add a rule for. */
+export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
+
+/**
+ * What the rule picker lists: every built-in tool that has no rule yet, by name. Apps are left out:
+ * an app rule matches a kind guessed from the action's name, which some providers' actions lack.
+ */
+export function approvalRuleChoices(
+  rules: ReadonlyArray<ActionApprovalRule>,
+): ApprovalRuleChoice[] {
+  const taken = new Set(
+    rules.filter((rule) => rule.matchKind === "tool").map((rule) => rule.matchValue.toLowerCase()),
+  );
+  return BUILTIN_TOOL_NAMES.filter((name) => !taken.has(name))
+    .map(
+      (name): ApprovalRuleChoice => ({
+        matchKind: "tool",
+        matchValue: name,
+        label: humanizeToolName(name),
+      }),
+    )
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

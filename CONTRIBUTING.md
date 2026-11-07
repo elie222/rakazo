@@ -7,6 +7,21 @@ Thanks for helping improve Rakazo. Keep changes focused and testable.
 Follow the [source checkout setup](README.md#local-development-source-checkout) for prerequisites,
 required secrets, and startup commands.
 
+For a new Git worktree, run `pnpm setup:worktree`. It copies the main checkout's local
+`.env` if one exists and keeps any `.env` already in the worktree.
+The main checkout is the original clone, located through `git worktree list` rather than
+a fixed directory or branch name.
+Worktrees attached to a bare repository skip copying because there is no original checkout.
+The source must be a Git-ignored regular file; symbolic links are rejected.
+Settings such as `RAKAZO_DEV_TAILNET=1` are inherited only when you enabled them locally;
+the setup command does not enable sharing or change any settings. If the main checkout
+has no `.env`, development uses its usual defaults.
+
+In T3 Code, import the worktree setup action from the repository's `t3.json` in project
+settings. It runs on worktree creation with T3's default timing. Existing worktrees keep their
+own settings; later changes to the main `.env` are not copied automatically.
+Run `pnpm install --frozen-lockfile` when you need to run or test the worktree.
+
 ## Checks before you open a PR
 
 | Command | When to run |
@@ -33,13 +48,25 @@ Ordinary test processes (`NODE_ENV=test`) do not load the checkout's `.env`.
 Verification CLIs load configuration before starting isolated test processes;
 live canaries explicitly enabled with `VERIFY_PROVIDERS` also opt into loading it.
 
+## UI strings and translations
+
+Add or change web strings in code only, with Lingui's `t` or `<Trans>`; leave the
+`messages.po` catalogs alone in feature pull requests (adding a UI language, below, is the
+one exception). Every production build extracts the
+source strings first, so a new string shows in English until someone translates it. After a
+merge to main, the
+[translation catalogs workflow](.github/workflows/translation-catalogs.yml) keeps one
+"Update translation catalogs" pull request in step with main. Translate by editing `msgstr`
+entries on that pull request, or in a separate translation-only pull request once it merges.
+
 ## Adding a UI language
 
 The web and Electron-hosted UI use Lingui catalogs. To add a locale, register it in
 `apps/web/lingui.config.ts`, `apps/web/src/lib/ui-locale.ts`, and
 `apps/web/src/lib/i18n.ts`, then run `pnpm --filter @rakazo/web intl:extract`, fill the new
 `apps/web/src/locales/<locale>/messages.po` catalog, and validate it with
-`pnpm --filter @rakazo/web intl:compile`. Keep message IDs, placeholders, JSX markers, and
+`pnpm --filter @rakazo/web intl:compile`. Commit the new catalog in the same pull request,
+since the app imports it and the sync workflow only updates catalogs that already exist. Keep message IDs, placeholders, JSX markers, and
 ICU plural branches intact; do not commit generated `*.js`/`*.mjs` catalog files.
 
 Expo mobile has its own catalog and locale registry. Add the locale to

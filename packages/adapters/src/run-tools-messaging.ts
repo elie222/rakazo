@@ -11,18 +11,18 @@ import {
   messageConnectedAgent,
   respondAgentConnection,
 } from "./agent-connections.js";
+import { startBackgroundHelper } from "./background-helpers.js";
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import type { RunContext } from "./run-context.js";
-import { publishMessage } from "./run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
   flushProgress,
-  nextProgressNonce,
   progressSinceBudgetStart,
+  publishInterimMessage,
   publishMidTurnNarration,
   showNarrationStatus,
 } from "./run-progress.js";
@@ -223,15 +223,30 @@ export const messagingTools: ToolHandlers = {
   async request_takeover() {
     return { ok: true };
   },
-  async run_subagent(_ctx, call) {
+  async run_subagent(ctx, call) {
     const { args } = call;
+    if (args.background === true) {
+      return call.finish(
+        await startBackgroundHelper(ctx, {
+          name:
+            String(args.name ?? "helper")
+              .trim()
+              .slice(0, 80) || "helper",
+          task: redactSecrets(String(args.task ?? "").trim(), ctx.secrets),
+          instructions: redactSecrets(String(args.instructions ?? "").trim(), ctx.secrets),
+          modelProvider: String(args.model_provider ?? "").trim(),
+          modelId: String(args.model_id ?? "").trim(),
+          executionId: call.executionId,
+          effectKey: call.effectKey,
+        }),
+      );
+    }
     return {
       ok: true,
       result: String(args.task ?? "done."),
     };
   },
   async message_user(ctx, call) {
-    const { deps, run } = ctx;
     const { args } = call;
     const { reply } = ctx.state;
     const rawMessage = redactSecrets(String(args.message ?? ""), ctx.secrets);
@@ -247,7 +262,11 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
-    if (!canPublishDurableProgress(reply) && !canPostLongTaskHeadsUp(ctx)) {
+    if (
+      ctx.replyMode === "chat" &&
+      !canPublishDurableProgress(reply) &&
+      !canPostLongTaskHeadsUp(ctx)
+    ) {
       return call.finish({
         ok: true,
         note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))
@@ -255,9 +274,12 @@ export const messagingTools: ToolHandlers = {
           : `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
       });
     }
-    await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    await publishInterimMessage(ctx, text, true);
+    // The person already has this message; notes written before it are no longer a missing answer.
+    if (ctx.replyMode === "messages") {
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = "";
+    }
     return call.finish(
       truncated
         ? {

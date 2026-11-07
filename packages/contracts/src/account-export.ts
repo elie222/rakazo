@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { Id, IsoDate } from "./ids.js";
+import { Id, IsoDate, ReplyModeSchema } from "./ids.js";
 import { PageSourceSchema, PageTitleSchema } from "./pages.js";
 
 /**
@@ -82,6 +82,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     crossSpaceCommunication: z.boolean(),
     dailyCheckIns: z.boolean().default(true),
     fleetManagement: z.boolean(),
+    replyMode: ReplyModeSchema.default("chat"),
     createdAt: IsoDate,
   }),
   z.object({
@@ -94,12 +95,14 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botIds: z.array(Id),
     createdAt: IsoDate,
   }),
-  /** A bot's or a group's conversation. */
+  /** A bot's or a group's conversation, or the thread a bot's background helper worked in. */
   z.object({
     type: z.literal("thread"),
     id: Id,
     botId: Id.nullable(),
     groupId: Id.nullable(),
+    /** Absent from archives written before helpers had threads. */
+    helperBotId: Id.nullable().optional(),
     historyCompactedUpToSeq: z.number().int().nullable(),
     historyCompactionSummary: z.string().nullable(),
     createdAt: IsoDate,

@@ -31,7 +31,8 @@ import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
 import { useOrganizationMenuAction } from "../components/organization-menu";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import { rpc, signOut } from "../lib/api";
+import { rpc } from "../lib/api";
+import { signOut } from "../lib/api-auth";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import type { Plan } from "../lib/billing";
 import {
@@ -48,6 +49,7 @@ import { translucentColor } from "../lib/color";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { organizationSwitchActions, useOrganizations } from "../lib/organizations";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 import { errorText } from "../lib/user-error";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -79,6 +81,7 @@ export default function Paywall() {
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const [pending, setPending] = useState(false);
+  const leaving = useRef(false);
   const deletion = useAccountDeletion();
   const organizations = useOrganizations(!dismissible).data;
   const organizationAction = useOrganizationMenuAction(organizations);
@@ -159,13 +162,19 @@ export default function Paywall() {
   }
 
   async function leave() {
+    // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+    if (leaving.current) return;
+    leaving.current = true;
     try {
+      if (!(await confirmUnsentSendLoss("sign-out"))) return;
       // Hang up while the session still exists, so the server records the call's end.
       await endCallBeforeSessionEnd();
       await signOut();
       replaceWithSignIn();
     } catch (err) {
       Alert.alert(errorText(err, t("Could not sign out")));
+    } finally {
+      leaving.current = false;
     }
   }
 

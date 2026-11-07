@@ -6,13 +6,16 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const rpcMock = vi.hoisted(() => ({ spendingLimit: { get: vi.fn(), set: vi.fn() } }));
+const rpcMock = vi.hoisted(() => ({
+  spendingLimit: { get: vi.fn(), set: vi.fn(), payments: vi.fn() },
+}));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcMock,
   rpcForSpace: () => rpcMock,
   createSpaceRpc: () => rpcMock,
   selectedSpaceId: () => null,
 }));
+vi.mock("../lib/relative-time", () => ({ formatRelativeTime: () => "2h ago" }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce(
@@ -71,6 +74,7 @@ import { SpendingLimitSettings } from "./SpendingLimitSettings";
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.spendingLimit.payments.mockResolvedValue([]);
 });
 
 async function render() {
@@ -144,4 +148,27 @@ it("removes a limit, and keeps the form when a save fails", async () => {
   await act(async () => button(container, "Remove").click());
   expect(rpcMock.spendingLimit.set).toHaveBeenLastCalledWith({ limit: null });
   expect(container.textContent).toContain("Spending limitNone");
+});
+
+it("lists the latest payments, and the rest on request", async () => {
+  rpcMock.spendingLimit.get.mockResolvedValue({ limit: null, spent: 0, shown: true });
+  rpcMock.spendingLimit.payments.mockResolvedValue(
+    Array.from({ length: 7 }, (_, index) => ({
+      id: `payment-${index}`,
+      site: `shop${index}.example.test`,
+      amount: 1_250 + index,
+      currency: "usd",
+      botName: index === 0 ? "Shopper" : null,
+      createdAt: "2026-11-05T09:30:00.000Z",
+    })),
+  );
+  const container = await render();
+  await vi.waitFor(() => expect(container.textContent).toContain("Recent payments"));
+  const rows = () => [...container.querySelectorAll("[data-testid=spending-payments] li")];
+  expect(rows()).toHaveLength(5);
+  expect(rows()[0]!.textContent).toBe("shop0.example.testShopper · 2h ago$12.50");
+  expect(rows()[1]!.textContent).toBe("shop1.example.test2h ago$12.51");
+  await act(async () => button(container, "Show all").click());
+  expect(rows()).toHaveLength(7);
+  expect(button(container, "Show all")).toBeUndefined();
 });

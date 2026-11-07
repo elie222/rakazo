@@ -1,4 +1,5 @@
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
@@ -400,6 +401,15 @@ const groupEvent = {
 };
 
 describe("createMessagingInboundHandler DM routing", () => {
+  it("drops a message for a bot whose Space is being deleted instead of failing the delivery", async () => {
+    const deps = createDeps();
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+
+    await expect(handle(dmEvent)).resolves.toBeUndefined();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
   it("delivers a known sender's message into their bot's existing thread", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
@@ -416,6 +426,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       threadId: "thread-1",
       botId: "bot-1",
       userId: "user-1",
+      authorUserId: "user-1",
       blocks: [{ kind: "text", text: "hello bot" }],
       prompt: "hello bot",
       trigger: "messaging",
@@ -1017,6 +1028,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           botId: "bot-1",
+          userId: "user-1",
           active: true,
           messageProvider: "slack",
         }),
@@ -1632,6 +1644,62 @@ describe("createMessagingInboundHandler channel routing", () => {
     await handle(groupEvent);
 
     expect(deps.outboundRows.filter((row) => row.kind === "intro")).toHaveLength(0);
+  });
+
+  it("still fans a message out to the other members when one member's Space is being deleted", async () => {
+    const senderMember = {
+      id: "cm-1",
+      channelId: "ch-1",
+      address: "+15551111111",
+      identityId: "mi-1",
+      status: "approved",
+    };
+    const peerMember = {
+      id: "cm-2",
+      channelId: "ch-1",
+      address: "+15553333333",
+      identityId: "mi-2",
+      status: "approved",
+    };
+    const deps = createDeps({ members: [senderMember, peerMember] });
+    const peerIdentity = {
+      id: "mi-2",
+      provider: "sendblue",
+      address: "+15553333333",
+      userId: "user-2",
+      spaceId: "ws-2",
+      botId: "bot-2",
+      outboundSinceInbound: 0,
+    };
+    Object.assign(deps.prisma.messagingIdentity, {
+      findUnique: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { provider_address?: { provider: string; address: string }; id?: string };
+        }) => {
+          if (where.id === "mi-2" || where.provider_address?.address === "+15553333333") {
+            return peerIdentity;
+          }
+          return {
+            id: "mi-1",
+            provider: "sendblue",
+            address: "+15551111111",
+            userId: "user-1",
+            spaceId: "ws-1",
+            botId: "bot-1",
+            outboundSinceInbound: 0,
+          };
+        },
+      ),
+    });
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    const handle = createMessagingInboundHandler(deps);
+    await expect(
+      handle({ ...groupEvent, participants: ["+15551111111", "+15553333333"] }),
+    ).resolves.toBeUndefined();
+
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
   });
 
   it("fans an approved member's message out to every approved member bot", async () => {

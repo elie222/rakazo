@@ -1,0 +1,80 @@
+name: Issue triage
+
+# Labels each new issue by type, size and priority, and points out a likely
+# duplicate. The model only reads main's code and returns JSON; the label job
+# applies values from a fixed list, so issue text can at worst mislabel.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+        type: number
+
+permissions: {}
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Write issue data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp/issue-triage
+          gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" --json number,title,body,labels \
+            > .tmp/issue-triage/issue.json
+          gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 300 --json number,title,state,body \
+            --jq "[.[] | select(.number < $ISSUE) | .body = ((.body // \"\")[:600])]" > .tmp/issue-triage/issues.json
+      - id: claude
+        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Read-only token: agent mode writes it into git config, so .git is unreadable.
+          github_token: ${{ github.token }}
+          prompt: Follow .github/prompts/issue-triage.md.
+          claude_args: >-
+            --model claude-haiku-5-5
+            --effort high
+            --max-turns 25
+            --allowedTools Read,Grep,Glob
+            --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,"Read(./.git/**)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["type","size","priority_high","duplicate_of","reason"],"properties":{"type":{"enum":["bug","enhancement","question","documentation","self-host"]},"size":{"enum":["small","medium","large"]},"priority_high":{"type":"boolean"},"duplicate_of":{"type":["integer","null"]},"reason":{"type":"string"}}}'
+
+  label:
+    needs: triage
+    if: needs.triage.outputs.result != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          RESULT: ${{ needs.triage.outputs.result }}
+        run: bash .github/scripts/apply-issue-triage.sh

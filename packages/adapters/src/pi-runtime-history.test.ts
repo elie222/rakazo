@@ -4,8 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const captured = vi.hoisted(() => ({
   initialMessages: [] as Array<Record<string, unknown>>,
   prompt: undefined as string | undefined,
-  options: undefined as { prepareNextTurnWithContext?: () => Promise<unknown> } | undefined,
-  steered: [] as Array<Record<string, unknown>>,
+  options: undefined as
+    | {
+        prepareNextTurnWithContext?: () => Promise<
+          { messages?: Array<Record<string, unknown>> } | undefined
+        >;
+      }
+    | undefined,
 }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
@@ -13,15 +18,14 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     state = { errorMessage: undefined, messages: [] };
     constructor(options: {
       initialState: { messages: Array<Record<string, unknown>> };
-      prepareNextTurnWithContext?: () => Promise<unknown>;
+      prepareNextTurnWithContext?: () => Promise<
+        { messages?: Array<Record<string, unknown>> } | undefined
+      >;
     }) {
       captured.initialMessages = options.initialState.messages;
       captured.options = options;
     }
     subscribe() {}
-    steer(message: Record<string, unknown>) {
-      captured.steered.push(message);
-    }
     async prompt(input: string) {
       captured.prompt = input;
     }
@@ -89,7 +93,6 @@ describe("Pi history replay", () => {
     captured.initialMessages = [];
     captured.prompt = undefined;
     captured.options = undefined;
-    captured.steered = [];
   });
 
   it("replays a direct chat as alternating user and assistant turns without a prefix", async () => {
@@ -230,10 +233,13 @@ describe("Pi history replay", () => {
       history: [
         { id: "m1", role: "user", content: "Do it" },
         { id: "m2", role: "assistant", content: "  " },
-        { id: "m3", role: "system", content: "internal" },
+        { id: "m3", role: "system", content: "Stopped." },
       ],
     });
-    expect(view(messages)).toEqual([{ role: "user", content: "Do it" }]);
+    expect(view(messages)).toEqual([
+      { role: "user", content: "Do it" },
+      { role: "user", content: "System note: Stopped." },
+    ]);
   });
 
   it("removes the current message from history by id or by raw text, whatever its label", async () => {
@@ -304,13 +310,15 @@ describe("Pi history replay", () => {
     expect(captured.prompt).toBe(
       "[User]: Check A.\n\nAdditional user context:\n[User]: Also check B.\nA message arrived from another member of this chat while you were working:\n\n(User): Skip it.",
     );
-    await captured.options!.prepareNextTurnWithContext!();
-    await captured.options!.prepareNextTurnWithContext!();
-    expect(captured.steered.map((message) => message.content)).toEqual([
+    const steered = [
+      ...((await captured.options!.prepareNextTurnWithContext!())?.messages ?? []),
+      ...((await captured.options!.prepareNextTurnWithContext!())?.messages ?? []),
+    ];
+    expect(steered.map((message) => message.content)).toEqual([
       expect.stringContaining("[User]: And C."),
       expect.stringContaining("A message arrived from another member of this chat"),
     ]);
-    expect(String(captured.steered[1]!.content)).not.toContain("[User]");
+    expect(String(steered[1]!.content)).not.toContain("[User]");
   });
 
   it("leaves a direct chat's mid-run messages bare", async () => {
@@ -323,8 +331,8 @@ describe("Pi history replay", () => {
       claimSteering: async () => claims.shift() ?? [],
     });
     expect(captured.prompt).toBe("Check A.\n\nAdditional user context:\nAlso check B.");
-    await captured.options!.prepareNextTurnWithContext!();
-    expect(String(captured.steered[0]!.content)).toContain("And C.");
-    expect(String(captured.steered[0]!.content)).not.toContain("[User]");
+    const steered = (await captured.options!.prepareNextTurnWithContext!())?.messages ?? [];
+    expect(String(steered[0]!.content)).toContain("And C.");
+    expect(String(steered[0]!.content)).not.toContain("[User]");
   });
 });

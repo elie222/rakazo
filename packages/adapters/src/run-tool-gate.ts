@@ -5,10 +5,10 @@ import type {
   ConnectorCall,
   ToolBatch,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
+  BACKGROUND_HELPER_TRIGGER,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -31,7 +31,6 @@ import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
@@ -71,7 +70,7 @@ import {
   recordEffect,
   uncertainEffectError,
 } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -84,10 +83,14 @@ import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
+const WEBHOOK_RUN_ASK_REASON =
+  "Asked because a webhook started this run. Always allow doesn't skip this.";
+
 type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
   batch: ToolBatch | undefined;
+  onceOnly: boolean;
 };
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
@@ -187,6 +190,21 @@ export async function gateToolCall(
           declaredReadOnlyFor(toolName),
         ),
       ));
+  // A background helper only reads, whatever the approval mode or rules: a connector call
+  // runs only when every action it names is declared read-only.
+  if (
+    run.trigger === BACKGROUND_HELPER_TRIGGER &&
+    viaConnector &&
+    !catalogControlRead &&
+    (unidentifiedAction ||
+      approvalToolNames.some((toolName) => declaredReadOnlyFor(toolName) !== true))
+  ) {
+    return {
+      result: {
+        error: `${name} can change something, and a background helper may only read. Don't retry; say in your result what the bot should do.`,
+      },
+    };
+  }
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   // paid_request with only a purchase id sends the request its approval already named.
@@ -274,12 +292,14 @@ export async function gateToolCall(
       ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    paying ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
+  // These ask in every run, whatever started it.
+  const mandatoryInAnyRun =
+    paying || commandWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+  const requiresMandatoryApproval = mandatoryInAnyRun || requiresUnattendedApproval;
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (commandWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
@@ -534,6 +554,20 @@ export async function gateToolCall(
   }
 
   const needsApproval = gateDecision === "ask";
+  // Nobody sees a background helper's thread, so a card there would wait forever.
+  if (needsApproval && run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    if (applied) {
+      await deps.prisma.externalEffect.updateMany({
+        where: { id: applied.effect.id, status: "intended" },
+        data: { status: "denied" },
+      });
+    }
+    return {
+      result: {
+        error: `${name} needs the owner's approval, and a background helper cannot ask. Don't retry; say in your result what the bot should ask for.`,
+      },
+    };
+  }
   const call = createToolCall(ctx, {
     name,
     args,
@@ -546,7 +580,20 @@ export async function gateToolCall(
     bypassApproval: gateDecision === "allow" && gated,
     spend: spends,
   });
-  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
+  // Only when the webhook overrode the owner's Always allow; cards every run shows say nothing.
+  const webhookForcedAsk =
+    requiresUnattendedApproval &&
+    !mandatoryInAnyRun &&
+    !request.heldForApproval &&
+    siteGate !== "new" &&
+    !unidentifiedAction &&
+    approvalResolved.source === "always_allow";
+  const card = {
+    reviewReason: webhookForcedAsk ? WEBHOOK_RUN_ASK_REASON : reviewReason,
+    summary: request.fleetSummary,
+    batch: connectorTool?.batch,
+    onceOnly: asksEveryTime || webhookForcedAsk,
+  };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
@@ -760,11 +807,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!paused) {
     throw new Error("Could not pause this run for approval; try sending again.");
   }
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,

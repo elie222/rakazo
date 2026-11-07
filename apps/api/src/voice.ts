@@ -3,7 +3,7 @@ import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
-  isFishSpeechModelId,
+  isSpeechModelId,
   isVoiceProviderId,
   listVoiceCatalog,
   MAX_SPEAK_CHARS,
@@ -38,12 +38,12 @@ import {
   saveVoicePreference,
   selectVoicePreference,
   voicePreferenceTarget,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
-import { withSerializableRetry } from "./serializable-retry.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
@@ -200,13 +200,11 @@ export function voiceCredentialPlaintext(input: {
   }
 }
 
-const FISH_AUDIO_PROVIDER = "fish-audio";
-
-/** Empty clears the Fish override. Anything else must be a header-safe model id. */
-export function fishSpeechModelValue(speechModel: string): string | null {
+/** Empty clears the speech model override. Anything else must be a header-safe model id. */
+export function speechModelValue(speechModel: string): string | null {
   const trimmed = speechModel.trim();
   if (!trimmed) return null;
-  if (!isFishSpeechModelId(trimmed)) {
+  if (!isSpeechModelId(trimmed)) {
     throw new ORPCError("BAD_REQUEST", { message: "That speech model id is not valid." });
   }
   return trimmed;
@@ -245,7 +243,7 @@ export async function resolveVoiceTarget(
   let botVoiceId: string | null = null;
   if (input.botId) {
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: actor.spaceId, userId: actor.userId },
+      where: { id: input.botId, spaceId: actor.spaceId },
       select: { voiceId: true },
     });
     if (!bot) throw new IsolationError();
@@ -294,8 +292,8 @@ export async function persistVoiceCredential(
       : undefined;
   const choicesChanged = voiceChoicesChanged(previous?.apiKey, plaintext);
   const requestedSpeechModel =
-    input.provider === FISH_AUDIO_PROVIDER && input.speechModel !== undefined
-      ? fishSpeechModelValue(input.speechModel)
+    voiceCatalogEntry(input.provider)?.speechModel && input.speechModel !== undefined
+      ? speechModelValue(input.speechModel)
       : undefined;
   const provider = createVoiceProvider(input.provider, { allowPrivateEndpoint });
   const verified = await provider.verify(plaintext, voiceContext(actor, input.signal));
@@ -310,7 +308,7 @@ export async function persistVoiceCredential(
     validVoiceIds = voices.map((voice) => voice.id);
   }
   const stored = await deps.secrets.put(plaintext, voiceContext(actor, input.signal));
-  const cred = await withSerializableRetry(() =>
+  const cred = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await tx.userVoiceCredential.findFirst({
@@ -409,7 +407,7 @@ export async function disconnectVoiceCredential(
   if (!provider) {
     throw new ORPCError("BAD_REQUEST", { message: "Unknown voice provider." });
   }
-  await withSerializableRetry(() =>
+  await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await tx.userVoiceCredential.findMany({
@@ -442,11 +440,11 @@ export async function updateVoiceSpeechModel(
   actor: Actor,
   input: { provider: string; speechModel: string; scope?: SettingsScope },
 ): Promise<VoiceCredential> {
-  if (input.provider !== FISH_AUDIO_PROVIDER) {
-    throw new ORPCError("BAD_REQUEST", { message: "Speech model applies to Fish Audio." });
+  if (!voiceCatalogEntry(input.provider)?.speechModel) {
+    throw new ORPCError("BAD_REQUEST", { message: "This voice provider has no speech model." });
   }
-  const speechModel = fishSpeechModelValue(input.speechModel);
-  return withSerializableRetry(() =>
+  const speechModel = speechModelValue(input.speechModel);
+  return withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const found = await tx.userVoiceCredential.findFirst({

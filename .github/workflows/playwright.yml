@@ -41,14 +41,18 @@ env:
   TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
 jobs:
+  # Six light shards × two workers. page-browser and pages each get their own job below so they
+  # cannot land on the same shard and set the floor. Six (not ten) keeps runner minutes down while
+  # the dedicated heavy jobs still own the E2E wall. Postgres boots beside checkout and install
+  # instead of inside the Playwright step via Testcontainers.
   shard:
-    name: Web E2E (${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }})
+    name: Web E2E (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.nightly && '[1, 2, 3, 4]' || '[1, 2]') }}
+        shard: [1, 2, 3, 4, 5, 6]
     # Checks its own changed areas instead of waiting for ci.yml's Changed areas job, so the shards
     # start with the first jobs; the steps skip and the combining job reports skipped when the
     # pull request cannot affect the suite.
@@ -62,45 +66,69 @@ jobs:
       - id: areas
         if: inputs.changed_areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      # Boots beside pnpm install so the harness does not wait on Testcontainers after install.
+      - name: Postgres cache week
         if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
+        if: steps.areas.outputs.e2e != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
+        if: steps.areas.outputs.e2e != 'false'
+        run: bash .github/scripts/restore-postgres-image.sh
+      - name: Start Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rakazo \
+            -p 5432:5432 \
+            mirror.gcr.io/library/postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
+          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.e2e != 'false'
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-        if: steps.areas.outputs.e2e != 'false'
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: steps.areas.outputs.e2e != 'false'
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          playwright: "true"
       - name: Install Chromium
         if: steps.areas.outputs.e2e != 'false'
         timeout-minutes: 5
         # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
         # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
         run: pnpm --filter @rakazo/web exec playwright install chromium
-      - name: Install agent-browser
+      - name: Install CJK fonts
         if: steps.areas.outputs.e2e != 'false'
-        timeout-minutes: 2
-        # The page-browser tests run the computer image's helper, which drives Chromium through it.
+        timeout-minutes: 6
+        # Chromium needs CJK fallback fonts; the runner's Azure mirror can stall on this package.
         run: |
-          infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
-          echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo timeout 240s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
+      - name: Wait for Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready" >&2
+          docker logs ci-postgres >&2 || true
+          exit 1
       - name: Run Playwright tests
         if: steps.areas.outputs.e2e != 'false'
         id: playwright_tests
         env:
-          SHARD: ${{ matrix.shard }}/${{ inputs.nightly && 4 || 2 }}
+          SHARD: ${{ matrix.shard }}/6
           E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
+          E2E_SKIP_HEAVY: "1"
         run: pnpm test:e2e -- --shard="$SHARD"
-      # Homepage screenshots only: no copy or layout assertions.
-      # Runs after product e2e so shared apps/web/test-results is not wiped by the product run.
-      - name: Capture marketing homepage screenshots
-        if: matrix.shard == 1 && always() && (steps.playwright_tests.outcome == 'success' || steps.playwright_tests.outcome == 'failure')
-        run: pnpm --filter @rakazo/www e2e
       - name: Upload shard results
         if: always() && steps.areas.outputs.e2e != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -108,17 +136,145 @@ jobs:
           name: playwright-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             blob-report
-            playwright-report-www
             apps/web/test-results
           # Matches the combined artifact, so re-running failed shards later still finds the others.
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Long page-browser and pages specs run alone so they cannot share a machine with each other.
+  # page-browser keeps one worker: its helper launches a second Chromium and flakes under peer load.
+  heavy:
+    name: Web E2E (${{ matrix.spec }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - spec: page-browser
+            workers: "1"
+            agent_browser: true
+          - spec: pages
+            workers: "2"
+            agent_browser: false
+    outputs:
+      e2e: ${{ steps.areas.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: ${{ inputs.changed_areas && 2 || 1 }}
+      - id: areas
+        if: inputs.changed_areas
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - name: Postgres cache week
+        if: steps.areas.outputs.e2e != 'false'
+        id: postgres-cache-week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore Postgres image cache
+        if: steps.areas.outputs.e2e != 'false'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/docker-postgres-cache
+          key: docker-postgres-18-alpine-v2-${{ steps.postgres-cache-week.outputs.week }}
+      - name: Load or pull Postgres image
+        if: steps.areas.outputs.e2e != 'false'
+        run: bash .github/scripts/restore-postgres-image.sh
+      - name: Start Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=rakazo \
+            -p 5432:5432 \
+            mirror.gcr.io/library/postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=500
+          echo "CI_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/rakazo" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup-workspace
+        if: steps.areas.outputs.e2e != 'false'
+        with:
+          playwright: "true"
+      - name: Install Chromium
+        if: steps.areas.outputs.e2e != 'false'
+        timeout-minutes: 5
+        run: pnpm --filter @rakazo/web exec playwright install chromium
+      - name: Install agent-browser
+        if: steps.areas.outputs.e2e != 'false' && matrix.agent_browser
+        timeout-minutes: 2
+        run: |
+          infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
+          echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
+      - name: Wait for Postgres
+        if: steps.areas.outputs.e2e != 'false'
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U postgres -d rakazo; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready" >&2
+          docker logs ci-postgres >&2 || true
+          exit 1
+      - name: Run Playwright tests
+        if: steps.areas.outputs.e2e != 'false'
+        id: playwright_tests
+        env:
+          E2E_SKIP_NIGHTLY: ${{ !inputs.nightly && '1' || '' }}
+          E2E_WORKERS: ${{ matrix.workers }}
+        run: pnpm test:e2e -- --spec="${{ matrix.spec }}.spec.ts"
+      - name: Upload heavy results
+        if: always() && steps.areas.outputs.e2e != 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-heavy-${{ matrix.spec }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            blob-report
+            apps/web/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Homepage screenshots only: no copy or layout assertions. Runs beside the product shards so the
+  # slowest shard no longer waits on them after its own tests finish.
+  www-screenshots:
+    name: Marketing homepage screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      e2e: ${{ steps.areas.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: ${{ inputs.changed_areas && 2 || 1 }}
+      - id: areas
+        if: inputs.changed_areas
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-workspace
+        if: steps.areas.outputs.e2e != 'false'
+        with:
+          playwright: "true"
+      - name: Install Chromium
+        if: steps.areas.outputs.e2e != 'false'
+        timeout-minutes: 5
+        run: pnpm --filter @rakazo/www exec playwright install chromium
+      - name: Capture marketing homepage screenshots
+        if: steps.areas.outputs.e2e != 'false'
+        id: www_e2e
+        run: pnpm --filter @rakazo/www e2e
+      - name: Upload homepage screenshots
+        if: always() && steps.areas.outputs.e2e != 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-www-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-report-www
           retention-days: 7
           if-no-files-found: ignore
 
   # Keeps the single "Web E2E" check and artifact that branch protection and the publisher expect.
   playwright:
     name: Web E2E
-    needs: shard
-    if: ${{ !cancelled() && needs.shard.outputs.e2e != 'false' }}
+    needs: [shard, heavy, www-screenshots]
+    if: ${{ !cancelled() && (needs.shard.outputs.e2e != 'false' || needs.heavy.outputs.e2e != 'false' || needs.www-screenshots.outputs.e2e != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -127,7 +283,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -139,15 +295,42 @@ jobs:
         with:
           pattern: playwright-shard-*-${{ github.run_id }}-*
           path: ${{ runner.temp }}/shards
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: playwright-heavy-*-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/heavy
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
+        with:
+          pattern: playwright-www-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/www
       - name: Combine shard results
         shell: bash
         env:
           SHARDS: ${{ runner.temp }}/shards
-          SHARD_TOTAL: ${{ inputs.nightly && 4 || 2 }}
+          HEAVY: ${{ runner.temp }}/heavy
+          WWW: ${{ runner.temp }}/www
+          SHARD_TOTAL: 6
+          HEAVY_SPECS: page-browser pages
         run: |
           set -euo pipefail
           mkdir -p blob-report apps/web/test-results
           missing=0
+          copy_blob() {
+            local label="$1" latest="$2"
+            if [[ -z "$latest" ]]; then
+              echo "::error::$label uploaded no results; the combined report is incomplete."
+              missing=1
+              return
+            fi
+            if compgen -G "$latest/blob-report/*.zip" >/dev/null; then
+              cp -R "$latest/blob-report/." blob-report/
+            else
+              echo "::error::$label has no Playwright blob report; the combined report is incomplete."
+              missing=1
+            fi
+            if [[ -d "$latest/apps/web/test-results" ]]; then cp -R "$latest/apps/web/test-results/." apps/web/test-results/; fi
+          }
           # A re-run of failed jobs uploads new attempts only for the shards it re-ran.
           for shard in $(seq 1 "$SHARD_TOTAL"); do
             latest=""
@@ -155,19 +338,22 @@ jobs:
               candidate="$SHARDS/playwright-shard-$shard-$GITHUB_RUN_ID-$attempt"
               if [[ -d "$candidate" ]]; then latest="$candidate"; break; fi
             done
-            if [[ -z "$latest" ]]; then
-              echo "::error::Shard $shard uploaded no results; the combined report is incomplete."
-              missing=1
-              continue
+            copy_blob "Shard $shard" "$latest"
+          done
+          for spec in $HEAVY_SPECS; do
+            latest=""
+            for attempt in $(seq "$GITHUB_RUN_ATTEMPT" -1 1); do
+              candidate="$HEAVY/playwright-heavy-$spec-$GITHUB_RUN_ID-$attempt"
+              if [[ -d "$candidate" ]]; then latest="$candidate"; break; fi
+            done
+            copy_blob "Heavy $spec" "$latest"
+          done
+          for attempt in $(seq "$GITHUB_RUN_ATTEMPT" -1 1); do
+            candidate="$WWW/playwright-www-$GITHUB_RUN_ID-$attempt"
+            if [[ -d "$candidate/playwright-report-www" ]]; then
+              cp -R "$candidate/playwright-report-www" .
+              break
             fi
-            if compgen -G "$latest/blob-report/*.zip" >/dev/null; then
-              cp -R "$latest/blob-report/." blob-report/
-            else
-              echo "::error::Shard $shard has no Playwright blob report; the combined report is incomplete."
-              missing=1
-            fi
-            if [[ -d "$latest/apps/web/test-results" ]]; then cp -R "$latest/apps/web/test-results/." apps/web/test-results/; fi
-            if [[ -d "$latest/playwright-report-www" ]]; then cp -R "$latest/playwright-report-www" .; fi
           done
           exit "$missing"
       - name: Merge Playwright reports
@@ -183,7 +369,7 @@ jobs:
       - name: Record Playwright result
         if: ${{ !cancelled() && inputs.upload_artifacts }}
         env:
-          PLAYWRIGHT_RESULT: ${{ needs.shard.result == 'success' && job.status == 'success' && 'success' || 'failure' }}
+          PLAYWRIGHT_RESULT: ${{ needs.shard.result == 'success' && needs.heavy.result == 'success' && needs.www-screenshots.result == 'success' && job.status == 'success' && 'success' || 'failure' }}
         run: |
           mkdir -p test-report/e2e
           if [[ "$PLAYWRIGHT_RESULT" == "success" ]]; then
@@ -213,7 +399,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PLAYWRIGHT_RESULT: ${{ needs.shard.result == 'success' && job.status == 'success' && 'success' || 'failure' }}
+          PLAYWRIGHT_RESULT: ${{ needs.shard.result == 'success' && needs.heavy.result == 'success' && needs.www-screenshots.result == 'success' && job.status == 'success' && 'success' || 'failure' }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.run_attempt }}
           PLAYWRIGHT_RUN_ID: ${{ github.run_id }}
           PLAYWRIGHT_RUN_NUMBER: ${{ github.run_number }}
@@ -222,10 +408,14 @@ jobs:
           PLAYWRIGHT_EVENT: ${{ github.event_name }}
           PLAYWRIGHT_BRANCH: ${{ github.ref_name }}
         run: bash scripts/publish-playwright-report.sh
-      - name: Fail when a shard failed
-        if: needs.shard.result != 'success'
+      - name: Fail when a shard, heavy spec, or homepage capture failed
+        if: needs.shard.result != 'success' || needs.heavy.result != 'success' || needs.www-screenshots.result != 'success'
         env:
           SHARD_RESULT: ${{ needs.shard.result }}
+          HEAVY_RESULT: ${{ needs.heavy.result }}
+          WWW_RESULT: ${{ needs.www-screenshots.result }}
         run: |
           echo "Playwright shards finished with: $SHARD_RESULT" >&2
+          echo "Heavy page-browser/pages finished with: $HEAVY_RESULT" >&2
+          echo "Marketing homepage screenshots finished with: $WWW_RESULT" >&2
           exit 1

@@ -88,6 +88,7 @@ function syncInput({
     notifyBrowserForEvent: vi.fn(),
     markBotReadIfVisible: vi.fn(),
     markGroupReadOnReply: vi.fn(),
+    meId: "user-1",
   } as unknown as Parameters<typeof useThreadSync>[0];
 }
 

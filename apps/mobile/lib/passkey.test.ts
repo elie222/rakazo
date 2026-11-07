@@ -3,13 +3,9 @@ import * as SecureStore from "expo-secure-store";
 import { Alert } from "react-native";
 import { create, get, isSupported } from "react-native-passkeys";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  authHeaders,
-  clearSpace,
-  currentApiBase,
-  fetchMobileJson,
-  passwordResetCapabilities,
-} from "./api";
+import { authHeaders, currentApiBase, fetchMobileJson } from "./api";
+import { passwordResetCapabilities } from "./api-auth";
+import { clearSpace } from "./api-server";
 import {
   addPasskey,
   listPasskeys,
@@ -29,11 +25,16 @@ vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn
 const platform = vi.hoisted(() => ({ OS: "ios" }));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() }, Platform: platform }));
 vi.mock("react-native-passkeys", () => ({ isSupported: vi.fn(), get: vi.fn(), create: vi.fn() }));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(async () => ({ authorization: "Bearer current-session" })),
-  clearSpace: vi.fn(async () => true),
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),
   fetchMobileJson: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  clearSpace: vi.fn(async () => true),
+}));
+vi.mock("./api-auth", () => ({
   passwordResetCapabilities: vi.fn(),
 }));
 vi.mock("./session", () => ({

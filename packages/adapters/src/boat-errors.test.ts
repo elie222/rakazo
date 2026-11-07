@@ -1,6 +1,12 @@
 import type * as TimersPromises from "node:timers/promises";
 import { FetchError, ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
+import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoatApiError, BoatRequestGate, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
@@ -153,6 +159,23 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a resume refused for lack of capacity as a computer that did not start", async () => {
+    const call = vi.fn(async () => {
+      throw new ResponseError(
+        Response.json(
+          {
+            code: "resume_failed",
+            message: "Server is currently at capacity. Please try again in a few minutes.",
+          },
+          { status: 409 },
+        ),
+      );
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnavailableError);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
     const call = wrapBoatCall(async () => {
       throw new ResponseError(
@@ -164,7 +187,7 @@ describe("Boat API errors", () => {
     }, "fake-key");
     const error = await call().catch((failure: unknown) => failure);
     expect(error).toBeInstanceOf(SandboxRateLimitError);
-    expect((error as Error).cause).toBeInstanceOf(ResponseError);
+    expect((error as Error).cause).toBeInstanceOf(BoatApiError);
     expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
   });
 
@@ -349,7 +372,9 @@ describe("Boat API errors", () => {
     expect((edge as Error).cause).toMatchObject({ response: { status: 525 } });
 
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
+    expect(billing).toBeInstanceOf(SandboxProviderAccountError);
     expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((billing as Error).message).toBe(COMPUTER_PROVIDER_UNAVAILABLE_ERROR);
     expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
 
     const forbidden = await failing(403, "api_key_action_forbidden")().catch(

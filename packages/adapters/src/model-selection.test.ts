@@ -4,6 +4,7 @@ import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
+import { serializeModelSecret } from "./model-secret.js";
 import {
   connectionServesModel,
   defaultCatalogModelId,
@@ -24,9 +25,8 @@ import {
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
-import { providerCatalogCache } from "./pi-live-catalog.js";
+import { liveCatalogEntry, providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
-import { serializeModelSecret } from "./pi-oauth.js";
 
 function credential(provider: string, defaultModel: string | null) {
   return {
@@ -1497,5 +1497,26 @@ describe("connectionServesModel", () => {
     deps.secretStore.load.mockClear();
     await expect(serves("secret-plus", shared.id)).resolves.toBe(true);
     expect(deps.secretStore.load).not.toHaveBeenCalled();
+  });
+
+  it("reads each account's secret once for every model one request checks", async () => {
+    // Spark and models only an account's own catalog lists.
+    const liveOnly = ["gpt-5.9-codex", "gpt-5.9-codex-mini", "gpt-6.0-codex"];
+    for (const id of liveOnly) expect(liveCatalogEntry("openai-codex", id)).toBeDefined();
+    const reads = new Map();
+    const findFirst = vi.mocked(deps.prisma.secret.findFirst);
+    findFirst.mockClear();
+    deps.secretStore.load.mockClear();
+    for (const secretId of ["secret-pro", "secret-plus"])
+      for (const modelId of ["gpt-5.3-codex-spark", ...liveOnly])
+        await connectionServesModel(
+          { ...deps, reads },
+          "user-1",
+          { secretId },
+          "openai-codex",
+          modelId,
+        );
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(deps.secretStore.load).toHaveBeenCalledTimes(2);
   });
 });

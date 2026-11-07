@@ -1,7 +1,8 @@
-import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import { ReplyPreviewSchema } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
+import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { displayName } from "./display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
+import { messageReaction } from "./message-reactions.js";
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -23,6 +24,65 @@ export function replyMetadata(
     replyQuote: typeof payload.replyQuote === "string" ? payload.replyQuote : previous?.replyQuote,
     replyPreview: preview.success ? preview.data : previous?.replyPreview,
   };
+}
+
+/** The author a live message event carries; updates omit it, so keep the known one. */
+export function payloadAuthor(
+  payload: Record<string, unknown>,
+  previous?: { author?: MessageAuthor },
+): { author?: MessageAuthor } {
+  const parsed = MessageAuthorSchema.safeParse(payload.author);
+  const author = parsed.success ? parsed.data : previous?.author;
+  return author ? { author } : {};
+}
+
+/** Someone else in a shared space; my own messages and unknown senders stay unnamed. */
+export function otherAuthor(
+  author: MessageAuthor | undefined,
+  meId: string | undefined,
+): MessageAuthor | undefined {
+  return author && meId && author.id !== meId ? author : undefined;
+}
+
+/**
+ * A message that leaves the chat unread for this viewer until they read it: a bot's, or one
+ * someone else in the space wrote. Their own never does. Takes a stored message or a live
+ * event's payload.
+ */
+export function messageUnreadFor(
+  message: { role?: unknown; author?: unknown },
+  meId: string | undefined,
+) {
+  return (
+    message.role === "bot" ||
+    (message.role === "user" && Boolean(otherAuthor(payloadAuthor(message).author, meId)))
+  );
+}
+
+/**
+ * Whether a person's message alerts the rest of the space, by push or on the desktop: typed
+ * text does; a spoken call turn, a reaction or a file sent alone does not.
+ */
+export function memberMessageAlerts(message: {
+  callId?: unknown;
+  blocks?: unknown;
+  replyToMessageId?: unknown;
+}): boolean {
+  const blocks = (Array.isArray(message.blocks) ? message.blocks : []) as MessageBlock[];
+  const replyToMessageId =
+    typeof message.replyToMessageId === "string" ? message.replyToMessageId : undefined;
+  return (
+    typeof message.callId !== "string" &&
+    !messageReaction({ role: "user", blocks, replyToMessageId }) &&
+    blocks.some(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        "text" in block &&
+        typeof block.text === "string" &&
+        block.text.trim() !== "",
+    )
+  );
 }
 
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {

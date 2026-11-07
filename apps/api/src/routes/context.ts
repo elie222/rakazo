@@ -210,6 +210,50 @@ export function createRouterContext(deps: RouterDeps) {
         : { env: process.env };
     return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
   };
+  /**
+   * The main role also says whether its model reads images where runs use it, so settings
+   * offer a computer-use model when screen work needs one. Left out when it cannot be told.
+   */
+  const withImageInput = async (
+    actor: Actor,
+    role: ModelRole,
+    view: ModelRoleView,
+  ): Promise<ModelRoleView> => {
+    const choice = role === "main" ? (view.primary ?? view.deploymentPrimary) : null;
+    if (!choice) return view;
+    try {
+      const [credential, catalog] = await Promise.all([
+        // The deployment's model runs on the deployment's key, never a member's connection.
+        view.primary
+          ? findConnectedModelCredential(
+              deps.prisma,
+              deps.secrets,
+              actor,
+              choice.provider,
+              choice.modelId,
+              { credentialId: choice.credentialId },
+            )
+          : null,
+        // Only an account-listed model needs the live catalog; the rest are known offline.
+        canonicalPiProviderId(choice.provider) === CHATGPT_OAUTH_PROVIDER ? chatCatalog(actor) : [],
+      ]);
+      const entry = catalog.find(
+        (entry) =>
+          entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,
+      );
+      const seesImages = await connectedModelSeesImages(
+        { prisma: deps.prisma, secretStore: deps.secrets },
+        actor.userId,
+        choice.provider,
+        choice.modelId,
+        credential,
+        entry?.images,
+      );
+      return { ...view, seesImages };
+    } catch {
+      return view;
+    }
+  };
   const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
     const catalog = await chatCatalog(actor);
     const decisions = role === "approval" ? decisionModelCatalog() : [];
@@ -237,6 +281,8 @@ export function createRouterContext(deps: RouterDeps) {
       where: { userId: actor.userId },
       select: { id: true, provider: true, secretId: true },
     });
+    // Every entry checks the same connections, so their rows are read once for the whole list.
+    const requestServingDeps = { ...servingDeps, reads: new Map() };
     const byProvider = new Map<string, typeof connections>();
     for (const connection of connections) {
       const provider = canonicalPiProviderId(connection.provider);
@@ -257,7 +303,13 @@ export function createRouterContext(deps: RouterDeps) {
         const serving: string[] = [];
         for (const owner of owners)
           if (
-            await connectionServesModel(servingDeps, actor.userId, owner, entry.provider, entry.id)
+            await connectionServesModel(
+              requestServingDeps,
+              actor.userId,
+              owner,
+              entry.provider,
+              entry.id,
+            )
           )
             serving.push(owner.id);
         return serving.length === owners.length ? entry : { ...entry, credentialIds: serving };
@@ -359,34 +411,31 @@ export function createRouterContext(deps: RouterDeps) {
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
 
-  const authed = os
-    .use(async ({ context, next }) => {
-      const actor = context.actor;
-      if (!actor) throw new ORPCError("UNAUTHORIZED");
-      return asTenant(actor, () => next({ context: { ...context, actor } }));
-    })
-    .use(async ({ context, next, path }, input) => {
-      const result = await next();
-      const event = procedureSecurityEvent(path, input, context.actor);
-      if (event) await recordSecurityEvent(event);
-      return result;
-    });
+  const signedIn = os.middleware(async ({ context, next }) => {
+    const actor = context.actor;
+    if (!actor) throw new ORPCError("UNAUTHORIZED");
+    return asTenant(actor, () => next({ context: { ...context, actor } }));
+  });
+
+  const authed = os.use(signedIn).use(async ({ context, next, path }, input) => {
+    const result = await next();
+    const event = procedureSecurityEvent(path, input, context.actor);
+    if (event) await recordSecurityEvent(event);
+    return result;
+  });
 
   const callsEnabled = authed.use(async ({ next }) => {
     if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
     return next();
   });
 
+  // The flag is checked first so a disabled board is not found even when signed out.
   const boardEnabled = os
     .use(async ({ next }) => {
       if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
       return next();
     })
-    .use(async ({ context, next }) => {
-      const actor = context.actor;
-      if (!actor) throw new ORPCError("UNAUTHORIZED");
-      return asTenant(actor, () => next({ context: { ...context, actor } }));
-    });
+    .use(signedIn);
   const ticketDeps = {
     prisma: deps.prisma,
     ticketBoardEnabled: deps.env?.ticketBoardEnabled,
@@ -416,6 +465,7 @@ export function createRouterContext(deps: RouterDeps) {
     agentImportServices,
     chatCatalog,
     withDeploymentDefault,
+    withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
     groupRepos,

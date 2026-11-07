@@ -6,7 +6,7 @@ import {
   MessagingTeamChatEmulator,
   messageBot,
 } from "@rakazo/adapters";
-import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
+import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
@@ -60,6 +60,7 @@ export type TrialOptions = {
   timeoutMs: number;
   judge?: EvalJudge;
   maxToolCalls: number;
+  replyMode?: ReplyMode;
   createApp: (
     services: EvalServices,
     messaging: MessagingTeamChatEmulator,
@@ -216,6 +217,7 @@ export async function runTrial(
         botId,
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
+        replyMode: options.replyMode,
       });
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
@@ -251,6 +253,7 @@ export async function runTrial(
           botId: created.id,
           modelProvider: options.connection.provider,
           modelId: options.connection.modelId,
+          replyMode: options.replyMode,
         });
         peer = { id: created.id, name: scenario.peer.name };
       }
@@ -824,6 +827,8 @@ export async function runTrial(
               ]))
             )
               await assertToolBudget();
+            // Work that ended between two checks still counts before grading and the judge.
+            await assertToolBudget();
           }
           const runs = await prisma.run.findMany({
             where: { botId: { in: memberBotIds }, createdAt: { gte: new Date(requestStarted) } },
@@ -897,9 +902,12 @@ export async function runTrial(
         const observed = realtime.events.filter((event) => event.runId === runId);
         routineRuns.push({
           text: lastText,
-          unread: (
-            await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { unread: true } })
-          ).unread,
+          unread: Boolean(
+            await prisma.threadRead.findFirst({
+              where: { thread: { botId }, unread: true },
+              select: { userId: true },
+            }),
+          ),
           messages: messages.map((m) => m.blocks as RoutineEvidence["messages"][number]),
           progress: observed
             .filter((event) => event.type === "thread.progress")

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComputerStatus } from "@rakazo/contracts";
+import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, Fragment, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -97,6 +98,7 @@ vi.mock("react-native", () => {
       },
     },
     Modal: MockModal,
+    StyleSheet: { create: <T,>(styles: T) => styles },
     Pressable: MockPressable,
     ScrollView: MockView,
     Text: MockView,
@@ -154,9 +156,11 @@ vi.mock("react-native-safe-area-context", () => {
 });
 
 const routeParams = vi.hoisted(() => ({ botId: "bot-1" as string | undefined }));
+const routerPush = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ botId: routeParams.botId, name: "Basil" }),
   useNavigation: () => ({ setOptions: () => undefined }),
+  useRouter: () => ({ push: routerPush }),
 }));
 
 vi.mock("../lib/fold-regions", () => ({ useFoldRegions: () => folds.regions }));
@@ -216,6 +220,9 @@ vi.mock("../components/computer-mode-picker", () => {
 });
 
 const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
 
 vi.mock("./i18n", () => {
@@ -1178,6 +1185,21 @@ describe("computer screen", () => {
         "Something went wrong while it was starting. Try again in a moment.",
       );
       expect(tryAgain(view)?.disabled).toBe(false);
+    });
+
+    it("offers Upgrade instead of Try again once the computer hours are spent", async () => {
+      const view = await render();
+      await act(async () => boots[0]?.reject(new Error(COMPUTER_ALLOWANCE_USED_ERROR)));
+      await settle();
+
+      expect(view.textContent).toContain(COMPUTER_ALLOWANCE_USED_ERROR);
+      expect(view.textContent).not.toContain("Couldn't start the computer");
+      expect(tryAgain(view)).toBeUndefined();
+      const upgrade = Array.from(view.querySelectorAll("button")).find(
+        (button) => button.textContent === "Upgrade",
+      );
+      await act(async () => upgrade?.click());
+      expect(routerPush).toHaveBeenCalledWith("/billing");
     });
 
     it("offers Try again after a failed boot", async () => {

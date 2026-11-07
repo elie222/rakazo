@@ -189,7 +189,12 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       });
       await prisma.thread.update({
         where: { id: created.threadId },
-        data: { nextMessageSeq: spec.count, unread: spec.unread },
+        data: {
+          nextMessageSeq: spec.count,
+          ...(spec.unread
+            ? { reads: { create: { spaceId: who.spaceId, userId: who.userId, unread: true } } }
+            : {}),
+        },
       });
     });
     return {
@@ -240,7 +245,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
   it("previews the newest message of each bot in another space and reads at most one message row per thread", async () => {
     const { result: listed, rowCount } = await messageRowsDuring("listSpaceBotsForSpaces", () =>
       runAsSystem("space navigation across the member's Spaces", () =>
-        createRepos(prisma).listSpaceBotsForSpaces(actor, [spaceB]),
+        createRepos(prisma).listSpaceBotsForSpaces([spaceB], owner.userId),
       ),
     );
     expect(
@@ -261,7 +266,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       "listSpaceBotsForSpaces empty",
       () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createRepos(prisma).listSpaceBotsForSpaces(actor, []),
+          createRepos(prisma).listSpaceBotsForSpaces([], owner.userId),
         ),
     );
     expect(result).toEqual([]);

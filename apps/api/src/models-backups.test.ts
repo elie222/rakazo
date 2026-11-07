@@ -492,6 +492,22 @@ describe("role-based model settings API", () => {
     });
     expect(refused.response.status).toBe(400);
   });
+  it("says whether the main model reads images, as computer use decides it", async () => {
+    const { call } = setup();
+    const seesImages = async (modelId: string) => {
+      const saved = await call("models/setRole", {
+        role: "main",
+        primary: { provider: "openrouter", modelId },
+      });
+      expect(saved.response.status).toBe(200);
+      const read = await call("models/role", { role: "main" });
+      return (await read.response.json()).json.seesImages;
+    };
+    expect(await seesImages(visionModel.id)).toBe(true);
+    expect(await seesImages(textOnlyModel.id)).toBe(false);
+    const approval = await call("models/role", { role: "approval" });
+    expect((await approval.response.json()).json.seesImages).toBeUndefined();
+  });
   it("offers only image-capable models for computer use", async () => {
     const { call } = setup();
     const { response } = await call("models/forRole", { role: "computer" });
@@ -651,6 +667,62 @@ describe("role-based model settings API", () => {
       expect(right.response.status).toBe(200);
     } finally {
       serves.mockRestore();
+    }
+  });
+  it("reads each connection's key and the saved choices once for the whole catalog", async () => {
+    const { call, prisma } = setup();
+    const connection = (id: string) => ({
+      id,
+      userId: owner.userId,
+      provider: "openrouter",
+      label: id,
+      secretId: `${id}-secret`,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      userPreferences: [],
+    });
+    Object.assign(prisma.userModelCredential, {
+      findMany: vi.fn(async () => [
+        connection("credential-personal"),
+        connection("credential-work"),
+      ]),
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
+    });
+    const secretRow = ({ where }: { where: { id: string } }) => ({
+      id: where.id,
+      ciphertext: `ciphertext-${where.id}`,
+    });
+    const findSecret = vi.fn(async (args: { where: { id: string } }) => secretRow(args));
+    Object.assign(prisma.secret, {
+      findFirst: findSecret,
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.map((id) => secretRow({ where: { id } })),
+      ),
+    });
+    // The work account's live list adds models the personal one does not list.
+    const bundled = listPiCatalog()
+      .filter((entry) => entry.provider === "openrouter" && !entry.placeholder)
+      .map((entry) => entry.id);
+    const liveOnly = bundled.slice(0, 20).map((id) => `${id}-preview`);
+    const lists = vi
+      .spyOn(adapters.ProviderCatalogCache.prototype, "read")
+      .mockImplementation(async ({ secretId }) =>
+        secretId === "credential-personal-secret" ? bundled : [...bundled, ...liveOnly],
+      );
+    vi.stubEnv("RAKAZO_LIVE_MODEL_CATALOG", "on");
+    try {
+      const catalog = (await (await call("models/forRole", { role: "main" })).response.json())
+        .json as Array<{ id: string; credentialIds?: string[] }>;
+      expect(catalog.filter((entry) => liveOnly.includes(entry.id))).toHaveLength(20);
+      expect(catalog.find((entry) => entry.id === liveOnly[0])?.credentialIds).toEqual([
+        "credential-work",
+      ]);
+      expect(findSecret).toHaveBeenCalledTimes(2);
+      // Once for the catalog itself and once for the connections that may serve it.
+      expect(prisma.bot.findMany).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+      lists.mockRestore();
     }
   });
   it("keeps the main model's effort when a list save repeats its primary", async () => {

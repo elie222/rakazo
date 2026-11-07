@@ -14,7 +14,7 @@ type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
   botId: string;
   botName: string;
-  groupNotification: boolean;
+  groupId: string | undefined;
 };
 
 type ChatAlertOptions = {
@@ -23,7 +23,24 @@ type ChatAlertOptions = {
   activeGroupId: RefObject<string | undefined>;
   /** `spaceId` is set when the chat may belong to another Space than the shell's. */
   openChat: (chat: Pick<ChatAlert, "botId" | "groupId"> & { spaceId?: string }) => void;
+  /** The signed-in person, whose own messages never notify them. */
+  meId: string | undefined;
 };
+
+// A click must not reach a shell that has gone, so the shell closes what it showed.
+function openChatOnClick(
+  notification: Notification,
+  shown: Set<Notification>,
+  openChat: () => void,
+) {
+  shown.add(notification);
+  notification.onclose = () => shown.delete(notification);
+  notification.onclick = () => {
+    window.focus();
+    openChat();
+    notification.close();
+  };
+}
 
 /**
  * Finished-run notifications for the open chat, held until the browser grants permission, and
@@ -32,17 +49,18 @@ type ChatAlertOptions = {
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId }: ChatAlertOptions,
 ) {
+  const meIdRef = useRef(meId);
+  meIdRef.current = meId;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
   const openChatRef = useRef(openChat);
   openChatRef.current = openChat;
+  const shown = useRef(new Set<Notification>());
   useEffect(() => {
     let active = true;
     let controller: AbortController | undefined;
     let cancelRetry: (() => void) | undefined;
-    // A click must not reach a shell that has gone, so its alerts go with it.
-    const shown = new Set<Notification>();
     const show = (alert: ChatAlert) => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       const isOpen = alert.groupId
@@ -64,13 +82,7 @@ export function useBrowserNotifications(
           // Per chat and kind: a repeat replaces its copy, but a question after a reply still pops up.
           tag: `${alert.threadId}:${alert.kind}`,
         });
-        shown.add(notification);
-        notification.onclose = () => shown.delete(notification);
-        notification.onclick = () => {
-          window.focus();
-          openChatRef.current(alert);
-          notification.close();
-        };
+        openChatOnClick(notification, shown.current, () => openChatRef.current(alert));
       } catch {
         // Some browsers only allow notifications from a service worker.
       }
@@ -107,7 +119,7 @@ export function useBrowserNotifications(
       active = false;
       controller?.abort();
       cancelRetry?.();
-      for (const notification of shown) notification.close();
+      for (const notification of shown.current) notification.close();
     };
   }, [rpc]);
   // Notifications while the desktop app is closed: register its token, and open the chat a
@@ -129,6 +141,15 @@ export function useBrowserNotifications(
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
+  // A permission answer can arrive after the shell has gone; its held notifications go with it.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pendingBrowserNotifications.current.clear();
+    };
+  }, []);
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
@@ -136,20 +157,24 @@ export function useBrowserNotifications(
       pending.event,
       currentBot.name || pending.botName,
       {
-        enabled: pending.groupNotification || currentBot.notifyOnFinish,
+        enabled: pending.groupId !== undefined || currentBot.notifyOnFinish,
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
         show: (title, body, tag) => {
           const icon = notificationIcon(currentBot);
-          new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
+          const notification = new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
+          openChatOnClick(notification, shown.current, () =>
+            openChatRef.current({ botId: pending.botId, groupId: pending.groupId }),
+          );
         },
       },
     );
     return result !== "pending";
   }, []);
   const flushPendingBrowserNotifications = useCallback(() => {
+    if (!mounted.current) return;
     for (const [threadId, pending] of pendingBrowserNotifications.current) {
       if (deliverBrowserNotification(pending)) {
         pendingBrowserNotifications.current.delete(threadId);
@@ -164,7 +189,7 @@ export function useBrowserNotifications(
       streamReady: boolean,
       botName: string,
       enabled: boolean,
-      groupNotification: boolean,
+      groupId: string | undefined,
     ) => {
       const botId = event.botId;
       if (typeof botId !== "string") return;
@@ -176,13 +201,14 @@ export function useBrowserNotifications(
         windowFocused: document.hasFocus(),
         permission: "granted",
         notifiedEventIds: notifiedBrowserEvents.current,
+        meId: meIdRef.current,
       });
       if (!eligible || !enabled) return;
       const pending = {
         event,
         botId,
         botName,
-        groupNotification,
+        groupId,
       } satisfies PendingBrowserNotification;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {

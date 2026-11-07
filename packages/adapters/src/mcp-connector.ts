@@ -31,7 +31,6 @@ import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { composioToolBatch } from "./composio-batch.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -52,6 +51,7 @@ import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
+  launchArgSecrets,
   looksLikeSecretValue,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
@@ -69,7 +69,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -499,11 +499,11 @@ export class McpConnector implements ConnectorProvider {
           );
           this.discoveryBackoff.delete(key);
           this.unavailable.delete(key);
-          void this.recordHealth(assignment.server.id, {
-            status: "ok",
-            message: null,
-            toolCount: listed.tools.length,
-          });
+          void this.recordHealth(
+            assignment.server.id,
+            { status: "ok", message: null, toolCount: listed.tools.length },
+            { revision: server.revision },
+          );
           reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
             .filter(
@@ -514,9 +514,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              inputSchema: tool.inputSchema as Record<string, unknown>,
-              readOnly: tool.annotations?.readOnlyHint,
-              batch: composioToolBatch(tool.name),
+              ...mcpToolFields(tool),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -559,7 +557,11 @@ export class McpConnector implements ConnectorProvider {
           // A cancelled run says nothing about the server, and an install that outlived the
           // deadline is still on its way.
           if (!context.signal.aborted && !this.installing.has(key)) {
-            void this.recordHealth(assignment.server.id, { status: "error", message: reason });
+            void this.recordHealth(
+              assignment.server.id,
+              { status: "error", message: reason },
+              { revision: server.revision },
+            );
             const delayMs = Math.min(
               (backoff?.revision === server.revision ? backoff.delayMs * 2 : 0) ||
                 DISCOVERY_BACKOFF_MS,
@@ -792,26 +794,33 @@ export class McpConnector implements ConnectorProvider {
       if (shared) await this.evict(key).catch(() => undefined);
       update = { status: "error", message: sanitizeConnectorError(error, secrets) };
     }
-    await this.recordHealth(server.id, update, { force: true });
+    await this.recordHealth(server.id, update, { force: true, revision: server.revision });
     return update;
   }
 
   /**
    * Persist a health observation without ever failing the caller. Unchanged observations
    * are rewritten at most once a minute, so discovery on every turn is not a write each.
+   * `revision` is the one observed: a sign-in or edit bumps it, and a slower observation of
+   * the old revision must not replace the new one's health.
    */
   private async recordHealth(
     serverId: string,
     update: McpServerHealthUpdate,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; revision?: number } = {},
   ): Promise<void> {
-    const value = JSON.stringify([update.status, update.message ?? null, update.toolCount ?? null]);
+    const value = JSON.stringify([
+      update.status,
+      update.message ?? null,
+      update.toolCount ?? null,
+      options.revision ?? null,
+    ]);
     const last = this.healthWrites.get(serverId);
     const now = Date.now();
     if (!options.force && last?.value === value && now - last.at < HEALTH_REWRITE_MS) return;
     this.healthWrites.set(serverId, { value, at: now });
     try {
-      await recordMcpServerHealth(this.prisma, serverId, update);
+      await recordMcpServerHealth(this.prisma, serverId, update, options.revision);
     } catch {
       // Health is advisory; the recorder already logs.
     }
@@ -1074,6 +1083,7 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       // Rows saved before arguments moved into the secret still hold them in plaintext.
       const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
+      launchSecrets.push(...launchArgSecrets(args));
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;
@@ -1114,13 +1124,16 @@ export class McpConnector implements ConnectorProvider {
                   await this.recordHealth(
                     server.id,
                     { status: "unknown", message: null },
-                    { force: true },
+                    { force: true, revision: server.revision },
                   );
               },
               onInstall: () => {
                 this.installing.add(installKey);
                 const installing = { status: "installing", message: null } as const;
-                void this.recordHealth(server.id, installing, { force: true });
+                void this.recordHealth(server.id, installing, {
+                  force: true,
+                  revision: server.revision,
+                });
                 installHealth = this.healthWrites.get(server.id);
               },
             });

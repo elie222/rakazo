@@ -37,13 +37,18 @@ export function normalizePiUsage(
   model: Pick<Model<Api>, "cost">,
   reported: ReportedUsageFields = new Set(),
 ): AgentUsage {
+  // A rejected request never generated, so every token count is zero — even if the
+  // error payload carries numbers. Decide this before normalizing any token field.
+  const rejected = rejectedRequests.has(reported);
   const token = (value: number | undefined, key: keyof AgentUsage) =>
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0 &&
-    (value > 0 || (reported.has(key) && (reportedValues.get(reported)?.get(key) ?? 0) === 0))
-      ? value
-      : null;
+    rejected
+      ? 0
+      : typeof value === "number" &&
+          Number.isSafeInteger(value) &&
+          value >= 0 &&
+          (value > 0 || (reported.has(key) && (reportedValues.get(reported)?.get(key) ?? 0) === 0))
+        ? value
+        : null;
   const inputTokens = token(usage?.input, "inputTokens");
   const outputTokens = token(usage?.output, "outputTokens");
   const cacheReadTokens = token(usage?.cacheRead, "cacheReadTokens");
@@ -69,7 +74,6 @@ export function normalizePiUsage(
     outputTokens !== null &&
     (model.cost.cacheRead === 0 || cacheReadTokens !== null) &&
     (model.cost.cacheWrite === 0 || cacheWriteTokens !== null);
-  const rejected = rejectedRequests.has(reported);
   const providerCost = reportedCosts.get(reported);
   return {
     providerRequestId: reportedRequestIds.get(reported) ?? null,
@@ -93,7 +97,8 @@ export function normalizePiUsage(
           ? "pi-catalog-estimate"
           : null,
     pricingSnapshot: model.cost ? JSON.parse(JSON.stringify(model.cost)) : null,
-    pricingVersion: providerCost !== undefined ? null : costKnown ? "pi-ai-1.3.0" : null,
+    pricingVersion:
+      rejected || providerCost !== undefined ? null : costKnown ? "pi-ai-1.3.0" : null,
     usageSource: rejected
       ? "provider-rejected"
       : reported.size

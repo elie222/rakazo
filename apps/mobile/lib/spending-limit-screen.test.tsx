@@ -9,6 +9,7 @@ import SpendingLimitSettings from "../app/(settings)/spending-limit";
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   set: vi.fn(),
+  payments: vi.fn(),
   alert: vi.fn(),
   prompt: vi.fn(),
   platform: { OS: "ios" },
@@ -22,10 +23,14 @@ vi.mock("expo-router", () => ({
     useEffect(callback, [callback]);
   },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: (method: string, body: unknown) => {
     if (method === "spendingLimit/get") return mocks.get();
     if (method === "spendingLimit/set") return mocks.set(body);
+    if (method === "spendingLimit/payments") return mocks.payments();
     throw new Error(`Unexpected ${method}`);
   },
 }));
@@ -93,6 +98,7 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.payments.mockResolvedValue([]);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -162,4 +168,31 @@ it("refuses an amount that isn't one, without saving", async () => {
   await act(async () => enter("abc"));
   expect(mocks.alert).toHaveBeenCalledWith("Enter an amount");
   expect(mocks.set).not.toHaveBeenCalled();
+});
+
+it("lists the payments that count under the limit", async () => {
+  mocks.get.mockResolvedValue({ limit: null, spent: 0, shown: true });
+  mocks.payments.mockResolvedValue([
+    {
+      id: "payment-1",
+      site: "shop.example.test",
+      amount: 2_340,
+      currency: "usd",
+      botName: "Shopper",
+      createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    },
+    {
+      id: "payment-2",
+      site: "other.example.test",
+      amount: 500,
+      currency: "eur",
+      botName: null,
+      createdAt: new Date(Date.now() - 30_000).toISOString(),
+    },
+  ]);
+  await render();
+  expect(button("shop.example.test").textContent).toBe(
+    "shop.example.test | $23.40 | Shopper · 2h ago",
+  );
+  expect(button("other.example.test").textContent).toBe("other.example.test | €5.00 | just now");
 });

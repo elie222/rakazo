@@ -20,10 +20,11 @@ and remote providers. This stack credential does not replace a remote provider's
 
 ## Settings configuration
 
-Admins can choose **Settings → Computer → New computers run on** and save a supported provider's fields.
+Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
+**Settings → Computer → New computers run on** and save a supported provider's fields.
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
-Changing a URL requires credentials again. **Deployment default** uses `SANDBOX_PROVIDER`.
+Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
 Docker, Kubernetes, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
 for desktop and fake deployments.
 
@@ -101,22 +102,30 @@ Resource ceilings, network isolation and shared folders for these computers are 
 
 ### Bot browser
 
-The published computer image uses Chromium. To use Brave instead, build the image with
-`BROWSER=brave` and point Compose at it:
+The published computer image uses Chromium. To use Google Chrome or Brave instead, build the image
+with `BROWSER=chrome` or `BROWSER=brave` and point Compose at it:
 
 ```bash
-docker build --build-arg BROWSER=brave -t rakazo-computer-brave infra/sandboxes/computer
+docker build --build-arg BROWSER=chrome -t rakazo-computer-chrome infra/sandboxes/computer
 ```
 
 ```env
-RAKAZO_COMPUTER_IMAGE=rakazo-computer-brave
+RAKAZO_COMPUTER_IMAGE=rakazo-computer-chrome
 RAKAZO_COMPUTER_IMAGE_TAG=latest
 ```
 
 The image holds one browser, and `rakazo-browser` launches whichever is installed. A locally built
 image is not on a registry, so start the stack with `bash install-images.sh --pull-never` after
 pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
-policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
+policy.
+
+`BROWSER=chrome` installs Google Chrome stable from Google's apt repository and checks Google's
+signing key by fingerprint. Google publishes Chrome for amd64 only, so the build fails on other
+platforms; build those with the default. Chrome identifies itself as Google Chrome and ships the
+Widevine module that some sites expect, where Debian's Chromium reports a plain Chromium brand and
+has no Widevine. Some payment and sign-in risk checks may count that profile against the device.
+
+Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
 
 ## `kubernetes`

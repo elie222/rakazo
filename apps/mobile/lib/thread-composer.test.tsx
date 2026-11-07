@@ -15,11 +15,15 @@ import { useThreadMentionCatalog } from "./thread-mention-catalog";
 const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 
 const input = vi.hoisted(() => ({
+  clear: vi.fn(),
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mentionApi.rpc,
   captureApiRequestContext: mentionApi.capture,
@@ -160,7 +164,12 @@ vi.mock("react-native", () => {
       input.select = onSelectionChange ?? (() => {});
       const segments = Children.toArray(children).filter(isValidElement);
       return createElement("input", {
-        ref,
+        // The native input's own clear(), which empties the field it shows.
+        ref: (element: HTMLInputElement | null) => {
+          if (element) Object.assign(element, { clear: input.clear });
+          if (typeof ref === "function") ref(element);
+          else if (ref) ref.current = element;
+        },
         value: segments.map(nativeText).join(""),
         "data-mentions": JSON.stringify(
           segments.filter((segment) => (segment.props as { style?: object }).style).map(nativeText),
@@ -1125,6 +1134,14 @@ describe("thread composer isolation", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("empties the native field when a send resets the composer, so a tall draft shrinks back", () => {
+    type("First line\nSecond line\nThird line\nFourth line");
+    expect(input.clear).not.toHaveBeenCalled();
+    act(() => composer.current!.reset());
+    expect(input.clear).toHaveBeenCalledOnce();
+    expect(field().value).toBe("");
   });
 
   it("keeps edits during send and clears an unchanged composition, including popovers", () => {

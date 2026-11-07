@@ -5,9 +5,15 @@ import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileMessage } from "./api";
 import { messageRowLayout } from "./message-row-layout";
+import type { MobileMessage } from "./mobile-types";
 import { answerThreadMessage } from "./thread-answer";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 type SheetProps = {
   destination: string;
@@ -74,8 +80,11 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("./native", () => ({
+  native: { fill: "fill" },
   useMobileTokens: () => ({ success: "success", mutedForeground: "muted" }),
 }));
+
+vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
@@ -320,6 +329,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
         readOnly: false,
         rpc,
         isCurrentTarget: () => true,
+        isFocused: () => true,
         refresh,
         markRead: vi.fn(),
       },
@@ -548,6 +558,14 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
       },
     ],
     mcpApproval: [{ kind: "mcp_approval", serverId: "server-1", name: "Example" }],
+    options: [
+      {
+        kind: "ask",
+        text: "Which one?",
+        status: "pending",
+        actions: [{ id: "choice-1", label: "A longer option than the question" }],
+      },
+    ],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -569,13 +587,27 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  // Connect cards take the full bubble width rather than shrinking to their button.
-  for (const kind of ["appConnect", "mcpApproval"] as const) {
+  for (const kind of ["appConnect", "mcpApproval", "options"] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");
     expect(card.menuMaxWidth).toBe(324);
     expect(card.menuFullWidth).toBe(true);
+  }
+  const allow = [
+    { id: "allow", label: "Allow" },
+    { id: "deny", label: "Deny" },
+  ];
+  for (const ask of [
+    { approvalEffectId: "approval-1" },
+    { instructionUpdate: { botId: "bot-1", before: "", after: "Be brief", reason: "" } },
+  ]) {
+    const layout = messageRowLayout(
+      [{ kind: "ask", text: "Allow?", status: "pending", actions: allow, ...ask }],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.menuFullWidth).toBe(false);
+    expect(layout.width).toBeUndefined();
   }
 });
 
@@ -612,5 +644,46 @@ it.each([
 
     await render(true);
     expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
+  },
+);
+
+it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+  const { AskActions } = await import("../components/AskActions");
+  const actions = [
+    { id: "choice-1", label: "Plan a trip" },
+    { id: "choice-2", label: "Write something" },
+  ];
+  for (const approval of [false, true]) {
+    await act(async () =>
+      root.render(
+        <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    const row = buttons[0]!.parentElement!;
+    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+      approval ? ["false", "false"] : ["true", "true"],
+    );
+    expect(row.style.flexDirection).toBe(approval ? "row" : "column");
+    expect(row.style.flexWrap).toBe(approval ? "wrap" : "nowrap");
+  }
+});
+
+it.each([undefined, "pending", "answered"] as const)(
+  "only widens option questions while their buttons are displayed (status: %s)",
+  (status) => {
+    const layout = messageRowLayout(
+      [
+        {
+          kind: "ask",
+          text: "Which one?",
+          status,
+          actions: [{ id: "choice-1", label: "Plan a trip" }],
+        },
+      ],
+      { inGroup: false, columnWidth: 400 },
+    );
+    expect(layout.width).toBe(status === "answered" ? undefined : "90%");
+    expect(layout.menuFullWidth).toBe(status !== "answered");
   },
 );
