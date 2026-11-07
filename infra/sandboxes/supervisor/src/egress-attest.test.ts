@@ -20,6 +20,9 @@ import {
 } from "./egress-attest.js";
 import { EgressNotEnforced } from "./egress-probe.js";
 
+const { logError } = vi.hoisted(() => ({ logError: vi.fn() }));
+vi.mock("@rakazo/logging", () => ({ getLogger: () => ({ error: logError }) }));
+
 // The managed prefix exactly as restrict-computer-egress.sh leaves it in the
 // kernel, in chain order (iptables may print -d before -i; normalization copes).
 function managedIptables({ missingDrop }: { missingDrop?: string } = {}) {
@@ -232,19 +235,28 @@ describe("egress attestation", () => {
   });
 
   it("fails closed when the build reports an error in its progress stream", async () => {
+    const signedUrl = "https://registry.example.com/v2/debian?X-Amz-Signature=secret-value";
     const docker = {
       getImage: vi
         .fn()
         .mockReturnValue({ inspect: vi.fn().mockRejectedValue({ statusCode: 404 }) }),
-      buildImage: vi.fn().mockResolvedValue(Readable.from(['{"error":"no network"}\n'])),
+      buildImage: vi
+        .fn()
+        .mockResolvedValue(Readable.from([`{"error":"manifest unknown at ${signedUrl}"}\n`])),
     } as unknown as Docker;
     const context = mkdtempSync(path.join(tmpdir(), "rakazo-attest-"));
     writeFileSync(path.join(context, "Dockerfile"), "FROM scratch\n");
     // The message must name the exact tag, so offline operators know what to
-    // build or load (Docker's own reason goes to the log instead).
+    // build or load; the logged reason keeps the diagnosis but not the
+    // registry URL's signature.
     await expect(attestImageEnsurer(docker, context)()).rejects.toThrow(
       `could not build ${expectedAttestImage(context)} from infra/sandboxes/egress-attest; build or load that exact tag on the Docker host (see docs/self-host-restricted-network.md)`,
     );
+    expect(logError).toHaveBeenCalledWith("attestation image build failed", {
+      reason: expect.stringContaining("?[redacted]"),
+      "container.image.name": expectedAttestImage(context),
+    });
+    expect(JSON.stringify(logError.mock.calls)).not.toContain("secret-value");
   });
 
   // docker-modem only streams log responses when `follow` is set; without it

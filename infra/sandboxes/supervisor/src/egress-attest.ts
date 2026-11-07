@@ -79,6 +79,11 @@ export function attestImageEnsurer(docker: Docker, context: string) {
   };
 }
 
+/** Strips URL query strings, which can carry registry signatures. */
+function redactUrlQueries(text: string) {
+  return text.replace(/\?[^\s"']+/g, "?[redacted]");
+}
+
 /**
  * The image name the supervisor builds and runs the attestation from, derived
  * from the Dockerfile's content hash: a changed build context means a new tag,
@@ -110,9 +115,11 @@ async function provideAttestImage(docker: Docker, context: string) {
     await docker.getImage(image).inspect();
     return image;
   } catch (error) {
-    // Docker's own reason can name registry hosts and signed URLs, so it goes
-    // to the log; the caller gets the tag to build or load instead.
-    getLogger().error("attestation image build failed", error, { "container.image.name": image });
+    // Docker's own reason can name registry hosts and embed signed URLs, so
+    // the log gets it with URL query strings stripped; the caller gets the tag
+    // to build or load instead.
+    const reason = redactUrlQueries(error instanceof Error ? error.message : String(error));
+    getLogger().error("attestation image build failed", { reason, "container.image.name": image });
     throw new Error(
       `could not build ${image} from infra/sandboxes/egress-attest; build or load that exact tag on the Docker host (see docs/self-host-restricted-network.md)`,
     );
