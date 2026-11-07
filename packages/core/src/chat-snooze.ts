@@ -58,8 +58,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How a wake time names its day: nothing today, the weekday within a week, else the date. */
 export function snoozeWakeDay(wake: Date, now: Date): Intl.DateTimeFormatOptions | null {
-  if (wake.toDateString() === now.toDateString()) return null;
-  return wake.getTime() - now.getTime() < 6 * DAY_MS
-    ? { weekday: "short" }
-    : { month: "short", day: "numeric" };
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  // Calendar days, so a daylight-saving change doesn't move a wake across the cutoff.
+  const days = Math.round((startOfDay(wake).getTime() - startOfDay(now).getTime()) / DAY_MS);
+  if (days === 0) return null;
+  return days < 7 ? { weekday: "short" } : { month: "short", day: "numeric" };
 }

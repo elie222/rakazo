@@ -60,6 +60,7 @@ export function useInboxChatActions({
   const [archiving, setArchiving] = useState<ReadonlySet<string>>(() => new Set());
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
+  const [sendSnooze] = useState(() => createLatestQueue<string | null>());
   const updateChat = useCallback(
     async (
       kind: InboxChatKind,
@@ -258,16 +259,25 @@ export function useInboxChatActions({
         );
       };
       apply(until);
-      try {
-        await chatRpc(chat.spaceId, "threads/snooze", { ...chatTarget(kind, chat.id), until });
-      } catch (err) {
-        // Put the chat back where it was, even if the reload after it fails too.
+      // One chat's changes go one at a time, latest choice next; a failure sends nothing after it,
+      // so the chat goes back to what the server still has.
+      await sendSnooze(
+        unreadOverrideKey(kind, chat.id),
+        until,
+        async (value) => {
+          await chatRpc(chat.spaceId, "threads/snooze", {
+            ...chatTarget(kind, chat.id),
+            until: value,
+          });
+        },
+        () => undefined,
+      ).catch((err) => {
         apply(chat.snoozedUntil ?? null);
         Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
-      }
+      });
       await loadBots().catch(() => undefined);
     },
-    [loadBots, setBots, setGroups, setSpaces, t],
+    [loadBots, sendSnooze, setBots, setGroups, setSpaces, t],
   );
   const editSectionFromMenu = useCallback(
     (

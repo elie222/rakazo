@@ -48,6 +48,13 @@ describe("chat snooze", () => {
     const saturday = new Date(2026, 10, 7, 14, 30);
     expect(snoozeWakeDay(new Date(2026, 10, 7, 18), saturday)).toBeNull();
     expect(snoozeWakeDay(new Date(2026, 10, 9, 9), saturday)).toEqual({ weekday: "short" });
+    // Six calendar days ahead is still within the week, even when that is under six full days.
+    expect(snoozeWakeDay(new Date(2026, 10, 13, 9), saturday)).toEqual({ weekday: "short" });
+    // A week ahead names the date, so it isn't mistaken for today's weekday.
+    expect(snoozeWakeDay(new Date(2026, 10, 14, 9), saturday)).toEqual({
+      month: "short",
+      day: "numeric",
+    });
     expect(snoozeWakeDay(new Date(2026, 10, 20, 9), saturday)).toEqual({
       month: "short",
       day: "numeric",

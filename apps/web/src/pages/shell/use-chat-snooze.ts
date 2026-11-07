@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, Space } from "@rakazo/contracts";
+import { createChatQueues } from "@rakazo/core";
 import { toast } from "@rakazo/ui-web";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { rpcForSpace } from "../../lib/rpc";
 
@@ -31,6 +32,9 @@ export function useChatSnooze({
   refreshBots: () => Promise<void>;
 }): SnoozeChat {
   const { t } = useLingui();
+  // One chat's changes reach the server in the order chosen, and only the latest one rolls back.
+  const [inOrder] = useState(createChatQueues);
+  const latest = useRef(new Map<string, string | null>());
   return useCallback(
     (chat, until) => {
       const apply = (value: string | null) => {
@@ -50,18 +54,21 @@ export function useChatSnooze({
           ),
         );
       };
+      const key = `${chat.kind}:${chat.id}`;
+      latest.current.set(key, until);
       apply(until);
       const client = chat.spaceId === openSpaceId ? rpc : rpcForSpace(chat.spaceId);
       const target = chat.kind === "bot" ? { botId: chat.id } : { groupId: chat.id };
-      void client.threads.snooze({ ...target, until }).then(
+      void inOrder(key, () => client.threads.snooze({ ...target, until })).then(
         () => refreshBots().catch(() => undefined),
         () => {
+          if (latest.current.get(key) !== until) return;
           // Put the chat back where it was, even if the refresh after it fails too.
           apply(chat.snoozedUntil ?? null);
           toast.error(t`Could not save`);
         },
       );
     },
-    [rpc, openSpaceId, setBots, setGroups, setSpaces, refreshBots, t],
+    [rpc, openSpaceId, setBots, setGroups, setSpaces, refreshBots, t, inOrder],
   );
 }
