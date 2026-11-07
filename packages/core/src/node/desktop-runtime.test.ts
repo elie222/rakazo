@@ -122,6 +122,13 @@ describe("shared Linux desktop lifecycle", () => {
     expect(terminalCommand("control", "terminal", "/work")).toContain("127.0.0.1:6080 8>&-");
   });
 
+  it("sends screen changes sooner only while a person has control", () => {
+    expect(interactiveScreenCommand(true, "control")).toMatch(
+      /x11vnc -display [^\n]* -wait 5 -defer 5 /,
+    );
+    expect(ensureScreenCommand(0, "bot", "view")).not.toMatch(/-wait 5|-defer 5/);
+  });
+
   it.each([undefined, "127.0.0.1", "localhost", "192.0.2.10", "0.0.0.0"])(
     "binds and identifies the configured gateway (%s)",
     (bindHost) => {
