@@ -171,6 +171,8 @@ export const SESSION_RECHECK_MS = 10_000;
 
 export const HEARTBEAT = Symbol("heartbeat");
 
+const ENDED = Symbol("ended");
+
 /**
  * Yields each event from `follow`, or HEARTBEAT after HEARTBEAT_MS of silence: a half-open stream
  * looks identical to an idle one, and clients treat any frame as liveness. Auth ran once when the
@@ -185,19 +187,27 @@ export async function* withHeartbeats<T>(
   const source = follow(
     context.signal ? AbortSignal.any([context.signal, controller.signal]) : controller.signal,
   );
+  // A source that ignores the abort would otherwise keep the loop, and its session re-checks,
+  // running after shutdown has closed the database pool.
+  const ended = new Promise<typeof ENDED>((resolve) => {
+    if (context.signal?.aborted) resolve(ENDED);
+    context.signal?.addEventListener("abort", () => resolve(ENDED), { once: true });
+  });
   let pending: Promise<IteratorResult<T>> | undefined;
   let authorizedAt = Date.now();
   try {
-    while (!context.signal?.aborted) {
+    while (true) {
       // A heartbeat keeps `pending`, so the in-flight read stays the next event in order.
       pending ??= source.next();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const next = await Promise.race([
         pending,
+        ended,
         new Promise<typeof HEARTBEAT>((resolve) => {
           timer = setTimeout(() => resolve(HEARTBEAT), HEARTBEAT_MS);
         }),
       ]).finally(() => clearTimeout(timer));
+      if (next === ENDED || context.signal?.aborted) return;
       if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
         if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
         authorizedAt = Date.now();

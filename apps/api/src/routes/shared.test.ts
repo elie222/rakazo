@@ -48,4 +48,21 @@ describe("withHeartbeats", () => {
     expect(stillAuthorized).toHaveBeenCalledOnce();
     expect(sourceSignal?.aborted).toBe(true);
   });
+
+  it("ends when the request aborts, without re-checking the session or waiting for the source", async () => {
+    vi.useFakeTimers();
+    const request = new AbortController();
+    const stillAuthorized = vi.fn(async () => true);
+    const stream = withHeartbeats({ signal: request.signal, stillAuthorized }, async function* () {
+      await new Promise<never>(() => {});
+      yield "never";
+    });
+
+    const first = stream.next();
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS - 1);
+    request.abort();
+    await expect(first).resolves.toEqual({ done: true, value: undefined });
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(stillAuthorized).not.toHaveBeenCalled();
+  });
 });
