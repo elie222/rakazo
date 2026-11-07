@@ -10,10 +10,18 @@ import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
 import type * as Api from "./api";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
+import type * as ApiAuth from "./api-auth";
+import {
+  deleteAccount,
+  fetchAccountSecurity,
+  requestAccountDeletionCode,
+  signOut,
+} from "./api-auth";
+import type * as ApiServer from "./api-server";
 import { replaceWithSignIn } from "./auth-routing";
 import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
+import type * as Session from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
 import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
@@ -210,13 +218,13 @@ vi.mock("../components/settings-group", () => ({
     ),
   useStackedSettings: () => false,
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiServer>()),
+}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof Api>()),
   currentApiBase: () => "http://127.0.0.1:3100",
-  deleteAccount: vi.fn(),
-  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
-  loadSessionToken: vi.fn(async () => "token"),
-  passwordResetCapabilities: vi.fn(async () => ({})),
-  requestAccountDeletionCode: vi.fn(),
   rpc: vi.fn(async (method: string) =>
     method === "me"
       ? account.me
@@ -229,8 +237,18 @@ vi.mock("./api", () => ({
             : {},
   ),
   selectedSpaceId: () => "space-1",
+}));
+vi.mock("./api-auth", () => ({
+  deleteAccount: vi.fn(),
+  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
+  passwordResetCapabilities: vi.fn(async () => ({})),
+  requestAccountDeletionCode: vi.fn(),
   signOut: vi.fn(),
   updateAccountName: vi.fn(),
+}));
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal<typeof Session>()),
+  loadSessionToken: vi.fn(async () => "token"),
 }));
 vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",
@@ -329,7 +347,6 @@ vi.mock("./trusted-link-sites", () => ({
   removeTrustedLinkSite: trusted.remove,
   useTrustedLinkSites: () => trusted.sites,
 }));
-vi.mock("./ui-locale", () => ({ UI_LOCALE_LABELS: { en: "English" } }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
 function security(overrides: Partial<AccountSecurity> = {}): AccountSecurity {
@@ -412,7 +429,7 @@ async function renderAccount() {
 }
 
 it("navigates to sign-in while a silent server still owes the sign-out delivery", async () => {
-  const actual = await vi.importActual<typeof Api>("./api");
+  const actual = await vi.importActual<typeof ApiAuth>("./api-auth");
   const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
   vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => store.get(key) ?? null);
   vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {

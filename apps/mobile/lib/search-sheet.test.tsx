@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SearchSheet from "../app/search";
-import { selectSpace } from "./api";
+import { selectSpace } from "./api-server";
 import type { InboxSpace } from "./inbox-spaces";
 import { searchKindLabel } from "./search-sheet";
 
@@ -64,11 +64,15 @@ vi.mock("expo-router", () => ({
       return cleanup;
     }, [effect]),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   selectSpace: (id: string) => {
     state.selectionSeq++;
     return state.selectSpace(id);
   },
+}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   spaceSelectionSeq: () => state.selectionSeq,
   selectedSpaceId: () => state.spaceId,
   currentApiBase: () => state.apiBase,

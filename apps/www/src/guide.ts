@@ -69,7 +69,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   {
     question: "What do I need to self-host Rakazo?",
     answer:
-      "Published images need Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. You do not need Node.js for that path. A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported.",
+      "Published images need Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. You do not need Node.js for that path. A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 23.x and 25.x are not supported.",
   },
   {
     question: "Where does my data live?",
@@ -297,7 +297,7 @@ The [full guide](${DOCS_URL}) lists every setting for each one.
 
 Published images need Docker Engine 26 or newer (API 1.45 or newer, for bot home volume subpaths), the Compose plugin, curl, and OpenSSL. No Node.js install.
 
-A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported.
+A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 23.x and 25.x are not supported.
 
 ## Install with published images
 

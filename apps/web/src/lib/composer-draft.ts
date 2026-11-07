@@ -2,6 +2,7 @@ import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMentionBinding } from "@rakazo/core";
 import {
   createKeyedListeners,
+  newClientId,
   validateComposerDraftSkill,
   validateComposerMentionBindings,
 } from "@rakazo/core";
@@ -309,7 +310,7 @@ function writeNonceRecord(
       composerNonceStorageKey(threadKey),
       JSON.stringify({
         version: 1,
-        owner: owner ?? crypto.randomUUID(),
+        owner: owner ?? newClientId(),
         nonce,
         text: readComposerDraft(threadKey, storage),
         bindingRecord: readBindingRecord(threadKey, storage),

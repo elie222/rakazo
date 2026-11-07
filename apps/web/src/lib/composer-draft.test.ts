@@ -33,6 +33,44 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("composer drafts", () => {
+  it("persists an unsettled nonce and protects fresh-document ownership on plain HTTP", async () => {
+    const storage = memoryStorage();
+    const webCrypto = globalThis.crypto;
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("crypto", { getRandomValues: webCrypto.getRandomValues.bind(webCrypto) });
+    try {
+      vi.resetModules();
+      const first = await import("./composer-draft.js");
+      first.writeComposerDraft("http", "saved words", storage, []);
+      const submitted = first.beginComposerDraftSubmission("http", "saved words", {
+        nonce: "http-operation",
+        bindings: [],
+        skill: null,
+      });
+      expect(first.readComposerRetryNonce("http")).toBe("http-operation");
+      vi.resetModules();
+      const restored = await import("./composer-draft.js");
+      expect(restored.composerHoldsWorkInFlight()).toBe(false);
+      expect(restored.readComposerRetryNonce("http")).toBe("http-operation");
+      // Another document arms a reply without changing the saved payload.
+      restored.writeComposerRetryNonce("http", null);
+      first.writeComposerRetryNonce("http", null);
+      first.settleComposerDraftSubmission("http", submitted, true);
+      expect(restored.readComposerDraft("http")).toBe("saved words");
+      expect(restored.readComposerRetryNonce("http")).toBeNull();
+      // This document can still accept its own unchanged draft after a context edit.
+      const retry = restored.beginComposerDraftSubmission("http", "saved words", {
+        nonce: "next-operation",
+        bindings: [],
+        skill: null,
+      });
+      restored.writeComposerRetryNonce("http", null);
+      restored.settleComposerDraftSubmission("http", retry, true);
+      expect(restored.readComposerDraft("http")).toBe("");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it.each(["reply edit", "same-payload write", "new submission"])(
     "preserves another document's draft after a %s",
     async (change) => {

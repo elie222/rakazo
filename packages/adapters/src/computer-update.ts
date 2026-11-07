@@ -2,7 +2,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -14,6 +14,7 @@ import {
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
+  ComputerSpaceDeletingError,
   computerSupportsUpdate,
   replaceComputer,
 } from "./computer-lifecycle.js";
@@ -137,7 +138,11 @@ export async function queueComputerUpdate(
           none: {
             OR: [
               { computerSwitching: true },
-              { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+              {
+                runs: {
+                  some: { status: { in: [...ACTIVE_RUN_STATUSES] }, ...COMPUTER_USING_RUNS },
+                },
+              },
             ],
           },
         },
@@ -583,20 +588,29 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {
-    if (error instanceof SandboxAllowanceUsedError) {
-      getLogger().warn("computer update failed", {
-        updateId,
-        computerId: update.computerId,
-        reason: error.message,
+    if (error instanceof ComputerSpaceDeletingError) {
+      // Refused before any teardown: the update waits for the deletion to end, and if it is called
+      // off, reconciliation runs it as if it had never started.
+      await deps.prisma.computerUpdate.updateMany({
+        where: { id: updateId, status: "running" },
+        data: { status: "queued" },
       });
     } else {
-      getLogger().error("computer update failed", error, {
-        updateId,
-        computerId: update.computerId,
-      });
+      if (error instanceof SandboxAllowanceUsedError) {
+        getLogger().warn("computer update failed", {
+          updateId,
+          computerId: update.computerId,
+          reason: error.message,
+        });
+      } else {
+        getLogger().error("computer update failed", error, {
+          updateId,
+          computerId: update.computerId,
+        });
+      }
+      // Provider errors may contain credentials or private URLs. Expose only the failed stage.
+      await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
     }
-    // Provider errors may contain credentials or private URLs. Expose only the failed stage.
-    await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
   } finally {
     clearInterval(heartbeat);
   }

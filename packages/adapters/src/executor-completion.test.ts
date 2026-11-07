@@ -292,6 +292,11 @@ describe("background ticket runs", () => {
     expect(runReplyGuidance("tickets")).toContain("ticket_comment");
   });
 
+  it("sends no finish notice for a background helper; the turn passing on its result does", () => {
+    expect(runSendsFinishNotification("helper")).toBe(false);
+    expect(runSendsFinishNotification("helper_result")).toBe(true);
+  });
+
   it("drops a tool-only ticket final so the transcript gets no bubble", () => {
     const steps = [{ kind: "steps" as const, steps: [{ label: "Ticket comment", count: 1 }] }];
     const blocks = finalBlocksAfterMidTurnProgress(steps, runAllowsSilentEmpty("tickets"));
@@ -614,6 +619,11 @@ describe("runReplyMode", () => {
     for (const trigger of ["routine", "reaction", "bot_message", "tickets", "created", "webhook"])
       expect(runReplyMode(trigger, "messages")).toBe("chat");
     expect(runReplyMode("user", "messages", new Set(["message_user"]))).toBe("chat");
+  });
+
+  it("keeps a background helper in chat mode, since it cannot message the person", () => {
+    expect(runReplyMode("helper", "messages")).toBe("chat");
+    expect(runReplyMode("helper_result", "messages")).toBe("messages");
   });
 
   it("gives each mode its own guidance", () => {

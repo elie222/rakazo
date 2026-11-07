@@ -54,11 +54,14 @@ export function activitySections<
   );
   const working = latest.filter((run) => activityAttention(run, runUnread(run)) === "working");
   const busy = new Set([...attention, ...working].map(chatKey));
+  const settled = latest.filter((run) => !busy.has(chatKey(run)));
   return {
     attention,
     working,
     unreadGroups: groups.filter((group) => group.unread && !busy.has(`group:${group.id}`)),
     unreadBots: bots.filter((bot) => bot.unread && !busy.has(`bot:${bot.id}`)),
-    recent: recent.filter((run) => !attention.includes(run) && !runUnread(run)),
+    /** Each quiet chat's latest run, unread ones included, for views that hide the Unread section. */
+    settled,
+    recent: settled.filter((run) => !runUnread(run)),
   };
 }

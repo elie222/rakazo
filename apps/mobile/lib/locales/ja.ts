@@ -127,8 +127,6 @@ export const JA_MESSAGES: Record<string, string> = {
 
   "Use 80 characters or fewer": "80文字以内で入力してください",
   "Could not update name": "名前を更新できませんでした",
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "OllamaのAPIキー",
   "Show password": "パスワードを表示",
   "Hide password": "パスワードを非表示",
   Export: "エクスポート",
@@ -443,6 +441,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "このアーティファクトの全{count}個のバージョンを削除します。この操作は元に戻せません。",
   Versions: "バージョン",
   Stop: "停止",
+  Stopped: "停止済み",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "すべてのメッセージを削除し、現在の作業を停止します。ボット、コンピューター、メモリ、ルーティンは保持されます。",
   "Type your answer": "回答を入力",
@@ -975,6 +974,9 @@ export const JA_MESSAGES: Record<string, string> = {
   Call: "通話",
   "Calls need transcription": "通話には文字起こしが必要です",
   "Could not hear that.": "聞き取れませんでした。",
+  "Approve or deny it on screen.": "画面で承認または拒否してください。",
+  "Hang up, then enter the code on screen.":
+    "通話を終了してから、画面に表示されたコードを入力してください。",
   "Could not speak that.": "読み上げできませんでした。",
   "Could not transcribe that.": "文字起こしできませんでした。",
   "Hang up": "通話を終了",
@@ -1118,6 +1120,10 @@ export const JA_MESSAGES: Record<string, string> = {
   Credits: "クレジット",
   "Available credits": "利用可能なクレジット",
   "Computer hours left": "コンピューターの残り時間",
+  Upgrade: "アップグレード",
+  "Cancelled trials have no computer hours.":
+    "キャンセルしたトライアルにはコンピューター時間がありません。",
+  "Renew plan": "プランを更新",
   "Trials get fewer hours to prevent abuse.":
     "不正利用を防ぐため、トライアルでは時間が少なくなっています。",
   "Start plan now": "今すぐプランを開始",

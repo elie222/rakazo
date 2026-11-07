@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
 import {
+  APP_LOCALE_LABELS,
   accountDisplay,
   displayName,
   MAX_PASSWORD_LENGTH,
@@ -15,6 +16,7 @@ import {
   NativeSelect,
   NativeSelectOption,
   OptionSelect,
+  SectionHeading,
   Switch,
   ToggleGroup,
   ToggleGroupItem,
@@ -55,7 +57,7 @@ import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import type { UiLocale } from "../lib/ui-locale";
-import { UI_LOCALE_LABELS, UI_LOCALES } from "../lib/ui-locale";
+import { UI_LOCALES } from "../lib/ui-locale";
 import { authErrorText } from "../lib/user-error";
 
 export type SettingsGeneralProps = {
@@ -590,9 +592,9 @@ export function ComputerSettingsPanel({
       data-testid="computers-setup-settings"
       className="rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-heading3 font-medium text-foreground">
+      <SectionHeading variant="heading">
         <Trans>Computers</Trans>
-      </h3>
+      </SectionHeading>
       {hintShown ? (
         <ComputersUnavailableHint
           className="mt-3 text-body-sm leading-relaxed text-muted-foreground"
@@ -839,7 +841,7 @@ function UiLocalePicker({
       aria-label={t`Language`}
       options={UI_LOCALES.map((code) => ({
         value: code,
-        label: UI_LOCALE_LABELS[code],
+        label: APP_LOCALE_LABELS[code],
       }))}
       value={value}
       onValueChange={onChange}

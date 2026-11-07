@@ -936,7 +936,8 @@ model Bot {
   children          Bot[]             @relation("BotChildren")
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
-  thread            Thread?
+  thread            Thread?           @relation("BotThread")
+  helperThreads     Thread[]          @relation("BotHelperThreads")
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
@@ -1057,7 +1058,10 @@ model Thread {
   spaceId                     String
   space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   botId                       String?    @unique
-  bot                         Bot?       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                         Bot?       @relation("BotThread", fields: [botId], references: [id], onDelete: Cascade)
+  /// Set only on a background helper's own thread: the bot that started the helper owns it.
+  helperBotId                 String?
+  helperBot                   Bot?       @relation("BotHelperThreads", fields: [helperBotId], references: [id], onDelete: Cascade)
   groupId                     String?    @unique
   group                       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
   externalConversationId      String?    @unique
@@ -1082,6 +1086,7 @@ model Thread {
 
   @@index([spaceId])
   @@index([spaceId, userId])
+  @@index([helperBotId])
   @@map("threads")
 }
 
@@ -1220,6 +1225,7 @@ model Run {
   @@index([threadId, createdAt, id])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
+  // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
   @@index([routineId])
   @@map("runs")
 }

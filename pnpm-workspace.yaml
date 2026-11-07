@@ -3,3 +3,54 @@ packages:
   - "packages/*"
   - "infra/sandboxes/supervisor"
   - "infra/updater"
+
+engineStrict: true
+strictPeerDependencies: false
+autoInstallPeers: true
+saveExact: true
+# pnpm 11+ reinstalls stale dependencies before `pnpm exec` and `pnpm run`. Tests that start
+# nested pnpm commands could then relink node_modules under the running suite.
+verifyDepsBeforeRun: false
+
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - current
+    - x64
+    - arm64
+
+overrides:
+  react: 19.2.3
+  react-dom: 19.2.3
+  proxy-addr@<2.0.8: 2.0.8
+  dompurify@<3.4.17: 3.4.17
+  ws@>=8 <8.21.1: 8.22.0
+  "@grpc/grpc-js@<1.14.5": 1.14.7
+  "@opentelemetry/core@>=2 <2.8.0": 2.12.0
+  "@composio/core>undici": 7.30.1
+  "@electron/get>undici": 7.30.1
+  e2b>undici: 7.30.1
+  e2b>undici8: npm:undici@8.12.3
+  joi@>=18 <18.3.1: 18.3.2
+
+patchedDependencies:
+  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
+  dockerode@5.0.1: patches/dockerode@5.0.1.patch
+  fflate@0.8.3: patches/fflate@0.8.3.patch
+
+# Dependency install scripts run only when listed true. The false entries are
+# no-ops on supported Node versions or optional native speedups with JS fallbacks.
+allowBuilds:
+  "@prisma/engines": true
+  "@sentry/cli": true
+  electron-winstaller: true
+  esbuild: true
+  koffi: true
+  prisma: true
+  "@alicloud/openapi-core": false
+  "@google/genai": false
+  core-js: false
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

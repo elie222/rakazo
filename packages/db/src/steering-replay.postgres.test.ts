@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { claimSteering, createPendingSteeringRun, finalizeRun, sendUserMessage } from "./events.js";
+import { finalizeRun, sendUserMessage } from "./events.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
 import { createThreadMessage, loadRunHistoryMessages } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
+import { claimSteering, createPendingSteeringRun } from "./thread-steering.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =

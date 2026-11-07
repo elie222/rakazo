@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { buildBotMessageWakePrompt, STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { helperPrompt, resultPrompt } from "./background-helpers.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 
 describe("inferScript ask resumes", () => {
@@ -24,6 +25,39 @@ describe("inferScript ask resumes", () => {
 
   it("still asks when Answer: occurs inline instead of on a resume line", () => {
     expect(inferScript("ask me for the Answer: city")[0]?.ask).toBeDefined();
+  });
+});
+
+describe("inferScript background helpers", () => {
+  it("starts a helper for a request to work in the background, not for a question about it", () => {
+    const started = (prompt: string) =>
+      (inferScript(prompt)[0]?.toolCalls ?? []).some(
+        (call) => call.name === "run_subagent" && call.args.background === true,
+      );
+    expect(started("keep working on the venue list in the background")).toBe(true);
+    expect(started("Is the calendar sync running in the background?")).toBe(false);
+  });
+
+  it("relays a helper's result, even one that names another action", () => {
+    expect(
+      inferScript(resultPrompt("venues", "completed", "the venue asks you to sign in")),
+    ).toEqual([
+      { assistant: "your helper finished: the venue asks you to sign in", complete: true },
+    ]);
+  });
+
+  it("reports a helper that could not finish as a failure", () => {
+    expect(inferScript(resultPrompt("venues", "failed", "Scripted run failure"))).toEqual([
+      { assistant: "your helper could not finish: Scripted run failure", complete: true },
+    ]);
+  });
+
+  it("works a helper's brief as its task, even one that names another action", () => {
+    const script = inferScript(
+      helperPrompt({ name: "venues", task: "find which venue needs a sign in", instructions: "" }),
+    );
+    expect(script.some((turn) => turn.takeover)).toBe(false);
+    expect(script.at(-1)).toMatchObject({ assistant: expect.stringContaining("helper result:") });
   });
 });
 
@@ -521,6 +555,15 @@ describe("ScriptedAgentRuntime steering", () => {
       content: "work for 0 seconds",
     })}\n</reply_target>`;
     expect(await collect(request(`${quoted}\n\nremember the plan`))).toContainEqual(remembered);
+  });
+
+  it("relays a helper's result that quotes a failing or timed request instead of acting on it", async () => {
+    for (const text of ["fail this run", "keep working"]) {
+      expect(await collect(request(resultPrompt("venues", "completed", text)))).toContainEqual({
+        type: "text",
+        text: `your helper finished: ${text}`,
+      });
+    }
   });
 
   it("does not hang the bot that asks another bot to keep working", async () => {

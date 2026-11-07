@@ -34,7 +34,7 @@ vi.mock("./voice", () => ({
   stopSpeaking: vi.fn(),
 }));
 
-import { resetApiBase, saveApiBase } from "./api";
+import { resetApiBase, saveApiBase } from "./api-server";
 import type { CallDeps } from "./call-session";
 import { startCall } from "./call-session";
 import { currentSessionGeneration, saveSessionToken } from "./session";

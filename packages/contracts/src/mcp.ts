@@ -1,4 +1,7 @@
 import * as z from "zod";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
+import { Id } from "./ids.js";
+import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 export const McpTransportSchema = z.enum(["streamable_http", "sse", "stdio"]);
 export type McpTransport = z.infer<typeof McpTransportSchema>;
@@ -163,3 +166,179 @@ export function parseMcpOAuthAuthorizationParams(value: string): Record<string, 
   }
   return params;
 }
+
+/** A remote MCP service that connects with a bearer token. */
+export const McpSourcePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Fixed endpoint; omitted when the person enters their own. */
+  url: z.string().url().optional(),
+  urlPlaceholder: z.string().optional(),
+});
+export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
+
+const McpServerBaseInput = z.object({
+  slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(2000).default(""),
+  enabled: z.boolean().default(true),
+  /** Keep this server's tool results whole instead of cutting them to fit context. Omitted keeps the stored value. */
+  verbatimResults: z.boolean().optional(),
+  /** Update-only: drop the stored static credential (secret/env/headers).
+   * OAuth state survives so a connected server stays connected. */
+  clearCredential: z.boolean().optional(),
+});
+const McpOAuthClientFields = {
+  clientId: z.string().trim().min(1).max(512),
+  clientSecret: z.string().min(1).max(4096).optional(),
+  /** Space-separated scopes to request. Empty: the server's advertised scopes. */
+  scope: z.string().trim().max(2000).optional(),
+  /** Extra authorization request parameters in query-string form, e.g. Google's
+   * `access_type=offline&prompt=consent` for a refresh token. */
+  authorizationParams: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((value) => {
+      try {
+        parseMcpOAuthAuthorizationParams(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Extra authorization parameters cannot set the OAuth flow's own parameters")
+    .optional(),
+};
+/** A client registered with the server's OAuth provider out of band, for
+ * providers without dynamic client registration. On update, omit it to keep
+ * the stored client and send null to remove it. A remote server discovers its
+ * authorization server, so the client is bound to it on first use. */
+const McpOAuthClientInput = z.object(McpOAuthClientFields).nullable().optional();
+/** A stdio server has no URL to discover from, so its client names the
+ * authorization server (its issuer, e.g. https://accounts.google.com). Rakazo
+ * runs the OAuth flow and passes the grant through `{{oauth.*}}` env references. */
+const McpStdioOAuthClientInput = z
+  .object({ ...McpOAuthClientFields, authorizationServer: McpRemoteEndpointSchema })
+  .nullable()
+  .optional();
+export const McpServerConfigInput = z.discriminatedUnion("transport", [
+  McpServerBaseInput.extend({
+    transport: z.literal("streamable_http"),
+    endpoint: McpRemoteEndpointSchema,
+    headers: McpHeadersSchema.default({}),
+    secret: z.string().max(16384).optional(),
+    oauthClient: McpOAuthClientInput,
+  }),
+  McpServerBaseInput.extend({
+    transport: z.literal("sse"),
+    endpoint: McpRemoteEndpointSchema,
+    headers: McpHeadersSchema.default({}),
+    secret: z.string().max(16384).optional(),
+    oauthClient: McpOAuthClientInput,
+  }),
+  McpServerBaseInput.extend({
+    transport: z.literal("stdio"),
+    command: z.string().min(1).max(512),
+    /** Update: send none to keep the stored arguments while the command is unchanged. */
+    args: z.array(z.string().max(2048)).max(64).default([]),
+    env: z
+      .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string().max(4096))
+      .superRefine((value, ctx) => {
+        if (Object.keys(value).length > 32) {
+          ctx.addIssue({ code: "custom", message: "At most 32 environment variables are allowed" });
+        }
+      })
+      .default({}),
+    /** Update: omit to keep the stored files, send the complete set to replace them. */
+    files: McpStdioFilesSchema.optional(),
+    secret: z.string().max(16384).optional(),
+    oauthClient: McpStdioOAuthClientInput,
+  }),
+]);
+export type McpServerConfigInput = z.infer<typeof McpServerConfigInput>;
+
+/**
+ * Last observed launch/discovery outcome of an MCP server. `installing` covers a stdio
+ * package being prepared; `unknown` means nothing has tried to reach the server yet.
+ */
+export const McpServerHealthSchema = z.object({
+  status: z.enum(["unknown", "installing", "ok", "error"]),
+  /** Redacted, human-readable failure reason (stderr tail included for stdio). */
+  message: z.string().nullable(),
+  /** A failure the user fixes in the server's settings, so clients can say how. */
+  code: z.enum([MCP_OAUTH_CLIENT_REQUIRED]).nullable().optional(),
+  toolCount: z.number().int().nonnegative().nullable(),
+  checkedAt: z.string().nullable(),
+});
+export type McpServerHealth = z.infer<typeof McpServerHealthSchema>;
+
+export const McpServerSchema = z.object({
+  id: Id,
+  spaceId: Id,
+  installId: Id.nullable().optional(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  transport: McpTransportSchema,
+  endpoint: z.string().url().nullable(),
+  command: z.string().nullable(),
+  /** Arguments are stored encrypted and never returned. */
+  hasArgs: z.boolean(),
+  envKeys: z.array(z.string()),
+  /** Env variables that receive a credential file's path instead of a value. */
+  fileKeys: z.array(z.string()),
+  headerKeys: z.array(z.string()),
+  hasSecret: z.boolean(),
+  oauthStatus: z.enum(["none", "connected", "reconnect"]),
+  /** The pre-registered OAuth client, when one is configured. Its secret is never returned. */
+  oauthClientId: z.string().nullable(),
+  health: McpServerHealthSchema,
+  enabled: z.boolean(),
+  /** Keep this server's tool results whole instead of cutting them to fit context. */
+  verbatimResults: z.boolean().default(false),
+  revision: z.number().int().positive(),
+  availability: SpaceAvailabilitySchema.optional(),
+  /** Every agent can use it; when false, only the agents assigned to it. */
+  allBots: z.boolean().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type McpServer = z.infer<typeof McpServerSchema>;
+
+export type McpServerConnection =
+  | "disabled"
+  | "needs_client"
+  | "needs_sign_in"
+  | "not_working"
+  | "connected"
+  | "not_connected";
+
+/** The one state every client shows for a saved server. */
+export function mcpServerConnection(
+  server: Pick<McpServer, "enabled" | "health" | "oauthClientId" | "oauthStatus">,
+): McpServerConnection {
+  if (!server.enabled) return "disabled";
+  if (server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId)
+    return "needs_client";
+  if (server.oauthStatus === "reconnect") return "needs_sign_in";
+  if (server.health.status === "error") return "not_working";
+  if (server.oauthStatus === "connected" || server.health.status === "ok") return "connected";
+  return "not_connected";
+}
+
+/** Whether Sign in or Reconnect can help: on, not connected, not signed in (even if failing). */
+export function mcpServerNeedsSignIn(server: Parameters<typeof mcpServerConnection>[0]): boolean {
+  const state = mcpServerConnection(server);
+  return state !== "disabled" && state !== "connected" && server.oauthStatus !== "connected";
+}
+
+export const BotMcpServerSchema = z.object({
+  id: Id,
+  botId: Id,
+  serverId: Id,
+  allowAllTools: z.boolean(),
+  allowedTools: z.array(z.string().min(1).max(200)),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;

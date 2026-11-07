@@ -7,13 +7,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
-import type { MobileBot } from "./api";
 import { createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
+import type { MobileBot } from "./mobile-types";
 import { useCollapsedSections } from "./use-collapsed-sections";
 import { useInboxDay } from "./use-inbox-day";
 import { usePublishSearchInbox } from "./use-publish-search-inbox";
@@ -128,6 +128,9 @@ vi.mock("expo-router", () => {
     },
   };
 });
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: ui.rpc,
   captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({

@@ -188,6 +188,7 @@ const compatibleEntry = {
   auth: "api-key" as const,
   authHint: "Custom server",
   placeholder: true,
+  endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
 };
 const deepseekCredential = {
   id: "cred-deepseek",
@@ -774,6 +775,7 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
     billing: "API key",
     auth: "api-key" as const,
     authHint: "API key",
+    routingFields: ["accountId" as const, "gatewayId" as const],
   };
   vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
   models.list.mockResolvedValue([entry]);
@@ -782,8 +784,8 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const fresh = await renderSettings();
   try {
     await pick("Change Main model", "Cloudflare AI Gateway");
-    const accountId = fresh.container.querySelector("#cloudflare-account-id");
-    const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
+    const accountId = fresh.container.querySelector("#model-account-id");
+    const gatewayId = fresh.container.querySelector("#model-gateway-id");
     expect(accountId).toBeInstanceOf(HTMLInputElement);
     expect(gatewayId).toBeInstanceOf(HTMLInputElement);
     expect((accountId as HTMLInputElement).value).toBe("");
@@ -809,12 +811,12 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   const saved = await renderSettings();
   try {
     await manage();
-    expect(
-      (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
-    ).toBe("acct1234");
-    expect(
-      (saved.container.querySelector("#cloudflare-gateway-id") as HTMLInputElement).value,
-    ).toBe("gateway-1");
+    expect((saved.container.querySelector("#model-account-id") as HTMLInputElement).value).toBe(
+      "acct1234",
+    );
+    expect((saved.container.querySelector("#model-gateway-id") as HTMLInputElement).value).toBe(
+      "gateway-1",
+    );
   } finally {
     await saved.unmount();
   }
@@ -1335,9 +1337,7 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     expect(
       [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
     ).toHaveLength(0);
-    const key = view.container.querySelector(
-      'input[placeholder="Ollama API key"]',
-    ) as HTMLInputElement;
+    const key = view.container.querySelector('input[aria-label="API key"]') as HTMLInputElement;
     expect(key.required).toBe(true);
     await typeInto(key, "fake-fixture-key");
     await click(buttons(view.container, "Find models")[0]);
@@ -1368,6 +1368,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
       provider: "openai-compatible",
       modelId: "fixture-model",
       baseUrl: "https://ollama.com/",
+      endpointName: "Ollama Cloud",
       hasKey: true,
     },
   ]);
@@ -1433,6 +1434,7 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
         provider: "openai-compatible",
         modelId: "fixture-model",
         baseUrl: "https://ollama.com/v1",
+        endpointName: "Ollama Cloud",
         hasKey: true,
       },
     ]);

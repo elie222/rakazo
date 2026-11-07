@@ -6,13 +6,10 @@ import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  ConnectorRegistry,
   collectLogIds,
-  collectPages,
   composioResultError,
   executeSessionKey,
   expandComposioMultiExecute,
-  filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
   isNoManagedAuthError,
@@ -22,6 +19,8 @@ import {
   planLiveConnectionSync,
   sanitizeIntegrationError,
 } from "./composio-connector.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
 const composioSdkState = vi.hoisted(() => ({

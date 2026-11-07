@@ -118,8 +118,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "API-ключ Ollama",
   "Show password": "Показать пароль",
   "Hide password": "Скрыть пароль",
   Export: "Экспорт",
@@ -838,6 +836,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Starting: "Запуск",
   "Starting…": "Запуск…",
   Stop: "Остановить",
+  Stopped: "Остановлено",
   Submit: "Отправить",
   "Take control": "Взять управление",
   "Clean up": "Очистить",
@@ -1008,6 +1007,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Hang up": "Завершить",
   "Allow microphone access to call a bot.": "Разрешите доступ к микрофону, чтобы звонить боту.",
   "Could not hear that.": "Не удалось расслышать.",
+  "Approve or deny it on screen.": "Утвердите или запретите это на экране.",
+  "Hang up, then enter the code on screen.": "Повесьте трубку, затем введите код на экране.",
   "Could not transcribe that.": "Не удалось распознать речь.",
   "Could not speak that.": "Не удалось озвучить.",
   "Voice chat": "Голосовой чат",
@@ -1170,6 +1171,10 @@ export const RU_MESSAGES: Record<string, string> = {
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
+  Upgrade: "Улучшить план",
+  "Cancelled trials have no computer hours.":
+    "У отменённого пробного периода нет часов компьютера.",
+  "Renew plan": "Возобновить план",
   "Trials get fewer hours to prevent abuse.":
     "В пробном периоде меньше часов, чтобы предотвратить злоупотребления.",
   "Start plan now": "Начать тариф сейчас",

@@ -6,10 +6,12 @@ import {
   ModelOutputError,
   runContinueJob,
   SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
   humanizeToolName,
@@ -26,6 +28,7 @@ import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
@@ -43,7 +46,7 @@ import {
 } from "./routine-backoff.js";
 import type { RunContext, RunState } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
-import { renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
   completionMarksUnread,
@@ -423,11 +426,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     offeredActions: event.actions,
   });
   if (!paused) return;
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,
@@ -634,11 +633,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   if (run.trigger === "routine" && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
-  if (stopped.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(stopped.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, stopped.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -899,11 +894,7 @@ export async function completeRun(ctx: RunContext) {
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
-  if (completed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(completed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, completed.continuationRunId);
   if (botMessageOutcome) {
     // Prefer the final reply. If the turn only posted mid-turn progress, return that
     // text explicitly as status. Delivery uses a stable auto-outcome key; mark
@@ -916,6 +907,11 @@ export async function completeRun(ctx: RunContext) {
       botMessageOutcome.text,
       botMessageOutcome.intent,
     ).catch((error) => getLogger().error("bot message result return", error));
+  }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "completed", text }).catch((error) =>
+      getLogger().error("background helper result return", error),
+    );
   }
   const notifyBody = completionNotificationPreview(text);
   if (runSendsFinishNotification(run.trigger) && notifyBody && !completed.continuationRunId) {
@@ -984,7 +980,8 @@ export async function failRun(
   } catch (computerError) {
     if (
       !(computerError instanceof SandboxRateLimitError) &&
-      !(computerError instanceof SandboxAllowanceUsedError)
+      !(computerError instanceof SandboxAllowanceUsedError) &&
+      !(computerError instanceof SandboxProviderAccountError)
     )
       throw computerError;
     error = computerError;
@@ -1051,11 +1048,7 @@ export async function failRun(
       },
     );
   }
-  if (failed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(failed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, failed.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -1066,14 +1059,22 @@ export async function failRun(
       { forceUnread: true },
     ).catch((returnError) => getLogger().error("bot message failure return", returnError));
   }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((returnError) =>
+      getLogger().error("background helper failure return", returnError),
+    );
+  }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
     run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
-  // A spent computer allowance refuses every run that needs the computer until the period resets.
+  // A spent computer allowance or an unusable provider account refuses every run that needs the
+  // computer until someone fixes it.
   if (
     run.trigger === "routine" &&
     run.routineId &&
-    (refusal || error instanceof SandboxAllowanceUsedError)
+    (refusal ||
+      error instanceof SandboxAllowanceUsedError ||
+      error instanceof SandboxProviderAccountError)
   ) {
     await backOffRoutineAfterAccountError(
       deps,

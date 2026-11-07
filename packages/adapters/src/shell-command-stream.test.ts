@@ -254,6 +254,47 @@ describe("deliverFinishedShells", () => {
     expect(followUps[0]).toContain("logged in");
   });
 
+  it("does not wait on a running command after a model error, which ends the run", async () => {
+    const running = new Promise<{ stdout: string; stderr: string; code: number }>(() => undefined);
+    const pending = [running];
+    const followUps: string[] = [];
+    await deliverFinishedShells((text) => followUps.push(text), pending, {
+      message: { stopReason: "error" },
+      toolResults: [],
+    });
+    expect(followUps).toEqual([]);
+    expect(pending).toEqual([running]);
+  });
+
+  it("takes only the commands that exited from a turn that called tools", async () => {
+    let release: (result: { stdout: string; stderr: string; code: number }) => void = () =>
+      undefined;
+    const running = new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
+      release = resolve;
+    });
+    const failed = Promise.reject(new Error("sandbox gone"));
+    failed.catch(() => undefined);
+    const pending = [running, Promise.resolve({ stdout: "built\n", stderr: "", code: 0 }), failed];
+    const delivered: string[] = [];
+    const toolTurn = { toolResults: [{ toolName: "read_file", details: {} }] };
+
+    await deliverFinishedShells((text) => delivered.push(text), pending, toolTurn);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("built");
+    expect(delivered[0]).toContain("sandbox gone");
+    expect(pending).toEqual([running]);
+
+    await deliverFinishedShells((text) => delivered.push(text), pending, toolTurn);
+    expect(delivered).toHaveLength(1);
+    expect(pending).toEqual([running]);
+
+    release({ stdout: "served\n", stderr: "", code: 124 });
+    await deliverFinishedShells((text) => delivered.push(text), pending, toolTurn);
+    expect(delivered).toHaveLength(2);
+    expect(delivered[1]).toContain("served");
+    expect(pending).toEqual([]);
+  });
+
   it("hands the bot the end of long output, where failures are printed", async () => {
     const followUps: string[] = [];
     await deliverFinishedShells(

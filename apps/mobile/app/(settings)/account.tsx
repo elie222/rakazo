@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
-import { accountDisplay, displayName } from "@rakazo/core";
+import { APP_LOCALE_LABELS, accountDisplay, displayName } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -31,17 +31,13 @@ import {
 } from "../../components/settings-group";
 import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
 import { createAccountNameEditor } from "../../lib/account-name-editor";
-import type { MobileMe } from "../../lib/api";
+import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
 import {
-  currentApiBase,
   fetchAccountSecurity,
-  loadSessionToken,
   passwordResetCapabilities,
-  rpc,
-  selectedSpaceId,
   signOut,
   updateAccountName,
-} from "../../lib/api";
+} from "../../lib/api-auth";
 import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
 import {
   getCachedAppearancePreference,
@@ -69,6 +65,7 @@ import {
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
+import type { MobileMe } from "../../lib/mobile-types";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { activeOrganization, useOrganizations } from "../../lib/organizations";
 import type { MobilePasskey } from "../../lib/passkey";
@@ -92,6 +89,7 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
+import { loadSessionToken } from "../../lib/session";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -101,7 +99,6 @@ import {
   removeTrustedLinkSite,
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
-import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
@@ -664,11 +661,11 @@ export default function Account() {
           <SettingsRow
             accessibilityRole="button"
             accessibilityLabel={t("Language")}
-            accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
+            accessibilityValue={{ text: APP_LOCALE_LABELS[locale] }}
             chevron="right"
             onPress={() => router.push("/language")}
             title={t("Language")}
-            value={UI_LOCALE_LABELS[locale]}
+            value={APP_LOCALE_LABELS[locale]}
           />
           <SettingsSwitch label={t("Haptics")} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
