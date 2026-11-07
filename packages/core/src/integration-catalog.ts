@@ -31,8 +31,10 @@ export async function findOrAddMcpServer(
     }) => Promise<McpServer>;
   },
 ): Promise<McpServer> {
+  // Compare parsed URLs: the catalog's "https://host/" is a saved "https://host".
+  const endpoint = new URL(server.endpoint).href;
   const existing = (await rpc.list()).find(
-    (row) => row.enabled && row.endpoint === server.endpoint,
+    (row) => row.enabled && row.endpoint && new URL(row.endpoint).href === endpoint,
   );
   return (
     existing ??

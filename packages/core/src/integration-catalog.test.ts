@@ -92,6 +92,19 @@ describe("findOrAddMcpServer", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("reuses a server saved under an equivalent URL", async () => {
+    const saved = { id: "saved", enabled: true, endpoint: "https://mcp.example" } as McpServer;
+    const create = vi.fn();
+
+    await expect(
+      findOrAddMcpServer(
+        { name: "Example", endpoint: "https://mcp.example/" },
+        { list: async () => [saved], create },
+      ),
+    ).resolves.toBe(saved);
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("adds a new server rather than reuse a disabled one", async () => {
     const disabled = { id: "off", enabled: false, endpoint: tracker.endpoint } as McpServer;
     const create = vi.fn(async () => ({ id: "new" }) as McpServer);
