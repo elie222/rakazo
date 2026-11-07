@@ -42,9 +42,9 @@ export function ConnectionQuota({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium">{label ?? <Trans>Quota</Trans>}</h3>
+          <h3 className="text-body font-medium">{label ?? <Trans>Quota</Trans>}</h3>
           {accountLabel ? (
-            <p className="truncate text-xs text-muted-foreground">{accountLabel}</p>
+            <p className="truncate text-label text-muted-foreground">{accountLabel}</p>
           ) : null}
         </div>
         {!compact && observation?.status !== "unsupported" ? (
@@ -71,17 +71,17 @@ export function ConnectionQuota({
         ) : null}
       </div>
       {quota.isPending ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           <Trans>Loading</Trans>
         </p>
       ) : null}
       {(quota.isError && !observation) || observation?.status === "unavailable" ? (
-        <p className="text-sm text-muted-foreground" role="status">
+        <p className="text-body text-muted-foreground" role="status">
           <Trans>Quota unavailable</Trans>
         </p>
       ) : null}
       {observation?.status === "stale" ? (
-        <p className="text-sm text-warning" role="status">
+        <p className="text-body text-warning" role="status">
           <Trans>Last known usage</Trans>
         </p>
       ) : null}
@@ -89,7 +89,7 @@ export function ConnectionQuota({
         <QuotaWindow key={window.id} window={window} compact={compact} />
       ))}
       {!compact && observation?.observedAt ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           <Trans>Updated</Trans>{" "}
           <time dateTime={observation.observedAt}>
             {new Date(observation.observedAt).toLocaleString(i18n.locale)}
@@ -116,7 +116,7 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
             : window.id;
   return (
     <div className="space-y-1">
-      <div className={`flex justify-between gap-3 ${compact ? "text-xs" : "text-sm"}`}>
+      <div className={`flex justify-between gap-3 ${compact ? "text-label" : "text-body"}`}>
         <span className="min-w-0 truncate">
           {label}
           {compact && window.resetsAt ? (
@@ -149,7 +149,7 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
         className="h-2 w-full appearance-none [&::-moz-meter-bar]:bg-foreground [&::-webkit-meter-bar]:border-0 [&::-webkit-meter-bar]:bg-muted [&::-webkit-meter-bar]:bg-none [&::-webkit-meter-optimum-value]:bg-foreground [&::-webkit-meter-optimum-value]:bg-none"
       />
       {!compact && window.resetsAt ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-label text-muted-foreground">
           <Trans>Resets</Trans>{" "}
           <time dateTime={window.resetsAt}>
             {new Date(window.resetsAt).toLocaleString(i18n.locale)}

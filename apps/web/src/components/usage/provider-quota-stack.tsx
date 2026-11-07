@@ -101,17 +101,17 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
   return (
     <div data-testid="provider-quota-stack" className="divide-y divide-border">
       {credentials.isPending ? (
-        <p className="py-3 text-sm text-muted-foreground">
+        <p className="py-3 text-body text-muted-foreground">
           <Trans>Loading</Trans>
         </p>
       ) : null}
       {credentials.isError ? (
-        <p role="status" className="py-3 text-sm text-muted-foreground">
+        <p role="status" className="py-3 text-body text-muted-foreground">
           <Trans>Could not load usage</Trans>
         </p>
       ) : null}
       {credentials.isSuccess && !groups.length ? (
-        <p className="py-3 text-sm text-muted-foreground">
+        <p className="py-3 text-body text-muted-foreground">
           <Trans>No connected providers</Trans>
         </p>
       ) : null}
@@ -120,7 +120,7 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
           data-testid="usage-sort-controls"
           className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 sm:flex sm:justify-end"
         >
-          <span className="text-sm text-muted-foreground">
+          <span className="text-body text-muted-foreground">
             <Trans>Sort by</Trans>
           </span>
           <Select
@@ -157,7 +157,7 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
               </SelectItem>
             </SelectContent>
           </Select>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-body text-muted-foreground">
             <Trans>Order</Trans>
           </span>
           <ToggleGroup
@@ -173,14 +173,14 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
             <ToggleGroupItem
               value="normal"
               data-testid="usage-sort-normal"
-              className="h-8 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+              className="h-8 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               {regularOrderLabel}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="inverted"
               data-testid="usage-sort-inverted"
-              className="h-8 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+              className="h-8 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               {invertedOrderLabel}
             </ToggleGroupItem>
