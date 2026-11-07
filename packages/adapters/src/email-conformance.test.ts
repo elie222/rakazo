@@ -1,5 +1,6 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { CloudflareEmailProvider } from "./cloudflare-email.js";
 import { EmailEmulator } from "./email-emulator.js";
 import { ResendEmailProvider } from "./resend-email.js";
 import { SmtpEmailProvider } from "./smtp-email.js";
@@ -9,6 +10,32 @@ const factories: Record<
   (capture: (message: TransactionalEmail) => void) => TransactionalEmailProvider
 > = {
   emulator: (capture) => new EmailEmulator(capture),
+  cloudflare: (capture) =>
+    new CloudflareEmailProvider(
+      {
+        apiKey: "fake-api-key",
+        accountId: "0123456789abcdef0123456789abcdef",
+        from: "hello@example.test",
+      },
+      {
+        fetch: async (_url, init) => {
+          const message = JSON.parse(init!.body as string);
+          capture(message);
+          return Response.json({
+            success: true,
+            errors: [],
+            messages: [],
+            result: {
+              message_id: "email-1",
+              delivered: Array.isArray(message.to) ? message.to : [message.to],
+              queued: [],
+              permanent_bounces: [],
+              suppressed_recipients: [],
+            },
+          });
+        },
+      },
+    ),
   smtp: (capture) =>
     new SmtpEmailProvider(
       { url: "smtps://smtp.example.test", from: "hello@example.test" },

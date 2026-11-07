@@ -7,6 +7,12 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("loads the generic email account ID", () => {
+    expect(
+      loadEnv({ ...base, EMAIL_ACCOUNT_ID: " 0123456789abcdef0123456789abcdef " }).emailAccountId,
+    ).toBe("0123456789abcdef0123456789abcdef");
+    expect(loadEnv(base).emailAccountId).toBeUndefined();
+  });
   it("defaults the attachment count to four and accepts configured bounds", () => {
     expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
     expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);

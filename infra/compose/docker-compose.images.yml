@@ -55,6 +55,7 @@ x-app-environment: &app-environment
   INBOUND_EMAIL_DOMAIN:
   EMAIL_PROVIDER:
   EMAIL_API_KEY:
+  EMAIL_ACCOUNT_ID:
   SMTP_URL:
   EMAIL_FROM:
   EMAIL_REPLY_TO:

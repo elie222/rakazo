@@ -1,10 +1,12 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { CloudflareEmailProvider } from "./cloudflare-email.js";
 import { ResendEmailProvider } from "./resend-email.js";
 import { SmtpEmailProvider } from "./smtp-email.js";
 
 export type EmailProviderConfig = {
   provider?: string;
   apiKey?: string;
+  accountId?: string;
   from?: string;
   replyTo?: string;
   smtpUrl?: string;
@@ -25,6 +27,13 @@ export function configuredEmailProvider(
         from: config.from ?? "",
         replyTo: config.replyTo,
       });
+    case "cloudflare":
+      return new CloudflareEmailProvider({
+        apiKey: config.apiKey ?? "",
+        accountId: config.accountId ?? "",
+        from: config.from ?? "",
+        replyTo: config.replyTo,
+      });
     case "resend":
       return new ResendEmailProvider({
         apiKey: config.apiKey ?? "",
@@ -32,6 +41,6 @@ export function configuredEmailProvider(
         replyTo: config.replyTo,
       });
     default:
-      throw new Error("EMAIL_PROVIDER must be none, smtp, or resend");
+      throw new Error("EMAIL_PROVIDER must be none, smtp, resend, or cloudflare");
   }
 }
