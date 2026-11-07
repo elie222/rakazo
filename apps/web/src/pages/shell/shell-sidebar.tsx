@@ -60,7 +60,7 @@ export function ShellSidebar({
   setNewSpaceOpen,
   setCreateBotOpen,
   roster,
-  archived,
+  shelves,
   footerLogos,
   user,
   ticketBoardEnabled,
@@ -89,7 +89,8 @@ export function ShellSidebar({
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
   roster: ReactNode;
-  archived: ReactNode;
+  /** Folded lists pinned under the roster, such as Snoozed. */
+  shelves: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
   ticketBoardEnabled: boolean;
@@ -283,7 +284,7 @@ export function ShellSidebar({
               : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
           }
         >
-          {archived}
+          {shelves}
         </div>
         <div className={mini ? "hidden" : "contents"}>
           <PasskeyOffer />

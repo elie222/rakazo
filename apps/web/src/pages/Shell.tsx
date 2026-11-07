@@ -68,7 +68,6 @@ import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { RoutineList } from "./RoutineList";
-import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
@@ -164,8 +163,6 @@ function SpaceShell() {
     botSections,
     spaces,
     setSpaces,
-    archivedBots,
-    archivedGroups,
     initialBotsLoaded,
     initialLoadFailed,
     bootstrapMe,
@@ -983,32 +980,21 @@ function SpaceShell() {
             botMenuContent={botMenuContent}
           />
         }
-        archived={
-          <>
-            <SnoozedChats
-              snoozed={sidebarSpaces.flatMap((space) => [
-                ...space.bots
-                  .filter((chat) => chatSnoozed(chat, snoozeNow))
-                  .map((chat) => ({ kind: "bot" as const, chat })),
-                ...space.groups
-                  .filter((chat) => chatSnoozed(chat, snoozeNow))
-                  .map((chat) => ({ kind: "group" as const, chat })),
-              ])}
-              showSpaceSearch={search.showSpaceSearch}
-              now={snoozeNow}
-              snooze={snooze}
-              openSpaceChat={openSpaceChat}
-            />
-            <ArchivedChats
-              archivedBots={archivedBots}
-              archivedGroups={archivedGroups}
-              showSpaceSearch={search.showSpaceSearch}
-              rpc={rpc}
-              refreshBots={refreshBots}
-              setDeleteTarget={dialogs.setDeleteTarget}
-              setDeleteGroupTarget={dialogs.setDeleteGroupTarget}
-            />
-          </>
+        shelves={
+          <SnoozedChats
+            snoozed={sidebarSpaces.flatMap((space) => [
+              ...space.bots
+                .filter((chat) => chatSnoozed(chat, snoozeNow))
+                .map((chat) => ({ kind: "bot" as const, chat })),
+              ...space.groups
+                .filter((chat) => chatSnoozed(chat, snoozeNow))
+                .map((chat) => ({ kind: "group" as const, chat })),
+            ])}
+            showSpaceSearch={search.showSpaceSearch}
+            now={snoozeNow}
+            snooze={snooze}
+            openSpaceChat={openSpaceChat}
+          />
         }
         footerLogos={footerLogos}
         user={session.data?.user}
@@ -1338,6 +1324,10 @@ function SpaceShell() {
       <Suspense fallback={null}>
         <SettingsOverlays
           rpc={rpc}
+          onArchivedChange={async (deletedId) => {
+            if (deletedId) composer.discardThreadAttachments(deletedId);
+            await refreshBots(true);
+          }}
           queries={queries}
           overlay={overlay}
           setOverlay={setOverlay}

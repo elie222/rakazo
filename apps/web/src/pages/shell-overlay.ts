@@ -11,6 +11,7 @@ const SETTINGS_SECTIONS = [
   "wallet",
   "usage",
   "computer",
+  "archived",
   "billing",
   "updates",
 ] as const;

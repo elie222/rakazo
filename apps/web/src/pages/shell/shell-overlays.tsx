@@ -126,6 +126,7 @@ export function SettingsOverlays({
   setPeerConversation,
   active,
   peerBot,
+  onArchivedChange,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -150,6 +151,8 @@ export function SettingsOverlays({
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
+  /** After an archived chat is restored or deleted, with the deleted chat's id. */
+  onArchivedChange: (deletedId?: string) => Promise<void>;
 }) {
   // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
   const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
@@ -162,6 +165,7 @@ export function SettingsOverlays({
       {overlay?.kind === "settings" && showSettings ? (
         <SettingsOverlay
           shellRpc={rpc}
+          onArchivedChange={onArchivedChange}
           space={settingsSpace}
           spaces={spaces}
           onRenameSpace={renameSpace}

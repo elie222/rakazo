@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openNewSpace, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openNewSpace,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("a new space auto-completes onboarding, is renamed in its settings, and is deleted with its bots", async ({
   page,
@@ -122,6 +129,6 @@ test("deleting the last bot in a space stays in the app after first use", {
     .getByRole("button", { name: "Delete", exact: true })
     .click();
   await expect(sidebar.getByText("Side", { exact: true })).toHaveCount(0);
-  await sidebar.getByRole("button", { name: /^Archived/ }).click();
-  await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
+  const settings = await openUserSettings(page, "archived");
+  await expect(settings.getByText("Chief", { exact: true })).toBeVisible();
 });

@@ -220,6 +220,7 @@ export async function openUserSettings(
     | "wallet"
     | "usage"
     | "computer"
+    | "archived"
     | "billing"
     | "organization"
     | "updates",

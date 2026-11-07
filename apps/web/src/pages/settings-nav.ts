@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import {
+  Archive,
   Brain,
   Building2,
   CloudDownload,
@@ -93,6 +94,7 @@ export function useSettingsNavItems(available: {
           },
         ]
       : []),
+    { id: "archived", label: t`Archived`, icon: Archive },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
     { id: "organization", label: t`Organization`, icon: Building2 },

@@ -24,6 +24,7 @@ import {
   UpdatesSettingsPanel,
   UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
+import { ArchivedChatsSettings } from "./ArchivedChatsSettings";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
@@ -67,6 +68,7 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
   onLeftSpace,
+  onArchivedChange = async () => undefined,
   shellRpc,
 }: {
   /** The space the Space page edits; it need not be the selected space. */
@@ -105,6 +107,8 @@ export function SettingsOverlay({
   onLeftSpace?: (spaceId: string, activeSpaceId: string) => void;
   /** Pinned to the space this window shows; billing acts on it. */
   shellRpc: RpcClient;
+  /** After an archived chat is restored or deleted, with the deleted chat's id. */
+  onArchivedChange?: (deletedId?: string) => Promise<void>;
 }) {
   const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -456,6 +460,9 @@ export function SettingsOverlay({
                     <BillingSettingsPanel client={shellRpc} />
                   ) : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
+                  {section === "archived" ? (
+                    <ArchivedChatsSettings rpc={shellRpc} onChange={onArchivedChange} />
+                  ) : null}
                   {section === "models" ? (
                     <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />
                   ) : null}
