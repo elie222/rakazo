@@ -49,6 +49,7 @@ import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { t, useI18n } from "../lib/i18n";
+import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
@@ -274,7 +275,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, botSections });
+  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
 
   const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
     hasSession,
@@ -327,6 +328,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   usePublishSearchInbox(inboxSpaces, me !== null);
+  // Rows read only each space's sections; keeping the list while they are unchanged keeps the row
+  // renderer, so a new preview doesn't re-render every row.
+  const [keptSections, setKeptSections] = useState<Pick<InboxSpace, "id" | "botSections">[]>([]);
+  const spaceSections = retainInboxValue(
+    keptSections,
+    inboxSpaces.map(({ id, botSections }) => ({ id, botSections })),
+  );
+  if (spaceSections !== keptSections) setKeptSections(spaceSections);
   const listData = useMemo((): InboxItem[] => {
     // Only bot threads support importing shares; use the same rows for every target.
     if (onShareSelect)
@@ -671,7 +680,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const renderItem = useInboxRenderItem({
     appearance,
     botAction,
-    botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
     createBotInSpace: createQuickBot,
@@ -688,6 +696,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
+    spaces: spaceSections,
     toggleCollapsed,
   });
 

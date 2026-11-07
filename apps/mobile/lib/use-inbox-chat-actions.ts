@@ -46,13 +46,11 @@ export function useInboxChatActions({
   setBots,
   setGroups,
   setSpaces,
-  botSections,
 }: {
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
-  botSections: MobileBotSection[];
 }) {
   const { t } = useI18n();
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
@@ -186,8 +184,10 @@ export function useInboxChatActions({
           notifyArchivedChatsChanged();
           void loadBots();
         };
-        if (kind === "bot") confirmDeleteBot({ id: chat.id, name: chat.name }, deleted);
-        else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted);
+        const requestContext = await chatRequestContext(chat.spaceId);
+        if (kind === "bot") {
+          confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
+        } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
@@ -236,9 +236,11 @@ export function useInboxChatActions({
       kind: InboxChatKind,
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       mode: "create" | "rename",
+      // The chat's own space's sections, which may not be the selected space.
+      sections: readonly MobileBotSection[],
     ) => {
       const current =
-        mode === "rename" ? botSections.find((section) => section.id === chat.sectionId) : null;
+        mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
       promptSectionName({
         title: current ? t("Rename section") : t("New section"),
@@ -247,13 +249,15 @@ export function useInboxChatActions({
         defaultValue: current?.name,
         onSubmit: (name) =>
           void (
-            current ? renameSection(current.id, name) : createSection(kind, chat.id, name)
+            current
+              ? renameSection(current.id, name, chat.spaceId)
+              : createSection(kind, chat.id, name, chat.spaceId)
           ).catch((err) =>
             Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
           ),
       });
     },
-    [botSections, createSection, renameSection, t],
+    [createSection, renameSection, t],
   );
 
   const deleteSection = useCallback(

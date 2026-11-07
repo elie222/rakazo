@@ -279,6 +279,10 @@ export const PinnedTiles = memo(function PinnedTiles({
     </View>
   );
 });
+// The iOS row menu opens on a long press; a press handler without onLongPress would still open the
+// chat when the finger lifts.
+const holdForMenu = () => undefined;
+
 /** What the iOS row menu needs to organize a chat in place. */
 type RowMenuProps = {
   sections: readonly MobileBotSection[];
@@ -291,6 +295,7 @@ type RowMenuProps = {
     kind: InboxChatKind,
     chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
     mode: "create" | "rename",
+    sections: readonly MobileBotSection[],
   ) => void;
 };
 
@@ -338,7 +343,7 @@ export const BotRow = memo(function BotRow({
         onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={() => onPress(bot)}
-      onLongPress={onLongPress ? () => onLongPress(bot) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(bot) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(bot) : undefined}
       onAction={runAction}
       avatar={
@@ -378,7 +383,7 @@ export const BotRow = memo(function BotRow({
       }}
       onAction={runAction}
       onOrganize={(update) => onOrganize("bot", bot, update)}
-      onEditSection={(mode) => onEditSection("bot", bot, mode)}
+      onEditSection={(mode) => onEditSection("bot", bot, mode, sections)}
     >
       {row}
     </InboxSwipeRow>
@@ -422,7 +427,7 @@ export const GroupRow = memo(function GroupRow({
         onLongPress || onAction ? t("Long press to pin or move to a section") : undefined
       }
       onPress={() => onPress(group)}
-      onLongPress={onLongPress ? () => onLongPress(group) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
       avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
@@ -442,7 +447,7 @@ export const GroupRow = memo(function GroupRow({
       }}
       onAction={runAction}
       onOrganize={(update) => onOrganize("group", group, update)}
-      onEditSection={(mode) => onEditSection("group", group, mode)}
+      onEditSection={(mode) => onEditSection("group", group, mode, sections)}
     >
       {row}
     </InboxSwipeRow>
