@@ -34,17 +34,17 @@ import { useCallSession } from "../../lib/call-session";
 import {
   appendComposerDraftText,
   beginComposerDraftSubmission,
-  keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerDraftSkill,
   readComposerRetryNonce,
   replaceComposerDraft,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
   subscribeComposerDraftReplaced,
   subscribeComposerOffer,
+  touchComposerDraftContext,
   writeComposerDraft,
-  writeComposerRetryNonce,
 } from "../../lib/composer-draft";
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
@@ -168,11 +168,20 @@ const ComposerBody = memo(function Composer({
       ...editSelections.current,
     ].slice(0, 3);
   }
+  // The skill chip is saved with the draft's mentions, so a reopened chat still sends it.
+  const [selectedSkill, setSkillState] = useState(() => readComposerDraftSkill(draftKey));
+  const selectedSkillRef = useRef(selectedSkill);
+  function setSelectedSkill(skill: AgentSkillCatalogEntry | null, persist = false) {
+    selectedSkillRef.current = skill;
+    setSkillState(skill);
+    if (persist) commitComposition(compositionRef.current);
+  }
   function commitComposition(next: typeof composition, persist = true) {
     compositionRef.current = next;
     setComposition(next);
     editSelections.current = [];
-    if (persist) writeComposerDraft(draftKey, next.text, undefined, next.bindings);
+    if (persist)
+      writeComposerDraft(draftKey, next.text, undefined, next.bindings, selectedSkillRef.current);
   }
   /** False when the words went to this chat's saved draft because it is no longer shown. */
   function appendDictation(text: string): boolean {
@@ -193,27 +202,34 @@ const ComposerBody = memo(function Composer({
     setMentionQuery,
     setMentionHighlightKey,
     setSlashQuery,
-    selectedSkill,
-    setSelectedSkill,
     updatePickers,
+    updateSlashQuery,
     insertMention,
     insertSkill,
     runSlashAction,
     removeSkill,
     mentionListboxId,
+    slashListboxId,
     mentionOptions,
     activeMentionIndex,
     mentionPickerOpen,
-    activeMentionOptionId,
     slashSkillOptions,
     slashActionOptions,
     showSlashPicker,
+    slashOptionKeys,
+    setSlashHighlightKey,
+    activeSlashIndex,
+    activeOptionId,
+    pickSlashOption,
   } = useComposerTriggers({
     draft,
     mentionBindings,
     selectedMentions,
     mentionTargets,
     agentSkills,
+    selectedSkill,
+    selectedSkillRef,
+    setSelectedSkill,
     getField: () => textareaRef.current,
     pendingCaret,
     markEdited,
@@ -246,8 +262,9 @@ const ComposerBody = memo(function Composer({
   useEffect(
     () =>
       subscribeComposerDraftAccepted(draftKey, (text) => {
-        if (compositionRef.current.text === text)
-          commitComposition({ text: "", bindings: [] }, false);
+        if (compositionRef.current.text !== text) return;
+        commitComposition({ text: "", bindings: [] }, false);
+        setSelectedSkill(null);
         setMentionQuery(null);
         setSlashQuery(null);
       }),
@@ -265,6 +282,7 @@ const ComposerBody = memo(function Composer({
     // An edit like typing: a send still in flight must not restore its older text over it.
     markEdited();
     const bindings = readComposerDraftBindings(draftKey);
+    setSelectedSkill(readComposerDraftSkill(draftKey));
     commitComposition({ text, bindings }, false);
     // The pickers follow the new text, as after an edit, with the caret at its end.
     updatePickers(text, text.length, text.length, bindings);
@@ -274,14 +292,13 @@ const ComposerBody = memo(function Composer({
   const dock = pageSession?.dock ?? noDock;
   const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
   // A draft reloaded without edits may still belong to a send whose answer never
-  // came; its nonce is stored beside it. Anything that would change the next
-  // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
-  const [storedRetryNonce] = useState(() =>
-    pendingAttachments.length === 0 && !replyTarget && openPageId === null
-      ? readComposerRetryNonce(draftKey)
-      : null,
-  );
-  const retryNonce = useRef(storedRetryNonce);
+  // came; its nonce is stored beside it. Transient context gates reuse at send time,
+  // but must not erase the saved operation that survives without that context.
+  const retryNonce = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingAttachments.length || replyTarget || openPageId !== null)
+      touchComposerDraftContext(draftKey);
+  }, [draftKey, pendingAttachments.length, replyTarget, openPageId]);
   // Opening or closing a page counts as an edit, like a reply change.
   const previousPageId = useRef(openPageId);
   useEffect(() => {
@@ -396,7 +413,7 @@ const ComposerBody = memo(function Composer({
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
-    writeComposerRetryNonce(draftKey, null);
+    touchComposerDraftContext(draftKey);
   }
 
   const draftKeyRef = useRef(draftKey);
@@ -449,25 +466,36 @@ const ComposerBody = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
-    // Recovery rebuilds the draft from text alone, so only a plain-text send —
-    // no reply target, no attachments, no skill, no open page — can share its
-    // nonce with a retry. Anything else keeps the words without a nonce.
-    const nonceRecoverable =
-      !replyTarget &&
-      pendingAttachments.length === 0 &&
-      selectedSkill === null &&
-      openPageId === null;
+    // Recovery rebuilds text, mention bindings and the skill chip. Reply targets,
+    // attachments and open pages are not persisted, so those cannot share a retry nonce.
+    const nonceRecoverable = !replyTarget && pendingAttachments.length === 0 && openPageId === null;
     const clientNonce =
       retryNonce.current ??
-      // A chat reopened before its unsettled send failed has not edited since
-      // mount, so the nonce stored beside the saved draft is still this draft's.
-      (revision === 0 && nonceRecoverable ? readComposerRetryNonce(draftKey) : null) ??
+      // Only persisted payload edits retire the saved operation; cancelling transient
+      // context can return to that same payload without a document reload.
+      (nonceRecoverable &&
+      readComposerDraft(draftKey) === compositionRef.current.text &&
+      JSON.stringify(readComposerDraftBindings(draftKey)) ===
+        JSON.stringify(compositionRef.current.bindings) &&
+      JSON.stringify(readComposerDraftSkill(draftKey)) === JSON.stringify(selectedSkill)
+        ? readComposerRetryNonce(draftKey)
+        : null) ??
       newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
-    const text = serializeComposerPrompt(submitted.text, selectedSkill);
+    const text = serializeComposerPrompt(submitted.text, selectedSkill, submitted.bindings);
     const mentions = composerMentionsForPrompt(submitted.text, selectedSkill, submitted.bindings);
-    const submission = beginComposerDraftSubmission(draftKey, draft);
+    const submission = beginComposerDraftSubmission(
+      draftKey,
+      draft,
+      nonceRecoverable
+        ? {
+            nonce: clientNonce,
+            bindings: submitted.bindings,
+            skill: selectedSkill,
+          }
+        : undefined,
+    );
     commitComposition({ text: "", bindings: [] }, false);
     setMentionQuery(null);
     setMentionHighlightKey(null);
@@ -486,10 +514,8 @@ const ComposerBody = memo(function Composer({
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible
-      // send. The saved draft still holds the words; only a recoverable plain
-      // text send keeps its nonce with them, so the retry is not mistaken for
-      // a reply-linked or otherwise different message.
-      if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
+      // send. The saved draft retains its metadata; only a fully recoverable
+      // payload keeps its nonce, so a retry cannot become a different message.
       return;
     }
     // A dictation queued behind this send, and no other edit since, joins the failed
@@ -502,18 +528,20 @@ const ComposerBody = memo(function Composer({
       const words = queued.text;
       const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
       if (mountedRef.current && draftKeyRef.current === draftKey) {
-        commitComposition(restored);
         setSelectedSkill(selectedSkill);
+        commitComposition(restored);
         return;
       }
       // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
-      // still holding just these words, mentions included, is this send's to restore, and the
-      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
+      // still holding just these words, mentions and skill included, is this send's to restore,
+      // and the reopened field follows it. The same spelling with newer metadata is a newer edit.
       if (
         readComposerDraft(draftKey) === words &&
-        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
+        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings) &&
+        JSON.stringify(readComposerDraftSkill(draftKey)) ===
+          JSON.stringify(selectedSkillRef.current)
       )
-        replaceComposerDraft(draftKey, restored.text, restored.bindings);
+        replaceComposerDraft(draftKey, restored.text, restored.bindings, selectedSkill);
       return;
     }
     // Restore only an untouched draft, retaining its nonce for an unchanged retry.
@@ -521,7 +549,6 @@ const ComposerBody = memo(function Composer({
     // the in-memory nonce is safe here; the stored one is only for plain text.
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
-    if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }
@@ -650,6 +677,9 @@ const ComposerBody = memo(function Composer({
       ) : null}
       {showSlashPicker ? (
         <SlashPicker
+          listboxId={slashListboxId}
+          activeIndex={activeSlashIndex}
+          onHighlight={setSlashHighlightKey}
           skills={slashSkillOptions}
           actions={slashActionOptions}
           onSkill={insertSkill}
@@ -743,6 +773,12 @@ const ComposerBody = memo(function Composer({
                     mentionBindings,
                   )?.query ?? null,
                 );
+                updateSlashQuery(
+                  field.value,
+                  field.selectionStart,
+                  field.selectionEnd,
+                  mentionBindings,
+                );
               }}
               onPaste={handlePaste}
               onKeyDown={(event) => {
@@ -757,11 +793,30 @@ const ComposerBody = memo(function Composer({
                   shiftKey: event.shiftKey,
                   ctrlKey: event.ctrlKey,
                   metaKey: event.metaKey,
+                  altKey: event.altKey,
                   enterToSend,
                   isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                  optionCount: mentionOptions.length,
-                  highlightedIndex: activeMentionIndex,
+                  optionCount: mentionPickerOpen ? mentionOptions.length : slashOptionKeys.length,
+                  highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
+                // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
+                // Shift+Tab still moves focus back out of the field.
+                if (
+                  showSlashPicker &&
+                  action.type !== "none" &&
+                  !(event.key === "Tab" && event.shiftKey)
+                ) {
+                  event.preventDefault();
+                  if (action.type === "complete" || action.type === "send")
+                    pickSlashOption(activeSlashIndex);
+                  else if (action.type === "move")
+                    setSlashHighlightKey(slashOptionKeys[action.index] ?? null);
+                  else {
+                    completedSelection.current = event.currentTarget.selectionStart;
+                    setSlashQuery(null);
+                  }
+                  return;
+                }
                 if (action.type === "complete") {
                   const mention = mentionOptions[action.index];
                   if (!mention) return;
@@ -797,12 +852,6 @@ const ComposerBody = memo(function Composer({
                   event.altKey
                 )
                   return;
-                // An open picker closes first; a held Escape never goes on to stop the reply.
-                if (showSlashPicker) {
-                  event.preventDefault();
-                  setSlashQuery(null);
-                  return;
-                }
                 if (running && !sending && !talk.recording?.locked) {
                   event.preventDefault();
                   void onStop();
@@ -820,9 +869,11 @@ const ComposerBody = memo(function Composer({
               role="combobox"
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={mentionPickerOpen}
-              aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
-              aria-activedescendant={activeMentionOptionId}
+              aria-expanded={mentionPickerOpen || showSlashPicker}
+              aria-controls={
+                mentionPickerOpen ? mentionListboxId : showSlashPicker ? slashListboxId : undefined
+              }
+              aria-activedescendant={activeOptionId}
               name="chat-message"
               autoComplete="off"
               dir="auto"

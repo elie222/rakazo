@@ -3,13 +3,20 @@ import type { CronLabels } from "./cron.js";
 import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
 
-export const COMPOSER_MENTION_KINDS = ["bot", "group", "routine", "connector", "everyone"] as const;
+export const COMPOSER_MENTION_KINDS = [
+  "bot",
+  "group",
+  "routine",
+  "connector",
+  "everyone",
+  "skill",
+] as const;
 
 export type ComposerMentionKind = (typeof COMPOSER_MENTION_KINDS)[number];
 
 export type ComposerMentionRange = { start: number; end: number };
 
-/** Chip selected in the composer `@` picker. */
+/** Chip selected in the composer `@` picker, or a skill picked inline from the `/` menu. */
 export type ComposerMention = {
   kind: ComposerMentionKind;
   id: string;
@@ -92,6 +99,11 @@ export function mentionChipKey(mention: Pick<ComposerMention, "kind" | "id">): s
 
 type MentionName = { name: string };
 
+/** A skill sits in the text as `/Name`; every other target as `@Name`. */
+export function composerMentionToken(mention: MentionName & { kind?: ComposerMentionKind }) {
+  return `${mention.kind === "skill" ? "/" : "@"}${mention.name}`;
+}
+
 /** Recognize each full mention once, so a name is not also its shorter prefix. */
 function composerMentionSpans(text: string, mentions: readonly MentionName[]) {
   const names = [...new Set(mentions.map((mention) => mention.name.trim()).filter(Boolean))].sort(
@@ -121,7 +133,9 @@ export function composerMentionQuery(
 ): ComposerMentionQuery | null {
   if (selectionStart !== selectionEnd || selectionStart < 0 || selectionStart > text.length)
     return null;
-  const bound = bindings.find((span) => selectionStart > span.start && selectionStart <= span.end);
+  const bound = bindings.find(
+    (span) => selectionStart > span.start && selectionStart <= span.end && text[span.start] === "@",
+  );
   if (bound)
     return {
       start: bound.start,
@@ -203,10 +217,10 @@ export function splitMentionText<T extends MentionName>(
 export function completeComposerMention(
   text: string,
   query: ComposerMentionQuery,
-  mention: MentionName,
+  mention: MentionName & { kind?: ComposerMentionKind },
 ): { text: string; caret: number } {
   const suffix = text.slice(query.end);
-  const token = `@${mention.name}`;
+  const token = composerMentionToken(mention);
   const separator = suffix.length === 0 ? " " : "";
   return {
     text: `${text.slice(0, query.start)}${token}${separator}${suffix}`,

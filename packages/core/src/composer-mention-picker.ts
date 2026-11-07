@@ -31,6 +31,7 @@ export function resolveMentionPickerKey(input: {
   shiftKey?: boolean;
   ctrlKey?: boolean;
   metaKey?: boolean;
+  altKey?: boolean;
   isComposing?: boolean;
   optionCount: number;
   highlightedIndex: number;
@@ -44,6 +45,7 @@ export function resolveMentionPickerKey(input: {
     shiftKey = false,
     ctrlKey = false,
     metaKey = false,
+    altKey = false,
     optionCount,
     enterToSend = true,
   } = input;
@@ -52,10 +54,12 @@ export function resolveMentionPickerKey(input: {
   if (key === "Enter" && !shiftKey && (ctrlKey || metaKey)) return { type: "send" };
 
   if (optionCount > 0) {
-    if (key === "ArrowDown") {
+    // Modified keys keep their text-editing and app-shortcut meaning, e.g. Ctrl+Tab for next bot.
+    if (ctrlKey || metaKey || altKey) return { type: "none" };
+    if (key === "ArrowDown" && !shiftKey) {
       return { type: "move", index: wrapMentionHighlightIndex(highlightedIndex + 1, optionCount) };
     }
-    if (key === "ArrowUp") {
+    if (key === "ArrowUp" && !shiftKey) {
       return { type: "move", index: wrapMentionHighlightIndex(highlightedIndex - 1, optionCount) };
     }
     if (key === "Enter" && !shiftKey) {
@@ -64,7 +68,7 @@ export function resolveMentionPickerKey(input: {
     if (key === "Tab") {
       return { type: "complete", index: highlightedIndex };
     }
-    if (key === "Escape") {
+    if (key === "Escape" && !shiftKey) {
       return { type: "dismiss" };
     }
     return { type: "none" };

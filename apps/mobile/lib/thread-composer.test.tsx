@@ -1175,6 +1175,115 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
+  it("offers skills only mid-message and puts a picked one inline without wiping the draft", () => {
+    const picker = () => container.querySelector('[data-testid="slash-picker"]');
+    type("Hello @He");
+    press("@{name}");
+    // Mid-message the menu offers skills only, and follows the caret.
+    type("Hello @Helper /sett");
+    expect(picker()).toBeNull();
+    type("Hello @Helper /W");
+    expect(picker()).not.toBeNull();
+    select(5);
+    expect(picker()).toBeNull();
+    type("Hello @Helper ");
+    type("Hello @Helper run /Wri");
+    press("Skill {name}");
+    expect(field().value).toBe("Hello @Helper run /Writing ");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper", "/Writing"]);
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 27, end: 27 });
+    expect(container.querySelector('[data-testid="skill-chip"]')).toBeNull();
+    // One skill per message: another / offers nothing once the draft has one.
+    type("Hello @Helper run /Writing now /");
+    expect(picker()).toBeNull();
+    type("Hello @Helper run /Writing now");
+    expect(composer.current!.snapshot()).toMatchObject({
+      promptText: "/Writing\nHello @Helper run /Writing now",
+      mentions: [bot],
+      skill: null,
+    });
+    render({ threadKey: "bot-2" });
+    render();
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper", "/Writing"]);
+  });
+
+  it("turns a skill picked at the start of a longer draft into the chip, keeping the rest", () => {
+    type("Hello @He");
+    press("@{name}");
+    type("/Wri Hello @Helper ");
+    select(4);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({
+      skill,
+      promptText: "/Writing\nHello @Helper ",
+      mentions: [bot],
+    });
+    expect(field().value).toBe(" Hello @Helper ");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+  });
+
+  it.each([false, true])(
+    "restores a skill-only draft after reopening (delete body: %s)",
+    (deleteBody) => {
+      render({ agentSkills: [{ ...skill, name: "summarize" }] });
+      type("/sum");
+      press("Skill {name}");
+      if (deleteBody) {
+        type("notes");
+        type("");
+      }
+      render({ threadKey: "bot-2" });
+      render();
+      expect(field().value).toBe("");
+      expect(composer.current!.snapshot()).toMatchObject({
+        skill: { ...skill, name: "summarize" },
+        promptText: "/summarize",
+      });
+      act(() => composer.current!.reset());
+      render({ threadKey: "bot-2" });
+      render();
+      expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "" });
+    },
+  );
+
+  it("keeps a skill chip picked before more text when the conversation is reopened", () => {
+    type("/Wri the notes");
+    select(4);
+    press("Skill {name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe(" the notes");
+    expect(composer.current!.snapshot()).toMatchObject({
+      skill,
+      promptText: "/Writing\nthe notes",
+    });
+    press("Remove skill {name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "the notes" });
+  });
+
+  it("does not report a skill-only composer as emptied when its body is deleted", () => {
+    const onEmptied = vi.fn();
+    render({ onEmptied });
+    type("/Wri");
+    press("Skill {name}");
+    type("notes");
+    onEmptied.mockClear();
+    type("");
+    expect(onEmptied).not.toHaveBeenCalled();
+    press("Remove skill {name}");
+    expect(onEmptied).toHaveBeenCalledOnce();
+  });
+
+  it("takes the chip after a blank line and keeps the text after the caret", () => {
+    type("\n/Wri，总结");
+    select(5);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({ skill, promptText: "/Writing\n，总结" });
+    expect(field().value).toBe("，总结");
+  });
+
   it("clears a slash query before routing and uses the call control for an empty draft", () => {
     type("/settings");
     press("Chat Settings");
