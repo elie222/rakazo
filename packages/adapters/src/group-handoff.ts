@@ -152,12 +152,6 @@ export async function handoffToGroupBot(
     const sourceHandoff = sourceBlocks.find(
       (block): block is Extract<MessageBlock, { kind: "handoff" }> => block.kind === "handoff",
     );
-    if (sourceHandoff?.fromBotId === targetId) {
-      return {
-        error:
-          "do not hand this stage back to its sender; post the result in the shared thread instead",
-      } as const;
-    }
     const hop = nextBotMessageHop(sourceHandoff?.hop ?? botMessageContext(sourceBlocks)?.hop);
     if (botMessageHopExhausted(hop)) {
       return {
