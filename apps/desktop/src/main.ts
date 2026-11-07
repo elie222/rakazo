@@ -863,6 +863,17 @@ app.whenReady().then(async () => {
         );
       }
     }
+  } else if (target.source === "cloud") {
+    // Offline on a first launch: setup offers the other servers alongside the reason.
+    const reachability = await probeServer(target.url);
+    if (reachability.ok) {
+      if (await appOpener.open(target.url)) {
+        commitPendingAppSwitch();
+        destroySetupWindow();
+      }
+    } else {
+      showSetupWindow(reachability.error ?? null);
+    }
   } else {
     if (await appOpener.open(target.url)) {
       commitPendingAppSwitch();
