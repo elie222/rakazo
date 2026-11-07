@@ -93,7 +93,9 @@ function launch(extraEnv: Record<string, string> = {}) {
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
   // A first launch opens Rakazo Cloud; these specs stay offline and start in setup instead.
-  if (!existsSync(path.join(userData, "setup.json"))) env.RAKAZO_FORCE_SETUP = "1";
+  if (!extraEnv.RAKAZO_WEB_URL && !existsSync(path.join(userData, "setup.json"))) {
+    env.RAKAZO_FORCE_SETUP = "1";
+  }
   const executablePath = process.env.RAKAZO_E2E_EXECUTABLE;
   return electron.launch({
     ...(executablePath ? { executablePath: path.resolve(executablePath) } : {}),
