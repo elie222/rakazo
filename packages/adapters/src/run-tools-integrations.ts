@@ -8,6 +8,10 @@ import { connectApp } from "./connect-app.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
+import {
+  listModelConnectionsFromTool,
+  testModelConnectionFromTool,
+} from "./model-management-tools.js";
 import type { RunContext } from "./run-context.js";
 import { runScopedToolExecutionId } from "./run-effects.js";
 import { publishMessage } from "./run-messages.js";
@@ -149,6 +153,15 @@ export const integrationTools: ToolHandlers = {
     const { deps, run, bot } = ctx;
     const { args, executionId } = call;
     return call.finish(await addMcpServerFromTool(deps, run, bot.id, args, executionId));
+  },
+  async list_model_connections(ctx, call) {
+    const { deps, run } = ctx;
+    return call.finish(await listModelConnectionsFromTool(deps, run));
+  },
+  async test_model_connection(ctx, call) {
+    const { deps, run } = ctx;
+    const { args } = call;
+    return call.finish(await testModelConnectionFromTool(deps, run, args));
   },
   async connect_app(ctx, call) {
     const { deps, run, runId, context } = ctx;

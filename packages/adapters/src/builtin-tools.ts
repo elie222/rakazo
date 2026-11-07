@@ -755,6 +755,30 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "list_model_connections",
+    description:
+      "List the user's model connections (providers) with their labels, default models and available models, when the user asks which providers or models are connected (/pmodels). Never shows API keys; report only labels, providers and model ids.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "test_model_connection",
+    description:
+      "Test whether a model connection (provider) is reachable right now, when the user asks to check or test one (/ptest). Identify it by its label, provider, or id. Reports only whether it works and how many models it lists; never shows API keys.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        connection: {
+          type: "string",
+          description: "Label, provider, or id of the connection to test.",
+        },
+      },
+      required: ["connection"],
+    },
+  },
+  {
     name: "remember",
     description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
     inputSchema: {

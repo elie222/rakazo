@@ -402,6 +402,17 @@ export function userTurnInstructions(parts: {
       "add_mcp_server",
       "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
+      "list_model_connections",
+      "When the user asks which model providers or models are connected (or types /pmodels), use list_model_connections and report the labels, providers and model ids. Never show API keys.",
+    ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
+      "test_model_connection",
+      "When the user asks to check or test a model connection (or types /ptest), use test_model_connection with the connection's label, provider, or id. Report only whether it works and how many models it lists; never show API keys.",
+    ),
+    "When the user asks to switch models (or types /model), use update_bot with the model field and the model name or id.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
     replyGuidanceForOfferedTools(parts.replyGuidance, parts.disabledBuiltinTools),
