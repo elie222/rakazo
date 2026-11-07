@@ -24,6 +24,8 @@ afterEach(() => vi.unstubAllEnvs());
 describe("optional Keenable web provider", () => {
   it("maps MCP results through the selected web tool without a key", async () => {
     vi.stubEnv("KEENABLE_API_KEY", "");
+    vi.stubEnv("TAVILY_API_KEY", "");
+    vi.stubEnv("BRAVE_API_KEY", "");
     const peer = keenableMcpFixture();
     const provider = createWebProvider(
       resolveWebProviderKind({ WEB_PROVIDER: "keenable" }),

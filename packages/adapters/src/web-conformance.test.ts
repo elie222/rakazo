@@ -1,11 +1,14 @@
 import type { AdapterContext, WebProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { BraveWebProvider } from "./brave-web.js";
 import { FakeWebProvider } from "./fake-web.js";
+import { FallbackWebProvider } from "./fallback-web.js";
 import { KeenableWebProvider } from "./keenable-web.js";
 import { keenableMcpFixture } from "./keenable-web.test-support.js";
 import { KeylessHttpWebProvider, parseDuckDuckGoResults } from "./keyless-http-web.js";
 import { ParallelWebProvider } from "./parallel-web.js";
 import { parallelMcpFixture } from "./parallel-web.test-support.js";
+import { TavilyWebProvider } from "./tavily-web.js";
 
 const ctx: AdapterContext = {
   operationId: "1",
@@ -81,5 +84,72 @@ describe("web provider conformance", () => {
       },
     });
     await assertWebConformance(provider);
+  });
+
+  it("holds for Tavily through its API (offline)", async () => {
+    const fetchMock: typeof fetch = async (input, init) => {
+      const href = String(input);
+      if (href === "https://api.tavily.com/search") {
+        return new Response(
+          JSON.stringify({
+            results: [{ url: "https://example.test/a", title: "Alpha", content: "Snippet" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (href === "https://api.tavily.com/extract") {
+        return new Response(
+          JSON.stringify({
+            results: [
+              { url: "https://example.test/a", title: "Alpha", raw_content: "Readable body text." },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch ${href}: ${String(init?.method ?? "GET")}`);
+    };
+    await assertWebConformance(new TavilyWebProvider({ apiKey: "tvly-test", fetch: fetchMock }));
+  });
+
+  it("holds for Brave through its API (offline)", async () => {
+    const pageHtml = `<html><title>Page</title><body><p>Readable body text for conformance.</p></body></html>`;
+    const fetchMock: typeof fetch = async (input) => {
+      const href = String(input);
+      if (href.startsWith("https://api.search.brave.com/res/v1/web/search")) {
+        return new Response(
+          JSON.stringify({
+            web: {
+              results: [{ url: "https://example.test/a", title: "Alpha", description: "Snippet" }],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(pageHtml, { status: 200, headers: { "content-type": "text/html" } });
+    };
+    await assertWebConformance(
+      new BraveWebProvider({
+        apiKey: "brave-test",
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+      }),
+    );
+  });
+
+  it("holds for the fallback chain when the first provider fails (offline)", async () => {
+    const failing = new TavilyWebProvider({
+      apiKey: "tvly-test",
+      fetch: (async () => new Response("nope", { status: 500 })) as typeof fetch,
+    });
+    const fake = new FakeWebProvider();
+    fake.searchHits = [{ title: "Hit", url: "https://example.test/page", snippet: "…" }];
+    fake.fetchResult = {
+      url: "https://example.test/page",
+      title: "Hit",
+      text: "body",
+      truncated: false,
+    };
+    await assertWebConformance(new FallbackWebProvider([failing, fake]));
   });
 });

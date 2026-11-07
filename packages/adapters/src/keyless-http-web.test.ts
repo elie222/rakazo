@@ -13,7 +13,11 @@ import {
   MAX_WEB_FETCH_OFFSET,
   pageWindow,
 } from "./web-limits.js";
-import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
+import {
+  createWebProvider,
+  defaultWebProviderChain,
+  resolveWebProviderKind,
+} from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
 const ctx: AdapterContext = {
@@ -27,10 +31,24 @@ const ctx: AdapterContext = {
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
 describe("web provider factory", () => {
-  it("defaults to keyless-http", () => {
-    expect(resolveWebProviderKind({})).toBe("keyless-http");
-    expect(createWebProvider().describe().id).toBe("keyless-http");
+  it("defaults to the keyless chain with no API keys", () => {
+    expect(resolveWebProviderKind({})).toBe("");
+    expect(resolveWebProviderKind({ WEB_PROVIDER: "keyless-http" })).toBe("keyless-http");
+    expect(defaultWebProviderChain({}).map((provider) => provider.describe().id)).toEqual([
+      "keyless-http",
+    ]);
+    expect(
+      defaultWebProviderChain({ TAVILY_API_KEY: "tvly-test", BRAVE_API_KEY: "brave-test" }).map(
+        (provider) => provider.describe().id,
+      ),
+    ).toEqual(["tavily", "brave", "keyless-http"]);
     expect(createWebProvider("fake").describe().id).toBe("fake");
+  });
+
+  it("builds a fallback chain from a comma-separated list", () => {
+    const provider = createWebProvider("tavily,keyless-http");
+    expect(provider.describe().id).toBe("fallback");
+    expect(createWebProvider("keyless-http").describe().id).toBe("keyless-http");
   });
 });
 

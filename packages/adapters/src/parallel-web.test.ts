@@ -223,9 +223,14 @@ describe("optional Parallel web provider", () => {
         );
         expect(request.headers.has("authorization")).toBe(false);
       }
-      expect(resolveWebProviderKind({})).toBe("keyless-http");
+      expect(resolveWebProviderKind({})).toBe("");
+      expect(resolveWebProviderKind({ WEB_PROVIDER: "keyless-http" })).toBe("keyless-http");
+      // No API keys configured, so the default chain is just keyless HTTP.
+      vi.stubEnv("TAVILY_API_KEY", "");
+      vi.stubEnv("BRAVE_API_KEY", "");
       for (const kind of ["", "keyless", "keyless-http"])
         expect(createWebProvider(kind).describe().id).toBe("keyless-http");
+      vi.unstubAllEnvs();
       expect(createWebProvider("fake").describe().id).toBe("fake");
       expect(() => createWebProvider("invalid")).toThrow("Unknown web provider");
     },
