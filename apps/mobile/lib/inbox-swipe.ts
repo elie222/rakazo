@@ -10,7 +10,7 @@ export const INBOX_ROW_ACTIONS = {
   delete: { label: "Delete…", systemImage: "trash" },
 } as const satisfies Record<InboxRowAction, { label: string; systemImage: string }>;
 
-/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin. */
+/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin, and a full swipe archives. */
 export function inboxRowActions(chat: { unread?: boolean; pinned?: boolean }): {
   leading: InboxRowAction;
   trailing: InboxRowAction[];
