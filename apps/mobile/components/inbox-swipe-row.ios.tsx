@@ -171,7 +171,7 @@ export function InboxSwipeRow({
               </ContextMenu.Items>
             </ContextMenu>
             <SwipeActions.Actions edge="leading">{button(actions.leading)}</SwipeActions.Actions>
-            <SwipeActions.Actions edge="trailing" allowsFullSwipe={false}>
+            <SwipeActions.Actions edge="trailing">
               {actions.trailing.map((action) => button(action))}
             </SwipeActions.Actions>
           </SwipeActions>

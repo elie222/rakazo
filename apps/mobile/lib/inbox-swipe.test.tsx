@@ -298,7 +298,7 @@ describe("iOS swipe row", () => {
     const { container, onAction, root } = render({ unread: true, pinned: true });
     expect(swift.groups).toEqual([
       { edge: "leading", allowsFullSwipe: undefined, labels: ["Mark as Read"] },
-      { edge: "trailing", allowsFullSwipe: false, labels: ["Archive", "Unpin"] },
+      { edge: "trailing", allowsFullSwipe: undefined, labels: ["Archive", "Unpin"] },
     ]);
     const buttons = Array.from(
       container.querySelectorAll<HTMLElement>('[data-ui="SwipeActions.Actions"] > button'),
