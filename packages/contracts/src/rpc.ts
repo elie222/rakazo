@@ -278,7 +278,7 @@ const threadSendOutput = z.object({
 });
 
 /** Without text or attachments, only the routines run and no message is saved. */
-export const threadSendWithRoutinesInput = threadSendFields.safeExtend({
+const threadSendWithRoutinesInput = threadSendFields.safeExtend({
   clientNonce: z.string().min(1).max(200),
   routineIds: z.array(Id).min(1).max(64),
 });

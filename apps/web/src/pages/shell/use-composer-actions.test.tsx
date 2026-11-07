@@ -4,7 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { composerHoldsUnsavedWork, writeComposerDraft } from "../../lib/composer-draft";
+import { composerHoldsUnsavedWork } from "../../lib/composer-draft";
 import type { PageSession } from "../../lib/pages";
 import { createPageSession } from "../../lib/pages";
 import type { createSpaceRpc } from "../../lib/rpc";
@@ -56,16 +56,8 @@ function ref<T>(current: T) {
   return { current };
 }
 
-function Harness({
-  extras,
-  useActions = useComposerActions,
-}: {
-  extras?: Record<string, unknown>;
-  useActions?: typeof useComposerActions;
-}) {
-  latest = useActions({
-    userId: "user-1",
-    currentSpaceId: "selected-space",
+function Harness({ extras }: { extras?: Record<string, unknown> }) {
+  latest = useComposerActions({
     ...extras,
     rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
     pageSession,
@@ -130,86 +122,6 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it.each(["skill", "binding", "reply", "attachment", "page"])(
-  "starts fresh intent only when changed %s is submitted",
-  async (change) => {
-    const text = change === "binding" ? "@Bob notes" : "notes";
-    writeComposerDraft("bot:bot-1", text);
-    rpc.threads.send.mockRejectedValue(new Error("answer lost"));
-    await act(async () => void (await latest.sendMessage(text, [], "original")));
-    const original = rpc.threads.send.mock.calls[0]![0];
-    if (change === "reply") {
-      act(() => latest.setReplyTarget(replyCandidate("new-reply")));
-      act(() => latest.clearReply());
-    } else if (change === "attachment") {
-      act(() => latest.onAttachmentPick([new File(["a"], "a.txt", { type: "text/plain" })]));
-      act(() => latest.removeAttachment(latest.activePendingAttachments[0]!));
-    } else if (change === "page") {
-      act(() => pageSession.dock.set({ page: { id: "new-page", title: "New page" } }));
-      act(() => pageSession.dock.set({ page: null }));
-    }
-    // Selection/cancel has not replaced the operation, even with a new UI token.
-    await act(async () => void (await latest.sendMessage(text, [], "another-click")));
-    expect(rpc.threads.send).toHaveBeenLastCalledWith(original);
-    if (change === "skill" || change === "binding") {
-      writeComposerDraft(
-        "bot:bot-1",
-        text,
-        undefined,
-        change === "binding"
-          ? [{ start: 0, end: 4, mention: { kind: "bot", id: "bob-new", name: "Bob" } }]
-          : [],
-        change === "skill"
-          ? {
-              id: "skill-new",
-              name: "summarize",
-              description: "",
-              source: "user",
-              readOnly: false,
-            }
-          : null,
-      );
-    } else if (change === "reply") act(() => latest.setReplyTarget(replyCandidate("new-reply")));
-    else if (change === "attachment") {
-      rpc.artifacts.create.mockResolvedValue({ id: "artifact-new" });
-      act(() => latest.onAttachmentPick([new File(["a"], "a.txt", { type: "text/plain" })]));
-    } else act(() => pageSession.dock.set({ page: { id: "new-page", title: "New page" } }));
-    await act(
-      async () =>
-        void (await latest.sendMessage(
-          text,
-          change === "binding" ? [{ kind: "bot", id: "bob-new", name: "Bob" }] : [],
-          "new-intent",
-        )),
-    );
-    expect(rpc.threads.send.mock.calls.at(-1)![0].clientNonce).not.toBe(original.clientNonce);
-  },
-);
-
-it.each(["@digest", "/summarize", "/summarize\nnotes"])(
-  "stores and directly replays exact routine/skill request: %s",
-  async (text) => {
-    writeComposerDraft("bot:bot-1", text);
-    const routines = text === "@digest";
-    const dispatch = routines ? rpc.threads.sendWithRoutines : rpc.threads.send;
-    dispatch.mockRejectedValue(new Error("lost"));
-    await act(
-      async () => void (await latest.sendMessage(text, routines ? [digest] : [], "original")),
-    );
-    const original = dispatch.mock.calls[0]![0];
-    act(() => root.unmount());
-    root = createRoot(document.createElement("div"));
-    act(() => root.render(<Harness />));
-    dispatch.mockResolvedValue(routines ? { routineRunIds: [] } : { runId: "r", taskId: "t" });
-    await act(
-      async () => void (await latest.sendMessage(text, routines ? [digest] : [], "new-click")),
-    );
-    expect(dispatch).toHaveBeenLastCalledWith(original);
-    expect(rpc.artifacts.create).not.toHaveBeenCalled();
-    expect(latest.sentCount).toBe(1);
-  },
-);
-
 it.each([undefined, 1, 8])(
   "uses the server attachment count with a fallback (%s)",
   (maxAttachmentsPerMessage) => {
@@ -225,164 +137,6 @@ it.each([undefined, 1, 8])(
     const limit = maxAttachmentsPerMessage ?? 4;
     expect(latest.activePendingAttachments).toHaveLength(limit);
     expect(latest.attachmentNotice).toContain(`max ${limit} attachments`);
-  },
-);
-
-it.each([false, true])(
-  "replays the saved final request after a fresh owner lifetime (routines: %s)",
-  async (routines) => {
-    writeComposerDraft("bot:bot-1", routines ? "@digest notes" : "notes");
-    pageSession.dock.set({ page: { id: "p1", title: "Original page" } });
-    rpc.artifacts.create.mockResolvedValue({ id: "uploaded-original" });
-    act(() => void latest.onAttachmentPick([new File(["a"], "a.txt", { type: "text/plain" })]));
-    const dispatch = routines ? rpc.threads.sendWithRoutines : rpc.threads.send;
-    dispatch.mockImplementation(() => {
-      expect(Object.values(localStorage).some((value) => value.includes("uploaded-original"))).toBe(
-        true,
-      );
-      return new Promise(() => {}); // The document disappears before the answer settles.
-    });
-    act(
-      () =>
-        void latest.sendMessage(
-          routines ? "@digest notes" : "notes",
-          routines ? [digest] : [],
-          "original-operation",
-        ),
-    );
-    await flush();
-    const original = dispatch.mock.calls[0]![0];
-    act(() => root.unmount());
-    vi.resetModules();
-    const fresh = await import("./use-composer-actions");
-    pageSession = createPageSession();
-    root = createRoot(document.createElement("div"));
-    function Fresh() {
-      latest = fresh.useComposerActions({
-        userId: "user-1",
-        currentSpaceId: "selected-space",
-        rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
-        pageSession,
-        activeId: activeChat,
-        inGroup: false,
-        groupId: undefined,
-        activeBotId,
-        activeGroupId,
-        botsRef,
-        bootstrapMe: me,
-        activeSnapshot,
-        navigate: navigate as never,
-        refreshBots,
-        refreshThreadRef,
-        refreshGroupThreadRef: refreshThreadRef,
-        updateSnapshot,
-        terminalRunReceipts,
-        computerRef,
-        commitComputer,
-        clearReadBoundary,
-        flushPendingBrowserNotifications,
-      });
-      return null;
-    }
-    act(() => root.render(<Fresh />));
-    dispatch.mockResolvedValue(routines ? { send: null, routineRunIds: [] } : null);
-    await act(
-      async () =>
-        void (await latest.sendMessage(
-          routines ? "@digest notes" : "notes",
-          routines ? [digest] : [],
-          "new-click",
-        )),
-    );
-    expect(dispatch).toHaveBeenLastCalledWith(original);
-    expect(rpc.artifacts.create).toHaveBeenCalledTimes(1);
-  },
-);
-
-it.each([false, true].flatMap((routines) => [false, true].map((reply) => ({ routines, reply }))))(
-  "preserves a final image confirmation as a durable file derivative ($routines, $reply)",
-  async ({ routines, reply }) => {
-    const text = `${routines ? "@digest " : ""}@Bob notes`;
-    const bob = { kind: "bot" as const, id: "bob", name: "Bob" };
-    const mentions = routines ? [digest, bob] : [bob];
-    writeComposerDraft("bot:bot-1", text);
-    pageSession.dock.set({ page: { id: "p1", title: "Original page" } });
-    if (reply) {
-      act(() => {
-        latest.setReplyTarget(replyCandidate("original-reply"));
-        latest.setReplyQuote("original excerpt");
-      });
-    }
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:image");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
-    rpc.artifacts.create.mockResolvedValue({ id: "uploaded-image" });
-    act(() => latest.onAttachmentPick([new File(["image"], "photo.png", { type: "image/png" })]));
-    const dispatch = routines ? rpc.threads.sendWithRoutines : rpc.threads.send;
-    const confirmation = { status: 409, data: { reason: "model_image_input_unsupported" } };
-    dispatch.mockRejectedValue(confirmation);
-    await act(async () => {
-      expect(await latest.sendMessage(text, mentions, "original-image")).toBe(false);
-    });
-    expect(latest.imageConfirmation).toBe(true);
-    const original = dispatch.mock.calls[0]![0];
-    const originalCopy = structuredClone(original);
-    expect(original).toMatchObject({
-      botId: "bot-1",
-      artifactIds: ["uploaded-image"],
-      imageHandling: "confirm",
-      replyToMessageId: reply ? "original-reply" : undefined,
-      replyQuote: reply ? "original excerpt" : undefined,
-      mentions: [{ kind: "bot", id: "bob" }],
-    });
-    if (!reply) expect(original.text).toContain("[Original page](page:p1)");
-    if (routines) expect(original.routineIds).toEqual([digest.id]);
-    const storageKey = "rakazo.composerSend.bot:bot-1";
-    const saved = JSON.parse(localStorage.getItem(storageKey)!);
-    const remount = async () => {
-      act(() => root.unmount());
-      vi.resetModules();
-      const fresh = await import("./use-composer-actions");
-      pageSession = createPageSession();
-      root = createRoot(document.createElement("div"));
-      act(() => root.render(<Harness useActions={fresh.useComposerActions} />));
-      expect(latest.activePendingAttachments).toEqual([]);
-      expect(latest.replyTarget).toBeNull();
-    };
-    await remount();
-    await act(async () => {
-      expect(await latest.sendMessage(text, [], "normal-replay")).toBe(false);
-    });
-    expect(dispatch).toHaveBeenLastCalledWith(originalCopy);
-    expect(latest.imageConfirmation).toBe(true);
-    const persistedAtDispatch: unknown[] = [];
-    dispatch.mockImplementation(async () => {
-      // The derivative's identity and original context must be durable before dispatch.
-      persistedAtDispatch.push(JSON.parse(localStorage.getItem(storageKey)!));
-      throw new Error("answer lost");
-    });
-    await act(async () => void (await latest.sendMessage(text, [], "file-click", "file")));
-    const derivative = dispatch.mock.calls.at(-1)![0];
-    expect(derivative.clientNonce).not.toBe(originalCopy.clientNonce);
-    expect(derivative).toEqual({
-      ...originalCopy,
-      imageHandling: "file",
-      clientNonce: derivative.clientNonce,
-    });
-    expect(persistedAtDispatch).toEqual([
-      { ...saved, envelope: { ...saved.envelope, body: derivative } },
-    ]);
-    expect(original).toEqual(originalCopy);
-    await act(async () => void (await latest.sendMessage(text, [], "file-retry", "file")));
-    expect(dispatch).toHaveBeenLastCalledWith(derivative);
-    await remount();
-    dispatch.mockResolvedValue(routines ? { send: null, routineRunIds: [] } : null);
-    await act(async () => {
-      expect(await latest.sendMessage(text, [], "after-reload", "file")).toBe(true);
-    });
-    expect(dispatch).toHaveBeenLastCalledWith(derivative);
-    expect(rpc.artifacts.create).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(storageKey)).toBeNull();
-    vi.restoreAllMocks();
   },
 );
 

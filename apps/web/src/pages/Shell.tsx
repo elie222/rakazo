@@ -666,8 +666,6 @@ function SpaceShell() {
   });
   const { computerBot, openComputer } = computerControls;
   const composer = useComposerActions({
-    userId,
-    currentSpaceId,
     rpc,
     pageSession: pages.session,
     activeId: active?.id,

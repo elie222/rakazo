@@ -16,11 +16,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
-import {
-  readComposerDraft,
-  readComposerDraftOwner,
-  replaceComposerDraft,
-} from "../../lib/composer-draft";
+import { readComposerRetryNonce, replaceComposerDraft } from "../../lib/composer-draft";
 import { dictation } from "../../lib/dictation";
 import { createPageSession, PagesProvider } from "../../lib/pages";
 import { Composer } from "./composer";
@@ -235,76 +231,20 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
-  it("clears accepted saved text after this owner selects an attachment while sending", async () => {
-    let finish!: (accepted: boolean) => void;
-    const textarea = renderComposer(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finish = resolve;
-        }),
-      {
-        onAttachmentPick: () => true,
-      },
-    );
-    type(textarea, "accepted words");
-    pressEnter(textarea);
-    rerenderComposer({
-      pendingAttachments: [
-        { id: "new-file", threadKey: "bot:bot-1", file: new File(["new"], "new.txt") },
-      ],
-    });
-    await act(async () => finish(true));
-    expect(readComposerDraft("bot:bot-1")).toBe("");
-    expect(composerProps.pendingAttachments).toHaveLength(1);
-  });
-  it.each(["see /usr/lib", "see /unmatched"])(
-    "does not refresh unmatched inline query %s across repeated caret re-entry",
-    (value) => {
-      const onSlashOpen = vi.fn();
-      const textarea = renderComposer(async () => true, { onSlashOpen });
-      type(textarea, value);
-      for (const position of [0, value.length, 0, value.length]) {
-        act(() => {
-          textarea.setSelectionRange(position, position);
-          document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
-        });
-      }
-      expect(onSlashOpen).not.toHaveBeenCalled();
-      expect(container?.querySelector('[role="listbox"]')).toBeNull();
-    },
-  );
-  it("refreshes slash skills only for genuine menu openings, not unmatched paths or caret re-entry", () => {
-    const onSlashOpen = vi.fn();
-    const textarea = renderComposer(async () => true, { onSlashOpen });
-    type(textarea, "see /usr/lib");
-    expect(container?.querySelector('[role="listbox"]')).toBeNull();
-    expect(onSlashOpen).not.toHaveBeenCalled();
-    for (const position of [0, textarea.value.length, 0, textarea.value.length]) {
-      act(() => {
-        textarea.setSelectionRange(position, position);
-        textarea.dispatchEvent(new Event("select", { bubbles: true }));
-      });
-    }
-    expect(onSlashOpen).not.toHaveBeenCalled();
-    type(textarea, "see /sum");
-    expect(container?.querySelector('[role="listbox"]')).not.toBeNull();
-    expect(onSlashOpen).toHaveBeenCalledTimes(1);
-    type(textarea, "see /summ");
-    expect(onSlashOpen).toHaveBeenCalledTimes(1);
-    type(textarea, "");
-    type(textarea, "/");
-    expect(onSlashOpen).toHaveBeenCalledTimes(2);
-  });
   it.each(["reply", "attachment", "page"])(
     "does not reuse a saved operation while transient %s context is active",
     async (context) => {
-      const onSend = vi.fn(async () => false);
+      const persisted: (string | null)[] = [];
+      const onSend = vi.fn(async () => {
+        persisted.push(readComposerRetryNonce("bot:bot-1"));
+        return false;
+      });
       const textarea = renderComposer(onSend);
       type(textarea, "notes");
       pressEnter(textarea);
       await act(async () => {});
       const original = onSend.mock.calls[0];
-      expect(readComposerDraft("bot:bot-1")).toBe("notes");
+      expect(persisted[0]).toBeTruthy();
       act(() => root?.unmount());
       container?.remove();
       const reopened =
@@ -323,7 +263,7 @@ describe("Composer", () => {
       pressEnter(reopened);
       await act(async () => {});
       expect(onSend).toHaveBeenCalledTimes(2);
-      expect(readComposerDraft("bot:bot-1")).toBe("notes");
+      expect(persisted[1]).toBeNull();
       expect(onSend.mock.calls[1]).not.toEqual(original);
     },
   );
@@ -361,14 +301,14 @@ describe("Composer", () => {
       );
       if (context === "page")
         act(() => session.dock.set({ page: { id: "page-2", title: "Plan" } }));
-      expect(readComposerDraft("bot:bot-1")).toBe("notes");
+      expect(readComposerRetryNonce("bot:bot-1")).toBe(original?.[2]);
       act(() => root?.unmount());
       container?.remove();
       const reopened = renderComposer(onSend);
       expect(reopened.value).toBe("notes");
       pressEnter(reopened);
       await act(async () => {});
-      expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(original?.slice(0, 2));
+      expect(onSend.mock.calls[1]).toEqual(original);
     },
   );
   it.each(["reply", "attachment", "page"])(
@@ -411,16 +351,16 @@ describe("Composer", () => {
       }
       pressEnter(context === "page" ? container!.querySelector("textarea")! : reopened);
       await act(async () => {});
-      expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(original?.slice(0, 2));
+      expect(onSend.mock.calls[1]).toEqual(original);
     },
   );
   it.each(["chip only", "chip and body", "plain text"])(
-    "captures local draft ownership before the dispatch callback settles: %s",
+    "persists exact operation identity before dispatch settles: %s",
     async (kind) => {
       let finish!: (accepted: boolean) => void;
       let persistedAtDispatch: string | null = null;
       const onSend = vi.fn((_text: string, _mentions: ComposerMention[], _nonce: string) => {
-        persistedAtDispatch = readComposerDraftOwner("bot:bot-1");
+        persistedAtDispatch = readComposerRetryNonce("bot:bot-1");
         return new Promise<boolean>((resolve) => {
           finish = resolve;
         });
@@ -433,9 +373,10 @@ describe("Composer", () => {
       if (kind !== "chip only") type(textarea, "notes");
       pressEnter(textarea);
       expect(onSend).toHaveBeenCalledOnce();
-      expect(persistedAtDispatch).toEqual(expect.any(String));
-      expect(readComposerDraftOwner("bot:bot-1")).toBe(persistedAtDispatch);
+      expect(persistedAtDispatch).toBe(onSend.mock.calls[0]?.[2]);
+      expect(readComposerRetryNonce("bot:bot-1")).toBe(onSend.mock.calls[0]?.[2]);
       await act(async () => finish(true));
+      expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
     },
   );
   it.each(["Enter", "Tab", "pointer"])(
@@ -508,7 +449,7 @@ describe("Composer", () => {
       pressEnter(reopened);
       await act(async () => {});
       expect(onSend).toHaveBeenCalledTimes(2);
-      expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(original?.slice(0, 2));
+      expect(onSend.mock.calls[1]).toEqual(original);
     },
   );
 
@@ -545,6 +486,7 @@ describe("Composer", () => {
         type(reopened, "notes");
       }
       await act(async () => rejectSend(new Error("answer lost")));
+      expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
       pressEnter(reopened);
       await act(async () => {});
       expect(onSend).toHaveBeenCalledTimes(2);
@@ -1103,7 +1045,7 @@ describe("Composer", () => {
     expect(textarea.value).toBe("");
   });
 
-  it("restores unchanged retry input and keeps edited input distinct", async () => {
+  it("reuses the nonce on an unchanged retry but renews it after an edit", async () => {
     const onSend = vi.fn().mockResolvedValue(false);
     const textarea = renderComposer(onSend);
     type(textarea, "hello");
@@ -1113,7 +1055,7 @@ describe("Composer", () => {
     await act(async () => {});
     const firstNonce = onSend.mock.calls[0]?.[2];
     expect(firstNonce).toEqual(expect.any(String));
-    expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(onSend.mock.calls[0]?.slice(0, 2));
+    expect(onSend.mock.calls[1]?.[2]).toBe(firstNonce);
     type(textarea, "hello edited");
     type(textarea, "hello");
     pressEnter(textarea);
@@ -1136,7 +1078,7 @@ describe("Composer", () => {
     expect(textarea.value).toBe("");
   });
 
-  it("restores after a rejected attachment pick and preserves input on rejected retry picks", async () => {
+  it("restores after a rejected attachment pick and preserves the nonce on rejected retry picks", async () => {
     let finishSend = (_sent: boolean) => {};
     const onSend = vi.fn<ComponentProps<typeof Composer>["onSend"]>(
       () =>
@@ -1155,7 +1097,7 @@ describe("Composer", () => {
     pressEnter(textarea);
     await act(async () => finishSend(false));
     expect(onAttachmentPick).toHaveBeenCalledTimes(2);
-    expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(onSend.mock.calls[0]?.slice(0, 2));
+    expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
   });
 
   const reply: ThreadMessage = {
@@ -1200,7 +1142,7 @@ describe("Composer", () => {
     expect(textarea.value).toBe("");
   });
 
-  it("preserves retry input when the reply object refreshes without changing its ID or quote", async () => {
+  it("preserves the retry nonce when the reply object refreshes without changing its ID or quote", async () => {
     const onSend = vi.fn().mockResolvedValue(false);
     const textarea = renderComposer(onSend, { replyTarget: reply, replyQuote: "original" });
     type(textarea, "hello");
@@ -1209,7 +1151,7 @@ describe("Composer", () => {
     rerenderComposer({ replyTarget: { ...reply } });
     pressEnter(textarea);
     await act(async () => {});
-    expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(onSend.mock.calls[0]?.slice(0, 2));
+    expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
   });
 
   it("uses a fresh nonce for another message after a successful retry", async () => {
@@ -1223,7 +1165,7 @@ describe("Composer", () => {
     type(textarea, "hello");
     pressEnter(textarea);
     await act(async () => {});
-    expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(onSend.mock.calls[0]?.slice(0, 2));
+    expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
     expect(onSend.mock.calls[2]?.[2]).not.toBe(onSend.mock.calls[0]?.[2]);
   });
 
@@ -1367,7 +1309,7 @@ describe("Composer", () => {
     expect(token()).not.toBeNull();
     pressEnter(textarea);
     await act(async () => {});
-    expect(onSend.mock.calls[1]?.slice(0, 2)).toEqual(onSend.mock.calls[0]?.slice(0, 2));
+    expect(onSend.mock.calls[1]).toEqual(onSend.mock.calls[0]);
   });
 
   it("sends a / in ordinary prose as typed instead of picking a row", async () => {
@@ -2093,7 +2035,7 @@ it("still cancels a recording that is listening when the chat changes", () => {
   }
 });
 
-it("restores unchanged dictation for retry after a failed send", async () => {
+it("retries an unchanged dictation with the same nonce after a failed send", async () => {
   const nonces: string[] = [];
   const onSend = vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
     nonces.push(clientNonce);
@@ -2113,7 +2055,7 @@ it("restores unchanged dictation for retry after a failed send", async () => {
     pressEnter(textarea);
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(2);
-    expect(nonces[1]).toEqual(expect.any(String));
+    expect(nonces[1]).toBe(nonces[0]);
   } finally {
     listen.mockRestore();
   }
@@ -2275,6 +2217,7 @@ it("keeps a reply-linked dictation's words without its nonce", async () => {
       fail(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
+    expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
     const reopened = renderComposer(
       vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
         nonces.push(clientNonce);
@@ -2292,7 +2235,7 @@ it("keeps a reply-linked dictation's words without its nonce", async () => {
   }
 });
 
-it("restores dictation input after a send loses its answer", async () => {
+it("reuses the stored nonce when a send that lost its answer is retried from the saved draft", async () => {
   const nonces: string[] = [];
   let fail!: (error: Error) => void;
   const onSend = vi.fn((_text: string, _mentions: unknown[], clientNonce: string) => {
@@ -2318,6 +2261,7 @@ it("restores dictation input after a send loses its answer", async () => {
       fail(new Error("offline"));
     });
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("spoken words");
+    expect(readComposerRetryNonce("bot:bot-1")).toBe(nonces[0]);
     const reopened = renderComposer(
       vi.fn(async (_text: string, _mentions: unknown[], clientNonce: string) => {
         nonces.push(clientNonce);
@@ -2327,7 +2271,7 @@ it("restores dictation input after a send loses its answer", async () => {
     expect(reopened.value).toBe("spoken words");
     pressEnter(reopened);
     await act(async () => {});
-    expect(nonces[1]).toEqual(expect.any(String));
+    expect(nonces[1]).toBe(nonces[0]);
   } finally {
     listen.mockRestore();
   }
@@ -2366,9 +2310,10 @@ it("recovers a dictation in a chat reopened before the send settles", async () =
     await act(async () => {
       fail(new Error("offline"));
     });
+    expect(readComposerRetryNonce("bot:bot-1")).toBe(nonces[0]);
     pressEnter(reopened);
     await act(async () => {});
-    expect(nonces[1]).toEqual(expect.any(String));
+    expect(nonces[1]).toBe(nonces[0]);
   } finally {
     listen.mockRestore();
   }
@@ -2754,6 +2699,7 @@ it("does not keep the nonce when a reopened chat rebinds the same mention text",
   await act(async () => {
     fail(new Error("offline"));
   });
+  expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
 });
 
 function renderWithOpenPage(onSend: ComponentProps<typeof Composer>["onSend"]) {
@@ -2770,7 +2716,7 @@ function renderWithOpenPage(onSend: ComponentProps<typeof Composer>["onSend"]) {
   return { session, textarea: container!.querySelector("textarea")! };
 }
 
-it("keeps saved input after an uncertain send made with a page open", async () => {
+it("does not store a retry nonce for a send made with a page open", async () => {
   let fail!: (error: Error) => void;
   const onSend = vi.fn(
     () =>
@@ -2788,6 +2734,7 @@ it("keeps saved input after an uncertain send made with a page open", async () =
     fail(new Error("offline"));
   });
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("about the page");
+  expect(readComposerRetryNonce("bot:bot-1")).toBeNull();
 });
 
 it("renews the nonce when the page closes before a retry", async () => {
