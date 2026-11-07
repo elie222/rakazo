@@ -53,7 +53,7 @@ test("ordinary accounts can add personal MCP connections without server setup", 
     }),
   );
   const message = "The sign-in address does not match this server's configuration.";
-  await page.route("**/rpc/mcp/oauth/begin", (route) =>
+  await page.route("**/rpc/mcp/servers/connect", (route) =>
     route.fulfill({
       status: 400,
       json: { json: { defined: false, code: "MCP_OAUTH_REDIRECT_MISMATCH", status: 400, message } },
@@ -70,8 +70,11 @@ test("ordinary accounts can add personal MCP connections without server setup", 
     "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
   );
   await captureScreenshot(page, testInfo, "personal-mcp-callback-mismatch");
-  await page.route("**/rpc/mcp/oauth/begin", (route) =>
-    route.fulfill({ json: { json: { status: "already_connected" } } }),
+  await page.unroute("**/rpc/mcp/servers/connect");
+  await page.route("**/rpc/mcp/servers/connect", (route) =>
+    route.fulfill({
+      json: { json: { server: { id: "notion" }, signIn: { status: "already_connected" } } },
+    }),
   );
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connected", exact: true })).toBeVisible();
