@@ -304,6 +304,18 @@ printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/shell-wins/cwd/.env"
 grep -qF 'rakazo/v0.8.0/infra/compose/docker-compose.images.yml' "$tmp/shell-wins/curl.log" ||
   fail "the shell should win over .env, as in Compose: $(cat "$tmp/shell-wins/curl.log")"
 
+setup_work "$tmp/env-spaces"
+printf "RAKAZO_IMAGE_TAG=v0.6.0\\nexport RAKAZO_IMAGE_TAG = 'v0.7.0'\\n" >> "$tmp/env-spaces/cwd/.env"
+run_install "$tmp/env-spaces" >/dev/null 2>&1 || fail "env-spaces install failed"
+grep -qF 'rakazo/v0.7.0/infra/compose/docker-compose.images.yml' "$tmp/env-spaces/curl.log" ||
+  fail ".env pin with spaces should use its tag: $(cat "$tmp/env-spaces/curl.log")"
+
+setup_work "$tmp/shell-empty"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/shell-empty/cwd/.env"
+(export RAKAZO_IMAGE_TAG=; run_install "$tmp/shell-empty" >/dev/null 2>&1) || fail "shell-empty install failed"
+grep -qF 'rakazo/main/infra/compose/docker-compose.images.yml' "$tmp/shell-empty/curl.log" ||
+  fail "an empty shell value should win over .env, as in Compose: $(cat "$tmp/shell-empty/curl.log")"
+
 setup_work "$tmp/mirror"
 printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/mirror/cwd/.env"
 (export RAKAZO_DOWNLOAD_BASE=https://mirror.example/compose; run_install "$tmp/mirror" >/dev/null 2>&1) || fail "mirror install failed"
