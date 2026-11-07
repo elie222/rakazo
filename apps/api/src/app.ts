@@ -547,6 +547,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await pushTokens
         .remove(userId)
         .catch((error) => getLogger().error("push token removal failed", error));
+      // Before the rows go with the account, so its phones' cards end too.
+      await workActivities
+        ?.endUser(userId)
+        .catch((error) => getLogger().error("live status card removal failed", error));
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {

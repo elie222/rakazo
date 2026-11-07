@@ -12,6 +12,8 @@ final class WorkActivities {
 
   /// Tokens are watched per card, once, for as long as this launch of the app runs.
   private var watched = Set<String>()
+  /// Cards being ended: a send meanwhile starts a new one instead of reusing them.
+  private var ending = Set<String>()
 
   func start(_ row: WorkActivityAttributes.ContentState.Row) {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -32,7 +34,7 @@ final class WorkActivities {
   @discardableResult
   func refresh() -> Bool {
     guard let current = Activity<WorkActivityAttributes>.activities.first(where: {
-      $0.activityState == .active
+      $0.activityState == .active && !ending.contains($0.id)
     }) else { return false }
     if let token = current.pushToken { onToken?(hex(token)) }
     // A card from an earlier launch may still change its token.
@@ -50,7 +52,11 @@ final class WorkActivities {
   /// Ends the card straight away, such as when the server cannot update it.
   func end() {
     for activity in Activity<WorkActivityAttributes>.activities {
-      Task { await activity.end(nil, dismissalPolicy: .immediate) }
+      ending.insert(activity.id)
+      Task { @MainActor [weak self] in
+        await activity.end(nil, dismissalPolicy: .immediate)
+        self?.ending.remove(activity.id)
+      }
     }
   }
 }

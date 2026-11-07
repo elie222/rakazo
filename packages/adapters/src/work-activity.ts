@@ -104,6 +104,10 @@ export class WorkActivities {
       },
       { recordId: recordId(tokenDigest) },
     );
+    // A card another account registered on this phone starts over, with nothing of that account's.
+    await runAsSystem("drop a live status card another account registered", () =>
+      this.prisma.workActivityToken.deleteMany({ where: { tokenDigest, userId: { not: userId } } }),
+    );
     // A token the card already had keeps its last state, so nothing is sent twice.
     await runAsSystem("register a live status card", () =>
       this.prisma.workActivityToken.upsert({
@@ -119,19 +123,10 @@ export class WorkActivities {
         where: { userId },
         orderBy: { createdAt: "desc" },
         skip: MAX_CARDS_PER_USER,
-        select: { tokenDigest: true, ciphertext: true },
+        select: { tokenDigest: true, userId: true, ciphertext: true },
       }),
     );
-    await Promise.all(
-      extra.map(async (card) => {
-        const old = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
-        const at = Math.floor(Date.now() / 1000);
-        await this.provider.send(old, { state: EMPTY_STATE, ended: true, urgent: true, at });
-        await runAsSystem("drop a user's oldest live status card", () =>
-          this.prisma.workActivityToken.deleteMany({ where: { tokenDigest: card.tokenDigest } }),
-        );
-      }),
-    );
+    await this.endCards(extra);
     // The work may have moved on before the card registered.
     this.userChanged(userId);
     return true;
@@ -167,6 +162,35 @@ export class WorkActivities {
         }),
       );
     else this.userChanged(userId);
+  }
+
+  /** The account is being deleted: its cards end now, before their rows go with it. */
+  async endUser(userId: string): Promise<void> {
+    const cards = await runAsSystem("load a deleted account's live status cards", () =>
+      this.prisma.workActivityToken.findMany({
+        where: { userId },
+        select: { tokenDigest: true, userId: true, ciphertext: true },
+      }),
+    );
+    await this.endCards(cards);
+  }
+
+  /** Ends these cards on their phones at once and forgets them. */
+  private async endCards(
+    cards: Array<{ tokenDigest: string; userId: string; ciphertext: string }>,
+  ): Promise<void> {
+    const at = Math.floor(Date.now() / 1000);
+    await Promise.all(
+      cards.map(async (card) => {
+        const token = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
+        await this.provider.send(token, { state: EMPTY_STATE, ended: true, urgent: true, at });
+        await runAsSystem("drop a live status card", () =>
+          this.prisma.workActivityToken.deleteMany({
+            where: { tokenDigest: card.tokenDigest, userId: card.userId },
+          }),
+        );
+      }),
+    );
   }
 
   userChanged(userId: string): void {
@@ -229,12 +253,15 @@ export class WorkActivities {
         });
         if (result === "invalid" || (ended && (result === "sent" || retried >= MAX_RETRIES))) {
           await runAsSystem("drop a live status card", () =>
-            this.prisma.workActivityToken.deleteMany({ where: { tokenDigest: card.tokenDigest } }),
+            this.prisma.workActivityToken.deleteMany({
+              where: { tokenDigest: card.tokenDigest, userId },
+            }),
           );
         } else if (result === "sent") {
           await runAsSystem("record a live status card update", () =>
             this.prisma.workActivityToken.updateMany({
-              where: { tokenDigest: card.tokenDigest },
+              // Only while this user still owns the card.
+              where: { tokenDigest: card.tokenDigest, userId },
               data: { lastState: digest, lastWaiting: state.waiting },
             }),
           );
@@ -316,7 +343,8 @@ export class WorkActivities {
       );
       for (const { payload } of progress) {
         const step = payload as { activity?: unknown; text?: unknown };
-        if (step.activity === true && typeof step.text === "string" && step.text.trim())
+        // An empty step is the bot clearing its last one.
+        if (step.activity === true && typeof step.text === "string")
           return truncatePlainText(step.text.trim().replace(/\s+/g, " "), LINE_MAX_CHARS);
       }
       if (progress.length < STEP_PAGE_SIZE) break;

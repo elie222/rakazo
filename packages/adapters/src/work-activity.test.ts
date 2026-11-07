@@ -101,10 +101,17 @@ function fakeDatabase() {
           .filter((card) => card.userId === where.userId)
           .reverse()
           .slice(skip),
-      deleteMany: async ({ where }: { where: { tokenDigest: string | { in: string[] } } }) => {
-        const digests =
-          typeof where.tokenDigest === "string" ? [where.tokenDigest] : where.tokenDigest.in;
-        for (const digest of digests) cards.delete(digest);
+      deleteMany: async ({
+        where,
+      }: {
+        where: { tokenDigest: string; userId?: string | { not: string } };
+      }) => {
+        const card = cards.get(where.tokenDigest);
+        const owner = where.userId;
+        const matches =
+          owner === undefined ||
+          (typeof owner === "string" ? card?.userId === owner : card?.userId !== owner.not);
+        if (card && matches) cards.delete(where.tokenDigest);
       },
       updateMany: async (input: { where: Partial<Card>; data: Partial<Card> }) => {
         for (const card of cards.values()) {
@@ -311,6 +318,42 @@ describe("live status card of the user's bots at work", () => {
     // The cards dropped are ended, not left on their phones without updates.
     for (const phone of ["0", "1"])
       expect(send).toHaveBeenCalledWith(phone.repeat(64), expect.objectContaining({ ended: true }));
+  });
+
+  it("ends a deleted account's cards on their phones", async () => {
+    const { activities, cards, send } = await registered();
+    await activities.endUser("user-1");
+    expect(cards.size).toBe(0);
+    expect(send.mock.lastCall![1]).toMatchObject({ ended: true, state: { rows: [] } });
+  });
+
+  it("starts a card over when another account registers it", async () => {
+    const { activities, cards, run } = await registered();
+    run("2", { userId: "user-2" });
+    await vi.waitFor(() => expect([...cards.values()][0]!.lastState).toBeTruthy());
+    await activities.register("user-2", "session-2", TOKEN);
+    expect([...cards.values()][0]).toMatchObject({ userId: "user-2", lastState: null });
+  });
+
+  it("clears the step when the bot clears it", async () => {
+    const { activities, events, send } = await registered();
+    events.push({
+      runId: "1",
+      type: "thread.progress",
+      seq: 1,
+      payload: { text: "Searching", activity: true },
+    });
+    await activities.sync("user-1");
+    expect(send.mock.lastCall![1].state.rows[0]!.line).toBe("Searching");
+    events.push({
+      runId: "1",
+      type: "thread.progress",
+      seq: 2,
+      payload: { text: "", activity: true },
+    });
+    await activities.sync("user-1");
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(send.mock.lastCall![1].state.rows[0]!.line).toBe("");
   });
 
   it("forgets a card Apple no longer knows", async () => {
