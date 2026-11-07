@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { redirectSystemPath } from "../app/+native-intent";
+import { receiveIncomingShare } from "./incoming-share";
 import {
   closeSettingsSheet,
   isSettingsLink,
@@ -72,6 +73,11 @@ describe("settings links", () => {
     ).toBe("");
     expect(close).not.toHaveBeenCalled();
     unregister();
+  });
+  it("still clears old shares when an MCP sign-in link starts the app", () => {
+    redirectSystemPath({ path: "rakazo://mcp-oauth?code=c&state=mobile-1", initial: true });
+
+    expect(receiveIncomingShare).toHaveBeenCalledWith(false, true);
   });
   it("knows every public page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))

@@ -6,10 +6,10 @@ import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-
  * the root stack instead of over the sheet. Settings links open inside the sheet. Something
  * shared from another app (expo-sharing opens `rakazo://expo-sharing`) opens the share target screen. */
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
-  // The in-app browser already returned this to the sign-in that opened it; stay put.
-  if (linkScreen(path) === linkScreen(MOBILE_MCP_OAUTH_CALLBACK_URL)) return "";
   const isShare = linkScreen(path) === "expo-sharing";
   receiveIncomingShare(isShare, initial);
+  // The in-app browser already returned this to the sign-in that opened it; stay put.
+  if (linkScreen(path) === linkScreen(MOBILE_MCP_OAUTH_CALLBACK_URL)) return "";
   if (!isSettingsLink(path)) closeSettingsSheet();
   return isShare ? "/share" : path;
 }
