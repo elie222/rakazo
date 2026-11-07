@@ -1984,6 +1984,7 @@ msgstr "已连接 {0}。"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
@@ -4946,6 +4947,10 @@ msgstr "通知"
 msgid "Number"
 msgstr "号码"
 
+#: src/pages/plugins/source-form.tsx
+msgid "OAuth"
+msgstr ""
+
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth 授权已取消。"
@@ -6035,6 +6040,10 @@ msgstr "周六"
 msgid "Save"
 msgstr "保存"
 
+#: src/pages/plugins/source-form.tsx
+msgid "Save and sign in"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "保存工作区并安装最新软件。"
@@ -6435,6 +6444,7 @@ msgid "Sign up"
 msgstr "注册"
 
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Try again."
 msgstr "登录已取消。请重试。"
 
@@ -7077,12 +7087,17 @@ msgid "This server cannot be assigned without a bot."
 msgstr "没有 Bot 就无法分配此服务器。"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "This server did not request browser authorization."
 msgstr "此服务器未请求浏览器授权。"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "此服务器已连接。请先断开再重新授权。"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
