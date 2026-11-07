@@ -222,6 +222,7 @@ const callbacks = {
   organizeFromMenu: action,
   organizeGroup: action,
   sharing: false,
+  snoozeChat: action,
   spaceBusy: false,
   spaceRecoveryId: null,
   toggleCollapsed: action,
@@ -398,6 +399,7 @@ it("renders saved bot rows without a notification setting", () => {
         sections={[]}
         onOrganize={action}
         onEditSection={action}
+        onSnooze={action}
       />
     )),
   );
@@ -439,6 +441,7 @@ it("says working only while the bot works, and shows nothing beside the time", (
         sections={[]}
         onOrganize={action}
         onEditSection={action}
+        onSnooze={action}
       />
     )),
   );

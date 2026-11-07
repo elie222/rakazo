@@ -21,11 +21,12 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import { useState } from "react";
 import { PlatformColor, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import type { InboxRowAction } from "../lib/inbox-swipe";
-import { INBOX_ROW_ACTIONS, inboxRowActions } from "../lib/inbox-swipe";
+import { INBOX_ROW_ACTIONS, inboxRowActions, SNOOZE_LABELS } from "../lib/inbox-swipe";
 import { native, useResolvedAppearance } from "../lib/native";
 import { InboxChatPreview } from "./inbox-chat-preview";
 import type { InboxSwipeRowProps } from "./inbox-swipe-row";
@@ -50,6 +51,8 @@ export function InboxSwipeRow({
   onAction,
   onOrganize,
   onEditSection,
+  snoozed,
+  onSnooze,
   children,
 }: InboxSwipeRowProps) {
   const { t } = useI18n();
@@ -137,6 +140,23 @@ export function InboxSwipeRow({
                     systemImage={notifyOnFinish ? "bell.slash" : "bell"}
                     onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
                   />
+                )}
+                {snoozed ? (
+                  <Button
+                    label={t("Unsnooze")}
+                    systemImage="moon.zzz"
+                    onPress={() => onSnooze(null)}
+                  />
+                ) : (
+                  <Menu label={t("Snooze")} systemImage="moon.zzz">
+                    {SNOOZE_PRESETS.map((preset) => (
+                      <Button
+                        key={preset}
+                        label={t(SNOOZE_LABELS[preset])}
+                        onPress={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
+                      />
+                    ))}
+                  </Menu>
                 )}
                 <Menu label={t("Move to")} systemImage="folder">
                   {sections.map((section) => (

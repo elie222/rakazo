@@ -1,4 +1,12 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Snooze: "Отложить",
+  Snoozed: "Отложенные",
+  Unsnooze: "Вернуть",
+  Woke: "Вернулся",
+  "1 hour": "1 час",
+  "3 hours": "3 часа",
+  Tomorrow: "Завтра",
+  "Next week": "На следующей неделе",
   "No matches": "Нет совпадений",
   "Always ask": "Всегда спрашивать",
   "Search tools": "Поиск инструментов",

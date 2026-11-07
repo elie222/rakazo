@@ -11,6 +11,7 @@ import {
   activeThreadRuns,
   answerableAskMessageIds,
   channelMessageSender,
+  chatSnoozed,
   chatUserBubbleColors,
   dismissableAskMessageIds,
   foldPeerReplies,
@@ -84,10 +85,12 @@ import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
 import { ShellSidePanel } from "./shell/side-panel";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar-roster";
+import { SnoozedChats } from "./shell/snoozed-chats";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { useChatRead } from "./shell/use-chat-read";
+import { useChatSnooze } from "./shell/use-chat-snooze";
 import { useComposerActions } from "./shell/use-composer-actions";
 import { useComposerMentions } from "./shell/use-composer-mentions";
 import { useComputerControls, useComputerState } from "./shell/use-computer";
@@ -101,6 +104,7 @@ import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
 import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/use-sidebar-search";
+import { useSnoozeClock } from "./shell/use-snooze-clock";
 import { useSpaceActions } from "./shell/use-space-actions";
 import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
@@ -167,6 +171,12 @@ function SpaceShell() {
     setBootstrapMe,
     refreshBots,
   } = roster;
+  const snoozeNow = useSnoozeClock([
+    ...bots,
+    ...groups,
+    ...spaces.flatMap((space) => [...space.bots, ...space.groups]),
+  ]);
+  const snooze = useChatSnooze({ rpc, setBots, setGroups, refreshBots });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   useEffect(() => {
@@ -296,8 +306,12 @@ function SpaceShell() {
   };
   useReportedUiLocale(rpc, bootstrapMe?.locale);
   const cycleBots = useMemo(
-    () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
-    [bots, botSections],
+    () =>
+      groupBotsForSidebar(
+        bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
+        botSections,
+      ).flatMap((group) => group.bots),
+    [bots, botSections, snoozeNow],
   );
   const dialogs = useShellDialogs();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -530,16 +544,18 @@ function SpaceShell() {
   );
   const sidebarGroups = useMemo(
     () =>
-      sidebarGroupsForSpaces(sidebarSpaces, miniSidebar ? "" : search.query, {
-        pinned: t`Pinned`,
-        unassigned: t`Unassigned`,
-      }),
-    [sidebarSpaces, search.query, miniSidebar, t],
+      sidebarGroupsForSpaces(
+        sidebarSpaces,
+        miniSidebar ? "" : search.query,
+        { pinned: t`Pinned`, unassigned: t`Unassigned` },
+        snoozeNow,
+      ),
+    [sidebarSpaces, search.query, miniSidebar, t, snoozeNow],
   );
   // The Dock badge ignores the roster search box: a filter must not hide unread chats.
   const unreadChatCount = useMemo(
-    () => countUnreadChats(sidebarGroupsForSpaces(sidebarSpaces, "")),
-    [sidebarSpaces],
+    () => countUnreadChats(sidebarGroupsForSpaces(sidebarSpaces, "", undefined, snoozeNow)),
+    [sidebarSpaces, snoozeNow],
   );
   useDesktopBadge(userId ? unreadChatCount : 0);
   const openSpaceChat = useOpenSpaceChat({
@@ -867,6 +883,7 @@ function SpaceShell() {
         onClose={closeBotMenu}
         refreshBots={refreshBots}
         read={read}
+        snooze={snooze}
         dialogs={dialogs}
         openChatSettings={openChatSettings}
         navigate={navigate}
@@ -945,15 +962,27 @@ function SpaceShell() {
           />
         }
         archived={
-          <ArchivedChats
-            archivedBots={archivedBots}
-            archivedGroups={archivedGroups}
-            showSpaceSearch={search.showSpaceSearch}
-            rpc={rpc}
-            refreshBots={refreshBots}
-            setDeleteTarget={dialogs.setDeleteTarget}
-            setDeleteGroupTarget={dialogs.setDeleteGroupTarget}
-          />
+          <>
+            <SnoozedChats
+              snoozedBots={bots.filter((bot) => chatSnoozed(bot, snoozeNow))}
+              snoozedGroups={groups.filter((group) => chatSnoozed(group, snoozeNow))}
+              showSpaceSearch={search.showSpaceSearch}
+              now={snoozeNow}
+              snooze={snooze}
+              openChat={(path) => {
+                if (bootstrapMe) openSpaceChat(bootstrapMe.spaceId, path);
+              }}
+            />
+            <ArchivedChats
+              archivedBots={archivedBots}
+              archivedGroups={archivedGroups}
+              showSpaceSearch={search.showSpaceSearch}
+              rpc={rpc}
+              refreshBots={refreshBots}
+              setDeleteTarget={dialogs.setDeleteTarget}
+              setDeleteGroupTarget={dialogs.setDeleteGroupTarget}
+            />
+          </>
         }
         footerLogos={footerLogos}
         user={session.data?.user}

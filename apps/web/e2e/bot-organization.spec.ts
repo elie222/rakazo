@@ -382,3 +382,36 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await page.getByRole("menuitem", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "group-settings");
 });
+
+test("a snoozed bot leaves the list until it is unsnoozed", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `bot-snooze-${stamp}@rakazo.test`, "password12", "Test User");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const sidebar = page.locator("aside").first();
+  const bot = sidebar.getByRole("button", { name: /^Chief/ });
+
+  await bot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Snooze", exact: true }).hover();
+  const snoozeMenu = page.getByRole("menu", { name: "Snooze", exact: true });
+  await expect(snoozeMenu).toBeVisible();
+  await captureScreenshot(page, testInfo, "snooze-menu");
+  await snoozeMenu.getByRole("menuitem", { name: /^Tomorrow/ }).click();
+
+  await expect(bot).toHaveCount(0);
+  const shelf = sidebar.getByRole("button", { name: /^Snoozed/ });
+  await expect(shelf).toContainText("1");
+  await page.reload();
+  await expect(shelf).toBeVisible();
+  await expect(bot).toHaveCount(0);
+
+  await shelf.click();
+  await captureScreenshot(page, testInfo, "snoozed-shelf");
+  // Shown on hover or keyboard focus.
+  await sidebar.getByRole("button", { name: "Unsnooze Chief" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(bot).toBeVisible();
+  await expect(shelf).toHaveCount(0);
+});

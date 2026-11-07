@@ -274,8 +274,8 @@ export function ShellSidebar({
               {roster}
             </>
           )}
-          <div className={mini ? "hidden" : "contents"}>{archived}</div>
         </div>
+        <div className={mini ? "hidden" : "flex shrink-0 flex-col px-2.5 pb-1"}>{archived}</div>
         <div className={mini ? "hidden" : "contents"}>
           <PasskeyOffer />
         </div>

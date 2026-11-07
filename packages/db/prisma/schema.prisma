@@ -1100,6 +1100,8 @@ model ThreadRead {
   unread      Boolean     @default(false)
   /// Highest message seq this member has read; the "New" divider goes after it. -1 = none read.
   lastReadSeq Int         @default(-1)
+  /// Hidden from this member's chat list until then; once past, the chat shows as woken until opened.
+  snoozedUntil DateTime?
 
   @@id([threadId, userId])
   @@index([spaceId, userId])

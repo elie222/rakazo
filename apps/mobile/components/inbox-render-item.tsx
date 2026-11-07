@@ -59,12 +59,18 @@ export function useInboxRenderItem({
   organizeFromMenu,
   organizeGroup,
   sharing,
+  snoozeChat,
   spaceBusy,
   spaceRecoveryId,
   toggleCollapsed,
 }: Pick<
   ChatActions,
-  "botAction" | "groupAction" | "organizeFromMenu" | "editSectionFromMenu" | "deleteSection"
+  | "botAction"
+  | "groupAction"
+  | "organizeFromMenu"
+  | "editSectionFromMenu"
+  | "deleteSection"
+  | "snoozeChat"
 > & {
   appearance: ResolvedAppearance;
   botSections: MobileBotSection[];
@@ -224,6 +230,7 @@ export function useInboxRenderItem({
           sections={botSections}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
+          onSnooze={snoozeChat}
         />
       ) : (
         <BotRow
@@ -235,6 +242,7 @@ export function useInboxRenderItem({
           sections={botSections}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
+          onSnooze={snoozeChat}
         />
       ),
     [
@@ -256,6 +264,7 @@ export function useInboxRenderItem({
       organizeGroup,
       router,
       sharing,
+      snoozeChat,
       spaceBusy,
       spaceRecoveryId,
       styles,

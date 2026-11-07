@@ -1,4 +1,12 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Snooze: "スヌーズ",
+  Snoozed: "スヌーズ中",
+  Unsnooze: "スヌーズを解除",
+  Woke: "再表示",
+  "1 hour": "1時間",
+  "3 hours": "3時間",
+  Tomorrow: "明日",
+  "Next week": "来週",
   "No matches": "一致するものはありません",
   "Always ask": "常に確認",
   "Search tools": "ツールを検索",

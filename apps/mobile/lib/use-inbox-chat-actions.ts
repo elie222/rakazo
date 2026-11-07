@@ -231,6 +231,33 @@ export function useInboxChatActions({
       ),
     [t, updateChat],
   );
+  /** Snoozes a chat until `until`, or wakes it with null; its row moves at once. */
+  const snoozeChat = useCallback(
+    async (
+      kind: InboxChatKind,
+      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+      until: string | null,
+    ) => {
+      const apply = <T extends { id: string; snoozedUntil?: string | null }>(chats: T[]) =>
+        chats.map((item) => (item.id === chat.id ? { ...item, snoozedUntil: until } : item));
+      if (kind === "bot") setBots(apply);
+      else setGroups(apply);
+      setSpaces((current) =>
+        current.map((space) =>
+          kind === "bot"
+            ? { ...space, bots: apply(space.bots) }
+            : { ...space, groups: apply(space.groups) },
+        ),
+      );
+      try {
+        await chatRpc(chat.spaceId, "threads/snooze", { ...chatTarget(kind, chat.id), until });
+      } catch (err) {
+        Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
+      }
+      await loadBots().catch(() => undefined);
+    },
+    [loadBots, setBots, setGroups, setSpaces, t],
+  );
   const editSectionFromMenu = useCallback(
     (
       kind: InboxChatKind,
@@ -283,5 +310,6 @@ export function useInboxChatActions({
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
+    snoozeChat,
   };
 }

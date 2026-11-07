@@ -28,6 +28,19 @@ export function formatThreadTime(iso: string, now = new Date()) {
   return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
 }
 
+/** When a snoozed chat wakes: the time today, the weekday within a week, or the date. */
+export function formatSnoozeWake(iso: string, now = new Date()) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  if (date.toDateString() === now.toDateString()) return time;
+  const day =
+    date.getTime() - now.getTime() < 6 * DAY_MS
+      ? date.toLocaleDateString(dateLocaleForUi(), { weekday: "short" })
+      : date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+  return `${day} ${time}`;
+}
+
 function pad(value: number) {
   return String(value).padStart(2, "0");
 }

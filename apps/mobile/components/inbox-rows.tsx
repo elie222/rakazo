@@ -1,5 +1,5 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { isRunWorking } from "@rakazo/core";
+import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
@@ -13,7 +13,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
-import { formatThreadTime } from "../lib/inbox";
+import { formatSnoozeWake, formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
@@ -292,7 +292,24 @@ type RowMenuProps = {
     chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
     mode: "create" | "rename",
   ) => void;
+  onSnooze: (
+    kind: InboxChatKind,
+    chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+    until: string | null,
+  ) => void;
 };
+
+/** The row's time slot: when a snoozed chat wakes, that it woke, or its last activity. */
+function chatTime(
+  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+  day: number,
+  t: (text: string) => string,
+) {
+  const now = Date.now();
+  if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
+  if (chatWoke(chat, now)) return t("Woke");
+  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
+}
 
 export const BotRow = memo(function BotRow({
   bot,
@@ -303,6 +320,7 @@ export const BotRow = memo(function BotRow({
   sections,
   onOrganize,
   onEditSection,
+  onSnooze,
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
@@ -312,7 +330,7 @@ export const BotRow = memo(function BotRow({
 } & RowMenuProps) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
-  const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
+  const time = chatTime(bot, day, t);
   const working = isRunWorking(bot.status);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
@@ -379,6 +397,8 @@ export const BotRow = memo(function BotRow({
       onAction={runAction}
       onOrganize={(update) => onOrganize("bot", bot, update)}
       onEditSection={(mode) => onEditSection("bot", bot, mode)}
+      snoozed={chatSnoozed(bot, Date.now())}
+      onSnooze={(until) => onSnooze("bot", bot, until)}
     >
       {row}
     </InboxSwipeRow>
@@ -396,6 +416,7 @@ export const GroupRow = memo(function GroupRow({
   sections,
   onOrganize,
   onEditSection,
+  onSnooze,
 }: {
   group: MobileGroup | SpaceGroup;
   day: number;
@@ -406,7 +427,7 @@ export const GroupRow = memo(function GroupRow({
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = group.updatedAt ? formatThreadTime(group.updatedAt, new Date(day)) : "";
+  const time = chatTime(group, day, t);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
@@ -443,6 +464,8 @@ export const GroupRow = memo(function GroupRow({
       onAction={runAction}
       onOrganize={(update) => onOrganize("group", group, update)}
       onEditSection={(mode) => onEditSection("group", group, mode)}
+      snoozed={chatSnoozed(group, Date.now())}
+      onSnooze={(until) => onSnooze("group", group, until)}
     >
       {row}
     </InboxSwipeRow>

@@ -1,5 +1,5 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import { accountDisplay, chatSnoozed } from "@rakazo/core";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -95,6 +95,7 @@ import { useHomeInbox } from "../lib/use-home-inbox";
 import { chatRpc, useInboxChatActions } from "../lib/use-inbox-chat-actions";
 import { useInboxDay } from "../lib/use-inbox-day";
 import { usePublishSearchInbox } from "../lib/use-publish-search-inbox";
+import { useSnoozeClock } from "../lib/use-snooze-clock";
 import { useSpaceActivity } from "../lib/use-space-activity";
 import { errorText } from "../lib/user-error";
 
@@ -274,6 +275,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
+    snoozeChat,
   } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, botSections });
 
   const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
@@ -327,6 +329,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   usePublishSearchInbox(inboxSpaces, me !== null);
+  const snoozeNow = useSnoozeClock(
+    inboxSpaces.flatMap((space) => [...space.bots, ...space.groups]),
+  );
   const listData = useMemo((): InboxItem[] => {
     // Only bot threads support importing shares; use the same rows for every target.
     if (onShareSelect)
@@ -335,23 +340,28 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           .filter((space) => space.bots.length > 0)
           .map((space) => ({ ...space, groups: [] })),
         collapsed,
+        undefined,
+        snoozeNow,
       );
     // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
     const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
-        .filter((bot) => bot.pinned)
+        .filter((bot) => bot.pinned && !chatSnoozed(bot, snoozeNow))
         .map((bot) => ({ kind: "bot" as const, bot })),
       ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
-        .filter((group) => group.pinned)
+        .filter((group) => group.pinned && !chatSnoozed(group, snoozeNow))
         .map((group) => ({ kind: "group" as const, group })),
     ];
+    // A snoozed pin waits under Snoozed rather than in the tiles.
     const sidebarSpaces = inboxSpaces.map((space) => ({
       ...space,
-      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned),
-      groups: space.groups.filter((group) => SWIPE_ROWS || !group.pinned),
+      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || chatSnoozed(bot, snoozeNow)),
+      groups: space.groups.filter(
+        (group) => SWIPE_ROWS || !group.pinned || chatSnoozed(group, snoozeNow),
+      ),
     }));
-    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId, snoozeNow);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     inboxSpaces,
@@ -362,8 +372,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     visibleGroups,
     locale,
     onShareSelect,
+    snoozeNow,
   ]);
-  const badgeCount = me ? unreadChatCount(inboxSpaces) : null;
+  // Snoozed chats stay off the icon until they wake.
+  const badgeCount = me
+    ? unreadChatCount(
+        inboxSpaces.map((space) => ({
+          bots: space.bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
+          groups: space.groups.filter((group) => !chatSnoozed(group, snoozeNow)),
+        })),
+      )
+    : null;
   useEffect(() => {
     if (badgeCount === null || badgeLoad === null) return;
     void syncInboxAppBadge(badgeCount, badgeLoad.generation);
@@ -685,6 +704,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeBot,
     organizeFromMenu,
     organizeGroup,
+    snoozeChat,
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
@@ -817,6 +837,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
             setOrganizeTarget(null);
           }}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
+          snoozed={chatSnoozed(organizeChat, Date.now())}
+          onSnooze={(until) => snoozeChat(organizeTarget.kind, organizeChat, until)}
           onCreateSection={(name) =>
             createSection(organizeTarget.kind, organizeChat.id, name, organizeTarget.spaceId)
           }

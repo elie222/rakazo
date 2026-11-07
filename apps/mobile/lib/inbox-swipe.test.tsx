@@ -260,6 +260,7 @@ describe("iOS swipe row", () => {
     const onAction = vi.fn<(action: InboxRowAction) => void>();
     const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
     const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
+    const onSnooze = vi.fn<InboxSwipeRowProps["onSnooze"]>();
     const container = document.createElement("div");
     const root = createRoot(container);
     act(() =>
@@ -271,6 +272,8 @@ describe("iOS swipe row", () => {
           onAction={onAction}
           onOrganize={onOrganize}
           onEditSection={onEditSection}
+          snoozed={false}
+          onSnooze={onSnooze}
           {...row}
         >
           <span>{key}</span>
@@ -281,7 +284,7 @@ describe("iOS swipe row", () => {
     const items = find('[data-ui="ContextMenu.Items"]')!;
     const press = (label: string) =>
       act(() => items.querySelector<HTMLElement>(`[data-label="${label}"]`)!.click());
-    return { container, find, items, press, onAction, onOrganize, onEditSection, root };
+    return { container, find, items, press, onAction, onOrganize, onEditSection, onSnooze, root };
   }
 
   const entry = (item: Element) => [
@@ -352,6 +355,7 @@ describe("iOS swipe row", () => {
       ["Mark as Read", "checkmark.message.fill", null],
       ["Pin", "pin", null],
       ["Silence notifications", "bell.slash", null],
+      ["Snooze", "moon.zzz", null],
       ["Move to", "folder", null],
       ["Archive", "eye.slash", null],
       ["Delete…", "trash", "destructive"],
@@ -360,7 +364,7 @@ describe("iOS swipe row", () => {
     for (const button of items.querySelectorAll<HTMLElement>("button")) {
       expect(button.dataset.modifiers ?? "[]").toBe("[]");
     }
-    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+    expect(entries(find('[data-ui="Menu"][data-label="Move to"]')!)).toEqual([
       ["Work", "true", null],
       ["Home", "false", null],
       ["Unassigned", "false", null],
@@ -375,6 +379,7 @@ describe("iOS swipe row", () => {
     expect(entries(items).map(([label]) => label)).toEqual([
       "Mark as Unread",
       "Unpin",
+      "Snooze",
       "Move to",
       "Archive",
       "Delete…",
@@ -383,13 +388,32 @@ describe("iOS swipe row", () => {
     expect(items.querySelector('[data-label="Delete…"]')?.getAttribute("data-role")).toBe(
       "destructive",
     );
-    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+    expect(entries(find('[data-ui="Menu"][data-label="Move to"]')!)).toEqual([
       ["Work", "false", null],
       ["Home", "false", null],
       ["Unassigned", "true", null],
       ["New section", "folder.badge.plus", null],
     ]);
     act(() => root.unmount());
+  });
+
+  it("snoozes until a preset, or offers Unsnooze while snoozed", () => {
+    const { find, press, onSnooze, root } = render();
+    expect(entries(find('[data-ui="Menu"][data-label="Snooze"]')!).map(([label]) => label)).toEqual(
+      ["1 hour", "3 hours", "Tomorrow", "Next week"],
+    );
+    const before = Date.now();
+    press("1 hour");
+    const until = Date.parse(onSnooze.mock.calls[0]![0]!);
+    expect(until - before).toBeGreaterThanOrEqual(60 * 60 * 1000 - 1000);
+    expect(until - before).toBeLessThanOrEqual(60 * 60 * 1000 + 1000);
+    act(() => root.unmount());
+
+    const snoozed = render({ snoozed: true });
+    expect(snoozed.find('[data-ui="Menu"][data-label="Snooze"]')).toBeNull();
+    snoozed.press("Unsnooze");
+    expect(snoozed.onSnooze).toHaveBeenCalledWith(null);
+    act(() => snoozed.root.unmount());
   });
 
   it("runs menu items through the swipe and organize paths", () => {
