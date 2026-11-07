@@ -13,6 +13,7 @@ import {
   currentApiBase,
   deliverSignOutRecord,
   endPasswordChange,
+  endpointChangeInProgress,
   fetchMobileJson,
   savePendingSignOut,
   selectedSpaceId,
@@ -70,14 +71,19 @@ async function authenticate(
     return { verificationRequired: true };
   if (!token) throw new Error(missingSession);
   // A server switch or sign-out while the request was in flight: this token belongs to a server
-  // the app no longer uses, so it is never saved and its session is ended there.
+  // the app no longer uses, so it is never saved and its session is ended there. A switch still
+  // running has already cleared the session but not yet moved to the new server.
+  const current = () =>
+    apiBase === currentApiBase() &&
+    generation === currentSessionGeneration() &&
+    !endpointChangeInProgress();
   let saved = false;
-  if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+  if (current()) {
     try {
       if (!(await clearSpace()))
         throw new Error(t("Could not save your sign-in on this device. Try again."));
       // Checked in the same tick the save starts; a failed write leaves no session behind.
-      if (apiBase === currentApiBase() && generation === currentSessionGeneration()) {
+      if (current()) {
         await saveSessionToken(token);
         // A change that lands while the token is being written clears it again.
         saved = currentSessionGeneration() === generation + 1 && apiBase === currentApiBase();
