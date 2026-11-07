@@ -810,6 +810,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                                 sections: botSections,
                                 onOrganize: organizeFromMenu,
                                 onEditSection: editSectionFromMenu,
+                                onSnooze: snoozeChat,
                               }
                             : undefined
                         }
