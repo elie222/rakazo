@@ -37,7 +37,6 @@ import {
   readComposerDraft,
   readComposerDraftBindings,
   readComposerDraftSkill,
-  readComposerRetryNonce,
   replaceComposerDraft,
   settleComposerDraftSubmission,
   subscribeComposerDraftAccepted,
@@ -251,8 +250,7 @@ const ComposerBody = memo(function Composer({
         selectedSkill !== null ||
         pendingAttachments.length > 0;
       if (!appendDictation(text) || reviewFirst) return;
-      const clientNonce = newClientId();
-      retryNonce.current = clientNonce;
+
       queuedDictation.current = editRevision.current;
       setDictationSendDue(editRevision.current);
     },
@@ -291,10 +289,7 @@ const ComposerBody = memo(function Composer({
   const pageSession = usePageSession();
   const dock = pageSession?.dock ?? noDock;
   const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
-  // A draft reloaded without edits may still belong to a send whose answer never
-  // came; its nonce is stored beside it. Transient context gates reuse at send time,
-  // but must not erase the saved operation that survives without that context.
-  const retryNonce = useRef<string | null>(null);
+  // Context changes fence stale view callbacks; dispatch owns request identity.
   useEffect(() => {
     if (pendingAttachments.length || replyTarget || openPageId !== null)
       touchComposerDraftContext(draftKey);
@@ -412,7 +407,6 @@ const ComposerBody = memo(function Composer({
   function markEdited() {
     onDraftEdited?.();
     editRevision.current += 1;
-    retryNonce.current = null;
     touchComposerDraftContext(draftKey);
   }
 
@@ -466,36 +460,11 @@ const ComposerBody = memo(function Composer({
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
-    // Recovery rebuilds text, mention bindings and the skill chip. Reply targets,
-    // attachments and open pages are not persisted, so those cannot share a retry nonce.
-    const nonceRecoverable = !replyTarget && pendingAttachments.length === 0 && openPageId === null;
-    const clientNonce =
-      retryNonce.current ??
-      // Only persisted payload edits retire the saved operation; cancelling transient
-      // context can return to that same payload without a document reload.
-      (nonceRecoverable &&
-      readComposerDraft(draftKey) === compositionRef.current.text &&
-      JSON.stringify(readComposerDraftBindings(draftKey)) ===
-        JSON.stringify(compositionRef.current.bindings) &&
-      JSON.stringify(readComposerDraftSkill(draftKey)) === JSON.stringify(selectedSkill)
-        ? readComposerRetryNonce(draftKey)
-        : null) ??
-      newClientId();
-    retryNonce.current = null;
+    const clientNonce = newClientId();
     const submitted = compositionRef.current;
     const text = serializeComposerPrompt(submitted.text, selectedSkill, submitted.bindings);
     const mentions = composerMentionsForPrompt(submitted.text, selectedSkill, submitted.bindings);
-    const submission = beginComposerDraftSubmission(
-      draftKey,
-      draft,
-      nonceRecoverable
-        ? {
-            nonce: clientNonce,
-            bindings: submitted.bindings,
-            skill: selectedSkill,
-          }
-        : undefined,
-    );
+    const submission = beginComposerDraftSubmission(draftKey, draft);
     commitComposition({ text: "", bindings: [] }, false);
     setMentionQuery(null);
     setMentionHighlightKey(null);
@@ -514,8 +483,8 @@ const ComposerBody = memo(function Composer({
     } catch {
       settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible
-      // send. The saved draft retains its metadata; only a fully recoverable
-      // payload keeps its nonce, so a retry cannot become a different message.
+      // send. The saved draft retains its metadata; the dispatch owner retains
+      // the final request independently of this view's callback lifetime.
       return;
     }
     // A dictation queued behind this send, and no other edit since, joins the failed
@@ -523,7 +492,6 @@ const ComposerBody = memo(function Composer({
     if (queuedDictation.current === revision + 1 && editRevision.current === revision + 1) {
       queuedDictation.current = null;
       setDictationSendDue(null);
-      retryNonce.current = null;
       const queued = compositionRef.current;
       const words = queued.text;
       const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
@@ -544,11 +512,8 @@ const ComposerBody = memo(function Composer({
         replaceComposerDraft(draftKey, restored.text, restored.bindings, selectedSkill);
       return;
     }
-    // Restore only an untouched draft, retaining its nonce for an unchanged retry.
-    // This composer still carries the reply and attachments the send carried, so
-    // the in-memory nonce is safe here; the stored one is only for plain text.
+    // Restore only an untouched view. Request identity belongs to dispatch.
     if (editRevision.current !== revision) return;
-    retryNonce.current = clientNonce;
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
   }

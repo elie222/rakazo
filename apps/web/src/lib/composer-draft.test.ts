@@ -33,179 +33,30 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("composer drafts", () => {
-  it("persists an unsettled nonce and protects fresh-document ownership on plain HTTP", async () => {
-    const storage = memoryStorage();
-    const webCrypto = globalThis.crypto;
-    vi.stubGlobal("localStorage", storage);
-    vi.stubGlobal("crypto", { getRandomValues: webCrypto.getRandomValues.bind(webCrypto) });
-    try {
-      vi.resetModules();
-      const first = await import("./composer-draft.js");
-      first.writeComposerDraft("http", "saved words", storage, []);
-      const submitted = first.beginComposerDraftSubmission("http", "saved words", {
-        nonce: "http-operation",
-        bindings: [],
-        skill: null,
-      });
-      expect(first.readComposerRetryNonce("http")).toBe("http-operation");
-      vi.resetModules();
-      const restored = await import("./composer-draft.js");
-      expect(restored.composerHoldsWorkInFlight()).toBe(false);
-      expect(restored.readComposerRetryNonce("http")).toBe("http-operation");
-      // Another document arms a reply without changing the saved payload.
-      restored.touchComposerDraftContext("http");
-      first.touchComposerDraftContext("http");
-      first.settleComposerDraftSubmission("http", submitted, true);
-      expect(restored.readComposerDraft("http")).toBe("saved words");
-      expect(restored.readComposerRetryNonce("http")).toBe("http-operation");
-      // This document can still accept its own unchanged draft after a context edit.
-      const retry = restored.beginComposerDraftSubmission("http", "saved words", {
-        nonce: "next-operation",
-        bindings: [],
-        skill: null,
-      });
-      restored.touchComposerDraftContext("http");
-      restored.settleComposerDraftSubmission("http", retry, true);
-      expect(restored.readComposerDraft("http")).toBe("");
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-  it.each(["reply edit", "same-payload write", "new submission"])(
-    "preserves another document's draft after a %s",
+  it.each(["context", "same-text write", "submission"])(
+    "fences old-document acceptance after a new document's %s on plain HTTP",
     async (change) => {
       const storage = memoryStorage();
+      const crypto = globalThis.crypto;
       vi.stubGlobal("localStorage", storage);
+      vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
       try {
         vi.resetModules();
         const first = await import("./composer-draft.js");
-        first.writeComposerDraft("ownership", "saved words", storage, []);
-        const submitted = first.beginComposerDraftSubmission("ownership", "saved words", {
-          nonce: "first-send",
-          bindings: [],
-          skill: null,
-        });
+        first.writeComposerDraft("thread", "words");
+        const submitted = first.beginComposerDraftSubmission("thread", "words");
         vi.resetModules();
         const second = await import("./composer-draft.js");
-        expect(second.readComposerRetryNonce("ownership")).toBe("first-send");
-        if (change === "same-payload write")
-          second.writeComposerDraft("ownership", "saved words", storage, []);
-        else if (change === "new submission")
-          second.beginComposerDraftSubmission("ownership", "saved words");
-        else second.touchComposerDraftContext("ownership"); // Arming a reply: no payload write.
-        // A subsequent local context edit cannot take ownership back from the other document.
-        first.touchComposerDraftContext("ownership");
-        first.settleComposerDraftSubmission("ownership", submitted, true);
-        expect(second.readComposerDraft("ownership")).toBe("saved words");
-        expect(second.readComposerRetryNonce("ownership")).toBe(
-          change === "reply edit" ? "first-send" : null,
-        );
-        // The saved operation survives even without either document's callbacks.
-        vi.resetModules();
-        const reloaded = await import("./composer-draft.js");
-        expect(reloaded.composerHoldsWorkInFlight()).toBe(false);
-        expect(reloaded.readComposerRetryNonce("ownership")).toBe(
-          change === "reply edit" ? "first-send" : null,
-        );
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    },
-  );
-  it.each(["text", "skill", "remove", "binding", "storage failure"])(
-    "does not recover an obsolete or unsaved identity: %s",
-    async (change) => {
-      const storage = memoryStorage();
-      vi.stubGlobal("localStorage", storage);
-      const skill = {
-        id: "s1",
-        name: "summarize",
-        description: "",
-        source: "user" as const,
-        readOnly: false,
-      };
-      try {
-        vi.resetModules();
-        const first = await import("./composer-draft.js");
-        first.writeComposerDraft("negative", "@Bob", storage, [], skill);
-        const setItem = storage.setItem;
-        if (change === "storage failure")
-          storage.setItem = (key, value) => {
-            if (key.startsWith("rakazo.composerNonce.")) throw new Error("quota");
-            setItem(key, value);
-          };
-        first.beginComposerDraftSubmission("negative", "@Bob", {
-          nonce: "old",
-          bindings: [],
-          skill,
-        });
-        if (change === "text") first.writeComposerDraft("negative", "changed", storage, [], skill);
-        if (change === "skill")
-          first.writeComposerDraft("negative", "@Bob", storage, [], { ...skill, id: "other" });
-        if (change === "remove") first.writeComposerDraft("negative", "@Bob", storage, []);
-        if (change === "binding")
-          storage.setItem(
-            composerDraftBindingsKey("negative"),
-            JSON.stringify({
-              version: 1,
-              text: "@Bob",
-              bindings: [{ start: 0, end: 4, mention: { kind: "bot", id: "bob", name: "Bob" } }],
-              skill,
-            }),
-          );
-        vi.resetModules();
-        const restored = await import("./composer-draft.js");
-        expect(restored.readComposerRetryNonce("negative")).toBeNull();
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    },
-  );
-  it.each(["", "notes", null])(
-    "recovers an unsettled operation in a fresh module: %s",
-    async (body) => {
-      const storage = memoryStorage();
-      vi.stubGlobal("localStorage", storage);
-      const skill = {
-        id: "s1",
-        name: "summarize",
-        description: "",
-        source: "user" as const,
-        readOnly: false,
-      };
-      try {
-        vi.resetModules();
-        const first = await import("./composer-draft.js");
-        first.writeComposerDraft(
-          "reload",
-          body ?? "plain text",
-          storage,
-          [],
-          body === null ? null : skill,
-        );
-        const original = first.beginComposerDraftSubmission("reload", body ?? "plain text", {
-          nonce: "operation-1",
-          bindings: [],
-          skill: body === null ? null : skill,
-        });
-        vi.resetModules();
-        const restored = await import("./composer-draft.js");
-        expect(restored.composerHoldsWorkInFlight()).toBe(false);
-        expect(restored.readComposerDraft("reload")).toBe(body ?? "plain text");
-        expect(restored.readComposerDraftSkill("reload")).toEqual(body === null ? null : skill);
-        expect(restored.readComposerRetryNonce("reload")).toBe("operation-1");
-        const retry = restored.beginComposerDraftSubmission("reload", body ?? "plain text", {
-          nonce: restored.readComposerRetryNonce("reload")!,
-          bindings: [],
-          skill: body === null ? null : skill,
-        });
-        restored.settleComposerDraftSubmission("reload", retry, true);
-        expect(restored.readComposerRetryNonce("reload")).toBeNull();
-        // A completion from the old document must not resurrect the accepted nonce.
-        first.settleComposerDraftSubmission("reload", original, false);
-        first.settleComposerDraftSubmission("reload", original, true);
-        expect(restored.readComposerDraft("reload")).toBe("");
-        expect(restored.readComposerRetryNonce("reload")).toBeNull();
+        if (change === "context") second.touchComposerDraftContext("thread");
+        else if (change === "submission") second.beginComposerDraftSubmission("thread", "words");
+        else second.writeComposerDraft("thread", "words");
+        first.touchComposerDraftContext("thread");
+        first.settleComposerDraftSubmission("thread", submitted, true);
+        expect(second.readComposerDraft("thread")).toBe("words");
+        const own = second.beginComposerDraftSubmission("thread", "words");
+        second.touchComposerDraftContext("thread");
+        second.settleComposerDraftSubmission("thread", own, true);
+        expect(second.readComposerDraft("thread")).toBe("");
       } finally {
         vi.unstubAllGlobals();
       }

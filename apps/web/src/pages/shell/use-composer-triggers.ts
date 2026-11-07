@@ -89,7 +89,12 @@ export function useComposerTriggers({
     const next = composerPromptSkill(selectedSkillRef.current, bindings)
       ? null
       : composerSlashQuery(value, start, end, bindings);
-    if (next !== null && slashQuery === null) onSlashOpen?.();
+    const options = next ? composerSlashOptions(next, agentSkills ?? []) : null;
+    const opensMenu = options !== null && (options.skills.length > 0 || options.actions.length > 0);
+    // A leading slash refreshes even an empty catalogue. Mid-message candidates
+    // refresh only when they actually open the picker, not for prose paths.
+    if (next && ((next.start === 0 && slashQuery === null) || (opensMenu && !showSlashPicker)))
+      onSlashOpen?.();
     setSlashQuery(next);
   }
 

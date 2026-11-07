@@ -21,7 +21,14 @@ import {
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestBrowserNotificationPermission } from "../../lib/browser-notifications";
-import { setComposerUnsavedWork } from "../../lib/composer-draft";
+import {
+  composerDraftKey,
+  readComposerDraft,
+  readComposerDraftOwner,
+  readComposerDraftSkill,
+  setComposerUnsavedWork,
+} from "../../lib/composer-draft";
+import { clearComposerSend, readComposerSend, saveComposerSend } from "../../lib/composer-send";
 import { scheduleFocusPrompt } from "../../lib/focus-prompt";
 import type { PageSession } from "../../lib/pages";
 import {
@@ -53,6 +60,8 @@ export function useComposerActions({
   activeGroupId,
   botsRef,
   bootstrapMe,
+  userId,
+  currentSpaceId,
   activeSnapshot,
   navigate,
   refreshBots,
@@ -75,6 +84,8 @@ export function useComposerActions({
   activeGroupId: RefObject<string | undefined>;
   botsRef: RefObject<Bot[]>;
   bootstrapMe: Me | null | undefined;
+  userId?: string;
+  currentSpaceId?: string | null;
   activeSnapshot: ThreadSnapshot | null;
   navigate: ReturnType<typeof useShellNavigation>["navigate"];
   refreshBots: () => Promise<void>;
@@ -115,6 +126,9 @@ export function useComposerActions({
     setSendFailure(message === null ? null : { message, imageConfirmation: false });
   }, []);
   const uploadedSendArtifacts = useRef(new Map<string, WeakMap<File, string>>());
+  // Only this mounted owner knows whether missing context was explicitly removed.
+  // A fresh document instead submits the preserved immutable request unchanged.
+  const knownSendContexts = useRef(new Set<string>());
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dismissedRunErrorIds, setDismissedRunErrorIds] =
@@ -347,19 +361,71 @@ export function useComposerActions({
       const { target: replyAtSend, quote: replyQuoteAtSend } = armedReply.current;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
-      const plan = resolveComposerSendPlan({
-        text: draft,
-        mentions,
-        hasAttachments: attachments.length > 0,
-      });
-      if (plan.isNoOp) return false;
-      const reroutedToGroup = Boolean(
-        plan.rerouteGroupId && plan.rerouteGroupId !== initialGroupTarget,
+      const draftKey = composerDraftKey(
+        initialGroupTarget ? { groupId: initialGroupTarget } : { botId: initialBotTarget! },
       );
-      const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
+      const scope = {
+        server: window.location.origin,
+        userId: userId ?? "",
+        spaceId: currentSpaceId ?? null,
+      };
+      const context = {
+        reply: replyAtSend?.id ?? null,
+        quote: replyQuoteAtSend,
+        page: pageSession.dock.get().page?.id ?? null,
+        attachments: attachments.map((item) => item.id),
+      };
+      const saved = readComposerSend(draftKey, scope);
+      const draftOwner = readComposerDraftOwner(draftKey);
+      // Selection alone does not retire an unknown operation. A changed context
+      // submitted by the user is new intent; document loss preserves the request.
+      const hasContext = context.reply || context.page || context.attachments.length;
+      let envelope =
+        saved &&
+        ((!hasContext && !knownSendContexts.current.has(draftKey)) ||
+          JSON.stringify(context) === JSON.stringify(saved.context))
+          ? saved.envelope
+          : null;
+      const sendContext = envelope ? saved!.context : context;
+      // Explicit confirmation changes only handling and operation identity, not
+      // the final uploaded request. An unknown file resend keeps that identity.
+      if (envelope && imageHandling && envelope.body.imageHandling !== imageHandling) {
+        clientNonce = newClientId();
+        envelope =
+          envelope.procedure === "sendWithRoutines"
+            ? { ...envelope, body: { ...envelope.body, imageHandling, clientNonce } }
+            : { ...envelope, body: { ...envelope.body, imageHandling, clientNonce } };
+      }
+      const persist = (envelope: Parameters<typeof saveComposerSend>[3]) => {
+        if (
+          readComposerDraftOwner(draftKey) === draftOwner &&
+          (readComposerDraft(draftKey) || readComposerDraftSkill(draftKey))
+        ) {
+          saveComposerSend(draftKey, scope, sendContext, envelope);
+          if (sendContext === context) knownSendContexts.current.add(draftKey);
+        }
+      };
+      // Replacing a saved envelope is a new operation, even if an older UI caller
+      // retained its local submission token across a transient context edit.
+      if (saved && !envelope) clientNonce = newClientId();
+      const plan = envelope
+        ? null
+        : resolveComposerSendPlan({
+            text: draft,
+            mentions,
+            hasAttachments: attachments.length > 0,
+          });
+      if (plan?.isNoOp) return false;
+      const reroutedToGroup = Boolean(
+        (envelope?.body.groupId ?? plan?.rerouteGroupId) &&
+          (envelope?.body.groupId ?? plan?.rerouteGroupId) !== initialGroupTarget,
+      );
+      const groupTarget = envelope?.body.groupId ?? plan?.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
       if (
-        plan.shouldSend &&
+        (envelope
+          ? Boolean(envelope.body.text || envelope.body.artifactIds?.length)
+          : plan?.shouldSend) &&
         (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
       ) {
         const permissionRequest = requestBrowserNotificationPermission();
@@ -367,9 +433,9 @@ export function useComposerActions({
       }
       // The open page rides only on text this chat sends, never on a group or routine-only send.
       const fromPage =
-        plan.shouldSend && !reroutedToGroup
+        plan?.shouldSend && !reroutedToGroup
           ? pageSession.send(plan.trimmed, activeSnapshot?.messages ?? [], replyAtSend?.id)
-          : { text: plan.trimmed, replyToMessageId: undefined };
+          : { text: plan?.trimmed ?? "", replyToMessageId: undefined };
       const trimmed = fromPage.text.trim();
       const replyToMessageId = fromPage.replyToMessageId;
       sendingRef.current = true;
@@ -386,92 +452,83 @@ export function useComposerActions({
       // Keep the draft cleared once the submission is confirmed accepted.
       let accepted = false;
       try {
-        if (!plan.shouldSend) {
+        if (!envelope && plan && !plan.shouldSend) {
           if (plan.shouldRunRoutines) {
-            await rpc.threads.sendWithRoutines({
+            const body = {
               ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
               clientNonce,
               routineIds: plan.routineIds,
-            });
-            accepted = true;
+            };
+            envelope = { procedure: "sendWithRoutines", body };
           }
-          dropDelayedSetup();
-          clearSentReply(replyAtSend, replyQuoteAtSend);
-          revokePendingAttachmentPreviews(attachments);
-          setPendingAttachments((current) =>
-            current.filter((attachment) => !attachments.includes(attachment)),
-          );
-          setAttachmentNotice(null);
-          if (reroutedToGroup && groupTarget) {
-            navigate(`/app/g/${groupTarget}`);
-            return true;
-          }
-          // The routine is saved; live events reconcile a failed refresh.
-          if (groupTarget && activeGroupId.current === groupTarget) {
-            void refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
-          } else if (botTarget && activeBotId.current === botTarget) {
-            void refreshThreadRef.current(botTarget).catch(() => undefined);
-          }
-          return true;
         }
-        const artifactIds: string[] = [];
-        const uploaded =
-          uploadedSendArtifacts.current.get(clientNonce) ?? new WeakMap<File, string>();
-        uploadedSendArtifacts.current.set(clientNonce, uploaded);
-        for (const pending of attachments) {
-          const existing = uploaded.get(pending.file);
-          if (existing) {
-            artifactIds.push(existing);
-            continue;
+        if (!envelope && plan?.shouldSend) {
+          const artifactIds: string[] = [];
+          const uploaded =
+            uploadedSendArtifacts.current.get(clientNonce) ?? new WeakMap<File, string>();
+          uploadedSendArtifacts.current.set(clientNonce, uploaded);
+          for (const pending of attachments) {
+            const existing = uploaded.get(pending.file);
+            if (existing) {
+              artifactIds.push(existing);
+              continue;
+            }
+            const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
+            if (!mimeType) {
+              throw new Error(t`Unsupported file type: ${pending.file.name}`);
+            }
+            const file = await prepareImage(pending.file);
+            const contentBase64 = await readFileAsBase64(file);
+            // Stable per pending attachment, so a retry under a new send nonce
+            // (an edited draft) gets back the artifact this upload already made.
+            // Scoped to the target: a retry rerouted to a group uploads afresh
+            // rather than replaying another chat's artifact.
+            const uploadNonce = `attachment:${groupTarget ?? botTarget}:${pending.id}`;
+            const artifact = await rpc.artifacts.create(
+              groupTarget
+                ? {
+                    groupId: groupTarget,
+                    name: pending.file.name,
+                    mimeType,
+                    contentBase64,
+                    clientNonce: uploadNonce,
+                  }
+                : {
+                    botId: botTarget!,
+                    name: pending.file.name,
+                    mimeType,
+                    contentBase64,
+                    clientNonce: uploadNonce,
+                  },
+            );
+            uploaded.set(pending.file, artifact.id);
+            artifactIds.push(artifact.id);
           }
-          const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
-          if (!mimeType) {
-            throw new Error(t`Unsupported file type: ${pending.file.name}`);
-          }
-          const file = await prepareImage(pending.file);
-          const contentBase64 = await readFileAsBase64(file);
-          // Stable per pending attachment, so a retry under a new send nonce
-          // (an edited draft) gets back the artifact this upload already made.
-          // Scoped to the target: a retry rerouted to a group uploads afresh
-          // rather than replaying another chat's artifact.
-          const uploadNonce = `attachment:${groupTarget ?? botTarget}:${pending.id}`;
-          const artifact = await rpc.artifacts.create(
-            groupTarget
-              ? {
-                  groupId: groupTarget,
-                  name: pending.file.name,
-                  mimeType,
-                  contentBase64,
-                  clientNonce: uploadNonce,
-                }
-              : {
-                  botId: botTarget!,
-                  name: pending.file.name,
-                  mimeType,
-                  contentBase64,
-                  clientNonce: uploadNonce,
-                },
-          );
-          uploaded.set(pending.file, artifact.id);
-          artifactIds.push(artifact.id);
+          const payload = {
+            ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+            clientNonce,
+            imageHandling: imageHandling ?? "confirm",
+            text: trimmed || undefined,
+            mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
+            artifactIds: artifactIds.length ? artifactIds : undefined,
+            replyToMessageId: reroutedToGroup ? undefined : (replyToMessageId ?? replyAtSend?.id),
+            replyQuote:
+              reroutedToGroup || replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
+            fromPage: !reroutedToGroup && replyToMessageId ? true : undefined,
+          } as const;
+          // The routines run in the same server operation as the message: both or neither.
+          envelope = plan.shouldRunRoutines
+            ? { procedure: "sendWithRoutines", body: { ...payload, routineIds: plan.routineIds } }
+            : { procedure: "send", body: payload };
         }
-        const payload = {
-          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
-          clientNonce,
-          imageHandling: imageHandling ?? "confirm",
-          text: trimmed || undefined,
-          mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
-          artifactIds: artifactIds.length ? artifactIds : undefined,
-          replyToMessageId: reroutedToGroup ? undefined : (replyToMessageId ?? replyAtSend?.id),
-          replyQuote:
-            reroutedToGroup || replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
-          fromPage: !reroutedToGroup && replyToMessageId ? true : undefined,
-        } as const;
-        // The routines run in the same server operation as the message: both or neither.
-        const sent = plan.shouldRunRoutines
-          ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
-          : await rpc.threads.send(payload);
+        if (envelope && envelope !== saved?.envelope) persist(envelope);
+        const sent = !envelope
+          ? undefined
+          : envelope.procedure === "sendWithRoutines"
+            ? (await rpc.threads.sendWithRoutines(envelope.body)).send
+            : await rpc.threads.send(envelope.body);
         accepted = true;
+        if (envelope) clearComposerSend(draftKey, envelope.body.clientNonce);
         if (sent && botTarget && activeBotId.current === botTarget) {
           updateSnapshot((current) =>
             applyThreadSendReceipt(
@@ -539,6 +596,8 @@ export function useComposerActions({
       pendingAttachments,
       sending,
       t,
+      userId,
+      currentSpaceId,
     ],
   );
   const stopRun = useCallback(async () => {
