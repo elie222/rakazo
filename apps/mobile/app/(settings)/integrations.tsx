@@ -256,7 +256,7 @@ export default function Integrations() {
     query.trim() && !category
       ? standaloneServers.filter(
           (server) =>
-            // A server just added from integrations.sh stays, with any client it needs.
+            // A server just added from the catalog search stays, with any client it needs.
             (catalogAdded?.serverId === server.id && catalogAdded.query === query) ||
             matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )

@@ -515,6 +515,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["marketplace/submissions"],
       ["mcp/servers/list"],
       ["mcp/servers/create"],
+      ["mcp/servers/connect"],
       ["mcp/servers/update"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],

@@ -694,7 +694,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Remove {name}": "{name}を削除",
   "Removing…": "削除中…",
   "Search apps": "アプリを検索",
-  "Search integrations.sh": "integrations.sh で検索",
+  "Search more apps": "他のアプリを検索",
   "Show more": "さらに表示",
   Tools: "ツール",
   Uninstall: "アンインストール",

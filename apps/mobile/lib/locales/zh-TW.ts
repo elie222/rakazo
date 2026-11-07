@@ -727,7 +727,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "排程任務",
   Search: "搜尋",
   "Search apps": "搜尋應用程式",
-  "Search integrations.sh": "在 integrations.sh 上搜尋",
+  "Search more apps": "搜尋更多應用程式",
   "Search models": "搜尋模型",
   "Search conversations, files, and routines": "搜尋對話、檔案和例行任務",
   Searching: "搜尋中",

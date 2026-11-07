@@ -1,18 +1,18 @@
 import type { SignInMcpServer } from "@rakazo/core";
-import { findOrAddMcpServer, signInMcpServers } from "@rakazo/core";
+import { signInMcpServers } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { signInToMcpServer } from "../lib/mcp-oauth";
+import { finishMcpSignIn } from "../lib/mcp-oauth";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { ConnectorIcon } from "./connector-icon";
 import { LOGO_SIZE } from "./integrations-styles";
 import { NativeActionButton } from "./native-action-button";
 
-/** Looks the search up on integrations.sh when asked, and connects a server by signing in. */
+/** Looks the search up in the public app catalog when asked, and connects a server by signing in. */
 export function IntegrationCatalogSearch({
   query,
   onConnected,
@@ -65,12 +65,12 @@ export function IntegrationCatalogSearch({
     setPending(server.endpoint);
     setError(null);
     try {
-      const row = await findOrAddMcpServer(server, {
-        list: () => rpc("mcp/servers/list"),
-        create: (config) => rpc("mcp/servers/create", config),
+      const { server: row, signIn } = await rpc("mcp/servers/connect", {
+        ...server,
+        client: "mobile",
       });
       try {
-        await signInToMcpServer(row.id);
+        await finishMcpSignIn(signIn);
       } finally {
         // The server is added whether or not sign-in finishes; show it, with any client it needs.
         await onConnected(row.id).catch(() => undefined);
@@ -87,7 +87,7 @@ export function IntegrationCatalogSearch({
       {servers === null ? (
         <NativeActionButton
           fill={false}
-          label={t("Search integrations.sh")}
+          label={t("Search more apps")}
           busy={pending === "search"}
           disabled={Boolean(pending)}
           onPress={() => void search()}

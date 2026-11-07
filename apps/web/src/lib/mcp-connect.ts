@@ -1,4 +1,3 @@
-import { findOrAddMcpServer } from "@rakazo/core";
 import { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 import { rpc } from "./rpc";
 
@@ -12,28 +11,35 @@ export type McpOauthResult =
   | "already_connected"
   | "authorization_not_requested";
 
+/** Where providers send the user back; a pre-registered client must allow it. */
+export function mcpOAuthRedirectUri(): string {
+  return `${window.location.origin}/mcp/oauth/callback`;
+}
+
+const POPUP_FEATURES = "popup,width=560,height=720";
+
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
  * broadcasts completion or the popup is closed without finishing.
  *
  * The BroadcastChannel (not window.opener) is the completion signal because
  * provider login pages with COOP sever the opener link. */
-/** Where providers send the user back; a pre-registered client must allow it. */
-export function mcpOAuthRedirectUri(): string {
-  return `${window.location.origin}/mcp/oauth/callback`;
-}
-
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({ serverId, redirectUri: mcpOAuthRedirectUri() });
   if (started.status !== "authorization_required") return started.status;
-  const popup = window.open(
+  return await waitForSignIn(
     started.authorizationUrl,
-    MCP_OAUTH_CHANNEL,
-    "popup,width=560,height=720",
+    window.open(started.authorizationUrl, MCP_OAUTH_CHANNEL, POPUP_FEATURES),
   );
+}
+
+async function waitForSignIn(
+  authorizationUrl: string,
+  popup: Window | null,
+): Promise<McpOauthResult> {
   if (!popup) {
     // Popup blocked: navigate this tab instead; the callback page returns to /app.
-    window.location.assign(started.authorizationUrl);
+    window.location.assign(authorizationUrl);
     return "cancelled";
   }
   return await new Promise<McpOauthResult>((resolve) => {
@@ -65,18 +71,28 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   });
 }
 
-/** Adds a remote MCP server by URL, reusing one already added, and signs in to it. */
+/** Adds a remote MCP server by URL, reusing one already added, and signs in to it. The server
+ * gives the bot the server once the sign-in finishes. Call it from the click, before any await. */
 export async function connectMcpEndpoint(input: {
   name: string;
   endpoint: string;
   botId?: string;
 }): Promise<McpOauthResult> {
-  const server = await findOrAddMcpServer(input, {
-    list: () => rpc.mcp.servers.list(),
-    create: (config) => rpc.mcp.servers.create(config),
-  });
-  const result = await connectMcpOauth(server.id);
-  if (result !== "cancelled" && input.botId)
-    await rpc.mcp.assignments.approve({ botId: input.botId, serverId: server.id });
-  return result;
+  // A browser blocks a popup opened after a request, so it opens first and is pointed later.
+  const popup = window.open("about:blank", MCP_OAUTH_CHANNEL, POPUP_FEATURES);
+  try {
+    const { signIn } = await rpc.mcp.servers.connect({
+      ...input,
+      redirectUri: mcpOAuthRedirectUri(),
+    });
+    if (signIn.status !== "authorization_required") {
+      popup?.close();
+      return signIn.status;
+    }
+    if (popup) popup.location.href = signIn.authorizationUrl;
+    return await waitForSignIn(signIn.authorizationUrl, popup);
+  } catch (error) {
+    popup?.close();
+    throw error;
+  }
 }

@@ -706,7 +706,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Remove {name}": "{name} verwijderen",
   "Removing…": "Bezig met verwijderen…",
   "Search apps": "Apps zoeken",
-  "Search integrations.sh": "Zoeken op integrations.sh",
+  "Search more apps": "Meer apps zoeken",
   "Show more": "Meer tonen",
   Tools: "Tools",
   Uninstall: "Verwijderen",

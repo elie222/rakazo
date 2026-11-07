@@ -782,6 +782,8 @@ type Pending = {
   /** The stored authorization generation this flow began at. */
   generation: number;
   provider: StoredMcpOAuthProvider;
+  /** The bot that gets the server once this sign-in finishes. */
+  botId: string | null;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
 };
@@ -1150,6 +1152,7 @@ export class McpOAuthBroker {
     userId: string;
     redirectUri: string;
     client?: McpOAuthBeginClient;
+    botId?: string;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1252,6 +1255,7 @@ export class McpOAuthBroker {
         endpoint: target,
         redirectUri: input.redirectUri,
         oauthCiphertext: sessionMaterial.ciphertext,
+        botId: input.botId ?? null,
       },
     });
     const expiry = setTimeout(() => {
@@ -1269,6 +1273,7 @@ export class McpOAuthBroker {
       stdio: !server.endpoint,
       generation: loaded.material.oauthGeneration ?? 0,
       provider,
+      botId: input.botId ?? null,
       createdAt: Date.now(),
       expiry,
     });
@@ -1285,7 +1290,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<{ serverId: string; revision: number }> {
+  }): Promise<{ serverId: string; revision: number; botId: string | null }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new Error("MCP OAuth session is invalid or expired");
@@ -1328,6 +1333,7 @@ export class McpOAuthBroker {
           redirectUri: session.redirectUri,
           state: session.id,
         }),
+        botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,
       };
@@ -1406,7 +1412,7 @@ export class McpOAuthBroker {
         });
       },
     );
-    return { serverId: pending.serverId, revision };
+    return { serverId: pending.serverId, revision, botId: pending.botId };
   }
 
   private async sweepExpiredPending(): Promise<void> {

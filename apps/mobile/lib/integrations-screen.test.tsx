@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Integrations from "../app/(settings)/integrations";
 import { ConnectorIcon } from "../components/connector-icon";
 import type * as McpOAuth from "./mcp-oauth";
-import { signInToMcpServer } from "./mcp-oauth";
+import { finishMcpSignIn, signInToMcpServer } from "./mcp-oauth";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -54,6 +54,7 @@ vi.mock("./last-bot", () => ({ loadLastBotId: async () => "" }));
 vi.mock("./mcp-oauth", async (importOriginal) => ({
   ...(await importOriginal<typeof McpOAuth>()),
   signInToMcpServer: vi.fn(async () => "connected"),
+  finishMcpSignIn: vi.fn(async () => "connected"),
 }));
 vi.mock("./appearance", () => ({
   mobileTokens: () => ({ destructive: "red", success: "green", warning: "orange" }),
@@ -238,6 +239,12 @@ afterEach(() => {
 async function render(node: ReactNode = <Integrations />) {
   await act(async () => root.render(node));
 }
+
+const SIGN_IN = {
+  status: "authorization_required",
+  sessionId: "session-1",
+  authorizationUrl: "https://auth.tracker.example/authorize",
+} as const;
 
 it("keeps Search visible and shows rows on a cold load until the first success", async () => {
   await render();
@@ -1056,7 +1063,7 @@ it("registers an OAuth MCP server, signs in, and reads the servers again", async
   expect(row()?.textContent).toBe("TTestConnected");
 });
 
-it("finds a server on integrations.sh and connects it by signing in", async () => {
+it("finds a server in the public catalog and connects it by signing in", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) => {
     if (proc === "capabilities/catalogSearch")
@@ -1085,8 +1092,11 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
           },
         ],
       });
-    if (proc === "mcp/servers/create")
-      return Promise.resolve({ id: "tracker-server", name: "Tracker", enabled: true });
+    if (proc === "mcp/servers/connect")
+      return Promise.resolve({
+        server: { id: "tracker-server", name: "Tracker", enabled: true },
+        signIn: SIGN_IN,
+      });
     return fallback?.(proc, args);
   });
   await render();
@@ -1104,7 +1114,7 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
 
   expect(container.textContent).toContain("No apps match your search.");
 
-  await act(async () => button("Search integrations.sh")?.click());
+  await act(async () => button("Search more apps")?.click());
 
   expect(state.rpc).toHaveBeenCalledWith("capabilities/catalogSearch", {
     query: "tracker",
@@ -1116,11 +1126,12 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
 
   await act(async () => button("Sign in")?.click());
 
-  expect(state.rpc).toHaveBeenCalledWith(
-    "mcp/servers/create",
-    expect.objectContaining({ name: "Tracker", endpoint: "https://mcp.tracker.example/mcp" }),
-  );
-  expect(signInToMcpServer).toHaveBeenCalledWith("tracker-server");
+  expect(state.rpc).toHaveBeenCalledWith("mcp/servers/connect", {
+    name: "Tracker",
+    endpoint: "https://mcp.tracker.example/mcp",
+    client: "mobile",
+  });
+  expect(finishMcpSignIn).toHaveBeenCalledWith(SIGN_IN);
 });
 
 it("saves a client ID for a server that cannot register Rakazo, then signs in", async () => {
@@ -1180,7 +1191,7 @@ it("saves a client ID for a server that cannot register Rakazo, then signs in", 
   expect(signInToMcpServer).toHaveBeenCalledWith("client");
 });
 
-it("drops an integrations.sh answer for a search the user has since changed", async () => {
+it("drops a catalog answer for a search the user has since changed", async () => {
   let answer: (value: unknown) => void = () => undefined;
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>
@@ -1205,7 +1216,7 @@ it("drops an integrations.sh answer for a search the user has since changed", as
   await type("tracker");
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((node) => node.textContent === "Search integrations.sh")
+      .find((node) => node.textContent === "Search more apps")
       ?.click(),
   );
 
@@ -1233,7 +1244,7 @@ it("drops an integrations.sh answer for a search the user has since changed", as
   );
 
   const results = container.querySelector('[data-testid="integration-catalog-search"]');
-  expect(results?.textContent).toBe("Search integrations.sh");
+  expect(results?.textContent).toBe("Search more apps");
 });
 
 it("shows a catalog server that still needs a client after its sign-in fails", async () => {
@@ -1274,15 +1285,15 @@ it("shows a catalog server that still needs a client after its sign-in fails", a
           },
         ],
       });
-    if (proc === "mcp/servers/create") {
+    if (proc === "mcp/servers/connect") {
       servers = [added];
-      return Promise.resolve(added);
+      return Promise.resolve({ server: added, signIn: SIGN_IN });
     }
     if (proc === "integrationSetup/get")
       return Promise.resolve({ webUrl: "https://rakazo.example.test/integrations/setup" });
     return fallback?.(proc, args);
   });
-  vi.mocked(signInToMcpServer).mockRejectedValueOnce(new Error("Needs an OAuth client ID"));
+  vi.mocked(finishMcpSignIn).mockRejectedValueOnce(new Error("Needs an OAuth client ID"));
   await render();
   await act(async () => resolveCatalog([item]));
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
@@ -1295,14 +1306,14 @@ it("shows a catalog server that still needs a client after its sign-in fails", a
   });
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find((node) => node.textContent === label);
-  await act(async () => button("Search integrations.sh")?.click());
+  await act(async () => button("Search more apps")?.click());
   await act(async () => button("Sign in")?.click());
 
   // The domain search doesn't match the server's name; it shows anyway, with its client form.
   expect(container.querySelector('[data-testid="mcp-oauth-client-form"]')).not.toBeNull();
 });
 
-it("says no apps match once when integrations.sh finds nothing either", async () => {
+it("says no apps match once when the catalog finds nothing either", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>
     proc === "capabilities/catalogSearch"
@@ -1320,7 +1331,7 @@ it("says no apps match once when integrations.sh finds nothing either", async ()
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
   const button = [...container.querySelectorAll("button")].find(
-    (node) => node.textContent === "Search integrations.sh",
+    (node) => node.textContent === "Search more apps",
   );
 
   await act(async () => button?.click());
@@ -1417,13 +1428,13 @@ it("shows a catalog server added before its sign-in was cancelled", async () => 
           },
         ],
       });
-    if (proc === "mcp/servers/create") {
+    if (proc === "mcp/servers/connect") {
       servers = [added];
-      return Promise.resolve(added);
+      return Promise.resolve({ server: added, signIn: SIGN_IN });
     }
     return fallback?.(proc, args);
   });
-  vi.mocked(signInToMcpServer).mockResolvedValueOnce("cancelled");
+  vi.mocked(finishMcpSignIn).mockResolvedValueOnce("cancelled");
   await render();
   await act(async () => resolveCatalog([item]));
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
@@ -1439,7 +1450,7 @@ it("shows a catalog server added before its sign-in was cancelled", async () => 
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find((node) => node.textContent === label);
   await type("tracker");
-  await act(async () => button("Search integrations.sh")?.click());
+  await act(async () => button("Search more apps")?.click());
   await act(async () => button("Sign in")?.click());
   await type("");
 

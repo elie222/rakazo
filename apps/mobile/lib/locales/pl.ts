@@ -1487,7 +1487,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "Odczytane ze strony, niesprawdzone",
   Total: "Razem",
   "{name} options": "Opcje modelu {name}",
-  "Search integrations.sh": "Szukaj w integrations.sh",
+  "Search more apps": "Szukaj więcej aplikacji",
   "Redirect URI": "Adres URI przekierowania",
 };
 

@@ -761,7 +761,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "计划任务",
   Search: "搜索",
   "Search apps": "搜索应用",
-  "Search integrations.sh": "在 integrations.sh 上搜索",
+  "Search more apps": "搜索更多应用",
   "Search models": "搜索模型",
   "Search conversations, files, and routines": "搜索对话、文件和例行任务",
   Searching: "搜索中",

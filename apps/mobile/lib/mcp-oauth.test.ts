@@ -22,7 +22,7 @@ beforeEach(() => {
           sessionId: SESSION,
           authorizationUrl: "https://auth.example.test/authorize",
         }
-      : { ok: true }) as never);
+      : { ok: true, status: "connected" }) as never);
 });
 
 function returnWith(params: Record<string, string>) {
@@ -44,32 +44,36 @@ it("finishes the sign-in in the app once the browser hands the code back", async
   );
   expect(rpc).toHaveBeenCalledWith("mcp/oauth/complete", {
     sessionId: SESSION,
-    code: "code-1",
     state: SESSION,
+    code: "code-1",
   });
 });
 
-it("refuses a code returned for another sign-in", async () => {
-  returnWith({ code: "code-1", state: "mobile-other" });
+it("hands a refusal or an error at the provider to the server to judge", async () => {
+  vi.mocked(rpc).mockImplementation((async (path: string) =>
+    path === "mcp/oauth/begin"
+      ? {
+          status: "authorization_required",
+          sessionId: SESSION,
+          authorizationUrl: "https://auth.example.test/authorize",
+        }
+      : { ok: true, status: "cancelled" }) as never);
+  returnWith({ error: "access_denied", error_description: "Declined", state: SESSION });
 
-  await expect(signInToMcpServer("server-1")).rejects.toThrow();
-  expect(rpc).not.toHaveBeenCalledWith("mcp/oauth/complete", expect.anything());
+  await expect(signInToMcpServer("server-1")).resolves.toBe("cancelled");
+  expect(rpc).toHaveBeenCalledWith("mcp/oauth/complete", {
+    sessionId: SESSION,
+    state: SESSION,
+    error: "access_denied",
+    errorDescription: "Declined",
+  });
 });
 
-it("treats closing the browser or declining access as cancelled", async () => {
+it("treats closing the browser as cancelled", async () => {
   vi.mocked(openAuthSessionAsync).mockResolvedValueOnce({ type: WebBrowserResultType.CANCEL });
-  await expect(signInToMcpServer("server-1")).resolves.toBe("cancelled");
 
-  returnWith({ error: "access_denied", state: SESSION });
   await expect(signInToMcpServer("server-1")).resolves.toBe("cancelled");
-
   expect(rpc).not.toHaveBeenCalledWith("mcp/oauth/complete", expect.anything());
-});
-
-it("shows the provider's reason when the sign-in fails", async () => {
-  returnWith({ error: "server_error", error_description: "Try later", state: SESSION });
-
-  await expect(signInToMcpServer("server-1")).rejects.toThrow("Try later");
 });
 
 it("skips the browser when the server is already signed in", async () => {
