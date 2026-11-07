@@ -1984,6 +1984,7 @@ msgstr "{0} verbunden."
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
@@ -4946,6 +4947,10 @@ msgstr "Benachrichtigungen"
 msgid "Number"
 msgstr "Nummer"
 
+#: src/pages/plugins/source-form.tsx
+msgid "OAuth"
+msgstr ""
+
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth-Autorisierung wurde abgebrochen."
@@ -6035,6 +6040,10 @@ msgstr "Samstag"
 msgid "Save"
 msgstr "Speichern"
 
+#: src/pages/plugins/source-form.tsx
+msgid "Save and sign in"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "Den Arbeitsbereich speichern und aktuelle Software installieren."
@@ -6435,6 +6444,7 @@ msgid "Sign up"
 msgstr "Registrieren"
 
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Try again."
 msgstr "Anmeldung abgebrochen. Versuche es erneut."
 
@@ -7077,12 +7087,17 @@ msgid "This server cannot be assigned without a bot."
 msgstr "Dieser Server kann ohne Bot nicht zugewiesen werden."
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "This server did not request browser authorization."
 msgstr "Dieser Server hat keine Browserautorisierung angefordert."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "Dieser Server ist bereits verbunden. Trenne zuerst die Verbindung, um ihn erneut zu autorisieren."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

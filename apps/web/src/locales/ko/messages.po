@@ -1984,6 +1984,7 @@ msgstr "{0}에 연결했습니다."
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/plugins/source-form.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
@@ -4946,6 +4947,10 @@ msgstr "알림"
 msgid "Number"
 msgstr "번호"
 
+#: src/pages/plugins/source-form.tsx
+msgid "OAuth"
+msgstr ""
+
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth 인증이 취소되었습니다."
@@ -6035,6 +6040,10 @@ msgstr "토요일"
 msgid "Save"
 msgstr "저장"
 
+#: src/pages/plugins/source-form.tsx
+msgid "Save and sign in"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다."
@@ -6435,6 +6444,7 @@ msgid "Sign up"
 msgstr "가입하기"
 
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Try again."
 msgstr "로그인이 취소되었습니다. 다시 시도하세요."
 
@@ -7077,12 +7087,17 @@ msgid "This server cannot be assigned without a bot."
 msgstr "연결할 Bot이 없어 이 서버를 배정할 수 없습니다."
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "This server did not request browser authorization."
 msgstr "이 서버는 브라우저 인증을 요청하지 않았습니다."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "이 서버는 이미 연결되어 있습니다. 다시 인증하려면 먼저 연결을 해제하세요."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "This server needs an OAuth client ID. Add one in Manage MCP servers."
+msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
