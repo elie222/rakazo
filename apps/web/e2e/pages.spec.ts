@@ -1,1 +1,1 @@
-PLACEHOLDER
+@/tmp/pages_content_only.txt
