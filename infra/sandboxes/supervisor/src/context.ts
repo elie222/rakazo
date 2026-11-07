@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveSupervisorToken, uploadSizeFromEnv } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import Docker from "dockerode";
+import { resolveComputerGpu } from "./computer-gpu.js";
 import { computerImageEnsurer } from "./computer-image.js";
 import {
   assertComputerMountSources,
@@ -42,6 +43,8 @@ assertComputerMountSources(
   })),
   [dataDir, dockerSocketPath],
 );
+// A configured render node the supervisor cannot see or verify stops it here, at startup.
+export const computerGpu = resolveComputerGpu();
 export const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.

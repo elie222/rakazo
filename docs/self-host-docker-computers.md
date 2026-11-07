@@ -1,7 +1,7 @@
 # Docker computers
 
-Limit what each local Docker computer can use, keep it off your network, and share host folders
-with it.
+Limit what each local Docker computer can use, keep it off your network, share host folders
+with it, and optionally give its browser a GPU.
 
 The Docker supervisor is not published as its own image and is not exposed on the host. It runs from
 the app image, stays on the internal Compose network, and holds the Docker socket because access to
@@ -198,3 +198,43 @@ them, the computer stays on UTC and the browser's default language. A changed ti
 language replaces the computer on its next start, so after upgrading, each computer whose owner
 has either set is replaced once. The home and saved browser profiles are kept. A custom computer
 image should not set `TZ` or `LANGUAGE`: the computer gets them from the account.
+
+## GPU for the browser
+
+Computers render pages in software by default. To let the bot's browser use a host GPU, pass one
+render node with `SANDBOX_COMPUTER_GPU` (Docker sandboxes only):
+
+```env
+SANDBOX_COMPUTER_GPU=/dev/dri/renderD128
+```
+
+The supervisor must see the host's `/dev/dri`. When it runs in Compose, give the supervisor
+service a read-only bind in a Compose override file:
+
+```yaml
+services:
+  supervisor:
+    volumes:
+      - /dev/dri:/dev/dri:ro
+```
+
+The bind only lets the supervisor read the nodes' type, number and group; it cannot open them.
+Only DRM render nodes are accepted, never `card*`: the node must be character device 226 with a
+minor of 128 or more, and not a symlink (Docker follows a symlink to whatever device it names).
+Each computer joins the node's own group. The supervisor refuses to start when the node is
+missing, not visible, or another device, and checks it again before it creates or starts each
+computer.
+
+WARNING: the render node enlarges the sandbox's kernel attack surface. Page code (WebGL, WebGPU,
+shaders) then reaches the host's GPU driver and Mesa through the node, and the browser runs
+without its own sandbox. A driver bug can let a page escape the computer or hang the host GPU for
+every other user of it. Turn it on only with a GPU you can dedicate to bot computers and a current
+kernel.
+
+Each computer gets the node at the same path; nothing else from `/dev` is passed in, and the
+other confinement is unchanged. The browser renders through ANGLE on Vulkan when it can open the
+node and the image's Mesa Vulkan drivers list the GPU (`vulkaninfo --summary` in the computer).
+Otherwise it keeps software rendering. The drivers come from the image's Debian release, so Intel
+and AMD GPUs that this Mesa supports work; GPUs newer than it, and NVIDIA GPUs, which need
+NVIDIA's own driver and container toolkit, stay in software. Recreate the supervisor after a
+change; each computer picks up the new setting on its next provision, which replaces it.
