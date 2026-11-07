@@ -288,6 +288,9 @@ export function normalizeRunError(
         ? { summary: translate(trimmed), details, recovery: "connection" }
         : { summary: details, details };
   }
+  if (trimmed === INTERNAL_RUN_ERROR) {
+    return { summary: translate("Something went wrong. Try again."), details };
+  }
   if (trimmed === MODEL_OUTPUT_CUT_ERROR) {
     return {
       summary: translate(MODEL_OUTPUT_CUT_ERROR),

@@ -147,6 +147,7 @@ describe("normalizeRunError", () => {
       "Your OpenRouter key hit its weekly limit.",
     ],
     ["", "The model provider returned an error."],
+    ["Internal server error", "Something went wrong. Try again."],
   ])("normalizes %s", (details, summary) => {
     expect(normalizeRunError(details)).toMatchObject({ summary, details });
   });
