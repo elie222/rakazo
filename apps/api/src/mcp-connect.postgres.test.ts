@@ -174,6 +174,26 @@ describe.skipIf(!enabled).sequential("MCP catalog connect (PostgreSQL, offline p
   );
 
   it(
+    "still connects when the bot it was for is gone",
+    asActor(async () => {
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      const { server } = await client().mcp.servers.connect({
+        name: "Tracker",
+        endpoint: "https://mcp.tracker.example.test/mcp",
+      });
+      vi.spyOn(mcpOAuth, "complete").mockResolvedValue({
+        serverId: server.id,
+        revision: 1,
+        botId: "deleted-bot",
+      });
+
+      await expect(
+        client().mcp.oauth.complete({ sessionId: "session-1", state: "session-1", code: "code" }),
+      ).resolves.toEqual({ ok: true, status: "connected" });
+    }),
+  );
+
+  it(
     "reads a refusal at the provider as a cancelled sign-in",
     asActor(async () => {
       const complete = vi.spyOn(mcpOAuth, "complete");
