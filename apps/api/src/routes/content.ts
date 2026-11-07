@@ -143,8 +143,16 @@ export function contentRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
-      summary: authed.usage.summary.handler(async ({ context }) => {
-        const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+      summary: authed.usage.summary.handler(async ({ context, input }) => {
+        const since =
+          input?.days !== undefined
+            ? new Date(Date.now() - input.days * 24 * 60 * 60 * 1000)
+            : undefined;
+        const where = {
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+          ...(since ? { createdAt: { gte: since } } : {}),
+        };
         const sums = {
           inputTokens: true,
           outputTokens: true,
@@ -152,7 +160,7 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups] = await Promise.all([
+        const [result, modelGroups, botGroups, runGroups, dayRows] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -160,7 +168,29 @@ export function contentRoutes(ctx: RouterContext) {
             _sum: sums,
             _count: counts,
           }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["botId"],
+            where,
+            _sum: sums,
+            _count: counts,
+          }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
+          // Daily series for the heatmap, capped at a year.
+          deps.prisma.usageRecord.findMany({
+            where: {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              createdAt: { gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) },
+            },
+            select: {
+              createdAt: true,
+              inputTokens: true,
+              outputTokens: true,
+              totalTokens: true,
+              costUsd: true,
+            },
+            orderBy: { createdAt: "asc" },
+          }),
         ]);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
@@ -179,6 +209,43 @@ export function contentRoutes(ctx: RouterContext) {
             modelCalls: group._count._all,
           };
         };
+        const botIds = botGroups.map((group) => group.botId).filter(Boolean) as string[];
+        const bots = botIds.length
+          ? await deps.prisma.bot.findMany({
+              where: { id: { in: botIds }, spaceId: context.actor.spaceId },
+              select: { id: true, name: true },
+            })
+          : [];
+        const botNameById = new Map(bots.map((bot) => [bot.id, bot.name]));
+        const byDay = new Map<
+          string,
+          {
+            inputTokens: number;
+            outputTokens: number;
+            totalTokens: number;
+            costUsd: number;
+            modelCalls: number;
+          }
+        >();
+        for (const row of dayRows) {
+          const date = row.createdAt.toISOString().slice(0, 10);
+          const day = byDay.get(date) ?? {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+            modelCalls: 0,
+          };
+          day.inputTokens += row.inputTokens ?? 0;
+          day.outputTokens += row.outputTokens ?? 0;
+          day.totalTokens += row.totalTokens ?? 0;
+          day.costUsd += row.costUsd ?? 0;
+          day.modelCalls += 1;
+          byDay.set(date, day);
+        }
+        const daily = [...byDay.entries()]
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([date, totals]) => ({ date, ...totals }));
         return {
           ...completeSums(result),
           runs,
@@ -191,6 +258,16 @@ export function contentRoutes(ctx: RouterContext) {
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
             ),
+          bots: botGroups
+            .map((group) => ({
+              botId: group.botId ?? "",
+              botName: group.botId ? (botNameById.get(group.botId) ?? null) : null,
+              ...completeSums(group),
+            }))
+            .sort(
+              (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
+            ),
+          daily,
         };
       }),
     },

@@ -150,6 +150,7 @@ import {
   UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
+  UsageSummaryInputSchema,
   UsageSummarySchema,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
@@ -1434,7 +1435,7 @@ export const appContract = {
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
-    summary: oc.output(UsageSummarySchema),
+    summary: oc.input(UsageSummaryInputSchema.optional()).output(UsageSummarySchema),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),

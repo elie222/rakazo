@@ -547,9 +547,21 @@ msgstr "**목요일**\n"
 msgid "/ month"
 msgstr "/ 월"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "1 day"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "스페이스 1개"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "30 days"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "7 days"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -849,6 +861,7 @@ msgstr "모든 스페이스"
 msgid "All statuses"
 msgstr "모든 상태"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "전체 기간"
@@ -971,6 +984,7 @@ msgid "Anthropic API"
 msgstr "Anthropic API"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
@@ -1124,6 +1138,11 @@ msgstr "파일 첨부"
 msgid "Attachment"
 msgstr "첨부 파일"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Auth method"
+msgstr ""
+
 #: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "인증"
@@ -1272,6 +1291,7 @@ msgid "bot"
 msgstr "Bot"
 
 #: src/lib/identity-display.ts
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
@@ -1316,6 +1336,8 @@ msgid "Bot's model"
 msgstr "봇의 모델"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Both"
 msgstr "둘 다"
 
@@ -1502,6 +1524,7 @@ msgid "Chat"
 msgstr "채팅"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Chat Completions"
 msgstr "Chat Completions"
 
@@ -1992,6 +2015,11 @@ msgstr "연결 중…"
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Connection"
 msgstr "연결"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Connection name"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
@@ -2859,6 +2887,10 @@ msgid "Daily check-ins on unfinished work"
 msgstr "미완료 작업 매일 확인"
 
 #: src/pages/AccountSettingsOverlay.tsx
+msgid "Daily cost, last year"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "다크"
@@ -2986,6 +3018,10 @@ msgstr "이 스페이스의 자격 증명을 삭제할까요?"
 msgid "deleted"
 msgstr "삭제됨"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Deleted bot"
+msgstr ""
+
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -3089,8 +3125,8 @@ msgid "Disconnect {name}?"
 msgstr "{name} 연결을 해제할까요?"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Disconnect Self-hosted"
-msgstr "자체 호스팅 연결 해제"
+msgid "Disconnect Third-party model"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Disconnected {disconnectName}."
@@ -4046,6 +4082,14 @@ msgstr "레이블"
 msgid "Language"
 msgstr "언어"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 30 days"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 7 days"
+msgstr ""
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
@@ -4055,6 +4099,10 @@ msgstr "마지막 확인 {0}: 변경됨"
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "마지막 확인 {0}: 변경 없음"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last day"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4583,6 +4631,11 @@ msgstr "음소거됨"
 msgid "My computers"
 msgstr "내 컴퓨터"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "My subscription"
+msgstr ""
+
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -4590,7 +4643,9 @@ msgstr "내 컴퓨터"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServerForm.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
@@ -4879,6 +4934,8 @@ msgstr "트리거 없음"
 
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "None"
 msgstr "없음"
 
@@ -5417,6 +5474,7 @@ msgid "Protected input"
 msgstr "보호된 입력"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Protocol"
 msgstr "프로토콜"
 
@@ -5851,6 +5909,7 @@ msgid "Resize panel"
 msgstr "패널 크기 조절"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Responses"
 msgstr "Responses"
 
@@ -6936,6 +6995,11 @@ msgstr "생각 깊이"
 msgid "Thinking: {0}"
 msgstr "사고: {0}"
 
+#: src/lib/localized-provider-hint.ts
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Third-party model"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "This account is deactivated"
 msgstr "이 계정은 비활성화되었습니다"
@@ -7375,6 +7439,10 @@ msgstr "긴급"
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "사용량"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Usage range"
+msgstr ""
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

@@ -547,9 +547,21 @@ msgstr "**星期四**\n"
 msgid "/ month"
 msgstr "/ 月"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "1 day"
+msgstr "1 天"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "30 days"
+msgstr "30 天"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "7 days"
+msgstr "7 天"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -849,6 +861,7 @@ msgstr "所有工作区"
 msgid "All statuses"
 msgstr "全部状态"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "全部时间"
@@ -971,6 +984,7 @@ msgid "Anthropic API"
 msgstr "Anthropic API"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
@@ -1277,6 +1291,7 @@ msgid "bot"
 msgstr "Bot"
 
 #: src/lib/identity-display.ts
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
@@ -1321,6 +1336,8 @@ msgid "Bot's model"
 msgstr "Bot 的模型"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Both"
 msgstr "两者"
 
@@ -1507,6 +1524,7 @@ msgid "Chat"
 msgstr "聊天"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Chat Completions"
 msgstr "Chat Completions"
 
@@ -2869,6 +2887,10 @@ msgid "Daily check-ins on unfinished work"
 msgstr "每天跟进未完成的工作"
 
 #: src/pages/AccountSettingsOverlay.tsx
+msgid "Daily cost, last year"
+msgstr "每日费用（过去一年）"
+
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "深色"
@@ -2995,6 +3017,10 @@ msgstr "要删除此工作区的凭据吗？"
 #: src/pages/shell/message-view.tsx
 msgid "deleted"
 msgstr "已删除"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Deleted bot"
+msgstr "已删除的机器人"
 
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
@@ -4056,6 +4082,14 @@ msgstr "标签"
 msgid "Language"
 msgstr "语言"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 30 days"
+msgstr "最近 30 天"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 7 days"
+msgstr "最近 7 天"
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
@@ -4065,6 +4099,10 @@ msgstr "上次检查 {0}：有变化"
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "上次检查 {0}：无变化"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last day"
+msgstr "最近 1 天"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4605,7 +4643,9 @@ msgstr "我的订阅"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServerForm.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
@@ -4894,6 +4934,8 @@ msgstr "无触发器"
 
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "None"
 msgstr "无"
 
@@ -5432,6 +5474,7 @@ msgid "Protected input"
 msgstr "受保护输入"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Protocol"
 msgstr "协议"
 
@@ -5866,6 +5909,7 @@ msgid "Resize panel"
 msgstr "调整面板大小"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Responses"
 msgstr "Responses"
 
@@ -6952,6 +6996,7 @@ msgid "Thinking: {0}"
 msgstr "思考：{0}"
 
 #: src/lib/localized-provider-hint.ts
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Third-party model"
 msgstr "第三方模型"
 
@@ -7394,6 +7439,10 @@ msgstr "紧急"
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Usage range"
+msgstr "用量范围"
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

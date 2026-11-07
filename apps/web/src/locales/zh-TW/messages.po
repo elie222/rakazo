@@ -548,9 +548,21 @@ msgstr "**星期四**\n"
 msgid "/ month"
 msgstr "/ 月"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "1 day"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 個空間"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "30 days"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "7 days"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -850,6 +862,7 @@ msgstr "所有空間"
 msgid "All statuses"
 msgstr "所有狀態"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "不限時間"
@@ -972,6 +985,7 @@ msgid "Anthropic API"
 msgstr "Anthropic API"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
@@ -1125,6 +1139,11 @@ msgstr "附加檔案"
 msgid "Attachment"
 msgstr "附件"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Auth method"
+msgstr ""
+
 #: src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "驗證"
@@ -1273,6 +1292,7 @@ msgid "bot"
 msgstr "機器人"
 
 #: src/lib/identity-display.ts
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
@@ -1317,6 +1337,8 @@ msgid "Bot's model"
 msgstr "機器人的模型"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Both"
 msgstr "兩者都有"
 
@@ -1503,6 +1525,7 @@ msgid "Chat"
 msgstr "聊天"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Chat Completions"
 msgstr "Chat Completions"
 
@@ -1993,6 +2016,11 @@ msgstr "正在連線…"
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Connection"
 msgstr "連線"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "Connection name"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
@@ -2860,6 +2888,10 @@ msgid "Daily check-ins on unfinished work"
 msgstr "每天追蹤未完成的工作"
 
 #: src/pages/AccountSettingsOverlay.tsx
+msgid "Daily cost, last year"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/use-palette-actions.ts
 msgid "Dark"
 msgstr "深色"
@@ -2987,6 +3019,10 @@ msgstr "要刪除此空間的憑證嗎？"
 msgid "deleted"
 msgstr "已刪除"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Deleted bot"
+msgstr ""
+
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
@@ -3090,8 +3126,8 @@ msgid "Disconnect {name}?"
 msgstr "中斷與 {name} 的連線？"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Disconnect Self-hosted"
-msgstr "中斷自架服務的連線"
+msgid "Disconnect Third-party model"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Disconnected {disconnectName}."
@@ -4047,6 +4083,14 @@ msgstr "標籤"
 msgid "Language"
 msgstr "語言"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 30 days"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last 7 days"
+msgstr ""
+
 #. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: changed"
@@ -4056,6 +4100,10 @@ msgstr "上次檢查 {0}：有變化"
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Last check {0}: no changes"
 msgstr "上次檢查 {0}：無變化"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Last day"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -4584,6 +4632,11 @@ msgstr "已靜音"
 msgid "My computers"
 msgstr "我的電腦"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
+msgid "My subscription"
+msgstr ""
+
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -4591,7 +4644,9 @@ msgstr "我的電腦"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServerForm.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/onboarding/model-step.tsx
 #: src/pages/OrganizationSettingsPanel.tsx
 #: src/pages/plugins/source-form.tsx
 #: src/pages/RoutineEditor.tsx
@@ -4880,6 +4935,8 @@ msgstr "無觸發器"
 
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "None"
 msgstr "無"
 
@@ -5418,6 +5475,7 @@ msgid "Protected input"
 msgstr "受保護的輸入"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Protocol"
 msgstr "通訊協定"
 
@@ -5852,6 +5910,7 @@ msgid "Resize panel"
 msgstr "調整面板大小"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/onboarding/model-step.tsx
 msgid "Responses"
 msgstr "Responses"
 
@@ -6937,6 +6996,11 @@ msgstr "思考"
 msgid "Thinking: {0}"
 msgstr "思考：{0}"
 
+#: src/lib/localized-provider-hint.ts
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Third-party model"
+msgstr ""
+
 #: src/lib/user-error.ts
 msgid "This account is deactivated"
 msgstr "此帳戶已停用"
@@ -7376,6 +7440,10 @@ msgstr "緊急"
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Usage range"
+msgstr ""
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

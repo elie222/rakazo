@@ -1167,8 +1167,29 @@ export const UsageSummarySchema = UsageTotalsSchema.extend({
   models: z
     .array(UsageTotalsSchema.required().extend({ provider: z.string(), model: z.string() }))
     .optional(),
+  bots: z
+    .array(
+      UsageTotalsSchema.required().extend({
+        botId: z.string(),
+        botName: z.string().nullable(),
+      }),
+    )
+    .optional(),
+  daily: z
+    .array(
+      UsageTotalsSchema.required().extend({
+        date: z.string(),
+      }),
+    )
+    .optional(),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
+
+/** Time range for the usage summary: how many days back to count, or all time when omitted. */
+export const UsageSummaryInputSchema = z.strictObject({
+  days: z.number().int().min(1).max(365).optional(),
+});
+export type UsageSummaryInput = z.infer<typeof UsageSummaryInputSchema>;
 
 export const MessagingLinkedIdentitySchema = z.object({
   id: Id,

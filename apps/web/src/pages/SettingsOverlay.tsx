@@ -45,6 +45,8 @@ export function SettingsOverlay({
   email,
   name,
   usage,
+  usageDays,
+  onUsageDaysChange,
   onUsageOpen,
   section: requestedSection,
   onSectionChange,
@@ -78,6 +80,8 @@ export function SettingsOverlay({
   email?: string | null;
   name: string;
   usage?: UsageSummary | null;
+  usageDays?: number | undefined;
+  onUsageDaysChange?: (days: number | undefined) => void;
   onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
@@ -438,7 +442,12 @@ export function SettingsOverlay({
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
                   ) : null}
                   {section === "usage" ? (
-                    <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                    <UsageSettingsPanel
+                      usage={usage}
+                      usageDays={usageDays}
+                      onUsageDaysChange={onUsageDaysChange}
+                      panelRef={usageRef}
+                    />
                   ) : null}
                   {section === "computer" && showComputer ? (
                     <ComputerSettingsPanel

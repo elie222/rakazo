@@ -9,7 +9,7 @@ import type {
 import { writeSaved } from "@rakazo/core/query";
 import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import type { connectedAppMarks } from "../../lib/connected-apps";
 import type { SpaceQueries } from "../../lib/query";
@@ -152,10 +152,21 @@ export function SettingsOverlays({
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
   // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
-  const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
+  // The range is part of the query key, so changing it refetches the summary.
+  const [usageDays, setUsageDays] = useState<number | undefined>(undefined);
+  const usageQuery = useQuery({
+    ...queries.usage.summary.queryOptions({
+      input: usageDays === undefined ? {} : { days: usageDays },
+    }),
+    enabled: false,
+  });
   const usage: UsageSummary | null = usageQuery.data ?? null;
   const refetchUsage = usageQuery.refetch;
   const refreshUsage = useCallback(() => void refetchUsage(), [refetchUsage]);
+  const usageSectionOpen = overlay?.kind === "settings" && overlay.section === "usage";
+  useEffect(() => {
+    if (usageSectionOpen) void refetchUsage();
+  }, [usageDays, usageSectionOpen, refetchUsage]);
   const voiceStatusKey = queries.voice.status.queryKey();
   return (
     <>
@@ -180,6 +191,8 @@ export function SettingsOverlays({
           }}
           email={user?.email}
           usage={usage}
+          usageDays={usageDays}
+          onUsageDaysChange={setUsageDays}
           onUsageOpen={refreshUsage}
           section={overlay.section}
           onSectionChange={(section) => setOverlay({ ...overlay, section })}

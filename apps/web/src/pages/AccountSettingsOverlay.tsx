@@ -488,9 +488,13 @@ export function GeneralSettingsPanels({
 
 export function UsageSettingsPanel({
   usage,
+  usageDays,
+  onUsageDaysChange,
   panelRef,
 }: {
   usage?: UsageSummary | null;
+  usageDays?: number | undefined;
+  onUsageDaysChange?: (days: number | undefined) => void;
   panelRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t, i18n } = useLingui();
@@ -503,8 +507,38 @@ export function UsageSettingsPanel({
   const cost = (value: number | null | undefined) =>
     value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
   const models = usage?.models ?? [];
+  const bots = usage?.bots ?? [];
+  const daily = usage?.daily ?? [];
+  const maxDayCost = daily.reduce((max, day) => Math.max(max, day.costUsd ?? 0), 0);
+  const rangeValue = usageDays === undefined ? "all" : String(usageDays);
   return (
     <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
+      {onUsageDaysChange ? (
+        <div className="mb-4">
+          <ToggleGroup
+            value={[rangeValue]}
+            onValueChange={([next]) => {
+              if (next === "all") onUsageDaysChange(undefined);
+              else if (next === "1" || next === "7" || next === "30")
+                onUsageDaysChange(Number(next));
+            }}
+            aria-label={t`Usage range`}
+          >
+            <ToggleGroupItem value="1" aria-label={t`Last day`}>
+              <Trans>1 day</Trans>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="7" aria-label={t`Last 7 days`}>
+              <Trans>7 days</Trans>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="30" aria-label={t`Last 30 days`}>
+              <Trans>30 days</Trans>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="all" aria-label={t`All time`}>
+              <Trans>All time</Trans>
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      ) : null}
       {usage ? (
         <dl className="grid grid-cols-3 gap-3">
           {[
@@ -520,6 +554,45 @@ export function UsageSettingsPanel({
             </div>
           ))}
         </dl>
+      ) : null}
+      {daily.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border px-4 py-3">
+          <div className="text-body-sm text-muted-foreground">
+            <Trans>Daily cost, last year</Trans>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1" data-testid="usage-heatmap">
+            {daily.map((day) => {
+              const intensity = maxDayCost > 0 ? (day.costUsd ?? 0) / maxDayCost : 0;
+              const level =
+                intensity <= 0
+                  ? 0
+                  : intensity < 0.25
+                    ? 1
+                    : intensity < 0.5
+                      ? 2
+                      : intensity < 0.75
+                        ? 3
+                        : 4;
+              return (
+                <div
+                  key={day.date}
+                  title={`${day.date}: ${cost(day.costUsd)} · ${number(day.totalTokens)} tokens`}
+                  className={
+                    level === 0
+                      ? "h-3 w-3 rounded-sm bg-muted"
+                      : level === 1
+                        ? "h-3 w-3 rounded-sm bg-emerald-200"
+                        : level === 2
+                          ? "h-3 w-3 rounded-sm bg-emerald-400"
+                          : level === 3
+                            ? "h-3 w-3 rounded-sm bg-emerald-600"
+                            : "h-3 w-3 rounded-sm bg-emerald-800"
+                  }
+                />
+              );
+            })}
+          </div>
+        </div>
       ) : null}
       {models.length > 0 ? (
         <div className="mt-4 rounded-xl border border-border px-2">
@@ -558,6 +631,44 @@ export function UsageSettingsPanel({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {number(row.outputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+      {bots.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Bot</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Calls</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Tokens</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bots.map((row) => (
+                <TableRow key={row.botId || "unknown"} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">{row.botName ?? t`Deleted bot`}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.modelCalls)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.totalTokens)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
                 </TableRow>
