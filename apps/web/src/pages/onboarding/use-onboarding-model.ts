@@ -37,6 +37,7 @@ const ENDPOINT_PRESET_OPTION = "endpoint-preset:";
 type ProviderAuth = "sign-in" | "key";
 
 const MAIN_PROVIDER_OPTIONS: ReadonlyArray<{ provider: string; auth?: ProviderAuth }> = [
+  { provider: OPENAI_COMPATIBLE_PROVIDER_ID },
   { provider: "openai-codex" },
   { provider: "anthropic", auth: "sign-in" },
   { provider: "openai" },
@@ -159,10 +160,21 @@ export function useOnboardingModel({
     };
     const main = [
       ...(billingEnabled ? [{ value: CREDITS_OPTION, label: t`Rakazo credits` }] : []),
-      ...MAIN_PROVIDER_OPTIONS.filter((option) => byId.has(option.provider)).map((option) => ({
-        value: providerOptionValue(option.provider, option.auth),
-        label: optionLabel(option.provider, option.auth),
-      })),
+      ...MAIN_PROVIDER_OPTIONS.filter((option) => byId.has(option.provider)).flatMap((option) => {
+        const item = {
+          value: providerOptionValue(option.provider, option.auth),
+          label: optionLabel(option.provider, option.auth),
+        };
+        if (option.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) return [item];
+        // The third-party entry keeps its hosted presets (Ollama Cloud) beside it.
+        return [
+          item,
+          ...(byId.get(option.provider)?.endpointPresets ?? []).map((preset) => ({
+            value: `${ENDPOINT_PRESET_OPTION}${preset.baseUrl}`,
+            label: preset.name,
+          })),
+        ];
+      }),
     ];
     const rest = popularModelProvidersFirst(
       providers
@@ -170,7 +182,10 @@ export function useOnboardingModel({
           (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
         )
         .flatMap((entry) => {
-          const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
+          const item = {
+            value: entry.provider,
+            label: providerDisplayName(entry.provider, entry.providerName ?? entry.provider),
+          };
           return [
             item,
             ...(entry.endpointPresets ?? []).map((preset) => ({

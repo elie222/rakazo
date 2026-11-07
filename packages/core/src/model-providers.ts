@@ -82,7 +82,13 @@ export function clampCatalogThinkingLevel(
   return null;
 }
 
+/**
+ * Providers in curated order, most-used first. The third-party (OpenAI-compatible)
+ * server leads because it is the one people connect a subscription or local server
+ * to; the named providers follow, then the rest by name.
+ */
 export const POPULAR_MODEL_PROVIDER_IDS = [
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   "openai-codex",
   "anthropic",
   "openai",

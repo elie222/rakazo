@@ -6951,6 +6951,10 @@ msgstr "思考"
 msgid "Thinking: {0}"
 msgstr "思考：{0}"
 
+#: src/lib/localized-provider-hint.ts
+msgid "Third-party model"
+msgstr "第三方模型"
+
 #: src/lib/user-error.ts
 msgid "This account is deactivated"
 msgstr "此账户已停用"

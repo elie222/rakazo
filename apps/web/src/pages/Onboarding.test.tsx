@@ -104,7 +104,7 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
   await act(async () =>
     [...document.querySelectorAll<HTMLElement>('[role="option"]')]
-      .find((option) => option.textContent === "OpenAI-compatible")!
+      .find((option) => option.textContent === "Third-party model")!
       .click(),
   );
   const change = async (label: string, value: string) => {

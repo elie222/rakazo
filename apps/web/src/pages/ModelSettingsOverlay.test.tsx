@@ -49,7 +49,8 @@ vi.mock("../lib/rpc", () => {
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
-  providerDisplayName: (_id: string, name: string) => name,
+  providerDisplayName: (id: string, name: string) =>
+    id === "openai-compatible" ? "Third-party model" : name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -1055,7 +1056,7 @@ it("lists not-connected providers by name alone", async () => {
   const view = await renderSettings();
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["DeepSeek", "Ollama Cloud", "OpenAI-compatible"]);
+    expect(pickerOptions()).toEqual(["Ollama Cloud", "Third-party model", "DeepSeek"]);
     expect(document.querySelectorAll("[cmdk-group-heading]")).toHaveLength(0);
   } finally {
     await view.unmount();
@@ -1410,7 +1411,7 @@ it("keeps setup help and API key collapsible for generic compatible servers", as
   models.credentials.mockResolvedValue([]);
   const view = await renderSettings(false);
   try {
-    await pick("Change Main model", "OpenAI-compatible");
+    await pick("Change Main model", "Third-party model");
     for (const name of ["Setup help", "API key"]) {
       const row = buttons(view.container, name)[0]!;
       expect(row.getAttribute("aria-expanded")).toBe("false");
