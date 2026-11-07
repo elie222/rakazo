@@ -282,7 +282,10 @@ function SpaceShell() {
   const active =
     inGroup || routeChat?.groupId
       ? undefined
-      : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ?? bots[0]);
+      : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
+        // With no chat named, open one that's in the list, not a snoozed one.
+        bots.find((b) => !chatSnoozed(b, snoozeNow)) ??
+        bots[0]);
   const selectBot = useCallback(
     (id: string) => {
       setMobileSidebarOpen(false);

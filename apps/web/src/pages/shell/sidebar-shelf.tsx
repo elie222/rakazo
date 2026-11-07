@@ -1,4 +1,9 @@
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@rakazo/ui-web";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  SectionHeading,
+} from "@rakazo/ui-web";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -16,16 +21,18 @@ export function SidebarShelf({
   const [open, setOpen] = useState(false);
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col">
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-label text-muted-foreground hover:bg-sidebar-accent">
-        <span>{title}</span>
-        <span className="flex items-center gap-1 tabular-nums">
-          {count}
-          <ChevronRight
-            aria-hidden="true"
-            className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`}
-          />
-        </span>
-      </CollapsibleTrigger>
+      <SectionHeading variant="label">
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-sidebar-accent">
+          <span>{title}</span>
+          <span className="flex items-center gap-1 tabular-nums">
+            {count}
+            <ChevronRight
+              aria-hidden="true"
+              className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`}
+            />
+          </span>
+        </CollapsibleTrigger>
+      </SectionHeading>
       <CollapsibleContent className="rk-scroll flex max-h-[40vh] flex-col overflow-y-auto">
         {children}
       </CollapsibleContent>
