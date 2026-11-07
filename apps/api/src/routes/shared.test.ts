@@ -45,6 +45,19 @@ describe("withHeartbeats", () => {
     await stream.return(undefined);
   });
 
+  it("does not start reading when the request has already aborted", async () => {
+    const request = new AbortController();
+    request.abort();
+    const reads = vi.fn();
+    const stream = withHeartbeats({ signal: request.signal }, async function* () {
+      reads();
+      yield "event";
+    });
+
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined });
+    expect(reads).not.toHaveBeenCalled();
+  });
+
   it("ends on revocation without waiting for a read the abort never lands on", async () => {
     vi.useFakeTimers();
     let sourceSignal: AbortSignal | undefined;

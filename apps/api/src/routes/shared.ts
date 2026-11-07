@@ -190,7 +190,7 @@ export async function* withHeartbeats<T>(
   let pending: Promise<IteratorResult<T>> | undefined;
   let authorizedAt = Date.now();
   try {
-    while (true) {
+    while (!context.signal?.aborted) {
       // A heartbeat keeps `pending`, so the in-flight read stays the next event in order.
       pending ??= source.next();
       let timer: ReturnType<typeof setTimeout> | undefined;
