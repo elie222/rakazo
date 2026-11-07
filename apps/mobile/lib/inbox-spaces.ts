@@ -43,6 +43,10 @@ export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] }
 
 /** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
 function chatSignal(chat: PinnedChat): InboxSignal {
+  // A snoozed chat asks for nothing until it wakes, even shown under its open Snoozed heading.
+  if (chatSnoozed(chat.kind === "bot" ? chat.bot : chat.group, Date.now())) {
+    return { unread: 0, attention: 0 };
+  }
   return chat.kind === "bot"
     ? {
         unread: chat.bot.unread ? 1 : 0,
@@ -133,10 +137,10 @@ export function spaceInboxItems(
         sectionId: chat.sectionId,
       })),
     ];
-    const snoozed = allChats.filter((item) =>
-      chatSnoozed(item.type === "bot" ? item.bot : item.group, now),
-    );
-    const chats = allChats.filter((item) => !snoozed.includes(item));
+    const isSnoozed = (item: (typeof allChats)[number]) =>
+      chatSnoozed(item.type === "bot" ? item.bot : item.group, now);
+    const snoozed = allChats.filter(isSnoozed);
+    const chats = allChats.filter((item) => !isSnoozed(item));
     const items: InboxSpaceItem[] = [];
     if (spaces.length > 1 || !space.isDefault || allChats.length === 0) {
       items.push({ type: "heading", key: space.id, title: space.name, space });

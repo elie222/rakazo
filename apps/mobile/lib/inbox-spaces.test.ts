@@ -578,3 +578,12 @@ describe("inbox attention pills", () => {
     ).toBe(0);
   });
 });
+
+it("keeps a snoozed chat out of the off-screen unread pills", () => {
+  const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true, snoozedUntil: later } })).toEqual({
+    unread: 0,
+    attention: 0,
+  });
+  expect(inboxSignal({ type: "bot", bot: { ...bot, unread: true } }).unread).toBe(1);
+});

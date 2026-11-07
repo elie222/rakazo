@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, Space } from "@rakazo/contracts";
-import { createChatQueues } from "@rakazo/core";
+import { createSnoozeQueue } from "@rakazo/core";
 import { toast } from "@rakazo/ui-web";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { rpcForSpace } from "../../lib/rpc";
 
@@ -32,12 +32,7 @@ export function useChatSnooze({
   refreshBots: () => Promise<void>;
 }): SnoozeChat {
   const { t } = useLingui();
-  // One chat's changes reach the server in the order chosen; only the latest one refreshes the
-  // roster or rolls back, and a rollback restores what the server last saved.
-  const [inOrder] = useState(createChatQueues);
-  const latest = useRef(new Map<string, string | null>());
-  const saved = useRef(new Map<string, string | null>());
-  const pending = useRef(new Map<string, number>());
+  const [queue] = useState(createSnoozeQueue);
   return useCallback(
     (chat, until) => {
       const apply = (value: string | null) => {
@@ -57,33 +52,17 @@ export function useChatSnooze({
           ),
         );
       };
-      const key = `${chat.kind}:${chat.id}`;
-      const waiting = pending.current.get(key) ?? 0;
-      if (waiting === 0) saved.current.set(key, chat.snoozedUntil ?? null);
-      pending.current.set(key, waiting + 1);
-      latest.current.set(key, until);
-      apply(until);
       const client = chat.spaceId === openSpaceId ? rpc : rpcForSpace(chat.spaceId);
       const target = chat.kind === "bot" ? { botId: chat.id } : { groupId: chat.id };
-      void inOrder(key, () => client.threads.snooze({ ...target, until }))
-        .then(
-          () => {
-            saved.current.set(key, until);
-            return true;
-          },
-          () => false,
-        )
-        .then((ok) => {
-          pending.current.set(key, (pending.current.get(key) ?? 1) - 1);
-          if (latest.current.get(key) !== until) return;
-          if (!ok) {
-            // Back to what the server last saved, even if the refresh after it fails too.
-            apply(saved.current.get(key) ?? null);
-            toast.error(t`Could not save`);
-          }
+      queue(`${chat.kind}:${chat.id}`, until, chat.snoozedUntil ?? null, {
+        send: (value) => client.threads.snooze({ ...target, until: value }),
+        apply,
+        settled: (failed) => {
+          if (failed) toast.error(t`Could not save`);
           void refreshBots().catch(() => undefined);
-        });
+        },
+      });
     },
-    [rpc, openSpaceId, setBots, setGroups, setSpaces, refreshBots, t, inOrder],
+    [rpc, openSpaceId, setBots, setGroups, setSpaces, refreshBots, t, queue],
   );
 }

@@ -186,6 +186,8 @@ async function deliverChatNotice(
   const snoozing =
     message.kind === "completion"
       ? await membersSnoozing(deps.prisma, message.threadId, input.recipients).catch((error) => {
+          // A retried delivery waits for the answer; otherwise everyone hears, rather than no one.
+          if (input.retryOnFailure) throw error;
           getLogger().error("snoozed chat lookup", error);
           return new Set<string>();
         })
