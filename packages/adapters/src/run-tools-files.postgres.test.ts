@@ -195,4 +195,70 @@ postgres("attach_file (PostgreSQL)", () => {
       [expect.objectContaining({ kind: "image", artifactId: posted.artifactId })],
     ]);
   });
+
+  it("posts behind a thread read longer than the default transaction budget", async () => {
+    bytes = new TextEncoder().encode("third image");
+    // A thread snapshot holds the thread row FOR SHARE for up to 15 s, and the message write
+    // inside the artifact transaction waits for it. The timed hold starts only once the
+    // attach is observed queued on the holder, so connection checkout cannot shorten what it
+    // waits, and it is held past Prisma's five-second default: the attach only survives on
+    // the thread-lock budget.
+    const holdMs = 6_000;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let locked!: (xactId: string) => void;
+    const lockTaken = new Promise<string>((resolve) => {
+      locked = resolve;
+    });
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const hold = fixture(() =>
+      prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR SHARE`;
+          const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
+            SELECT pg_current_xact_id()::text AS "xactId"`;
+          locked(rows[0]?.xactId ?? "");
+          await opened;
+        },
+        { timeout: 30_000 },
+      ),
+    );
+    const xactId = await lockTaken;
+    const before = await state();
+    const probe = await fixture(() => pool.connect());
+    let posted: { artifactId: string };
+    try {
+      const attaching = attach("shots/third.png", { owner: "worker-1", fence: 1 });
+      // Backends waiting on the holder's transaction: the attach, blocked on the thread row.
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const result = await probe.query(
+          "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+          [xactId],
+        );
+        if ((result.rows[0].waiting as number) > 0) break;
+        if (Date.now() >= deadline)
+          throw new Error("the attach did not block on the held thread row");
+        await sleep(20);
+      }
+      // The blocked write sits in Postgres until the row is released; on the default budget
+      // Prisma reports the expiry then, and the attach returns an error instead of posting.
+      await sleep(holdMs);
+      open();
+      posted = (await attaching) as { artifactId: string };
+      expect(posted).toMatchObject({ artifactId: expect.any(String) });
+    } finally {
+      open();
+      probe.release();
+      await hold.catch(() => undefined);
+    }
+    const after = await state();
+    expect(after.artifacts).toHaveLength(before.artifacts.length + 1);
+    expect(after.stored).toHaveLength(before.stored.length + 1);
+    expect(after.messages.slice(before.messages.length).map((message) => message.blocks)).toEqual([
+      [expect.objectContaining({ kind: "image", artifactId: posted.artifactId })],
+    ]);
+  }, 30_000);
 });
