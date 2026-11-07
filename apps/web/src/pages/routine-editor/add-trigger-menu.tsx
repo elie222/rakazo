@@ -59,14 +59,14 @@ export function AddTriggerMenu({
   async function addWebhook() {
     onChange({ ...draft, webhookEnabled: true });
     if (!webhookConfigured) {
-      await onEnsureWebhook().catch(() => undefined);
+      await onEnsureWebhook();
     }
   }
 
   async function addGithub() {
     onChange({ ...draft, githubEnabled: true });
     if (!webhookConfigured) {
-      await onEnsureWebhook().catch(() => undefined);
+      await onEnsureWebhook();
     }
   }
 

@@ -677,6 +677,7 @@ model SpaceMember {
   aiDataConsents AiDataConsent[]
   modelRoleChoices SpaceModelRoleChoice[]
   settingOverrides SpaceSettingOverride[]
+  threadReads      ThreadRead[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -1075,9 +1076,7 @@ model Thread {
   historyCompactionGeneration Int        @default(0)
   /// After a summary came back over the size limit, compaction waits until nextMessageSeq reaches this.
   historyCompactionRetryAfterSeq Int?
-  unread                      Boolean    @default(false)
-  /// Highest message seq the user has read; the "New" divider goes after it. -1 = none read.
-  lastReadSeq                 Int        @default(-1)
+  reads                       ThreadRead[]
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]
@@ -1088,6 +1087,23 @@ model Thread {
   @@index([spaceId, userId])
   @@index([helperBotId])
   @@map("threads")
+}
+
+/// One member's read state for a chat: a personal resource. No row means caught up.
+/// Leaving the Space deletes it with the membership.
+model ThreadRead {
+  threadId    String
+  thread      Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId      String
+  spaceId     String
+  member      SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  unread      Boolean     @default(false)
+  /// Highest message seq this member has read; the "New" divider goes after it. -1 = none read.
+  lastReadSeq Int         @default(-1)
+
+  @@id([threadId, userId])
+  @@index([spaceId, userId])
+  @@map("thread_reads")
 }
 
 model Message {

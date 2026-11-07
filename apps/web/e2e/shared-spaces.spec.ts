@@ -71,36 +71,18 @@ test("an owner invites someone by link and both see the space's members", async 
   await captureScreenshot(inviteePage, testInfo, "space-members-member");
 
   // Both people talk to one bot in the shared space; each sees who wrote what.
-  const bot = await ownerPage.request
-    .post("/rpc/bots/create", {
-      headers: { "x-rakazo-space-id": home.id },
-      data: {
-        json: {
-          name: "Family",
-          title: "",
-          description: "",
-          notifyOnFinish: true,
-          computerMode: "team",
-        },
-      },
-    })
-    .then(async (response) => ((await response.json()) as { json: { id: string } }).json);
-  await openBotInSpace(ownerPage, home.id, bot.id, "Family");
-  await send(ownerPage, "Can you plan dinner for Saturday?");
-  await openBotInSpace(inviteePage, home.id, bot.id, "Family");
-  await send(inviteePage, "Make it vegetarian please");
-  await expect(inviteePage.getByText("Ada Owner", { exact: true })).toBeVisible();
-  await captureScreenshot(inviteePage, testInfo, "shared-thread-invitee");
-  await ownerPage.reload();
-  await expect(ownerPage.getByText("Bob Invitee", { exact: true })).toBeVisible();
-  await captureScreenshot(ownerPage, testInfo, "shared-thread-owner");
-
-  // A group in the shared space: each bot's reply is named and in its own color.
   const inHome = { "x-rakazo-space-id": home.id };
   const post = async <T>(path: string, json: unknown) =>
     ownerPage.request
       .post(`/rpc/${path}`, { headers: inHome, data: { json } })
       .then(async (response) => ((await response.json()) as { json: T }).json);
+  const bot = await post<{ id: string }>("bots/create", {
+    name: "Family",
+    title: "",
+    description: "",
+    notifyOnFinish: true,
+    computerMode: "team",
+  });
   const planner = await post<{ id: string }>("bots/create", {
     name: "Planner",
     title: "",
@@ -109,6 +91,30 @@ test("an owner invites someone by link and both see the space's members", async 
     computerMode: "team",
     color: "#2A92FE",
   });
+  // Each person reads for themselves: what Ada writes is new to Bob, not to her. Bob is in
+  // another chat first, so his shell does not open Family, and read it, when it appears.
+  const familyRow = (page: Page) =>
+    page.locator("aside").first().locator(`[data-roster-bot-id="${bot.id}"]`);
+  await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
+  await openBotInSpace(ownerPage, home.id, bot.id, "Family");
+  await send(ownerPage, "Can you plan dinner for Saturday?");
+  await inviteePage.reload();
+  await expect(familyRow(inviteePage)).toHaveAttribute("data-roster-unread", "true");
+  await captureScreenshot(inviteePage, testInfo, "shared-unread-invitee");
+  await ownerPage.bringToFront();
+  await expect(familyRow(ownerPage)).not.toHaveAttribute("data-roster-unread", "true");
+
+  await inviteePage.bringToFront();
+  await openBotInSpace(inviteePage, home.id, bot.id, "Family");
+  await expect(familyRow(inviteePage)).not.toHaveAttribute("data-roster-unread", "true");
+  await send(inviteePage, "Make it vegetarian please");
+  await expect(inviteePage.getByText("Ada Owner", { exact: true })).toBeVisible();
+  await captureScreenshot(inviteePage, testInfo, "shared-thread-invitee");
+  await ownerPage.reload();
+  await expect(ownerPage.getByText("Bob Invitee", { exact: true })).toBeVisible();
+  await captureScreenshot(ownerPage, testInfo, "shared-thread-owner");
+
+  // A group in the shared space: each bot's reply is named and in its own color.
   const group = await post<{ id: string }>("groups/create", {
     name: "Household",
     botIds: [bot.id, planner.id],

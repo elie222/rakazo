@@ -1,6 +1,12 @@
 import { ORPCError } from "@orpc/server";
-import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  NotificationProvider,
+  ProductAnalytics,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { notifyMemberMessage } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -12,6 +18,7 @@ import {
   callIdFromClientNonce,
   isConversationalRun,
   MODEL_REQUIRED_SEND_ERROR,
+  memberMessageAlerts,
   mentionedGroupBotIds,
   messageBypassesTakeoverWait,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -494,6 +501,7 @@ export async function sendThreadMessage(
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
     sandbox: SandboxProvider;
+    notifications?: NotificationProvider;
   },
   actor: Actor,
   target: ThreadTarget,
@@ -1051,6 +1059,21 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
+  if (
+    memberMessageAlerts({
+      callId,
+      blocks: committed.message.blocks,
+      replyToMessageId: committed.message.replyToMessageId,
+    })
+  ) {
+    // Not awaited: the sender's reply does not wait on anyone else's devices.
+    void notifyMemberMessage(deps, {
+      spaceId: actor.spaceId,
+      threadId: target.threadId,
+      authorUserId: actor.userId,
+      text: input.text?.trim() ?? "",
+    }).catch((error) => getLogger().error("member message notification", error));
+  }
   if (releaseTakeover) {
     for (const run of committed.runs) {
       if (steersMessageFrom(run, actor)) await releaseTakeover(run.id);

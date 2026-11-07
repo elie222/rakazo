@@ -617,6 +617,26 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
+  it("reports a machine still refused as stopped after waking it as a computer that did not start", async () => {
+    const command = FakeBoatApi.prototype.command;
+    let machineStops = false;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      ...args
+    ) {
+      if (!machineStops) return command.apply(this, args);
+      throw boatError(409, "machine_not_running", "Sandbox machine is not running.");
+    });
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    machineStops = true;
+
+    const error = await (async () => {
+      for await (const _ of provider.exportWorkspace(computer, context));
+    })().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnavailableError);
+  });
+
   it("waits for a resume another job already started instead of failing", async () => {
     const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
     const { api, provider, computer } = await boat();

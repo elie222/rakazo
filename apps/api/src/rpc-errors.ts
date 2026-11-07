@@ -1,4 +1,4 @@
-import { ORPCError } from "@orpc/server";
+import { ORPCError, ValidationError } from "@orpc/server";
 import {
   SandboxAllowanceUsedError,
   SandboxDamagedError,
@@ -13,7 +13,7 @@ import {
   SpaceDeletionInProgressError,
   SpaceOwnerRequiredError,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { voiceAccountErrorStatus } from "./voice.js";
 
@@ -101,6 +101,18 @@ export function logUnexpectedRpcError(error: unknown, path: readonly string[]): 
   // A procedure's own 5xx (a store it depends on is down) would otherwise reach the collector
   // only as an anonymous failed request; report it under the procedure with its cause.
   if (error instanceof ORPCError && error.status < 500) return;
+  // The procedure already logged this outage as a warning and marked its 5xx expected.
+  if (getLogContext()["error.expected"]) return;
   const where = `rpc ${path.join("/")} failed`;
+  const cause = error instanceof ORPCError ? error.cause : undefined;
+  if (cause instanceof ValidationError) {
+    // Paths and schema messages only: the rejected data can hold message content.
+    const issues = cause.issues.slice(0, 10).map((issue) => {
+      const keys = (issue.path ?? []).map((key) => String(typeof key === "object" ? key.key : key));
+      return `${keys.join(".")}: ${issue.message}`;
+    });
+    getLogger().error(where, error, { "validation.issues": issues.join("; ") });
+    return;
+  }
   getLogger().error(where, error);
 }

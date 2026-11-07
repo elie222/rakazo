@@ -479,14 +479,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         secret: env.authSecret,
         baseURL: env.authUrl,
         ipAddressHeader: CLIENT_IP_HEADER,
-        logger: {
-          level: "error",
-          log: (_level, _message, ...args) =>
-            getLogger().error(
-              "directory.request.failed",
-              args.find((arg) => arg instanceof Error),
-            ),
-        },
+        logger: authLibraryLogger("directory.request.failed"),
         onAccountChange: (change) => directoryChanges.getStore()?.push(change),
       })
     : undefined;
@@ -503,14 +496,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     signupAllowlist: env.signupAllowlist,
     singleAccount: Boolean(env.desktopStackToken),
     email,
-    logger: {
-      level: "error",
-      log: (_level, _message, ...args) =>
-        getLogger().error(
-          "auth.request.failed",
-          args.find((arg) => arg instanceof Error),
-        ),
-    },
+    logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
     afterSignIn:
       email && env.welcomeEmailEnabled
@@ -1154,6 +1140,21 @@ export async function actorFromMembership(membership: Promise<Actor>): Promise<A
     if (error instanceof IsolationError) return null;
     throw error;
   }
+}
+
+/**
+ * The auth library repeats each failure as a bare message after logging it with its error. That
+ * echo stays out of the collector; the request's completion reports a failure nothing else did.
+ */
+function authLibraryLogger(event: string) {
+  return {
+    level: "error" as const,
+    log: (_level: string, _message: string, ...args: unknown[]) =>
+      getLogger().error(
+        event,
+        args.find((arg) => arg instanceof Error) ?? { "error.report": false },
+      ),
+  };
 }
 
 /**

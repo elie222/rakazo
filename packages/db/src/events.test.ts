@@ -170,6 +170,7 @@ describe("finalizeRun", () => {
 
   it("saves the reply a failure cut short before the error, as no answer to steering", async () => {
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => []),
       run: {
@@ -536,6 +537,9 @@ describe("thread lock transaction budget", () => {
 
   it("clears a thread with the explicit budget", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
+      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
@@ -1321,6 +1325,7 @@ describe("pauseRunForInput", () => {
       const fanout = new TestFanout();
       const publish = vi.spyOn(fanout, "publish");
       const tx = {
+        $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         run: {
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -1456,6 +1461,7 @@ describe("pauseRunForInput", () => {
   it("stores offered choice actions on the run checkpoint for resume", async () => {
     const fanout = new TestFanout();
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -2021,6 +2027,7 @@ describe("answerRunInput", () => {
   it("records a spoken call answer as a user utterance with the call identity", async () => {
     const fanout = new TestFanout();
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
       user: { findMany: vi.fn().mockResolvedValue([]) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
@@ -2107,6 +2114,7 @@ describe("answerRunInput", () => {
       const fanout = new TestFanout();
       const secret = "sk-live-choice-secret";
       const tx = {
+        $executeRaw: vi.fn(async () => 0),
         user: { findMany: vi.fn().mockResolvedValue([]) },
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
@@ -5210,6 +5218,9 @@ describe("claimSteering", () => {
 describe("clearThread", () => {
   it("reports a committed clear even when the legacy binding sweep fails", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
+      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5259,6 +5270,9 @@ describe("clearThread", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
+      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -5350,6 +5364,8 @@ describe("clearThread", () => {
   it("scopes group clear lease cleanup to cancelled run ids", async () => {
     const fanout = new TestFanout();
     const tx = {
+      $executeRaw: vi.fn(async () => 0),
+      threadRead: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => [{ id: "group-1" }]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {

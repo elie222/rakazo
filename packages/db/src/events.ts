@@ -48,6 +48,7 @@ import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
+import { clearThreadReads } from "./thread-reads.js";
 import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 import {
   claimSteering,
@@ -243,9 +244,11 @@ export async function clearThread(
         spaceId: input.spaceId,
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
-      data: { unread: false },
+      // Takes the thread's row lock, as every message writer does; nothing in it changes.
+      data: { nextMessageSeq: { increment: 0 } },
       select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
+    await clearThreadReads(tx, input.threadId);
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,

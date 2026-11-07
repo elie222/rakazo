@@ -701,6 +701,36 @@ class PurchaseTest(unittest.TestCase):
                               "title": ""})
 
 
+class PurchaseSiteTest(unittest.TestCase):
+    """The world a check starts in, while the tab may be replacing its document."""
+
+    GONE = RuntimeError("Runtime.evaluate failed: {'code': -32000, 'message': 'Cannot find context with specified id'}")
+
+    def site(self, worlds):
+        """What site() answers, or raises, when world_in answers `worlds` in turn."""
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        with patch.object(secrets, "main_frame", return_value={"id": "top"}), \
+                patch.object(secrets, "world_in", side_effect=worlds) as world_in, \
+                patch.object(secrets, "eval_json", return_value="tickets.example.test"), \
+                patch.object(helper.time, "sleep"):
+            try:
+                return found.site(), world_in.call_count
+            except RuntimeError as error:
+                return error, world_in.call_count
+
+    def test_a_document_replaced_while_the_check_starts_is_read_again(self):
+        self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
+
+    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+        error, _ = self.site([self.GONE] * 10)
+        self.assertIs(error, self.GONE)
+
+    def test_another_failure_is_not_retried(self):
+        other = RuntimeError("Runtime.evaluate failed: too large")
+        self.assertEqual(self.site([other, 7]), (other, 1))
+
+
 class DesktopPurchaseTest(unittest.TestCase):
     """The real checks, with the page's answers scripted by what is asked."""
 

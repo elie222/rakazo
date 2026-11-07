@@ -429,6 +429,7 @@ function SpaceShell() {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
+      meId: userId,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
@@ -465,6 +466,7 @@ function SpaceShell() {
     notifyBrowserForEvent,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
+    meId: userId,
   });
   const {
     editorProps: routineEditorProps,
@@ -1177,6 +1179,7 @@ function SpaceShell() {
               computerOpen={computerOpen}
               embeddedScreenUrl={computerControls.embeddedScreenUrl}
               screenFrameKey={computerState.screenFrameKey}
+              heldScreen={computerState.heldScreen}
               screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
@@ -1327,6 +1330,7 @@ function SpaceShell() {
           sendError={sendError}
           embeddedScreenUrl={computerControls.embeddedScreenUrl}
           screenFrameKey={computerState.screenFrameKey}
+          heldScreen={computerState.heldScreen}
           screenFrameRef={computerState.setScreenFrame}
           computerScreenError={computerControls.computerScreenError}
           computerBooting={computerControls.computerBooting}

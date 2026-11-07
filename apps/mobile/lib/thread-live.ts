@@ -3,6 +3,7 @@ import {
   createRefreshCoalescer,
   isRetryableError,
   isRunTerminalEvent,
+  messageUnreadFor,
   reduceThreadSnapshot,
   rememberTerminalRun,
   retryDelayMs,
@@ -38,6 +39,7 @@ export function useThreadLiveSubscription({
   focused = false,
   readOnly,
   sessionEpoch,
+  userId,
   messageId,
   historyEpoch,
   expandedHistoryThread,
@@ -60,6 +62,8 @@ export function useThreadLiveSubscription({
   focused?: boolean;
   readOnly: boolean;
   sessionEpoch: number;
+  /** The signed-in person: another member's message is new to them, their own is not. */
+  userId: string;
   /** A pending search jump, which loads its own page instead of the latest one. */
   messageId?: string;
   historyEpoch: RefObject<number>;
@@ -252,7 +256,10 @@ export function useThreadLiveSubscription({
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
-              if (event.type === "thread.message.created" && event.payload?.role === "bot") {
+              if (
+                event.type === "thread.message.created" &&
+                messageUnreadFor(event.payload ?? {}, userId)
+              ) {
                 readVisibleTarget.current = null;
                 markReadIfVisible();
               }
@@ -300,7 +307,16 @@ export function useThreadLiveSubscription({
       snapshotRefresh.dispose();
       abort.abort();
     };
-  }, [botId, groupId, foreground, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
+  }, [
+    botId,
+    groupId,
+    foreground,
+    readOnly,
+    markReadIfVisible,
+    refreshMentionBots,
+    sessionEpoch,
+    userId,
+  ]);
 
   return liveSubscribed;
 }
