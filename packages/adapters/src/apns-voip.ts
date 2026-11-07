@@ -90,7 +90,8 @@ export class ApnsClient {
     this.jwt = { value, issuedAt: now };
     return value;
   }
-  post(
+  /** Sends one push. Failures are logged under `failureEvent` and never thrown. */
+  async send(
     token: string,
     request: {
       topic: string;
@@ -99,23 +100,34 @@ export class ApnsClient {
       expiration: number;
       body: unknown;
     },
-  ): Promise<{ status: number; reason?: string }> {
-    return this.transport(
-      this.config.environment === "sandbox"
-        ? "https://api.sandbox.push.apple.com"
-        : "https://api.push.apple.com",
-      {
-        ":method": "POST",
-        ":path": `/3/device/${token}`,
-        authorization: this.authorization(),
-        "apns-topic": request.topic,
-        "apns-push-type": request.pushType,
-        "apns-priority": String(request.priority),
-        "apns-expiration": String(request.expiration),
-        "content-type": "application/json",
-      },
-      JSON.stringify(request.body),
-    );
+    failureEvent: string,
+  ): Promise<"sent" | "invalid" | "unavailable"> {
+    try {
+      const reply = await this.transport(
+        this.config.environment === "sandbox"
+          ? "https://api.sandbox.push.apple.com"
+          : "https://api.push.apple.com",
+        {
+          ":method": "POST",
+          ":path": `/3/device/${token}`,
+          authorization: this.authorization(),
+          "apns-topic": request.topic,
+          "apns-push-type": request.pushType,
+          "apns-priority": String(request.priority),
+          "apns-expiration": String(request.expiration),
+          "content-type": "application/json",
+        },
+        JSON.stringify(request.body),
+      );
+      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
+      if (reply.status === 200) return "sent";
+      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
+      getLogger().warn(failureEvent, { status: reply.status, reason: reply.reason });
+      return "unavailable";
+    } catch (error) {
+      getLogger().warn(failureEvent, { error });
+      return "unavailable";
+    }
   }
 }
 
@@ -127,8 +139,9 @@ export class ApnsVoipProvider implements VoipPushProvider {
   async send(token: string, call: IncomingCallPush): Promise<"sent" | "invalid" | "unavailable"> {
     const expiration = Math.floor(Date.parse(call.expiresAt) / 1000);
     if (!(expiration > Date.now() / 1000)) return "unavailable";
-    try {
-      const reply = await this.client.post(token, {
+    return this.client.send(
+      token,
+      {
         topic: `${this.client.config.bundleId}.voip`,
         pushType: "voip",
         priority: 10,
@@ -140,15 +153,8 @@ export class ApnsVoipProvider implements VoipPushProvider {
           botName: call.botName.slice(0, 100),
           expiresAt: call.expiresAt,
         },
-      });
-      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
-      if (reply.status === 200) return "sent";
-      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
-      getLogger().warn("call.voip_push_failed", { status: reply.status, reason: reply.reason });
-      return "unavailable";
-    } catch (error) {
-      getLogger().warn("call.voip_push_failed", { error });
-      return "unavailable";
-    }
+      },
+      "call.voip_push_failed",
+    );
   }
 }

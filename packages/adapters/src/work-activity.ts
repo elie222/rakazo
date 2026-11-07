@@ -49,6 +49,8 @@ export interface WorkActivityPushProvider {
   send(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable">;
 }
 
+/** Cards kept per user: one per phone they use. */
+const MAX_CARDS_PER_USER = 5;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
@@ -105,9 +107,25 @@ export class WorkActivities {
       this.prisma.workActivityToken.upsert({
         where: { tokenDigest },
         create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
-        update: { userId, sessionId },
+        // Re-registering counts as recent, so the cap below drops cards no phone still uses.
+        update: { userId, sessionId, createdAt: new Date() },
       }),
     );
+    // A user's phones are few; the oldest cards beyond that go, so each update fans out a little.
+    const extra = await runAsSystem("find a user's oldest live status cards", () =>
+      this.prisma.workActivityToken.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        skip: MAX_CARDS_PER_USER,
+        select: { tokenDigest: true },
+      }),
+    );
+    if (extra.length)
+      await runAsSystem("drop a user's oldest live status cards", () =>
+        this.prisma.workActivityToken.deleteMany({
+          where: { tokenDigest: { in: extra.map((card) => card.tokenDigest) } },
+        }),
+      );
     // The work may have moved on before the card registered.
     this.userChanged(userId);
     return true;

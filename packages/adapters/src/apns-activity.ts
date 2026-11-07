@@ -1,4 +1,3 @@
-import { getLogger } from "@rakazo/logging";
 import type { ApnsTransport, ApnsVoipConfig } from "./apns-voip.js";
 import { ApnsClient } from "./apns-voip.js";
 import type { WorkActivityPush, WorkActivityPushProvider } from "./work-activity.js";
@@ -14,9 +13,10 @@ export class ApnsActivityProvider implements WorkActivityPushProvider {
   constructor(config: ApnsVoipConfig, transport?: ApnsTransport) {
     this.client = new ApnsClient(config, transport);
   }
-  async send(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable"> {
-    try {
-      const reply = await this.client.post(token, {
+  send(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable"> {
+    return this.client.send(
+      token,
+      {
         topic: `${this.client.config.bundleId}.push-type.liveactivity`,
         pushType: "liveactivity",
         // Steps change often and iOS budgets high priority updates.
@@ -32,18 +32,8 @@ export class ApnsActivityProvider implements WorkActivityPushProvider {
             ...(push.ended ? { "dismissal-date": push.at } : {}),
           },
         },
-      });
-      if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
-      if (reply.status === 200) return "sent";
-      getLogger().warn("thread_activity.push_failed", {
-        status: reply.status,
-        reason: reply.reason,
-      });
-      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the card.
-      return "unavailable";
-    } catch (error) {
-      getLogger().warn("thread_activity.push_failed", { error });
-      return "unavailable";
-    }
+      },
+      "work_activity.push_failed",
+    );
   }
 }

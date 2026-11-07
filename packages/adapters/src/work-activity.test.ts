@@ -84,10 +84,16 @@ function fakeDatabase() {
           current ?? { lastState: null, lastWaiting: 0, ...input.create },
         );
       },
-      findMany: async ({ where }: { where: { userId: string } }) =>
-        [...cards.values()].filter((card) => card.userId === where.userId),
-      deleteMany: async ({ where }: { where: { tokenDigest: string } }) => {
-        cards.delete(where.tokenDigest);
+      // Cards are kept in registration order, so newest first is reverse order.
+      findMany: async ({ where, skip = 0 }: { where: { userId: string }; skip?: number }) =>
+        [...cards.values()]
+          .filter((card) => card.userId === where.userId)
+          .reverse()
+          .slice(skip),
+      deleteMany: async ({ where }: { where: { tokenDigest: string | { in: string[] } } }) => {
+        const digests =
+          typeof where.tokenDigest === "string" ? [where.tokenDigest] : where.tokenDigest.in;
+        for (const digest of digests) cards.delete(digest);
       },
       updateMany: async (input: { where: Partial<Card>; data: Partial<Card> }) => {
         for (const card of cards.values()) {
@@ -256,6 +262,13 @@ describe("live status card of the user's bots at work", () => {
       ended: true,
       state: { count: 0, waiting: 0, rows: [] },
     });
+  });
+
+  it("keeps a few cards per user, dropping the oldest", async () => {
+    const { activities, cards } = setup();
+    for (let phone = 0; phone < 7; phone += 1)
+      await activities.register("user-1", "session-1", String(phone).repeat(64));
+    expect(cards.size).toBe(5);
   });
 
   it("forgets a card Apple no longer knows", async () => {
