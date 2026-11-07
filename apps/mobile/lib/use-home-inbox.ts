@@ -101,8 +101,9 @@ export function useHomeInbox(
         }
       }
       // The account follows this device's zone until the user picks one by hand; the
-      // poll that returns here also covers the foreground return after a zone change.
-      void reportDeviceTimeZone(nextMe.userId).catch(() => undefined);
+      // me this poll brought says what the server holds, so a report goes out only on
+      // a difference, also covering the foreground return after a zone change.
+      void reportDeviceTimeZone(nextMe.userId, nextMe.timezone).catch(() => undefined);
       inboxLoaded.current = true;
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
