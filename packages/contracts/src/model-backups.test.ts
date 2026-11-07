@@ -101,6 +101,17 @@ describe("connected backup model choices", () => {
     expect(offered(true)).not.toContain("custom-model");
     expect(offered(true)).not.toContain("hosted-vision");
   });
+  it("offers Anthropic-protocol compatible models for computer use without a vision list", () => {
+    const anthropicCompatible = {
+      ...credentials[1]!,
+      enabledModelIds: ["claude-relay"],
+      apiProtocol: "anthropic-messages" as const,
+    };
+    const offered = connectedBackupOptions(catalog, [anthropicCompatible], true).map(
+      (option) => option.modelId,
+    );
+    expect(offered).toContain("claude-relay");
+  });
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([
       {

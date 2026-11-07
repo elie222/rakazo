@@ -111,12 +111,12 @@ it("selects an available provider when the saved self-hosted provider is hidden"
     expect(container.querySelector('input[placeholder="Paste your API key"]')).not.toBeNull();
     expect(voice.voices).not.toHaveBeenCalled();
     const disconnect = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Disconnect Self-hosted",
+      (button) => button.textContent === "Disconnect Third-party model",
     );
     expect(disconnect).toBeTruthy();
     await act(async () => disconnect!.click());
     expect(voice.disconnect).toHaveBeenCalledWith({ provider: "openai-compatible" });
-    expect(container.textContent).not.toContain("Self-hosted");
+    expect(container.textContent).not.toContain("Third-party model");
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -222,7 +222,7 @@ it("connects a self-hosted speech server by URL without a key", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.connect.mockReset();
   voice.catalog.mockResolvedValue([
-    { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
   ]);
   voice.credentials.mockResolvedValue([]);
   voice.status.mockResolvedValue({
@@ -311,7 +311,7 @@ it.each([
       sttModel: "saved-transcription",
     };
     voice.catalog.mockResolvedValue([
-      { id: saved.provider, name: "Self-hosted", description: "", transcribe: true },
+      { id: saved.provider, name: "Third-party model", description: "", transcribe: true },
     ]);
     voice.credentials.mockResolvedValue([saved]);
     voice.status.mockResolvedValue({
@@ -379,7 +379,7 @@ it("keeps self-hosted edits typed while a reconnect is in flight", async () => {
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
     ]);
   voice.credentials.mockReset().mockResolvedValue([saved]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
@@ -453,7 +453,7 @@ it("shows what a reconnect saved for fields edited before it started", async () 
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
     ]);
   // The server adds the missing /v1 and keeps the speech model the blank field left out.
   voice.credentials
@@ -528,7 +528,7 @@ it("follows the voice a reconnect saves when the voice field was edited and reve
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
     ]);
   // The connect on a new endpoint drops the old voice; the server picks another.
   voice.credentials
@@ -791,7 +791,7 @@ it("lets a background refresh update untouched fields but keeps edited ones", as
   const catalog = [
     {
       id: "openai-compatible",
-      name: "Self-hosted",
+      name: "Third-party model",
       description: "",
       transcribe: true,
     },
@@ -922,7 +922,7 @@ it("saves a typed self-hosted voice on blur without dropping other unsaved edits
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
     ]);
   voice.credentials.mockReset().mockResolvedValue([saved]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
@@ -1094,7 +1094,7 @@ describe("a save that succeeded stays a success when the read after it fails", (
     voice.catalog
       .mockReset()
       .mockResolvedValue([
-        { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+        { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
       ]);
     // The first read opens the form; the one after the save fails.
     voice.credentials.mockReset().mockResolvedValueOnce([saved]).mockRejectedValue(failure);
@@ -1179,7 +1179,7 @@ it("applies the voice a reconnect saved when the read after it fails", async () 
   voice.catalog
     .mockReset()
     .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+      { id: "openai-compatible", name: "Third-party model", description: "", transcribe: true },
     ]);
   voice.credentials.mockReset().mockResolvedValueOnce([saved]).mockRejectedValue({});
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });

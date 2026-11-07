@@ -115,7 +115,15 @@ export function connectedBackupOptions(
     for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
       const modelId = raw.trim();
       if (!modelId || seen.has(modelId)) continue;
-      if (computerUse && !credential.visionModelIds?.includes(modelId)) continue;
+      // Screen work needs a model that accepts images. A connection on the Anthropic
+      // protocol serves Claude models, which see images, so those count even when the
+      // operator never flipped the per-model switch.
+      if (
+        computerUse &&
+        !credential.visionModelIds?.includes(modelId) &&
+        credential.apiProtocol !== "anthropic-messages"
+      )
+        continue;
       seen.add(modelId);
       const entry = catalog.find(
         (candidate) =>

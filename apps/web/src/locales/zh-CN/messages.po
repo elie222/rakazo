@@ -3099,8 +3099,8 @@ msgid "Disconnect {name}?"
 msgstr "断开 {name}？"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Disconnect Self-hosted"
-msgstr "断开自托管"
+msgid "Disconnect Third-party model"
+msgstr "断开第三方模型"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Disconnected {disconnectName}."

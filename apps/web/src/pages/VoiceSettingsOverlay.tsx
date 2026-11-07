@@ -69,6 +69,9 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  // The compatible speech server is the third-party option, so it shows as one.
+  const voiceProviderName = (entry: VoiceCatalogEntry) =>
+    entry.id === OPENAI_COMPATIBLE_PROVIDER_ID ? t`Third-party model` : entry.name;
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -406,7 +409,7 @@ export function VoiceSettingsOverlay({
               const connected = credentials.some((cred) => cred.provider === entry.id);
               return (
                 <NativeSelectOption key={entry.id} value={entry.id}>
-                  {entry.name}
+                  {voiceProviderName(entry)}
                   {connected ? ` (${t`Connected`})` : ""}
                 </NativeSelectOption>
               );
@@ -420,7 +423,7 @@ export function VoiceSettingsOverlay({
           disabled={busy}
           onClick={() => void disconnectProvider(OPENAI_COMPATIBLE_PROVIDER_ID)}
         >
-          <Trans>Disconnect Self-hosted</Trans>
+          <Trans>Disconnect Third-party model</Trans>
         </Button>
       ) : null}
       {selected ? (
