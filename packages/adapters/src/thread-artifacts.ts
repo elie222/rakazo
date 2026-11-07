@@ -23,7 +23,11 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
-import { withResolvedArtifactVersion, withTransactionRetry } from "@rakazo/db";
+import {
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withResolvedArtifactVersion,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
@@ -111,6 +115,9 @@ export async function attachWorkspaceFileToThread(
         await input.onAttached?.(tx, artifact);
         return artifact;
       },
+      // onAttached may post a message, which waits for the thread row; a snapshot read can
+      // hold it longer than Prisma's default budget, and an expired transaction is not retried.
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     ),
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
