@@ -44,14 +44,17 @@ import {
   injectNovncStorageShim,
   isNovncPage,
   MAX_NOVNC_HTML_BYTES,
+  novncAssetBase,
   novncPageRequestHeaders,
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
+  withoutNovncAssetBase,
 } from "./src/novnc-html.js";
 import { rakazoPwa } from "./src/pwa/plugin.js";
 import type { ScreenTargetFailure } from "./src/screen-proxy.js";
 import {
   checkScreenAuthorization,
+  confirmedNovncAssetBase,
   novncRequestPath,
   resolveNovncTarget,
   safeProxyHeaders,
@@ -126,7 +129,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       next();
       return;
     }
-    req.url = path;
+    // A control page may name its bot's watch screen for static files; nothing past here sees it.
+    const assetBase = novncAssetBase(path);
+    req.url = withoutNovncAssetBase(path);
     const connectionId = randomUUID();
     const bindings = {
       "screen.connection_id": connectionId,
@@ -238,11 +243,19 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
               incoming.destroy();
               return;
             }
-            void collectNovncHtml(incoming, MAX_NOVNC_HTML_BYTES)
-              .then((html) => {
+            void Promise.all([
+              collectNovncHtml(incoming, MAX_NOVNC_HTML_BYTES),
+              confirmedNovncAssetBase(assetBase, target, (base) =>
+                resolveNovncTarget(base, secret, api),
+              ),
+            ])
+              .then(([html, confirmedAssetBase]) => {
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
-                const body = injectNovncStorageShim(html, { viewOnly: !target.interactive });
+                const body = injectNovncStorageShim(html, {
+                  viewOnly: !target.interactive,
+                  assetBase: confirmedAssetBase,
+                });
                 res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })

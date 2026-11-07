@@ -437,6 +437,7 @@ it("shows the remembered view at once on release and returns to control if it fa
   await read();
   screenUrlFactory = () => proxied("control", "c1");
   await read();
+  const controlScreen = state.screenUrl;
   let released!: Promise<void>;
   await act(async () => {
     released = controls.releaseComputer();
@@ -447,7 +448,23 @@ it("shows the remembered view at once on release and returns to control if it fa
     pending.reject(new Error("offline"));
     await released;
   });
-  expect(state.screenUrl).toBe(proxied("control", "c1"));
+  expect(state.screenUrl).toBe(controlScreen);
+});
+
+it("names the remembered watch screen for a control screen's files while it has time left", async () => {
+  screenUrlFactory = () => proxied("view", "v1");
+  await read();
+  screenUrlFactory = () => proxied("control", "c1");
+  await read();
+  expect(state.screenUrl).toBe(
+    `${proxied("control", "c1")}?assets=${encodeURIComponent("/novnc/session/view/9999999999999.v1/")}`,
+  );
+  // A watch screen with too little time left is not named.
+  screenUrlFactory = () => `/novnc/session/view/${Date.now() + 30_000}.v2/embed.html`;
+  await read();
+  screenUrlFactory = () => proxied("control", "c2");
+  await read();
+  expect(state.screenUrl).toBe(proxied("control", "c2"));
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {

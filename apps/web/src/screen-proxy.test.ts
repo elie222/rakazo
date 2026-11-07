@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScreenCheck } from "./screen-proxy.js";
 import {
   checkScreenAuthorization,
+  confirmedNovncAssetBase,
   novncRequestPath,
   resolveNovncTarget,
   safeProxyHeaders,
@@ -594,3 +595,40 @@ function connectTargetPort(args: unknown[]): number | undefined {
   }
   return undefined;
 }
+
+describe("control page files from the watch screen", () => {
+  const base = "/novnc/session/view/9999999999999.abc/";
+  const control = { interactive: true, hostname: "computer-1" };
+  const view =
+    (over: Partial<{ interactive: boolean; hostname: string }> = {}) =>
+    async () =>
+      ({
+        protocol: "http:",
+        hostname: "computer-1",
+        port: 6080,
+        path: "/",
+        interactive: false,
+        ...over,
+      }) as never;
+
+  it("names the watch screen only while the authority honours it for the same computer", async () => {
+    expect(await confirmedNovncAssetBase(base, control, view())).toBe(base);
+    // A recreated computer revokes the old view: the page loads its files as before.
+    expect(await confirmedNovncAssetBase(base, control, async () => null)).toBeUndefined();
+    expect(
+      await confirmedNovncAssetBase(base, control, async () => {
+        throw new Error("api down");
+      }),
+    ).toBeUndefined();
+    expect(
+      await confirmedNovncAssetBase(base, control, view({ hostname: "computer-2" })),
+    ).toBeUndefined();
+    expect(
+      await confirmedNovncAssetBase(base, control, view({ interactive: true })),
+    ).toBeUndefined();
+    expect(
+      await confirmedNovncAssetBase(base, { ...control, interactive: false }, view()),
+    ).toBeUndefined();
+    expect(await confirmedNovncAssetBase(undefined, control, view())).toBeUndefined();
+  });
+});

@@ -8,6 +8,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
+import { SCREEN_ASSET_BASE_PARAM } from "@rakazo/contracts/content-security-policy";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -426,7 +427,8 @@ export function useComputerState({
         read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
-      commit: (screen) => {
+      commit: (read) => {
+        const screen = { ...read, url: withViewAssets(read.url, id) };
         setScreenUrlLoadedBotId(
           computerRef.current?.botId === id &&
             screenReadLoaded(issuedState, computerRef.current.state)
@@ -456,6 +458,20 @@ export function useComputerState({
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
+  }
+
+  /**
+   * A control screen names the bot's watch screen, whose static files the browser already holds,
+   * so the proxy can point the page's file loads there instead of fetching them all again.
+   */
+  function withViewAssets(url: string | null, botId: string) {
+    if (!url || proxiedScreenCapability(url)?.policy !== "control") return url;
+    const view = viewScreenUrlFor(botId);
+    const base =
+      view &&
+      /^\/novnc\/session\/view\/[^/]+\//.exec(new URL(view, window.location.href).pathname)?.[0];
+    if (!base) return url;
+    return `${url}${url.includes("?") ? "&" : "?"}${SCREEN_ASSET_BASE_PARAM}=${encodeURIComponent(base)}`;
   }
 
   /** The bot's last read-only screen, while its capability still has time left. */

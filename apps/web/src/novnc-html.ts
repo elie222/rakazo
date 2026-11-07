@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders } from "node:http";
 import type { Readable } from "node:stream";
+import { SCREEN_ASSET_BASE_PARAM } from "@rakazo/contracts/content-security-policy";
 
 export const MAX_NOVNC_HTML_BYTES = 1024 * 1024;
 
@@ -67,6 +68,30 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
   return { ...rest, "cache-control": "no-store, no-transform" };
 }
 
+const NOVNC_ASSET_BASE = /^\/novnc\/session\/view\/(\d+)\.[A-Za-z0-9_-]+\/$/;
+// The page loads its modules right after this answer; a nearly spent watch screen is left out.
+const NOVNC_ASSET_BASE_MIN_REMAINING_MS = 60_000;
+
+/**
+ * The watch screen a control page names for its static files, which the browser already holds
+ * from that view. Only a watch screen of this proxy qualifies, and only while it has time left;
+ * otherwise the page loads its files under its own capability, as before.
+ */
+export function novncAssetBase(url: string | undefined, now = Date.now()): string | undefined {
+  if (!url) return undefined;
+  const value = new URL(url, "http://screen.invalid").searchParams.get(SCREEN_ASSET_BASE_PARAM);
+  const match = value ? NOVNC_ASSET_BASE.exec(value) : null;
+  return match && Number(match[1]) - now > NOVNC_ASSET_BASE_MIN_REMAINING_MS ? value! : undefined;
+}
+
+/** The request without the asset parameter, which the authority and the computer never see. */
+export function withoutNovncAssetBase(url: string): string {
+  const parsed = new URL(url, "http://screen.invalid");
+  if (!parsed.searchParams.has(SCREEN_ASSET_BASE_PARAM)) return url;
+  parsed.searchParams.delete(SCREEN_ASSET_BASE_PARAM);
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 /**
  * Replace both storages, keep browser extensions from taking the page down, and report the
  * screen's state to the app. Extension content scripts run inside the sandboxed document too;
@@ -75,7 +100,10 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
  * soon as it runs and then follows noVNC's connection classes (which Rakazo's own embed page
  * sets as well) and its status bar.
  */
-export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) {
+export function injectNovncStorageShim(
+  html: string,
+  { viewOnly = false, assetBase }: { viewOnly?: boolean; assetBase?: string } = {},
+) {
   // The app shows the screen's state itself, and noVNC's status bar names the provider's host.
   // Its side panel only has controls to offer while the user has control.
   const chrome = `<style>#noVNC_status{display:none!important}${
@@ -172,9 +200,12 @@ export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) 
   else observe();
 })();
 </script>`;
+  // Relative module and style URLs resolve under the watch screen; the socket URL is built from
+  // the page's own location or an absolute path, so it stays on the control capability.
+  const head = `${assetBase && NOVNC_ASSET_BASE.test(assetBase) ? `<base href="${assetBase}">` : ""}${shim}`;
   return html.includes("<head>")
-    ? html.replace("<head>", `<head>${shim}`)
-    : html.replace(/<script\b/i, `${shim}<script`);
+    ? html.replace("<head>", `<head>${head}`)
+    : html.replace(/<script\b/i, `${head}<script`);
 }
 
 /** Read a noVNC document with a hard cap, and fail if the upstream ends without `end`. */

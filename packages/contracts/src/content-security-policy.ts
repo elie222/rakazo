@@ -14,6 +14,8 @@ export const MCP_APP_VIEWER_PATH = "/mcp-app-viewer.html";
 
 /** Embedded computer screen and its local runtime assets. */
 export const COMPUTER_SCREEN_PATH = "/computer-screen/screen.html";
+/** The query parameter with which a control screen page names its bot's watch screen for files. */
+export const SCREEN_ASSET_BASE_PARAM = "assets";
 export const COMPUTER_SCREEN_PREFIX = "/computer-screen/";
 export const COMPUTER_SCREEN_RUNTIME_PATH = "/computer-screen/sdk/ASP/container.html";
 

@@ -46,6 +46,21 @@ export function novncRequestPath(url: string | undefined): string | null {
 }
 
 /** Fail closed when the authoritative lifecycle check is unavailable. */
+/**
+ * The watch screen a control page may load its files from, only while the authority still honours
+ * it now and it reaches the same computer. A revoked or recreated computer's view would refuse the
+ * page's modules, so the page then loads them under its own capability instead.
+ */
+export async function confirmedNovncAssetBase(
+  assetBase: string | undefined,
+  target: Pick<ScreenProxyTarget, "interactive" | "hostname">,
+  resolve: (path: string) => Promise<ScreenProxyTarget | null>,
+): Promise<string | undefined> {
+  if (!assetBase || !target.interactive) return undefined;
+  const view = await resolve(assetBase).catch(() => null);
+  return view && !view.interactive && view.hostname === target.hostname ? assetBase : undefined;
+}
+
 export async function resolveNovncTarget(
   url: string | undefined,
   secret: string,

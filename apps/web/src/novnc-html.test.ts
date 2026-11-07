@@ -7,9 +7,11 @@ import {
   isNovncPage,
   MAX_NOVNC_HTML_BYTES,
   NOVNC_EXTENSION_ERROR,
+  novncAssetBase,
   novncPageRequestHeaders,
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
+  withoutNovncAssetBase,
 } from "./novnc-html.js";
 
 const html = { "content-type": "text/html; charset=utf-8" };
@@ -375,5 +377,49 @@ describe("noVNC frame state report", () => {
     p.listeners.DOMContentLoaded?.();
     p.mutate();
     expect(p.posted).toEqual([{ rakazoScreen: "loading" }]);
+  });
+});
+
+describe("control page files from the watch screen", () => {
+  const now = 1_000_000_000_000;
+  const view = (expiresAt: number) => `/novnc/session/view/${expiresAt}.abc_DEF-123/`;
+  const page = (assets: string) =>
+    `/novnc/session/control/${now + 3_600_000}.tok/embed.html?path=websockify&assets=${encodeURIComponent(assets)}`;
+
+  it("accepts only a watch screen of this proxy with time left", () => {
+    expect(novncAssetBase(page(view(now + 600_000)), now)).toBe(view(now + 600_000));
+    expect(novncAssetBase(page(view(now + 30_000)), now)).toBeUndefined();
+    expect(
+      novncAssetBase(page(`/novnc/session/control/${now + 600_000}.abc/`), now),
+    ).toBeUndefined();
+    expect(
+      novncAssetBase(page("https://elsewhere.test/novnc/session/view/1.abc/"), now),
+    ).toBeUndefined();
+    expect(novncAssetBase(page(`${view(now + 600_000)}"><script>`), now)).toBeUndefined();
+    expect(
+      novncAssetBase("/novnc/session/control/1.tok/embed.html?path=websockify", now),
+    ).toBeUndefined();
+  });
+
+  it("keeps the parameter from the authority and the computer", () => {
+    const plain = "/novnc/session/control/1.tok/embed.html?path=websockify&view_only=false";
+    expect(withoutNovncAssetBase(plain)).toBe(plain);
+    expect(withoutNovncAssetBase(page(view(now + 600_000)))).toBe(
+      `/novnc/session/control/${now + 3_600_000}.tok/embed.html?path=websockify`,
+    );
+  });
+
+  it("points relative file loads at the watch screen before anything else in the page", () => {
+    const base = view(now + 600_000);
+    const headed = injectNovncStorageShim("<html><head><title>x</title>", { assetBase: base });
+    expect(headed.startsWith(`<html><head><base href="${base}"><style>`)).toBe(true);
+    const bare = injectNovncStorageShim('<!doctype html><script src="app.js"></script>', {
+      assetBase: base,
+    });
+    expect(bare.indexOf("<base")).toBeLessThan(bare.indexOf('src="app.js"'));
+    expect(injectNovncStorageShim("<html><head>", { assetBase: '/x"><script>' })).not.toContain(
+      "<base",
+    );
+    expect(injectNovncStorageShim("<html><head>")).not.toContain("<base");
   });
 });
