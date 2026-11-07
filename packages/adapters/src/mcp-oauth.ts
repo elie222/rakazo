@@ -187,7 +187,9 @@ function isCredentialName(normalized: string): boolean {
     isExplicitCredentialKey(normalized) ||
     isAmbiguousCredentialKey(normalized) ||
     NAMED_KEY.test(normalized) ||
-    /(?:^|_)auth$|^(key|pat)$/.test(normalized)
+    /^(key|pat|auth)$/.test(normalized) ||
+    // `--client-auth <token>`, but not a switch such as `--no-auth`, whose next argument is not its value.
+    (/_auth$/.test(normalized) && !/^(no|disable|enable|skip|use|require)_/.test(normalized))
   );
 }
 
