@@ -84,9 +84,9 @@ describe("plainTextLinkParts", () => {
 
     const wrapped = "(see https://example.com)";
     expect(plainTextLinkParts(wrapped)).toEqual([
-      { type: "text", value: "(see " },
+      { type: "text", value: "(see ", start: 0 },
       { type: "link", value: "https://example.com", href: "https://example.com" },
-      { type: "text", value: ")" },
+      { type: "text", value: ")", start: 24 },
     ]);
     expect(visible(wiki)).toBe(wiki);
     expect(visible(wrapped)).toBe(wrapped);
@@ -111,9 +111,15 @@ describe("plainTextLinkParts", () => {
   it("reads a page link a sent reply starts with, and keeps other markdown links literal", () => {
     expect(plainTextLinkParts("[Plan \\[v2\\]](page:pg_1)\nsee https://example.com")).toEqual([
       { type: "page", value: "Plan [v2]", pageId: "pg_1" },
-      { type: "text", value: "\nsee " },
+      { type: "text", value: "\nsee ", start: 24 },
       { type: "link", value: "https://example.com", href: "https://example.com" },
     ]);
+    // A run after a page link starts after the link's source, even when its title repeats the run.
+    expect(plainTextLinkParts("[ @all](page:pg_1) @all").at(-1)).toEqual({
+      type: "text",
+      value: " @all",
+      start: 18,
+    });
     const other = "[docs](https://example.com) [x](page:bad id)";
     expect(plainTextLinkParts(other).some((part) => part.type === "page")).toBe(false);
   });
@@ -123,7 +129,7 @@ describe("plainTextLinkParts", () => {
     const started = performance.now();
     const parts = plainTextLinkParts(text);
     expect(performance.now() - started).toBeLessThan(250);
-    expect(parts).toEqual([{ type: "text", value: text }]);
+    expect(parts).toEqual([{ type: "text", value: text, start: 0 }]);
   });
 });
 

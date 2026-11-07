@@ -2,6 +2,7 @@ import type { BotAvatarSet, Connection, ConnectionCatalogItem } from "@rakazo/co
 import type { CronLabels } from "./cron.js";
 import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
+import { CJK_CHAR, mentionSpans } from "./group-mentions.js";
 
 export const COMPOSER_MENTION_KINDS = ["bot", "group", "routine", "connector", "everyone"] as const;
 
@@ -82,10 +83,6 @@ export function mentionConnectorsFrom(
   return options;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export function mentionChipKey(mention: Pick<ComposerMention, "kind" | "id">): string {
   return `${mention.kind}:${mention.id}`;
 }
@@ -94,20 +91,14 @@ type MentionName = { name: string };
 
 /** Recognize each full mention once, so a name is not also its shorter prefix. */
 function composerMentionSpans(text: string, mentions: readonly MentionName[]) {
-  const names = [...new Set(mentions.map((mention) => mention.name.trim()).filter(Boolean))].sort(
-    (a, b) => b.length - a.length,
-  );
-  if (names.length === 0) return [];
-  const pattern = new RegExp(
-    `(?<![\\p{L}\\p{N}_-])@(${names.map(escapeRegExp).join("|")})(?![\\p{L}\\p{N}_-])`,
-    "giu",
-  );
-  return [...text.matchAll(pattern)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    name: match[1]!.toLowerCase(),
-  }));
+  return mentionSpans(
+    text,
+    mentions.map((mention) => mention.name),
+  ).map((span) => ({ ...span, name: span.name.toLowerCase() }));
 }
+
+// A name being typed starts after a space or, as in "请@Wr", Chinese, Japanese or Korean text.
+const PARTIAL_MENTION = new RegExp(`(?:^|\\s|${CJK_CHAR})@([\\w-]*)$`, "u");
 
 /** The active @query at a collapsed caret, including its full recognized name. */
 export type ComposerMentionQuery = { start: number; end: number; query: string };
@@ -132,7 +123,7 @@ export function composerMentionQuery(
     (span) => selectionStart > span.start && selectionStart <= span.end,
   );
   if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
-  const match = /(?:^|\s)@([\w-]*)$/.exec(text.slice(0, selectionStart));
+  const match = PARTIAL_MENTION.exec(text.slice(0, selectionStart));
   if (!match) return null;
   const query = match[1] ?? "";
   const start = selectionStart - query.length - 1;
