@@ -55,9 +55,14 @@ export function ArchivedChatsSettings({
 
   if (failed && !chats) {
     return (
-      <p className="text-body text-muted-foreground">
-        <Trans>Could not load</Trans>
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-body text-muted-foreground">
+          <Trans>Could not load</Trans>
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          <Trans>Try again</Trans>
+        </Button>
+      </div>
     );
   }
   if (!chats) return null;
