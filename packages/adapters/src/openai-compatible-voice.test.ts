@@ -75,6 +75,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     });
     expect(openAiCompatibleVoiceServer(keyed)).toEqual({
       endpoint: "http://192.168.1.20:8880/v1",
+      sttEndpoint: "",
       ttsModel: "kokoro",
       sttModel: "whisper-1",
     });
@@ -118,6 +119,123 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     );
     expect(moved.apiKey).toBeUndefined();
     expect(moved.ttsModel).toBe(DEFAULT_COMPATIBLE_TTS_MODEL);
+  });
+
+  it("keeps the saved transcription model only for the same transcription server", () => {
+    const newStt = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.30:9000" },
+        keyed,
+      ),
+    );
+    expect(newStt).toMatchObject({ ttsModel: "kokoro", sttModel: DEFAULT_COMPATIBLE_STT_MODEL });
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      sttModel: "whisper-large",
+    });
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved.sttModel).toBe("whisper-large");
+    const backToMain = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "" }, split),
+    );
+    expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
+  });
+
+  it("stores a separate transcription server only when it differs from the main one", () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: " http://192.168.1.30:9000 ",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(split).sttBaseUrl).toBe("http://192.168.1.30:9000/v1");
+    expect(openAiCompatibleVoiceServer(split)?.sttEndpoint).toBe("http://192.168.1.30:9000/v1");
+    const same = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.20:8880/v1",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(same).sttBaseUrl).toBeUndefined();
+    // Omitted keeps the saved transcription server; blank goes back to the main server.
+    const kept = serializeAsOwner({ baseUrl: "http://192.168.1.20:8880" }, split);
+    expect(parseOpenAiCompatibleVoiceSecret(kept).sttBaseUrl).toBe("http://192.168.1.30:9000/v1");
+    const cleared = serializeAsOwner(
+      { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "" },
+      split,
+    );
+    expect(parseOpenAiCompatibleVoiceSecret(cleared).sttBaseUrl).toBeUndefined();
+  });
+
+  it("keeps each key with its own server", () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    expect(parseOpenAiCompatibleVoiceSecret(split)).toMatchObject({
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    // A client that does not know the fields keeps the transcription server and its key.
+    const rekeyed = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", apiKey: "new-test-key" }, split),
+    );
+    expect(rekeyed).toMatchObject({
+      apiKey: "new-test-key",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    // Moving only the main server leaves the transcription server and its key alone.
+    const mainMoved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, split),
+    );
+    expect(mainMoved).toMatchObject({
+      baseUrl: "http://192.168.1.21:8880/v1",
+      sttBaseUrl: "http://192.168.1.30:9000/v1",
+      sttApiKey: "stt-test-key",
+    });
+    expect(mainMoved.apiKey).toBeUndefined();
+    const moved = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner(
+        { baseUrl: "http://192.168.1.20:8880", sttBaseUrl: "http://192.168.1.31:9000" },
+        split,
+      ),
+    );
+    expect(moved.apiKey).toBe("main-test-key");
+    expect(moved.sttApiKey).toBeUndefined();
+    const single = parseOpenAiCompatibleVoiceSecret(
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880", sttApiKey: "stt-test-key" }),
+    );
+    expect(single.sttApiKey).toBeUndefined();
+  });
+
+  it("checks the transcription server like the main server", () => {
+    expect(() =>
+      serializeOpenAiCompatibleVoiceSecret({
+        baseUrl: "http://192.168.1.20:8880",
+        sttBaseUrl: "http://192.168.1.30:9000",
+      }),
+    ).toThrow("Private model endpoints require operator authorization.");
+    expect(() =>
+      serializeAsOwner({ baseUrl: "http://127.0.0.1:8810", sttBaseUrl: "http://169.254.169.254" }),
+    ).toThrow(/blocked/);
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        sttApiKey: "stt-test-key",
+      }),
+    ).toThrow(/must use HTTPS/);
+    // The main key never goes to the transcription server, so it does not need HTTPS there.
+    expect(() =>
+      serializeAsOwner({
+        baseUrl: "http://127.0.0.1:8810",
+        sttBaseUrl: "http://speech.example.com",
+        apiKey: "local-test-key",
+      }),
+    ).not.toThrow();
   });
 
   it("rejects a key that could break the Authorization header", () => {
@@ -401,6 +519,43 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(form.get("response_format")).toBe("json");
     expect(form.get("language")).toBe("en");
     expect((form.get("file") as File).name).toBe("speech.m4a");
+  });
+
+  it("transcribes on the separate transcription server and speaks on the main one", async () => {
+    const split = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+      sttApiKey: "stt-test-key",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"text":"hi"}'))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }),
+      );
+    await provider(fetchMock).transcribe(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: split },
+      ctx,
+    );
+    await provider(fetchMock).synthesize({ text: "hi", voiceId: "af_heart", apiKey: split }, ctx);
+    expect(calledUrl(fetchMock, 0)).toBe("http://192.168.1.30:9000/v1/audio/transcriptions");
+    expect(calledInit(fetchMock, 0).headers).toEqual({ authorization: "Bearer stt-test-key" });
+    expect(calledUrl(fetchMock, 1)).toBe("http://192.168.1.20:8880/v1/audio/speech");
+    expect(calledInit(fetchMock, 1).headers).toMatchObject({
+      authorization: "Bearer main-test-key",
+    });
+    const keylessStt = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+      apiKey: "main-test-key",
+    });
+    const sttOnly = vi.fn().mockResolvedValue(new Response('{"text":"hi"}'));
+    await provider(sttOnly).transcribe(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keylessStt },
+      ctx,
+    );
+    expect(calledInit(sttOnly).headers).toEqual({});
   });
 
   it("accepts a plain-text transcript body", async () => {

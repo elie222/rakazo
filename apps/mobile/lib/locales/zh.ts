@@ -813,6 +813,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Speak: "朗读",
   "Speech model": "语音模型",
   "Transcription model": "转写模型",
+  "Transcription server URL": "转写服务器地址",
+  "Transcription API key": "转写 API 密钥",
   Reconnect: "重新连接",
   Starting: "正在启动",
   "Starting…": "正在启动…",

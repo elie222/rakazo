@@ -7190,6 +7190,10 @@ msgid "Transcript"
 msgstr "תמליל"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "מפתח API לתמלול"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "מודל תמלול"
 
@@ -7200,6 +7204,10 @@ msgstr "תם הזמן לבקשת התמלול."
 #: src/lib/dictation.ts
 msgid "Transcription response is too large."
 msgstr "תשובת התמלול גדולה מדי."
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "URL של שרת התמלול"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"

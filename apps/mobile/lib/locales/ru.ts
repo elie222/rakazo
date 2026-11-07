@@ -832,6 +832,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Speak: "Озвучить",
   "Speech model": "Речевая модель",
   "Transcription model": "Модель транскрипции",
+  "Transcription server URL": "URL-адрес сервера транскрипции",
+  "Transcription API key": "API-ключ для транскрипции",
   Reconnect: "Переподключить",
   Starting: "Запуск",
   "Starting…": "Запуск…",

@@ -9,7 +9,8 @@ Open **Settings → Voice**, pick a **Provider** and add its **API key**:
 - **ElevenLabs**, **OpenAI** and **Fish Audio** can speak and transcribe.
 - **Cartesia** speaks only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
-  **Server URL**.
+  **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
+  **Transcription API key** if it needs one.
 - **macOS** uses the voices installed on the Mac running your server, with no key. It appears only
   when the server runs on a Mac.
 

@@ -831,6 +831,7 @@ describe("voiceCredentialServer", () => {
     );
     expect(server).toEqual({
       endpoint: "http://100.64.0.10:8810/v1",
+      sttEndpoint: "",
       ttsModel: "kokoro",
       sttModel: adapters.DEFAULT_COMPATIBLE_STT_MODEL,
     });

@@ -764,6 +764,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Replace key": "Schlüssel ersetzen",
   "Speech model": "Sprachmodell",
   "Transcription model": "Transkriptionsmodell",
+  "Transcription server URL": "Server-URL für Transkription",
+  "Transcription API key": "API-Schlüssel für Transkription",
   Reconnect: "Erneut verbinden",
   "This device": "Dieses Gerät",
   "Agent messages": "Agent-Nachrichten",

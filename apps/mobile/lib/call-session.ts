@@ -47,7 +47,7 @@ import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
-import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
+import { createSpeechOwner, ensureVoiceConsent, speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 
@@ -472,7 +472,9 @@ async function openMic(): Promise<void> {
   } catch (error) {
     if (!mine()) return;
     micOpen = false;
-    failTurn(error);
+    // A refused upload is the same disclosure a refused reply asks for: mute, do not retry.
+    if (error instanceof AiConsentBlocked) blockForConsent(error);
+    else failTurn(error);
   }
 }
 
@@ -941,6 +943,7 @@ async function transcribeClip(
   signal: AbortSignal,
   requestContext: ApiRequestContext,
 ): Promise<string> {
+  await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
   const res = await fetchServer(
     `${apiBase}/api/voice/transcribe`,

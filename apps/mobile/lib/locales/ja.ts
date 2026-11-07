@@ -744,6 +744,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Replace key": "キーを置き換え",
   "Speech model": "音声合成モデル",
   "Transcription model": "文字起こしモデル",
+  "Transcription server URL": "文字起こしサーバーURL",
+  "Transcription API key": "文字起こしAPIキー",
   Reconnect: "再接続",
   "This device": "このデバイス",
   "Agent messages": "エージェントのメッセージ",

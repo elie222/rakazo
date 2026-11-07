@@ -757,6 +757,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Replace key": "Sleutel vervangen",
   "Speech model": "Spraakmodel",
   "Transcription model": "Transcriptiemodel",
+  "Transcription server URL": "Server-URL voor transcriptie",
+  "Transcription API key": "API-sleutel voor transcriptie",
   Reconnect: "Opnieuw verbinden",
   "This device": "Dit apparaat",
   "Agent messages": "Agentberichten",

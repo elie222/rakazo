@@ -109,7 +109,7 @@ export function toVoiceCredential(row: {
   isDefault: boolean;
   voiceId: string;
   speechModel?: string | null;
-  server?: { endpoint: string; ttsModel: string; sttModel: string };
+  server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
 }): VoiceCredential {
   return {
     id: row.id,
@@ -120,6 +120,7 @@ export function toVoiceCredential(row: {
     speechModel: row.speechModel ?? "",
     transcribe: Boolean(catalogEntry(row.provider)?.transcribe),
     endpoint: row.server?.endpoint ?? "",
+    sttEndpoint: row.server?.sttEndpoint ?? "",
     ttsModel: row.server?.ttsModel ?? "",
     sttModel: row.server?.sttModel ?? "",
   };
@@ -166,6 +167,8 @@ export function voiceCredentialPlaintext(input: {
   provider: string;
   plaintext: string;
   baseUrl?: string;
+  sttBaseUrl?: string;
+  sttApiKey?: string;
   ttsModel?: string;
   sttModel?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
@@ -186,7 +189,9 @@ export function voiceCredentialPlaintext(input: {
     return serializeOpenAiCompatibleVoiceSecret(
       {
         baseUrl: input.baseUrl ?? "",
+        sttBaseUrl: input.sttBaseUrl,
         apiKey: input.plaintext,
+        sttApiKey: input.sttApiKey,
         ttsModel: input.ttsModel,
         sttModel: input.sttModel,
       },
@@ -265,6 +270,8 @@ export async function persistVoiceCredential(
     voiceId?: string;
     speechModel?: string;
     baseUrl?: string;
+    sttBaseUrl?: string;
+    sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
     /** Which copy the connection becomes the default voice in; omitted is what applies. */

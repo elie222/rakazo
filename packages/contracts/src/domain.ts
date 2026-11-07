@@ -1314,6 +1314,8 @@ export const VoiceCredentialSchema = z.object({
   transcribe: z.boolean(),
   /** Self-hosted server base URL and model ids (never the key). Empty for hosted providers. */
   endpoint: z.string().default(""),
+  /** A separate self-hosted transcription server; empty when `endpoint` transcribes. */
+  sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
 });

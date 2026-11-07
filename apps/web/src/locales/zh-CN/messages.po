@@ -7190,6 +7190,10 @@ msgid "Transcript"
 msgstr "文字记录"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription API key"
+msgstr "转写 API 密钥"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "转写模型"
 
@@ -7200,6 +7204,10 @@ msgstr "转写请求超时。"
 #: src/lib/dictation.ts
 msgid "Transcription response is too large."
 msgstr "转写响应过大。"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription server URL"
+msgstr "转写服务器 URL"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
