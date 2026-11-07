@@ -95,8 +95,12 @@ export function observeThreadChanges(
   return {
     describe: () => realtime.describe(),
     publish: async (topic, payload) => {
-      await realtime.publish(topic, payload);
-      if (topic.startsWith(THREAD_TOPIC)) onThread(topic.slice(THREAD_TOPIC.length));
+      // The change is committed whether or not other processes heard about it.
+      try {
+        await realtime.publish(topic, payload);
+      } finally {
+        if (topic.startsWith(THREAD_TOPIC)) onThread(topic.slice(THREAD_TOPIC.length));
+      }
     },
     subscribe: (topic, onMessage) => realtime.subscribe(topic, onMessage),
     close: () => realtime.close(),

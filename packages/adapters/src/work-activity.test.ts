@@ -40,6 +40,11 @@ function fakeDatabase() {
               (!where.userId || run.userId === where.userId) &&
               (!where.status || where.status.in.includes(run.status)),
           )
+          .filter((run, index, list) =>
+            where.threadId
+              ? list.findIndex((other) => other.userId === run.userId) === index
+              : true,
+          )
           .slice(0, take)
           .map((run) => ({
             ...run,
@@ -190,28 +195,36 @@ describe("live status card of the user's bots at work", () => {
   });
 
   it("updates the owners of a changed thread's work, at most once per window", async () => {
-    const { activities, events, send } = await registered("sent", 300);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    const step = (seq: number) => {
-      events.push({
-        runId: "1",
-        type: "thread.progress",
-        seq,
-        payload: { text: `Step ${seq}`, activity: true },
-      });
-      activities.threadChanged("thread-1");
-    };
-    step(1);
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
-    step(2);
-    step(3);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(send).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3), { timeout: 2_000 });
-    expect(send.mock.calls.map(([, push]) => push.state.rows[0]!.line)).toEqual([
-      "",
-      "Step 1",
-      "Step 3",
-    ]);
+    // Only the clock is fake: the window passes when the test says so, never under load.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const window = 10_000;
+      const { activities, events, send } = await registered("sent", window);
+      await vi.advanceTimersByTimeAsync(window);
+      const step = (seq: number) => {
+        events.push({
+          runId: "1",
+          type: "thread.progress",
+          seq,
+          payload: { text: `Step ${seq}`, activity: true },
+        });
+        activities.threadChanged("thread-1");
+      };
+      step(1);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      step(2);
+      step(3);
+      await vi.advanceTimersByTimeAsync(window / 2);
+      expect(send).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(window);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+      expect(send.mock.calls.map(([, push]) => push.state.rows[0]!.line)).toEqual([
+        "",
+        "Step 1",
+        "Step 3",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -63,9 +63,29 @@ function withAppIntents(config) {
       path.join(widgetDir, "WorkActivityAttributes.swift"),
     );
     if (!project.pbxTargetByName(WIDGET_TARGET)) addWidgetTarget(config, project);
+    // Also on an existing project, so a source added since its prebuild joins the widget.
+    const widget = widgetTargetUuid(project);
+    for (const filepath of WIDGET_FILES) {
+      IOSConfig.XcodeUtils.addBuildSourceFileToGroup({
+        filepath,
+        groupName: WIDGET_TARGET,
+        project,
+        targetUuid: widget,
+      });
+    }
     setWidgetBuildSettings(config, project);
     return config;
   });
+}
+
+/** The widget target's id. Targets the xcode library adds keep their names in quotes. */
+function widgetTargetUuid(project) {
+  const targets = project.pbxNativeTargetSection();
+  const uuid = Object.keys(targets).find(
+    (key) => targets[key]?.name?.replaceAll?.('"', "") === WIDGET_TARGET,
+  );
+  if (!uuid) throw new Error(`The ${WIDGET_TARGET} target is missing.`);
+  return uuid;
 }
 
 function addWidgetTarget(config, project) {
@@ -75,14 +95,15 @@ function addWidgetTarget(config, project) {
   objects.PBXContainerItemProxy ??= {};
   const bundleId = `${config.ios?.bundleIdentifier}.widgets`;
   const target = project.addTarget(WIDGET_TARGET, "app_extension", WIDGET_TARGET, bundleId);
+  // The sources join the group and this phase below, as on an existing project.
   const group = addPbxGroupWithOwnFiles(
     project,
-    [...WIDGET_FILES, "Assets.xcassets", "Info.plist"],
+    ["Assets.xcassets", "Info.plist"],
     WIDGET_TARGET,
     WIDGET_TARGET,
   );
   project.addToPbxGroup(group.uuid, project.getFirstProject().firstProject.mainGroup);
-  project.addBuildPhase(WIDGET_FILES, "PBXSourcesBuildPhase", "Sources", target.uuid);
+  project.addBuildPhase([], "PBXSourcesBuildPhase", "Sources", target.uuid);
   project.addBuildPhase(["Assets.xcassets"], "PBXResourcesBuildPhase", "Resources", target.uuid);
   project.addBuildPhase([], "PBXFrameworksBuildPhase", "Frameworks", target.uuid);
 }

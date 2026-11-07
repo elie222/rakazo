@@ -262,6 +262,9 @@ public class RakazoNotificationsModule: Module {
           status: .working, title: title, line: "", spaceId: spaceId, botId: botId, groupId: groupId))
       }
     }.runOnQueue(.main)
+    AsyncFunction("refreshWorkActivity") {
+      if #available(iOS 18.0, *) { WorkActivities.shared.refresh() }
+    }.runOnQueue(.main)
     AsyncFunction("endWorkActivity") {
       if #available(iOS 18.0, *) { WorkActivities.shared.end() }
     }.runOnQueue(.main)

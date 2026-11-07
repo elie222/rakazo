@@ -1,6 +1,7 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { rpc } from "./api";
+import { loadSessionToken, subscribeSessionGeneration } from "./session";
 
 type NativeWorkActivities = {
   startWorkActivity(
@@ -9,6 +10,7 @@ type NativeWorkActivities = {
     botId: string | null,
     groupId: string | null,
   ): Promise<void>;
+  refreshWorkActivity(): Promise<void>;
   endWorkActivity(): Promise<void>;
   addListener(
     name: "onWorkActivityToken",
@@ -22,15 +24,28 @@ const native =
     : null;
 const activities = native?.startWorkActivity ? native : null;
 
-// The card's push token arrives after it starts, and again whenever iOS changes it.
-activities?.addListener("onWorkActivityToken", ({ token }) => {
-  rpc("notifications/followWorkActivity", { token })
-    .then(({ following }) => {
-      // Nothing would update it: no bot is at work or this server cannot reach the phone.
-      if (!following) return activities.endWorkActivity();
-    })
-    .catch(() => activities.endWorkActivity());
-});
+if (activities) {
+  // The card's push token arrives after it starts, again whenever iOS changes it, and whenever the
+  // app opens, so the server can say the work it shows has ended.
+  activities.addListener("onWorkActivityToken", ({ token }) => {
+    rpc("notifications/followWorkActivity", { token })
+      .then(({ following }) => {
+        // Nothing would update it: no bot is at work or this server cannot reach the phone.
+        if (!following) return activities.endWorkActivity();
+      })
+      // An unanswered request proves nothing; the next open asks again.
+      .catch(() => undefined);
+  });
+  AppState.addEventListener("change", (state) => {
+    if (state === "active") void activities.refreshWorkActivity().catch(() => undefined);
+  });
+  // Signed out: the card shows the last account's bots.
+  subscribeSessionGeneration(() => {
+    void loadSessionToken().then((token) => {
+      if (!token) return activities.endWorkActivity();
+    });
+  });
+}
 
 /**
  * Shows the user's bots at work on the Lock Screen and in the Dynamic Island, starting with the

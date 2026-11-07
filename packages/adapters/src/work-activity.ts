@@ -53,8 +53,8 @@ export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
 /** Progress events read back to find the latest step; streamed text sits between them. */
 const STEP_LOOKBACK = 20;
-/** Recent runs of a changed thread whose owners' cards may need an update. */
-const THREAD_RUN_LOOKBACK = 20;
+/** A run that ended this recently may be the change its owner's card has yet to show. */
+const JUST_ENDED_MS = 10 * 60_000;
 /** A busy thread or user is looked at most this often. The last change always goes out. */
 const UPDATE_WINDOW_MS = 3_000;
 const EMPTY_STATE: WorkActivityState = { count: 0, waiting: 0, rows: [] };
@@ -104,18 +104,23 @@ export class WorkActivities {
     return true;
   }
 
-  /** A thread changed: update the cards of everyone with recent work in it. */
+  /** A thread changed: update the cards of everyone with work in it, going or just ended. */
   threadChanged(threadId: string): void {
     this.throttle(`thread:${threadId}`, async () => {
       const runs = await runAsSystem("find whose work a thread change touches", () =>
         this.prisma.run.findMany({
-          where: { threadId },
-          orderBy: { createdAt: "desc" },
-          take: THREAD_RUN_LOOKBACK,
+          where: {
+            threadId,
+            OR: [
+              { status: { in: [...ACTIVE_RUN_STATUSES] } },
+              { updatedAt: { gte: new Date(Date.now() - JUST_ENDED_MS) } },
+            ],
+          },
+          distinct: ["userId"],
           select: { userId: true },
         }),
       );
-      for (const userId of new Set(runs.map((run) => run.userId))) this.userChanged(userId);
+      for (const { userId } of runs) this.userChanged(userId);
     });
   }
 

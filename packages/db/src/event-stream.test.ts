@@ -22,4 +22,13 @@ describe("observeThreadChanges", () => {
     expect(changed.mock.calls).toEqual([["thread-1"]]);
     expect(published).toEqual(["thread:thread-1", "incoming-calls:user-1"]);
   });
+
+  it("still reports a committed change whose publish failed", async () => {
+    const realtime = {
+      publish: vi.fn().mockRejectedValue(new Error("fanout down")),
+    } as unknown as RealtimeFanout;
+    const changed = vi.fn();
+    await notifyRealtime(observeThreadChanges(realtime, changed), "thread-1", 5);
+    expect(changed).toHaveBeenCalledWith("thread-1");
+  });
 });
