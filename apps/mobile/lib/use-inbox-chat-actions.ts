@@ -270,12 +270,12 @@ export function useInboxChatActions({
             until: value,
           });
         },
-        () => undefined,
+        // Reload once nothing is left to send, so a stale list can't cover a pending choice.
+        () => void loadBots().catch(() => undefined),
       ).catch((err) => {
         apply(chat.snoozedUntil ?? null);
         Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
       });
-      await loadBots().catch(() => undefined);
     },
     [loadBots, sendSnooze, setBots, setGroups, setSpaces, t],
   );
