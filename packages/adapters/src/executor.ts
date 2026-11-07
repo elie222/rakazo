@@ -1198,7 +1198,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true, threadId: true },
+                select: { clientNonce: true, role: true, blocks: true, threadId: true, seq: true },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
