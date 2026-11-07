@@ -85,6 +85,7 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
+  workActivityTokens          WorkActivityToken[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
@@ -156,6 +157,25 @@ model CallPushDevice {
 
   @@index([userId, sessionId])
   @@map("call_push_devices")
+}
+
+/// A phone's live status card for the user's bots at work. Rows go once no bot is working.
+model WorkActivityToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the card; the card ends with it. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// A keyed digest of the last state sent, so unchanged work sends nothing.
+  lastState String?
+  /// Bots waiting on the user in that state, so a new question shows at once.
+  lastWaiting Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_tokens")
 }
 
 model EmailSend {
@@ -1239,6 +1259,7 @@ model Run {
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([threadId, createdAt, id])
+  @@index([userId, status, createdAt])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
