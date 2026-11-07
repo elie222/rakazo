@@ -760,6 +760,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Restore: "Restaurar",
   "Scheduled tasks": "Tareas programadas",
   "Sign out": "Cerrar sesión",
+  "Sign in anyway": "Iniciar sesión de todos modos",
+  "Signing in deletes unsent messages.": "Iniciar sesión elimina los mensajes sin enviar.",
   "Sign out anyway": "Cerrar sesión de todos modos",
   "Signing out deletes unsent messages.": "Cerrar sesión elimina los mensajes sin enviar.",
   "Stream replies": "Transmitir respuestas",

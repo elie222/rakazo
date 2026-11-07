@@ -784,6 +784,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Sign in": "登录",
   "Sign in to Rakazo": "登录 Rakazo",
   "Sign out": "退出登录",
+  "Sign in anyway": "仍要登录",
+  "Signing in deletes unsent messages.": "登录将删除未发送的消息。",
   "Sign out anyway": "仍要退出",
   "Signing out deletes unsent messages.": "退出登录将删除未发送的消息。",
   "Sign up": "注册",

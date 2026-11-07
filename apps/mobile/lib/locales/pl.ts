@@ -788,6 +788,8 @@ export const PL_MESSAGES: Record<string, string> = {
   Restore: "Przywróć",
   "Scheduled tasks": "Zaplanowane zadania",
   "Sign out": "Wyloguj się",
+  "Sign in anyway": "Zaloguj mimo to",
+  "Signing in deletes unsent messages.": "Zalogowanie usunie niewysłane wiadomości.",
   "Sign out anyway": "Wyloguj mimo to",
   "Signing out deletes unsent messages.": "Wylogowanie usunie niewysłane wiadomości.",
   "Stream replies": "Strumieniuj odpowiedzi",

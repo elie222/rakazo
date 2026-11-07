@@ -797,6 +797,8 @@ export const DE_MESSAGES: Record<string, string> = {
   Restore: "Wiederherstellen",
   "Scheduled tasks": "Geplante Aufgaben",
   "Sign out": "Abmelden",
+  "Sign in anyway": "Trotzdem anmelden",
+  "Signing in deletes unsent messages.": "Beim Anmelden werden ungesendete Nachrichten gelöscht.",
   "Sign out anyway": "Trotzdem abmelden",
   "Signing out deletes unsent messages.": "Beim Abmelden werden ungesendete Nachrichten gelöscht.",
   "Stream replies": "Antworten streamen",

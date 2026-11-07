@@ -781,6 +781,8 @@ export const JA_MESSAGES: Record<string, string> = {
   Restore: "復元",
   "Scheduled tasks": "スケジュール済みのタスク",
   "Sign out": "ログアウト",
+  "Sign in anyway": "それでもログイン",
+  "Signing in deletes unsent messages.": "ログインすると未送信のメッセージが削除されます。",
   "Sign out anyway": "それでもログアウト",
   "Signing out deletes unsent messages.": "ログアウトすると未送信のメッセージが削除されます。",
   "Stream replies": "返信をストリーミング",

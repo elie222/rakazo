@@ -809,6 +809,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in": "Войти",
   "Sign in to Rakazo": "Войти в Rakazo",
   "Sign out": "Выйти",
+  "Sign in anyway": "Всё равно войти",
+  "Signing in deletes unsent messages.": "Вход удалит неотправленные сообщения.",
   "Sign out anyway": "Всё равно выйти",
   "Signing out deletes unsent messages.": "Выход удалит неотправленные сообщения.",
   "Sign up": "Зарегистрироваться",

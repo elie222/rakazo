@@ -794,6 +794,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Restore: "Herstellen",
   "Scheduled tasks": "Geplande taken",
   "Sign out": "Uitloggen",
+  "Sign in anyway": "Toch aanmelden",
+  "Signing in deletes unsent messages.": "Aanmelden verwijdert onverzonden berichten.",
   "Sign out anyway": "Toch uitloggen",
   "Signing out deletes unsent messages.": "Uitloggen verwijdert onverzonden berichten.",
   "Stream replies": "Antwoorden streamen",
