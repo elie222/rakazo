@@ -39,7 +39,12 @@ vi.mock("../components/inbox-rows", () => ({
   SectionToggle: ({ title, collapsed }: { title: string; collapsed: boolean }) => (
     <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${title}`} />
   ),
-  ConversationRow: ({ title }: { title: string }) => <p>{title}</p>,
+  ConversationRow: ({ title, actions }: { title: string; actions?: string[] }) => (
+    <p data-actions={actions?.join(" ")}>{title}</p>
+  ),
+  ChatSwipe: ({ rowKey, children }: { rowKey: string; children: ReactNode }) => (
+    <section data-swipe={rowKey}>{children}</section>
+  ),
 }));
 
 import { ActivitySection } from "../components/inbox-activity";
@@ -54,7 +59,11 @@ it("opens Needs attention and folds Working and Unread until the user opens them
         ] as never,
         recent: [],
       },
-      bots: [{ id: "writer", name: "Writer", status: "idle", unread: true }] as never,
+      bots: [
+        { id: "marketing", name: "Marketing", status: "waiting_input" },
+        { id: "research", name: "Research", status: "running" },
+        { id: "writer", name: "Writer", status: "idle", unread: true },
+      ] as never,
       groups: [],
       toggledSections: new Set(["activity:unread"]),
       onToggleSection: () => undefined,
@@ -67,4 +76,40 @@ it("opens Needs attention and folds Working and Unread until the user opens them
   expect(markup).toContain("Marketing");
   expect(markup).not.toContain("Research");
   expect(markup).toContain("Writer");
+});
+
+it("offers the inbox swipe actions on the selected space's chats and leaves out archived ones", () => {
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: {
+        active: [],
+        recent: [
+          { runId: "a", botId: "marketing", botName: "Marketing", status: "completed" },
+          { runId: "b", botId: "archived", botName: "Archived", status: "completed" },
+          { runId: "c", botId: "other", botName: "Other space", status: "completed" },
+        ] as never,
+      },
+      bots: [
+        { id: "marketing", name: "Marketing", status: "idle", spaceId: "space-1" },
+        { id: "other", name: "Other space", status: "idle", spaceId: "space-2" },
+      ] as never,
+      groups: [],
+      toggledSections: new Set(),
+      onToggleSection: () => undefined,
+      openChat: () => undefined,
+      swipe: {
+        spaceId: "space-1",
+        botAction: () => undefined,
+        groupAction: () => undefined,
+        sections: [],
+        onOrganize: () => undefined,
+        onEditSection: () => undefined,
+      },
+    }),
+  );
+  expect(markup).toContain(
+    '<section data-swipe="activity:bot:marketing"><p data-actions="unread archive pin">Marketing</p></section>',
+  );
+  expect(markup).not.toContain("Archived");
+  expect(markup).toContain("<p>Other space</p>");
 });

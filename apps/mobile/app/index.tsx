@@ -772,6 +772,18 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         toggledSections={collapsed}
                         onToggleSection={toggleCollapsed}
                         openChat={openChat}
+                        swipe={
+                          SWIPE_ROWS
+                            ? {
+                                spaceId: me?.spaceId,
+                                botAction,
+                                groupAction,
+                                sections: botSections,
+                                onOrganize: organizeFromMenu,
+                                onEditSection: editSectionFromMenu,
+                              }
+                            : undefined
+                        }
                       />
                     ) : null}
                   </>
