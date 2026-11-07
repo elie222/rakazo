@@ -1348,6 +1348,10 @@ msgstr "Explorar"
 msgid "Browse MCP servers"
 msgstr "Explorar servidores MCP"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Browser sign-in cleared"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
@@ -1650,6 +1654,10 @@ msgstr "Limpar"
 #: src/pages/shell/dialogs.tsx
 msgid "Clear {0}’s conversation?"
 msgstr "Limpar a conversa do {0}?"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Clear browser sign-in"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -2164,6 +2172,10 @@ msgstr "Não foi possível verificar o status do ensino. Atualize a visualizaç�
 #: src/pages/shell/dialogs.tsx
 msgid "Could not clear conversation"
 msgstr "Não foi possível limpar a conversa"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not clear the browser sign-in"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Could not complete action"

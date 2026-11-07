@@ -1349,6 +1349,10 @@ msgstr "瀏覽"
 msgid "Browse MCP servers"
 msgstr "瀏覽 MCP 伺服器"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Browser sign-in cleared"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
@@ -1651,6 +1655,10 @@ msgstr "清空"
 #: src/pages/shell/dialogs.tsx
 msgid "Clear {0}’s conversation?"
 msgstr "清空與 {0} 的對話？"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Clear browser sign-in"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -2165,6 +2173,10 @@ msgstr "無法檢查教學狀態，請重新整理畫面以繼續。"
 #: src/pages/shell/dialogs.tsx
 msgid "Could not clear conversation"
 msgstr "無法清空對話"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not clear the browser sign-in"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Could not complete action"

@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all } },
+  mcp: { servers: mocks, assignments: { all: access.all }, oauth: { disconnect: vi.fn() } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -195,6 +195,56 @@ function server(id: string, status = "unknown") {
     enabled: true,
   } as McpServer;
 }
+
+function oauthServer(id: string) {
+  return {
+    id,
+    name: id,
+    transport: "streamable_http",
+    endpoint: "https://provider.example.com/mcp",
+    oauthStatus: "connected",
+    health: { status: "ok" },
+    enabled: true,
+  } as McpServer;
+}
+
+it("clears a server's own browser sign-in and its stored grant", async () => {
+  const clear = vi.fn().mockResolvedValue(undefined);
+  window.rakazoDesktop = {
+    platform: "darwin",
+    mcpBrowser: { clear, onOAuthCallback: () => () => {} },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
+  api.mcp.oauth.disconnect.mockReset().mockResolvedValue({ ok: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.textContent).toContain("Clear browser sign-in"));
+    const item = Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Clear browser sign-in",
+    );
+    await act(async () => item?.click());
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledWith("Mobbin"));
+    expect(api.mcp.oauth.disconnect).toHaveBeenCalledWith({ serverId: "Mobbin" });
+  } finally {
+    await act(async () => root.unmount());
+    delete window.rakazoDesktop;
+  }
+});
+
+it("hides browser clearing where the shell shares one cookie jar", async () => {
+  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.textContent).toContain("Reconnect OAuth"));
+    expect(host.textContent).not.toContain("Clear browser sign-in");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
 
 it("offers stdio only where the deployment runs it, and still shows existing stdio servers", async () => {
   mocks.list

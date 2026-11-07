@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { oauthCallbackFrom } from "./oauth-callback.js";
+import { mcpOAuthCallbackFrom, oauthCallbackFrom } from "./oauth-callback.js";
 
 describe("loopback OAuth callbacks", () => {
   it("reads the code and state Anthropic redirects with", () => {
@@ -71,4 +71,55 @@ it("lets SSO reach its API callback instead of capturing a separate loopback ori
       frameName: "rakazo-model-oauth",
     }),
   ).toEqual({ code: "model-code" });
+});
+
+describe("MCP sign-in callbacks", () => {
+  const appOrigin = "https://rakazo.example.com";
+
+  it("reads the code from the app's own callback route", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        `${appOrigin}/mcp/oauth/callback?code=mcp_123&state=session-456`,
+        appOrigin,
+      ),
+    ).toEqual({ code: "mcp_123", state: "session-456" });
+  });
+
+  it("ignores another origin, another route and the authorize step", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        "https://elsewhere.example.com/mcp/oauth/callback?code=mcp_123&state=s",
+        appOrigin,
+      ),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/app?code=mcp_123&state=s`, appOrigin),
+    ).toBeUndefined();
+    expect(mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback`, appOrigin)).toBeUndefined();
+    expect(mcpOAuthCallbackFrom("not a url", appOrigin)).toBeUndefined();
+  });
+
+  it("needs exactly one code and one state", () => {
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&code=b&state=s`, appOrigin),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&state=s&state=t`, appOrigin),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&state=%20`, appOrigin),
+    ).toBeUndefined();
+  });
+
+  it("reports a refusal the provider sends back instead of leaving its window open", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        `${appOrigin}/mcp/oauth/callback?error=access_denied&error_description=Wrong+account`,
+        appOrigin,
+      ),
+    ).toEqual({ error: "Wrong account" });
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?error=access_denied`, appOrigin),
+    ).toEqual({ error: "access_denied" });
+  });
 });

@@ -1348,6 +1348,10 @@ msgstr "둘러보기"
 msgid "Browse MCP servers"
 msgstr "MCP 서버 둘러보기"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Browser sign-in cleared"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Built-in"
@@ -1650,6 +1654,10 @@ msgstr "비우기"
 #: src/pages/shell/dialogs.tsx
 msgid "Clear {0}’s conversation?"
 msgstr "{0}와의 대화 내용을 비울까요?"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Clear browser sign-in"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -2164,6 +2172,10 @@ msgstr "가르치기 상태를 확인하지 못했습니다. 화면을 새로고
 #: src/pages/shell/dialogs.tsx
 msgid "Could not clear conversation"
 msgstr "대화 내용을 비우지 못했습니다."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not clear the browser sign-in"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Could not complete action"
