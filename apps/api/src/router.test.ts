@@ -568,6 +568,17 @@ describe("account preferences", () => {
     expect(setup.update).not.toHaveBeenCalled();
   });
 
+  it("a device report that only spells the stored zone differently writes nothing", async () => {
+    const setup = preferencesDeps("organic", "Asia/Kolkata", "device");
+    const client = createRouterClient(createRouter(setup.deps), {
+      context: { actor: setup.actor } as never,
+    });
+
+    await client.preferences.adoptTimezone({ timezone: "Asia/Calcutta" });
+
+    expect(setup.update).not.toHaveBeenCalled();
+  });
+
   it("switchTo returns a hand-picked zone to the device", async () => {
     const setup = preferencesDeps("organic", "Europe/London", "manual");
     const client = createRouterClient(createRouter(setup.deps), {

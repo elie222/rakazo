@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./session", () => ({ currentSessionGeneration: vi.fn() }));
 
 import { rpc } from "./api";
+import { currentSessionGeneration } from "./session";
+
+/** The session generation the mocked module reports; a sign-in bumps it. */
+let generation = 0;
 
 async function load() {
   vi.resetModules();
@@ -11,15 +16,23 @@ async function load() {
 
 /** The runtime's own zone lookup, pointed at a fixed zone for one assertion. */
 function fakeDeviceZone(zone: string) {
-  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation((() => ({
-    resolvedOptions: () => ({ timeZone: zone }),
-  })) as unknown as typeof Intl.DateTimeFormat);
+  const real = Intl.DateTimeFormat;
+  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+    // A plain function, so `new` works too; a named zone canonicalizes for real, only
+    // the device's own lookup answers with the fixed zone.
+    ((_locale?: string, options?: Intl.DateTimeFormatOptions) => {
+      if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
+      return real("en-US", options);
+    }) as unknown as typeof Intl.DateTimeFormat,
+  );
 }
 
 /** Lets the report queue issue its next request before an assertion. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
+  generation = 0;
+  vi.mocked(currentSessionGeneration).mockImplementation(() => generation);
   vi.mocked(rpc)
     .mockReset()
     .mockImplementation(((_proc: string, body: { timezone: string }) =>
@@ -290,6 +303,33 @@ describe("device timezone report", () => {
       auckland.mockRestore();
       london?.mockRestore();
       paris?.mockRestore();
+    }
+  });
+
+  it("drops a queued report when another sign-in takes the session before it runs", async () => {
+    const zone = fakeDeviceZone("Pacific/Auckland");
+    const { reportDeviceTimeZone } = await load();
+    try {
+      const first = reportDeviceTimeZone("user-1", null, null);
+      // The account switches before the queued report runs.
+      generation = 1;
+      await flush();
+      expect(vi.mocked(rpc)).not.toHaveBeenCalled();
+      await first;
+    } finally {
+      zone.mockRestore();
+    }
+  });
+
+  it("stays quiet when the server spells the device's zone differently", async () => {
+    const zone = fakeDeviceZone("Asia/Calcutta");
+    try {
+      const { reportDeviceTimeZone } = await load();
+      await reportDeviceTimeZone("user-1", "Asia/Kolkata", "device");
+      await reportDeviceTimeZone("user-1", "Asia/Calcutta", "device");
+      expect(vi.mocked(rpc)).not.toHaveBeenCalled();
+    } finally {
+      zone.mockRestore();
     }
   });
 

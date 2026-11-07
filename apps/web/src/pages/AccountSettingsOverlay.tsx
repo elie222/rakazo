@@ -7,6 +7,7 @@ import {
   localTimezone,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  sameTimeZone,
 } from "@rakazo/core";
 import {
   Button,
@@ -50,7 +51,7 @@ import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import { sameTimeZone, timezoneOptions } from "../lib/local-timezone";
+import { timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";

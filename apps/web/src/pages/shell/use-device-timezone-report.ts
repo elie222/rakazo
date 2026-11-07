@@ -1,5 +1,5 @@
 import type { Me } from "@rakazo/contracts";
-import { localTimezone } from "@rakazo/core";
+import { localTimezone, timezoneReportDue } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
 import type { createSpaceRpc } from "../../lib/rpc";
 
@@ -36,8 +36,7 @@ export function useDeviceTimezoneReport(
     if (
       document.visibilityState !== "visible" ||
       !me ||
-      me.timezoneSource === "manual" ||
-      me.timezone === deviceTimezone
+      !timezoneReportDue(deviceTimezone, me.timezone, me.timezoneSource)
     )
       return;
     const sent = choiceEpoch.current;
@@ -51,9 +50,10 @@ export function useDeviceTimezoneReport(
   }, []);
   const hasMe = me != null;
   const savedZone = me?.timezone ?? null;
+  const savedSource = me?.timezoneSource ?? null;
   useEffect(() => {
     if (hasMe) report();
-  }, [hasMe, savedZone, report]);
+  }, [hasMe, savedZone, savedSource, report]);
   useEffect(() => {
     const onForeground = () => report();
     document.addEventListener("visibilitychange", onForeground);

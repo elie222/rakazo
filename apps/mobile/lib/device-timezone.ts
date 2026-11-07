@@ -1,6 +1,7 @@
 import type { Me } from "@rakazo/contracts";
-import { localTimezone } from "@rakazo/core";
+import { localTimezone, timezoneReportDue } from "@rakazo/core";
 import { rpc } from "./api";
+import { currentSessionGeneration } from "./session";
 
 /** The report this device still owes: in flight, or queued behind an earlier one. */
 let pending: { userId: string; timezone: string; report: Promise<void> } | null = null;
@@ -14,9 +15,10 @@ let reports: Promise<void> = Promise.resolve();
  * and its source from the same poll's `me`, and so does every foreground return, so a
  * zone the system changed while the app was away lands too. A report goes out only
  * while the account follows its devices and the server's zone differs from this
- * device's, so a write that lands late is caught by the next comparison, not by
- * memory. One report is in flight at a time: identical calls share it, a different
- * zone or account queues behind it.
+ * device's, spellings aside, so a write that lands late is caught by the next
+ * comparison, not by memory. One report is in flight at a time: identical calls share
+ * it, a different zone or account queues behind it, and a report planned under one
+ * sign-in never runs under another.
  */
 export function reportDeviceTimeZone(
   userId: string,
@@ -24,13 +26,14 @@ export function reportDeviceTimeZone(
   serverSource: Me["timezoneSource"],
 ): Promise<void> {
   const timezone = localTimezone();
-  // A hand-picked zone stays; an older server cannot say, so the zone comparison rules.
-  if (serverSource === "manual") return Promise.resolve();
-  if (serverZone === timezone) return Promise.resolve();
+  if (!timezoneReportDue(timezone, serverZone, serverSource)) return Promise.resolve();
   if (pending?.userId === userId && pending.timezone === timezone) return pending.report;
   const attempt = { userId, timezone, report: Promise.resolve() };
+  const session = currentSessionGeneration();
   // Replaced just below, before the attempt becomes visible as the pending one.
   attempt.report = reports.then(async () => {
+    // A queued report's call would carry the new sign-in's account, not this one's.
+    if (session !== currentSessionGeneration()) return;
     try {
       await rpc("preferences/adoptTimezone", { timezone });
     } finally {

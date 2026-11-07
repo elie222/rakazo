@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import type { createSpaceRpc } from "../../lib/rpc";
-import { useDeviceTimezoneReport } from "./use-device-timezone-report";
+import { useDeviceTimezoneReport, withServerTimezone } from "./use-device-timezone-report";
 
 type Rpc = ReturnType<typeof createSpaceRpc>;
 type AdoptTimezone = (input: { timezone: string }) => Promise<Me>;
@@ -21,6 +21,19 @@ function deferred<T>() {
     resolve = settle;
   });
   return { promise, resolve };
+}
+
+/** The runtime's own zone lookup, pointed at a fixed zone for one test. */
+function fakeDeviceZone(zone: string) {
+  const real = Intl.DateTimeFormat;
+  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+    // A plain function, so `new` works too; a named zone canonicalizes for real, only
+    // the device's own lookup answers with the fixed zone.
+    ((_locale?: string, options?: Intl.DateTimeFormatOptions) => {
+      if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
+      return real("en-US", options);
+    }) as unknown as typeof Intl.DateTimeFormat,
+  );
 }
 
 /** Mounts the hook with a stubbed report call; `manualSave` runs the marker it returns. */
@@ -115,7 +128,6 @@ it("reports again once a hand-picked zone returns to the device", async () => {
   // "Use device timezone" answers with the device source, and the helper that lands
   // a timezone answer on the cached me carries the source along, so the report guard
   // never trusts a stale "manual".
-  const { withServerTimezone } = await import("./use-device-timezone-report");
   const answer = deferred<Me>();
   const adoptTimezone = vi.fn(() => answer.promise);
   const harness = await mountReport(adoptTimezone, me(savedZone, "manual"));
@@ -132,6 +144,31 @@ it("reports again once a hand-picked zone returns to the device", async () => {
     // The device then moves away from that zone: the report goes out again.
     await harness.rerender(me(savedZone, returned.timezoneSource));
     expect(adoptTimezone).toHaveBeenCalledTimes(1);
+    expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("stays quiet when the saved zone only spells the device's differently", async () => {
+  const device = fakeDeviceZone("Asia/Calcutta");
+  const adoptTimezone = vi.fn(async () => me("Asia/Kolkata"));
+  const harness = await mountReport(adoptTimezone, me("Asia/Kolkata", "device"));
+  try {
+    expect(adoptTimezone).not.toHaveBeenCalled();
+  } finally {
+    device.mockRestore();
+    await harness.cleanup();
+  }
+});
+
+it("reports when only the saved zone's source turns back to the device", async () => {
+  const adoptTimezone = vi.fn(async () => me(localTimezone()));
+  const harness = await mountReport(adoptTimezone, me(savedZone, "manual"));
+  try {
+    expect(adoptTimezone).not.toHaveBeenCalled();
+    // "Use device timezone" on another client: the zone stays, the source changes.
+    await harness.rerender(me(savedZone, "device"));
     expect(adoptTimezone).toHaveBeenCalledWith({ timezone: localTimezone() });
   } finally {
     await harness.cleanup();

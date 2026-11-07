@@ -10,6 +10,7 @@ import {
   nextCronDate,
   nextCronDateAcross,
   ONCE_ROUTINE_CRON,
+  sameTimeZone,
   unevenInterval,
   wallClock,
   zonedDateTime,
@@ -323,7 +324,8 @@ export async function changeUserTimezone(
         // A device report never displaces a zone picked by hand; the lock keeps this
         // check and the write together, so a concurrent manual choice always wins.
         (source === "device" && user.timezoneSource === "manual") ||
-        (user.timezone === timezone &&
+        // A different spelling of the held zone changes nothing, so it writes nothing.
+        (sameTimeZone(user.timezone, timezone) &&
           user.timezoneSource === timezoneSource &&
           Object.keys(fields).length === 0)
       )
