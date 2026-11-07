@@ -77,6 +77,26 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-integrations-advanced
+# A search with no saved match offers the public catalog; the offline one has no sign-in servers.
+- openLink: "rakazo:///integrations"
+- extendedWaitUntil:
+    visible: "Search apps"
+    timeout: 15000
+- tapOn: "Search apps"
+- inputText: "tracker"
+- extendedWaitUntil:
+    visible: "Search more apps"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08b-integrations-search
+- tapOn: "Search more apps"
+- extendedWaitUntil:
+    visible: "No apps match your search."
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08c-integrations-catalog
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
     visible: ".*This device.*"
