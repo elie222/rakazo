@@ -271,4 +271,43 @@ override_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
 grep -qF -e '-f docker-compose.override.yml up' "$tmp/unpassed/docker.log" ||
   fail "compose up did not layer the override: $(cat "$tmp/unpassed/docker.log")"
 
+# The Compose files come from the pinned release, whichever way the tag was pinned.
+unset RAKAZO_IMAGE_TAG
+download_ref() {
+  local name="$1" image_tag="${2:-}"
+  shift 2
+  setup_work "$tmp/$name"
+  (
+    [[ -z "$image_tag" ]] || export RAKAZO_IMAGE_TAG="$image_tag"
+    run_install "$tmp/$name" "$@" >/dev/null 2>&1
+  ) || fail "$name install failed"
+  grep -F 'docker-compose.images.yml' "$tmp/$name/curl.log" | grep -oE 'rakazo/[^/]+/infra/compose' | sort -u
+}
+ref="$(download_ref untagged "")"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "no pin should use main, got: $ref"
+ref="$(download_ref shell-pin v0.8.0)"
+[[ "$ref" == "rakazo/v0.8.0/infra/compose" ]] || fail "shell pin should use its tag, got: $ref"
+ref="$(download_ref shell-edge edge)"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "edge should use main, got: $ref"
+ref="$(download_ref shell-custom v0.8.0-custom)"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "a tag that is not a release should use main, got: $ref"
+
+setup_work "$tmp/env-pin"
+printf 'RAKAZO_IMAGE_TAG=edge\nexport RAKAZO_IMAGE_TAG="v0.7.0" # pinned\r\n' >> "$tmp/env-pin/cwd/.env"
+run_install "$tmp/env-pin" >/dev/null 2>&1 || fail "env-pin install failed"
+grep -qF 'rakazo/v0.7.0/infra/compose/docker-compose.images.yml' "$tmp/env-pin/curl.log" ||
+  fail ".env pin should use its tag: $(cat "$tmp/env-pin/curl.log")"
+
+setup_work "$tmp/shell-wins"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/shell-wins/cwd/.env"
+(export RAKAZO_IMAGE_TAG=v0.8.0; run_install "$tmp/shell-wins" >/dev/null 2>&1) || fail "shell-wins install failed"
+grep -qF 'rakazo/v0.8.0/infra/compose/docker-compose.images.yml' "$tmp/shell-wins/curl.log" ||
+  fail "the shell should win over .env, as in Compose: $(cat "$tmp/shell-wins/curl.log")"
+
+setup_work "$tmp/mirror"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/mirror/cwd/.env"
+(export RAKAZO_DOWNLOAD_BASE=https://mirror.example/compose; run_install "$tmp/mirror" >/dev/null 2>&1) || fail "mirror install failed"
+grep -qF 'https://mirror.example/compose/docker-compose.images.yml' "$tmp/mirror/curl.log" ||
+  fail "RAKAZO_DOWNLOAD_BASE should win: $(cat "$tmp/mirror/curl.log")"
+
 echo "ok"
