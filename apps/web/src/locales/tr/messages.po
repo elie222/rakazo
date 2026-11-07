@@ -3377,7 +3377,7 @@ msgstr "Her hafta"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
-msgstr "Buradaki herkes sohbetlerini, botlarını ve hafızasını görür"
+msgstr "Buradaki herkes bu alanın sohbetlerini, botlarını ve hafızasını görür"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."

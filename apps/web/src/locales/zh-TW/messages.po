@@ -3378,7 +3378,7 @@ msgstr "每週"
 
 #: src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
-msgstr "這裡的每個人都能看到它的聊天、機器人和記憶"
+msgstr "這裡的每個人都能看到這個空間的聊天、機器人和記憶"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
