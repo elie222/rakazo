@@ -86,7 +86,7 @@ export function IntegrationSetup({
           onChange={(event) => setQuery(event.target.value)}
         />
         <Button type="submit" disabled={busy || !query.trim()}>
-          <Trans>Search integrations.sh</Trans>
+          <Trans>Search</Trans>
         </Button>
       </form>
       {remoteResults.map((result) => (

@@ -60,7 +60,7 @@ test("ordinary accounts can add personal MCP connections without server setup", 
     }),
   );
   await page.getByRole("textbox", { name: "Search apps", exact: true }).fill("Notion");
-  await page.getByRole("button", { name: "Search integrations.sh", exact: true }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await expect(page.getByText("Keyed tool", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Connect", exact: true }).click();

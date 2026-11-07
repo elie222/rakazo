@@ -6106,6 +6106,7 @@ msgstr "Pantalla no conectada"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6146,6 @@ msgstr "Buscar bots, acciones y configuración"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Buscar por dominio"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "Buscar en integrations.sh"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

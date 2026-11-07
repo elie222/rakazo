@@ -6106,6 +6106,7 @@ msgstr "Ekran nie jest połączony"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6146,6 @@ msgstr "Szukaj botów, działań i ustawień"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Szukaj według domeny"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "Szukaj w integrations.sh"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

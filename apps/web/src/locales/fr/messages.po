@@ -6106,6 +6106,7 @@ msgstr "Écran non connecté"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6146,6 @@ msgstr "Rechercher des bots, des actions et des paramètres"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Rechercher par domaine"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "Rechercher sur integrations.sh"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

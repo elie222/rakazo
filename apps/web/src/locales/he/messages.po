@@ -6106,6 +6106,7 @@ msgstr "המסך אינו מחובר"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6146,6 @@ msgstr "חיפוש בוטים, פעולות והגדרות"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "חיפוש לפי דומיין"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "חיפוש ב-integrations.sh"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

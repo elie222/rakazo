@@ -6106,6 +6106,7 @@ msgstr "Ekran bağlı değil"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6146,6 @@ msgstr "Botlarda, işlemlerde ve ayarlarda ara"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Etki alanına göre ara"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "integrations.sh üzerinde ara"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
