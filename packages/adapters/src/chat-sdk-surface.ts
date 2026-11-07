@@ -19,6 +19,7 @@ import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./lark/text-parts.js";
+import { clearTemporaryReceipt } from "./messaging-receipt-cleanup.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -73,6 +74,8 @@ export interface MessagingPlatform {
   provider: string;
   capabilities: MessagingCapabilities;
   adapter: Adapter;
+  /** A temporary receipt can return cleanup owned by the inbound process. */
+  acknowledge?: (handle: string, context: AdapterContext) => Promise<void | (() => Promise<void>)>;
   /**
    * The adapter's own thread-id prefix when it differs from `provider`, so
    * one adapter type can mount more than once (one Telegram bot per space:
@@ -316,12 +319,32 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     }
   }
 
-  async acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void> {
+  async acknowledge(
+    threadId: string,
+    handle: string,
+    context: AdapterContext,
+  ): Promise<void | (() => Promise<void>)> {
     const mounted = this.byProvider.get(providerOfThreadId(threadId));
     const receipt = mounted?.platform.capabilities.receipt;
     if (!mounted || !receipt) return;
-    await this.ensureInitialized();
+    context.signal.throwIfAborted();
+    await raceWithSignal(this.ensureInitialized(), context.signal);
+    context.signal.throwIfAborted();
     const { platform } = mounted;
+    if (platform.acknowledge) {
+      const operation = platform.acknowledge(handle, context);
+      try {
+        return await raceWithSignal(operation, context.signal);
+      } catch (error) {
+        // If abort wins, the caller cannot own a cleanup returned by a later completion.
+        if (context.signal.aborted)
+          void operation.then(
+            (cleanup) => (cleanup ? clearTemporaryReceipt(cleanup) : undefined),
+            () => undefined,
+          );
+        throw error;
+      }
+    }
     const adapterThreadId = toAdapterThreadId(mounted, threadId);
     const sends: Record<MessagingReceipt, () => Promise<void>> = {
       typing: () => platform.adapter.startTyping(adapterThreadId),

@@ -7,6 +7,7 @@ import type {
   MessagingInboundMessage,
 } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -135,6 +136,8 @@ beforeEach(() => {
   images.clear();
   request.mockReset();
   request.mockImplementation(async ({ url }: { url: string }) => {
+    const reaction = /\/im\/v1\/messages\/([^/]+)\/reactions(?:\/[^/]+)?$/.exec(url);
+    if (reaction) return { code: 0, data: { reaction_id: `re-${reaction[1]}` } };
     const resource = /\/im\/v1\/messages\/om-test\/resources\/([^/?]+)$/.exec(url);
     if (resource) {
       const bytes = images.get(resource[1]!);
@@ -770,6 +773,106 @@ describe("Lark messaging conformance", () => {
       expect.objectContaining({ url: "https://open.larksuite.com/open-apis/im/v1/chats" }),
     );
     expect(adapter.isDM(encodeThreadId({ chatId: "oc-test" }))).toBe(true);
+  });
+});
+
+describe("Lark working receipts", () => {
+  it("acknowledges the requested message without depending on an inbound webhook", async () => {
+    const { surface } = createSurface();
+    const clear = await surface.acknowledge(
+      encodeThreadId({ chatId: "oc-test" }),
+      "om-original",
+      context,
+    );
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        url: expect.stringMatching(/messages\/om-original\/reactions$/),
+        data: { reaction_type: { emoji_type: "Typing" } },
+      }),
+    );
+    expect(typeof clear).toBe("function");
+    if (clear) await clear();
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "DELETE",
+        url: expect.stringMatching(/messages\/om-original\/reactions\/re-om-original$/),
+      }),
+    );
+  });
+
+  it("clears a reaction created after the receipt timed out", async () => {
+    const { surface } = createSurface();
+    // Initialize before delaying only the create-reaction call.
+    await surface.handleWebhook(
+      "lark",
+      webhook({ type: "url_verification", token, challenge: "test" }),
+    );
+    const controller = new AbortController();
+    const respond = request.getMockImplementation()!;
+    request.mockImplementation(async (call: { url: string; method?: string }) => {
+      if (call.method === "POST" && call.url.endsWith("/reactions")) controller.abort();
+      return respond(call);
+    });
+    await expect(
+      surface.acknowledge(encodeThreadId({ chatId: "oc-test" }), "om-late", {
+        ...context,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "DELETE",
+          url: expect.stringMatching(/messages\/om-late\/reactions\/re-om-late$/),
+        }),
+      ),
+    );
+  });
+
+  it("retries a failed deletion when a create completes after abort", async () => {
+    const { surface } = createSurface();
+    await surface.handleWebhook(
+      "lark",
+      webhook({ type: "url_verification", token, challenge: "test" }),
+    );
+    const controller = new AbortController();
+    const respond = request.getMockImplementation()!;
+    let deletes = 0;
+    const log = vi.spyOn(getLogger(), "error").mockImplementation(() => {});
+    request.mockImplementation(async (call: { url: string; method?: string }) => {
+      if (call.method === "POST" && call.url.endsWith("/reactions"))
+        controller.abort(new Error("expired"));
+      if (call.method === "DELETE" && ++deletes === 1) throw new Error("temporary outage");
+      return respond(call);
+    });
+    try {
+      await expect(
+        surface.acknowledge(encodeThreadId({ chatId: "oc-test" }), "om-late-retry", {
+          ...context,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("expired");
+      await vi.waitFor(() => expect(deletes).toBe(2));
+      expect(log).toHaveBeenCalledOnce();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("keeps messages independent when receipts overlap", async () => {
+    const { surface } = createSurface();
+    const threadId = encodeThreadId({ chatId: "oc-test" });
+    const clears = await Promise.all([
+      surface.acknowledge(threadId, "om-first", context),
+      surface.acknowledge(threadId, "om-second", context),
+    ]);
+    for (const clear of clears) if (clear) await clear();
+    const calls = request.mock.calls.map(([call]) => call as { method?: string; url: string });
+    expect(calls.filter((call) => call.method === "DELETE").map((call) => call.url)).toEqual([
+      expect.stringMatching(/messages\/om-first\/reactions\/re-om-first$/),
+      expect.stringMatching(/messages\/om-second\/reactions\/re-om-second$/),
+    ]);
   });
 });
 

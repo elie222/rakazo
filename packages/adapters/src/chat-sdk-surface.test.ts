@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -900,6 +901,131 @@ describe("ChatSdkMessagingSurface thread history", () => {
 });
 
 describe("ChatSdkMessagingSurface acknowledge", () => {
+  it.each([false, true])(
+    "owns cleanup returned at the abort boundary (transient failure=%s)",
+    async (fails) => {
+      vi.useFakeTimers();
+      const log = vi.spyOn(getLogger(), "error").mockImplementation(() => {});
+      try {
+        const clear = vi.fn(async () => {});
+        if (fails) clear.mockRejectedValueOnce(new Error("temporary failure"));
+        const controller = new AbortController();
+        const { surface } = createSurface({
+          acknowledge: async () => {
+            controller.abort(new Error("receipt expired"));
+            return clear;
+          },
+        });
+        await surface.initialize();
+        await expect(
+          surface.acknowledge("mock:Duser:1", "m-1", { ...context, signal: controller.signal }),
+        ).rejects.toThrow("receipt expired");
+        await vi.advanceTimersByTimeAsync(250);
+        expect(clear).toHaveBeenCalledTimes(fails ? 2 : 1);
+        expect(log).toHaveBeenCalledTimes(fails ? 1 : 0);
+        expect(vi.getTimerCount()).toBe(0);
+        await surface.shutdown();
+      } finally {
+        log.mockRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("bounds and logs deletion failures for a result delivered after timeout", async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(getLogger(), "error").mockImplementation(() => {});
+    try {
+      const clear = vi.fn(async () => {
+        throw new Error("delete unavailable");
+      });
+      let release = (_cleanup: () => Promise<void>) => {};
+      let entered = () => {};
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const { surface } = createSurface({
+        acknowledge: () => {
+          entered();
+          return new Promise<() => Promise<void>>((resolve) => {
+            release = resolve;
+          });
+        },
+      });
+      const controller = new AbortController();
+      const pending = surface.acknowledge("mock:Duser:1", "m-1", {
+        ...context,
+        signal: controller.signal,
+      });
+      const rejected = expect(pending).rejects.toThrow("receipt expired");
+      await started;
+      controller.abort(new Error("receipt expired"));
+      await rejected;
+      expect(clear).not.toHaveBeenCalled();
+      release(clear);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(clear).toHaveBeenCalledTimes(3);
+      expect(log).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+      await surface.shutdown();
+    } finally {
+      log.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([true, false])(
+    "times out during unrelated initialization without sending a late receipt (custom=%s)",
+    async (custom) => {
+      const acknowledge = vi.fn(async () => {});
+      const target = createPlatform(custom ? { acknowledge } : {});
+      let release = () => {};
+      let entered = () => {};
+      const initializing = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const slow = createPlatform(
+        { provider: "slow" },
+        {
+          initialize: async () => {
+            entered();
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          },
+        },
+      );
+      const surface = new ChatSdkMessagingSurface([target.platform, slow.platform]);
+      const controller = new AbortController();
+      const pending = surface.acknowledge("mock:Duser:1", "m-1", {
+        ...context,
+        signal: controller.signal,
+      });
+      const rejected = expect(pending).rejects.toThrow("receipt timed out");
+      await initializing;
+      controller.abort(new Error("receipt timed out"));
+      await rejected;
+      // Completing initialization later must not continue the abandoned acknowledgement.
+      release();
+      await surface.initialize();
+      expect(acknowledge).not.toHaveBeenCalled();
+      expect(target.adapter.startTyping).not.toHaveBeenCalled();
+      await surface.shutdown();
+    },
+  );
+
+  it("does not initialize or create a receipt for an already-aborted request", async () => {
+    const acknowledge = vi.fn(async () => {});
+    const { surface, adapter } = createSurface({ acknowledge });
+    const controller = new AbortController();
+    controller.abort(new Error("already expired"));
+    await expect(
+      surface.acknowledge("mock:Duser:1", "m-1", { ...context, signal: controller.signal }),
+    ).rejects.toThrow("already expired");
+    expect(adapter.initialize).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+  });
+
   it.each(["mock", "mock-work"])("reacts with eyes on provider %s", async (provider) => {
     const { surface, adapter } = createSurface({
       provider,
