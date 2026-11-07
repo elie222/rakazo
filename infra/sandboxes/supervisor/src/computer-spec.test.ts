@@ -858,6 +858,55 @@ describe("graphical computer spec", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32")(
+    "offers pages the account's language on new and saved profiles",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-language-"));
+      const bin = path.join(temp, "bin");
+      const capture = path.join(temp, "args");
+      mkdirSync(bin);
+      const chromium = path.join(bin, "chromium");
+      writeFileSync(
+        chromium,
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+        '#!/bin/sh\nprintf "LANGUAGE=%s\\n" "${LANGUAGE-unset}" > "$RAKAZO_TEST_ARGS"\nprintf "%s\\n" "$@" >> "$RAKAZO_TEST_ARGS"\n',
+      );
+      chmodSync(chromium, 0o755);
+      const run = (language: string | undefined) => {
+        const { LANGUAGE: _host, ...env } = process.env;
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser")], {
+          env: {
+            ...env,
+            ...(language === undefined ? {} : { LANGUAGE: language }),
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        const [first, ...args] = readFileSync(capture, "utf8").trim().split(/\r?\n/);
+        return { language: first, accept: args.filter((arg) => arg.startsWith("--accept-lang")) };
+      };
+      try {
+        // Unknown: the browser's own default, as before.
+        expect(run(undefined)).toEqual({ language: "LANGUAGE=unset", accept: [] });
+        // Chrome reads LANGUAGE itself; --accept-lang also reaches a profile saved in English.
+        expect(run("pl")).toEqual({
+          language: "LANGUAGE=pl",
+          accept: ["--accept-lang=pl,en-US,en"],
+        });
+        expect(run("pt_BR:pt").accept).toEqual(["--accept-lang=pt-BR,pt,en-US,en"]);
+        expect(run("en-GB").accept).toEqual(["--accept-lang=en-GB,en"]);
+        for (const value of ["", "pl;id", "-x", "pl pl"]) expect(run(value).accept).toEqual([]);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
   it.skipIf(process.platform !== "linux")(
     "spawns Chromium when the caller passes the profile and debug flags itself",
     () => {

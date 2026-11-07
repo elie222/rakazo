@@ -142,6 +142,13 @@ export interface SandboxProvider {
        * the provider cannot move to throws `SandboxSizeUnavailableError`.
        */
       size?: ComputerSize;
+      /**
+       * The owner's IANA time zone (`Europe/Warsaw`) and app language (`pl`, `pt-BR`), for the
+       * computer's clock and browser. Absent when unknown: the provider keeps its defaults.
+       * Values are not validated here; a provider ignores one it cannot use.
+       */
+      timezone?: string;
+      language?: string;
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
