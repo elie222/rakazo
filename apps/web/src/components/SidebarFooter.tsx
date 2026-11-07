@@ -28,6 +28,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { Organization } from "../lib/organizations";
 import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
+import { UsagePopover } from "./usage/usage-popover";
 
 type Props = {
   mini?: boolean;
@@ -45,6 +46,7 @@ type Props = {
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
+  onUsage: () => void;
   onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
@@ -75,6 +77,7 @@ export function SidebarFooter({
   onLink,
   onArtifacts,
   onSettings,
+  onUsage,
   onInvite,
   onLogOut,
   signingOut,
@@ -225,6 +228,7 @@ export function SidebarFooter({
                 {link.label}
               </Button>
             ))}
+            <UsagePopover onUsage={onUsage} />
             <div className="my-1 border-t border-border" />
             <a
               className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}

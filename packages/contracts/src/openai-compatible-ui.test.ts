@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMMANDCODE_BASE_URL,
   compatibleEndpointPresets,
+  isCommandCodeBaseUrl,
+  isOpenCodeGoBaseUrl,
   matchCompatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
+  OPENCODE_GO_BASE_URL,
   openAiCompatibleConnectReady,
   savedCompatibleEndpointMatches,
 } from "./openai-compatible-ui.js";
@@ -46,7 +50,7 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
     );
   });
 
-  it("keeps gateway paths that already contain a version segment", () => {
+  it("keeps gateway paths that contain a version segment", () => {
     expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1/some-model")).toBe(
       "https://gateway.example.test/v1/some-model",
     );
@@ -113,4 +117,31 @@ it.each(["", "https://", "https://other.test", "https://hosted.example.test/v2"]
 );
 it("does not match a missing saved endpoint", () => {
   expect(savedCompatibleEndpointMatches(PRESET_BASE_URL, undefined)).toBe(false);
+});
+
+it("recognizes manual CommandCode endpoints and requires a key through its preset", () => {
+  expect(COMMANDCODE_BASE_URL).toBe("https://api.commandcode.ai/provider/v1");
+  const commandCode = [{ name: "CommandCode", baseUrl: COMMANDCODE_BASE_URL }];
+  expect(matchCompatibleEndpointPreset(commandCode, `${COMMANDCODE_BASE_URL}/`)?.name).toBe(
+    "CommandCode",
+  );
+  // Typed addresses normalize before matching, so the key is required for an equivalent URL.
+  expect(
+    matchCompatibleEndpointPreset(commandCode, "https://api.commandcode.ai/provider")?.name,
+  ).toBe("CommandCode");
+  expect(isCommandCodeBaseUrl(`${COMMANDCODE_BASE_URL}/`)).toBe(true);
+  for (const url of [
+    undefined,
+    "https://api.commandcode.ai.evil.test/provider/v1",
+    "http://api.commandcode.ai/provider/v1",
+    `${COMMANDCODE_BASE_URL}?key=other`,
+  ])
+    expect(isCommandCodeBaseUrl(url)).toBe(false);
+});
+
+it("recognizes direct OpenCode Go URLs without requiring its dedicated picker", () => {
+  expect(isOpenCodeGoBaseUrl(OPENCODE_GO_BASE_URL)).toBe(true);
+  expect(isOpenCodeGoBaseUrl(`${OPENCODE_GO_BASE_URL}/`)).toBe(true);
+  expect(isOpenCodeGoBaseUrl("https://opencode.ai.evil.test/zen/go/v1")).toBe(false);
+  expect(isOpenCodeGoBaseUrl("http://opencode.ai/zen/go/v1")).toBe(false);
 });

@@ -44,6 +44,7 @@ import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
+import { ProviderQuotaStack } from "../components/usage/provider-quota-stack";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
@@ -505,6 +506,9 @@ export function UsageSettingsPanel({
   const models = usage?.models ?? [];
   return (
     <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
+      <div className="mb-6">
+        <ProviderQuotaStack />
+      </div>
       {usage ? (
         <dl className="grid grid-cols-3 gap-3">
           {[

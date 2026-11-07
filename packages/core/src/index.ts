@@ -70,6 +70,7 @@ export * from "./model-oauth.js";
 export * from "./model-probe.js";
 export * from "./model-providers.js";
 export * from "./model-role-settings.js";
+export * from "./model-usage-sort.js";
 export * from "./notification-avatar.js";
 export * from "./organizations.js";
 export * from "./page-links.js";

@@ -181,6 +181,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
+import { ModelQuotaSchema } from "./model-quota.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import {
   PAGE_LIST_MAX_LIMIT,
@@ -494,6 +495,9 @@ export const appContract = {
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
   models: {
+    quota: oc
+      .input(z.object({ credentialId: Id, fresh: z.boolean().optional() }))
+      .output(ModelQuotaSchema),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

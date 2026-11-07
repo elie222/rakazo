@@ -100,6 +100,7 @@ vi.mock("../components/ApprovalRulesSettings", () => ({ ApprovalRulesSettings: (
 vi.mock("../components/TrustedLinkSitesSettings", () => ({
   TrustedLinkSitesSettings: () => null,
 }));
+vi.mock("../components/usage/provider-quota-stack", () => ({ ProviderQuotaStack: () => null }));
 vi.mock("../components/ai/primitives", () => ({ SuccessPop: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   ComputersUnavailableHint: () => null,

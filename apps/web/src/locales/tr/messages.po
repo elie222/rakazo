@@ -367,6 +367,10 @@ msgstr "{provider} çok geç yanıt verdi. Tekrar deneyin."
 msgid "{remaining} left"
 msgstr "{remaining} kaldı"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "%{remaining} kaldı"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# koltuk} other {# koltuk}}"
@@ -576,6 +580,10 @@ msgstr "Bir abonelik kimlik bilgisi güvenli şekilde saklanıyor."
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "A weekly digest of what changed on topics you follow"
 msgstr "Takip ettiğin konulardaki değişikliklerin haftalık özeti"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -877,6 +885,10 @@ msgstr "Rakazo'nun Konuşma Tanıma ve mikrofonu kullanmasına Sistem Ayarları'
 msgid "Allow writing"
 msgstr "Yazmaya izin ver"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "Kota"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr "Bu alanda izinli"
@@ -884,6 +896,10 @@ msgstr "Bu alanda izinli"
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "Bir kez izin verildi"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "Alfabetik"
 
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
@@ -1034,6 +1050,7 @@ msgstr "Uygula"
 msgid "Approval boundaries"
 msgstr "Onay sınırları"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "Onay modeli"
@@ -1215,6 +1232,10 @@ msgstr "Sohbete dön"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Oturum açmaya geri dön"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "Önce yedekler"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -2414,6 +2435,10 @@ msgstr "Bu sohbet yüklenemedi."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "Bu dosya yüklenemedi."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "Kullanım yüklenemedi"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -4056,9 +4081,17 @@ msgstr "Son kontrol {0}: değişiklik var"
 msgid "Last check {0}: no changes"
 msgstr "Son kontrol {0}: değişiklik yok"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "Bilinen son kullanım"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "Daha sonra"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "En az kalan"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4131,6 +4164,11 @@ msgstr "Daha eski çalıştırmaları yükle"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "Web görsellerini otomatik yükle"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "Yükleniyor"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4221,6 +4259,7 @@ msgstr "Düşük"
 msgid "Made by bots"
 msgstr "Botların oluşturdukları"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "Ana model"
@@ -4524,6 +4563,7 @@ msgstr "ay"
 
 #: src/components/ModelCredits.tsx
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
@@ -4554,6 +4594,10 @@ msgstr "Diğer bilgisayar işlemleri"
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "Morning briefing"
 msgstr "Sabah özeti"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "En çok kalan"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4781,6 +4825,10 @@ msgstr "Bot yok"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "Eşleşen bot yok"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "Bağlı sağlayıcı yok"
 
 #: src/components/AskCard.tsx
 #: src/components/SecretAskCard.tsx
@@ -5104,6 +5152,10 @@ msgstr "İsteğe bağlı üstbilgi değeri"
 msgid "Or paste an API key"
 msgstr "Veya bir API anahtarı yapıştır"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "Sıra"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/settings-nav.ts
 msgid "Organization"
@@ -5392,6 +5444,10 @@ msgstr "Önceki sayfa"
 msgid "Previous settings sections"
 msgstr "Önceki ayar bölümleri"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "Önce birincil"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "Öncelik"
@@ -5437,6 +5493,14 @@ msgstr "Çekme isteği"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "Kuyrukta"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "Kota"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "Kota kullanılamıyor"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -5589,6 +5653,7 @@ msgstr "Yönlendirme URI'si"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "Yenile"
 
@@ -5637,6 +5702,10 @@ msgstr "Kontrolü bırak"
 #: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Yeniden yükle"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "Kalan kota"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
@@ -5835,6 +5904,7 @@ msgid "Reset your password"
 msgstr "Parolanızı sıfırlayın"
 
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Resets"
 msgstr "Sıfırlama"
 
@@ -6274,6 +6344,10 @@ msgstr "Sunucu adı"
 msgid "Server URL"
 msgstr "Sunucu URL'si"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "Oturum"
+
 #: src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "Ayarla"
@@ -6524,6 +6598,10 @@ msgstr "Aynı adda bir şey az önce eklendi. Yeniden dene."
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Seçtiğin bir şey burada çalışamaz. İşaretini kaldırıp yeniden dene."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "Sıralama ölçütü"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -7338,6 +7416,10 @@ msgstr "İlerlemeyi güncelle"
 msgid "Update required"
 msgstr "Güncelleme gerekli"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "Güncellendi"
+
 #: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "Güncellemeler"
@@ -7372,6 +7454,7 @@ msgstr "Yükle"
 msgid "Urgent"
 msgstr "Acil"
 
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Kullanım"
@@ -7514,6 +7597,10 @@ msgstr "Tümünü gör"
 msgid "View source"
 msgstr "Kaynağı görüntüle"
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "Kullanımı görüntüle"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -7576,6 +7663,7 @@ msgid "Weekends"
 msgstr "Hafta sonları"
 
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Weekly"
 msgstr "Haftalık"
 
@@ -7844,6 +7932,10 @@ msgstr "Ses sağlayıcınızın kredisi bitti."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Ses sağlayıcınız anahtarı reddetti."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "ZIP or postal code"

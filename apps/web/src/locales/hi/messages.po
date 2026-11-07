@@ -367,6 +367,10 @@ msgstr "{provider} ने जवाब देने में बहुत स�
 msgid "{remaining} left"
 msgstr "{remaining} शेष"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "{remaining}% शेष"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# सीट} other {# सीटें}}"
@@ -576,6 +580,10 @@ msgstr "एक सब्सक्रिप्शन क्रेडेंशि�
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "A weekly digest of what changed on topics you follow"
 msgstr "आपके फ़ॉलो किए गए विषयों में हुए बदलावों का साप्ताहिक सारांश"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "About {kb} KB of memory no longer reaches the bot."
@@ -877,6 +885,10 @@ msgstr "सिस्टम सेटिंग्स में Rakazo को स�
 msgid "Allow writing"
 msgstr "लिखने की अनुमति दें"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "सीमा"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr "इस स्पेस में अनुमत"
@@ -884,6 +896,10 @@ msgstr "इस स्पेस में अनुमत"
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "एक बार अनुमति दी गई"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "वर्णानुक्रम में"
 
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Already connected"
@@ -1034,6 +1050,7 @@ msgstr "लागू करें"
 msgid "Approval boundaries"
 msgstr "अनुमोदन सीमाएं"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "अनुमोदन मॉडल"
@@ -1215,6 +1232,10 @@ msgstr "चैट पर वापस जाएँ"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "साइन इन पर वापस जाएँ"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "बैकअप पहले"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -2414,6 +2435,10 @@ msgstr "यह चैट लोड नहीं हो सकी."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "यह फ़ाइल लोड नहीं हो सकी।"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "उपयोग लोड नहीं हो सका"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -4056,9 +4081,17 @@ msgstr "पिछली जाँच {0}: बदलाव हुए"
 msgid "Last check {0}: no changes"
 msgstr "पिछली जाँच {0}: कोई बदलाव नहीं"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "अंतिम ज्ञात उपयोग"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "बाद में"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "सबसे कम शेष"
 
 #: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -4131,6 +4164,11 @@ msgstr "पुराने रन लोड करें"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "वेब छवियाँ अपने-आप लोड करें"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "लोड हो रहा है"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4221,6 +4259,7 @@ msgstr "निम्न"
 msgid "Made by bots"
 msgstr "बॉट्स ने बनाई"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "मुख्य मॉडल"
@@ -4524,6 +4563,7 @@ msgstr "महीना"
 
 #: src/components/ModelCredits.tsx
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "मासिक"
@@ -4554,6 +4594,10 @@ msgstr "कंप्यूटर की और कार्रवाइयाँ
 #: src/components/bot-templates/bot-template-copy.ts
 msgid "Morning briefing"
 msgstr "सुबह की ब्रीफ़िंग"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "सबसे अधिक शेष"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4781,6 +4825,10 @@ msgstr "कोई बॉट नहीं"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "कोई बॉट मेल नहीं खाता"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "कोई कनेक्टेड प्रदाता नहीं"
 
 #: src/components/AskCard.tsx
 #: src/components/SecretAskCard.tsx
@@ -5104,6 +5152,10 @@ msgstr "वैकल्पिक हेडर मान"
 msgid "Or paste an API key"
 msgstr "या एक API कुंजी पेस्ट करें"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "क्रम"
+
 #: src/components/ComputerProviderSettings.tsx
 #: src/pages/settings-nav.ts
 msgid "Organization"
@@ -5392,6 +5444,10 @@ msgstr "पिछला पृष्ठ"
 msgid "Previous settings sections"
 msgstr "पिछले सेटिंग्स अनुभाग"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "प्राथमिक पहले"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "प्राथमिकता"
@@ -5437,6 +5493,14 @@ msgstr "पुल अनुरोध"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "कतार में"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "कोटा"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "कोटा उपलब्ध नहीं"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -5589,6 +5653,7 @@ msgstr "रीडायरेक्ट URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "रीफ़्रेश करें"
 
@@ -5637,6 +5702,10 @@ msgstr "नियंत्रण छोड़ें"
 #: src/lib/client-update.ts
 msgid "Reload"
 msgstr "फिर से लोड करें"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "शेष कोटा"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/SpaceMembersSettings.tsx
@@ -5835,6 +5904,7 @@ msgid "Reset your password"
 msgstr "अपना पासवर्ड रीसेट करें"
 
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Resets"
 msgstr "रीसेट"
 
@@ -6274,6 +6344,10 @@ msgstr "सर्वर का नाम"
 msgid "Server URL"
 msgstr "सर्वर URL"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "सत्र"
+
 #: src/components/SpendingLimitSettings.tsx
 msgid "Set"
 msgstr "सेट करें"
@@ -6524,6 +6598,10 @@ msgstr "अभी इसी नाम से कुछ जोड़ा गया
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "आपका चुना हुआ कुछ यहाँ काम नहीं कर सकता। उसे अनचेक करके दोबारा कोशिश करें।"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "क्रमबद्ध करें"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -7338,6 +7416,10 @@ msgstr "अपडेट की प्रगति"
 msgid "Update required"
 msgstr "अपडेट आवश्यक है"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "अपडेट किया गया"
+
 #: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "अपडेट"
@@ -7372,6 +7454,7 @@ msgstr "अपलोड"
 msgid "Urgent"
 msgstr "अत्यावश्यक"
 
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "उपयोग"
@@ -7514,6 +7597,10 @@ msgstr "सभी देखें"
 msgid "View source"
 msgstr "सोर्स देखें"
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "उपयोग देखें"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-settings-sections.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -7576,6 +7663,7 @@ msgid "Weekends"
 msgstr "सप्ताहांत"
 
 #: src/components/SpendingLimitSettings.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Weekly"
 msgstr "हर हफ़्ते"
 
@@ -7844,6 +7932,10 @@ msgstr "आपके आवाज़ प्रोवाइडर का क्�
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "आपके आवाज़ प्रोवाइडर ने कुंजी अस्वीकार कर दी।"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "ZIP or postal code"

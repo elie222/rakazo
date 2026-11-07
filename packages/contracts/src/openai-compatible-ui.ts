@@ -25,6 +25,30 @@ export function matchCompatibleEndpointPreset(
   return presets.find((preset) => preset.baseUrl === normalized);
 }
 
+/** Hosted services whose usage limits Rakazo reads. Matched strictly, so a lookalike host
+ * never receives the key. */
+export const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+
+export function isOpenCodeGoBaseUrl(baseUrl: string | undefined): boolean {
+  return baseUrl === OPENCODE_GO_BASE_URL || baseUrl === `${OPENCODE_GO_BASE_URL}/`;
+}
+
+export const COMMANDCODE_BASE_URL = "https://api.commandcode.ai/provider/v1";
+
+export function isCommandCodeBaseUrl(baseUrl: string | undefined): boolean {
+  return baseUrl === COMMANDCODE_BASE_URL || baseUrl === `${COMMANDCODE_BASE_URL}/`;
+}
+
+/** Synthetic serves inference under more than one path on this host. */
+export function isSyntheticBaseUrl(baseUrl: string | undefined): boolean {
+  try {
+    const url = new URL(baseUrl ?? "");
+    return url.protocol === "https:" && url.hostname === "api.synthetic.new";
+  } catch {
+    return false;
+  }
+}
+
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
@@ -98,7 +122,10 @@ export function savedCompatibleEndpointMatches(
   savedBaseUrl: string | undefined,
 ): boolean {
   try {
-    return Boolean(savedBaseUrl) && normalizeOpenAiCompatibleBaseUrl(baseUrl) === savedBaseUrl;
+    return (
+      Boolean(savedBaseUrl) &&
+      normalizeOpenAiCompatibleBaseUrl(baseUrl) === normalizeOpenAiCompatibleBaseUrl(savedBaseUrl!)
+    );
   } catch {
     return false;
   }

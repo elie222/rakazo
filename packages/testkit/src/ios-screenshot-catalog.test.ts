@@ -14,6 +14,7 @@ const catalogDir = path.join(mobileDir, "e2e", "ios-screenshots");
 const UNCOVERED: Record<string, string> = {
   "integration-setup": "redirects to Integrations",
   share: "Android only: iOS has no share extension yet",
+  usage: "shows provider quotas, and the screenshot account has no connections",
 };
 
 /** Route names under app/, without route groups, layouts, or Expo Router hooks. */

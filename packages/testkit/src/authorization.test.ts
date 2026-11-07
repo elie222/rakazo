@@ -252,6 +252,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
+      ["models/quota", { credentialId: "missing-credential" }],
       ["models/forRole"],
       ["models/role"],
       ["models/setRole"],

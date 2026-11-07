@@ -2,7 +2,9 @@ import { ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   compatibleEndpointPreset,
+  dispatcherFetch,
   listPiCatalog,
+  ModelQuotaReader,
   ModelSignInError,
   modelCredentialDto,
   oauthCredentialEmail,
@@ -52,9 +54,11 @@ import {
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
+import { readConnectionQuota } from "../model-quota.js";
 import type { RouterContext } from "./context.js";
 
 export function modelsRoutes(ctx: RouterContext) {
+  const quotaReader = new ModelQuotaReader(dispatcherFetch);
   const {
     deps,
     codexCatalog,
@@ -69,6 +73,14 @@ export function modelsRoutes(ctx: RouterContext) {
   } = ctx;
   return {
     models: {
+      quota: authed.models.quota.handler(
+        async ({ context, input }) =>
+          (
+            await readConnectionQuota(ctx, quotaReader, context.actor, input.credentialId, {
+              fresh: input.fresh,
+            })
+          ).view,
+      ),
       list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([

@@ -103,7 +103,10 @@ vi.mock("./api", () => ({
           provider: "openai-compatible",
           id: "model-fixture",
           label: "Fixture",
-          endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "CommandCode", baseUrl: "https://api.commandcode.ai/provider/v1" },
+          ],
         },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
@@ -377,10 +380,11 @@ async function notConnectedChoices() {
   return modelPickerRequest(route.params.requestId)!.connectChoices ?? [];
 }
 
-it("offers deployment-funded providers and Ollama Cloud once among providers to connect", async () => {
+it("offers deployment-funded providers and service presets once among providers to connect", async () => {
   expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
     "Anthropic",
     "OpenRouter",
+    "CommandCode",
     "Ollama Cloud",
   ]);
 });
@@ -391,6 +395,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
     expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
       "Anthropic",
       "OpenRouter",
+      "CommandCode",
     ]);
   } finally {
     saved.baseUrl = savedEndpoint;
