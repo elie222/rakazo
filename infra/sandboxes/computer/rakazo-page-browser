@@ -2146,6 +2146,11 @@ INVISIBLE = re.compile("[\U000E0000-\U000E007F​-‏⁠-⁤‪-‮⁦-⁩﻿]")
 # What the card shows when not even the page's own signals can be read: the check asks rather than allows.
 UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
 DESKTOP_DEADLINE_SECONDS = 8.0
+# Chromium's answer for a world whose document the tab has just replaced, and how long the check waits
+# for the new one.
+DOCUMENT_GONE = "Cannot find context with specified id"
+DOCUMENT_GONE_TRIES = 5
+DOCUMENT_GONE_WAIT_SECONDS = 0.2
 # Elements that hold another document.
 FRAME_ELEMENTS = ("IFRAME", "FRAME", "OBJECT", "EMBED")
 
@@ -2194,10 +2199,20 @@ class Purchases:
     def site(self) -> str:
         """The top page's host. Each check starts here, in the world of the document the tab shows now: an
         earlier step may have navigated."""
-        top = page_secrets.main_frame(self.client, self.session)["id"]
-        self.client.context_id = page_secrets.world_in(self.client, self.session, top)
-        host = page_secrets.eval_json(self.client, self.session, "location.host")
-        return host if isinstance(host, str) else ""
+        tries = DOCUMENT_GONE_TRIES
+        while True:
+            try:
+                top = page_secrets.main_frame(self.client, self.session)["id"]
+                self.client.context_id = page_secrets.world_in(self.client, self.session, top)
+                host = page_secrets.eval_json(self.client, self.session, "location.host")
+                return host if isinstance(host, str) else ""
+            except RuntimeError as error:
+                # The tab replaced its document between finding the world and reading it, as a login's
+                # redirect does: read the new one. A page that keeps doing it still fails, and asks.
+                tries -= 1
+                if DOCUMENT_GONE not in str(error) or not tries:
+                    raise
+                time.sleep(DOCUMENT_GONE_WAIT_SECONDS)
 
     def asked_with_frames(self, session: str, world: int | None, call: str) -> dict[str, Any] | None:
         """`call` (with a %s for whether the page shows a payment provider's frame), asked again with one."""
