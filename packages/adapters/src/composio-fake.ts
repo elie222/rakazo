@@ -9,6 +9,7 @@ import type {
 } from "@composio/core";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import type { ComposioClient, ComposioSession } from "./composio-connector.js";
+import { collectPages } from "./connector-catalog.js";
 import type { EmulatedGithubRelease } from "./release-watch.js";
 import {
   DEFAULT_RAKAZO_EMULATED_RELEASES,
@@ -361,7 +362,10 @@ export class FakeComposioClient implements ComposioClient {
     if (toolkit.noAuth)
       throw new Error(`ToolkitsIsNoAuth: ${toolkit.slug} does not require authentication`);
     if (toolkit.needsSignInSetup) {
-      const { items } = await this.authConfigs.list({});
+      const items = await collectPages(async (cursor) => {
+        const page = await this.authConfigs.list({ cursor });
+        return { items: page.items, cursor: page.nextCursor ?? undefined };
+      });
       const configured = items.some(
         (config) =>
           config.status === "ENABLED" && config.toolkit.slug.toLowerCase() === slug.toLowerCase(),
