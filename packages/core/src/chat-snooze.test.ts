@@ -120,4 +120,30 @@ describe("snooze queue", () => {
     await flush();
     expect(settled).toEqual([false]);
   });
+
+  it("lets only the newest of repeated choices roll back", async () => {
+    const { requests, shown, settled, queue, change } = setup();
+    queue("bot:a", tomorrow, null, change);
+    queue("bot:a", null, tomorrow, change);
+    queue("bot:a", tomorrow, null, change);
+    await flush();
+    requests[0]!.reject(new Error("offline"));
+    await flush();
+    // The first choice failing neither rolls back nor reloads over the two after it.
+    expect(shown.at(-1)).toBe(tomorrow);
+    expect(settled).toEqual([]);
+    requests[1]!.resolve();
+    await flush();
+    requests[2]!.resolve();
+    await flush();
+    expect(settled).toEqual([false]);
+  });
+
+  it("never starts a save before the one ahead of it finishes", async () => {
+    const { requests, queue, change } = setup();
+    queue("bot:a", tomorrow, null, change);
+    queue("bot:a", null, tomorrow, change);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requests).toHaveLength(1);
+  });
 });
