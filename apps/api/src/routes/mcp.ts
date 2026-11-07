@@ -7,7 +7,7 @@ import {
   persistPreparedSecret,
   recordMcpServerHealth,
 } from "@rakazo/adapters";
-import type { Actor, McpOAuthBeginClient } from "@rakazo/contracts";
+import type { Actor, McpOAuthBeginClient, McpOAuthClient } from "@rakazo/contracts";
 import { MCP_OAUTH_REDIRECT_MISMATCH, McpServerConfigInput } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -41,6 +41,23 @@ import {
 } from "../mcp-servers.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
+
+/** A client resent with the same ID keeps its stored scope and parameters, so it reads as
+ * unchanged and keeps its sign-in. */
+function withStoredClientSettings(
+  client: McpOAuthClient,
+  material: Record<string, unknown>,
+): McpOAuthClient {
+  const stored = material.oauthClient as
+    | { client_id?: string; scope?: string; authorization_params?: string }
+    | undefined;
+  if (stored?.client_id !== client.clientId) return client;
+  return {
+    ...client,
+    scope: client.scope ?? stored.scope,
+    authorizationParams: client.authorizationParams ?? stored.authorization_params,
+  };
+}
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -295,7 +312,12 @@ export function mcpRoutes(ctx: RouterContext) {
                     headers: (existingMaterial.headers ?? {}) as Record<string, string>,
                     ...("secret" in input
                       ? { secret: input.secret }
-                      : { oauthClient: input.oauthClient }),
+                      : {
+                          oauthClient: withStoredClientSettings(
+                            input.oauthClient,
+                            existingMaterial,
+                          ),
+                        }),
                   };
             if (!("config" in input) && existing.transport === "stdio") {
               throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
@@ -681,11 +703,17 @@ export function mcpRoutes(ctx: RouterContext) {
           try {
             if (input.state !== input.sessionId)
               throw new Error("MCP OAuth session is invalid or expired");
-            // The person declined at the provider; the session expires on its own.
-            if (input.error === "access_denied")
-              return { ok: true as const, status: "cancelled" as const };
-            if (input.error || !input.code)
+            if (input.error || !input.code) {
+              // The provider answered without a code: end the sign-in so it stops counting.
+              await mcpOAuth.discard({
+                sessionId: input.sessionId,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+              });
+              if (input.error === "access_denied")
+                return { ok: true as const, status: "cancelled" as const };
               throw new Error(input.errorDescription || "Could not complete MCP OAuth");
+            }
             const { serverId, revision, botId } = await mcpOAuth.complete({
               sessionId: input.sessionId,
               state: input.state,

@@ -214,6 +214,7 @@ const McpOAuthClientFields = {
  * the stored client and send null to remove it. A remote server discovers its
  * authorization server, so the client is bound to it on first use. */
 export const McpOAuthClientSchema = z.object(McpOAuthClientFields);
+export type McpOAuthClient = z.infer<typeof McpOAuthClientSchema>;
 const McpOAuthClientInput = McpOAuthClientSchema.nullable().optional();
 /** A stdio server has no URL to discover from, so its client names the
  * authorization server (its issuer, e.g. https://accounts.google.com). Rakazo
