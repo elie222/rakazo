@@ -71,6 +71,7 @@ import {
   installSecurityEventStore,
   isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
+  observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   rowSecurityWarning,
@@ -104,10 +105,16 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
-  const realtime = new PostgresRealtimeFanout({
-    connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
-    publisher: pool,
-  });
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
+  // Every thread change this process commits also updates its users' live status cards.
+  const realtime = observeThreadChanges(
+    new PostgresRealtimeFanout({
+      connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
+      publisher: pool,
+    }),
+    (threadId) => workActivities?.threadChanged(threadId),
+  );
   const secrets = await createWorkerSecretStore(process.env, realtime);
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
@@ -120,12 +127,9 @@ async function main() {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
-  // Set once push delivery is configured below; thread changes before then have no cards.
-  let workActivities: WorkActivities | undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
-    onThreadChanged: (threadId) => workActivities?.threadChanged(threadId),
   });
   const env = runRuntimeEnvFromProcess(process.env);
   const boardEvents = createBoardEvents(realtime);

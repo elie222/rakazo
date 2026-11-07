@@ -23,6 +23,7 @@ vi.mock("react-native", () => ({
   AppState: {
     addEventListener: (_name: string, callback: (state: string) => void) => {
       app.appState = callback;
+      return { remove() {} };
     },
   },
 }));
@@ -31,10 +32,12 @@ vi.mock("./session", () => ({
   loadSessionToken: async () => app.token,
   subscribeSessionGeneration: (listener: () => void) => {
     app.session = listener;
+    return () => undefined;
   },
 }));
 
-const { startWorkActivity } = await import("./work-activity");
+const { startWorkActivities, startWorkActivity } = await import("./work-activity");
+startWorkActivities();
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
@@ -65,7 +68,10 @@ it("ends the card only when the server says nothing would update it", async () =
   expect(native.endWorkActivity).toHaveBeenCalledOnce();
 });
 
-it("asks again when the app opens and ends the card on sign-out", async () => {
+it("asks again on launch and whenever the app opens, and ends the card on sign-out", async () => {
+  startWorkActivities();
+  expect(native.refreshWorkActivity).toHaveBeenCalledOnce();
+  native.refreshWorkActivity.mockClear();
   app.appState!("background");
   app.appState!("active");
   expect(native.refreshWorkActivity).toHaveBeenCalledOnce();

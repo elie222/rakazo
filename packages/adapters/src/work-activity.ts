@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import {
   ACTIVE_RUN_STATUSES,
   displayName,
@@ -74,11 +75,11 @@ export class WorkActivities {
 
   constructor(
     private readonly prisma: PrismaClient,
-    encryptionKey: string,
+    private readonly digestKey: string,
     private readonly provider: WorkActivityPushProvider,
     private readonly windowMs = UPDATE_WINDOW_MS,
   ) {
-    this.encryption = new EncryptedSecretStore(encryptionKey);
+    this.encryption = new EncryptedSecretStore(digestKey);
   }
 
   /**
@@ -186,24 +187,20 @@ export class WorkActivities {
     );
     const live = new Set(sessions.map((session) => session.id));
     const state = await this.state(userId);
-    const json = JSON.stringify(state);
+    // Keyed, so the stored digest reveals nothing about the chat content it stands for.
+    const digest = createHmac("sha256", this.digestKey).update(JSON.stringify(state)).digest("hex");
     const retried = this.retries.get(userId) ?? 0;
     const results = await Promise.all(
       cards.map(async (card) => {
-        // A signed-out, expired or revoked session's card ends with what it already shows.
+        // A signed-out, expired or revoked session's card ends, and is sent nothing newer.
         const ended = state.count === 0 || !live.has(card.sessionId);
-        // Sealed like the push token: the rows hold chat content.
-        const lastJson = card.lastState
-          ? await this.encryption.load(card.lastState, stateRecordId(card.tokenDigest))
-          : undefined;
-        if (json === lastJson && !ended) return "sent";
-        const last: WorkActivityState = lastJson ? JSON.parse(lastJson) : EMPTY_STATE;
+        if (!ended && digest === card.lastState) return "sent";
         const token = await this.encryption.load(card.ciphertext, recordId(card.tokenDigest));
         const result = await this.provider.send(token, {
-          // The card keeps its last rows while it leaves.
-          state: ended ? last : state,
+          // An ending card leaves at once, so it needs no rows.
+          state: ended ? EMPTY_STATE : state,
           ended,
-          urgent: ended || state.waiting > last.waiting,
+          urgent: ended || state.waiting > card.lastWaiting,
           at,
         });
         if (result === "invalid" || (ended && (result === "sent" || retried >= MAX_RETRIES))) {
@@ -211,21 +208,10 @@ export class WorkActivities {
             this.prisma.workActivityToken.deleteMany({ where: { tokenDigest: card.tokenDigest } }),
           );
         } else if (result === "sent") {
-          const sealed = await this.encryption.put(
-            json,
-            {
-              operationId: "work-activity.update",
-              traceId: "work-activity.update",
-              spaceId: "",
-              userId,
-              signal: new AbortController().signal,
-            },
-            { recordId: stateRecordId(card.tokenDigest) },
-          );
           await runAsSystem("record a live status card update", () =>
             this.prisma.workActivityToken.updateMany({
               where: { tokenDigest: card.tokenDigest },
-              data: { lastState: sealed.ciphertext },
+              data: { lastState: digest, lastWaiting: state.waiting },
             }),
           );
         }
@@ -258,14 +244,18 @@ export class WorkActivities {
         },
       }),
     );
-    // One row per bot in a chat: a continuation is the same work.
-    const seen = new Set<string>();
-    const shown = runs.filter((run) => {
+    // One row per bot in a chat: a continuation is the same work. A question still open there
+    // outranks newer work beside it, which a pending question does not hold back.
+    const byChat = new Map<string, (typeof runs)[number]>();
+    for (const run of runs) {
+      if (isBackgroundRunTrigger(run.trigger)) continue;
       const key = `${run.threadId}:${run.botId}`;
-      if (isBackgroundRunTrigger(run.trigger) || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+      const newest = byChat.get(key);
+      if (!newest) byChat.set(key, run);
+      else if (isRunWaitingOnUser(run.status) && !isRunWaitingOnUser(newest.status))
+        byChat.set(key, { ...newest, status: run.status });
+    }
+    const shown = [...byChat.values()];
     const waiting = shown.filter((run) => isRunWaitingOnUser(run.status));
     const ordered = [...waiting, ...shown.filter((run) => !isRunWaitingOnUser(run.status))];
     const rows = await Promise.all(
@@ -302,8 +292,4 @@ export class WorkActivities {
 
 function recordId(tokenDigest: string): string {
   return `work-activity:${tokenDigest}`;
-}
-
-function stateRecordId(tokenDigest: string): string {
-  return `work-activity-state:${tokenDigest}`;
 }

@@ -4,6 +4,7 @@ CREATE TABLE "work_activity_tokens" (
   "sessionId" TEXT NOT NULL,
   "ciphertext" TEXT NOT NULL,
   "lastState" TEXT,
+  "lastWaiting" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX "work_activity_tokens_userId_idx" ON "work_activity_tokens"("userId");

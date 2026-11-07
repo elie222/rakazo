@@ -18,6 +18,7 @@ type Card = {
   sessionId: string;
   ciphertext: string;
   lastState: string | null;
+  lastWaiting: number;
 };
 
 const TOKEN = "ab".repeat(32);
@@ -75,10 +76,13 @@ function fakeDatabase() {
     workActivityToken: {
       upsert: async (input: {
         where: { tokenDigest: string };
-        create: Omit<Card, "lastState">;
+        create: Omit<Card, "lastState" | "lastWaiting">;
       }) => {
         const current = cards.get(input.where.tokenDigest);
-        cards.set(input.where.tokenDigest, current ?? { lastState: null, ...input.create });
+        cards.set(
+          input.where.tokenDigest,
+          current ?? { lastState: null, lastWaiting: 0, ...input.create },
+        );
       },
       findMany: async ({ where }: { where: { userId: string } }) =>
         [...cards.values()].filter((card) => card.userId === where.userId),
@@ -197,14 +201,25 @@ describe("live status card of the user's bots at work", () => {
     ]);
   });
 
-  it("ends the card with its last rows once no bot is at work", async () => {
+  it("keeps a question open in a chat ahead of newer work in it", async () => {
+    const { activities, run, runs, send } = await registered();
+    runs[0]!.status = "waiting_input";
+    run("9", { threadId: "thread-1", botId: "bot-1", status: "queued" });
+    await activities.sync("user-1");
+    expect(send.mock.lastCall![1]).toMatchObject({
+      urgent: true,
+      state: { count: 1, waiting: 1, rows: [{ status: "waiting", title: "Planner" }] },
+    });
+  });
+
+  it("ends the card once no bot is at work", async () => {
     const { activities, cards, runs, send } = await registered();
     runs[0]!.status = "completed";
     await activities.sync("user-1");
     expect(send.mock.lastCall![1]).toMatchObject({
       ended: true,
       urgent: true,
-      state: { count: 1, rows: [{ title: "Planner" }] },
+      state: { count: 0, waiting: 0, rows: [] },
     });
     expect(cards.size).toBe(0);
   });
@@ -235,11 +250,11 @@ describe("live status card of the user's bots at work", () => {
     sessions.delete("session-2");
     await activities.endSession("user-1", "session-2");
     await vi.waitFor(() => expect(cards.size).toBe(0));
-    // It leaves with what it already showed; nothing newer reaches the signed-out phone.
+    // It leaves at once; nothing about the work reaches the signed-out phone.
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.lastCall![1]).toMatchObject({
       ended: true,
-      state: send.mock.calls[0]![1].state,
+      state: { count: 0, waiting: 0, rows: [] },
     });
   });
 

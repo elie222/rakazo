@@ -24,27 +24,40 @@ const native =
     : null;
 const activities = native?.startWorkActivity ? native : null;
 
-if (activities) {
-  // The card's push token arrives after it starts, again whenever iOS changes it, and whenever the
-  // app opens, so the server can say the work it shows has ended.
-  activities.addListener("onWorkActivityToken", ({ token }) => {
+/**
+ * Keeps the card in step for the app's lifetime: hands its token to the server, re-checks it on
+ * launch and whenever the app opens, and ends it on sign-out.
+ */
+export function startWorkActivities(): () => void {
+  if (!activities) return () => undefined;
+  const card = activities;
+  // The token arrives after the card starts, again whenever iOS changes it, and on each refresh,
+  // so the server can say the work the card shows has ended.
+  const tokens = card.addListener("onWorkActivityToken", ({ token }) => {
     rpc("notifications/followWorkActivity", { token })
       .then(({ following }) => {
         // Nothing would update it: no bot is at work or this server cannot reach the phone.
-        if (!following) return activities.endWorkActivity();
+        if (!following) return card.endWorkActivity();
       })
       // An unanswered request proves nothing; the next open asks again.
       .catch(() => undefined);
   });
-  AppState.addEventListener("change", (state) => {
-    if (state === "active") void activities.refreshWorkActivity().catch(() => undefined);
+  const refresh = () => void card.refreshWorkActivity().catch(() => undefined);
+  const opens = AppState.addEventListener("change", (state) => {
+    if (state === "active") refresh();
   });
   // Signed out: the card shows the last account's bots.
-  subscribeSessionGeneration(() => {
+  const sessions = subscribeSessionGeneration(() => {
     void loadSessionToken().then((token) => {
-      if (!token) return activities.endWorkActivity();
+      if (!token) return card.endWorkActivity();
     });
   });
+  refresh();
+  return () => {
+    tokens.remove();
+    opens.remove();
+    sessions();
+  };
 }
 
 /**

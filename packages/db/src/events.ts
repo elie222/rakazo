@@ -31,7 +31,6 @@ import {
   mapProductEvent,
   notifyCommittedEvent,
   notifyRealtime,
-  observeThreadChanges,
 } from "./event-stream.js";
 import type { RunLease } from "./messages.js";
 import {
@@ -199,12 +198,8 @@ export function createThreadEvents(
     catchUpMs?: number;
     runSecretWriter?: RunSecretWriter;
     analytics?: ProductAnalytics;
-    /** Called after each thread change commits, for work that follows a thread's runs. */
-    onThreadChanged?: (threadId: string) => void;
   } = {},
 ): ThreadEvents {
-  if (realtime && options.onThreadChanged)
-    realtime = observeThreadChanges(realtime, options.onThreadChanged);
   const chatAlerts = createChatAlerts(realtime);
   return {
     publishChatAlert: chatAlerts.publish,

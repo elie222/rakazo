@@ -100,6 +100,7 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   requireMembership,
@@ -282,14 +283,19 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   if (rowSecurity) logger.warn(rowSecurity);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
-  const realtime =
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
+  // Every thread change this process commits also updates its users' live status cards.
+  const realtime = observeThreadChanges(
     realtimeOverride ??
-    (created.pool
-      ? new PostgresRealtimeFanout({
-          connectionString: env.realtimeDatabaseUrl,
-          publisher: created.pool,
-        })
-      : new InMemoryRealtimeFanout());
+      (created.pool
+        ? new PostgresRealtimeFanout({
+            connectionString: env.realtimeDatabaseUrl,
+            publisher: created.pool,
+          })
+        : new InMemoryRealtimeFanout()),
+    (threadId) => workActivities?.threadChanged(threadId),
+  );
   const secrets = createSecretStore(env.encryptionKey, process.env, realtime);
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
@@ -303,12 +309,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
-  // Set once push delivery is configured below; thread changes before then have no cards.
-  let workActivities: WorkActivities | undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
-    onThreadChanged: (threadId) => workActivities?.threadChanged(threadId),
   });
   const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);

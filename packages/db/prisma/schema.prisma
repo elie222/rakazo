@@ -167,8 +167,10 @@ model WorkActivityToken {
   /// The session that registered the card; the card ends with it. No FK, as for push tokens.
   sessionId String
   ciphertext String
-  /// The last state sent, sealed, so unchanged work sends nothing.
+  /// A keyed digest of the last state sent, so unchanged work sends nothing.
   lastState String?
+  /// Bots waiting on the user in that state, so a new question shows at once.
+  lastWaiting Int @default(0)
   createdAt DateTime @default(now())
 
   @@index([userId])
@@ -1257,6 +1259,7 @@ model Run {
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([threadId, createdAt, id])
+  @@index([userId, status, createdAt])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.

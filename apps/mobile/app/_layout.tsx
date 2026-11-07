@@ -98,6 +98,7 @@ import {
   useTrustedLinkSites,
 } from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
+import { startWorkActivities } from "../lib/work-activity";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -346,6 +347,7 @@ function LayoutContent() {
   }, [ready]);
 
   useEffect(() => watchForegroundUpdates(), []);
+  useEffect(() => startWorkActivities(), []);
 
   useEffect(() => {
     markMobileStartupMounted();
