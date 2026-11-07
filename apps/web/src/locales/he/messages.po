@@ -5022,6 +5022,7 @@ msgstr "פתיחת {0}"
 msgid "Open {name}"
 msgstr "פתיחת {name}"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 msgid "Open {title}"
 msgstr "פתיחת {title}"
@@ -5138,6 +5139,7 @@ msgstr "פלט"
 msgid "Owner"
 msgstr "בעלים"
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 msgid "Page"
@@ -7037,6 +7039,7 @@ msgstr "החודש"
 msgid "This page couldn't be shown."
 msgstr "לא ניתן היה להציג את הדף הזה."
 
+#: src/components/pages/InlineHtmlPage.tsx
 #: src/components/pages/PageCard.tsx
 #: src/components/pages/PageView.tsx
 #: src/components/pages/PageViewHost.tsx

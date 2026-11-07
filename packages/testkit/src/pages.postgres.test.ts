@@ -97,6 +97,44 @@ describePages("pages", () => {
     return effect?.result as Record<string, unknown> | undefined;
   };
 
+  it("saves an HTML page as written and serves it as its own viewer code", async () => {
+    const cookie = await signup(app, `pages-html-${stamp}@rakazo.test`, "HTML Owner");
+    const bot = await createBot(app, cookie, "Builder");
+    const save = (args: unknown) =>
+      sendAndWait(app, cookie, bot.id, { text: `call save_page with ${JSON.stringify(args)}` });
+    const html = `<!DOCTYPE html>
+<html><head><style>body { margin: 0 }</style></head>
+<body><h1>Inline</h1><button onclick="this.textContent = 'Ran'">Run</button></body></html>`;
+
+    await save({ title: "Inline", format: "html", source: html });
+    const created = (await lastResult(bot.id)) as { pageId: string; format: string };
+    expect(created).toMatchObject({ version: 1, title: "Inline", format: "html" });
+    const detail = await rpc<PageDetail>(app, cookie, "pages/get", { pageId: created.pageId });
+    // No compiler runs: the document the bot saved is what the viewer receives.
+    expect(detail).toMatchObject({ format: "html", code: html });
+    expect(detail.code).not.toContain("React.createElement");
+
+    // An edit changes the document and keeps the format.
+    await save({
+      pageId: created.pageId,
+      edits: [{ find: "<h1>Inline</h1>", replace: "<h1>Inline, edited</h1>" }],
+    });
+    expect(await lastResult(bot.id)).toMatchObject({ version: 2, format: "html" });
+    expect(
+      await rpc<PageDetail>(app, cookie, "pages/get", { pageId: created.pageId }),
+    ).toMatchObject({ format: "html", code: expect.stringContaining("Inline, edited") });
+
+    // It never becomes a JSX page in place.
+    await save({
+      pageId: created.pageId,
+      format: "jsx",
+      source: "const App = () => <Page title='t' />;\nexport default App;\n",
+    });
+    expect(await lastResult(bot.id)).toMatchObject({
+      error: expect.stringMatching(/keeps the format/),
+    });
+  });
+
   it("saves, edits and guards pages through the bot's save_page", async () => {
     const cookie = await signup(app, `pages-${stamp}@rakazo.test`, "Page Owner");
     const bot = await createBot(app, cookie, "Reporter");
@@ -130,6 +168,7 @@ describePages("pages", () => {
       pageId,
       version: 2,
       title: "Weekly KPIs",
+      format: "jsx",
       mention: `Mention it in your reply as [Weekly KPIs](page:${pageId})`,
     });
     await save({
@@ -431,6 +470,7 @@ describePages("pages", () => {
     expect(await opened.json()).toEqual({
       title: "Q3 plan",
       code: expect.stringMatching(/React\.createElement\(Page, \{ title: "Middle"/),
+      format: "jsx",
       version: 1,
       updatedAt: expect.any(String),
     });

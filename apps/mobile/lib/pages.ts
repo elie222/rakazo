@@ -1,5 +1,5 @@
-import type { PageDetail, PageVisibility } from "@rakazo/contracts";
-import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
+import type { PageDetail, PageFormat, PageVisibility } from "@rakazo/contracts";
+import { htmlPageViewerDocument, isServerUnreachable, pageViewerDocument } from "@rakazo/core";
 import { rpc } from "./api";
 import { getActiveUiLocale } from "./i18n";
 import { loadPageRuntime } from "./page-runtime";
@@ -242,8 +242,13 @@ export async function pageDocument(
   code: string,
   theme: "light" | "dark",
   errorTitle: string,
-  options: { reply?: boolean } = {},
+  options: { reply?: boolean; format?: PageFormat } = {},
 ): Promise<string> {
+  const { format = "jsx", ...viewer } = options;
+  // An HTML page carries its own document, so the JSX runtime is neither fetched nor run.
+  if (format === "html") {
+    return htmlPageViewerDocument({ html: code, theme, lang: getActiveUiLocale() });
+  }
   const runtime = await loadPageRuntime(apiBase);
   return pageViewerDocument({
     runtime,
@@ -252,6 +257,6 @@ export async function pageDocument(
     errorTitle,
     touch: true,
     lang: getActiveUiLocale(),
-    ...options,
+    ...viewer,
   });
 }

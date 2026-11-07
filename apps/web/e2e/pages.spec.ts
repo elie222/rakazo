@@ -973,3 +973,81 @@ test("a page acts for its reader only after a click in it, never on load or from
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
 });
+
+/** A self-contained HTML page: its own styles and a script, with no network resource. */
+function htmlReport(heading: string) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 32px; font: 16px/1.5 system-ui, sans-serif; }
+  html[data-theme="dark"] body { background: #151515; color: #f5f5f5; }
+  html[data-theme="light"] body { background: #ffffff; color: #111111; }
+  .metric { margin: 0; font-size: 40px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>${heading}</h1>
+  <p class="metric">$48,900</p>
+  <button id="reveal" type="button">Reveal change</button>
+  <p id="change" hidden>+12% from last week</p>
+  <script>
+    document.getElementById("reveal").addEventListener("click", () => {
+      document.getElementById("change").hidden = false;
+      document.getElementById("reveal").hidden = true;
+    });
+  </script>
+</body>
+</html>`;
+}
+
+test("a bot's HTML page draws whole in the chat and its own script runs", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `html-pages-${Date.now()}@rakazo.test`, "password12", "HTML Owner");
+  await completeOnboarding(page);
+
+  const title = "Inline HTML report (example data)";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: htmlReport(title), format: "html" })}\nthen say I made an inline ${title}.`,
+  );
+  const inline = page.getByTestId("inline-page");
+  await expect(inline).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByTestId("page-card")).toHaveCount(0);
+  // The saved block sits under the reply that introduces it, as a JSX page card does.
+  await expect(page.getByTestId("message-bot-bubble").last()).toContainText(
+    `I made an inline ${title}`,
+  );
+
+  const frame = pageFrame(page, title);
+  await expect(frame.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(frame.getByText("$48,900")).toBeVisible();
+  // The frame left its placeholder for the page's own height, whether that is taller or shorter.
+  await expect
+    .poll(async () => {
+      const content = await frame
+        .locator("html")
+        .evaluate((root) => Math.ceil(root.getBoundingClientRect().height));
+      const box = await page.locator(`iframe[title="${title}"]`).last().boundingBox();
+      return Math.abs((box?.height ?? 0) - content);
+    })
+    .toBeLessThan(1);
+  await captureScreenshot(page, testInfo, "page-inline-html");
+
+  // The page's own script runs in its sandbox.
+  await frame.getByRole("button", { name: "Reveal change" }).click();
+  await expect(frame.getByText("+12% from last week")).toBeVisible();
+
+  // It is a page like any other: its footer opens the full view, where it can be shared and
+  // printed.
+  await inline.getByRole("button", { name: `Open ${title}` }).click();
+  await expect(page.getByTestId("page-view")).toBeVisible();
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: title, level: 1 }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-inline-html-full-screen");
+});

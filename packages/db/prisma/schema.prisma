@@ -1887,6 +1887,8 @@ model Page {
   groupId        String?
   group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   title          String
+  /// "jsx" for the page kit, "html" for a self-contained HTML document. Fixed when created.
+  format         String        @default("jsx")
   visibility     String        @default("private")
   /// sha256 of the link token; the public read looks pages up by it.
   shareTokenHash String?       @unique

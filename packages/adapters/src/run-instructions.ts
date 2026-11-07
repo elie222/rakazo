@@ -395,7 +395,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "save_page",
-      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
+      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the guides), using the page kit by default. Set format "html" to save a self-contained HTML/CSS/JS document, which renders inline in the chat at its own height. To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

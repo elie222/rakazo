@@ -38,7 +38,7 @@ function SharedPageBody() {
     enabled: token !== null,
     retry: false,
   });
-  const viewer = usePageDocument(shared.data?.code);
+  const viewer = usePageDocument(shared.data ?? undefined);
   const title = shared.data?.title;
   useEffect(() => {
     if (title) document.title = title;
