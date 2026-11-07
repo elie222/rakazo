@@ -337,6 +337,8 @@ export function userTurnInstructions(parts: {
   offeredFleetTools?: readonly string[];
   /** The run can set its own follow-ups (see followUpsOffered). */
   followUpsOffered?: boolean;
+  /** Whether this turn may start a background helper (only in the bot's own app chat). */
+  backgroundHelpersAllowed?: boolean;
   userComputer?: UserComputerState;
 }): (string | undefined)[] {
   return [
@@ -365,7 +367,9 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "run_subagent",
-      "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+      parts.backgroundHelpersAllowed
+        ? "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here. For longer work the user need not wait on, or when they ask for it, set background true and end your turn: you stay free for their next message, and the result comes back to you later to pass on. A background helper cannot use the computer, ask the user, or change memory, skills or routines; do those yourself when its result comes back."
+        : "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
     ),
     parts.botDirectory,
     offeredBuiltinClause(
@@ -444,6 +448,21 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   return messagingChannelRun
     ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
     : { ...context, includeSemanticRecall: true };
+}
+
+/** The bot's own address, which it may give out, and the inbox tools this run has. */
+export function botEmailInstruction(
+  address: string,
+  tools: { read: boolean; send: boolean; delete: boolean },
+): string {
+  return [
+    `Your email address is ${address}.`,
+    tools.read ? "Every email sent to it is saved to your inbox; check it with read_email." : "",
+    tools.send ? "Send email from it with send_email." : "",
+    tools.delete ? "Delete emails from your inbox with delete_email." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */

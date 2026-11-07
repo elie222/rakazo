@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -379,6 +380,7 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       sandboxProvider: undefined,
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
     return <textarea aria-label="Goal" />;
@@ -395,4 +397,40 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
   expect(state.computerOpen).toBe(true);
   await press();
   expect(state.computerOpen).toBe(false);
+});
+
+it("offers Upgrade instead of a retry once the computer hours are spent", async () => {
+  const onUpgrade = vi.fn();
+  function Controls() {
+    state = useComputerState({
+      rpc: {} as never,
+      panel: null,
+      activeId: undefined,
+      activeBotId: { current: undefined },
+    });
+    const controls = useComputerControls({
+      rpc: {} as never,
+      state,
+      panel: null,
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: undefined },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(),
+      refreshGroupThread: vi.fn(),
+      onUpgrade,
+    });
+    return <>{controls.computerScreenError}</>;
+  }
+  await act(async () => root.render(<Controls />));
+  await act(async () => state.setComputerError(COMPUTER_ALLOWANCE_USED_ERROR));
+  const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
+  expect(buttons).toEqual(["Upgrade"]);
+  await act(async () => container.querySelector("button")!.click());
+  expect(onUpgrade).toHaveBeenCalledOnce();
+  await act(async () => state.commitComputer({ state: "running", kind: "browser" } as never));
+  expect(container.textContent).not.toContain("Upgrade");
 });

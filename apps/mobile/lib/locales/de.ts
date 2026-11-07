@@ -1,4 +1,13 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "No matches": "Keine Treffer",
+  "Always ask": "Immer fragen",
+  "Search tools": "Tools durchsuchen",
+  "A model approves routine actions and asks you about the rest.":
+    "Ein Modell genehmigt Routineaktionen und fragt dich beim Rest.",
+  "Asks only before purchases and the first use of your computer. Only Block rules apply.":
+    "Fragt nur vor Käufen und der ersten Nutzung deines Computers. Nur Sperrregeln gelten.",
+  "Asks before sending, spending or changing anything in your apps.":
+    "Fragt, bevor in deinen Apps etwas gesendet, ausgegeben oder geändert wird.",
   Haptics: "Haptisches Feedback",
   "Add rule": "Regel hinzufügen",
   "Tool name": "Tool-Name",
@@ -112,8 +121,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Ersatzmodelle sind fehlgeschlagen oder waren für diese Anfrage nicht verfügbar.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-Schlüssel",
   "Show password": "Passwort anzeigen",
   "Hide password": "Passwort verbergen",
   Export: "Exportieren",
@@ -453,6 +460,7 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",
   Versions: "Versionen",
   Stop: "Stoppen",
+  Stopped: "Gestoppt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",
   "Type your answer": "Gib deine Antwort ein",
@@ -522,6 +530,21 @@ export const DE_MESSAGES: Record<string, string> = {
   "Message event": "Nachrichtenereignis",
   "When something changes": "Wenn sich etwas ändert",
   "When an email arrives": "Wenn eine E-Mail eingeht",
+  "Add email trigger": "E-Mail-Auslöser hinzufügen",
+  "Add a trigger to run this routine.": "Füge einen Auslöser für diese Routine hinzu.",
+  "Copy {address}": "{address} kopieren",
+  "Email address": "E-Mail-Adresse",
+  "Claim {address}": "{address} beanspruchen",
+  "Who can start it": "Wer es starten kann",
+  "Only me": "Nur ich",
+  "Anyone at @{domain}": "Jeder bei @{domain}",
+  "Remove email trigger": "E-Mail-Auslöser entfernen",
+  "Get an email address": "E-Mail-Adresse anlegen",
+  "Bot email addresses": "E-Mail-Adressen der Bots",
+  "Use 2 to 64 characters": "Verwende 2 bis 64 Zeichen",
+  "Use letters, numbers, dots, dashes or underscores":
+    "Verwende Buchstaben, Ziffern, Punkte, Bindestriche oder Unterstriche",
+  "That address isn't available": "Diese Adresse ist nicht verfügbar",
   "Open conversation": "Unterhaltung öffnen",
   Paused: "Pausiert",
   Prompt: "Prompt",
@@ -546,7 +569,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not delete routine": "Routine konnte nicht gelöscht werden",
   "Edit routine": "Routine bearbeiten",
   "Next run": "Nächste Ausführung",
-  "Add a schedule to run this routine.": "Füge einen Zeitplan für diese Routine hinzu.",
   "Add schedule": "Zeitplan hinzufügen",
   "Could not run routine": "Routine konnte nicht ausgeführt werden",
   "Could not save routine": "Routine konnte nicht gespeichert werden",
@@ -669,8 +691,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Added: "Hinzugefügt",
   Back: "Zurück",
   "Bearer token": "Bearer-Token",
-  "Connect Executor": "Executor verbinden",
-  "Connect Treg": "Treg verbinden",
   "Connection pending": "Verbindung steht aus",
   "Could not add source": "Quelle konnte nicht hinzugefügt werden",
   "Could not approve this server": "Server konnte nicht genehmigt werden",
@@ -680,7 +700,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not revoke connection": "Verbindung konnte nicht widerrufen werden",
   "Custom connector": "Eigener Connector",
   "Display name": "Anzeigename",
-  "Executor token": "Executor-Token",
   "Finish connecting in the browser, then refresh this page.":
     "Schließe die Verbindung im Browser ab und aktualisiere dann diese Seite.",
   "GraphQL endpoint": "GraphQL-Endpunkt",
@@ -696,7 +715,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search apps": "Apps suchen",
   "Show more": "Mehr anzeigen",
   Tools: "Tools",
-  "Treg token": "Treg-Token",
   Uninstall: "Deinstallieren",
   "Verify and add": "Prüfen und hinzufügen",
   "Working…": "Wird verarbeitet…",
@@ -704,7 +722,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "https://example.com/graphql": "https://example.com/graphql",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
-  "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count} Tools",
   "API key": "API-Schlüssel",
   "Account ID": "Konto-ID",
@@ -902,6 +919,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die vorherige Serversitzung konnte nicht gelöscht werden",
   "Could not clear the previous space":
     "Die vorherige Space-Auswahl konnte nicht zurückgesetzt werden",
+  "Could not save the previous server session":
+    "Die vorherige Serversitzung konnte nicht gespeichert werden",
   "Could not save the server URL": "Server-URL konnte nicht gespeichert werden",
   "Could not send reset email": "E-Mail zum Zurücksetzen konnte nicht gesendet werden",
   "The server changed while starting the request":
@@ -976,6 +995,9 @@ export const DE_MESSAGES: Record<string, string> = {
   Call: "Anrufen",
   "Calls need transcription": "Anrufe brauchen eine Transkription",
   "Could not hear that.": "Das war nicht zu verstehen.",
+  "Approve or deny it on screen.": "Genehmige oder lehne es auf dem Bildschirm ab.",
+  "Hang up, then enter the code on screen.":
+    "Lege auf und gib dann den Code auf dem Bildschirm ein.",
   "Could not speak that.": "Das konnte nicht vorgelesen werden.",
   "Could not transcribe that.": "Das konnte nicht transkribiert werden.",
   "Hang up": "Auflegen",
@@ -1120,6 +1142,10 @@ export const DE_MESSAGES: Record<string, string> = {
   Credits: "Guthaben",
   "Available credits": "Verfügbares Guthaben",
   "Computer hours left": "Verbleibende Computerstunden",
+  Upgrade: "Upgraden",
+  "Cancelled trials have no computer hours.":
+    "Gekündigte Testzeiträume haben keine Computerstunden.",
+  "Renew plan": "Plan verlängern",
   "Trials get fewer hours to prevent abuse.":
     "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern.",
   "Start plan now": "Plan jetzt starten",
@@ -1418,6 +1444,45 @@ export const DE_MESSAGES: Record<string, string> = {
   "Discard changes?": "Änderungen verwerfen?",
   Discard: "Verwerfen",
   "Could not delete note": "Notiz konnte nicht gelöscht werden",
+  "Morning briefing": "Morgenbriefing",
+  "Your day at a glance, every weekday morning":
+    "Dein Tag auf einen Blick, jeden Werktag am Morgen",
+  "**Thursday**\n\n**Calendar**\n- 10:00 Design review, moved to 11:30\n- 14:00 Call with Dana\n\n**Needs you**\n- Alex asked for the Q4 numbers by noon\n- A contract is waiting for your signature\n\n**Worth knowing**\n- Light rain after 4pm\n- Two stories on the topics you follow":
+    "**Donnerstag**\n\n**Kalender**\n- 10:00 Design-Review, verschoben auf 11:30\n- 14:00 Call mit Dana\n\n**Wartet auf dich**\n- Alex möchte die Q4-Zahlen bis 12 Uhr\n- Ein Vertrag wartet auf deine Unterschrift\n\n**Gut zu wissen**\n- Leichter Regen ab 16 Uhr\n- Zwei Artikel zu Themen, denen du folgst",
+  "Inbox triage": "Posteingang sortieren",
+  "Sorts new email and drafts the replies": "Sortiert neue E-Mails und entwirft die Antworten",
+  '**12 new since 8:00**\n\n**Reply needed**\n1. Priya wants to move Friday\'s review. Draft: "Friday works if we start at 2."\n2. Your card expires on the 30th. Draft ready.\n3. Sam asked about the API limits. Draft ready.\n\n**For your information**: a shipping update and a calendar change\n\n**Low priority**: 7 newsletters and notifications':
+    "**12 neue seit 8:00**\n\n**Antwort nötig**\n1. Priya möchte das Review am Freitag verschieben. Entwurf: „Freitag passt, wenn wir um 14 Uhr anfangen.“\n2. Deine Karte läuft am 30. ab. Entwurf bereit.\n3. Sam hat nach den API-Limits gefragt. Entwurf bereit.\n\n**Zur Info**: ein Versand-Update und eine Kalenderänderung\n\n**Niedrige Priorität**: 7 Newsletter und Benachrichtigungen",
+  "PR reviewer": "PR-Reviewer",
+  "Reviews pull requests waiting on you": "Prüft Pull Requests, die auf dich warten",
+  "**2 pull requests are waiting on you**\n\n**#482 Add retry to webhook delivery**\n- Retries on 404 too, so a deleted endpoint is retried five times. Retry only 5xx and timeouts?\n- No test for the backoff cap.\n\nSuggested review: request changes.\n\n**#479 Fix date parsing in reports**\nLooks good. Suggested review: approve.":
+    "**2 Pull Requests warten auf dich**\n\n**#482 Retry für Webhook-Zustellung hinzufügen**\n- Wiederholt auch bei 404, ein gelöschter Endpunkt wird also fünfmal erneut angefragt. Nur bei 5xx und Timeouts wiederholen?\n- Kein Test für die Backoff-Obergrenze.\n\nEmpfohlenes Review: Änderungen anfordern.\n\n**#479 Datums-Parsing in Berichten korrigieren**\nSieht gut aus. Empfohlenes Review: genehmigen.",
+  "Topic watch": "Themenradar",
+  "A weekly digest of what changed on topics you follow":
+    "Ein wöchentlicher Überblick, was sich bei deinen Themen getan hat",
+  "**This week**\n\n**Open-source AI agents**\n- A major release adds scheduled tasks (3 days ago)\n- Two new comparisons; both call memory the main gap\n\n**competitor.example**\n- Pricing: the Team plan went from $20 to $25 per seat\n\nNothing new on battery recycling.":
+    "**Diese Woche**\n\n**Open-Source-KI-Agenten**\n- Ein großes Release bringt geplante Aufgaben (vor 3 Tagen)\n- Zwei neue Vergleiche; beide sehen beim Gedächtnis die größte Lücke\n\n**competitor.example**\n- Preise: Der Team-Tarif stieg von $20 auf $25 pro Platz\n\nNichts Neues zum Batterierecycling.",
+  "API key for {provider}": "API-Schlüssel für {provider}",
+  "Credentials: {names}": "Zugangsdaten: {names}",
+  "Environment variables: {names}": "Umgebungsvariablen: {names}",
+  "Program: {name}": "Programm: {name}",
+  "Uses paths on your computer": "Nutzt Pfade auf deinem Computer",
+  "Needs: {names}": "Benötigt: {names}",
+  "Uses files that are not imported": "Nutzt Dateien, die nicht importiert werden",
+  "Setup complete": "Einrichtung abgeschlossen",
+  "Finish setting up": "Einrichtung abschließen",
+  "Check this yourself": "Bitte selbst prüfen",
+  "Could not load templates": "Vorlagen konnten nicht geladen werden",
+  Skill: "Skill",
+  "{schedule}, paused until you turn it on": "{schedule}, pausiert, bis du sie einschaltest",
+  "This template was just updated. Check it again.":
+    "Diese Vorlage wurde gerade aktualisiert. Sieh sie dir noch einmal an.",
+  "Could not create the bot": "Der Bot konnte nicht erstellt werden",
+  "Create bot": "Bot erstellen",
+  Adds: "Enthält",
+  "Works with": "Funktioniert mit",
+  "Bot templates": "Bot-Vorlagen",
+  Templates: "Vorlagen",
   "Recent payments": "Letzte Zahlungen",
   "Spending limit": "Ausgabenlimit",
   Amount: "Betrag",

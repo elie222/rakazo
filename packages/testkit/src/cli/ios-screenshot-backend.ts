@@ -14,6 +14,7 @@ import {
 import { createDb } from "@rakazo/db";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
+import { disposableDatabaseEnv } from "./postgres.js";
 
 /**
  * An isolated API for the iOS catalog: scripted models, a fake sandbox, and offline billing,
@@ -31,7 +32,8 @@ export async function startIosScreenshotBackend(input: {
   const apiUrl = `http://127.0.0.1:${input.port}`;
   Object.assign(process.env, {
     NODE_ENV: "test",
-    DATABASE_URL: databaseUrl,
+    // Migrations follow DATABASE_MIGRATION_URL, so an inherited one must not win.
+    ...disposableDatabaseEnv(databaseUrl),
     WAKEUP_DRIVER: "memory",
     SANDBOX_PROVIDER: "fake",
     AGENT_RUNTIME: "scripted",

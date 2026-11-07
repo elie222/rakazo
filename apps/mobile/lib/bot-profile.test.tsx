@@ -56,14 +56,19 @@ const {
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
   captureApiRequestContext: requestContext,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
@@ -236,6 +241,11 @@ vi.mock("../components/native-segmented-control", () => ({
         ),
       ),
     ),
+}));
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
 }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 

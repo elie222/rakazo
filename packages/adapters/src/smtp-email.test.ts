@@ -44,6 +44,33 @@ describe("SmtpEmailProvider", () => {
     );
   });
 
+  it("sends as a bot's own address, with its copies and reply-to", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "message-1" }));
+    const provider = new SmtpEmailProvider(
+      {
+        url: "smtps://smtp.example.test:465",
+        from: "hello@example.test",
+        replyTo: "founder@example.test",
+      },
+      { transport: { sendMail } as never },
+    );
+    await provider.send({
+      to: "ada@example.test",
+      from: "Scout <scout@bots.test>",
+      cc: ["grace@example.test"],
+      replyTo: "scout@bots.test",
+      subject: "Re: Order",
+      text: "Hi",
+    });
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "Scout <scout@bots.test>",
+        cc: ["grace@example.test"],
+        replyTo: "scout@bots.test",
+      }),
+    );
+  });
+
   it("retries only failures that cannot have sent the message, then drains", async () => {
     const temporary = Object.assign(new Error("Try again later"), {
       code: "EENVELOPE",

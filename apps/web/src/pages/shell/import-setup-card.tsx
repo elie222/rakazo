@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AgentImportSetupItem, AgentImportSetupState, MessageBlock } from "@rakazo/contracts";
-import { isRetiredImportSetup } from "@rakazo/core";
+import type { AgentImportSetupState, MessageBlock } from "@rakazo/contracts";
+import {
+  importSetupStateInput,
+  isImportSetupComplete,
+  isImportSetupDone,
+  isImportSetupVerifiable,
+  isRetiredImportSetup,
+} from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -13,25 +19,6 @@ export type ImportSetupTarget =
   | { kind: "models" }
   | { kind: "mcp"; serverId: string }
   | { kind: "routine"; routineId: string };
-
-/**
- * Needs Rakazo cannot check from its own data: what a skill declares, and a program or local
- * paths a stdio server relies on. Such rows are never shown as done.
- */
-function isVerifiable(item: AgentImportSetupItem): boolean {
-  if (item.kind === "skill") return false;
-  if (item.kind !== "mcp") return true;
-  return !item.needs.some((need) => need.kind === "program" || need.kind === "local_paths");
-}
-
-/** Null when it cannot be checked or is not read yet. */
-function isDone(item: AgentImportSetupItem, state: AgentImportSetupState | null) {
-  if (!state || !isVerifiable(item)) return null;
-  if (item.kind === "model") return state.providers[item.provider] === true;
-  if (item.kind === "mcp") return state.serverIds[item.serverId] === true;
-  if (item.kind === "routine") return state.routineIds[item.routineId] === true;
-  return null;
-}
 
 /** MCP servers on this checklist are still granted through their own approval cards. */
 export function ImportSetupCard({
@@ -52,17 +39,8 @@ export function ImportSetupCard({
   useEffect(() => {
     if (!botId || retired) return;
     let current = true;
-    const kinds = <K extends AgentImportSetupItem["kind"]>(kind: K) =>
-      block.items.filter(
-        (item): item is Extract<AgentImportSetupItem, { kind: K }> => item.kind === kind,
-      );
     rpc.bots
-      .importSetupState({
-        botId,
-        providers: kinds("model").map((item) => item.provider),
-        serverIds: kinds("mcp").map((item) => item.serverId),
-        routineIds: kinds("routine").map((item) => item.routineId),
-      })
+      .importSetupState(importSetupStateInput(botId, block))
       .then((next) => {
         if (current) setState(next);
       })
@@ -74,7 +52,7 @@ export function ImportSetupCard({
 
   if (retired) return null;
   // Rows that cannot be checked keep the full list.
-  if (state && block.items.every((item) => isDone(item, state) === true)) {
+  if (isImportSetupComplete(block, state)) {
     return (
       <BuiCard
         data-testid="import-setup-card"
@@ -94,7 +72,7 @@ export function ImportSetupCard({
       <ul className="mt-2 divide-y divide-border">
         {block.items.map((item, index) => {
           const name = item.kind === "model" ? item.title : item.name;
-          const done = isDone(item, state);
+          const done = isImportSetupDone(item, state);
           const detail =
             item.kind === "model"
               ? text.need({ kind: "api_key", provider: item.providerName ?? item.provider })
@@ -121,7 +99,7 @@ export function ImportSetupCard({
                 </p>
                 <p className="flex flex-wrap gap-x-2 text-body-sm text-muted-foreground" dir="auto">
                   <span>{detail}</span>
-                  {isVerifiable(item) ? null : <span>{t`Check this yourself`}</span>}
+                  {isImportSetupVerifiable(item) ? null : <span>{t`Check this yourself`}</span>}
                 </p>
               </div>
               {done ? (

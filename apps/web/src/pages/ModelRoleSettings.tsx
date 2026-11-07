@@ -27,9 +27,10 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -66,6 +67,10 @@ type Props = {
   onChanged?: () => void;
   /** The connection form, when it was opened from this list. */
   panel?: ReactNode;
+  /** Sits at the end of the heading row. */
+  headerAction?: ReactNode;
+  /** Extra items in the first row's menu. */
+  primaryMenuItems?: ReactNode;
 };
 
 const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
@@ -76,6 +81,23 @@ const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   modelId: option.id,
   ...(option.credentialId ? { credentialId: option.credentialId } : {}),
 });
+
+/** One role's saved list, read through the same cache entry its settings list keeps fresh. */
+export function useModelRole(
+  account: { userId: string; spaceId: string } | null,
+  scope: SettingsScope,
+  role: ModelRole,
+) {
+  const rpc = useSpaceRpc();
+  const userId = account?.userId ?? "";
+  const spaceId = account?.spaceId ?? "";
+  const input = { role, expectedUserId: userId, scope };
+  return useQuery({
+    queryKey: spaceQueries(userId, spaceId).models.role.queryKey({ input }),
+    queryFn: () => rpc.models.role(input, { context: { spaceId } }),
+    enabled: Boolean(account),
+  }).data;
+}
 
 /** One ordered list per model purpose: the first row runs, the rest take over in order. */
 export function ModelRoleSettings({
@@ -93,6 +115,8 @@ export function ModelRoleSettings({
   thinking,
   onChanged,
   panel,
+  headerAction,
+  primaryMenuItems,
 }: Props) {
   const rpc = useSpaceRpc();
   const queryClient = useQueryClient();
@@ -267,9 +291,14 @@ export function ModelRoleSettings({
     </button>
   );
 
+  const optionsLabel = (name: string) => t`${name} options`;
+
   return (
     <section className="mb-8" data-testid={`model-role-${role}`}>
-      <h3 className="mb-2.5 text-heading3 font-medium text-foreground">{title}</h3>
+      <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
+        <SectionHeading variant="heading">{title}</SectionHeading>
+        {headerAction}
+      </div>
       <ol className="divide-y divide-border rounded-xl border border-border">
         {primary ? null : (
           <li className={`${rowClass} ${ordered ? "ps-8" : ""}`} data-testid="model-role-default">
@@ -288,6 +317,26 @@ export function ModelRoleSettings({
               reopen={reopenFor("primary")}
               onReopened={() => setReopen(null)}
             />
+            {deployment && primaryMenuItems ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 text-muted-foreground"
+                      aria-label={optionsLabel(modelLabel(deployment))}
+                      disabled={busy}
+                    />
+                  }
+                >
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[200px]">
+                  {primaryMenuItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
           </li>
         )}
         {rows.map((choice, index) => {
@@ -356,7 +405,7 @@ export function ModelRoleSettings({
                       variant="ghost"
                       size="icon-sm"
                       className="shrink-0 text-muted-foreground"
-                      aria-label={t`${name} options`}
+                      aria-label={optionsLabel(name)}
                       disabled={busy}
                     />
                   }
@@ -405,6 +454,12 @@ export function ModelRoleSettings({
                       >
                         <Trans>Move down</Trans>
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
+                  {isPrimary && primaryMenuItems ? (
+                    <>
+                      {primaryMenuItems}
                       <DropdownMenuSeparator />
                     </>
                   ) : null}

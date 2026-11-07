@@ -17,7 +17,6 @@ on:
   pull_request:
     paths:
       - ".dockerignore"
-      - ".npmrc"
       - ".github/workflows/publish-server-image.yml"
       - ".github/actions/publish-image/**"
       - "infra/compose/**"

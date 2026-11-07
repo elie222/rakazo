@@ -19,16 +19,21 @@ const ENTRIES = [
 // @chat-adapter/state-memory is left out: it is the Chat SDK's own in-memory state, which
 // every messaging platform needs, not a vendor.
 const OPTIONAL_VENDORS =
-  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node)$/;
+  /^(@aws-sdk\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node|@alicloud\/.+|@darabonba\/typescript|@kubernetes\/client-node|@larksuiteoapi\/node-sdk|@photon-ai\/chat-adapter-imessage|mppx|railway)$/;
+// Packages the bundles load through import() that are not vendor SDKs: an image library, the
+// auth library's own SCIM plugin, the email parser and DKIM check for inbound mail, and the
+// database client, which is also imported statically.
+const LAZY_NON_VENDORS = [
+  "sharp",
+  "@better-auth/scim",
+  "postal-mime",
+  "mailauth",
+  "@prisma/client",
+];
 // Known static imports still to make lazy. Remove an entry once its SDK loads on demand.
 const PENDING = [
-  "@chat-adapter/slack",
   "@chat-adapter/telegram",
   "@chat-adapter/whatsapp",
-  "@daytona/sdk",
-  "@boatdev/sdk",
-  "@boxd-sh/sdk",
-  "chat-adapter-sendblue",
   // The wallet factory imports its module dynamically, but the bundle inlines that module,
   // so the SDK is a static import of every emitted server bundle.
   "@stripe/link-sdk",
@@ -36,6 +41,8 @@ const PENDING = [
 
 // Vendor SDKs statically imported by each emitted bundle: Map<entry, Set<vendor>>.
 const staticVendors = new Map();
+// Every package a bundle loads through import(), across all entries.
+const dynamicPackages = new Set();
 for (const entry of ENTRIES) {
   const options = serverBuildOptions(path.join(root, entry), path.join(root, "dist/check.js"));
   const { metafile } = await build({
@@ -49,8 +56,12 @@ for (const entry of ENTRIES) {
   const found = new Set();
   for (const output of Object.values(metafile.outputs)) {
     for (const edge of output.imports ?? []) {
-      if (edge.kind !== "import-statement") continue;
       const name = packageName(edge.path);
+      if (edge.kind === "dynamic-import" && edge.path.includes("node_modules/")) {
+        dynamicPackages.add(name);
+      }
+      // A require() call loads its package at startup just like a static import.
+      if (edge.kind !== "import-statement" && edge.kind !== "require-call") continue;
       if (OPTIONAL_VENDORS.test(name)) found.add(name);
     }
   }
@@ -77,6 +88,23 @@ test("every pending vendor SDK is still statically imported somewhere", () => {
     PENDING.filter((name) => !anywhere.has(name)),
     [],
     "Now loaded on demand; remove from PENDING",
+  );
+});
+
+test("every package loaded on demand is a listed vendor SDK or a known non-vendor", () => {
+  // A vendor SDK missing from OPTIONAL_VENDORS could become a static import unnoticed, also when
+  // another bundle already imports it statically.
+  assert.deepEqual(
+    [...dynamicPackages]
+      .filter((name) => !OPTIONAL_VENDORS.test(name) && !LAZY_NON_VENDORS.includes(name))
+      .sort(),
+    [],
+    "Add the SDK to OPTIONAL_VENDORS, or a non-vendor package to LAZY_NON_VENDORS",
+  );
+  assert.deepEqual(
+    LAZY_NON_VENDORS.filter((name) => !dynamicPackages.has(name)),
+    [],
+    "No longer loaded on demand; remove from LAZY_NON_VENDORS",
   );
 });
 

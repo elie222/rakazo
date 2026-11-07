@@ -111,9 +111,7 @@ export function ActivityList({
     groups,
   });
   // Filters narrow runs, so unread chats step aside and their matching runs stay in Recent.
-  const recentRows = filtersOn
-    ? filteredRecent.filter((run) => !sections.attention.includes(run))
-    : sections.recent;
+  const recentRows = filtersOn ? sections.settled : sections.recent;
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const section = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,

@@ -9,28 +9,34 @@ import { describe, expect, it, vi } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
-import type { AnswerRunInput } from "./events.js";
+import { followThreadEvents } from "./event-stream.js";
 import {
-  AnswerTooLongError,
-  answerRunInput,
-  answerWaitingRunWithTextInTransaction,
   appendEvent,
-  claimSteering,
   clearThread,
   completedRunBlocks,
-  createPendingSteeringRun,
-  discardAnsweredSteering,
-  finalizeComputerControlRelease,
   finalizeRun,
-  followThreadEvents,
-  pauseRunForInput,
-  pauseRunForTakeover,
   sendUserMessage,
-  settleReleasedTakeoverCards,
 } from "./events.js";
 import { endTakeoverWaits } from "./expire-stuck-run.js";
 import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
+import type { AnswerRunInput } from "./thread-ask.js";
+import {
+  AnswerTooLongError,
+  answerRunInput,
+  answerWaitingRunWithTextInTransaction,
+  pauseRunForInput,
+} from "./thread-ask.js";
+import {
+  claimSteering,
+  createPendingSteeringRun,
+  discardAnsweredSteering,
+} from "./thread-steering.js";
+import {
+  finalizeComputerControlRelease,
+  pauseRunForTakeover,
+  settleReleasedTakeoverCards,
+} from "./thread-takeover.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -531,6 +537,7 @@ describe("thread lock transaction budget", () => {
   it("clears a thread with the explicit budget", async () => {
     const tx = {
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({
@@ -3901,6 +3908,8 @@ describe("queue admission beside pending cards", () => {
     "admits a %s wake beside waiting_input",
     async (trigger) => {
       const tx = {
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn() },
         thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 4 }) },
         message: {
           create: vi.fn().mockResolvedValue({ id: "message-new", seq: 2 }),
@@ -4046,6 +4055,8 @@ describe("sendUserMessage", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4180,6 +4191,8 @@ describe("sendUserMessage", () => {
 
   it("pins an agreed inbound model onto the run it creates", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4239,6 +4252,8 @@ describe("sendUserMessage", () => {
 
   it("persists steering instead of starting a parallel run when the bot is busy", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4305,6 +4320,8 @@ describe("sendUserMessage", () => {
     "handles a message arriving at a $waiting takeover request ($trigger, group: $group)",
     async ({ waiting, trigger, group }) => {
       const tx = {
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn() },
         thread: {
           update: vi
             .fn()
@@ -4384,6 +4401,8 @@ describe("sendUserMessage", () => {
 
   it("keeps an agreed inbound model on steering while a routine run is busy", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4446,6 +4465,8 @@ describe("sendUserMessage", () => {
 
   it("keeps an inbound message pending while the creation intro is active", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4498,6 +4519,8 @@ describe("sendUserMessage", () => {
 
   it("keeps a messaging inbound's origin on the hold behind the creation intro", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4558,6 +4581,8 @@ describe("sendUserMessage", () => {
     "keeps the message pending when the busy run is a %s turn",
     async (trigger) => {
       const tx = {
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn() },
         thread: {
           update: vi
             .fn()
@@ -4617,6 +4642,8 @@ describe("sendUserMessage", () => {
 
   it("keeps another member's message pending instead of steering the busy run", async () => {
     const tx = {
+      space: { findUnique: vi.fn() },
+      $queryRaw: vi.fn(async () => []),
       thread: {
         update: vi
           .fn()
@@ -4668,6 +4695,8 @@ describe("sendUserMessage", () => {
 
   it("steers the conversational run when a parallel webhook turn is also active", async () => {
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -4780,6 +4809,8 @@ describe("sendUserMessage", () => {
           ]
         : [{ kind: "text" as const, text: "hello" }];
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
       thread: {
         update: vi
           .fn()
@@ -5181,6 +5212,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
@@ -5229,6 +5261,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })
@@ -5914,6 +5947,7 @@ describe("discardAnsweredSteering", () => {
 
 it("checks cross-space peer permission inside the message transaction before creating a run", async () => {
   const tx = {
+    space: { findUnique: vi.fn() },
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 1 })) },
     message: { create: vi.fn(async () => ({ id: "message-1", seq: 0 })) },
     task: { create: vi.fn() },

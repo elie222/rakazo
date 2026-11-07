@@ -29,7 +29,7 @@ import type {
   VaultPutInput,
 } from "@rakazo/contracts";
 import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, displayName } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
@@ -39,6 +39,7 @@ import {
   expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
+  isRecordNotFound,
   recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
@@ -50,18 +51,15 @@ import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
-import { botEmailAddress, claimBotEmailAddress } from "../bot-email-address.js";
+import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
+import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
+import { managedAppCatalog } from "../onboarding.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
-import {
-  computerContext,
-  isRecordNotFound,
-  modelSetup,
-  THREAD_MESSAGE_PAGE_SIZE,
-} from "./shared.js";
+import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -339,6 +337,23 @@ export function botsRoutes(ctx: RouterContext) {
       importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),
+      templates: authed.bots.templates.handler(async ({ context }) =>
+        listBotTemplates(agentImportServices, context.actor),
+      ),
+      createFromTemplate: authed.bots.createFromTemplate.handler(async ({ context, input }) => {
+        try {
+          // Like an import, the bot starts inert: no intro run, and its routines are paused.
+          return await createBotFromTemplate(
+            agentImportServices,
+            () => managedAppCatalog(deps.connectors, context.actor, "bots.createFromTemplate"),
+            context.actor,
+            input,
+            context.signal,
+          );
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
@@ -524,7 +539,11 @@ export function botsRoutes(ctx: RouterContext) {
         if (claimed.count !== 1) throw new ORPCError("CONFLICT");
         try {
           const active = await deps.prisma.run.findFirst({
-            where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+            where: {
+              botId: bot.id,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
+              ...COMPUTER_USING_RUNS,
+            },
             select: { id: true },
           });
           if (active) {
@@ -620,6 +639,9 @@ export function botsRoutes(ctx: RouterContext) {
         if (bot.userId !== context.actor.userId) return null;
         return botEmailAddress(deps.prisma, deps.env.inboundEmailDomain, bot.id);
       }),
+      emailAddresses: authed.bots.emailAddresses.handler(async ({ context }) =>
+        botEmailAddresses(deps.prisma, deps.env.inboundEmailDomain, context.actor),
+      ),
       claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");

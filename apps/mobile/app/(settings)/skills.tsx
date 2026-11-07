@@ -1,10 +1,7 @@
-import type {
-  AgentSkillCatalogEntry,
-  CapabilityInstall,
-  PluginMarketplaceEntry,
-} from "@rakazo/contracts";
+import type { CapabilityInstall } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -15,11 +12,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { NativeActionButton } from "../../components/native-action-button";
 import { PluginIcon } from "../../components/plugin-icon";
 import { Chevron } from "../../components/row-accessories";
 import { SkillSymbol } from "../../components/skill-symbol";
-import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
@@ -31,6 +28,7 @@ import {
   pluginSkillCount,
   skillPacks,
 } from "../../lib/plugin-marketplace";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 
 const LOGO_SIZE = 32;
@@ -42,43 +40,39 @@ export default function SkillsScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useI18n();
-  const [entries, setEntries] = useState<PluginMarketplaceEntry[]>([]);
-  const [installs, setInstalls] = useState<CapabilityInstall[]>([]);
-  const [ownSkills, setOwnSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "partial">("loading");
+  const skills = useQuery(rpcQuery("agentSkills/list"), queryClient);
+  const catalog = useQuery(rpcQuery("marketplace/catalog", { query: "" }), queryClient);
+  const capabilities = useQuery(rpcQuery("capabilities/list"), queryClient);
+  const [retrying, setRetrying] = useState(false);
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
   const [gitUrl, setGitUrl] = useState("");
-  const live = useRef(true);
+  const { refetch: refetchSkills } = skills;
+  const { refetch: refetchCatalog } = catalog;
+  const { refetch: refetchCapabilities } = capabilities;
 
+  // Your skills refresh alongside; Retry waits on the browse reads only.
   const load = useCallback(() => {
-    // Plugin skills are listed by their plugin, not one by one.
-    void rpc("agentSkills/list")
-      .then((skills) => {
-        if (live.current) setOwnSkills(skills.filter((skill) => skill.source !== "plugin"));
-      })
-      .catch(() => undefined);
-    void Promise.all([rpc("marketplace/catalog", { query: "" }), rpc("capabilities/list")])
-      .then(([catalog, rows]) => {
-        if (!live.current) return;
-        setEntries(catalog.entries);
-        setInstalls(rows.filter((row) => row.kind === "plugin"));
-        setState(catalog.unavailableRegistries.length ? "partial" : "ready");
-      })
-      .catch(() => {
-        if (live.current) setState("partial");
-      });
-  }, []);
+    void refetchSkills();
+    return Promise.all([refetchCatalog(), refetchCapabilities()]);
+  }, [refetchSkills, refetchCatalog, refetchCapabilities]);
 
   useFocusEffect(
     useCallback(() => {
-      live.current = true;
-      load();
-      return () => {
-        live.current = false;
-      };
+      void load();
     }, [load]),
   );
+
+  // Plugin skills are listed by their plugin, not one by one.
+  const ownSkills = (skills.data ?? []).filter((skill) => skill.source !== "plugin");
+  const entries = catalog.data?.entries ?? [];
+  const installs = (capabilities.data ?? []).filter((row) => row.kind === "plugin");
+  const state =
+    retrying || !(catalog.isError || capabilities.isError || (catalog.data && capabilities.data))
+      ? "loading"
+      : catalog.isError || capabilities.isError || catalog.data?.unavailableRegistries.length
+        ? "partial"
+        : "ready";
 
   useLayoutEffect(() => {
     const toggle = () => setImporting((open) => !open);
@@ -181,6 +175,16 @@ export default function SkillsScreen() {
             <Chevron />
           </Pressable>
         </View>
+        <Pressable
+          testID="open-bot-templates"
+          accessibilityRole="button"
+          onPress={() => router.push("/bot-templates")}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        >
+          <BotTemplateIcon size={LOGO_SIZE} />
+          <Text style={[styles.title, styles.grow]}>{t("Templates")}</Text>
+          <Chevron />
+        </Pressable>
         {skillSets.length ? (
           <View testID="plugin-skill-sets" style={styles.list}>
             <Text style={styles.section}>{t("Plugins")}</Text>
@@ -237,8 +241,8 @@ export default function SkillsScreen() {
               fill={false}
               label={t("Retry")}
               onPress={() => {
-                setState("loading");
-                load();
+                setRetrying(true);
+                void load().finally(() => setRetrying(false));
               }}
               prominence="secondary"
             />

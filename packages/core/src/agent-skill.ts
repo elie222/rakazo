@@ -329,7 +329,7 @@ type YamlBlockScalarHeader = {
 };
 
 function parseYamlBlockScalarHeader(raw: string): YamlBlockScalarHeader | null {
-  const match = /^([>|])(?:([1-9]\d*)([+-]?)|([+-])([1-9]\d*)?)?$/.exec(raw);
+  const match = /^([>|])(?:([1-9]\d*)([+-]?)|([+-])([1-9]\d*)?)?(?:[ \t]+(?:#.*)?)?$/.exec(raw);
   if (!match) return null;
   const style = match[1] as "|" | ">";
   const indentToken = match[2] ?? match[5] ?? "";

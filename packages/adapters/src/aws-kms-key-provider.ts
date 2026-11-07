@@ -7,6 +7,14 @@ export type AwsKmsKeyProviderConfig = {
 } & ({ accessKeyId: string; secretAccessKey: string } | { profile: string });
 
 const MASTER_KEY_PREFIX = "aws-kms:";
+const KMS_MAX_ATTEMPTS = 3;
+const KMS_REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * Bounds a whole KMS call. The SDK's requestTimeout stops at the response headers, so a KMS or
+ * proxy that sends them and then stalls the body would hold the call. Every attempt may use
+ * its whole request limit, and the margin covers the backoff between them.
+ */
+const KMS_CALL_DEADLINE_MS = KMS_MAX_ATTEMPTS * KMS_REQUEST_TIMEOUT_MS + 10_000;
 const KEY_ARN = /^arn:aws[a-z-]*:kms:([a-z0-9-]+):\d{12}:key\/([A-Za-z0-9-]+)$/;
 
 /**
@@ -67,12 +75,12 @@ export class AwsKmsKeyProvider implements KeyProvider {
                     secretAccessKey: config.secretAccessKey,
                   },
                 }),
-            maxAttempts: 3,
+            maxAttempts: KMS_MAX_ATTEMPTS,
             // Without throwOnRequestTimeout the SDK only logs when requestTimeout passes and keeps
             // waiting, so a KMS that stops answering would hold the secret save or run for good.
             requestHandler: {
               connectionTimeout: 3_000,
-              requestTimeout: 10_000,
+              requestTimeout: KMS_REQUEST_TIMEOUT_MS,
               throwOnRequestTimeout: true,
             },
           }),
@@ -102,6 +110,7 @@ export class AwsKmsKeyProvider implements KeyProvider {
         Plaintext: dataKey,
         EncryptionContext: encryptionContext(context),
       }),
+      { abortSignal: AbortSignal.timeout(KMS_CALL_DEADLINE_MS) },
     );
     if (!CiphertextBlob) throw new Error("AWS KMS returned no ciphertext");
     return {
@@ -127,6 +136,7 @@ export class AwsKmsKeyProvider implements KeyProvider {
           CiphertextBlob: Buffer.from(wrapped.wrappedKey, "base64url"),
           EncryptionContext: encryptionContext(context),
         }),
+        { abortSignal: AbortSignal.timeout(KMS_CALL_DEADLINE_MS) },
       )
       .catch((error: unknown) => {
         throw new Error(`Space key could not be unwrapped with master key ${wrapped.masterKeyId}`, {

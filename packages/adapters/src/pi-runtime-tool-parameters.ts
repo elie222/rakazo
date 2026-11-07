@@ -92,6 +92,7 @@ function builtinParameters(tool: ConnectorTool) {
       instructions: Type.Optional(Type.String()),
       model_provider: Type.Optional(Type.String()),
       model_id: Type.Optional(Type.String()),
+      background: Type.Optional(Type.Boolean()),
     });
   }
   if (tool.name === "spawn_bot") {

@@ -20,11 +20,14 @@ export type InboundEmailResolver = (
 export type InboundEmail = {
   /**
    * The same message always gets the same key: its verified DKIM signature, which a resent copy
-   * cannot change, else its Message-ID or a hash of the raw bytes.
+   * cannot change, else a hash of what it says.
    */
   key: string;
   /** The single From mailbox, lowercased; null when the From field is missing or malformed. */
   from: { address: string; name: string } | null;
+  /** The sender's Message-ID and the thread it answers, for a reply that stays in its thread. */
+  messageId: string | null;
+  references: string[];
   /**
    * A DKIM signature that passed, was made by the From address's own domain and covers the one
    * From, To and Cc field, so that domain vouches for the From address and the recipients.
@@ -77,6 +80,12 @@ export async function readInboundEmail(
     dkim && dkim.fromFields === 1 && dkim.fromSyntax === "valid" && dkim.headerFrom.length === 1
       ? (dkim.headerFrom[0]?.toLowerCase() ?? null)
       : null;
+  // Mail with too many signatures is never checked; its sender is still shown, as unverified.
+  const parsedFrom =
+    fieldCount("from") === 1 && email.from && !email.from.group
+      ? email.from.address?.trim().toLowerCase() || null
+      : null;
+  const sender = fromAddress ?? (dkim ? null : parsedFrom);
   const to = addresses(email.to);
   const cc = addresses(email.cc);
   // An extra To or Cc added above the signed one would be read but not verified.
@@ -109,27 +118,59 @@ export async function readInboundEmail(
     values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
     fieldCount("list-id") > 0;
 
-  // Unauthenticated mail is dropped unread, so its body is never converted. A huge HTML part is
-  // cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS of its text.
-  const body = !signature
-    ? ""
-    : email.text?.trim() ||
-      (email.html ? htmlToPlainText(email.html.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS * 10)) : "");
+  // A huge HTML part is cut first: the bot only ever sees the first INBOUND_EMAIL_TEXT_MAX_CHARS
+  // of its text.
+  const body =
+    email.text?.trim() ||
+    (email.html ? htmlToPlainText(email.html.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS * 10)) : "");
   const text =
     body.length > INBOUND_EMAIL_TEXT_MAX_CHARS
       ? `${body.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
       : body;
   const fromName =
-    email.from && !email.from.group && email.from.address?.toLowerCase() === fromAddress
+    email.from && !email.from.group && email.from.address?.trim().toLowerCase() === sender
       ? email.from.name
       : "";
 
+  const attachments = email.attachments
+    // Inline parts are images an HTML body shows, such as signature logos.
+    .filter((attachment) => !attachment.related)
+    .map((attachment) => ({
+      name: attachment.filename?.trim() || "attachment",
+      mimeType: attachment.mimeType,
+      bytes:
+        typeof attachment.content === "string"
+          ? new TextEncoder().encode(attachment.content)
+          : new Uint8Array(attachment.content),
+    }));
+
   return {
+    // Anyone can reuse an unsigned message's Message-ID, so its key is its content: a different
+    // message under the same ID is a different message, and a relay's retry is the same one.
     key: signature?.id
       ? `dkim:${signature.id}`
-      : email.messageId?.trim() ||
-        `sha256:${createHash("sha256").update(buffer).digest("base64url")}`,
-    from: fromAddress ? { address: fromAddress, name: fromName } : null,
+      : `sha256:${createHash("sha256")
+          .update(
+            JSON.stringify([
+              email.messageId ?? "",
+              sender,
+              to,
+              cc,
+              email.subject ?? "",
+              email.date ?? "",
+              text,
+              attachments.map((file) => [
+                file.name,
+                createHash("sha256").update(file.bytes).digest("base64url"),
+              ]),
+            ]),
+          )
+          .digest("base64url")}`,
+    from: sender ? { address: sender, name: fromName } : null,
+    messageId: messageIds(email.messageId)[0] ?? null,
+    references: [
+      ...new Set([...messageIds(email.references), ...messageIds(email.inReplyTo)]),
+    ].slice(-MAX_REFERENCES),
     authenticated: signature !== undefined,
     // Only the From domain's own signature decides; another domain's slow DNS changes nothing.
     temporaryFailure:
@@ -147,18 +188,17 @@ export async function readInboundEmail(
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
-    attachments: email.attachments
-      // Inline parts are images an HTML body shows, such as signature logos.
-      .filter((attachment) => !attachment.related)
-      .map((attachment) => ({
-        name: attachment.filename?.trim() || "attachment",
-        mimeType: attachment.mimeType,
-        bytes:
-          typeof attachment.content === "string"
-            ? new TextEncoder().encode(attachment.content)
-            : new Uint8Array(attachment.content),
-      })),
+    attachments,
   };
+}
+
+/** References kept per message; a long thread's oldest ones add nothing to a reply. */
+const MAX_REFERENCES = 20;
+
+/** The `<id@host>` tokens in a Message-ID, In-Reply-To or References field. */
+function messageIds(value: string | undefined): string[] {
+  // The newest come last in References, so a long thread keeps those.
+  return (value?.match(/<[^<>\s]{1,250}>/g) ?? []).slice(-100);
 }
 
 function addresses(list: Address[] | undefined): string[] {

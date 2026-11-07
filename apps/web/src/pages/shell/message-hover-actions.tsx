@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread } from "@rakazo/core";
+import { canMarkMessageUnread, copyableMessageText } from "@rakazo/core";
 import {
+  CopyTextFallback,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -10,11 +11,11 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  useCopyText,
 } from "@rakazo/ui-web";
-import { Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../components/MessageHoverMetadata";
-import { copyableMessageText } from "../../lib/message-text";
 
 export function MessageHoverActions({
   message,
@@ -32,23 +33,31 @@ export function MessageHoverActions({
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
+  // The text the last successful copy put on the clipboard: a message that changes during the
+  // confirmation no longer shows as copied.
+  const [copiedText, setCopiedText] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
 
+  const copied = copiedNow && copiedText === copyableMessageText(message);
+
   function copyMessage() {
     const text = copyableMessageText(message);
-    if (!text || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(text).catch(() => undefined);
+    if (!text) return;
+    void copy(text).then((ok) => {
+      if (ok) setCopiedText(text);
+    });
   }
 
   const iconButtonClass =
     "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
-    <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
+    <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
@@ -86,8 +95,15 @@ export function MessageHoverActions({
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
-            <MoreHorizontal size={15} strokeWidth={1.7} />
+          <DropdownMenuTrigger
+            aria-label={copied ? t`Copied` : t`More`}
+            className={iconButtonClass}
+          >
+            {copied ? (
+              <Check size={15} strokeWidth={1.7} />
+            ) : (
+              <MoreHorizontal size={15} strokeWidth={1.7} />
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"} className="w-auto">
             <DropdownMenuItem
@@ -117,6 +133,12 @@ export function MessageHoverActions({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={copyFailedText}
+        label={t`Copy`}
+      />
     </MessageHoverMetadata>
   );
 }

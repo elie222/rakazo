@@ -37,11 +37,17 @@ import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
+  COMPUTER_USING_RUNS,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { clearEndedRunState, expireComputerExecutionLeases, IsolationError } from "@rakazo/db";
+import {
+  clearEndedRunState,
+  expireComputerExecutionLeases,
+  IsolationError,
+  isUniqueViolation,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 export interface TaughtSkillsDeps {
@@ -95,7 +101,12 @@ async function cancelActiveRuns(
   botId: string,
 ): Promise<void> {
   const activeRuns = await deps.prisma.run.updateManyAndReturn({
-    where: { botId, userId: actor.userId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    where: {
+      botId,
+      userId: actor.userId,
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      ...COMPUTER_USING_RUNS,
+    },
     data: { status: "cancelled", completedAt: new Date() },
     select: { id: true },
   });
@@ -191,6 +202,7 @@ async function assertComputerFreeFor(
   const othersWork = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
+      ...COMPUTER_USING_RUNS,
       userId: { not: actor.userId },
       ...(bot.computerId ? { bot: { computerId: bot.computerId } } : { botId: bot.id }),
     },
@@ -428,11 +440,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       } catch (error) {
         if (error instanceof ORPCError) throw error;
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code?: string }).code === "P2002"
-        ) {
+        if (isUniqueViolation(error)) {
           throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
         }
         throw error;

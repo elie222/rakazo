@@ -66,10 +66,13 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
     const signal = AbortSignal.timeout(this.timeoutMs);
     // Reuse only within this delivery: a later sign-in request must get a new email.
     const idempotencyKey = randomUUID();
+    const { from, replyTo, cc, ...rest } = message;
+    const reply = replyTo ?? this.config.replyTo;
     const body = JSON.stringify({
-      from: this.config.from,
-      ...(this.config.replyTo ? { reply_to: this.config.replyTo } : {}),
-      ...message,
+      from: from ?? this.config.from,
+      ...(reply ? { reply_to: reply } : {}),
+      ...(cc?.length ? { cc } : {}),
+      ...rest,
     });
     for (let attempt = 0; ; attempt++) {
       let retry = true;

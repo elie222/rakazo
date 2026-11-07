@@ -79,6 +79,17 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
  * Identity of a live screen stream, ignoring rotating capability tokens.
  * View vs control stays in the key so takeover/release still reconnects.
  */
+export function screenStreamBase(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^(\/novnc\/session\/(?:view|control)\/)[^/]+/);
+    if (match) return `${parsed.origin}${match[1]}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function screenStreamKey(url: string): string {
   try {
     const parsed = new URL(url);
@@ -262,11 +273,9 @@ export function fromScreenPage(
     // sandboxed screen. Accept its advisory state only while the native navigation
     // event identifies the exact authorized screen page; other pages stay rejected.
     if (pageUrl === "null") {
-      return (
-        isProxiedScreenPage(screenUrl) &&
-        Boolean(loadedPageUrl) &&
-        new URL(loadedPageUrl!).href === new URL(screenUrl).href
-      );
+      const loadedBase = loadedPageUrl ? screenStreamBase(loadedPageUrl) : null;
+      const screenBase = screenStreamBase(screenUrl);
+      return isProxiedScreenPage(screenUrl) && Boolean(loadedBase) && loadedBase === screenBase;
     }
     return Boolean(pageUrl) && new URL(pageUrl!).origin === new URL(screenUrl).origin;
   } catch {

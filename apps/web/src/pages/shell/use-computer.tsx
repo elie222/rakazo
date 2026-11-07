@@ -7,6 +7,7 @@ import type {
   Run,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
   createScreenReconnects,
   isRetryableError,
@@ -468,6 +469,7 @@ export function useComputerControls({
   sandboxProvider,
   refreshThread,
   refreshGroupThread,
+  onUpgrade,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   state: ComputerState;
@@ -481,6 +483,7 @@ export function useComputerControls({
   sandboxProvider: Me["sandboxProvider"] | undefined;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
+  onUpgrade: () => void;
 }) {
   const { t } = useLingui();
   const {
@@ -780,6 +783,8 @@ export function useComputerControls({
           : !booting && computer?.state === "error"
             ? t`Computer failed to boot`
             : null));
+  // Retrying cannot help once the hours are spent; only a plan change can.
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(computerFailure);
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-body">
       {screenFailure ? (
@@ -788,32 +793,38 @@ export function useComputerControls({
         </p>
       ) : null}
       <p className="text-destructive">{computerFailure}</p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          if (!computerBot) return;
-          setScreenLoadError(null);
-          setScreenUrlLoadedBotId(null);
-          // An explicit retry clears any error and starts the screen's reconnects over;
-          // background screen reads clear only their own error.
-          screenAwaitsRetry.current = false;
-          resetScreenReconnect();
-          if (computer?.state === "running") {
-            setComputerError(null);
-            setComputerErrorFromScreen(false);
-            void refreshComputerScreen(computerBot.id);
-          } else
-            void bootComputer({
-              botId: computerBot.id,
-              takeControl: false,
-              showProgress: true,
-              force: true,
-            }).catch(() => undefined);
-        }}
-      >
-        <Trans>Retry screen</Trans>
-      </Button>
+      {allowanceUsed ? (
+        <Button variant="outline" size="sm" onClick={onUpgrade}>
+          <Trans>Upgrade</Trans>
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (!computerBot) return;
+            setScreenLoadError(null);
+            setScreenUrlLoadedBotId(null);
+            // An explicit retry clears any error and starts the screen's reconnects over;
+            // background screen reads clear only their own error.
+            screenAwaitsRetry.current = false;
+            resetScreenReconnect();
+            if (computer?.state === "running") {
+              setComputerError(null);
+              setComputerErrorFromScreen(false);
+              void refreshComputerScreen(computerBot.id);
+            } else
+              void bootComputer({
+                botId: computerBot.id,
+                takeControl: false,
+                showProgress: true,
+                force: true,
+              }).catch(() => undefined);
+          }}
+        >
+          <Trans>Retry screen</Trans>
+        </Button>
+      )}
       {screenFailure && computer?.state === "running" && computerBot ? (
         <ComputerMaintenanceActions
           visibleRecover

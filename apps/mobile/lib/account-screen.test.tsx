@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import * as SecureStore from "expo-secure-store";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -8,10 +9,19 @@ import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Account from "../app/(settings)/account";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode, signOut } from "./api";
+import type * as Api from "./api";
+import type * as ApiAuth from "./api-auth";
+import {
+  deleteAccount,
+  fetchAccountSecurity,
+  requestAccountDeletionCode,
+  signOut,
+} from "./api-auth";
+import type * as ApiServer from "./api-server";
 import { replaceWithSignIn } from "./auth-routing";
 import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
+import type * as Session from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
 import type * as ThreadFeedback from "./thread-feedback";
 import { hasUnsentSends } from "./thread-feedback";
@@ -54,6 +64,13 @@ vi.mock("./thread-feedback", async (importOriginal) => ({
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
+// The real sign-out flow runs in one test; its store and caches need these.
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
@@ -201,13 +218,13 @@ vi.mock("../components/settings-group", () => ({
     ),
   useStackedSettings: () => false,
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiServer>()),
+}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof Api>()),
   currentApiBase: () => "http://127.0.0.1:3100",
-  deleteAccount: vi.fn(),
-  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
-  loadSessionToken: vi.fn(async () => "token"),
-  passwordResetCapabilities: vi.fn(async () => ({})),
-  requestAccountDeletionCode: vi.fn(),
   rpc: vi.fn(async (method: string) =>
     method === "me"
       ? account.me
@@ -220,8 +237,18 @@ vi.mock("./api", () => ({
             : {},
   ),
   selectedSpaceId: () => "space-1",
+}));
+vi.mock("./api-auth", () => ({
+  deleteAccount: vi.fn(),
+  fetchAccountSecurity: vi.fn(async () => ({ hasPassword: true })),
+  passwordResetCapabilities: vi.fn(async () => ({})),
+  requestAccountDeletionCode: vi.fn(),
   signOut: vi.fn(),
   updateAccountName: vi.fn(),
+}));
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal<typeof Session>()),
+  loadSessionToken: vi.fn(async () => "token"),
 }));
 vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",
@@ -261,7 +288,12 @@ vi.mock("./haptics", () => ({
 vi.mock("./i18n", () => {
   // Stable across renders, as the real hook's is.
   const i18n = { t: (text: string) => text, locale: "en" };
-  return { t: i18n.t, dateLocaleForUi: () => "en", useI18n: () => i18n };
+  return {
+    dateLocaleForUi: () => "en",
+    getActiveUiLocale: () => "en",
+    t: (text: string) => text,
+    useI18n: () => i18n,
+  };
 });
 vi.mock("./live-notifications", () => ({
   canPostPromotedNotifications: vi.fn(async () => false),
@@ -270,7 +302,9 @@ vi.mock("./live-notifications", () => ({
   hasLiveUpdateSettings: () => false,
   openLiveNotificationSettings: vi.fn(),
   openPromotedNotificationSettings: vi.fn(),
+  resumeLiveNotifications: vi.fn(async () => undefined),
   setLiveNotificationSettings: vi.fn(),
+  stopLiveNotifications: vi.fn(async () => undefined),
 }));
 const { styles } = vi.hoisted(() => ({ styles: new Proxy({}, { get: () => ({}) }) }));
 vi.mock("./native", () => ({
@@ -313,7 +347,6 @@ vi.mock("./trusted-link-sites", () => ({
   removeTrustedLinkSite: trusted.remove,
   useTrustedLinkSites: () => trusted.sites,
 }));
-vi.mock("./ui-locale", () => ({ UI_LOCALE_LABELS: { en: "English" } }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
 function security(overrides: Partial<AccountSecurity> = {}): AccountSecurity {
@@ -347,6 +380,7 @@ afterEach(() => {
   container?.remove();
   root = undefined;
   container = undefined;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -393,6 +427,44 @@ async function renderAccount() {
     alert: () => screen.querySelector('[role="alert"]')?.textContent ?? null,
   };
 }
+
+it("navigates to sign-in while a silent server still owes the sign-out delivery", async () => {
+  const actual = await vi.importActual<typeof ApiAuth>("./api-auth");
+  const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+  vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => store.get(key) ?? null);
+  vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+    store.set(key, value);
+  });
+  vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+    store.delete(key);
+  });
+  vi.mocked(signOut).mockImplementation(actual.signOut);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((_input: string) => new Promise<Response>(() => undefined)),
+  );
+
+  const view = await renderAccount();
+  try {
+    vi.useFakeTimers();
+    await view.press("Sign out");
+
+    // The screen leaves before the request timeout fires; the device is signed out.
+    expect(replaceWithSignIn).toHaveBeenCalled();
+    expect(store.has("rakazo.session_token")).toBe(false);
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+
+    // The delivery still runs: it times out and the record waits for retry.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/sign-out",
+      expect.anything(),
+    );
+    expect(JSON.parse(store.get("rakazo.pending_sign_out") ?? "[]")).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it("shows a device haptics switch that follows and saves the local preference", async () => {
   haptics.enabled = false;

@@ -23,7 +23,7 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
-import { withResolvedArtifactVersion } from "@rakazo/db";
+import { withResolvedArtifactVersion, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
@@ -78,35 +78,40 @@ export async function attachWorkspaceFileToThread(
   };
   const stored = await deps.artifacts.put({ name, mimeType, bytes: input.bytes }, context);
   const hash = createHash("sha256").update(input.bytes).digest("hex");
-  const row = await withResolvedArtifactVersion(
-    deps.prisma,
-    {
-      spaceId: input.spaceId,
-      botId: input.botId,
-      groupId: input.groupId,
-      name,
-    },
-    async (tx, { rootArtifactId, version }) => {
-      const artifact = await tx.artifact.create({
-        data: {
-          spaceId: input.spaceId,
-          userId: input.userId,
-          botId: input.botId,
-          groupId: input.groupId,
-          runId: input.runId,
-          name,
-          description: input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
-          mimeType,
-          size: input.bytes.byteLength,
-          hash,
-          storageKey: stored.id,
-          rootArtifactId,
-          version,
-        },
-      });
-      await input.onAttached?.(tx, artifact);
-      return artifact;
-    },
+  // Concurrent runs in one thread contend for its sequence counters when onAttached posts
+  // a message; Postgres aborts a deadlock victim, which commits nothing, so retry it.
+  const row = await withTransactionRetry(() =>
+    withResolvedArtifactVersion(
+      deps.prisma,
+      {
+        spaceId: input.spaceId,
+        botId: input.botId,
+        groupId: input.groupId,
+        name,
+      },
+      async (tx, { rootArtifactId, version }) => {
+        const artifact = await tx.artifact.create({
+          data: {
+            spaceId: input.spaceId,
+            userId: input.userId,
+            botId: input.botId,
+            groupId: input.groupId,
+            runId: input.runId,
+            name,
+            description:
+              input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
+            mimeType,
+            size: input.bytes.byteLength,
+            hash,
+            storageKey: stored.id,
+            rootArtifactId,
+            version,
+          },
+        });
+        await input.onAttached?.(tx, artifact);
+        return artifact;
+      },
+    ),
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;

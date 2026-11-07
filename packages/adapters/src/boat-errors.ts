@@ -1,16 +1,25 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { FetchError, ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import type { FetchError, ResponseError } from "@boatdev/sdk";
+import {
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
 
-/** An SDK `ResponseError` that keeps Boat's machine-readable error code. */
-export class BoatApiError extends ResponseError {
+/** The SDK loads only when Boat is configured; its error classes are read after a call fails. */
+export const boatSdk = () => import("@boatdev/sdk");
+
+/** A failed Boat response, shaped like the SDK's `ResponseError`, that keeps Boat's error code. */
+export class BoatApiError extends Error implements ResponseError {
+  override name = "ResponseError" as const;
+
   constructor(
-    response: Response,
+    readonly response: Response,
     message: string,
     readonly code: string | undefined,
     /** How long Boat asked to wait before the next request, on a 429 that said. */
@@ -18,7 +27,7 @@ export class BoatApiError extends ResponseError {
     /** The span a start limit counts over: `minute`, `hour`, or `day`. */
     readonly window?: string,
   ) {
-    super(response, message);
+    super(message);
   }
 }
 
@@ -85,12 +94,13 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await call(...args);
     } catch (error) {
+      const { FetchError, ResponseError } = await boatSdk();
       // The connection to Boat failed without an answer. The request may have arrived, so it
       // is not resent unless it never left; background work tries again on its next pass.
       if (error instanceof FetchError && !aborted(error, callerSignal(args[1]))) {
         throw new SandboxUnresponsiveError("Boat could not be reached", { cause: error });
       }
-      if (!(error instanceof ResponseError)) throw error;
+      if (!(error instanceof BoatApiError || error instanceof ResponseError)) throw error;
       const wrapped =
         error instanceof BoatApiError ? error : await boatResponseError(error.response, apiKey);
       if (error.response.status === 429) {
@@ -133,9 +143,8 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await attemptWithRetry(...args);
     } catch (error) {
-      if (failedAtBoat(error) || billingRequired(error)) {
-        throw new SandboxUnresponsiveError(error.message, { cause: error });
-      }
+      if (billingRequired(error)) throw new SandboxProviderAccountError({ cause: error });
+      if (failedAtBoat(error)) throw new SandboxUnresponsiveError(error.message, { cause: error });
       throw error;
     }
   };

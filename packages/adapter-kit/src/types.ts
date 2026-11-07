@@ -774,6 +774,8 @@ export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+  /** The provider can filter its listed voices by language. */
+  languages?: boolean;
 }
 
 export interface VoiceVerifyResult {
@@ -819,6 +821,8 @@ export interface BackgroundJobPayloads {
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
   "messaging.deliver": { runId?: string };
+  /** A running chat-app run's interim messages; the run is not marked mirrored. */
+  "messaging.progress": { runId: string };
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
@@ -903,7 +907,12 @@ export interface NotificationMessage {
 
 /** A product-authored transactional email, independent of its delivery vendor. */
 export interface TransactionalEmail {
-  to: string;
+  to: string | string[];
+  /** Sends as this address, such as a bot's own, instead of the provider's configured one. */
+  from?: string;
+  cc?: string[];
+  /** Where replies go, instead of the provider's configured reply-to address. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;

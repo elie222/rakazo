@@ -30,9 +30,15 @@ import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
-import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
+import {
+  MAX_AUTHORIZATION_URL_LENGTH,
+  secureFetch,
+  validateUrl,
+  withEndpointOriginFallback,
+} from "./mcp-transport.js";
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
@@ -69,12 +75,7 @@ export type OAuthMaterial = {
 /** Values that must never appear in model-visible tool results or errors. */
 export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   const values: string[] = [];
-  const add = (value: string | undefined) => {
-    if (!value) return;
-    values.push(value);
-    const bearer = value.match(/^Bearer\s+(.+)$/i);
-    if (bearer?.[1]) values.push(bearer[1]);
-  };
+  const add = (value: string | undefined) => addSecret(values, value);
   add(material.secret);
   add(material.oauth?.tokens?.access_token);
   add(material.oauth?.tokens?.refresh_token);
@@ -102,6 +103,159 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   return [...new Set(values)];
 }
 
+/** Registers a credential and, for a Bearer or Basic value, the credential on its own. */
+function addSecret(values: string[], value: string | undefined): void {
+  if (!value) return;
+  values.push(value);
+  const bearer = value.match(/^(?:Bearer|Basic)\s+(.+)$/i);
+  if (bearer?.[1]) values.push(bearer[1]);
+}
+
+/** Credentials in stdio launch arguments, which the process can echo in output and errors. */
+export function launchArgSecrets(args: string[]): string[] {
+  const values: string[] = [];
+  const add = (value: string | undefined) => addSecret(values, value);
+  const addAssignment = (assignment: string) => {
+    const match = assignment.match(/^([A-Za-z_][\w.-]*)=([\s\S]*)$/);
+    if (match?.[1] && match[2] && isLaunchSecret(match[1], match[2])) add(match[2]);
+  };
+  for (const [index, arg] of args.entries()) {
+    for (const url of urlsIn(arg)) values.push(...urlSecrets(url));
+    const flag = arg.match(/^--?([A-Za-z][\w.-]*)(?:=([\s\S]*))?$/);
+    if (!flag?.[1]) {
+      addAssignment(arg);
+      continue;
+    }
+    const name = flag[1];
+    const next = args[index + 1];
+    const value = flag[2] ?? (next?.startsWith("-") ? undefined : next);
+    if (!value) continue;
+    const normalized = snakeName(name);
+    if (name === "H" || normalized === "header") {
+      const header = value.match(/^([^:]+):\s*([\s\S]*)$/);
+      if (!header?.[1] || !header[2]) continue;
+      const [, headerName, headerValue] = header;
+      // `--header Authorization:Bearer <token>` splits the token into the next argument, which
+      // may itself start with "-"; only an argument shaped like a flag is not the token.
+      if (isAuthHeaderKey(headerName) && /^bearer$/i.test(headerValue)) {
+        const token = args[index + 2];
+        if (flag[2] === undefined && !/^(--|-.$)/.test(token ?? "")) add(token);
+      } else if (
+        isAuthHeaderKey(headerName) ||
+        // Custom auth headers (an API gateway's subscription key) have no standard name, so any
+        // header but the content-negotiation ones follows the configured-header rule.
+        (!/^(accept|content|user-agent|cache-control|connection|host)/i.test(headerName.trim()) &&
+          isLaunchSecret(headerName, headerValue))
+      ) {
+        add(headerValue);
+      }
+    } else if (name === "e" || normalized === "env") {
+      addAssignment(value);
+    } else if (name.length === 1) {
+      // `-y` (as in `npx -y <package>`) takes no value; what follows it is the package.
+      if (name !== "y" && looksLikeOpaqueToken(value)) add(value);
+    } else if (isCredentialArg(name, value)) {
+      add(value);
+    }
+  }
+  return [...new Set(values)];
+}
+
+/** An assignment or header value: the configured env/header rule, or a credential name. */
+function isLaunchSecret(name: string, value: string): boolean {
+  return isConfiguredSecret(snakeName(name), value) || isCredentialArg(name, value);
+}
+
+/** A flag, query, or header value under a credential name. Only explicit credential names
+ * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
+function isCredentialArg(name: string, value: string): boolean {
+  const normalized = snakeName(name);
+  return (
+    isCredentialName(normalized) &&
+    looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
+  );
+}
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
+function isCredentialName(normalized: string): boolean {
+  return (
+    isExplicitCredentialKey(normalized) ||
+    isAmbiguousCredentialKey(normalized) ||
+    /(?:^|_)(access_key|private_key|secret_key)$|^(key|pat|auth)$/.test(normalized)
+  );
+}
+
+/** `apiKey`, `APIKey`, `api.key` and `api-key` → `api_key`, so they match the snake_case rules. */
+function snakeName(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])|([A-Z])([A-Z][a-z])/g, (_, a, b, c, d) =>
+      a ? `${a}_${b}` : `${c}_${d}`,
+    )
+    .toLowerCase()
+    .replace(/[-.]/g, "_");
+}
+
+/** A one-letter flag's value is a credential only when it reads like a generated token,
+ * not a word, path, or number. */
+function looksLikeOpaqueToken(value: string): boolean {
+  return /^[\w+=.-]{16,}$/.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
+}
+
+/** Each whitespace- or quote-separated word containing `scheme://`, from the scheme on. A scan,
+ * not a global regex, so a long argument cannot make matching quadratic. */
+function urlsIn(text: string): string[] {
+  const urls: string[] = [];
+  for (const word of text.split(/[\s"'<>]+/)) {
+    const separator = word.indexOf("://");
+    let start = separator;
+    while (start > 0 && /[a-z\d+.-]/i.test(word.charAt(start - 1))) start--;
+    while (start < separator && !/[a-z]/i.test(word.charAt(start))) start++;
+    if (start < separator) urls.push(word.slice(start));
+  }
+  return urls;
+}
+
+/** The userinfo of a URL (`user:password@`, or a bare token as the user) and its
+ * credential-named query values. */
+function urlSecrets(text: string): string[] {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return [];
+  }
+  const values: string[] = [];
+  const addEncoded = (value: string) => values.push(value, decodeURIComponentSafe(value));
+  if (url.password) addEncoded(url.password);
+  // An HTTP(S) user name without a password is how a token is passed (`https://<token>@host`);
+  // otherwise, as for `ssh://git@host` or `user:password@`, it counts only when it reads like one.
+  const username = decodeURIComponentSafe(url.username);
+  if (
+    !url.password && /^https?:$/.test(url.protocol)
+      ? username.length >= MIN_NEUTRAL_SECRET_LENGTH
+      : looksLikeOpaqueToken(username)
+  )
+    addEncoded(url.username);
+  for (const pair of url.search.slice(1).split("&")) {
+    const [[key, value] = []] = new URLSearchParams(pair);
+    if (!key || !value) continue;
+    // Both the decoded value and its spelling in the argument, which the server may echo.
+    if (isCredentialArg(key, value)) {
+      addSecret(values, value);
+      values.push(pair.slice(pair.indexOf("=") + 1));
+    }
+  }
+  return values;
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Redaction replaces substrings, so a short value under a neutral name would mangle output. */
 const MIN_NEUTRAL_SECRET_LENGTH = 8;
 
@@ -118,6 +272,7 @@ function isAuthHeaderKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/-/g, "_");
   return (
     normalized === "authorization" ||
+    normalized === "proxy_authorization" ||
     normalized === "cookie" ||
     normalized === "set_cookie" ||
     normalized === "x_session" ||
@@ -529,6 +684,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       authorizationUrl = validateUrl(url, {
         allowHttpLocalhost: true,
         allowPrivateEndpoint: this.options.allowPrivateEndpoint,
+        maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
       });
     } catch (error) {
       if (!this.options.onAuthorization) {
@@ -542,6 +698,11 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
     }
     requestOfflineAccess(authorizationUrl, this.material.oauth?.discoveryState);
+    // Configured parameters are added after validation; keep the final URL within bounds too.
+    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH) {
+      if (!this.options.onAuthorization) await this.invalidateCredentials("tokens");
+      throw new Error(`MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`);
+    }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
       this.options.onAuthorization(authorizationUrl);
@@ -850,8 +1011,12 @@ type MaterialSnapshot = {
   secret: { id: string; ciphertext: string } | null;
 };
 
-function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<number> {
-  return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+/** Serializes changes to one MCP server's stored credential across the API and worker. */
+export function lockMcpOAuthMaterial(
+  tx: Prisma.TransactionClient,
+  serverId: string,
+): Promise<unknown> {
+  return advisoryLock(tx, "mcp-oauth-material", serverId);
 }
 
 /** One refresh-token grant against the stored authorization server. */
@@ -1222,7 +1387,7 @@ export class McpOAuthBroker {
     // default transaction timeout.
     const { revision } = await withRefreshLock(
       this.prisma,
-      (tx) => lockMaterial(tx, pending.serverId),
+      (tx) => lockMcpOAuthMaterial(tx, pending.serverId),
       async (tx) => {
         const endpoint = pending.stdio ? null : pending.endpoint;
         const snapshot = await this.snapshot(tx, pending.serverId, input, endpoint);
@@ -1386,7 +1551,7 @@ export class McpOAuthBroker {
         () =>
           withRefreshLock(
             this.prisma,
-            (tx) => lockMaterial(tx, serverId),
+            (tx) => lockMcpOAuthMaterial(tx, serverId),
             async (tx) => {
               const snapshot = await this.snapshot(tx, serverId, context, endpoint);
               const material = snapshot.secret
@@ -1544,7 +1709,7 @@ export class McpOAuthBroker {
         stored,
         () =>
           this.prisma.$transaction(async (tx) => {
-            await lockMaterial(tx, serverId);
+            await lockMcpOAuthMaterial(tx, serverId);
             return this.commitMaterial(
               tx,
               serverId,

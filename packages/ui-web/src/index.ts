@@ -51,6 +51,8 @@ export * from "./components/ui/textarea.js";
 export * from "./components/ui/toggle.js";
 export * from "./components/ui/toggle-group.js";
 export * from "./components/ui/tooltip.js";
+export { useCopyText, writeClipboard } from "./copy-text";
+export { CopyTextFallback } from "./copy-text-fallback";
 export { GroupAvatar, type GroupAvatarMember, type GroupAvatarProps } from "./group-avatar.js";
 export { cn } from "./lib/utils.js";
 export { LogoAvatar } from "./logo-avatar.js";

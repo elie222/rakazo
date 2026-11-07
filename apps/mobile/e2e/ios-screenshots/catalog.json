@@ -95,7 +95,7 @@
     "id": "skills",
     "title": "Skills",
     "flow": "flows/skills.yaml",
-    "screens": ["skills", "skill", "plugin"]
+    "screens": ["skills", "skill", "plugin", "bot-templates", "bot-template"]
   },
   {
     "id": "memory",
@@ -107,7 +107,15 @@
     "id": "workspace",
     "title": "Workspace",
     "flow": "flows/workspace.yaml",
-    "screens": ["board", "approvals", "vault", "archived-bots", "space", "space-members"]
+    "screens": [
+      "board",
+      "approvals",
+      "approval-rule-add",
+      "vault",
+      "archived-bots",
+      "space",
+      "space-members"
+    ]
   },
   {
     "id": "messaging",

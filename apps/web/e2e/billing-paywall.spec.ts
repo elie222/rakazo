@@ -323,6 +323,49 @@ test("end an own-key trial early to get full computer hours", async ({ page }, t
   await expect.poll(() => ended).toBe(true);
 });
 
+test("a cancelled trial explains its missing computer hours and offers renewal", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `trial-cancelled-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const trial = billingStatus({
+    access: true,
+    trialAvailable: false,
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1000,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    state: "trialing",
+    cancelAtPeriodEnd: true,
+    trialEndsAt: "2030-01-15T12:00:00.000Z",
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    hasCustomer: true,
+    computerHoursLeft: 0,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
+  let portalOpened = false;
+  await page.route("**/rpc/billing/portal", async (route) => {
+    portalOpened = true;
+    await route.fulfill({ json: { json: { url: "/app" } } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(
+    settings.getByText("Cancelled trials have no computer hours.", { exact: true }),
+  ).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Start plan now" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "billing-cancelled-trial-computer-hours");
+  await settings.getByRole("button", { name: "Renew plan", exact: true }).click();
+  await expect.poll(() => portalOpened).toBe(true);
+});
+
 test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
   await signup(page, `byok-switch-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
