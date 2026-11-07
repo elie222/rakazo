@@ -53,18 +53,18 @@ describe("composer drafts", () => {
       expect(restored.composerHoldsWorkInFlight()).toBe(false);
       expect(restored.readComposerRetryNonce("http")).toBe("http-operation");
       // Another document arms a reply without changing the saved payload.
-      restored.writeComposerRetryNonce("http", null);
-      first.writeComposerRetryNonce("http", null);
+      restored.touchComposerDraftContext("http");
+      first.touchComposerDraftContext("http");
       first.settleComposerDraftSubmission("http", submitted, true);
       expect(restored.readComposerDraft("http")).toBe("saved words");
-      expect(restored.readComposerRetryNonce("http")).toBeNull();
+      expect(restored.readComposerRetryNonce("http")).toBe("http-operation");
       // This document can still accept its own unchanged draft after a context edit.
       const retry = restored.beginComposerDraftSubmission("http", "saved words", {
         nonce: "next-operation",
         bindings: [],
         skill: null,
       });
-      restored.writeComposerRetryNonce("http", null);
+      restored.touchComposerDraftContext("http");
       restored.settleComposerDraftSubmission("http", retry, true);
       expect(restored.readComposerDraft("http")).toBe("");
     } finally {
@@ -92,12 +92,21 @@ describe("composer drafts", () => {
           second.writeComposerDraft("ownership", "saved words", storage, []);
         else if (change === "new submission")
           second.beginComposerDraftSubmission("ownership", "saved words");
-        else second.writeComposerRetryNonce("ownership", null); // Arming a reply: no payload write.
+        else second.touchComposerDraftContext("ownership"); // Arming a reply: no payload write.
         // A subsequent local context edit cannot take ownership back from the other document.
-        first.writeComposerRetryNonce("ownership", null);
+        first.touchComposerDraftContext("ownership");
         first.settleComposerDraftSubmission("ownership", submitted, true);
         expect(second.readComposerDraft("ownership")).toBe("saved words");
-        expect(second.readComposerRetryNonce("ownership")).toBeNull();
+        expect(second.readComposerRetryNonce("ownership")).toBe(
+          change === "reply edit" ? "first-send" : null,
+        );
+        // The saved operation survives even without either document's callbacks.
+        vi.resetModules();
+        const reloaded = await import("./composer-draft.js");
+        expect(reloaded.composerHoldsWorkInFlight()).toBe(false);
+        expect(reloaded.readComposerRetryNonce("ownership")).toBe(
+          change === "reply edit" ? "first-send" : null,
+        );
       } finally {
         vi.unstubAllGlobals();
       }
@@ -193,7 +202,9 @@ describe("composer drafts", () => {
         restored.settleComposerDraftSubmission("reload", retry, true);
         expect(restored.readComposerRetryNonce("reload")).toBeNull();
         // A completion from the old document must not resurrect the accepted nonce.
-        first.keepComposerRetryNonce("reload", original, "operation-1");
+        first.settleComposerDraftSubmission("reload", original, false);
+        first.settleComposerDraftSubmission("reload", original, true);
+        expect(restored.readComposerDraft("reload")).toBe("");
         expect(restored.readComposerRetryNonce("reload")).toBeNull();
       } finally {
         vi.unstubAllGlobals();

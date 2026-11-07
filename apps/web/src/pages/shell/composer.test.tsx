@@ -231,6 +231,129 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
+  it.each(["reply", "attachment", "page"])(
+    "does not reuse a saved operation while transient %s context is active",
+    async (context) => {
+      const persisted: (string | null)[] = [];
+      const onSend = vi.fn(async () => {
+        persisted.push(readComposerRetryNonce("bot:bot-1"));
+        return false;
+      });
+      const textarea = renderComposer(onSend);
+      type(textarea, "notes");
+      pressEnter(textarea);
+      await act(async () => {});
+      const original = onSend.mock.calls[0];
+      expect(persisted[0]).toBeTruthy();
+      act(() => root?.unmount());
+      container?.remove();
+      const reopened =
+        context === "page"
+          ? renderWithOpenPage(onSend).textarea
+          : renderComposer(
+              onSend,
+              context === "reply"
+                ? { replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage }
+                : {
+                    pendingAttachments: [
+                      { id: "a-1", threadKey: "bot:bot-1", file: new File(["notes"], "notes.txt") },
+                    ],
+                  },
+            );
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledTimes(2);
+      expect(persisted[1]).toBeNull();
+      expect(onSend.mock.calls[1]).not.toEqual(original);
+    },
+  );
+  it.each(["reply", "attachment", "page"])(
+    "preserves an unsettled saved operation after transient %s context and reload",
+    async (context) => {
+      const onSend = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise<boolean>(() => {}))
+        .mockResolvedValue(true);
+      const { session, textarea } = renderWithOpenPage(onSend);
+      act(() => session.dock.set({ page: null }));
+      type(textarea, "/sum");
+      pressEnter(textarea);
+      type(textarea, "notes");
+      pressEnter(textarea);
+      const original = onSend.mock.calls[0];
+      const nextProps =
+        context === "reply"
+          ? { replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage }
+          : context === "attachment"
+            ? {
+                pendingAttachments: [
+                  { id: "a-1", threadKey: "bot:bot-1", file: new File(["notes"], "notes.txt") },
+                ],
+              }
+            : {};
+      composerProps = { ...composerProps, ...nextProps };
+      act(() =>
+        root?.render(
+          <PagesProvider value={{ open: () => {}, session }}>
+            <Composer {...composerProps} />
+          </PagesProvider>,
+        ),
+      );
+      if (context === "page")
+        act(() => session.dock.set({ page: { id: "page-2", title: "Plan" } }));
+      expect(readComposerRetryNonce("bot:bot-1")).toBe(original?.[2]);
+      act(() => root?.unmount());
+      container?.remove();
+      const reopened = renderComposer(onSend);
+      expect(reopened.value).toBe("notes");
+      pressEnter(reopened);
+      await act(async () => {});
+      expect(onSend.mock.calls[1]).toEqual(original);
+    },
+  );
+  it.each(["reply", "attachment", "page"])(
+    "reuses the saved operation after cancelling transient %s context",
+    async (context) => {
+      const onSend = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("answer lost"))
+        .mockResolvedValue(true);
+      const { session, textarea } = renderWithOpenPage(onSend);
+      act(() => session.dock.set({ page: null }));
+      type(textarea, "notes");
+      pressEnter(textarea);
+      await act(async () => {});
+      const original = onSend.mock.calls[0];
+      act(() => root?.unmount());
+      container?.remove();
+      const reopened = renderComposer(onSend);
+      if (context === "page") {
+        act(() =>
+          root?.render(
+            <PagesProvider value={{ open: () => {}, session }}>
+              <Composer {...composerProps} />
+            </PagesProvider>,
+          ),
+        );
+        act(() => session.dock.set({ page: { id: "page-2", title: "Plan" } }));
+        act(() => session.dock.set({ page: null }));
+      } else {
+        rerenderComposer(
+          context === "reply"
+            ? { replyTarget: { id: "m-9", blocks: [] } as unknown as ThreadMessage }
+            : {
+                pendingAttachments: [
+                  { id: "a-1", threadKey: "bot:bot-1", file: new File(["notes"], "notes.txt") },
+                ],
+              },
+        );
+        rerenderComposer({ replyTarget: null, pendingAttachments: [] });
+      }
+      pressEnter(context === "page" ? container!.querySelector("textarea")! : reopened);
+      await act(async () => {});
+      expect(onSend.mock.calls[1]).toEqual(original);
+    },
+  );
   it.each(["chip only", "chip and body", "plain text"])(
     "persists exact operation identity before dispatch settles: %s",
     async (kind) => {

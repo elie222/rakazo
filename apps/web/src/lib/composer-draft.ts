@@ -16,7 +16,6 @@ type ComposerDraftSubmission = {
   text: string;
   bindingRecord: string | null;
   owner: string | null;
-  nonce?: string;
   appended?: string;
 };
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
@@ -102,8 +101,6 @@ export function beginComposerDraftSubmission(
     JSON.stringify(readComposerDraftSkill(threadKey)) === JSON.stringify(recoverable.skill);
   writeNonceRecord(threadKey, matches ? recoverable.nonce : null, getLocalStorage());
   submission.owner = readComposerDraftOwner(threadKey);
-  if (matches && readComposerRetryNonce(threadKey) === recoverable.nonce)
-    submission.nonce = recoverable.nonce;
   pendingSubmissions.set(threadKey, submission);
   return submission;
 }
@@ -129,25 +126,6 @@ export function settleComposerDraftSubmission(
   }
   writeComposerDraft(threadKey, "");
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
-}
-
-/**
- * Keeps a failed send's nonce beside the saved draft only while that draft is
- * still the one it sent, mentions included, so a retry cannot reuse it for a
- * different payload.
- */
-export function keepComposerRetryNonce(
-  threadKey: string,
-  submission: ComposerDraftSubmission,
-  nonce: string,
-): void {
-  if (
-    readComposerDraft(threadKey) === submission.text &&
-    readBindingRecord(threadKey) === submission.bindingRecord &&
-    readComposerDraftOwner(threadKey) === submission.owner &&
-    (submission.nonce === undefined || readComposerRetryNonce(threadKey) === submission.nonce)
-  )
-    writeComposerRetryNonce(threadKey, nonce);
 }
 
 let sendingWork = false;
@@ -282,17 +260,16 @@ function readComposerDraftOwner(threadKey: string, storage = getLocalStorage()):
   }
 }
 
-/** Retry eligibility can end without retiring this document's in-flight draft ownership. */
-export function writeComposerRetryNonce(
+/** Transient context claims this document's draft without changing its saved operation. */
+export function touchComposerDraftContext(
   threadKey: string,
-  nonce: string | null,
   storage: DraftStorage | null = getLocalStorage(),
 ): void {
   const owner = readComposerDraftOwner(threadKey, storage);
-  if (nonce === null && owner === null) return;
+  if (owner === null) return;
   writeNonceRecord(
     threadKey,
-    nonce,
+    readComposerRetryNonce(threadKey, storage),
     storage,
     pendingSubmissions.get(threadKey)?.owner === owner ? owner : null,
   );

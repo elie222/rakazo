@@ -43,8 +43,8 @@ import {
   subscribeComposerDraftAccepted,
   subscribeComposerDraftReplaced,
   subscribeComposerOffer,
+  touchComposerDraftContext,
   writeComposerDraft,
-  writeComposerRetryNonce,
 } from "../../lib/composer-draft";
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
@@ -292,12 +292,12 @@ const ComposerBody = memo(function Composer({
   const dock = pageSession?.dock ?? noDock;
   const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
   // A draft reloaded without edits may still belong to a send whose answer never
-  // came; its nonce is stored beside it. Anything that would change the next
-  // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
+  // came; its nonce is stored beside it. Transient context gates reuse at send time,
+  // but must not erase the saved operation that survives without that context.
   const retryNonce = useRef<string | null>(null);
   useEffect(() => {
     if (pendingAttachments.length || replyTarget || openPageId !== null)
-      writeComposerRetryNonce(draftKey, null);
+      touchComposerDraftContext(draftKey);
   }, [draftKey, pendingAttachments.length, replyTarget, openPageId]);
   // Opening or closing a page counts as an edit, like a reply change.
   const previousPageId = useRef(openPageId);
@@ -413,7 +413,7 @@ const ComposerBody = memo(function Composer({
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
-    writeComposerRetryNonce(draftKey, null);
+    touchComposerDraftContext(draftKey);
   }
 
   const draftKeyRef = useRef(draftKey);
@@ -471,10 +471,9 @@ const ComposerBody = memo(function Composer({
     const nonceRecoverable = !replyTarget && pendingAttachments.length === 0 && openPageId === null;
     const clientNonce =
       retryNonce.current ??
-      // A chat reopened before its unsettled send failed has not edited since
-      // mount, so the nonce stored beside the saved draft is still this draft's.
-      (revision === 0 &&
-      nonceRecoverable &&
+      // Only persisted payload edits retire the saved operation; cancelling transient
+      // context can return to that same payload without a document reload.
+      (nonceRecoverable &&
       readComposerDraft(draftKey) === compositionRef.current.text &&
       JSON.stringify(readComposerDraftBindings(draftKey)) ===
         JSON.stringify(compositionRef.current.bindings) &&
