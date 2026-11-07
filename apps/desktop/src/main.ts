@@ -86,6 +86,7 @@ import {
 } from "./setup-config.js";
 import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
 import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup-window.js";
+import { StackStopMenuAvailability } from "./stop-local-stack.js";
 import { createSystemSpeech } from "./system-speech.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
 
@@ -569,6 +570,8 @@ app.whenReady().then(async () => {
         ...events,
       }),
   });
+  // Must exist before the stack controller: its lifecycle transitions refresh the stop item.
+  const stopStackMenu = new StackStopMenuAvailability(() => installApplicationMenu());
   desktop.localStack = new LocalStackController({
     hostComputer: desktop.hostComputer?.connection,
     platform: process.platform,
@@ -595,7 +598,12 @@ app.whenReady().then(async () => {
       if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
         desktop.setupWindow.webContents.send("desktop.setup.stack.changed", state);
       }
+      // A stack can start or stop without a server switch; its phase transitions refresh
+      // the stop item.
+      stopStackMenu.stackChanged(state.phase);
     },
+    // A confirmed reuse changes no phase; the menu must hear about it separately.
+    onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
   });
   desktop.currentSetup = await readSetup(userDataDir);
   const target = resolveStartupTarget({
@@ -849,6 +857,11 @@ app.whenReady().then(async () => {
         showSetupWindow();
       }
     } else {
+      // The saved server is external, but the app-managed stack may still be running from
+      // before the switch — possibly on an older release, which must not be reused but
+      // still needs the off-switch. Probe only: with no stack files this returns before
+      // any request, and nothing starts or stops.
+      void desktop.localStack.rediscoverManagedStack();
       const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
       if (reachability.ok) {
         if (await appOpener.open(target.url)) {

@@ -31,6 +31,7 @@ let server: Server;
 let serverUrl: string;
 let userData: string;
 let app: ElectronApplication | undefined;
+let stackProbes = 0;
 
 // The fake docker is a POSIX shell script; Windows desktop e2e does not run in CI.
 test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
@@ -38,6 +39,7 @@ test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
 test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     if (request.url === STACK_PROBE_PATH && request.method === "GET") {
+      stackProbes += 1;
       const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8")
         .then((value) => value.trim())
         .catch(() => null);
@@ -76,6 +78,7 @@ test.beforeEach(async () => {
   userData = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-desktop-stack-")));
   // Setup otherwise follows the machine's language; these specs read its English text.
   await writeFile(path.join(userData, "ui-locale.txt"), "en\n");
+  stackProbes = 0;
 });
 
 test.afterEach(async () => {
@@ -378,6 +381,58 @@ test("a saved local stack is reused only after its private identity matches", as
   const appWindow = await shownWindow(app);
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
   expect(await readLog()).toEqual([]);
+});
+
+test("a restart with a saved external server keeps the off-switch for a running stack", async () => {
+  const stackDir = path.join(userData, "stack");
+  await mkdir(stackDir, { recursive: true });
+  const host = await prepareHostComputer(userData);
+  await writeFile(
+    path.join(stackDir, ".desktop-host-config"),
+    createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),
+  );
+  await host.close();
+  await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await writeFile(
+    path.join(userData, "setup.json"),
+    `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+
+  app = await launch("ok");
+  const appWindow = await app.firstWindow();
+  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+  await expect
+    .poll(() =>
+      app!.evaluate(
+        ({ Menu }) =>
+          Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible === true,
+      ),
+    )
+    .toBe(true);
+  // Rediscovery probes only: the stack is neither started nor stopped.
+  expect(await readLog()).toEqual([]);
+});
+
+test("a restart with a saved external server and no stack files probes nothing", async () => {
+  await writeFile(
+    path.join(userData, "setup.json"),
+    `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+
+  app = await launch("ok");
+  const appWindow = await app.firstWindow();
+  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+  expect(stackProbes).toBe(0);
+  expect(
+    await app.evaluate(
+      ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("stop-local-stack")?.visible,
+    ),
+  ).toBe(false);
 });
 
 test("a saved local target is the exact origin authenticated before reuse", async () => {
