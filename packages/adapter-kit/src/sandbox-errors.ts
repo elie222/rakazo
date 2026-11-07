@@ -70,6 +70,19 @@ export class SandboxUnavailableError extends Error {
   }
 }
 
+/**
+ * The provider is down, slow, or limiting requests. Work waits and tries again, so it is logged
+ * as a warning; the operator's own account refusing requests is still reported.
+ */
+export function isSandboxProviderOutage(error: unknown): error is Error {
+  return (
+    (error instanceof SandboxUnresponsiveError &&
+      !(error instanceof SandboxProviderAccountError)) ||
+    error instanceof SandboxUnavailableError ||
+    error instanceof SandboxRateLimitError
+  );
+}
+
 /** A computer's workspace is over the size or file count a save allows, so it is not saved. */
 export class WorkspaceTooLargeError extends Error {
   readonly code = "WORKSPACE_TOO_LARGE";

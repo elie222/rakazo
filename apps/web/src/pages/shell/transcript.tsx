@@ -237,7 +237,7 @@ export const Transcript = memo(function Transcript({
     (message) => !exchanges.lineOf.has(message.id) || exchanges.lines.has(message.id),
   );
   const separatorIds = timeSeparatorIds(shownMessages);
-  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
+  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{

@@ -42,7 +42,8 @@ import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
 import { afterSpaceDeparture } from "../space-departure.js";
-import { resolveThreadTarget, threadSnapshot } from "../thread-target.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { resolveThreadTarget } from "../thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
 
@@ -423,10 +424,10 @@ async function memberSpaceNavigation(
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
-    repos.listSpaceBotsForSpaces(inactiveSpaceIds),
-    groupRepos.listSpaceGroupsForSpaces(inactiveSpaceIds),
+    repos.listSpaceBotsForSpaces(inactiveSpaceIds, actor.userId),
+    groupRepos.listSpaceGroupsForSpaces(inactiveSpaceIds, actor.userId),
     repos.listBotSectionsForSpaces(spaceIds),
-    createExternalConversationRepos(deps.prisma).listForSpaces(spaceIds),
+    createExternalConversationRepos(deps.prisma).listForSpaces(spaceIds, actor.userId),
     // Active-only navigation lists miss archived content in other spaces; count any
     // bot/group in the actor's spaces (including another member's) so a shared
     // non-empty space cannot look empty for onboarding redirects.

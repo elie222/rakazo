@@ -388,3 +388,26 @@ it("sends a settings Undo through the chat's space client", async () => {
   await act(async () => undo?.click());
   expect(spaceRpc.bots.update).toHaveBeenCalledTimes(1);
 });
+
+it("stops a background helper from its saved running card, never a turn's live one", () => {
+  const spaceRpc = { threads: { stopHelper: vi.fn(async () => ({ ok: true })) } };
+  const helper = (id: string): ThreadMessage => ({
+    id,
+    threadId: "thread",
+    seq: 1,
+    role: "bot",
+    botId: "bot-1",
+    createdAt: new Date().toISOString(),
+    blocks: [{ kind: "subagent", agentId: id, name: "scout", task: "venues", status: "running" }],
+  });
+  const stopButton = () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Stop");
+  renderView("bot", [], { message: helper("subagent:live"), rpc: spaceRpc as never });
+  expect(stopButton()).toBeUndefined();
+  renderView("bot", [], { message: helper("card-1"), rpc: spaceRpc as never });
+  act(() => stopButton()?.click());
+  expect(spaceRpc.threads.stopHelper).toHaveBeenCalledExactlyOnceWith({
+    botId: "bot-1",
+    messageId: "card-1",
+  });
+});

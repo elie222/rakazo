@@ -322,6 +322,7 @@ function fixture({
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
@@ -487,6 +488,7 @@ function fixture({
     externalEffect,
   };
   const transactionalPrisma = Object.assign(prisma, {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
       action(prisma),
@@ -687,6 +689,7 @@ function fixture({
         blocks: [{ kind: "text", text: promptText }],
       };
       const tx = {
+        $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn(async () => []),
         space: { findUnique: vi.fn(async () => null) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
@@ -3747,6 +3750,78 @@ describe("user computer screen control", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.results).toEqual([{ error: expect.stringMatching(/^actions\.0/) }]);
     expect(requests).toEqual([]);
+  });
+});
+
+describe("background helpers only read", () => {
+  it.each([
+    ["remember", { content: "Must not be saved" }],
+    ["update_bot", { instructions: "Never ask" }],
+  ])("refuses %s, which it was not offered, before anything is written", async (name, args) => {
+    const f = fixture({ name, builtin: true, trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
+  it("refuses a read-only connector tool that a local tool's handler would run", async () => {
+    const f = fixture({ name: "message_agent", trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args: { connection_id: "c1", text: "hi" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
+  it("runs a declared read in Never ask", async () => {
+    const f = fixture({ trigger: "helper", skipApprovals: true });
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a declared write whatever the mode or rules", async () => {
+    for (const options of [
+      { skipApprovals: true },
+      { rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_get_item" }] },
+    ] as Parameters<typeof fixture>[0][]) {
+      const f = fixture({ trigger: "helper", readOnly: false, ...options });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("a background helper may only read");
+    }
+  });
+
+  it("runs a batch of declared reads, but not one naming no action or an undeclared one", async () => {
+    const batchOf = (...slugs: Array<string | undefined>) => ({
+      id: "batch",
+      tools: slugs.map((slug) => (slug ? { tool_slug: slug, arguments: {} } : { arguments: {} })),
+    });
+    const helperBatch = () =>
+      fixture({
+        name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        readOnly: true,
+        secondResource: true,
+        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+        trigger: "helper",
+        skipApprovals: true,
+      });
+    const named = helperBatch();
+    named.setCalls([{ args: batchOf("demo_get_other"), executionId: "call-1" }]);
+    await named.run();
+    expect(named.execute).toHaveBeenCalledOnce();
+    const unnamed = helperBatch();
+    unnamed.setCalls([{ args: batchOf("demo_get_other", undefined), executionId: "call-1" }]);
+    await unnamed.run();
+    expect(unnamed.execute).not.toHaveBeenCalled();
+    // An action no tool declares read-only is not a read either.
+    const undeclared = helperBatch();
+    undeclared.setCalls([{ args: batchOf("gmail_archive_thread"), executionId: "call-1" }]);
+    await undeclared.run();
+    expect(undeclared.execute).not.toHaveBeenCalled();
   });
 });
 

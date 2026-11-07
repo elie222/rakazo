@@ -40,6 +40,20 @@ class SenderPushTest {
   }
 
   @Test
+  fun `a plain push, whose title Expo renders, still goes to Expo`() {
+    // Registrations without sender support get Expo's own title and text beside this data.
+    assertEquals(
+      PushDisposition.EXPO,
+      SenderPush.disposition(
+        JSONObject(mapOf("botId" to "bot", "threadId" to "thread", "kind" to "completion")),
+        hasSession = { true },
+        openThread = { false },
+        foreground = { false },
+      ),
+    )
+  }
+
+  @Test
   fun `an open thread and finished foreground work stay quiet`() {
     assertEquals(
       PushDisposition.DROP,

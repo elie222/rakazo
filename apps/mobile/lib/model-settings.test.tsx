@@ -53,6 +53,9 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async (spaceId = "space-fixture") => ({

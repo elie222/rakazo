@@ -455,6 +455,7 @@ export const NL_MESSAGES: Record<string, string> = {
     "Hiermee worden alle {count} versies van dit artefact verwijderd. Dit kan niet ongedaan worden gemaakt.",
   Versions: "Versies",
   Stop: "Stoppen",
+  Stopped: "Gestopt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Hiermee worden alle berichten verwijderd en lopend werk gestopt. De bot, computer, het geheugen en de routines blijven behouden.",
   "Type your answer": "Typ je antwoord",
@@ -986,6 +987,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Call: "Bellen",
   "Calls need transcription": "Gesprekken hebben transcriptie nodig",
   "Could not hear that.": "Dat kon niet gehoord worden.",
+  "Approve or deny it on screen.": "Keur het goed of weiger het op het scherm.",
+  "Hang up, then enter the code on screen.": "Hang op en voer daarna de code op het scherm in.",
   "Could not speak that.": "Dat kon niet uitgesproken worden.",
   "Could not transcribe that.": "Dat kon niet worden getranscribeerd.",
   "Hang up": "Ophangen",

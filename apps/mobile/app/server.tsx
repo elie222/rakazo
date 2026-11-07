@@ -7,16 +7,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../components/header-rows-editor";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
+import { currentApiBase } from "../lib/api";
+import { resetApiBase, saveApiBase } from "../lib/api-server";
 import {
   apiBaseWarning,
-  currentApiBase,
   defaultApiBase,
   normalizeApiBase,
   probeApiBase,
-  resetApiBase,
-  saveApiBase,
   usesCustomApiBase,
-} from "../lib/api";
+} from "../lib/endpoint";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";

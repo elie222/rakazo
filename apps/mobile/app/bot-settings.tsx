@@ -36,8 +36,7 @@ import {
   SettingsRow,
   SettingsSwitch,
 } from "../components/settings-group";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import {
   avatarColor,
   avatarShape,
@@ -52,8 +51,10 @@ import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
+import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { thinkingLevelLabel } from "../lib/thinking-level";
 import { errorText } from "../lib/user-error";
