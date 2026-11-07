@@ -20,7 +20,7 @@ export const SNOOZE_LABELS = {
   nextWeek: "Next week",
 } as const satisfies Record<SnoozePreset, string>;
 
-/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin. */
+/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin, and a full swipe archives. */
 export function inboxRowActions(chat: { unread?: boolean; pinned?: boolean }): {
   leading: InboxRowAction;
   trailing: InboxRowAction[];

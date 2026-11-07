@@ -260,7 +260,7 @@ describe("iOS swipe row", () => {
     const onAction = vi.fn<(action: InboxRowAction) => void>();
     const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
     const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
-    const onSnooze = vi.fn<InboxSwipeRowProps["onSnooze"]>();
+    const onSnooze = vi.fn<NonNullable<InboxSwipeRowProps["onSnooze"]>>();
     const container = document.createElement("div");
     const root = createRoot(container);
     act(() =>
@@ -301,7 +301,7 @@ describe("iOS swipe row", () => {
     const { container, onAction, root } = render({ unread: true, pinned: true });
     expect(swift.groups).toEqual([
       { edge: "leading", allowsFullSwipe: undefined, labels: ["Mark as Read"] },
-      { edge: "trailing", allowsFullSwipe: false, labels: ["Archive", "Unpin"] },
+      { edge: "trailing", allowsFullSwipe: undefined, labels: ["Archive", "Unpin"] },
     ]);
     const buttons = Array.from(
       container.querySelectorAll<HTMLElement>('[data-ui="SwipeActions.Actions"] > button'),

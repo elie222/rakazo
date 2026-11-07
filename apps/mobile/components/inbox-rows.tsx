@@ -1,7 +1,7 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
@@ -284,7 +284,7 @@ export const PinnedTiles = memo(function PinnedTiles({
 const holdForMenu = () => undefined;
 
 /** What the iOS row menu needs to organize a chat in place. */
-type RowMenuProps = {
+export type RowMenuProps = {
   sections: readonly MobileBotSection[];
   onOrganize: (
     kind: InboxChatKind,
@@ -297,7 +297,8 @@ type RowMenuProps = {
     mode: "create" | "rename",
     sections: readonly MobileBotSection[],
   ) => void;
-  onSnooze: (
+  /** Without it the menu offers no snooze. */
+  onSnooze?: (
     kind: InboxChatKind,
     chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
     until: string | null,
@@ -314,6 +315,64 @@ function chatTime(
   if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
   if (chatWoke(chat, now)) return t("Woke");
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
+}
+
+/** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
+export function ChatSwipe({
+  target,
+  rowKey = `${target.kind}:${target.chat.id}`,
+  onAction,
+  sections,
+  onOrganize,
+  onEditSection,
+  snoozed,
+  onSnooze,
+  children,
+}: {
+  /** Snoozed until a time still ahead. */
+  snoozed?: boolean;
+  onSnooze?: (until: string | null) => void;
+  target:
+    | { kind: "bot"; chat: MobileBot | SpaceBot }
+    | { kind: "group"; chat: MobileGroup | SpaceGroup };
+  /** Height cache key, for rows of a different layout than the inbox's. */
+  rowKey?: string;
+  onAction: (action: InboxRowAction) => void;
+  children: ReactElement;
+} & RowMenuProps) {
+  const { kind, chat } = target;
+  return (
+    <InboxSwipeRow
+      rowKey={rowKey}
+      unread={chat.unread}
+      pinned={chat.pinned}
+      notifyOnFinish={target.kind === "bot" ? target.chat.notifyOnFinish : undefined}
+      sectionId={chat.sectionId}
+      sections={sections}
+      preview={{
+        title: chat.name,
+        message: chat.preview,
+        avatar:
+          target.kind === "bot" ? (
+            <BotAvatar
+              color={target.chat.color || FALLBACK_COLOR}
+              avatarSet={target.chat.avatarSet}
+              identity={target.chat.id}
+              size={32}
+            />
+          ) : (
+            <GroupAvatar members={target.chat.members} size={32} />
+          ),
+      }}
+      onAction={onAction}
+      onOrganize={(update) => onOrganize(kind, chat, update)}
+      onEditSection={(mode) => onEditSection(kind, chat, mode, sections)}
+      snoozed={snoozed}
+      onSnooze={onSnooze}
+    >
+      {children}
+    </InboxSwipeRow>
+  );
 }
 
 export const BotRow = memo(function BotRow({
@@ -383,33 +442,17 @@ export const BotRow = memo(function BotRow({
     />
   );
   return onAction ? (
-    <InboxSwipeRow
-      rowKey={`bot:${bot.id}`}
-      unread={bot.unread}
-      pinned={bot.pinned}
-      notifyOnFinish={bot.notifyOnFinish}
-      sectionId={bot.sectionId}
-      sections={sections}
-      preview={{
-        title: bot.name,
-        message: bot.preview,
-        avatar: (
-          <BotAvatar
-            color={bot.color || FALLBACK_COLOR}
-            avatarSet={bot.avatarSet}
-            identity={bot.id}
-            size={32}
-          />
-        ),
-      }}
+    <ChatSwipe
+      target={{ kind: "bot", chat: bot }}
       onAction={runAction}
-      onOrganize={(update) => onOrganize("bot", bot, update)}
-      onEditSection={(mode) => onEditSection("bot", bot, mode, sections)}
+      sections={sections}
+      onOrganize={onOrganize}
+      onEditSection={onEditSection}
       snoozed={chatSnoozed(bot, now)}
-      onSnooze={(until) => onSnooze("bot", bot, until)}
+      onSnooze={onSnooze && ((until) => onSnooze("bot", bot, until))}
     >
       {row}
-    </InboxSwipeRow>
+    </ChatSwipe>
   ) : (
     row
   );
@@ -461,25 +504,17 @@ export const GroupRow = memo(function GroupRow({
     />
   );
   return onAction ? (
-    <InboxSwipeRow
-      rowKey={`group:${group.id}`}
-      unread={group.unread}
-      pinned={group.pinned}
-      sectionId={group.sectionId}
-      sections={sections}
-      preview={{
-        title: group.name,
-        message: group.preview,
-        avatar: <GroupAvatar members={group.members} size={32} />,
-      }}
+    <ChatSwipe
+      target={{ kind: "group", chat: group }}
       onAction={runAction}
-      onOrganize={(update) => onOrganize("group", group, update)}
-      onEditSection={(mode) => onEditSection("group", group, mode, sections)}
+      sections={sections}
+      onOrganize={onOrganize}
+      onEditSection={onEditSection}
       snoozed={chatSnoozed(group, now)}
-      onSnooze={(until) => onSnooze("group", group, until)}
+      onSnooze={onSnooze && ((until) => onSnooze("group", group, until))}
     >
       {row}
-    </InboxSwipeRow>
+    </ChatSwipe>
   ) : (
     row
   );
