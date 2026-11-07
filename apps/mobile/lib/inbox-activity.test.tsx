@@ -94,7 +94,7 @@ it("offers the inbox swipe actions on the selected space's chats and leaves out 
         { id: "other", name: "Other space", status: "idle", spaceId: "space-2" },
       ] as never,
       groups: [],
-      toggledSections: new Set(),
+      toggledSections: new Set<string>(),
       onToggleSection: () => undefined,
       openChat: () => undefined,
       swipe: {
