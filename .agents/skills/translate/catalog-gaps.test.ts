@@ -1,5 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { applyTranslations, findMismatches, listGaps, translationsOf } from "./catalog-gaps.ts";
+
+const LOCALES = fileURLToPath(new URL("../../../apps/web/src/locales", import.meta.url));
 
 const po = `msgid ""
 msgstr ""
@@ -75,11 +80,24 @@ describe("catalog gaps", () => {
       "**Inbox**\n- {count} new": "**Posteingang**\n- {count} neu",
     });
     expect(filled).toContain(
-      'msgid "**Inbox**\\n"\n"- {count} new"\nmsgstr "**Posteingang**\\n- {count} neu"',
+      'msgid "**Inbox**\\n"\n"- {count} new"\nmsgstr "**Posteingang**\\n"\n"- {count} neu"',
     );
     expect(filled).toContain('msgstr "**Heute**\\n"\n"- {count} neu"');
     expect(findMismatches(filled)).toEqual([]);
     expect(findMismatches(filled.replace('"- {count} neu"', '"- neu"'))).toHaveLength(1);
+  });
+
+  it("writes every real translation back exactly as Lingui formats it", () => {
+    for (const locale of readdirSync(LOCALES)) {
+      const catalog = readFileSync(join(LOCALES, locale, "messages.po"), "utf8");
+      const blanked = catalog
+        .split("\n\n")
+        .map((block, index) =>
+          index ? block.replace(/^msgstr ".*"(\n".*")*$/m, 'msgstr ""') : block,
+        )
+        .join("\n\n");
+      expect(applyTranslations(blanked, translationsOf(catalog)).po, locale).toBe(catalog);
+    }
   });
 
   it("flags translations that drop or rename a placeholder or tag", () => {

@@ -6,7 +6,8 @@
 //                                               JSON file, or from another messages.po
 //   node catalog-gaps.ts check [locale...]      count gaps and placeholder mismatches
 //
-// A key is the msgid, or `msgctxt\u0004msgid` when the entry has a context. `apply` only
+// A key is the msgid, or `msgctxt\u0004msgid` when the entry has a context, prefixed with
+// `explicit-id:` for messages declared with an explicit id. `apply` only
 // writes entries that are still empty, so it never overwrites a translation.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,7 +39,8 @@ function parseEntry(block: string): Entry | null {
   if (!id || !str || id.value === "") return null;
   const msgctxt = context?.value ?? null;
   return {
-    key: msgctxt ? `${msgctxt}\u0004${id.value}` : id.value,
+    // An explicit-id message can share its text with a source-text one, so its key differs.
+    key: `${block.includes("#. js-lingui-explicit-id") ? "explicit-id:" : ""}${msgctxt ? `${msgctxt}\u0004` : ""}${id.value}`,
     msgctxt,
     msgid: id.value,
     notes: block.split("\n").filter((line) => line.startsWith("#.") || line.startsWith("#:")),
@@ -66,6 +68,13 @@ export function translationsOf(po: string): Record<string, string> {
   );
 }
 
+// Lingui's formatter breaks a value after each newline onto continuation lines.
+const poString = (value: string) =>
+  value
+    .split(/(?<=\n)(?!$)/)
+    .map((line) => JSON.stringify(line))
+    .join("\n");
+
 export function applyTranslations(po: string, translations: Record<string, unknown>) {
   let filled = 0;
   const blocks = po.split("\n\n").map((block) => {
@@ -75,7 +84,7 @@ export function applyTranslations(po: string, translations: Record<string, unkno
     if (typeof value !== "string" || !value.trim()) return block;
     filled++;
     const [start, end] = entry.msgstrAt;
-    return `${block.slice(0, start)}msgstr ${JSON.stringify(value)}${block.slice(end)}`;
+    return `${block.slice(0, start)}msgstr ${poString(value)}${block.slice(end)}`;
   });
   return { po: blocks.join("\n\n"), filled };
 }
