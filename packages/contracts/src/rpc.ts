@@ -164,6 +164,7 @@ import {
 } from "./integration-settings.js";
 import {
   BotMcpServerSchema,
+  McpOAuthClientSchema,
   McpServerConfigInput,
   McpServerSchema,
   McpSourcePresetSchema,
@@ -1159,6 +1160,8 @@ export const appContract = {
           z.union([
             z.object({ id: Id, config: McpServerConfigInput }),
             z.object({ id: Id, secret: z.string().min(1).max(16384) }),
+            /** Saves a client for the server and keeps the rest as stored. */
+            z.object({ id: Id, oauthClient: McpOAuthClientSchema }),
           ]),
         )
         .output(McpServerSchema),

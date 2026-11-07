@@ -1723,6 +1723,27 @@ describe("MCP pre-registered OAuth client", () => {
     });
   });
 
+  it("saves only a client for a server, keeping its stored headers", async () => {
+    const { client, material } = harness();
+    await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: { "x-team": "fake-team" },
+    });
+
+    await client.mcp.servers.update({
+      id: "server-1",
+      oauthClient: { clientId: "client-2.apps.example.test", clientSecret: "client-secret" },
+    });
+
+    expect(material()).toMatchObject({
+      headers: { "x-team": "fake-team" },
+      oauthClient: { client_id: "client-2.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+
   it("reports a second server with the same name as a conflict", async () => {
     const { client, prisma } = harness();
     vi.mocked(prisma.mcpServer.create).mockRejectedValueOnce(

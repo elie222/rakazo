@@ -293,7 +293,9 @@ export function mcpRoutes(ctx: RouterContext) {
                     transport: existing.transport as "streamable_http" | "sse",
                     endpoint: existing.endpoint!,
                     headers: (existingMaterial.headers ?? {}) as Record<string, string>,
-                    secret: input.secret,
+                    ...("secret" in input
+                      ? { secret: input.secret }
+                      : { oauthClient: input.oauthClient }),
                   };
             if (!("config" in input) && existing.transport === "stdio") {
               throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
@@ -691,10 +693,12 @@ export function mcpRoutes(ctx: RouterContext) {
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
             });
+            // A bot removed since the sign-in began has nothing to link. Any other failure fails
+            // the sign-in: signing in again finds the server connected and links the bot then.
             if (botId)
-              await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) =>
-                getLogger().error("mcp assignment after oauth failed", error),
-              );
+              await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) => {
+                if (!(error instanceof IsolationError)) throw error;
+              });
             // A check from before the sign-in would otherwise still read as failing. Only this
             // sign-in's revision: an edit since then has its own health and its own check.
             await recordMcpServerHealth(

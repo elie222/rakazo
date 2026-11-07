@@ -39,8 +39,6 @@ export function McpOAuthClientForm({
   }, []);
 
   if (!server.endpoint || server.transport === "stdio") return null;
-  const endpoint = server.endpoint;
-  const transport = server.transport;
 
   async function save() {
     setBusy(true);
@@ -48,20 +46,7 @@ export function McpOAuthClientForm({
     try {
       await rpc("mcp/servers/update", {
         id: server.id,
-        config: {
-          slug: server.slug,
-          name: server.name,
-          description: server.description,
-          enabled: server.enabled,
-          transport,
-          endpoint,
-          // Blank values keep the stored headers; the secret is kept when omitted.
-          headers: Object.fromEntries(server.headerKeys.map((key) => [key, ""])),
-          oauthClient: {
-            clientId: clientId.trim(),
-            clientSecret: clientSecret || undefined,
-          },
-        },
+        oauthClient: { clientId: clientId.trim(), clientSecret: clientSecret || undefined },
       });
     } catch (reason) {
       setError(errorText(reason, t("Could not connect")));

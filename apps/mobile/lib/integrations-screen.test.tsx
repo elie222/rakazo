@@ -1177,16 +1177,7 @@ it("saves a client ID for a server that cannot register Rakazo, then signs in", 
 
   expect(state.rpc).toHaveBeenCalledWith("mcp/servers/update", {
     id: "client",
-    config: {
-      slug: "client-server",
-      name: "Client server",
-      description: "",
-      enabled: true,
-      transport: "streamable_http",
-      endpoint: "https://mcp.client.example/mcp",
-      headers: { "x-team": "" },
-      oauthClient: { clientId: "client-1", clientSecret: "secret-1" },
-    },
+    oauthClient: { clientId: "client-1", clientSecret: "secret-1" },
   });
   expect(signInToMcpServer).toHaveBeenCalledWith("client");
 });
