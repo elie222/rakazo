@@ -117,16 +117,19 @@ import {
 
 loadRootEnv();
 
+// Bundle the build context next to the supervisor so it can build the probe
+// image on the Docker host when restricted egress is first used.
+const attestContext = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../egress-attest",
+);
+
 if (process.argv.includes("--print-attest-tag")) {
   // Offline installs cannot build the attestation image on the Docker host;
   // this prints the exact content-hash tag to build elsewhere and preload.
   // Handled before any supervisor configuration, so a plain repository
   // checkout without credentials can run it.
-  process.stdout.write(
-    `${expectedAttestImage(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../egress-attest"),
-    )}\n`,
-  );
+  process.stdout.write(`${expectedAttestImage(attestContext)}\n`);
   process.exit(0);
 }
 
@@ -136,12 +139,6 @@ const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
 const ensureComputerImage = computerImageEnsurer(docker, COMPUTER_IMAGE, computerContext);
-// Bundle the build context next to the supervisor so it can build the probe
-// image on the Docker host when restricted egress is first used.
-const attestContext = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../egress-attest",
-);
 const ensureAttestImage = attestImageEnsurer(docker, attestContext);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
