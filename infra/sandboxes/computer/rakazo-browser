@@ -460,7 +460,24 @@ if gpu_usable; then
     esac
   done
 fi
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage $GPU_FLAGS --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
+# The account's language arrives as LANGUAGE, which Chrome on Linux reads for its
+# own language (it ignores --lang). For the languages pages see, it reads LANGUAGE
+# only when it creates a profile and keeps that profile's list afterwards, so a
+# saved profile gets the account's language through --accept-lang on each start.
+LANGUAGE_FLAGS=""
+language="${LANGUAGE:-}"
+language="$(printf '%s' "${language%%:*}" | tr _ -)"
+case "$language" in
+  ''|-*|*[!A-Za-z0-9-]*) ;;
+  *)
+    base="${language%%-*}"
+    languages="$language"
+    [ "$base" = "$language" ] || languages="$languages,$base"
+    [ "$base" = en ] || languages="$languages,en-US,en"
+    LANGUAGE_FLAGS="--accept-lang=$languages"
+    ;;
+esac
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage $GPU_FLAGS $LANGUAGE_FLAGS --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

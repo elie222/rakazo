@@ -189,6 +189,16 @@ mounts, for example from a systemd mount unit the share's unit depends on). The 
 exist on the Docker host. Recreate the supervisor after a change; each computer picks the new
 set up on its next provision, which replaces it.
 
+## Time zone and language
+
+Each computer runs in its owner's time zone and app language when the account has them: the
+supervisor sets `TZ` and `LANGUAGE` on the container, and the browser offers pages that language
+(`Accept-Language` and `navigator.languages`), also for a browser profile saved earlier. Without
+them, the computer stays on UTC and the browser's default language. A changed time zone or
+language replaces the computer on its next start, so after upgrading, each computer whose owner
+has either set is replaced once. The home and saved browser profiles are kept. A custom computer
+image should not set `TZ` or `LANGUAGE`: the computer gets them from the account.
+
 ## GPU for the browser
 
 Computers render pages in software by default. To let the bot's browser use a host GPU, pass one

@@ -9,6 +9,8 @@ import {
 import type Docker from "dockerode";
 import type { ComputerGpu } from "./computer-gpu.js";
 import { computerGpuHostConfig } from "./computer-gpu.js";
+import type { ComputerLocale } from "./computer-locale.js";
+import { computerLocaleEnv } from "./computer-locale.js";
 
 /**
  * The computer image. RAKAZO_COMPUTER_IMAGE_TAG is appended the way Compose does, so a
@@ -584,6 +586,7 @@ export interface ComputerCreateInput {
   dns?: string[];
   mounts?: ComputerMount[];
   gpu?: ComputerGpu;
+  locale?: ComputerLocale;
 }
 
 interface PointerInput {
@@ -615,6 +618,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
+      ...computerLocaleEnv(input.locale),
     ],
     Labels: {
       "rakazo.managed": "true",

@@ -11,6 +11,11 @@ import { z } from "zod";
 import { computerControlEndpoint, controlDesktop } from "./computer-control.js";
 import { computerGpuMatches, resolveComputerGpu } from "./computer-gpu.js";
 import {
+  computerLocaleFields,
+  computerLocaleMatches,
+  resolveComputerLocale,
+} from "./computer-locale.js";
+import {
   assertComputerMountSources,
   assertVolumeSubpathSupport,
   COMPUTER_GID,
@@ -148,8 +153,10 @@ app.post("/computers", async (c) => {
       botId: z.string().min(1),
       homePath: z.string().min(1),
       spaceId: z.string().min(1),
+      ...computerLocaleFields,
     })
     .parse(await c.req.json());
+  const locale = resolveComputerLocale(body);
   try {
     assertRequestIdentity(headers.botId, headers.spaceId, {
       botId: body.botId,
@@ -254,6 +261,8 @@ app.post("/computers", async (c) => {
           computerMountsMatch(info, computerMounts) &&
           // So is the render node with its group.
           computerGpuMatches(info, gpu) &&
+          // So are the owner's time zone and language.
+          computerLocaleMatches(info.Config.Env, locale) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -318,6 +327,7 @@ app.post("/computers", async (c) => {
           dns: computerDns,
           mounts: computerMounts,
           gpu,
+          locale,
         });
         let container: Docker.Container | undefined;
         const removeNamedComputer = () =>
