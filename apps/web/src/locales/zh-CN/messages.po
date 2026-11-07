@@ -262,11 +262,11 @@ msgstr "{name} 已停止"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keep their own model"
-msgstr ""
+msgstr "{names} 保留自己的模型"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keeps its own model"
-msgstr ""
+msgstr "{names} 保留自己的模型"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -561,7 +561,7 @@ msgstr "命令的输出"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
-msgstr ""
+msgstr "由模型批准常规操作，其余操作会询问你。"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -587,11 +587,11 @@ msgstr "关于{label}"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Access key ID"
-msgstr ""
+msgstr "访问密钥 ID"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Access key secret"
-msgstr ""
+msgstr "访问密钥 Secret"
 
 #: src/pages/McpServerForm.tsx
 msgid "Access token (optional)"
@@ -631,7 +631,7 @@ msgstr "{0} 的操作"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Actions for {name}"
-msgstr ""
+msgstr "{name} 的操作"
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
@@ -674,7 +674,7 @@ msgstr "请在设置中添加模型后再使用。"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Add a note"
-msgstr ""
+msgstr "添加备注"
 
 #: src/components/PasskeyOffer.tsx
 msgid "Add a passkey for faster sign-in?"
@@ -752,7 +752,7 @@ msgstr "添加提供方"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add rule"
-msgstr ""
+msgstr "添加规则"
 
 #: src/pages/McpServerForm.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -794,11 +794,11 @@ msgstr "正在添加…"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address"
-msgstr ""
+msgstr "地址"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Address line 2"
-msgstr ""
+msgstr "地址第 2 行"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Adds"
@@ -855,7 +855,7 @@ msgstr "全部时间"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
-msgstr ""
+msgstr "允许"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Allow cross-space bot communication"
@@ -899,7 +899,7 @@ msgstr "始终处理"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always allow"
-msgstr ""
+msgstr "始终允许"
 
 #: src/components/AskCard.tsx
 msgid "Always allow {site}"
@@ -915,7 +915,7 @@ msgstr "始终允许"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Always ask"
-msgstr ""
+msgstr "始终询问"
 
 #: src/components/markdown-link-prompt.tsx
 msgid "Always open {site}"
@@ -1012,11 +1012,11 @@ msgstr "API 密钥"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "API token"
-msgstr ""
+msgstr "API 令牌"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "API URL"
-msgstr ""
+msgstr "API URL"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -1096,11 +1096,11 @@ msgstr "询问"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks before sending, spending or changing anything in your apps."
-msgstr ""
+msgstr "在你的应用中发送、花费或更改任何内容前都会询问。"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Asks only before purchases and the first use of your computer. Only Block rules apply."
-msgstr ""
+msgstr "仅在购买和首次使用你的电脑前询问。只有“阻止”规则生效。"
 
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
@@ -1242,7 +1242,7 @@ msgstr "账单"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Billing address"
-msgstr ""
+msgstr "账单地址"
 
 #: src/components/ModelCredits.tsx
 msgid "Billing period"
@@ -1250,7 +1250,7 @@ msgstr "账单周期"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
-msgstr ""
+msgstr "阻止"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/lib/ticket-status.ts
@@ -1304,7 +1304,7 @@ msgstr "Bot 屏幕预览"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Bot style"
-msgstr ""
+msgstr "Bot 风格"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 #: src/pages/shell/use-palette-actions.ts
@@ -1333,7 +1333,7 @@ msgstr "每个 Bot 都有自己的电脑和浏览器"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bots with their own model"
-msgstr ""
+msgstr "使用自己模型的 Bot"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
@@ -1384,7 +1384,7 @@ msgstr "调用"
 
 #: src/pages/settings-nav.ts
 msgid "Calls, dictation, and replies read aloud."
-msgstr ""
+msgstr "通话、听写和朗读回复。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
@@ -1429,7 +1429,7 @@ msgstr "取消新建群组"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Cancel open invites"
-msgstr ""
+msgstr "取消待处理的邀请"
 
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
@@ -1454,11 +1454,11 @@ msgstr "已取消的试用没有电脑时长。"
 
 #: src/components/vault/kinds.tsx
 msgid "Card"
-msgstr ""
+msgstr "银行卡"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Card number"
-msgstr ""
+msgstr "卡号"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -1466,7 +1466,7 @@ msgstr "卡片视图"
 
 #: src/components/vault/kinds.tsx
 msgid "Cards"
-msgstr ""
+msgstr "银行卡"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -1519,7 +1519,7 @@ msgstr "在 Slack 中与你的机器人聊天。"
 
 #: src/pages/settings-nav.ts
 msgid "Chat with your bots from other apps."
-msgstr ""
+msgstr "在其他应用中与你的 Bot 聊天。"
 
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
@@ -1597,7 +1597,7 @@ msgstr "选择模型"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose a model that can see the screen"
-msgstr ""
+msgstr "选择能看到屏幕的模型"
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1627,7 +1627,7 @@ msgstr "选择如何使用 Rakazo"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "City"
-msgstr ""
+msgstr "城市"
 
 #: src/components/BotEmailAddressField.tsx
 msgid "Claim"
@@ -1856,7 +1856,7 @@ msgstr "电脑操作模型"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
-msgstr ""
+msgstr "电脑操作模型…"
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2008,11 +2008,11 @@ msgstr "连接器"
 
 #: src/components/vault/kinds.tsx
 msgid "Contact"
-msgstr ""
+msgstr "联系人"
 
 #: src/components/vault/kinds.tsx
 msgid "Contacts"
-msgstr ""
+msgstr "联系人"
 
 #: src/pages/shell/agent-import-plan.tsx
 #: src/pages/shell/import-status.ts
@@ -2089,7 +2089,7 @@ msgstr "复制图表源代码"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Copy invite link"
-msgstr ""
+msgstr "复制邀请链接"
 
 #: src/components/InviteDialog.tsx
 #: src/components/pages/PublicPageShell.tsx
@@ -2135,7 +2135,7 @@ msgstr "无法授权此应用"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not cancel invites"
-msgstr ""
+msgstr "无法取消邀请"
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Could not change"
@@ -2226,7 +2226,7 @@ msgstr "无法创建群组"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not create invite link"
-msgstr ""
+msgstr "无法创建邀请链接"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
@@ -2331,7 +2331,7 @@ msgstr "无法安装插件"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not leave space"
-msgstr ""
+msgstr "无法退出工作区"
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
@@ -2362,7 +2362,7 @@ msgstr "无法加载 Bot。请重新加载后再试。"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Could not load computer settings"
-msgstr ""
+msgstr "无法加载电脑设置"
 
 #: src/components/VaultSettings.tsx
 msgid "Could not load credentials."
@@ -2380,7 +2380,7 @@ msgstr "无法加载 MCP 服务器"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not load members"
-msgstr ""
+msgstr "无法加载成员"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2483,7 +2483,7 @@ msgstr "无法移除连接器"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Could not remove member"
-msgstr ""
+msgstr "无法移除成员"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -2554,7 +2554,7 @@ msgstr "无法保存自动审核"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Could not save computer settings"
-msgstr ""
+msgstr "无法保存电脑设置"
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2717,7 +2717,7 @@ msgstr "无法加载钱包"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
-msgstr ""
+msgstr "无法更新 Bot 风格"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
@@ -2733,7 +2733,7 @@ msgstr "无法更新钱包"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Country"
-msgstr ""
+msgstr "国家/地区"
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/pages/Board.tsx
@@ -3021,7 +3021,7 @@ msgstr "桌面应用"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Desktop ID"
-msgstr ""
+msgstr "桌面 ID"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
@@ -3058,7 +3058,7 @@ msgstr "你是不是想输入 <0>{emailSuggestion}</0>？"
 
 #: src/lib/dictation.ts
 msgid "Didn't catch that."
-msgstr ""
+msgstr "没听清。"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Disable a tool"
@@ -3259,7 +3259,7 @@ msgstr "启用 {0}"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "End user ID"
-msgstr ""
+msgstr "终端用户 ID"
 
 #: src/lib/billing.ts
 msgid "Ends {day}"
@@ -3298,7 +3298,7 @@ msgstr "测试前请输入 API 密钥。"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Environment ID"
-msgstr ""
+msgstr "环境 ID"
 
 #: src/pages/McpServerForm.tsx
 msgid "Environment variables"
@@ -3382,7 +3382,7 @@ msgstr "这里的每个人都能看到它的聊天、机器人和记忆"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr ""
+msgstr "此 Bot 所在工作区的所有人都能读取它从 {linkApp} 收到的对话。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -3403,15 +3403,15 @@ msgstr "已过期"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Expires"
-msgstr ""
+msgstr "到期"
 
 #: src/components/vault/kinds.tsx
 msgid "Expires {expiry}"
-msgstr ""
+msgstr "{expiry} 到期"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Expiry"
-msgstr ""
+msgstr "有效期"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-settings-sections.tsx
@@ -3602,7 +3602,7 @@ msgstr "来自 GitHub"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Full name"
-msgstr ""
+msgstr "全名"
 
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
@@ -3615,11 +3615,11 @@ msgstr "网关 ID"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Gateway token"
-msgstr ""
+msgstr "网关令牌"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Gateway URL"
-msgstr ""
+msgstr "网关 URL"
 
 #: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
@@ -3761,7 +3761,7 @@ msgstr "按住说话，松开发送"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Home"
-msgstr ""
+msgstr "家"
 
 #: src/lib/cron.ts
 msgid "hour"
@@ -4036,7 +4036,7 @@ msgstr "键盘快捷键"
 
 #: src/components/vault/kinds.tsx
 msgid "Keys"
-msgstr ""
+msgstr "密钥"
 
 #: src/components/vault/LoginFieldsInput.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -4069,7 +4069,7 @@ msgstr "退出"
 #. placeholder {0}: space.name
 #: src/components/SpaceMembersSettings.tsx
 msgid "Leave {0}?"
-msgstr ""
+msgstr "要退出 {0} 吗？"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Leave space"
@@ -4193,15 +4193,15 @@ msgstr "退出登录"
 
 #: src/components/vault/kinds.tsx
 msgid "Login"
-msgstr ""
+msgstr "登录信息"
 
 #: src/components/vault/kinds.tsx
 msgid "Logins"
-msgstr ""
+msgstr "登录信息"
 
 #: src/pages/settings-nav.ts
 msgid "Logins and keys your bots can use."
-msgstr ""
+msgstr "你的 Bot 可以使用的登录信息和密钥。"
 
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
@@ -4419,7 +4419,7 @@ msgstr "已发给 {peer}"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Messages"
-msgstr ""
+msgstr "消息"
 
 #: src/pages/settings-nav.ts
 msgid "Messaging"
@@ -4582,7 +4582,7 @@ msgstr "已静音"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "My computers"
-msgstr ""
+msgstr "我的电脑"
 
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4606,7 +4606,7 @@ msgstr "名称"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Name on card"
-msgstr ""
+msgstr "持卡人姓名"
 
 #: src/pages/shell/agent-import-plan.tsx
 msgid "Name this bot"
@@ -4672,7 +4672,7 @@ msgstr "新消息"
 
 #: src/components/VaultSettings.tsx
 msgid "New API key"
-msgstr ""
+msgstr "新建 API 密钥"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4683,15 +4683,15 @@ msgstr "新建 Bot"
 
 #: src/components/VaultSettings.tsx
 msgid "New card"
-msgstr ""
+msgstr "新建银行卡"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "New computers run on"
-msgstr ""
+msgstr "新电脑运行于"
 
 #: src/components/VaultSettings.tsx
 msgid "New contact"
-msgstr ""
+msgstr "新建联系人"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -4705,7 +4705,7 @@ msgstr "新建群聊"
 
 #: src/components/VaultSettings.tsx
 msgid "New login"
-msgstr ""
+msgstr "新建登录信息"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New messages"
@@ -4744,7 +4744,7 @@ msgstr "新建工单"
 
 #: src/components/VaultSettings.tsx
 msgid "New variable"
-msgstr ""
+msgstr "新建变量"
 
 #: src/pages/shell/chat-find-bar.tsx
 msgid "Next match"
@@ -4791,7 +4791,7 @@ msgstr "已停用"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
 msgid "No matches"
-msgstr ""
+msgstr "无匹配结果"
 
 #: src/pages/Artifacts.tsx
 msgid "No matching artifacts"
@@ -4881,7 +4881,7 @@ msgstr "无触发器"
 #: src/components/SpendingLimitSettings.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "None"
-msgstr ""
+msgstr "无"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4945,7 +4945,7 @@ msgstr "通知"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Number"
-msgstr ""
+msgstr "号码"
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -5285,7 +5285,7 @@ msgstr "个人"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Phone"
-msgstr ""
+msgstr "电话"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -5607,7 +5607,7 @@ msgstr "正在刷新…"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Region"
-msgstr ""
+msgstr "区域"
 
 #: src/lib/user-error.ts
 msgid "Registration is closed"
@@ -5667,11 +5667,11 @@ msgstr "把 {0} 移出群组"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Remove {label}"
-msgstr ""
+msgstr "移除 {label}"
 
 #: src/components/SpaceMembersSettings.tsx
 msgid "Remove {memberName}?"
-msgstr ""
+msgstr "要移除 {memberName} 吗？"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -5773,11 +5773,11 @@ msgstr "替换密钥"
 #: src/components/SecretAskCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Replaces the login saved for {0}"
-msgstr ""
+msgstr "替换 {0} 已保存的登录信息"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "Replies"
-msgstr ""
+msgstr "回复"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Replies to"
@@ -5935,7 +5935,7 @@ msgstr "已撤销"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Root filesystem"
-msgstr ""
+msgstr "根文件系统"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Rotate key"
@@ -6171,11 +6171,11 @@ msgstr "搜索技能"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Search tools"
-msgstr ""
+msgstr "搜索工具"
 
 #: src/components/VaultSettings.tsx
 msgid "Search Vault"
-msgstr ""
+msgstr "搜索保管库"
 
 #. placeholder {0}: filters.query.trim()
 #: src/pages/ActivityList.tsx
@@ -6198,7 +6198,7 @@ msgstr "安全与运维"
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Security code"
-msgstr ""
+msgstr "安全码"
 
 #: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
@@ -6446,7 +6446,7 @@ msgstr "网站"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Sites you sign in to stay signed in for everyone in this space"
-msgstr ""
+msgstr "你登录的网站会对此工作区的所有人保持登录"
 
 #: src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Skill"
@@ -6641,7 +6641,7 @@ msgstr "正在开始…"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "State or region"
-msgstr ""
+msgstr "州/省/地区"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Board.tsx
@@ -6780,7 +6780,7 @@ msgstr "接管控制权"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Target"
-msgstr ""
+msgstr "目标"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
@@ -6805,7 +6805,7 @@ msgstr "Teams 消息"
 
 #: src/components/ComputerProviderSettings.tsx
 msgid "Template"
-msgstr ""
+msgstr "模板"
 
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -6847,7 +6847,7 @@ msgstr "Bot 可以使用该文件，但看不到图片内容。"
 
 #: src/components/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
-msgstr ""
+msgstr "Bot 的浏览器会对此工作区的所有人保持登录"
 
 #: src/lib/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -6855,7 +6855,7 @@ msgstr "浏览器反复断开麦克风连接。请重新启动语音输入。"
 
 #: src/pages/settings-nav.ts
 msgid "The computer your bots work on."
-msgstr ""
+msgstr "你的 Bot 工作所用的电脑。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -7010,7 +7010,7 @@ msgstr "此导入已使用过。请重新选择文件。"
 
 #: src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
-msgstr ""
+msgstr "此邀请链接已失效。"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -7220,7 +7220,7 @@ msgstr "为防止滥用，试用期的时长较少。"
 
 #: src/components/ErrorNotice.tsx
 msgid "Troubleshoot"
-msgstr ""
+msgstr "故障排除"
 
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Trusted sites"
@@ -7245,11 +7245,11 @@ msgstr "周二"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn off"
-msgstr ""
+msgstr "关闭"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Turn on"
-msgstr ""
+msgstr "开启"
 
 #: src/components/vault/VaultItemDetail.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -7422,7 +7422,7 @@ msgstr "请使用字母、数字、点、短横线或下划线"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use main model"
-msgstr ""
+msgstr "使用主模型"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -7480,15 +7480,15 @@ msgstr "值"
 #: src/components/vault/kinds.tsx
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Variable"
-msgstr ""
+msgstr "变量"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "Variable name"
-msgstr ""
+msgstr "变量名"
 
 #: src/components/vault/kinds.tsx
 msgid "Variables"
-msgstr ""
+msgstr "变量"
 
 #: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
@@ -7622,7 +7622,7 @@ msgstr "监视内容"
 
 #: src/pages/settings-nav.ts
 msgid "What your bots remember between chats."
-msgstr ""
+msgstr "你的 Bot 在对话之间记住的内容。"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 #: src/pages/RoutineList.tsx
@@ -7635,7 +7635,7 @@ msgstr "收到邮件时"
 
 #: src/pages/settings-nav.ts
 msgid "When bots check with you before acting."
-msgstr ""
+msgstr "Bot 何时在行动前先征求你的确认。"
 
 #: src/pages/shell/bot-settings-sections.tsx
 msgid "When it finishes or needs input"
@@ -7663,11 +7663,11 @@ msgstr "Bot 应在哪里运行？"
 
 #: src/pages/settings-nav.ts
 msgid "Where your bots pay from."
-msgstr ""
+msgstr "你的 Bot 用什么付款。"
 
 #: src/pages/settings-nav.ts
 msgid "Which LLMs your bots use."
-msgstr ""
+msgstr "你的 Bot 使用哪些 LLM。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Who can open this page"
@@ -7848,4 +7848,4 @@ msgstr "你的语音提供方拒绝了该密钥。"
 
 #: src/components/vault/VaultItemEditor.tsx
 msgid "ZIP or postal code"
-msgstr ""
+msgstr "邮政编码"

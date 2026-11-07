@@ -65,7 +65,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly listeners: Array<(event: Record<string, unknown>) => void> = [];
     private readonly prepareNextTurnWithContext?: (input: {
       context: { messages: unknown[] };
-    }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+    }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
     private readonly finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     private aborted = false;
 
@@ -73,7 +73,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       initialState: { tools: typeof fakeAgentState.tools; messages: unknown[] };
       prepareNextTurnWithContext?: (input: {
         context: { messages: unknown[] };
-      }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+      }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
       finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     }) {
       this.tools = options.initialState.tools;
@@ -87,12 +87,18 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       this.listeners.push(listener);
     }
 
+    // Messages the hook returns are appended before the next request, like steered ones.
+    private async prepareNextTurn() {
+      const update = await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+      fakeAgentState.steeredMessages.push(...(update?.messages ?? []));
+    }
+
     async prompt(prompt: string, images?: unknown[]) {
       fakeAgentState.promptInputs.push(prompt);
       fakeAgentState.promptImages.push(images ?? []);
       if (fakeAgentState.mode === "answer-then-stop") {
         // The model answers the steered message in text and stops.
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+        await this.prepareNextTurn();
         await this.finishTurn?.({
           message: {
             role: "assistant",
@@ -106,12 +112,8 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         return;
       }
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
-        if (fakeAgentState.mode === "two-boundaries") {
-          await this.prepareNextTurnWithContext?.({
-            context: { messages: [] },
-          });
-        }
+        await this.prepareNextTurn();
+        if (fakeAgentState.mode === "two-boundaries") await this.prepareNextTurn();
         fakeAgentState.preparedMessages = [...fakeAgentState.steeredMessages];
         return;
       }
