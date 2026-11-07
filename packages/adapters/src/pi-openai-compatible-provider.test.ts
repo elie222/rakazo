@@ -13,6 +13,7 @@ import { buildModelConnectPlaintext } from "./model-connect.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   assertAllowedOpenAiCompatibleUrl,
+  COMPATIBLE_ENDPOINT_PRESETS,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -22,6 +23,7 @@ import {
   OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
   openAiCompatibleCatalogProvider,
   prepareOpenAiCompatibleConnect,
+  probeOpenAiCompatibleModelList,
   probeOpenAiCompatibleModels,
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
@@ -1058,6 +1060,22 @@ describe("built-in public compatible host", () => {
       assertAllowedOpenAiCompatibleUrl("https://other.test", { allowPublic: true }).hostname,
     ).toBe("other.test");
   });
+  it("allows the DeepInfra preset host without the public gate", () => {
+    expect(
+      assertAllowedOpenAiCompatibleUrl("https://api.deepinfra.com/v1/openai", {
+        allowPublic: false,
+      }).href,
+    ).toBe("https://api.deepinfra.com/v1/openai");
+    for (const url of [
+      "http://api.deepinfra.com/v1/openai",
+      "https://api.deepinfra.com:8443/v1/openai",
+      "https://deepinfra.com/v1/openai",
+      "https://evil.api.deepinfra.com/v1/openai",
+      "https://api.deepinfra.com.evil.test/v1/openai",
+    ]) {
+      expect(() => assertAllowedOpenAiCompatibleUrl(url, { allowPublic: false })).toThrow();
+    }
+  });
   it("still rejects a private DNS answer for the built-in host", async () => {
     const safeFetch = createOpenAiCompatibleFetch(
       undefined,
@@ -1098,6 +1116,110 @@ describe("built-in public compatible host", () => {
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
     expect(transport).toHaveBeenCalledTimes(2);
   });
+  describe("DeepInfra preset", () => {
+    const deepInfra = "https://api.deepinfra.com/v1/openai";
+    const listing = {
+      object: "list",
+      data: [
+        {
+          id: "fixture/chat",
+          metadata: {
+            context_length: 131072,
+            pricing: { input_tokens: 0.3, output_tokens: 1, cache_read_tokens: 0.1 },
+            tags: ["chat", "vision", "reasoning_effort", "prompt_cache"],
+          },
+        },
+        { id: "fixture/always-thinking", metadata: { tags: ["chat", "reasoning"] } },
+        { id: "fixture/image-gen", metadata: { tags: ["image-gen"] } },
+        { id: "fixture/embed", metadata: { tags: ["embed"] } },
+      ],
+    };
+
+    it("verifies the key on an authenticated endpoint, then lists chat models with details", async () => {
+      const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.redirect).toBe("error");
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
+        return String(input) === "https://api.deepinfra.com/v1/me"
+          ? Response.json({})
+          : Response.json(listing);
+      });
+      await expect(
+        probeOpenAiCompatibleModelList(
+          { baseUrl: deepInfra, apiKey: "fake-key" },
+          transport,
+          undefined,
+          { allowPublic: false },
+        ),
+      ).resolves.toEqual({
+        models: ["fixture/chat", "fixture/always-thinking"],
+        details: [
+          {
+            id: "fixture/chat",
+            supportsImages: true,
+            reasoning: true,
+            contextWindow: 131072,
+            cacheCapabilities: {
+              scope: "account",
+              retentionMode: "short",
+              inputCostPerMillion: 0.3,
+              readCostPerMillion: 0.1,
+            },
+          },
+          { id: "fixture/always-thinking", supportsImages: false, reasoning: false },
+        ],
+      });
+      expect(transport.mock.calls.map(([input]) => String(input))).toEqual([
+        "https://api.deepinfra.com/v1/me",
+        "https://api.deepinfra.com/v1/openai/models",
+      ]);
+      await expect(
+        probeOpenAiCompatibleModels({ baseUrl: deepInfra, apiKey: "fake-key" }, transport),
+      ).resolves.toEqual(["fixture/chat", "fixture/always-thinking"]);
+    });
+
+    it.each([401, 403])(
+      "rejects an invalid key (%s) although the model list is public",
+      async (status) => {
+        const transport = vi.fn(async (input: RequestInfo | URL) =>
+          String(input).endsWith("/v1/me")
+            ? new Response(null, { status })
+            : Response.json(listing),
+        );
+        await expect(
+          probeOpenAiCompatibleModelList({ baseUrl: deepInfra, apiKey: "fake-key" }, transport),
+        ).rejects.toThrow("API key was rejected by the provider.");
+        expect(transport).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("requires a key and reports an unreachable check as retryable", async () => {
+      const unused = vi.fn();
+      await expect(verifyOpenAiCompatibleApiKey({ baseUrl: deepInfra }, unused)).rejects.toThrow(
+        "API key was rejected",
+      );
+      expect(unused).not.toHaveBeenCalled();
+      for (const transport of [
+        vi.fn(async () => new Response(null, { status: 503 })),
+        vi.fn(async () => {
+          throw new TypeError("network down");
+        }),
+      ]) {
+        await expect(
+          verifyOpenAiCompatibleApiKey({ baseUrl: deepInfra, apiKey: "fake-key" }, transport),
+        ).rejects.toThrow("Could not verify the API key. Try again.");
+      }
+    });
+
+    it("reads DeepInfra metadata only for the DeepInfra preset", async () => {
+      const transport = vi.fn(async () => Response.json(listing));
+      await expect(
+        probeOpenAiCompatibleModelList({ baseUrl: "https://other.test/v1" }, transport),
+      ).resolves.toEqual({
+        models: ["fixture/chat", "fixture/always-thinking", "fixture/image-gen", "fixture/embed"],
+      });
+    });
+  });
+
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();
     await verifyOpenAiCompatibleApiKey({ baseUrl: "https://other.test/v1" }, transport);
@@ -1105,6 +1227,20 @@ describe("built-in public compatible host", () => {
       verifyOpenAiCompatibleApiKey({ baseUrl: "https://ollama.com/v1" }, transport),
     ).rejects.toThrow("API key was rejected");
     expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("does not check keys for a hosted preset that names no key check", async () => {
+    COMPATIBLE_ENDPOINT_PRESETS.push({
+      name: "Fixture",
+      baseUrl: "https://hosted.example.test/v1",
+    });
+    try {
+      const transport = vi.fn();
+      await verifyOpenAiCompatibleApiKey({ baseUrl: "https://hosted.example.test/v1" }, transport);
+      expect(transport).not.toHaveBeenCalled();
+    } finally {
+      COMPATIBLE_ENDPOINT_PRESETS.pop();
+    }
   });
 });
 

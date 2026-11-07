@@ -1,4 +1,5 @@
 import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
 
 /** Every hosted service the catalog offers for compatible connections. */
 export function compatibleEndpointPresets(
@@ -23,6 +24,23 @@ export function matchCompatibleEndpointPreset(
     return undefined;
   }
   return presets.find((preset) => preset.baseUrl === normalized);
+}
+
+/**
+ * Base URLs of the offered hosted services that already have a saved connection. A service is
+ * offered again only until one is saved, however many other compatible connections there are.
+ */
+export function savedCompatibleEndpointPresets(
+  presets: readonly CompatibleEndpointPreset[],
+  credentials: readonly { provider: string; baseUrl?: string }[],
+): Set<string> {
+  const saved = new Set<string>();
+  for (const credential of credentials) {
+    if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    const preset = matchCompatibleEndpointPreset(presets, credential.baseUrl);
+    if (preset) saved.add(preset.baseUrl);
+  }
+  return saved;
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =

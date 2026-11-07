@@ -3824,6 +3824,10 @@ msgstr "La saisie d’images n’est pas configurée pour ce modèle."
 msgid "Image upload area"
 msgstr "Zone de téléchargement d'image"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "Images"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "Importer"
@@ -4303,6 +4307,10 @@ msgstr "Maximum d'images par requête"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "Jetons de sortie maximum"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "Le maximum de jetons de sortie doit être inférieur à la limite de contexte."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Il profite de {weeks} semaines gratuites."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

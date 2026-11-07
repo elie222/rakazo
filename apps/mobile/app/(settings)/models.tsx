@@ -2,7 +2,7 @@ import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  savedCompatibleEndpointMatches,
+  savedCompatibleEndpointPresets,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -159,6 +159,7 @@ export default function Models() {
       }),
     );
 
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
   /** Every provider, popular first, plus the hosted presets of the compatible one. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
@@ -170,30 +171,26 @@ export default function Models() {
       });
     }
     const all = [...grouped.values()];
-    for (const preset of compatibleEndpointPresets(catalog))
+    for (const preset of endpointPresets)
       all.push({ id: OPENAI_COMPATIBLE_PROVIDER_ID, name: preset.name, baseUrl: preset.baseUrl });
     return popularModelProvidersFirst(
       all,
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog]);
+  }, [catalog, endpointPresets]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    const savedPreset = (baseUrl: string) =>
-      credentials.some(
-        (entry) =>
-          entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-          savedCompatibleEndpointMatches(entry.baseUrl ?? "", baseUrl),
-      );
+    // A hosted preset is offered once, until a connection to its endpoint is saved.
+    const savedPresets = savedCompatibleEndpointPresets(endpointPresets, credentials);
     return allProviders.filter((provider) =>
       provider.baseUrl
-        ? !savedPreset(provider.baseUrl)
+        ? !savedPresets.has(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
-  }, [allProviders, credentials]);
+  }, [allProviders, credentials, endpointPresets]);
 
   const providerKey = (provider: ConnectableProvider) =>
     `connect:${provider.id}:${provider.baseUrl ?? ""}`;

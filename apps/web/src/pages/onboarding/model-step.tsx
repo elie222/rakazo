@@ -19,6 +19,7 @@ import {
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { modelCapabilityHint } from "../../lib/model-capability-hint";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -254,6 +255,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
 function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
   const { t } = useLingui();
   const {
+    applyProbedModelFields,
     baseUrl,
     contextWindow,
     headerRows,
@@ -264,6 +266,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
     modelId,
     preflightFailure,
     preflightTarget,
+    probeInfoById,
     probeModels,
     probeServerModels,
     probing,
@@ -321,8 +324,10 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
               invalidatePreflight();
               setManualModelId(next === CUSTOM_MODEL_OPTION);
               setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
+              if (next !== CUSTOM_MODEL_OPTION) applyProbedModelFields(next);
             }}
             otherValue={CUSTOM_MODEL_OPTION}
+            hint={(id) => modelCapabilityHint(probeInfoById.get(id))}
           />
         ) : (
           <Input
@@ -345,6 +350,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onClick={() => {
               setManualModelId(false);
               setModelId(probeModels[0] ?? "");
+              applyProbedModelFields(probeModels[0] ?? "");
               invalidatePreflight();
             }}
           >

@@ -25,11 +25,16 @@ vi.mock("../lib/rpc", () => ({
           id: "",
           label: "Custom",
           billing: "API key",
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
+          ],
         },
       ]),
       probeOpenAiCompatible: vi.fn(async () => ({
         models: Array.from({ length: 11 }, (_, index) => `found-${index}`),
       })),
+      connect: vi.fn(async () => ({})),
     },
   },
 }));
@@ -137,5 +142,125 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   ]);
   await act(async () => document.querySelector<HTMLElement>("[cmdk-item]")!.click());
   expect(document.querySelector('[aria-label="Models from server"]')?.textContent).toBe("found-10");
+  await act(async () => root.unmount());
+});
+
+it("connects DeepInfra with a required key and the model's discovered capabilities", async () => {
+  vi.mocked(rpc.models.list).mockResolvedValueOnce([
+    {
+      provider: "openai-compatible",
+      providerName: "OpenAI-compatible",
+      id: "",
+      label: "Custom",
+      billing: "API key",
+      endpointPresets: [{ name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" }],
+    },
+  ] as never);
+  vi.mocked(rpc.models.probeOpenAiCompatible).mockResolvedValueOnce({
+    models: ["vision-model", "text-model"],
+    details: [
+      {
+        id: "vision-model",
+        supportsImages: true,
+        reasoning: true,
+        contextWindow: 131072,
+        cacheCapabilities: { scope: "connection" as const },
+      },
+      { id: "text-model", supportsImages: false, reasoning: false, contextWindow: 32768 },
+    ],
+  });
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "DeepInfra")!
+      .click(),
+  );
+  const input = (selector: string) => document.querySelector<HTMLInputElement>(selector)!;
+  const change = async (element: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        element,
+        value,
+      );
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const button = (text: string) =>
+    [...document.querySelectorAll("button")].find((entry) => entry.textContent === text)!;
+  expect(input('input[aria-label="OpenAI-compatible server URL"]').value).toBe(
+    "https://api.deepinfra.com/v1/openai",
+  );
+  expect(document.body.textContent).not.toContain("Setup help");
+  const key = input('input[aria-label="API key"]');
+  expect(key.required).toBe(true);
+  await change(key, "fake-fixture-key");
+  await act(async () => button("Find models").click());
+  await act(async () =>
+    document.querySelector<HTMLElement>('[aria-label="Models from server"]')!.click(),
+  );
+  expect([...document.querySelectorAll("[cmdk-item]")].map((row) => row.textContent)).toEqual([
+    "vision-modelImages · Thinking",
+    "text-model",
+    "Other model…",
+  ]);
+  await act(async () => document.querySelectorAll<HTMLElement>("[cmdk-item]")[1]!.click());
+  await act(async () => button("Continue").click());
+  expect(rpc.models.connect).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      provider: "openai-compatible",
+      baseUrl: "https://api.deepinfra.com/v1/openai",
+      apiKey: "fake-fixture-key",
+      modelId: "text-model",
+      reasoning: false,
+      supportsImages: false,
+      contextWindow: 32768,
+      // The listing describes this model as having no prompt cache, which is sent as such.
+      cacheCapabilitiesByModel: { "text-model": null },
+    }),
+  );
+  expect(vi.mocked(rpc.models.connect).mock.lastCall?.[0]).not.toHaveProperty("cacheCapabilities");
+  await act(async () => root.unmount());
+});
+
+it("keeps Continue disabled for a hosted preset until its key is entered", async () => {
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.load({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "Ollama Cloud")!
+      .click(),
+  );
+  const continueButton = [...document.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Continue",
+  )!;
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="API key"]')?.required).toBe(
+    true,
+  );
+  expect(continueButton.disabled).toBe(true);
   await act(async () => root.unmount());
 });

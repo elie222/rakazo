@@ -613,6 +613,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "Introduce un número entero del 1 al 1000 para el límite de imágenes.",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "Introduce un número entero del 1 al {max} para el máximo de tokens de salida.",
+  "Maximum output tokens must be lower than the context limit.":
+    "El máximo de tokens de salida debe ser inferior al límite de contexto.",
   "Enter a whole number from 1 to {max} for the context limit.":
     "Introduce un número entero del 1 al {max} para el límite de contexto.",
   "Find models": "Buscar modelos",

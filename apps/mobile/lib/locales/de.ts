@@ -637,6 +637,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein.",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "Gib eine ganze Zahl von 1 bis {max} für die maximalen Ausgabetokens ein.",
+  "Maximum output tokens must be lower than the context limit.":
+    "Die maximalen Ausgabetokens müssen unter dem Kontextlimit liegen.",
   "Enter a whole number from 1 to {max} for the context limit.":
     "Gib eine ganze Zahl von 1 bis {max} für das Kontextlimit ein.",
   "Enter this code in your browser:": "Gib diesen Code im Browser ein:",

@@ -896,6 +896,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Context limit": "Лимит контекста",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "Введите целое число от 1 до {max} для максимума выходных токенов.",
+  "Maximum output tokens must be lower than the context limit.":
+    "Максимум выходных токенов должен быть меньше лимита контекста.",
   "Enter a whole number from 1 to {max} for the context limit.":
     "Введите целое число от 1 до {max} для лимита контекста.",
   "Supports images": "Поддерживает изображения",

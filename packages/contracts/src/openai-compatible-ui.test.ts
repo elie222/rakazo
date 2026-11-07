@@ -5,9 +5,11 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatibleConnectReady,
   savedCompatibleEndpointMatches,
+  savedCompatibleEndpointPresets,
 } from "./openai-compatible-ui.js";
 
 const PRESET_BASE_URL = "https://hosted.example.test/v1";
+const NESTED_BASE_URL = "https://api.nested.example.test/v1/openai";
 const presets = [{ name: "Hosted", baseUrl: PRESET_BASE_URL }];
 
 describe("openAiCompatibleConnectReady", () => {
@@ -97,6 +99,27 @@ it.each([
   "https://user:pass@hosted.example.test",
 ])("matches no preset for %s", (url) => {
   expect(matchCompatibleEndpointPreset(presets, url)).toBeUndefined();
+});
+
+it("matches a preset whose path already holds a version segment", () => {
+  const nested = [{ name: "Nested", baseUrl: NESTED_BASE_URL }];
+  expect(matchCompatibleEndpointPreset(nested, `${NESTED_BASE_URL}/`)?.name).toBe("Nested");
+  expect(matchCompatibleEndpointPreset(nested, "https://api.nested.example.test/v1")).toBe(
+    undefined,
+  );
+});
+
+it("lists every preset with a saved connection, however many share the provider", () => {
+  const both = [...presets, { name: "Nested", baseUrl: NESTED_BASE_URL }];
+  expect(
+    savedCompatibleEndpointPresets(both, [
+      { provider: "openai-compatible", baseUrl: `${PRESET_BASE_URL}/` },
+      { provider: "openai-compatible", baseUrl: NESTED_BASE_URL },
+      { provider: "openai-compatible", baseUrl: "http://127.0.0.1:8000/v1" },
+      { provider: "openai-compatible" },
+      { provider: "anthropic", baseUrl: PRESET_BASE_URL },
+    ]),
+  ).toEqual(new Set([PRESET_BASE_URL, NESTED_BASE_URL]));
 });
 
 it.each(["https://hosted.example.test", "https://hosted.example.test/v1/"])(

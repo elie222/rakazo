@@ -103,6 +103,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     modelProbe,
     modelsForProvider,
     openConnection,
+    probeInfoRef,
     probeModels,
     provider,
     reasoning,
@@ -394,6 +395,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
+      probedModels: probeInfoRef.current,
       ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
     });
     if (request.status === "incomplete") return;
@@ -403,7 +405,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
           ? t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`
           : request.field === "maxImagesPerPrompt"
             ? t`Enter a whole number from 1 to 1000 for the image limit.`
-            : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
+            : request.field === "maxTokensExceedsContext"
+              ? t`Maximum output tokens must be lower than the context limit.`
+              : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
       );
       return;
     }

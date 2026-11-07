@@ -3824,6 +3824,10 @@ msgstr "Bu model için görüntü girişi yapılandırılmamış."
 msgid "Image upload area"
 msgstr "Görüntü yükleme alanı"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "Görüntüler"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "İçe aktar"
@@ -4303,6 +4307,10 @@ msgstr "İstek başına maksimum görüntü sayısı"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "Maksimum çıktı token sayısı"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "Maksimum çıktı token sayısı bağlam sınırından düşük olmalıdır."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "Arkadaşın {weeks} hafta ücretsiz kullanır."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

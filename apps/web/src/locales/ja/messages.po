@@ -3824,6 +3824,10 @@ msgstr "このモデルでは画像入力が設定されていません。"
 msgid "Image upload area"
 msgstr "画像アップロードエリア"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "画像"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "インポート"
@@ -4303,6 +4307,10 @@ msgstr "リクエストあたりの最大画像数"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "最大出力トークン数"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "最大出力トークン数はコンテキスト上限より小さくしてください。"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "友だちは{weeks}週間無料で使えます。"
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

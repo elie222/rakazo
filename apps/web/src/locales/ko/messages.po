@@ -3824,6 +3824,10 @@ msgstr "이 모델에는 이미지 입력이 설정되어 있지 않습니다."
 msgid "Image upload area"
 msgstr "이미지 업로드 영역"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "이미지"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "가져오기"
@@ -4303,6 +4307,10 @@ msgstr "요청당 최대 이미지 수"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "최대 출력 토큰 수"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "최대 출력 토큰 수는 컨텍스트 한도보다 작아야 합니다."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "친구는 {weeks}주 동안 무료로 사용해요."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

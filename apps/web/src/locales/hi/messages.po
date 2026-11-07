@@ -3824,6 +3824,10 @@ msgstr "इस मॉडल के लिए चित्र इनपुट क
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "छवियाँ"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "इम्पोर्ट करें"
@@ -4303,6 +4307,10 @@ msgstr "प्रति अनुरोध अधिकतम इमेज"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "अधिकतम आउटपुट टोकन"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "अधिकतम आउटपुट टोकन संदर्भ सीमा से कम होने चाहिए।"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "उन्हें {weeks} हफ़्ते मुफ़्त मिलते हैं।"
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

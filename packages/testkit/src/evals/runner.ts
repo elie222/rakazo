@@ -7,6 +7,7 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
+import { connectionCacheCapabilities } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
@@ -1118,20 +1119,19 @@ export async function runTrial(
       const pricedModel = options.connection.modelId
         ? { provider: options.connection.provider, modelId: options.connection.modelId }
         : undefined;
+      const cacheMinimumTokens = connectionCacheCapabilities(
+        options.connection,
+        options.connection.modelId,
+      )?.minimumTokens;
       Object.assign(
         result,
-        measureCalls(
-          [...seenUsage.values()],
-          options.pricing,
-          options.connection.cacheCapabilities?.minimumTokens,
-          pricedModel,
-        ),
+        measureCalls([...seenUsage.values()], options.pricing, cacheMinimumTokens, pricedModel),
       );
       result.stepAccounting = measureWorkflowSteps(
         [...seenUsage.values()],
         runSteps,
         options.pricing,
-        options.connection.cacheCapabilities?.minimumTokens,
+        cacheMinimumTokens,
         pricedModel,
       );
       result.cacheDecisions = handles.cacheDecisions ? [...handles.cacheDecisions] : [];

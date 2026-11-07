@@ -60,6 +60,62 @@ test("Ollama Cloud onboarding requires a key before continuing", async ({ page }
   await expect(continueButton).toBeDisabled();
 });
 
+test("DeepInfra onboarding requires a key and prefills the picked model's capabilities", async ({
+  page,
+}) => {
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
+  });
+  await page.route("**/rpc/models/probeOpenAiCompatible", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          models: ["vision-model", "text-model"],
+          details: [
+            { id: "vision-model", supportsImages: true, reasoning: true, contextWindow: 131072 },
+            { id: "text-model", supportsImages: false, reasoning: false, contextWindow: 32768 },
+          ],
+        },
+      },
+    }),
+  );
+  let connected: Record<string, unknown> | null = null;
+  await page.route("**/rpc/models/connect", async (route) => {
+    connected = route.request().postDataJSON().json;
+    await route.fulfill({ json: { json: { id: "fixture" } } });
+  });
+  await signup(page, `deepinfra-${Date.now()}@rakazo.test`, "password12", "Model setup");
+  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Provider" }).click();
+  await page.getByRole("option", { name: "DeepInfra", exact: true }).click();
+  await expect(page.getByLabel("OpenAI-compatible server URL")).toHaveValue(
+    "https://api.deepinfra.com/v1/openai",
+  );
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  const apiKey = page.getByLabel("API key", { exact: true });
+  await expect(continueButton).toBeDisabled();
+  await apiKey.fill("fake-test-key");
+  await page.getByRole("button", { name: "Find models", exact: true }).click();
+  await page.getByRole("button", { name: "Models from server", exact: true }).click();
+  await expect(page.getByRole("option", { name: /vision-model/ })).toContainText(
+    "Images · Thinking",
+  );
+  await page.getByRole("option", { name: "text-model", exact: true }).click();
+  await expect(continueButton).toBeEnabled();
+  await continueButton.click();
+  await expect
+    .poll(() => connected)
+    .toMatchObject({
+      baseUrl: "https://api.deepinfra.com/v1/openai",
+      modelId: "text-model",
+      reasoning: false,
+      supportsImages: false,
+      contextWindow: 32768,
+    });
+});
+
 test("Rakazo credits are chosen like a provider, with nothing else to fill in", async ({
   page,
 }, testInfo) => {

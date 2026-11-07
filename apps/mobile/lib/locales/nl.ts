@@ -630,6 +630,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "Voer een geheel getal van 1 tot 1000 in voor de afbeeldingslimiet.",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "Voer een geheel getal van 1 tot {max} in voor het maximale aantal uitvoertokens.",
+  "Maximum output tokens must be lower than the context limit.":
+    "Het maximale aantal uitvoertokens moet lager zijn dan de contextlimiet.",
   "Enter a whole number from 1 to {max} for the context limit.":
     "Voer een geheel getal van 1 tot {max} in voor de contextlimiet.",
   "Enter this code in your browser:": "Voer deze code in je browser in:",

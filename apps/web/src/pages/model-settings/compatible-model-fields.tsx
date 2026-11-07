@@ -14,6 +14,7 @@ import {
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { modelCapabilityHint } from "../../lib/model-capability-hint";
 import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -40,6 +41,7 @@ export function CompatibleModelFields({
   modelId,
   preflightFailure,
   preflightTarget,
+  probeInfoById,
   probeModels,
   probeServerModels,
   probing,
@@ -82,6 +84,7 @@ export function CompatibleModelFields({
   | "modelId"
   | "preflightFailure"
   | "preflightTarget"
+  | "probeInfoById"
   | "probeModels"
   | "probeServerModels"
   | "probing"
@@ -263,6 +266,11 @@ export function CompatibleModelFields({
                   }}
                 />
                 <span className="min-w-0 break-all">{id}</span>
+                {modelCapabilityHint(probeInfoById.get(id)) ? (
+                  <span className="shrink-0 text-body-sm text-muted-foreground">
+                    {modelCapabilityHint(probeInfoById.get(id))}
+                  </span>
+                ) : null}
               </Label>
             ))}
             {visibleRows.length ? null : (

@@ -1,5 +1,11 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  CacheCapabilities,
+  CacheCapabilitiesByModel,
+  ModelConnectInput,
+  ModelCredential,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
@@ -13,7 +19,7 @@ import {
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
 import type { StoredModelSecret } from "./model-secret.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { modelCacheCapabilities, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
 import {
   compatibleModelSeesImages,
@@ -74,7 +80,10 @@ export function buildModelConnectPlaintext(
 ): string {
   const previous = tryParseModelSecret(previousPlaintext);
   const inherited = previous?.kind === "api_key" ? previous : undefined;
-  const cacheCapabilities = input.cacheCapabilities ?? inherited?.cacheCapabilities;
+  const cacheCapabilities = connectCacheCapabilities(
+    input.cacheCapabilities,
+    inherited?.cacheCapabilities,
+  );
   const contextWindow = input.contextWindow ?? inherited?.contextWindow;
   const limits = {
     ...(cacheCapabilities !== undefined ? { cacheCapabilities } : {}),
@@ -136,8 +145,19 @@ export function buildModelConnectPlaintext(
       },
       prepared.modelId,
     );
-    const compatibleCacheCapabilities =
-      input.cacheCapabilities ?? compatiblePrevious?.cacheCapabilities;
+    // The connection-wide value cannot describe several models. A save that sends per-model
+    // values replaces it rather than letting a model with no entry inherit another's pricing.
+    const compatibleCacheCapabilities = connectCacheCapabilities(
+      input.cacheCapabilities,
+      input.cacheCapabilitiesByModel === undefined
+        ? compatiblePrevious?.cacheCapabilities
+        : undefined,
+    );
+    const cacheCapabilitiesByModel = mergeCacheCapabilitiesByModel(
+      compatiblePrevious?.cacheCapabilitiesByModel,
+      input.cacheCapabilitiesByModel,
+      enabledModelIds,
+    );
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
@@ -148,6 +168,7 @@ export function buildModelConnectPlaintext(
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
         : {}),
+      ...(cacheCapabilitiesByModel !== undefined ? { cacheCapabilitiesByModel } : {}),
       ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
@@ -213,6 +234,35 @@ export function buildModelConnectPlaintext(
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
   throw new Error("API key must contain at least 8 characters");
+}
+
+/** A value sets the capabilities, `null` clears them, and omitting keeps the previous ones. */
+function connectCacheCapabilities(
+  input: CacheCapabilities | null | undefined,
+  previous: CacheCapabilities | undefined,
+): CacheCapabilities | undefined {
+  return input === null ? undefined : (input ?? previous);
+}
+
+/**
+ * Entries the input sends replace the saved ones; `null` removes a model's entry. Past the
+ * enabled-model limit, entries of models that are no longer enabled are dropped.
+ */
+function mergeCacheCapabilitiesByModel(
+  previous: CacheCapabilitiesByModel | undefined,
+  input: Record<string, CacheCapabilities | null> | undefined,
+  enabledModelIds: readonly string[],
+): CacheCapabilitiesByModel | undefined {
+  const merged = new Map(Object.entries(previous ?? {}));
+  for (const [modelId, capabilities] of Object.entries(input ?? {})) {
+    if (capabilities === null) merged.delete(modelId);
+    else merged.set(modelId, capabilities);
+  }
+  if (merged.size > MAX_ENABLED_MODEL_IDS) {
+    const enabled = new Set(enabledModelIds);
+    for (const modelId of merged.keys()) if (!enabled.has(modelId)) merged.delete(modelId);
+  }
+  return merged.size > 0 ? Object.fromEntries(merged) : undefined;
 }
 
 const CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE =
@@ -350,7 +400,10 @@ export function modelCredentialDto(
       : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
-    cacheCapabilities: parsed.cacheCapabilities,
+    cacheCapabilities: modelCacheCapabilities(parsed, row.defaultModel ?? ""),
+    ...(parsed.cacheCapabilitiesByModel !== undefined
+      ? { cacheCapabilitiesByModel: parsed.cacheCapabilitiesByModel }
+      : {}),
     ...(parsed.maxImagesPerPrompt !== undefined
       ? { maxImagesPerPrompt: parsed.maxImagesPerPrompt }
       : {}),

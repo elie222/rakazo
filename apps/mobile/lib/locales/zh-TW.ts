@@ -835,6 +835,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Context limit": "上下文長度限制",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "請輸入 1 到 {max} 之間的整數作為最大輸出 token 數。",
+  "Maximum output tokens must be lower than the context limit.":
+    "最大輸出 token 數必須小於上下文限制。",
   "Enter a whole number from 1 to {max} for the context limit.":
     "請輸入 1 到 {max} 之間的整數作為上下文限制。",
   "Supports images": "支援影像",

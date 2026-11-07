@@ -3824,6 +3824,10 @@ msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
 
+#: src/lib/model-capability-hint.ts
+msgid "Images"
+msgstr "תמונות"
+
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
 msgstr "ייבוא"
@@ -4303,6 +4307,10 @@ msgstr "מספר תמונות מרבי לבקשה"
 #: src/pages/onboarding/model-step.tsx
 msgid "Maximum output tokens"
 msgstr "מספר טוקנים מרבי בפלט"
+
+#: src/pages/model-settings/use-model-settings.ts
+msgid "Maximum output tokens must be lower than the context limit."
+msgstr "מספר טוקני הפלט המרבי חייב להיות נמוך ממגבלת ההקשר."
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
@@ -6925,6 +6933,7 @@ msgid "They get {weeks} weeks free."
 msgstr "הם מקבלים {weeks} שבועות בחינם."
 
 #: src/components/call/CallCard.tsx
+#: src/lib/model-capability-hint.ts
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/routine-editor/model-settings.tsx
 #: src/pages/shell/bot-settings-sections.tsx

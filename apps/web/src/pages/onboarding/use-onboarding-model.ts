@@ -94,6 +94,7 @@ export function useOnboardingModel({
     modelId,
     modelsForProvider,
     openConnection,
+    probeInfoRef,
     provider,
     reasoning,
     selected,
@@ -275,6 +276,8 @@ export function useOnboardingModel({
           );
           return;
         }
+        // Prompt-caching support the model listing published rides along with the connection.
+        const cached = probeInfoRef.current.get(modelId.trim());
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
@@ -287,6 +290,9 @@ export function useOnboardingModel({
           contextWindow: parsedContextWindow,
           supportsImages,
           maxImagesPerPrompt: maxImagesPerPromptInput,
+          ...(cached
+            ? { cacheCapabilitiesByModel: { [modelId.trim()]: cached.cacheCapabilities ?? null } }
+            : {}),
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });

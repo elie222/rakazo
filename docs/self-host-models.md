@@ -100,6 +100,10 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 
+## DeepInfra
+
+In **Settings → Models**, choose **DeepInfra**, paste an API key from deepinfra.com, then **Find models**. The list shows DeepInfra's chat models only, and each model's image input, thinking, context window and prompt cache pricing are prefilled from DeepInfra's own model metadata. **Supports thinking** starts on only for models that accept `reasoning_effort`; models that always think, with no effort control, start with it off. Like Ollama Cloud, this needs no environment configuration and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. DeepInfra's model list answers without a key, so Rakazo checks the key against DeepInfra's account endpoint before listing or saving.
+
 ## OpenAI-compatible connections
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
@@ -155,6 +159,16 @@ Connections with unknown retention or `retentionMode: "none"` retain the default
 retrieval policy. An explicit executor context strategy still takes precedence.
 Callers without usable history-retrieval tools keep fitting original history
 under the model's context budget instead of replacing it with snapshots.
+
+An OpenAI-compatible connection can enable several models whose cache support and
+prices differ, so it also accepts `cacheCapabilitiesByModel`, keyed by model id. The
+model that runs uses its own entry. A value saves that model's entry, `null` clears it
+(a model the server lists with no prompt cache), and models not mentioned keep theirs.
+`cacheCapabilities` stays as the fallback for a model without an entry, which suits a
+connection set up by hand or saved before per-model entries; sending
+`cacheCapabilitiesByModel` without it replaces the saved connection-wide value, and
+`cacheCapabilities: null` clears it. Settings → Models sends per-model entries for
+every enabled model that DeepInfra's listing described.
 
 Cache warmth is advisory. Changing instructions or tools, context pressure,
 worker eviction, or a process restart can require fresh prompt processing.

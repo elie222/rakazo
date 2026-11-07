@@ -618,6 +618,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "画像の上限には1〜1000の整数を入力してください。",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
     "最大出力トークン数には1〜{max}の整数を入力してください。",
+  "Maximum output tokens must be lower than the context limit.":
+    "最大出力トークン数はコンテキスト上限より小さくしてください。",
   "Enter a whole number from 1 to {max} for the context limit.":
     "コンテキスト上限には1〜{max}の整数を入力してください。",
   "Enter this code in your browser:": "ブラウザでこのコードを入力してください:",
