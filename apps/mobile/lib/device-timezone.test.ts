@@ -27,14 +27,14 @@ beforeEach(() => {
 });
 
 describe("device timezone report", () => {
-  it("reports while the server's zone differs and stays quiet once it agrees", async () => {
+  it("reports while the account follows its devices and the server's zone differs", async () => {
     const zone = fakeDeviceZone("Pacific/Auckland");
     try {
       const { reportDeviceTimeZone } = await load();
-      await reportDeviceTimeZone("user-1", null);
-      // The next poll's me carries the accepted zone.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
+      await reportDeviceTimeZone("user-1", null, null);
+      // The next poll's me carries the accepted zone and its device source.
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
       expect(vi.mocked(rpc).mock.calls).toEqual([
         ["preferences/adoptTimezone", { timezone: "Pacific/Auckland" }],
       ]);
@@ -46,12 +46,12 @@ describe("device timezone report", () => {
   it("reports again when the system zone changed while the app was away", async () => {
     const auckland = fakeDeviceZone("Pacific/Auckland");
     const { reportDeviceTimeZone } = await load();
-    await reportDeviceTimeZone("user-1", null);
+    await reportDeviceTimeZone("user-1", null, null);
     auckland.mockRestore();
     const london = fakeDeviceZone("Europe/London");
     try {
       // The fresh me still holds the zone this device reported before the change.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
       expect(vi.mocked(rpc).mock.calls).toEqual([
         ["preferences/adoptTimezone", { timezone: "Pacific/Auckland" }],
         ["preferences/adoptTimezone", { timezone: "Europe/London" }],
@@ -66,8 +66,8 @@ describe("device timezone report", () => {
     try {
       const { reportDeviceTimeZone } = await load();
       // The account already agrees: quiet.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
-      await reportDeviceTimeZone("user-2", null);
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
+      await reportDeviceTimeZone("user-2", null, null);
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(rpc).mock.calls[0]).toEqual([
         "preferences/adoptTimezone",
@@ -83,14 +83,14 @@ describe("device timezone report", () => {
     try {
       const { reportDeviceTimeZone } = await load();
       vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
-      await expect(reportDeviceTimeZone("user-1", null)).rejects.toThrow("offline");
+      await expect(reportDeviceTimeZone("user-1", null, null)).rejects.toThrow("offline");
       // The server still holds nothing: the next poll sends the report again.
-      await reportDeviceTimeZone("user-1", null);
+      await reportDeviceTimeZone("user-1", null, null);
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
       // The next poll's me carries the accepted zone: quiet again, without a
       // confirming send, because the comparison is against what the server holds.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
     } finally {
       zone.mockRestore();
@@ -101,7 +101,7 @@ describe("device timezone report", () => {
     const zone = fakeDeviceZone("Pacific/Auckland");
     const { reportDeviceTimeZone } = await load();
     vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
-    await expect(reportDeviceTimeZone("user-1", null)).rejects.toThrow("offline");
+    await expect(reportDeviceTimeZone("user-1", null, null)).rejects.toThrow("offline");
     let settle!: () => void;
     vi.mocked(rpc).mockImplementationOnce(
       ((_proc: string, body: { timezone: string }) =>
@@ -110,9 +110,9 @@ describe("device timezone report", () => {
         })) as never,
     );
     try {
-      const retry = reportDeviceTimeZone("user-1", null);
-      const duplicate = reportDeviceTimeZone("user-1", null);
-      const third = reportDeviceTimeZone("user-1", null);
+      const retry = reportDeviceTimeZone("user-1", null, null);
+      const duplicate = reportDeviceTimeZone("user-1", null, null);
+      const third = reportDeviceTimeZone("user-1", null, null);
       await flush();
       // The failed report and one retry: nothing more queued behind them.
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
@@ -143,10 +143,10 @@ describe("device timezone report", () => {
     );
     let auckland: ReturnType<typeof fakeDeviceZone> | undefined;
     try {
-      const first = reportDeviceTimeZone("user-1", null);
+      const first = reportDeviceTimeZone("user-1", null, null);
       london.mockRestore();
       auckland = fakeDeviceZone("Pacific/Auckland");
-      const second = reportDeviceTimeZone("user-1", null);
+      const second = reportDeviceTimeZone("user-1", null, null);
       // The answers land newest first, so the older write commits after the newer one.
       let drained = false;
       void Promise.all([first, second]).then(() => {
@@ -160,7 +160,7 @@ describe("device timezone report", () => {
       await second;
       expect(accepted).toBe("Pacific/Auckland");
       // The next poll's me carries the accepted zone: quiet.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
     } finally {
       london.mockRestore();
@@ -168,11 +168,12 @@ describe("device timezone report", () => {
     }
   });
 
-  it("re-sends when a write the client gave up on lands after its successor", async () => {
+  it("re-sends when a write the client gave up on lands before its successor's answer", async () => {
     const london = fakeDeviceZone("Europe/London");
     const { reportDeviceTimeZone } = await load();
     // The account holds whatever write the server committed last; a client timeout
-    // does not stop the server-side write, which can land after a newer report's.
+    // does not stop the server-side write, which can land between a newer report's
+    // write and that report's own answer read.
     let accepted: string | null = null;
     type ServerCall = {
       settled: boolean;
@@ -207,43 +208,35 @@ describe("device timezone report", () => {
       if (!issued) throw new Error(`report ${index} was not issued (out: ${calls.length})`);
       return issued;
     };
-    /** Answers every request issued so far, as the accepted Auckland write. */
-    const answerIssued = async () => {
-      await flush();
-      for (const current of calls) {
-        if (current.settled) continue;
-        current.write("Pacific/Auckland");
-        current.answer("Pacific/Auckland");
-        await flush();
-      }
-    };
     let auckland: ReturnType<typeof fakeDeviceZone> | undefined;
     try {
-      const first = reportDeviceTimeZone("user-1", null);
+      const first = reportDeviceTimeZone("user-1", null, null);
       await flush();
       // The client gives up on the first report; its write lives on at the server.
       call(0).fail(new Error("timeout"));
       await expect(first).rejects.toThrow("timeout");
       london.mockRestore();
       auckland = fakeDeviceZone("Pacific/Auckland");
-      const second = reportDeviceTimeZone("user-1", null);
-      await answerIssued();
-      await second;
-      // The next poll's me carries the accepted zone, so nothing is left to send.
-      const quiet = reportDeviceTimeZone("user-1", "Pacific/Auckland");
-      await answerIssued();
-      await quiet;
-      // The timed-out write commits after the successor and anything that followed it.
+      const second = reportDeviceTimeZone("user-1", null, null);
+      await flush();
+      // The successor's write commits, then the timed-out one, and only then does the
+      // successor's answer read the account: it reports the older zone.
+      call(1).write("Pacific/Auckland");
       call(0).write("Europe/London");
+      call(1).answer("Europe/London");
+      await second;
       expect(accepted).toBe("Europe/London");
-      // The next poll's me carries the stale zone: the device's zone goes out again.
-      const third = reportDeviceTimeZone("user-1", "Europe/London");
-      await answerIssued();
+      // The next poll's me carries the stale zone under the device source: the
+      // device's zone goes out again.
+      const third = reportDeviceTimeZone("user-1", "Europe/London", "device");
+      await flush();
+      call(2).write("Pacific/Auckland");
+      call(2).answer("Pacific/Auckland");
       await third;
       expect(accepted).toBe("Pacific/Auckland");
       // The next poll agrees: quiet.
-      await reportDeviceTimeZone("user-1", "Pacific/Auckland");
-      await answerIssued();
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
+      await flush();
       expect(calls.length).toBe(3);
     } finally {
       london.mockRestore();
@@ -251,46 +244,64 @@ describe("device timezone report", () => {
     }
   });
 
-  it("stays quiet while the server keeps a hand-picked zone", async () => {
-    const london = fakeDeviceZone("Europe/London");
-    const { reportDeviceTimeZone } = await load();
-    // The server keeps the hand-picked zone against the device's report.
-    vi.mocked(rpc).mockImplementationOnce(((_proc: string, _body: { timezone: string }) =>
-      Promise.resolve({ timezone: "Europe/Paris" })) as never);
-    let auckland: ReturnType<typeof fakeDeviceZone> | undefined;
+  it("stays quiet while the account holds a hand-picked zone", async () => {
+    const zone = fakeDeviceZone("Europe/London");
     try {
-      await reportDeviceTimeZone("user-1", null);
-      london.mockRestore();
-      auckland = fakeDeviceZone("Pacific/Auckland");
-      // Even a moved device zone does not fight the hand-picked one.
-      await reportDeviceTimeZone("user-1", "Europe/Paris");
-      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
-      // A new hand-picked zone is learned the same way: one report, refused again.
-      vi.mocked(rpc).mockImplementationOnce(((_proc: string, _body: { timezone: string }) =>
-        Promise.resolve({ timezone: "Europe/Berlin" })) as never);
-      await reportDeviceTimeZone("user-1", "Europe/Berlin");
-      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
-      await reportDeviceTimeZone("user-1", "Europe/Berlin");
-      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
+      const { reportDeviceTimeZone } = await load();
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "manual");
+      expect(vi.mocked(rpc)).not.toHaveBeenCalled();
+      // A moved device zone does not fight the hand-picked one either.
+      const paris = fakeDeviceZone("Europe/Paris");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "manual");
+      paris.mockRestore();
+      expect(vi.mocked(rpc)).not.toHaveBeenCalled();
     } finally {
-      london.mockRestore();
-      auckland?.mockRestore();
+      zone.mockRestore();
     }
   });
 
-  it("stays quiet for another account whose zone the server already holds", async () => {
-    const zone = fakeDeviceZone("Pacific/Auckland");
+  it("reports again after a hand-picked zone returns to the device", async () => {
+    const auckland = fakeDeviceZone("Pacific/Auckland");
+    const { reportDeviceTimeZone } = await load();
+    // The server keeps the hand-picked zone against the device's report.
+    vi.mocked(rpc).mockImplementationOnce(((_proc: string, _body: { timezone: string }) =>
+      Promise.resolve({ timezone: "Europe/London" })) as never);
+    let london: ReturnType<typeof fakeDeviceZone> | undefined;
+    let paris: ReturnType<typeof fakeDeviceZone> | undefined;
+    try {
+      await reportDeviceTimeZone("user-1", "Europe/London", "manual");
+      auckland.mockRestore();
+      // The user returns the account to the device on another client: this device's
+      // report lands again.
+      london = fakeDeviceZone("Europe/London");
+      await reportDeviceTimeZone("user-1", "Pacific/Auckland", "device");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(rpc).mock.calls[0]?.[1]).toEqual({ timezone: "Europe/London" });
+      // The account and this device agree: quiet.
+      await reportDeviceTimeZone("user-1", "Europe/London", "device");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
+      // A later move reports again, with nothing remembered about the manual choice.
+      london.mockRestore();
+      paris = fakeDeviceZone("Europe/Paris");
+      await reportDeviceTimeZone("user-1", "Europe/London", "device");
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(rpc).mock.calls[1]?.[1]).toEqual({ timezone: "Europe/Paris" });
+    } finally {
+      auckland.mockRestore();
+      london?.mockRestore();
+      paris?.mockRestore();
+    }
+  });
+
+  it("keeps reporting on a zone difference when an older server cannot say the source", async () => {
+    const zone = fakeDeviceZone("Europe/Paris");
     try {
       const { reportDeviceTimeZone } = await load();
-      // The first account's report lands; a second account then signs in on this
-      // device, and its own zone already agrees, so no report of its own is needed.
-      await reportDeviceTimeZone("user-1", null);
-      await reportDeviceTimeZone("user-2", "Pacific/Auckland");
+      await reportDeviceTimeZone("user-1", "Europe/London", undefined);
       expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(rpc).mock.calls[0]).toEqual([
-        "preferences/adoptTimezone",
-        { timezone: "Pacific/Auckland" },
-      ]);
+      // Once that server holds the zone, the next poll is quiet.
+      await reportDeviceTimeZone("user-1", "Europe/Paris", undefined);
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
     } finally {
       zone.mockRestore();
     }

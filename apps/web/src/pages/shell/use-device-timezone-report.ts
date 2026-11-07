@@ -24,7 +24,13 @@ export function useDeviceTimezoneReport(
   const report = useCallback(() => {
     const { rpc, me, applyTimezone } = stateRef.current;
     const deviceTimezone = localTimezone();
-    if (document.visibilityState !== "visible" || !me || me.timezone === deviceTimezone) return;
+    if (
+      document.visibilityState !== "visible" ||
+      !me ||
+      me.timezoneSource === "manual" ||
+      me.timezone === deviceTimezone
+    )
+      return;
     const sent = choiceEpoch.current;
     void rpc.preferences
       .adoptTimezone({ timezone: deviceTimezone })

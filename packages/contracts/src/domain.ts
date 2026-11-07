@@ -1478,6 +1478,12 @@ export const MeSchema = z.object({
    */
   timezone: z.string().nullable().optional(),
   /**
+   * Who chose the timezone: "manual" is a hand-picked zone a device report never
+   * displaces, "device" while the account follows one. Null when the zone is unset;
+   * absent from servers that predate it.
+   */
+  timezoneSource: z.enum(["device", "manual"]).nullable().optional(),
+  /**
    * The app language last reported for the user, or null until an app reports it.
    * Absent from servers that predate it.
    */

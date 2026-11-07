@@ -592,6 +592,28 @@ describe("account preferences", () => {
     });
   });
 
+  it("me says who chose the timezone", async () => {
+    const handPicked = preferencesDeps("organic", "Europe/London", "manual");
+    const handPickedClient = createRouterClient(createRouter(handPicked.deps), {
+      context: { actor: handPicked.actor } as never,
+    });
+
+    await expect(handPickedClient.me()).resolves.toMatchObject({
+      timezone: "Europe/London",
+      timezoneSource: "manual",
+    });
+
+    const following = preferencesDeps("organic", "Pacific/Auckland", "device");
+    const followingClient = createRouterClient(createRouter(following.deps), {
+      context: { actor: following.actor } as never,
+    });
+
+    await expect(followingClient.me()).resolves.toMatchObject({
+      timezone: "Pacific/Auckland",
+      timezoneSource: "device",
+    });
+  });
+
   it.each([{ timezone: "Mars/Olympus_Mons" }, { timezone: "" }, {}])(
     "rejects an unknown timezone or an empty update: %j",
     async (json) => {

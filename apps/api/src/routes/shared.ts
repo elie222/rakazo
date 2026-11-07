@@ -35,6 +35,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         email: true,
         name: true,
         timezone: true,
+        timezoneSource: true,
         locale: true,
         botAvatarSet: true,
         signupSurvey: { select: { userId: true } },
@@ -82,6 +83,10 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
     timezone: user.timezone ?? null,
+    timezoneSource:
+      user.timezoneSource === "device" || user.timezoneSource === "manual"
+        ? user.timezoneSource
+        : null,
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),
     // Only billing deployments ask; self-hosted installs never see the survey.
