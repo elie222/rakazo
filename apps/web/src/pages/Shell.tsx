@@ -429,6 +429,7 @@ function SpaceShell() {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
       },
+      meId: userId,
     },
   );
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
@@ -465,6 +466,7 @@ function SpaceShell() {
     notifyBrowserForEvent,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
+    meId: userId,
   });
   const {
     editorProps: routineEditorProps,

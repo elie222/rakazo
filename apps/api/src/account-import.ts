@@ -978,7 +978,7 @@ class AccountImporter implements ArchiveSink {
       if (lastSeq < 0) continue;
       await this.deps.prisma.thread.update({
         where: { id: threadId },
-        data: { nextMessageSeq: lastSeq + 1, lastReadSeq: lastSeq, unread: false },
+        data: { nextMessageSeq: lastSeq + 1 },
       });
     }
   }

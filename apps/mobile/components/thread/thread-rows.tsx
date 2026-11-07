@@ -106,8 +106,8 @@ export function useThreadRows({
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const unreadDividerId = useMemo(
-    () => unreadDividerMessageId(visibleMessages, readSeq, snap?.olderCursor ?? null),
-    [visibleMessages, readSeq, snap?.olderCursor],
+    () => unreadDividerMessageId(visibleMessages, readSeq, snap?.olderCursor ?? null, userId),
+    [visibleMessages, readSeq, snap?.olderCursor, userId],
   );
   // Group calls in reading order, then reverse for the inverted list.
   const liveItems = useMemo(() => groupVoiceChats(visibleMessages).reverse(), [visibleMessages]);

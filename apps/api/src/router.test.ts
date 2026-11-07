@@ -7181,7 +7181,7 @@ describe("bot model auth on save", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -8238,7 +8238,7 @@ describe("openai-compatible enabled models", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -9110,6 +9110,7 @@ describe("threads.endCall", () => {
     const events: { type: string; payload: Record<string, unknown> }[] = [];
     const tx = {
       $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
       message: {
         findUnique: vi.fn().mockResolvedValue(null),
