@@ -8,6 +8,7 @@ import {
   MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
@@ -105,6 +106,14 @@ describe("normalizeRunError", () => {
     [
       '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error"}',
       "Your model provider can't run this model.",
+    ],
+    [
+      'openai-compatible API error (400): {"message":"example:27b is a decision model and only supports /v1/example (ref: <ref-id>)","type":"invalid_request_error","param":null,"code":null}',
+      "Your model provider can't run this model.",
+    ],
+    [
+      "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
+      "Your OpenRouter reached its credit limit.",
     ],
     [
       '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
@@ -444,6 +453,7 @@ describe("normalizeRunError", () => {
       "Parsing failed. The model generated output that could not be parsed. Please adjust your prompt. See 'failed_generation' for more details.",
       '400 {"type":"error","error":{"type":"api_error","message":"Upstream request failed: [api_error] Upstream response was not valid JSON"}}',
       "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
+      "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -452,6 +462,14 @@ describe("normalizeRunError", () => {
         details,
         kind: "output",
         recovery: "model",
+      });
+    });
+
+    it("keeps the advice when Rakazo credits run out", () => {
+      expect(normalizeRunError(MODEL_CREDITS_EXHAUSTED_ERROR)).toEqual({
+        summary: MODEL_CREDITS_EXHAUSTED_ERROR,
+        details: MODEL_CREDITS_EXHAUSTED_ERROR,
+        recovery: "connection",
       });
     });
 

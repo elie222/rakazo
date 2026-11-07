@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
+import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
@@ -127,10 +128,7 @@ export async function reserveModelCredits(
       where: { organizationId, balanceMicros: { gte: amountMicros } },
       data: { balanceMicros: { decrement: amountMicros } },
     });
-    if (reserved.count !== 1)
-      throw new Error(
-        "Not enough model credits. Add credits in Billing or connect your own API key.",
-      );
+    if (reserved.count !== 1) throw new Error(MODEL_CREDITS_EXHAUSTED_ERROR);
     const allocations = await allocateCreditLots(tx, organizationId, amountMicros, now);
     return (
       await tx.modelCreditEntry.create({
