@@ -20,6 +20,8 @@ import { NativeSymbol } from "./native-symbol";
 export const SWIPE_ROWS = Platform.OS === "ios";
 
 type ChatActions = ReturnType<typeof useInboxChatActions>;
+// One empty list, so a row with no sections keeps its memoized render.
+const NO_SECTIONS: MobileBotSection[] = [];
 
 /** The end of the inbox list: the create hint while it is needed, then the archived chats. */
 export function InboxListFooter({
@@ -44,7 +46,6 @@ export function InboxListFooter({
 export function useInboxRenderItem({
   appearance,
   botAction,
-  botSections,
   chooseInboxSpace,
   confirmDeleteSpace,
   createBotInSpace,
@@ -61,6 +62,7 @@ export function useInboxRenderItem({
   organizeGroup,
   sharing,
   snoozeChat,
+  spaces,
   spaceBusy,
   spaceRecoveryId,
   toggleCollapsed,
@@ -74,14 +76,13 @@ export function useInboxRenderItem({
   | "snoozeChat"
 > & {
   appearance: ResolvedAppearance;
-  botSections: MobileBotSection[];
   chooseInboxSpace: (spaceId: string) => void;
   confirmDeleteSpace: (space: InboxSpace) => void;
   createBotInSpace: (spaceId: string) => void;
   day: number;
   /** The snooze clock, so rows redraw when a chat wakes. */
   now: number;
-  /** The selected space: only its chats get swipe actions and the row menu. */
+  /** The selected space: only its section headings can be deleted. */
   spaceId: string | undefined;
   openBot: (bot: MobileBot | SpaceBot) => void;
   openGroup: (group: MobileGroup | SpaceGroup) => void;
@@ -89,6 +90,8 @@ export function useInboxRenderItem({
   organizeGroup: (group: MobileGroup | SpaceGroup) => void;
   /** Picking a chat for an incoming share: rows only open, without menus or swipe actions. */
   sharing: boolean;
+  /** The listed spaces, whose sections each chat's row menu can move it between. */
+  spaces: readonly Pick<InboxSpace, "id" | "botSections">[];
   spaceBusy: boolean;
   spaceRecoveryId: string | null;
   toggleCollapsed: (key: string) => void;
@@ -97,8 +100,10 @@ export function useInboxRenderItem({
   const { t } = useI18n();
   const router = useRouter();
   return useCallback(
-    ({ item }: { item: InboxItem }) =>
-      item.type === "pinned" ? (
+    ({ item }: { item: InboxItem }) => {
+      const sectionsOf = (chatSpaceId: string | undefined) =>
+        spaces.find((space) => space.id === (chatSpaceId ?? spaceId))?.botSections ?? NO_SECTIONS;
+      return item.type === "pinned" ? (
         // The pinned tiles' avatars freeze with their row when it scrolls away.
         <AvatarRow id={inboxItemKey(item)}>
           <PinnedTiles
@@ -230,8 +235,8 @@ export function useInboxRenderItem({
           now={now}
           onPress={openGroup}
           onLongPress={!SWIPE_ROWS ? organizeGroup : undefined}
-          onAction={SWIPE_ROWS && item.group.spaceId === spaceId ? groupAction : undefined}
-          sections={botSections}
+          onAction={SWIPE_ROWS ? groupAction : undefined}
+          sections={sectionsOf(item.group.spaceId)}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
           onSnooze={snoozeChat}
@@ -243,17 +248,17 @@ export function useInboxRenderItem({
           now={now}
           onPress={openBot}
           onLongPress={!sharing && !SWIPE_ROWS ? organizeBot : undefined}
-          onAction={!sharing && SWIPE_ROWS && item.bot.spaceId === spaceId ? botAction : undefined}
-          sections={botSections}
+          onAction={!sharing && SWIPE_ROWS ? botAction : undefined}
+          sections={sectionsOf(item.bot.spaceId)}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
           onSnooze={snoozeChat}
         />
-      ),
+      );
+    },
     [
       appearance,
       botAction,
-      botSections,
       chooseInboxSpace,
       confirmDeleteSpace,
       createBotInSpace,
@@ -271,6 +276,7 @@ export function useInboxRenderItem({
       router,
       sharing,
       snoozeChat,
+      spaces,
       spaceBusy,
       spaceRecoveryId,
       styles,

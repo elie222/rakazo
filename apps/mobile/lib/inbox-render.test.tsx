@@ -69,6 +69,7 @@ vi.mock("react-native", () => {
       accessibilityState,
       accessibilityValue,
       onPress,
+      onLongPress,
       style,
     }: {
       children?: ReactNode;
@@ -76,6 +77,7 @@ vi.mock("react-native", () => {
       accessibilityState?: { expanded?: boolean };
       accessibilityValue?: { text?: string };
       onPress?: () => void;
+      onLongPress?: () => void;
       style?: unknown;
     }) => (
       <button
@@ -83,6 +85,7 @@ vi.mock("react-native", () => {
         aria-label={accessibilityLabel}
         aria-expanded={accessibilityState?.expanded}
         data-value={accessibilityValue?.text}
+        data-long-press={onLongPress ? "true" : undefined}
         data-min-height={
           flatten(typeof style === "function" ? style({ pressed: false }) : style).minHeight
         }
@@ -198,8 +201,16 @@ vi.mock("../components/bot-avatar", () => ({
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
 // Rows in the current space carry the iOS swipe host and its long-press menu.
 vi.mock("../components/inbox-swipe-row", () => ({
-  InboxSwipeRow: ({ rowKey, children }: { rowKey: string; children: ReactElement }) => {
-    ui.swipeRows.push(rowKey);
+  InboxSwipeRow: ({
+    rowKey,
+    sections,
+    children,
+  }: {
+    rowKey: string;
+    sections: { id: string }[];
+    children: ReactElement;
+  }) => {
+    ui.swipeRows.push([rowKey, ...sections.map((section) => section.id)].join(" "));
     return children;
   },
 }));
@@ -209,7 +220,6 @@ const action = vi.fn();
 const callbacks = {
   appearance: "light" as const,
   botAction: action,
-  botSections: [],
   chooseInboxSpace: action,
   confirmDeleteSpace: action,
   createBotInSpace: action,
@@ -223,6 +233,7 @@ const callbacks = {
   organizeGroup: action,
   sharing: false,
   snoozeChat: action,
+  spaces: [],
   spaceBusy: false,
   spaceRecoveryId: null,
   toggleCollapsed: action,
@@ -601,7 +612,7 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   expect(publish).toHaveBeenLastCalledWith([]);
 });
 
-it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
+it("gives chats in every space the long-press menu, with their own space's sections", () => {
   const chat = (id: string, spaceId: string) => ({
     id,
     spaceId,
@@ -609,15 +620,35 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     preview: "",
     members: [],
   });
-  // Chats listed from another space have no row menu, as with Archive.
   const items = [
     { type: "bot", bot: chat("current-bot", "space-current") },
     { type: "group", group: chat("current-group", "space-current") },
     { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
   ] as unknown as InboxItem[];
-  render(<List items={items} spaceId="space-current" />);
-  expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
+  const section = (id: string) => ({ id, name: id, position: 0, createdAt: "", updatedAt: "" });
+  render(
+    <List
+      items={items}
+      spaceId="space-current"
+      options={{
+        spaces: [
+          { id: "space-current", botSections: [section("current-section")] },
+          { id: "space-other", botSections: [section("other-section")] },
+        ],
+      }}
+    />,
+  );
+  expect(ui.swipeRows).toEqual([
+    "bot:current-bot current-section",
+    "group:current-group current-section",
+    "bot:other-bot other-section",
+    "group:other-group other-section",
+  ]);
+  // A long press opens the menu and never the chat.
+  const rows = Array.from(container.querySelectorAll("button"));
+  expect(rows).toHaveLength(4);
+  for (const row of rows) expect(row.dataset.longPress).toBe("true");
 });
 
 it("offers every space heading's Members and Settings, and Delete only where the member may delete it", () => {
