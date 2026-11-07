@@ -8,7 +8,14 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop, pageLinksAsTitles } from "@rakazo/core";
+import {
+  askAsPlainText,
+  botMessageHopExhausted,
+  isTextAnswerableAsk,
+  nextBotMessageHop,
+  pageLinksAsTitles,
+  WORKING_RUN_STATUSES,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   accountDeactivated,
@@ -96,11 +103,24 @@ export async function mirrorMessagingOutbound(
   deps: MessagingDeliveryDeps,
   runId: string,
 ): Promise<void> {
+  const before = await newestBotMessageSeq(deps.prisma, runId);
   await mirrorRun(deps, runId);
+  // A run answered since it paused is working again, or has written a reply this mirror may have
+  // missed even if it already finished: either way that reply's own mirror sets the mark.
+  if ((await newestBotMessageSeq(deps.prisma, runId)) !== before) return;
   await deps.prisma.run.updateMany({
-    where: { id: runId, trigger: "messaging" },
+    where: { id: runId, trigger: "messaging", status: { notIn: [...WORKING_RUN_STATUSES] } },
     data: { messagingMirroredAt: new Date() },
   });
+}
+
+async function newestBotMessageSeq(prisma: PrismaClient, runId: string): Promise<number | null> {
+  const newest = await prisma.message.findFirst({
+    where: { runId, role: "bot" },
+    orderBy: { seq: "desc" },
+    select: { seq: true },
+  });
+  return newest?.seq ?? null;
 }
 
 /**
@@ -166,9 +186,11 @@ async function mirrorRun(
   // re-sends only the parts that failed and never repeats delivered text.
   // The whole reply takes one explicit, non-overlapping range, like a group
   // reply, so a concurrent DM mirror cannot interleave its parts.
-  const linkedPages = linkedPageIds(messages);
+  const linkedPages = linkedPageIds(messages, { asks: true });
   const rowsByMessage = messages.map((message) => {
-    const body = extractText(message.blocks, linkedPages);
+    // A pending question goes as text, so a reply in the chat can answer it. While the run is
+    // going it holds back like a card: it goes with the mirror the pause triggers.
+    const body = extractText(message.blocks, linkedPages, { asks: true });
     const parts = body ? splitOutboundBody(identity.provider, body) : [];
     return [
       ...parts.map((part, index) => ({
@@ -881,18 +903,31 @@ function extractArtifactIds(blocks: unknown): string[] {
   );
 }
 
-function textBlocks(blocks: unknown): string[] {
+/** A pending question a typed reply can answer, as the text a chat gets for it. */
+function pendingAskText(block: { kind?: unknown; text?: unknown } | null): string | undefined {
+  if (block?.kind !== "ask" || typeof block.text !== "string") return undefined;
+  const ask = block as Extract<MessageBlock, { kind: "ask" }>;
+  return ask.status !== "answered" && isTextAnswerableAsk(ask) ? askAsPlainText(ask) : undefined;
+}
+
+/** Text blocks, and with `asks` each pending question sent as text (see extractText). */
+function textBlocks(blocks: unknown, options: { asks?: boolean } = {}): string[] {
   if (!Array.isArray(blocks)) return [];
-  return blocks.flatMap((block: { kind?: unknown; text?: unknown } | null) =>
-    block?.kind === "text" && typeof block.text === "string" ? [block.text] : [],
-  );
+  return blocks.flatMap((block: { kind?: unknown; text?: unknown } | null) => {
+    if (block?.kind === "text" && typeof block.text === "string") return [block.text];
+    const ask = options.asks ? pendingAskText(block) : undefined;
+    return ask ? [ask] : [];
+  });
 }
 
 /** Pages the run's replies already link by name, so their cards add nothing more. */
-function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
+function linkedPageIds(
+  messages: readonly { blocks: unknown }[],
+  options: { asks?: boolean } = {},
+): Set<string> {
   const ids = new Set<string>();
   for (const message of messages)
-    for (const text of textBlocks(message.blocks)) {
+    for (const text of textBlocks(message.blocks, options)) {
       // Only links the conversion names count; one inside a code example stays as written, so a
       // page counts when fewer of its links remain after converting than were written.
       const converted = pageLinksAsTitles(text);
@@ -905,15 +940,23 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
 
 /**
  * The text other channels get. A page card cannot travel, so a page the reply does not name goes
- * as its title.
+ * as its title. With `asks`, a pending question a reply can answer goes as text too.
  */
-function extractText(blocks: unknown, linkedPages: ReadonlySet<string>): string {
+function extractText(
+  blocks: unknown,
+  linkedPages: ReadonlySet<string>,
+  options: { asks?: boolean } = {},
+): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
     .flatMap(
       (block: { kind?: unknown; text?: unknown; pageId?: unknown; title?: unknown } | null) => {
         if (block?.kind === "text" && typeof block.text === "string")
           return [pageLinksAsTitles(block.text)];
+        if (options.asks && block?.kind === "ask") {
+          const ask = pendingAskText(block);
+          return ask ? [pageLinksAsTitles(ask)] : [];
+        }
         if (
           block?.kind === "page" &&
           typeof block.title === "string" &&

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   answerableAskMessageIds,
+  askAsPlainText,
   dismissableAskMessageIds,
+  isTextAnswerableAsk,
+  plainTextAskAnswer,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "./answerable-ask.js";
@@ -151,5 +154,63 @@ describe("dismissableAskMessageIds", () => {
     ).toEqual(new Set());
     expect(dismissableAskMessageIds(null, "owner")).toEqual(new Set());
     expect(answerableAskMessageIds(snapshot).has("secret")).toBe(true);
+  });
+});
+
+describe("plain-text questions", () => {
+  const actions = [
+    { id: "choice-1", label: "Berlin" },
+    { id: "choice-2", label: "Paris" },
+  ];
+
+  it("lists the options by number after the question and its detail", () => {
+    expect(askAsPlainText({ text: "Which city?", detail: "For the trip in May.", actions })).toBe(
+      "Which city?\n\nFor the trip in May.\n\n1. Berlin\n2. Paris",
+    );
+    expect(askAsPlainText({ text: "What should I call it?" })).toBe("What should I call it?");
+  });
+
+  it("answers with the option a bare number picks, and otherwise with the reply", () => {
+    expect(plainTextAskAnswer(" 2 ", actions)).toBe("choice-2");
+    expect(plainTextAskAnswer("paris", actions)).toBe("paris");
+    expect(plainTextAskAnswer("3", actions)).toBe("3");
+    expect(plainTextAskAnswer("2 please", actions)).toBe("2 please");
+    for (const reply of ["2.", "2)", "#2", "2、", " # 2 "])
+      expect(plainTextAskAnswer(reply, actions)).toBe("choice-2");
+    expect(plainTextAskAnswer("3.", actions)).toBe("3.");
+    expect(plainTextAskAnswer("2", undefined)).toBe("2");
+  });
+
+  it("reads a listed number as its position, even when labels are numbers", () => {
+    const counts = [
+      { id: "choice-1", label: "2" },
+      { id: "choice-2", label: "5" },
+      { id: "choice-3", label: "10" },
+    ];
+    expect(plainTextAskAnswer("2", counts)).toBe("choice-2");
+    expect(plainTextAskAnswer("3", counts)).toBe("choice-3");
+    // Past the list, the reply is passed on for the usual label match.
+    expect(plainTextAskAnswer("5", counts.slice(0, 2))).toBe("5");
+  });
+
+  it("takes other numbered forms as the reply's own words", () => {
+    for (const reply of ["２", "-1", "0", "2..", "2.5", "(2"]) {
+      expect(plainTextAskAnswer(reply, actions)).toBe(reply);
+    }
+  });
+
+  it("leaves approvals and secret requests to their cards", () => {
+    expect(isTextAnswerableAsk({ kind: "ask", actions })).toBe(true);
+    expect(isTextAnswerableAsk({ kind: "ask", input: "secret" })).toBe(false);
+    expect(
+      isTextAnswerableAsk({
+        kind: "ask",
+        approvalEffectId: "effect-1",
+        actions: [
+          { id: "allow", label: "Allow" },
+          { id: "deny", label: "Deny" },
+        ],
+      }),
+    ).toBe(false);
   });
 });
