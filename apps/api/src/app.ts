@@ -71,8 +71,8 @@ import {
   userDeviceForwardSecret,
   userDeviceInternalAddress,
   verifyModelServesAgents,
-  withSecretPersistence,
   WorkActivities,
+  withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
@@ -466,8 +466,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       voip: await createApnsVoipProvider(env.apnsVoip),
     });
   const activityPush = await createApnsActivityProvider(env.apnsVoip);
-  if (activityPush)
-    workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
+  if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
   const userDeviceHub = env.userDevicesEnabled
     ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })

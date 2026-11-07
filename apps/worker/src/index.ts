@@ -57,9 +57,9 @@ import {
   shutdownPiTelemetry,
   UserDevices,
   userDeviceForwardSecret,
+  WorkActivities,
   withRunWorker,
   withSecretPersistence,
-  WorkActivities,
 } from "@rakazo/adapters";
 import { resolveSupervisorToken } from "@rakazo/core";
 import {
@@ -195,8 +195,7 @@ async function main() {
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
   });
   const activityPush = await createApnsActivityProvider(apnsVoipConfig(process.env));
-  if (activityPush)
-    workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
+  if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const email = configuredEmailProvider({
     provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
     apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
