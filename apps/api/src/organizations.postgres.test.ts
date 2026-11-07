@@ -567,10 +567,14 @@ describePostgres("organizations (PostgreSQL)", () => {
       returnBilling = resolve;
     });
     const deadline = new AbortController();
+    // Going on after its deadline, the attempt's next step would be a query; record any it makes.
+    let billingReturned = false;
+    const queriesAfterBilling: string[] = [];
     const late = runAsSystem("an attempt cut off at its deadline", () =>
       deleteOrganization(
         {
           ...deps(),
+          prisma: recordingQueries(prisma, () => billingReturned, queriesAfterBilling),
           billing: {
             cancelForDeletedOrganization: async () => {
               billingCalled();
@@ -595,9 +599,11 @@ describePostgres("organizations (PostgreSQL)", () => {
     const retry = client(ada).organizations.remove({ organizationId: work.id });
     await until(() => sandbox.started.includes(ref));
 
+    billingReturned = true;
     returnBilling();
-    // Give the cut-off attempt time to go on, if it would.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // The cut-off attempt resumes within these microtasks, so by now it has stopped or gone on.
+    await new Promise(setImmediate);
+    expect(queriesAfterBilling).toEqual([]);
     expect(sandbox.started.filter((started) => started === ref)).toHaveLength(1);
     release();
     await retry;
@@ -1083,4 +1089,29 @@ function memoryRing() {
     sampleByMasterKey: async () => [],
   };
   return new ContentKeyRing(new LocalKeyProvider([{ id: "k1", key: randomBytes(32) }]), store);
+}
+
+/** `prisma`, recording each model query made while `recording()` is true. */
+function recordingQueries(
+  prisma: PrismaClient,
+  recording: () => boolean,
+  queries: string[],
+): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, model, receiver) {
+      const delegate = Reflect.get(target, model, receiver);
+      if (typeof model !== "string" || model.startsWith("$") || typeof delegate !== "object")
+        return delegate;
+      return new Proxy(delegate, {
+        get(methods, method, methodsReceiver) {
+          const query = Reflect.get(methods, method, methodsReceiver);
+          if (typeof query !== "function") return query;
+          return (...args: unknown[]) => {
+            if (recording()) queries.push(`${model}.${String(method)}`);
+            return query.apply(methods, args);
+          };
+        },
+      });
+    },
+  });
 }
