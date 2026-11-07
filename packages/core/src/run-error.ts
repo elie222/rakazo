@@ -1,8 +1,8 @@
 import type { RunErrorKind } from "@rakazo/contracts";
 import {
-  COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  isComputerAllowanceUsed,
   providerQuotaResetAt,
 } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
@@ -115,7 +115,6 @@ const APP_RUN_ERRORS = new Set([
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
-  COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
@@ -210,12 +209,15 @@ const MALFORMED_KEY_HEADER =
 const MODEL_UNAVAILABLE =
   /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model)\b|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
 
+export type RunErrorRecovery = "connection" | "model" | "plan";
+
 /**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
  * is the one action that fixes the failure: "connection" opens the model connections (a
  * rejected or capped key, or no model at all) and "model" picks another model (a provider out
- * of quota or credits, refusing the model to the account, or unable to serve it). Transient
- * failures carry none: their summary already says to try again.
+ * of quota or credits, refusing the model to the account, or unable to serve it), and "plan"
+ * opens billing (computer hours spent). Transient failures carry none: their summary already
+ * says to try again.
  */
 export function normalizeRunError(
   details: string,
@@ -225,7 +227,7 @@ export function normalizeRunError(
 ): {
   summary: string;
   details: string;
-  recovery?: "connection" | "model";
+  recovery?: RunErrorRecovery;
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
@@ -275,6 +277,7 @@ export function normalizeRunError(
       ].join("\n"),
     };
   }
+  if (isComputerAllowanceUsed(trimmed)) return { summary: details, details, recovery: "plan" };
   // Preserve only known recovery advice: provider diagnostics can also be plain text.
   if (APP_RUN_ERRORS.has(trimmed)) {
     return MODEL_OUTPUT_RUN_ERRORS.has(trimmed)
@@ -361,7 +364,7 @@ export function normalizeRunError(
   let resetAt: number | undefined;
   let kind: RunErrorKind | undefined;
   let period: "none" | "daily" | "weekly" | "monthly" | undefined;
-  let recovery: "connection" | "model" | undefined;
+  let recovery: RunErrorRecovery | undefined;
   let summary = translate("The model provider returned an error.");
   const financialQuota =
     /insufficient[_ ](?:quota|balance)|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(

@@ -1,4 +1,8 @@
-import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR, COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import {
+  COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+} from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -667,6 +671,14 @@ it.each([COMPUTER_RATE_LIMIT_ERROR, COMPUTER_PROVIDER_UNAVAILABLE_ERROR])(
     expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
   },
 );
+
+it("sends spent computer hours to billing", () => {
+  expect(normalizeRunError(COMPUTER_ALLOWANCE_USED_ERROR)).toEqual({
+    summary: COMPUTER_ALLOWANCE_USED_ERROR,
+    details: COMPUTER_ALLOWANCE_USED_ERROR,
+    recovery: "plan",
+  });
+});
 
 it("does not expose malformed fallback metadata as user-facing copy", () => {
   expect(
