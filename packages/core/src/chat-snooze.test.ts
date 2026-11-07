@@ -15,7 +15,6 @@ describe("chat snooze", () => {
     expect(chatWoke({ snoozedUntil: "not a date" }, now)).toBe(false);
   });
 
-
   it("finds the next wake among future snoozes", () => {
     const soon = "2026-11-07T13:00:00.000Z";
     expect(
