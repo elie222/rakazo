@@ -136,11 +136,15 @@ export function AskActions({
             />
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
               <NativeActionButton
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={onAccessibilityAction}
                 label={t("Send answer")}
                 disabled={disabled || !typed.trim() || submitting}
                 onPress={() => void submit(typed.trim())}
               />
               <NativeActionButton
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={onAccessibilityAction}
                 label={t("Cancel")}
                 disabled={submitting}
                 prominence="secondary"
@@ -153,6 +157,8 @@ export function AskActions({
           </>
         ) : (
           <NativeActionButton
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
             label={t("Type your answer")}
             disabled={disabled || submitting}
             prominence="plain"

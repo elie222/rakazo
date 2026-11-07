@@ -40,11 +40,23 @@ vi.mock("../components/native-action-button", () => ({
     label,
     onPress,
     disabled,
+    accessibilityActions,
   }: {
     label: string;
     onPress: () => void;
     disabled?: boolean;
-  }) => createElement("button", { type: "button", onClick: onPress, disabled }, label),
+    accessibilityActions?: Array<{ name: string }>;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onPress,
+        disabled,
+        "data-actions": accessibilityActions?.map((action) => action.name).join(","),
+      },
+      label,
+    ),
 }));
 
 import { AskActions } from "../components/AskActions";
@@ -141,6 +153,31 @@ it("sends nothing when Return is pressed on an empty typed answer", async () => 
   });
 
   expect(onAnswer).not.toHaveBeenCalled();
+});
+
+it("keeps the message's accessibility actions on the typed-answer buttons", async () => {
+  await act(async () =>
+    root.render(
+      <AskActions
+        actions={[
+          { id: "choice-1", label: "Plan a trip" },
+          { id: "choice-2", label: "Write something" },
+        ]}
+        approval={false}
+        onAnswer={async () => undefined}
+        accessibilityActions={[{ name: "reply", label: "Reply" }]}
+      />,
+    ),
+  );
+  const buttons = () => [...container.querySelectorAll("button")];
+  await act(async () =>
+    buttons()
+      .find((item) => item.textContent === "Type your answer")!
+      .click(),
+  );
+  expect(buttons().map((item) => item.getAttribute("data-actions"))).toEqual(
+    buttons().map(() => "reply"),
+  );
 });
 
 it("keeps typing off approval cards", async () => {
