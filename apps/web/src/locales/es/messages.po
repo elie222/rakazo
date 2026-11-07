@@ -2179,6 +2179,7 @@ msgstr "No se pudo completar la actualización. Vuelve a intentarlo."
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/plugins/use-plugin-connections.ts
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "No se pudo conectar"

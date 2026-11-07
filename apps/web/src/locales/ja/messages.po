@@ -2179,6 +2179,7 @@ msgstr "アップデートを完了できませんでした。もう一度お試
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/plugins/use-plugin-connections.ts
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "接続できませんでした"
