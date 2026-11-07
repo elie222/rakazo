@@ -49,6 +49,7 @@ export function useInboxRenderItem({
   confirmDeleteSpace,
   createBotInSpace,
   day,
+  now,
   deleteSection,
   editSectionFromMenu,
   groupAction,
@@ -78,6 +79,8 @@ export function useInboxRenderItem({
   confirmDeleteSpace: (space: InboxSpace) => void;
   createBotInSpace: (spaceId: string) => void;
   day: number;
+  /** The snooze clock, so rows redraw when a chat wakes. */
+  now: number;
   /** The selected space: only its chats get swipe actions and the row menu. */
   spaceId: string | undefined;
   openBot: (bot: MobileBot | SpaceBot) => void;
@@ -224,6 +227,7 @@ export function useInboxRenderItem({
         <GroupRow
           group={item.group}
           day={day}
+          now={now}
           onPress={openGroup}
           onLongPress={!SWIPE_ROWS ? organizeGroup : undefined}
           onAction={SWIPE_ROWS && item.group.spaceId === spaceId ? groupAction : undefined}
@@ -236,6 +240,7 @@ export function useInboxRenderItem({
         <BotRow
           bot={item.bot}
           day={day}
+          now={now}
           onPress={openBot}
           onLongPress={!sharing && !SWIPE_ROWS ? organizeBot : undefined}
           onAction={!sharing && SWIPE_ROWS && item.bot.spaceId === spaceId ? botAction : undefined}
@@ -254,6 +259,7 @@ export function useInboxRenderItem({
       createBotInSpace,
       deleteSection,
       day,
+      now,
       editSectionFromMenu,
       groupAction,
       spaceId,

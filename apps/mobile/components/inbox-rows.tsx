@@ -303,9 +303,9 @@ type RowMenuProps = {
 function chatTime(
   chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
   day: number,
+  now: number,
   t: (text: string) => string,
 ) {
-  const now = Date.now();
   if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
   if (chatWoke(chat, now)) return t("Woke");
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
@@ -314,6 +314,7 @@ function chatTime(
 export const BotRow = memo(function BotRow({
   bot,
   day,
+  now,
   onPress,
   onLongPress,
   onAction,
@@ -324,13 +325,15 @@ export const BotRow = memo(function BotRow({
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
+  /** The snooze clock, so a row redraws when its chat wakes. */
+  now: number;
   onPress: (bot: MobileBot | SpaceBot) => void;
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
 } & RowMenuProps) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
-  const time = chatTime(bot, day, t);
+  const time = chatTime(bot, day, now, t);
   const working = isRunWorking(bot.status);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
@@ -397,7 +400,7 @@ export const BotRow = memo(function BotRow({
       onAction={runAction}
       onOrganize={(update) => onOrganize("bot", bot, update)}
       onEditSection={(mode) => onEditSection("bot", bot, mode)}
-      snoozed={chatSnoozed(bot, Date.now())}
+      snoozed={chatSnoozed(bot, now)}
       onSnooze={(until) => onSnooze("bot", bot, until)}
     >
       {row}
@@ -410,6 +413,7 @@ export const BotRow = memo(function BotRow({
 export const GroupRow = memo(function GroupRow({
   group,
   day,
+  now,
   onPress,
   onLongPress,
   onAction,
@@ -420,6 +424,8 @@ export const GroupRow = memo(function GroupRow({
 }: {
   group: MobileGroup | SpaceGroup;
   day: number;
+  /** The snooze clock, so a row redraws when its chat wakes. */
+  now: number;
   onPress: (group: MobileGroup | SpaceGroup) => void;
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
   onAction?: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
@@ -427,7 +433,7 @@ export const GroupRow = memo(function GroupRow({
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = chatTime(group, day, t);
+  const time = chatTime(group, day, now, t);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
@@ -464,7 +470,7 @@ export const GroupRow = memo(function GroupRow({
       onAction={runAction}
       onOrganize={(update) => onOrganize("group", group, update)}
       onEditSection={(mode) => onEditSection("group", group, mode)}
-      snoozed={chatSnoozed(group, Date.now())}
+      snoozed={chatSnoozed(group, now)}
       onSnooze={(until) => onSnooze("group", group, until)}
     >
       {row}

@@ -1,3 +1,4 @@
+import { snoozeWakeDay } from "@rakazo/core";
 import { dateLocaleForUi } from "./i18n";
 
 const DAY_MS = 86_400_000;
@@ -33,12 +34,8 @@ export function formatSnoozeWake(iso: string, now = new Date()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  if (date.toDateString() === now.toDateString()) return time;
-  const day =
-    date.getTime() - now.getTime() < 6 * DAY_MS
-      ? date.toLocaleDateString(dateLocaleForUi(), { weekday: "short" })
-      : date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
-  return `${day} ${time}`;
+  const day = snoozeWakeDay(date, now);
+  return day ? `${date.toLocaleDateString(dateLocaleForUi(), day)} ${time}` : time;
 }
 
 function pad(value: number) {

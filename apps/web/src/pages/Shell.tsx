@@ -176,7 +176,14 @@ function SpaceShell() {
     ...groups,
     ...spaces.flatMap((space) => [...space.bots, ...space.groups]),
   ]);
-  const snooze = useChatSnooze({ rpc, setBots, setGroups, refreshBots });
+  const snooze = useChatSnooze({
+    rpc,
+    openSpaceId: bootstrapMe?.spaceId,
+    setBots,
+    setGroups,
+    setSpaces,
+    refreshBots,
+  });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   useEffect(() => {
@@ -964,14 +971,18 @@ function SpaceShell() {
         archived={
           <>
             <SnoozedChats
-              snoozedBots={bots.filter((bot) => chatSnoozed(bot, snoozeNow))}
-              snoozedGroups={groups.filter((group) => chatSnoozed(group, snoozeNow))}
+              snoozed={sidebarSpaces.flatMap((space) => [
+                ...space.bots
+                  .filter((chat) => chatSnoozed(chat, snoozeNow))
+                  .map((chat) => ({ kind: "bot" as const, chat })),
+                ...space.groups
+                  .filter((chat) => chatSnoozed(chat, snoozeNow))
+                  .map((chat) => ({ kind: "group" as const, chat })),
+              ])}
               showSpaceSearch={search.showSpaceSearch}
               now={snoozeNow}
               snooze={snooze}
-              openChat={(path) => {
-                if (bootstrapMe) openSpaceChat(bootstrapMe.spaceId, path);
-              }}
+              openSpaceChat={openSpaceChat}
             />
             <ArchivedChats
               archivedBots={archivedBots}

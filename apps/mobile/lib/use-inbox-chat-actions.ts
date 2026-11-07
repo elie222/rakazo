@@ -238,20 +238,25 @@ export function useInboxChatActions({
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       until: string | null,
     ) => {
-      const apply = <T extends { id: string; snoozedUntil?: string | null }>(chats: T[]) =>
-        chats.map((item) => (item.id === chat.id ? { ...item, snoozedUntil: until } : item));
-      if (kind === "bot") setBots(apply);
-      else setGroups(apply);
-      setSpaces((current) =>
-        current.map((space) =>
-          kind === "bot"
-            ? { ...space, bots: apply(space.bots) }
-            : { ...space, groups: apply(space.groups) },
-        ),
-      );
+      const apply = (value: string | null) => {
+        const set = <T extends { id: string; snoozedUntil?: string | null }>(chats: T[]) =>
+          chats.map((item) => (item.id === chat.id ? { ...item, snoozedUntil: value } : item));
+        if (kind === "bot") setBots(set);
+        else setGroups(set);
+        setSpaces((current) =>
+          current.map((space) =>
+            kind === "bot"
+              ? { ...space, bots: set(space.bots) }
+              : { ...space, groups: set(space.groups) },
+          ),
+        );
+      };
+      apply(until);
       try {
         await chatRpc(chat.spaceId, "threads/snooze", { ...chatTarget(kind, chat.id), until });
       } catch (err) {
+        // Put the chat back where it was, even if the reload after it fails too.
+        apply(chat.snoozedUntil ?? null);
         Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
       }
       await loadBots().catch(() => undefined);

@@ -53,3 +53,13 @@ export function snoozePresetTime(preset: SnoozePreset, now: Date): Date {
   wake.setDate(wake.getDate() + days);
   return wake;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** How a wake time names its day: nothing today, the weekday within a week, else the date. */
+export function snoozeWakeDay(wake: Date, now: Date): Intl.DateTimeFormatOptions | null {
+  if (wake.toDateString() === now.toDateString()) return null;
+  return wake.getTime() - now.getTime() < 6 * DAY_MS
+    ? { weekday: "short" }
+    : { month: "short", day: "numeric" };
+}

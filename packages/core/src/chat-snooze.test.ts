@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { chatSnoozed, chatWoke, nextChatWake, snoozePresetTime } from "./chat-snooze.js";
+import {
+  chatSnoozed,
+  chatWoke,
+  nextChatWake,
+  snoozePresetTime,
+  snoozeWakeDay,
+} from "./chat-snooze.js";
 
 const now = Date.parse("2026-11-07T12:00:00Z");
 const later = "2026-11-07T15:00:00.000Z";
@@ -36,5 +42,15 @@ describe("chat snooze", () => {
     expect(snoozePresetTime("nextWeek", new Date(2026, 10, 9, 8))).toEqual(
       new Date(2026, 10, 16, 9),
     );
+  });
+
+  it("names a wake day only when it is not today", () => {
+    const saturday = new Date(2026, 10, 7, 14, 30);
+    expect(snoozeWakeDay(new Date(2026, 10, 7, 18), saturday)).toBeNull();
+    expect(snoozeWakeDay(new Date(2026, 10, 9, 9), saturday)).toEqual({ weekday: "short" });
+    expect(snoozeWakeDay(new Date(2026, 10, 20, 9), saturday)).toEqual({
+      month: "short",
+      day: "numeric",
+    });
   });
 });

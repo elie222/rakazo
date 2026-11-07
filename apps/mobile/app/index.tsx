@@ -695,6 +695,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     confirmDeleteSpace,
     createBotInSpace: createQuickBot,
     day,
+    now: snoozeNow,
     deleteSection,
     editSectionFromMenu,
     groupAction,

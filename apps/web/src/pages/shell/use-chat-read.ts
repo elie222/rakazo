@@ -228,7 +228,9 @@ export function useChatRead({
     void request
       .then(() =>
         setGroups((current) =>
-          current.map((group) => (group.id === groupId ? { ...group, unread } : group)),
+          (unread ? current : endWake(current, groupId)).map((group) =>
+            group.id === groupId ? { ...group, unread } : group,
+          ),
         ),
       )
       .catch(() => {

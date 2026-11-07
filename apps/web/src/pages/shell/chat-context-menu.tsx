@@ -73,7 +73,7 @@ export function ChatContextMenu({
       snoozed={chatSnoozed({ snoozedUntil: chat.snoozedUntil }, Date.now())}
       onSnooze={(until) => {
         onClose();
-        snooze(target.kind, chat.id, until);
+        snooze({ kind: target.kind, ...chat }, until);
       }}
       onMoveToSection={(sectionId) => {
         onClose();

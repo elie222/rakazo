@@ -240,7 +240,7 @@ function List({
   day?: number;
   options?: Partial<Parameters<typeof useInboxRenderItem>[0]>;
 }) {
-  const renderItem = useInboxRenderItem({ ...callbacks, ...options, day, spaceId });
+  const renderItem = useInboxRenderItem({ now: 0, ...callbacks, ...options, day, spaceId });
   onRenderItem?.(renderItem);
   // Keyed like the inbox's FlatList.
   return items.map((item) => cloneElement(renderItem({ item }), { key: inboxItemKey(item) }));
@@ -395,6 +395,7 @@ it("renders saved bot rows without a notification setting", () => {
         key={bot.id}
         bot={bot}
         day={0}
+        now={0}
         onPress={action}
         sections={[]}
         onOrganize={action}
@@ -437,6 +438,7 @@ it("says working only while the bot works, and shows nothing beside the time", (
         key={bot.id}
         bot={bot}
         day={0}
+        now={0}
         onPress={action}
         sections={[]}
         onOrganize={action}
@@ -467,7 +469,13 @@ it("collapses a section from its heading and keeps the choice for the account", 
   ui.saveCollapsedSections.mockReset();
   function SectionList({ spaces, me }: { spaces: InboxSpace[]; me: { userId: string } }) {
     const { collapsed, toggleCollapsed, loaded } = useCollapsedSections(me.userId);
-    const renderItem = useInboxRenderItem({ ...callbacks, toggleCollapsed, day: 0, spaceId });
+    const renderItem = useInboxRenderItem({
+      ...callbacks,
+      toggleCollapsed,
+      day: 0,
+      now: 0,
+      spaceId,
+    });
     // The inbox waits for the saved choice, so a collapsed section never draws open first.
     if (!loaded) return null;
     return spaceInboxItems(spaces, collapsed, spaceId).map((item) =>
