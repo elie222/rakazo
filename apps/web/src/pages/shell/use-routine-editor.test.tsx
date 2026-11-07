@@ -154,3 +154,13 @@ it("keeps each bot's revealed secret when rotations overlap", async () => {
   act(() => root.render(<Harness />));
   expect(editor.editorProps!.webhook.secret).toBe("secret-1");
 });
+
+it("shows why a key cannot be set instead of leaving the rejection unhandled", async () => {
+  rotateWebhookSecret.mockRejectedValue(
+    Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 }),
+  );
+  await act(async () => {
+    await editor.editorProps!.onEnsureWebhook();
+  });
+  expect(editor.editorProps!.error).toBe("Only the bot's creator can set its webhook key.");
+});

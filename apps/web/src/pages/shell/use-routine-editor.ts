@@ -15,7 +15,7 @@ import {
 } from "../../lib/routine-draft";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { sharedInflight } from "../../lib/shared-inflight";
-import { errorText } from "../../lib/user-error";
+import { errorCode, errorText } from "../../lib/user-error";
 import type { RoutineEditor } from "../RoutineEditor";
 
 export function useRoutineEditor({
@@ -57,6 +57,10 @@ export function useRoutineEditor({
       );
       return result.secret;
     });
+  const webhookErrorText = (error: unknown, fallback: string) =>
+    errorCode(error) === "FORBIDDEN"
+      ? t`Only the bot's creator can set its webhook key.`
+      : errorText(error, fallback);
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
@@ -117,7 +121,11 @@ export function useRoutineEditor({
         onBack: () => setPanel("routines"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
-          await ensureWebhookSecret(active.id);
+          try {
+            await ensureWebhookSecret(active.id);
+          } catch (error) {
+            setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
+          }
         },
         onSave: async () => {
           if (routineSavePending.current) return;
@@ -235,7 +243,7 @@ export function useRoutineEditor({
             if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
               return;
             }
-            setRoutineError(errorText(error, t`Could not save routine`));
+            setRoutineError(webhookErrorText(error, t`Could not save routine`));
             return;
           } finally {
             routineSavePending.current = false;
