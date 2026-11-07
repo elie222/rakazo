@@ -32,9 +32,9 @@ export function reportDeviceTimeZone(
   const session = currentSessionGeneration();
   // Replaced just below, before the attempt becomes visible as the pending one.
   attempt.report = reports.then(async () => {
-    // A queued report's call would carry the new sign-in's account, not this one's.
-    if (session !== currentSessionGeneration()) return;
     try {
+      // A queued report's call would carry the new sign-in's account, not this one's.
+      if (session !== currentSessionGeneration()) return;
       await rpc("preferences/adoptTimezone", { timezone });
     } finally {
       if (pending === attempt) pending = null;

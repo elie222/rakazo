@@ -32,9 +32,9 @@ function fakeDeviceZone(zone: string) {
     if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
     return real("en-US", options);
   }
-  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
-    lookup as unknown as typeof Intl.DateTimeFormat,
-  );
+  return vi
+    .spyOn(Intl, "DateTimeFormat")
+    .mockImplementation(lookup as unknown as typeof Intl.DateTimeFormat);
 }
 
 /** Mounts the hook with a stubbed report call; `manualSave` runs the marker it returns. */

@@ -23,9 +23,9 @@ function fakeDeviceZone(zone: string) {
     if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
     return real("en-US", options);
   }
-  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
-    lookup as unknown as typeof Intl.DateTimeFormat,
-  );
+  return vi
+    .spyOn(Intl, "DateTimeFormat")
+    .mockImplementation(lookup as unknown as typeof Intl.DateTimeFormat);
 }
 
 /** Lets the report queue issue its next request before an assertion. */
@@ -317,6 +317,10 @@ describe("device timezone report", () => {
       await flush();
       expect(vi.mocked(rpc)).not.toHaveBeenCalled();
       await first;
+      // Signing back in as the same account reports the same zone again.
+      generation = 2;
+      await reportDeviceTimeZone("user-1", null, null);
+      expect(vi.mocked(rpc)).toHaveBeenCalledTimes(1);
     } finally {
       zone.mockRestore();
     }
