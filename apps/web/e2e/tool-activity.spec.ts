@@ -58,6 +58,10 @@ test("tool activity shows for live and finished runs when the user turned it on"
       "true",
     );
     await expect(liveCard.locator("button[aria-expanded]")).toContainText(/Working…\s*8 tools/);
+    // The status line's sweep shows through: its muted text color must not paint over it.
+    const statusLabel = page.getByRole("status").locator("span[dir=auto]");
+    await expect(statusLabel).toHaveCSS("-webkit-text-fill-color", "rgba(0, 0, 0, 0)");
+    await expect(statusLabel).toHaveCSS("animation-name", "text-shimmer");
     await expect(page.getByTestId("tool-rows-hidden")).toHaveText("+2 earlier steps");
     await expect(page.getByTestId("tool-rows")).not.toContainText("Open calendar");
     await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
