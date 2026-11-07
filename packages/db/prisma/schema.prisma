@@ -36,6 +36,9 @@ model User {
   botAvatarSet                String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// Where `timezone` came from: "device" (client reports may move it) or "manual" (a
+  /// choice in the app or by a bot; only the user can leave it). Null until set.
+  timezoneSource              String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?

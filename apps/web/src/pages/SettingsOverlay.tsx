@@ -83,7 +83,7 @@ export function SettingsOverlay({
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
-  onTimezoneChange: (timezone: string) => Promise<void>;
+  onTimezoneChange: (timezone: string, followsDevice?: boolean) => Promise<void>;
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;

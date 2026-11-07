@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sameTimeZone, timezoneOptions } from "./local-timezone.js";
-
-describe("sameTimeZone", () => {
-  it("matches a zone with its legacy alias but not a different zone", () => {
-    expect(sameTimeZone("Asia/Kolkata", "Asia/Calcutta")).toBe(true);
-    expect(sameTimeZone("Pacific/Auckland", "Pacific/Auckland")).toBe(true);
-    expect(sameTimeZone("Pacific/Auckland", "Europe/London")).toBe(false);
-  });
-});
+import { timezoneOptions } from "./local-timezone.js";
 
 describe("timezoneOptions", () => {
   it("always offers UTC and the current zone, sorted", () => {

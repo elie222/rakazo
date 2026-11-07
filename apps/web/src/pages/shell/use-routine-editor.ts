@@ -1,9 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
-import { cronFromPreset } from "@rakazo/core";
+import { cronFromPreset, localTimezone } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useRef, useState } from "react";
-import { localTimezone } from "../../lib/local-timezone";
 import { parseModelOptionKey } from "../../lib/model-catalog";
 import type { Panel } from "../../lib/right-panel-state";
 import type { RoutineDraftState } from "../../lib/routine-draft";

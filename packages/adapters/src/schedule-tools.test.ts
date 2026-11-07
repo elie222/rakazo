@@ -1637,7 +1637,7 @@ describe("changeUserTimezone", () => {
     expect(userUpdate).toHaveBeenCalledTimes(1);
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { timezone: "Europe/London", locale: "pt-BR" },
+      data: { timezone: "Europe/London", timezoneSource: "manual", locale: "pt-BR" },
     });
   });
 
@@ -1646,7 +1646,7 @@ describe("changeUserTimezone", () => {
     await changeUserTimezone(deps, "user-1", "Africa/Cairo", { locale: "pt-BR" });
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { timezone: "Africa/Cairo", locale: "pt-BR" },
+      data: { timezone: "Africa/Cairo", timezoneSource: "manual", locale: "pt-BR" },
     });
     expect(rows).toHaveLength(0);
   });

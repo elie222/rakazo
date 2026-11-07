@@ -4,8 +4,10 @@ import {
   APP_LOCALE_LABELS,
   accountDisplay,
   displayName,
+  localTimezone,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  sameTimeZone,
 } from "@rakazo/core";
 import {
   Button,
@@ -49,7 +51,7 @@ import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
+import { timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";
@@ -66,7 +68,9 @@ export type SettingsGeneralProps = {
   onNameSaved?: () => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
-  onTimezoneChange?: (timezone: string) => Promise<void>;
+  /** Saves a zone the user picked; `followsDevice` marks the "Use {zone}" button, which
+   * also returns the account to following the device. */
+  onTimezoneChange?: (timezone: string, followsDevice?: boolean) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -163,12 +167,12 @@ export function GeneralSettingsPanels({
     });
   }
 
-  async function chooseTimezone(next: string) {
+  async function chooseTimezone(next: string, followsDevice = false) {
     if (!onTimezoneChange || timezonePending || next === timezone) return;
     setTimezonePending(true);
     setTimezoneError(null);
     try {
-      await onTimezoneChange(next);
+      await onTimezoneChange(next, followsDevice);
     } catch {
       setTimezoneError(t`Couldn't update your timezone`);
     } finally {
@@ -386,7 +390,7 @@ export function GeneralSettingsPanels({
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
                     disabled={timezonePending}
                     data-testid="timezone-use-device"
-                    onClick={() => void chooseTimezone(deviceTimezone)}
+                    onClick={() => void chooseTimezone(deviceTimezone, true)}
                   >
                     <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
                       Use {deviceTimezone.replaceAll("_", " ")}

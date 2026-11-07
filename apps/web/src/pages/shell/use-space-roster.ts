@@ -15,7 +15,6 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
 import { linkedBotRoute } from "../../lib/bootstrap-target";
-import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../lib/query";
@@ -23,6 +22,7 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
+import { useDeviceTimezoneReport, withServerTimezone } from "./use-device-timezone-report";
 import type { useShellNavigation } from "./use-shell-navigation";
 import { firstThreadRoute } from "./use-shell-navigation";
 import type { ThreadState } from "./use-thread-state";
@@ -194,6 +194,22 @@ export function useSpaceRoster({
     );
   }
 
+  /** Applies the server's zone after a device report, keeping every other local field. */
+  const applyReportedTimezone = useCallback(
+    (nextMe: Me) => {
+      setBootstrapMe((current) =>
+        current &&
+        (current.timezone !== nextMe.timezone || current.timezoneSource !== nextMe.timezoneSource)
+          ? withServerTimezone(current, nextMe)
+          : (current ?? nextMe),
+      );
+    },
+    [setBootstrapMe],
+  );
+  // The account follows this device's zone until the user picks one by hand; manual saves
+  // order older device reports out.
+  const noteTimezoneChoice = useDeviceTimezoneReport(rpc, bootstrapMe, applyReportedTimezone);
+
   return {
     groups,
     setGroups,
@@ -214,6 +230,7 @@ export function useSpaceRoster({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    noteTimezoneChoice,
     callsEnabledRef,
     botsRefreshApplied,
     botsRefreshInFlight,
@@ -232,7 +249,6 @@ export type SpaceRoster = ReturnType<typeof useSpaceRoster>;
  * revisit paints at once.
  */
 export function useSpaceBootstrap({
-  rpc,
   roster,
   thread,
   commitComputer,
@@ -247,7 +263,6 @@ export function useSpaceBootstrap({
   redirectKeepingOverlay,
   openSpaceChat,
 }: {
-  rpc: ReturnType<typeof createSpaceRpc>;
   roster: SpaceRoster;
   thread: ThreadState;
   commitComputer: (next: ComputerStatus | null) => void;
@@ -342,22 +357,6 @@ export function useSpaceBootstrap({
         if (cancelled) return;
         const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
-        // First sign-in with no saved timezone: adopt this browser's, once. A choice made
-        // in Settings is never overwritten; a failure just leaves bots on UTC.
-        if (bootstrap.me.timezone === null) {
-          void rpc.preferences
-            .adoptTimezone({ timezone: localTimezone() })
-            .then((nextMe) => {
-              if (!cancelled) {
-                setBootstrapMe((current) =>
-                  current && current.timezone == null
-                    ? { ...current, timezone: nextMe.timezone }
-                    : (current ?? nextMe),
-                );
-              }
-            })
-            .catch(() => {});
-        }
         // Skip list/route writes only if a later refreshBots() successfully
         // committed (failed refreshes bump epoch but not botsRefreshApplied).
         const applyBotLists = appliedAtStart === botsRefreshApplied.current;

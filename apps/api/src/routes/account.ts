@@ -165,7 +165,9 @@ export function accountRoutes(ctx: RouterContext) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
           // waits for any bot creation holding the user row, so no new bot is missed below.
+          // A zone picked here is the user's choice: device reports stop moving the account.
           await changeUserTimezone(deps, userId, input.timezone, {
+            source: "manual",
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
           });
@@ -222,10 +224,11 @@ export function accountRoutes(ctx: RouterContext) {
       }),
       adoptTimezone: authed.preferences.adoptTimezone.handler(
         async ({ context, input }): Promise<Me> => {
-          // Conditional in one statement: a concurrent explicit save always wins.
-          await deps.prisma.user.updateMany({
-            where: { id: context.actor.userId, timezone: null },
-            data: { timezone: input.timezone },
+          // A device report moves only an account that follows the device; the guard and
+          // the write share the account row's lock inside the save, so a concurrent
+          // manual choice always wins.
+          await changeUserTimezone(deps, context.actor.userId, input.timezone, {
+            source: input.switchTo === true ? "device-switch" : "device",
           });
           return meDto(deps, context.actor);
         },

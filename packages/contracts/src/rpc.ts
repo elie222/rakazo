@@ -404,8 +404,11 @@ export const appContract = {
           ),
       )
       .output(MeSchema),
-    /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
-    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
+    /** Reports this device's timezone: the account follows it until the user picks a zone
+     * by hand. `switchTo` also takes a hand-picked account back to the device. */
+    adoptTimezone: oc
+      .input(z.object({ timezone: TimeZoneSchema, switchTo: z.boolean().optional() }))
+      .output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),

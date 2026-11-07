@@ -6,6 +6,7 @@ import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { selectInitialSpace } from "./api-server";
 import { appBadgeGeneration } from "./app-badge";
 import { isPaywallShown } from "./billing";
+import { reportDeviceTimeZone } from "./device-timezone";
 import { getActiveUiLocale, useI18n } from "./i18n";
 import { retainInboxValue } from "./inbox-retention";
 import type {
@@ -106,6 +107,13 @@ export function useHomeInbox(
           ).catch(() => undefined);
         }
       }
+      // The account follows this device's zone until the user picks one by hand; the
+      // me this poll brought says what the server holds and who chose it, so a report
+      // goes out only on a difference, also covering the foreground return after a
+      // zone change.
+      void reportDeviceTimeZone(nextMe.userId, nextMe.timezone, nextMe.timezoneSource).catch(
+        () => undefined,
+      );
       inboxLoaded.current = true;
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });

@@ -126,7 +126,10 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
 
   async function resetAccount() {
     await system.routine.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
-    await system.user.update({ where: { id: userId }, data: { timezone: "Africa/Cairo" } });
+    await system.user.update({
+      where: { id: userId },
+      data: { timezone: "Africa/Cairo", timezoneSource: null },
+    });
     jobs.enqueue.mockClear();
   }
 
@@ -195,6 +198,74 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
       changeUserTimezone({ prisma: unhurried(), jobs }, userIdArg, timezone),
     );
   }
+
+  it("a device report moves an account that follows the device, with its routines", async () => {
+    await resetAccount();
+    await system.user.update({ where: { id: userId }, data: { timezoneSource: "device" } });
+    const mine = await weeklyRoutine(spaces[0]!, userId, "A");
+
+    await runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
+      changeUserTimezone({ prisma: unhurried(), jobs }, userId, "Europe/London", {
+        source: "device",
+      }),
+    );
+
+    await expect(
+      system.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timezone: true, timezoneSource: true },
+      }),
+    ).resolves.toEqual({ timezone: "Europe/London", timezoneSource: "device" });
+    // The routine that took the account zone keeps its local schedule in the new one.
+    await expect(
+      system.routine.findUniqueOrThrow({
+        where: { id: mine.id },
+        select: { timezone: true, nextRunAt: true },
+      }),
+    ).resolves.toEqual({
+      timezone: "Europe/London",
+      nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+    });
+  });
+
+  it("a device report keeps a zone picked by hand; only the switch back displaces it", async () => {
+    await resetAccount();
+    await system.user.update({ where: { id: userId }, data: { timezoneSource: "manual" } });
+    const mine = await weeklyRoutine(spaces[0]!, userId, "A");
+
+    await runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
+      changeUserTimezone({ prisma: unhurried(), jobs }, userId, "Europe/London", {
+        source: "device",
+      }),
+    );
+
+    await expect(
+      system.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timezone: true, timezoneSource: true },
+      }),
+    ).resolves.toEqual({ timezone: "Africa/Cairo", timezoneSource: "manual" });
+    await expect(
+      system.routine.findUniqueOrThrow({ where: { id: mine.id }, select: { timezone: true } }),
+    ).resolves.toEqual({ timezone: "Africa/Cairo" });
+
+    // The user's explicit return to the device zone moves the account and its routines.
+    await runAsTenant({ spaceId: spaces[0]!.spaceId, userId }, () =>
+      changeUserTimezone({ prisma: unhurried(), jobs }, userId, "Pacific/Auckland", {
+        source: "device-switch",
+      }),
+    );
+
+    await expect(
+      system.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timezone: true, timezoneSource: true },
+      }),
+    ).resolves.toEqual({ timezone: "Pacific/Auckland", timezoneSource: "device" });
+    await expect(
+      system.routine.findUniqueOrThrow({ where: { id: mine.id }, select: { timezone: true } }),
+    ).resolves.toEqual({ timezone: "Pacific/Auckland" });
+  });
 
   it("moves the user's routines in every space, and only theirs", async () => {
     await resetAccount();

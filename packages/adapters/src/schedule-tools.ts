@@ -10,6 +10,7 @@ import {
   nextCronDate,
   nextCronDateAcross,
   ONCE_ROUTINE_CRON,
+  sameTimeZone,
   unevenInterval,
   wallClock,
   zonedDateTime,
@@ -310,6 +311,10 @@ async function sharedAccountZone(tx: Prisma.TransactionClient, userId: string): 
  * Clearing the zone (`null`) only clears the account: a routine cannot hold no zone.
  * `timezone` is the already-validated zone the caller wants saved; `other` holds the
  * preference fields that came in the same save, so they commit with it or not at all.
+ * `other.source` says who chose the zone: "manual" (the default) is a choice in the app
+ * or by a bot and always lands; a client-detected "device" zone lands only while the
+ * account already follows the device, and "device-switch" is the user's explicit return
+ * to it, which also displaces a hand-picked zone.
  */
 export async function changeUserTimezone(
   deps: Pick<ScheduleToolDeps, "prisma" | "jobs">,
@@ -319,8 +324,12 @@ export async function changeUserTimezone(
     locale?: string;
     botAvatarSet?: string;
     marketingEmailOptOutAt?: Date | null;
+    source?: "manual" | "device" | "device-switch";
   },
 ): Promise<void> {
+  const { source = "manual", ...fields } = other ?? {};
+  // Clearing the zone clears its origin too, so a device can adopt one again.
+  const timezoneSource = timezone === null ? null : source === "manual" ? "manual" : "device";
   const woken: { id: string; nextRunAt: Date }[] = [];
   await deps.prisma.$transaction(async (tx) => {
     // The user's routines sit in every space they own one in, and a tenant scope only
@@ -329,9 +338,25 @@ export async function changeUserTimezone(
       // The lock serializes overlapping zone saves: each reads the previous zone only
       // after the last save committed, so no routine keeps an intermediate zone.
       await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
-      const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
-      if (!user || (user.timezone === timezone && !other)) return;
-      await tx.user.update({ where: { id: userId }, data: { timezone, ...other } });
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true, timezoneSource: true },
+      });
+      if (
+        !user ||
+        // A device report never displaces a zone picked by hand; the lock keeps this
+        // check and the write together, so a concurrent manual choice always wins.
+        (source === "device" && user.timezoneSource === "manual") ||
+        // A different spelling of the held zone changes nothing, so it writes nothing.
+        (sameTimeZone(user.timezone, timezone) &&
+          user.timezoneSource === timezoneSource &&
+          Object.keys(fields).length === 0)
+      )
+        return;
+      await tx.user.update({
+        where: { id: userId },
+        data: { timezone, timezoneSource, ...fields },
+      });
       if (user.timezone === timezone || !timezone || !user.timezone) return;
       // Lock the rows about to move, so a run firing meanwhile cannot advance one between
       // the read and the write: its claim lands after the commit and re-derives from the
