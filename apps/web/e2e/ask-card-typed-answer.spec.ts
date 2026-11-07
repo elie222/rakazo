@@ -8,6 +8,8 @@ test("an option card lets the person type an answer of their own", async ({ page
     .filter({ hasText: "What do you want me to help with?" });
   const typeAnswer = card.getByRole("button", { name: "Type your answer" });
   await expect(typeAnswer).toBeVisible();
+  // The transcript opens at its newest message; bring this card into view for the capture.
+  await typeAnswer.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "ask-card-type-answer-link");
   await typeAnswer.click();
   await expect(card.getByRole("textbox", { name: "Answer" })).toBeVisible();
