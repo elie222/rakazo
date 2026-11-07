@@ -538,7 +538,9 @@ export class ComposioConnector implements ComposioProvider {
       name: toolkit.name,
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
-      ...(needsSetup.has(composioSlugKey(toolkit.slug)) ? { needsSignInSetup: true } : {}),
+      ...(!toolkit.isNoAuth && needsSetup.has(composioSlugKey(toolkit.slug))
+        ? { needsSignInSetup: true }
+        : {}),
     }));
   }
 
