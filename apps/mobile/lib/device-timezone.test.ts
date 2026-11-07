@@ -17,13 +17,14 @@ async function load() {
 /** The runtime's own zone lookup, pointed at a fixed zone for one assertion. */
 function fakeDeviceZone(zone: string) {
   const real = Intl.DateTimeFormat;
+  // A named function declaration, so `new` reaches it; a named zone canonicalizes for
+  // real, only the device's own lookup answers with the fixed zone.
+  function lookup(_locale?: string, options?: Intl.DateTimeFormatOptions) {
+    if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
+    return real("en-US", options);
+  }
   return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
-    // A plain function, so `new` works too; a named zone canonicalizes for real, only
-    // the device's own lookup answers with the fixed zone.
-    ((_locale?: string, options?: Intl.DateTimeFormatOptions) => {
-      if (!options?.timeZone) return { resolvedOptions: () => ({ timeZone: zone }) };
-      return real("en-US", options);
-    }) as unknown as typeof Intl.DateTimeFormat,
+    lookup as unknown as typeof Intl.DateTimeFormat,
   );
 }
 
