@@ -1026,6 +1026,10 @@ describe("graphical computer spec", () => {
         '#!/bin/sh\n[ -n "$RAKAZO_TEST_VULKAN" ] || exit 1\nprintf "%s\\n" "$RAKAZO_TEST_VULKAN"\n',
       );
       chmodSync(vulkaninfo, 0o755);
+      // The launcher bounds vulkaninfo with GNU timeout, which macOS lacks; run the command as is.
+      const timeout = path.join(bin, "timeout");
+      writeFileSync(timeout, '#!/bin/sh\nshift\nexec "$@"\n');
+      chmodSync(timeout, 0o755);
       const integrated = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU";
       const cpuOnly = "\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU";
       const run = (args: string[] = [], devices = integrated) => {
