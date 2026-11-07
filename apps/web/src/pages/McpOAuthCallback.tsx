@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -19,6 +20,11 @@ export function McpOAuthCallbackPage() {
   const [done, setDone] = useState(false);
   const handledState = useRef<string | null>(null);
   useEffect(() => {
+    const appReturn = mobileMcpOAuthReturnUrl(params);
+    if (appReturn) {
+      window.location.replace(appReturn);
+      return;
+    }
     const code = params.get("code");
     const state = params.get("state");
     if (!code || !state) {

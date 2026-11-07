@@ -37,6 +37,7 @@ import type {
 import { PluginDetail, pluginSelection } from "../components/integrations/plugin-marketplace";
 import { reachesOtherSpaces, useOwnSpaces } from "../components/integrations/space-availability";
 import type { connectedAppMarks } from "../lib/connected-apps";
+import { connectMcpEndpoint } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { AddMenu } from "./plugins/add-menu";
@@ -48,7 +49,7 @@ import type { TileContext } from "./plugins/parts";
 import { ViewTitle } from "./plugins/parts";
 import { PluginBrowse } from "./plugins/plugin-browse";
 import type { SourceKind } from "./plugins/source-form";
-import { SourceFormView, useSourceForm } from "./plugins/source-form";
+import { SourceFormView, takesCredential, useSourceForm } from "./plugins/source-form";
 import { PLUGIN_PAGE_SIZE, useCatalogBrowse } from "./plugins/use-catalog-browse";
 import { usePluginConnections } from "./plugins/use-plugin-connections";
 
@@ -240,11 +241,31 @@ export function PluginsOverlay({
     setSourceError(null);
   }
 
+  async function signInCatalogSurface(name: string, endpoint: string) {
+    domainSearch.setCatalogFeedError(null);
+    setPending(`catalog:${endpoint}`);
+    try {
+      const result = await connectMcpEndpoint({ name, endpoint, botId: activeBotId });
+      if (result !== "cancelled") setView("manage");
+    } catch (err) {
+      domainSearch.setCatalogFeedError(errorText(err, t`Could not connect`));
+    } finally {
+      // The server is added whether or not sign-in finishes, and a failure can leave it needing a client.
+      await refresh().catch(() => undefined);
+      setPending(null);
+    }
+  }
+
   function beginCatalogSurface(
     result: IntegrationCatalogResult,
     surface: IntegrationCatalogSurface,
   ) {
     if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
+    // The catalog reports OAuth only for a server that can sign in.
+    if (!takesCredential(surface)) {
+      void signInCatalogSurface(result.name, surface.source);
+      return;
+    }
     setSourceBack("domain");
     setView("source");
     sourceForm.startFromCatalog(result, surface, surface.source);
@@ -542,6 +563,7 @@ export function PluginsOverlay({
           ) : view === "domain" ? (
             <DomainSearch
               state={domainSearch}
+              busy={Boolean(pending)}
               onBack={() => setView("browse")}
               onPick={beginCatalogSurface}
             />

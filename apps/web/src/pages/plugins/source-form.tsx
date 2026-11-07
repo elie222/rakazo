@@ -21,6 +21,16 @@ export type SourceKind = "mcp" | "api" | "graphql";
 export type SourceForm = ReturnType<typeof useSourceForm>;
 
 /** The fields of a custom MCP, OpenAPI, or GraphQL connector; each start fills them afresh. */
+type CredentialAuth = NonNullable<IntegrationCatalogSurface["auth"]> & {
+  type: "none" | "bearer" | "header";
+};
+/** A catalog surface set up with a credential in the form, not by signing in. */
+export type CredentialSurface = IntegrationCatalogSurface & { auth: CredentialAuth | null };
+
+export function takesCredential(surface: IntegrationCatalogSurface): surface is CredentialSurface {
+  return surface.auth?.type !== "oauth";
+}
+
 export function useSourceForm() {
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourcePreset, setSourcePreset] = useState<McpSourcePreset | null>(null);
@@ -45,7 +55,7 @@ export function useSourceForm() {
   /** A domain search result prefills the form with what it found. */
   function startFromCatalog(
     result: IntegrationCatalogResult,
-    surface: IntegrationCatalogSurface,
+    surface: CredentialSurface,
     source: string,
   ) {
     setSourceKind(surface.kind === "mcp" ? "mcp" : "api");

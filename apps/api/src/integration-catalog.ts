@@ -97,21 +97,25 @@ function normalizeSurface(value: unknown): IntegrationCatalogSurface[] {
   if (kind !== "mcp" && kind !== "openapi" && kind !== "graphql" && kind !== "cli") return [];
   const slug = shortString(value.slug, 120);
   if (!slug) return [];
+  const source = httpUrl(value.url);
   return [
     {
       kind,
       slug,
-      source: httpUrl(value.url),
-      auth: normalizeAuth(value.auth),
+      source,
+      auth: normalizeAuth(value.auth, kind === "mcp" && Boolean(source?.startsWith("https://"))),
     },
   ];
 }
 
-function normalizeAuth(value: unknown): IntegrationCatalogSurface["auth"] {
+/** Only a server that can sign in reports OAuth; any other OAuth surface takes a token. */
+function normalizeAuth(value: unknown, canSignIn: boolean): IntegrationCatalogSurface["auth"] {
   if (!isRecord(value)) return null;
   const kind = shortString(value.kind, 40)?.toLowerCase();
   const note = shortString(value.note, 500) ?? null;
   if (kind === "none") return { type: "none", headerName: null, note };
+  const oauth = kind === "oauth" || kind === "oauth2";
+  if (oauth && canSignIn) return { type: "oauth", headerName: null, note };
 
   const header = shortString(value.header, 200);
   const headerName = header?.split(":", 1)[0]?.trim() || null;
@@ -119,7 +123,7 @@ function normalizeAuth(value: unknown): IntegrationCatalogSurface["auth"] {
     return { type: "bearer", headerName: null, note };
   }
   if (headerName) return { type: "header", headerName, note };
-  if (kind && ["bearer", "token", "mixed", "oauth", "oauth2"].includes(kind)) {
+  if (oauth || (kind && ["bearer", "token", "mixed"].includes(kind))) {
     return { type: "bearer", headerName: null, note };
   }
   return note ? { type: "bearer", headerName: null, note } : null;

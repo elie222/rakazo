@@ -2180,6 +2180,7 @@ msgstr "無法完成更新，請再試一次。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/plugins/use-plugin-connections.ts
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "無法連線"
@@ -6106,6 +6107,7 @@ msgstr "螢幕未連線"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6145,10 +6147,6 @@ msgstr "搜尋機器人、操作和設定"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "依網域搜尋"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "搜尋 integrations.sh"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

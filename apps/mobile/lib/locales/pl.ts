@@ -1487,6 +1487,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "Odczytane ze strony, niesprawdzone",
   Total: "Razem",
   "{name} options": "Opcje modelu {name}",
+  "Search more apps": "Szukaj więcej aplikacji",
+  "Redirect URI": "Adres URI przekierowania",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

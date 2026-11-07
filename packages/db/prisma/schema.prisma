@@ -2065,6 +2065,8 @@ model McpOAuthSession {
   endpoint        String
   redirectUri     String
   oauthCiphertext String
+  /// The bot that gets the server once this sign-in finishes.
+  botId           String?
   createdAt       DateTime  @default(now())
 
   @@index([spaceId, userId, createdAt])

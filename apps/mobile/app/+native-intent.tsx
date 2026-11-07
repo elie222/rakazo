@@ -1,3 +1,4 @@
+import { MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
 import { receiveIncomingShare } from "../lib/incoming-share";
 import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-sheet";
 
@@ -7,6 +8,8 @@ import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
   const isShare = linkScreen(path) === "expo-sharing";
   receiveIncomingShare(isShare, initial);
+  // The in-app browser already returned this to the sign-in that opened it; stay put.
+  if (linkScreen(path) === linkScreen(MOBILE_MCP_OAUTH_CALLBACK_URL)) return "";
   if (!isSettingsLink(path)) closeSettingsSheet();
   return isShare ? "/share" : path;
 }

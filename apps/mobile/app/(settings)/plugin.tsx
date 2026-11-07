@@ -33,6 +33,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { McpOAuthClientForm } from "../../components/mcp-oauth-client-form";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { PluginIcon } from "../../components/plugin-icon";
@@ -47,6 +48,7 @@ import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { loadLastBotId } from "../../lib/last-bot";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -241,16 +243,12 @@ function PluginScreen() {
     run(
       server.id,
       async () => {
-        const { webUrl } = await rpc("integrationSetup/get");
-        const started = await rpc("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
+        // A failed sign-in can leave the server needing a client, which the reload shows.
+        const status = await signInToMcpServer(server.id).catch(async (reason: unknown) => {
+          await load().catch(() => undefined);
+          throw reason;
         });
-        if (started.status === "authorization_required") {
-          await Linking.openURL(started.authorizationUrl);
-          return;
-        }
-        if (started.status === "authorization_not_requested")
+        if (status === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
         await load();
       },
@@ -475,8 +473,13 @@ function PluginScreen() {
                         <ConnectedMark label={t("Connected")} />
                       ) : null}
                     </View>
+                    {mcpServerConnection(server) === "needs_client" ? (
+                      <McpOAuthClientForm server={server} onSaved={() => signIn(server)} />
+                    ) : null}
                     <View style={styles.itemActions}>
-                      {!mcpServerNeedsSignIn(server) || noAuth.has(server.id) ? null : (
+                      {!mcpServerNeedsSignIn(server) ||
+                      noAuth.has(server.id) ||
+                      mcpServerConnection(server) === "needs_client" ? null : (
                         <NativeActionButton
                           busy={pending === server.id}
                           disabled={busy}

@@ -2179,6 +2179,7 @@ msgstr "Das Update konnte nicht abgeschlossen werden. Versuche es erneut."
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/plugins/use-plugin-connections.ts
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Verbindung fehlgeschlagen"
@@ -6105,6 +6106,7 @@ msgstr "Bildschirm nicht verbunden"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6144,10 +6146,6 @@ msgstr "Bots, Aktionen und Einstellungen durchsuchen"
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "Nach Domain suchen"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "integrations.sh durchsuchen"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

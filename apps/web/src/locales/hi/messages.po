@@ -2179,6 +2179,7 @@ msgstr "अपडेट पूरा नहीं हो सका। फिर 
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/plugins/use-plugin-connections.ts
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "कनेक्ट नहीं हो सका"
@@ -6105,6 +6106,7 @@ msgstr "स्क्रीन कनेक्ट नहीं है"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/FoundModelPicker.tsx
+#: src/components/integrations/IntegrationSetup.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -6144,10 +6146,6 @@ msgstr "बॉट, कार्रवाइयाँ और सेटिंग�
 #: src/pages/plugins/domain-search.tsx
 msgid "Search by domain"
 msgstr "डोमेन से खोजें"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Search integrations.sh"
-msgstr "integrations.sh खोजें"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"

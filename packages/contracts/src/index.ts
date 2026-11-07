@@ -28,6 +28,7 @@ export * from "./local-settings.js";
 export * from "./markdown-text.js";
 export * from "./mcp.js";
 export * from "./mcp-app.js";
+export * from "./mcp-oauth-return.js";
 export * from "./model-backups.js";
 export * from "./model-connections.js";
 export * from "./model-headers.js";

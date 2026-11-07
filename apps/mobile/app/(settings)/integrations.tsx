@@ -28,7 +28,6 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -46,10 +45,12 @@ import type {
 import { AddCustomForm, AddCustomMenu } from "../../components/add-custom-integration";
 import { BotTemplateIcon } from "../../components/bot-template-icon";
 import { ConnectorIcon } from "../../components/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integration-catalog-search";
 import type { ConnectionTool } from "../../components/integration-detail";
 import { IntegrationDetail } from "../../components/integration-detail";
 import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integration-plugins";
 import { createIntegrationsStyles, LOGO_SIZE } from "../../components/integrations-styles";
+import { McpOAuthClientForm } from "../../components/mcp-oauth-client-form";
 import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
@@ -67,6 +68,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
+import { signInToMcpServer } from "../../lib/mcp-oauth";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
 import type { PluginParams } from "../../lib/plugin-marketplace";
@@ -111,6 +113,13 @@ export default function Integrations() {
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState<string | null>(null);
+  const [catalogSearched, setCatalogSearched] = useState(false);
+  const [catalogAdded, setCatalogAdded] = useState<{ serverId: string; query: string } | null>(
+    null,
+  );
+  const [signInError, setSignInError] = useState<{ serverId: string; message: string } | null>(
+    null,
+  );
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [pluginInstalls, setPluginInstalls] = useState<CapabilityInstall[]>([]);
   const [pluginEntries, setPluginEntries] = useState<PluginMarketplaceEntry[]>([]);
@@ -140,7 +149,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -246,8 +254,11 @@ export default function Integrations() {
   const standaloneServers = mcpServers.filter((server) => !server.installId);
   const savedServerMatches =
     query.trim() && !category
-      ? standaloneServers.filter((server) =>
-          matchesWordPrefixes(`${server.name} ${server.description}`, query),
+      ? standaloneServers.filter(
+          (server) =>
+            // A server just added from the catalog search stays, with any client it needs.
+            (catalogAdded?.serverId === server.id && catalogAdded.query === query) ||
+            matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
@@ -451,16 +462,6 @@ export default function Integrations() {
   );
 
   useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
     if (!detailKey) {
       setTools([]);
       setToolsLoading(false);
@@ -574,7 +575,7 @@ export default function Integrations() {
           : state === "not_working"
             ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
             : null;
-    return (
+    const row = (
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
@@ -595,7 +596,9 @@ export default function Integrations() {
         {server.enabled &&
         state !== "connected" &&
         state !== "needs_client" &&
-        (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
+        (server.oauthStatus === "reconnect" ||
+          server.id === oauthServerId ||
+          server.oauthClientId) ? (
           <NativeActionButton
             label={server.oauthStatus === "reconnect" ? t("Reconnect") : t("Connect")}
             fill={false}
@@ -603,6 +606,17 @@ export default function Integrations() {
             onPress={() => void authorizeMcp(server.id)}
             prominence="secondary"
           />
+        ) : null}
+      </View>
+    );
+    const error = signInError?.serverId === server.id ? signInError.message : null;
+    if (state !== "needs_client" && !error) return row;
+    return (
+      <View key={server.id} style={styles.catalogStack}>
+        {row}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {state === "needs_client" ? (
+          <McpOAuthClientForm server={server} onSaved={() => authorizeMcp(server.id)} />
         ) : null}
       </View>
     );
@@ -831,20 +845,15 @@ export default function Integrations() {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
     setPending(`oauth:${serverId}`);
-    setMcpError(null);
+    setSignInError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await refresh();
-      }
+      await signInToMcpServer(serverId);
     } catch (reason) {
-      if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
+      if (isCurrent())
+        setSignInError({ serverId, message: errorText(reason, t("Could not start MCP OAuth")) });
     } finally {
+      // A failed sign-in can leave the server needing a client, which the reload shows.
+      if (isCurrent()) await refresh().catch(() => undefined);
       if (isCurrent()) setPending(null);
     }
   }
@@ -1212,6 +1221,7 @@ export default function Integrations() {
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
+                !catalogSearched &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}
@@ -1224,6 +1234,16 @@ export default function Integrations() {
                   />
                 ) : null}
 
+                {!category ? (
+                  <IntegrationCatalogSearch
+                    query={query}
+                    onConnected={(serverId) => {
+                      setCatalogAdded({ serverId, query });
+                      return retryRefresh();
+                    }}
+                    onSearched={setCatalogSearched}
+                  />
+                ) : null}
                 <PluginSection
                   pluginsState={pluginsState}
                   catalogReady={catalogReady}

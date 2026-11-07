@@ -85,7 +85,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     oauthStatus = "connected";
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ json: { ok: true } }),
+      body: JSON.stringify({ json: { ok: true, status: "connected" } }),
     });
   });
 
