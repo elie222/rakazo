@@ -66,7 +66,6 @@ jobs:
       BRANCH: i18n/catalog-sync
       CHANGED: ${{ needs.extract.outputs.changed }}
       GH_TOKEN: ${{ github.token }}
-      PATCH_DIR: ${{ runner.temp }}/translation-catalogs
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -77,6 +76,9 @@ jobs:
           name: translation-catalogs
           path: ${{ runner.temp }}/translation-catalogs
       - name: Push branch and open, or close, the PR
+        env:
+          # The runner context exists only at step level.
+          PATCH_DIR: ${{ runner.temp }}/translation-catalogs
         run: |
           set -euo pipefail
           pr="$(gh pr list --state open --head "$BRANCH" --json number,isCrossRepository \
