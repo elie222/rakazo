@@ -10,7 +10,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { countUnreadInboxChats } from "@rakazo/db";
+import { countUnreadInboxChats, membersSnoozing } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
@@ -181,11 +181,21 @@ async function deliverChatNotice(
   },
 ) {
   const { spaceId, message, groupId, bot } = input;
-  for (const userId of input.recipients) {
+  // News in a chat waits for whoever snoozed it. Questions, takeovers and failures still reach
+  // the person whose run it is: the chat is hidden, so this is how they would hear of it.
+  const snoozing =
+    message.kind === "completion"
+      ? await membersSnoozing(deps.prisma, message.threadId, input.recipients).catch((error) => {
+          getLogger().error("snoozed chat lookup", error);
+          return new Set<string>();
+        })
+      : new Set<string>();
+  const recipients = input.recipients.filter((userId) => !snoozing.has(userId));
+  for (const userId of recipients) {
     publishChatAlert(deps.events, { spaceId, userId }, message, groupId);
   }
   const notifications = deps.notifications;
-  if (!notifications || !input.recipients.length) return;
+  if (!notifications || !recipients.length) return;
   const sender = bot && (await notificationIdentity(bot));
   const deliver = async (userId: string) => {
     // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
@@ -221,8 +231,8 @@ async function deliverChatNotice(
   };
   // A few members at a time, so a large Space does not take the whole connection pool at once.
   const failures: Array<{ error: unknown } | undefined> = [];
-  for (let start = 0; start < input.recipients.length; start += NOTIFY_RECIPIENTS_AT_ONCE) {
-    const batch = input.recipients.slice(start, start + NOTIFY_RECIPIENTS_AT_ONCE);
+  for (let start = 0; start < recipients.length; start += NOTIFY_RECIPIENTS_AT_ONCE) {
+    const batch = recipients.slice(start, start + NOTIFY_RECIPIENTS_AT_ONCE);
     failures.push(...(await Promise.all(batch.map(deliver))));
   }
   const failed = failures.find((failure) => failure !== undefined);

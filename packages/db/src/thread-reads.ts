@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "./client.js";
-import { runAsSystemInTransaction } from "./row-security.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 /**
@@ -174,4 +174,20 @@ export async function setThreadSnoozeFor(prisma: PrismaClient, reader: Reader, u
       });
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
+}
+
+/** Who among `userIds` has the chat snoozed right now, so its news can wait for them. */
+export async function membersSnoozing(
+  prisma: PrismaClient,
+  threadId: string,
+  userIds: readonly string[],
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await runAsSystem("find which members have a chat snoozed", () =>
+    prisma.threadRead.findMany({
+      where: { threadId, userId: { in: [...userIds] }, snoozedUntil: { gt: new Date() } },
+      select: { userId: true },
+    }),
+  );
+  return new Set(rows.map((row) => row.userId));
 }
