@@ -698,6 +698,10 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    // Its own route, so a server without it refuses rather than stopping the whole chat.
+    stopHelper: oc
+      .input(threadTarget.safeExtend({ messageId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(
         threadTarget.safeExtend({

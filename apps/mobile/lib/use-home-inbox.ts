@@ -2,12 +2,19 @@ import { isRetryableError, reportUiLocale } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
-import type { MobileBot, MobileBotSection, MobileGroup, MobileMe, MobileSpace } from "./api";
-import { currentApiBase, rpc, selectedSpaceId, selectInitialSpace } from "./api";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
+import { selectInitialSpace } from "./api-server";
 import { appBadgeGeneration } from "./app-badge";
 import { isPaywallShown } from "./billing";
 import { getActiveUiLocale, useI18n } from "./i18n";
 import { retainInboxValue } from "./inbox-retention";
+import type {
+  MobileBot,
+  MobileBotSection,
+  MobileGroup,
+  MobileMe,
+  MobileSpace,
+} from "./mobile-types";
 import { ensureOrganizations } from "./organizations";
 import { forgetReferrals, rememberReferral } from "./referral";
 import { saveInbox } from "./saved-chats";

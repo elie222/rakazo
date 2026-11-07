@@ -840,41 +840,42 @@ app.whenReady().then(async () => {
 
   if (target.kind === "setup") {
     showSetupWindow();
-  } else if (target.source === "saved") {
-    if (desktop.currentSetup?.mode === "new") {
-      const managedUrl = managedLocalOpenUrl(target.url, desktop.localStack.webUrl());
-      const managedStackReady =
-        managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
-      if (managedStackReady && managedUrl !== null) {
-        if (await appOpener.open(managedUrl)) {
-          commitPendingAppSwitch();
-          destroySetupWindow();
-        }
-      } else {
-        // Missing, stale, foreign, or owned by another process: reconcile the
-        // app-managed stack before any API or computer traffic is allowed.
-        void desktop.localStack.start();
-        showSetupWindow();
+  } else if (target.source === "saved" && desktop.currentSetup?.mode === "new") {
+    const managedUrl = managedLocalOpenUrl(target.url, desktop.localStack.webUrl());
+    const managedStackReady =
+      managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
+    if (managedStackReady && managedUrl !== null) {
+      if (await appOpener.open(managedUrl)) {
+        commitPendingAppSwitch();
+        destroySetupWindow();
       }
     } else {
-      // The saved server is external, but the app-managed stack may still be running from
-      // before the switch — possibly on an older release, which must not be reused but
-      // still needs the off-switch. Probe only: with no stack files this returns before
-      // any request, and nothing starts or stops.
-      void desktop.localStack.rediscoverManagedStack();
-      const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
-      if (reachability.ok) {
-        if (await appOpener.open(target.url)) {
-          commitPendingAppSwitch();
-          destroySetupWindow();
-        }
-      } else {
-        showSetupWindow(
-          t("Could not reconnect to the saved server. {detail}", {
-            detail: reachability.error ?? "",
-          }),
-        );
+      // Missing, stale, foreign, or owned by another process: reconcile the
+      // app-managed stack before any API or computer traffic is allowed.
+      void desktop.localStack.start();
+      showSetupWindow();
+    }
+  } else if (target.source !== "env") {
+    // A saved external server: the app-managed stack may still be running from before the
+    // switch — possibly on an older release, which must not be reused but still needs the
+    // off-switch. Probe only: with no stack files this returns before any request, and
+    // nothing starts or stops.
+    if (target.source === "saved") void desktop.localStack.rediscoverManagedStack();
+    const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
+    if (reachability.ok) {
+      if (await appOpener.open(target.url)) {
+        commitPendingAppSwitch();
+        destroySetupWindow();
       }
+    } else {
+      // An unreachable first-launch Cloud lands in setup, where the other servers are.
+      showSetupWindow(
+        target.source === "saved"
+          ? t("Could not reconnect to the saved server. {detail}", {
+              detail: reachability.error ?? "",
+            })
+          : (reachability.error ?? null),
+      );
     }
   } else {
     if (await appOpener.open(target.url)) {

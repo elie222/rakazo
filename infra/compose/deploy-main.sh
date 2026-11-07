@@ -176,11 +176,13 @@ replace_worker() {
 # normally; the replaced containers already match the new configuration and stay as they are.
 # Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {
-  local service old
+  local service old services
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
   # On older releases the API migrates on start, so only start its database here.
-  if compose 1m config --services | grep -qx migrate; then
+  # grep -q would exit at the first match and SIGPIPE compose, which pipefail reads as no match.
+  services="$(compose 1m config --services)"
+  if grep -qx migrate <<<"${services}"; then
     compose "${UP_TIMEOUT}" run --rm -T -e "RAKAZO_DEPLOYED_MIGRATIONS=${deployed_migrations}" migrate
   else
     compose "${UP_TIMEOUT}" up -d --wait postgres

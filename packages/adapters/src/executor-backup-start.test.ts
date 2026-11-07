@@ -2,7 +2,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
+import { serializeModelSecret } from "./model-secret.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
 import { withModelRoles } from "./testing/model-roles.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({

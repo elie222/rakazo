@@ -1,7 +1,16 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
+import {
+  cancelComputerRunWork,
+  returnHelperOutcome,
+  screenLeaseIdForRun,
+  toComputerRef,
+} from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, parseMessagingCommand } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
+  parseMessagingCommand,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -33,18 +42,21 @@ export async function stopThreadRuns(
   },
   actor: Actor,
   target: ThreadTarget,
+  /** Stop only the background helper behind this card in the chat. */
+  helperMessageId?: string,
 ) {
   const stop = await deps.prisma.$transaction(
-    cancelThreadRuns(actor, target),
+    cancelThreadRuns(actor, target, undefined, helperMessageId),
     THREAD_LOCK_TRANSACTION_OPTIONS,
   );
   await finishThreadStop(deps, actor, target, stop);
 }
 
 /**
- * Stop's database half, run in the caller's transaction: cancels the thread's active runs and
- * clears its pending steering under the thread lock. `note` says so in the chat when anything
- * was cancelled. Call finishThreadStop after commit.
+ * Stop's database half, run in the caller's transaction: cancels the thread's active runs, and
+ * the background helpers it started, and clears its pending steering under the thread lock.
+ * `note` says so in the chat when anything was cancelled. `helperMessageId` stops only the
+ * helper behind that card. Call finishThreadStop after commit.
  */
 export function cancelThreadRuns(
   actor: Pick<Actor, "spaceId">,
@@ -52,12 +64,20 @@ export function cancelThreadRuns(
     | { kind: "bot"; botId: string; threadId: string }
     | { kind: "group"; memberBotIds: string[]; threadId: string },
   note?: { botId: string },
+  helperMessageId?: string,
 ) {
+  // Background helpers this chat started work in threads of their own.
+  const helpers = {
+    trigger: BACKGROUND_HELPER_TRIGGER,
+    sourceMessage: { threadId: target.threadId },
+  };
   return async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const cancelled = await tx.run.updateManyAndReturn({
       where: {
-        threadId: target.threadId,
+        ...(helperMessageId
+          ? { ...helpers, sourceMessageId: helperMessageId }
+          : { OR: [{ threadId: target.threadId }, helpers] }),
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
@@ -66,19 +86,23 @@ export function cancelThreadRuns(
         botId: true,
         userId: true,
         spaceId: true,
+        threadId: true,
         trigger: true,
+        sourceMessageId: true,
         routineId: true,
         routine: { select: { name: true } },
       },
     });
     const ids = cancelled.map((run) => run.id);
     await clearEndedRunState(tx, ids);
-    await tx.steeringMessage.deleteMany({
-      where: {
-        botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
-        message: { threadId: target.threadId },
-      },
-    });
+    if (!helperMessageId) {
+      await tx.steeringMessage.deleteMany({
+        where: {
+          botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
+          message: { threadId: target.threadId },
+        },
+      });
+    }
     // Snapshot teardown coordinates before commit. Once cancellation becomes
     // visible, a worker can release its lease / execution columns immediately; a
     // later lookup would then miss the sandbox work this request must stop.
@@ -113,8 +137,11 @@ export function cancelThreadRuns(
     // flip and the progress purge below. Other clients learn the run ended, and
     // the fresh seq keeps max(seq) above every deleted progress row so a client
     // whose cursor pointed at one never discards later refreshes as stale.
+    // Not for a helper in a thread of its own: in the chat it would read as the bot stopping,
+    // and the helper's card update tells the chat instead.
     let eventSeq: number | null = null;
     for (const run of cancelled) {
+      if (run.threadId !== target.threadId) continue;
       const event = await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
         threadId: target.threadId,
@@ -168,21 +195,39 @@ export function cancelThreadRuns(
         },
       });
     }
-    return { runIds: ids, computers, leases, eventSeq };
+    return {
+      runIds: ids,
+      computers,
+      leases,
+      eventSeq,
+      stoppedHelpers: cancelled.filter((run) => run.trigger === BACKGROUND_HELPER_TRIGGER),
+    };
   };
 }
 
-/** Stop's after-commit half: wakes subscribers and tears down the cancelled runs' computer work. */
+/** Stop's after-commit half: wakes subscribers, settles stopped helpers' cards, and tears down the cancelled runs' computer work. */
 export async function finishThreadStop(
   deps: { prisma: PrismaClient; sandbox: SandboxProvider; events: Pick<ThreadEvents, "notify"> },
   actor: Pick<Actor, "spaceId" | "userId">,
   target: { threadId: string },
-  { runIds, computers, leases, eventSeq }: Awaited<ReturnType<ReturnType<typeof cancelThreadRuns>>>,
+  {
+    runIds,
+    computers,
+    leases,
+    eventSeq,
+    stoppedHelpers,
+  }: Awaited<ReturnType<ReturnType<typeof cancelThreadRuns>>>,
 ) {
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
     await deps.events.notify(target.threadId, eventSeq).catch((error) => {
       getLogger().error("thread stop realtime notification", error);
+    });
+  }
+  // Settle each stopped helper's card now rather than at the next reconciliation.
+  for (const helper of stoppedHelpers) {
+    await returnHelperOutcome(deps, helper, { status: "stopped", text: "" }).catch((error) => {
+      getLogger().error("stopped helper card", error);
     });
   }
   // Keep the DB lease until after teardown so a replacement run cannot claim the

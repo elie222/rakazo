@@ -14,6 +14,7 @@ import {
   BillingCheckoutCompletedError,
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
+  BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import type { BillingCancellationReason, ByokTier } from "@rakazo/contracts";
 import {
@@ -113,6 +114,7 @@ class StripeRequestError extends Error {
   constructor(
     message: string,
     readonly type: string | undefined,
+    readonly status: number,
   ) {
     super(message);
     this.name = "StripeRequestError";
@@ -658,10 +660,15 @@ export class StripeBillingProvider implements BillingProvider {
       toSnapshot(chosen.subscription, chosen.status).cancelAtPeriodEnd
     )
       return;
-    // Bills the first period now; a declined card fails the request and the trial runs on.
+    // Bills the first period now. A card that is declined or needs confirming fails the request
+    // with 402, and the trial runs on.
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(chosen.subscription.id)}`, {
       trial_end: "now",
       payment_behavior: "error_if_incomplete",
+    }).catch((error: unknown) => {
+      if (error instanceof StripeRequestError && error.status === 402)
+        throw new BillingPaymentNotCompletedError({ cause: error });
+      throw error;
     });
   }
 
@@ -814,6 +821,7 @@ export class StripeBillingProvider implements BillingProvider {
       throw new StripeRequestError(
         `Stripe request failed (${response.status})${message ? `: ${message}` : ""}`,
         error?.type,
+        response.status,
       );
     }
   }

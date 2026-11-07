@@ -1,8 +1,12 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJobKey,
+  isSandboxProviderOutage,
+  SandboxAllowanceUsedError,
+} from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -138,7 +142,11 @@ export async function queueComputerUpdate(
           none: {
             OR: [
               { computerSwitching: true },
-              { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+              {
+                runs: {
+                  some: { status: { in: [...ACTIVE_RUN_STATUSES] }, ...COMPUTER_USING_RUNS },
+                },
+              },
             ],
           },
         },
@@ -592,7 +600,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         data: { status: "queued" },
       });
     } else {
-      if (error instanceof SandboxAllowanceUsedError) {
+      if (error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)) {
         getLogger().warn("computer update failed", {
           updateId,
           computerId: update.computerId,

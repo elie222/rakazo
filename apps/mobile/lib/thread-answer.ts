@@ -1,6 +1,6 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
-import type { MobileMessage } from "./api";
 import { hapticSuccess } from "./haptics";
+import type { MobileMessage } from "./mobile-types";
 
 export type ThreadAnswerContext = {
   botId: string | undefined;

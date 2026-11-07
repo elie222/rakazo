@@ -778,6 +778,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Starting: "正在啟動",
   "Starting…": "正在啟動…",
   Stop: "停止",
+  Stopped: "已停止",
   Submit: "提交",
   "Take control": "接管控制",
   "Clean up": "清理",

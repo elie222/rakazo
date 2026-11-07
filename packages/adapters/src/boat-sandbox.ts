@@ -903,11 +903,15 @@ export class BoatSandboxProvider implements SandboxProvider {
     try {
       return await call();
     } catch (error) {
-      if (!(error instanceof BoatApiError) || !BOAT_NOT_RUNNING_CODES.has(error.code ?? "")) {
-        throw error;
-      }
+      if (!notRunning(error)) throw error;
       await this.ensureRunnable(id, signal);
-      return call();
+      try {
+        return await call();
+      } catch (retryError) {
+        // Boat reported the machine up, then refused again; a later attempt finds it settled.
+        if (notRunning(retryError)) throw new SandboxUnavailableError({ cause: retryError });
+        throw retryError;
+      }
     }
   }
 
@@ -1608,6 +1612,10 @@ function utf8Tail(text: string): string {
 }
 
 /** Boat refusing a machine type becomes the neutral size error; anything else is unchanged. */
+function notRunning(error: unknown): error is BoatApiError {
+  return error instanceof BoatApiError && BOAT_NOT_RUNNING_CODES.has(error.code ?? "");
+}
+
 function boatSizeError(error: unknown): unknown {
   if (!(error instanceof BoatApiError)) return error;
   if (error.code === "machine_class_plan_required") {

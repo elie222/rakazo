@@ -24,14 +24,10 @@ import {
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
 import { useSyncExternalStore } from "react";
-import type { ApiRequestContext, MobileSnapshot } from "./api";
-import {
-  blockText,
-  captureApiRequestContext,
-  configureSessionEndHangUp,
-  rpc,
-  subscribeThread,
-} from "./api";
+import type { ApiRequestContext } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
+import { subscribeThread } from "./api-live";
+import { configureSessionEndHangUp } from "./api-server";
 import type { CallCue } from "./call-sounds";
 import {
   playCallCue,
@@ -44,6 +40,8 @@ import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
+import type { MobileSnapshot } from "./mobile-types";
+import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
 import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";

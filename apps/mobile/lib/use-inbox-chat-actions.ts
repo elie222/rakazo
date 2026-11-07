@@ -3,21 +3,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
-import type {
-  ApiRequestContext,
-  MobileBot,
-  MobileBotSection,
-  MobileGroup,
-  MobileSpace,
-  RpcArgs,
-} from "./api";
-import {
-  captureApiRequestContext,
-  currentApiBase,
-  loadSessionToken,
-  rpc,
-  selectedSpaceId,
-} from "./api";
+import type { ApiRequestContext, RpcArgs } from "./api";
+import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
@@ -25,9 +12,10 @@ import { useI18n } from "./i18n";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
+import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
-import { currentSessionGeneration } from "./session";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -58,13 +46,11 @@ export function useInboxChatActions({
   setBots,
   setGroups,
   setSpaces,
-  botSections,
 }: {
   loadBots: () => Promise<unknown>;
   setBots: ListUpdate<MobileBot>;
   setGroups: ListUpdate<MobileGroup>;
   setSpaces: ListUpdate<MobileSpace>;
-  botSections: MobileBotSection[];
 }) {
   const { t } = useI18n();
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
@@ -198,8 +184,16 @@ export function useInboxChatActions({
           notifyArchivedChatsChanged();
           void loadBots();
         };
-        if (kind === "bot") confirmDeleteBot({ id: chat.id, name: chat.name }, deleted);
-        else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted);
+        // Capture fails only when the session or server changed; the delete is dropped quietly.
+        let requestContext: ApiRequestContext | undefined;
+        try {
+          requestContext = await chatRequestContext(chat.spaceId);
+        } catch {
+          return;
+        }
+        if (kind === "bot") {
+          confirmDeleteBot({ id: chat.id, name: chat.name }, deleted, undefined, requestContext);
+        } else confirmDeleteGroup({ id: chat.id, name: chat.name }, deleted, requestContext);
         return;
       }
       await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
@@ -248,9 +242,11 @@ export function useInboxChatActions({
       kind: InboxChatKind,
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       mode: "create" | "rename",
+      // The chat's own space's sections, which may not be the selected space.
+      sections: readonly MobileBotSection[],
     ) => {
       const current =
-        mode === "rename" ? botSections.find((section) => section.id === chat.sectionId) : null;
+        mode === "rename" ? sections.find((section) => section.id === chat.sectionId) : null;
       if (mode === "rename" && !current) return;
       promptSectionName({
         title: current ? t("Rename section") : t("New section"),
@@ -259,13 +255,15 @@ export function useInboxChatActions({
         defaultValue: current?.name,
         onSubmit: (name) =>
           void (
-            current ? renameSection(current.id, name) : createSection(kind, chat.id, name)
+            current
+              ? renameSection(current.id, name, chat.spaceId)
+              : createSection(kind, chat.id, name, chat.spaceId)
           ).catch((err) =>
             Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
           ),
       });
     },
-    [botSections, createSection, renameSection, t],
+    [createSection, renameSection, t],
   );
 
   const deleteSection = useCallback(

@@ -442,6 +442,7 @@ export const ES_MESSAGES: Record<string, string> = {
     "Esto elimina las {count} versiones de este artefacto. No se puede deshacer.",
   Versions: "Versiones",
   Stop: "Detener",
+  Stopped: "Detenido",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Esto elimina todos los mensajes y detiene el trabajo en curso. Se conservan el bot, la computadora, la memoria y las rutinas.",
   "Type your answer": "Escribe tu respuesta",

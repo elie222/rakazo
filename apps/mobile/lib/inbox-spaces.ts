@@ -1,9 +1,10 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { botAvatarActivity, groupBotsForSidebar, logoAvatarNeedsAttention } from "@rakazo/core";
-import type { MobileBot, MobileGroup, MobileSpace } from "./api";
-import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
+import { rpc, selectedSpaceId } from "./api";
+import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
 import { t } from "./i18n";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { MobileBot, MobileGroup, MobileSpace } from "./mobile-types";
 import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<

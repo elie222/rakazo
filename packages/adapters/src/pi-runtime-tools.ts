@@ -30,7 +30,11 @@ import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
-import { clipToolResultContent, clipToolResultText } from "./pi-runtime-limits.js";
+import {
+  clipToolResultContent,
+  clipToolResultText,
+  TOOL_RESULT_TEXT_LIMIT,
+} from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import { executeSubagent } from "./pi-runtime-subagent.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
@@ -224,7 +228,7 @@ export function describeToolActivity(
     const text = sanitizeSensitiveText(String(value ?? ""))
       .replaceAll(/\s+/g, " ")
       .trim();
-    return text.length > ACTIVITY_DETAIL_LIMIT ? `${text.slice(0, ACTIVITY_DETAIL_LIMIT)}…` : text;
+    return clipToolResultText(text, ACTIVITY_DETAIL_LIMIT);
   };
   if (toolName === "shell") return `Running: ${detail(record.command)}`;
   if (toolName === "user_computer_shell")
@@ -453,6 +457,7 @@ function toAgentTool(
           instructions: raw.instructions ? String(raw.instructions) : "",
           model_provider: raw.model_provider ? String(raw.model_provider) : "",
           model_id: raw.model_id ? String(raw.model_id) : "",
+          ...(raw.background === true ? { background: true } : {}),
         };
       }
       if (tool.name === "spawn_bot") {
@@ -612,7 +617,8 @@ function toAgentTool(
                   details: found,
                 };
               }
-              if (tool.name === "run_subagent") {
+              // A background helper is its own run, which the executor starts like any tool effect.
+              if (tool.name === "run_subagent" && args.background !== true) {
                 const result = await executeSubagent(host, executionId, args);
                 return {
                   content: [{ type: "text", text: result }],
@@ -739,14 +745,14 @@ export function serializeToolResult(
     if (!text) return "ok";
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
     if (
-      text.length <= 12_000 ||
+      text.length <= TOOL_RESULT_TEXT_LIMIT ||
       VERBATIM_TOOL_RESULTS.has(name) ||
       isVerbatimMcpResult(name, args, verbatimMcpServers)
     )
       return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
-      : shortenToolResultText(text, 12_000, { name, arguments: args });
+      : shortenToolResultText(text, TOOL_RESULT_TEXT_LIMIT, { name, arguments: args });
   } catch {
     return "ok";
   }

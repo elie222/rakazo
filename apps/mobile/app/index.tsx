@@ -36,8 +36,9 @@ import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutters } from "../lib/adaptive-layout";
-import type { MobileBot, MobileGroup } from "../lib/api";
-import { currentApiBase, loadSessionToken, selectSpace, signOut } from "../lib/api";
+import { currentApiBase } from "../lib/api";
+import { signOut } from "../lib/api-auth";
+import { selectSpace } from "../lib/api-server";
 import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
@@ -48,6 +49,7 @@ import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { t, useI18n } from "../lib/i18n";
+import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
@@ -63,6 +65,7 @@ import {
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
 import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
@@ -81,6 +84,7 @@ import { loadSavedInbox } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
+  loadSessionToken,
   subscribeSessionGeneration,
 } from "../lib/session";
 import { useSplitView } from "../lib/split-view";
@@ -271,7 +275,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
-  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces, botSections });
+  } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
 
   const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
     hasSession,
@@ -324,6 +328,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   usePublishSearchInbox(inboxSpaces, me !== null);
+  // Rows read only each space's sections; keeping the list while they are unchanged keeps the row
+  // renderer, so a new preview doesn't re-render every row.
+  const [keptSections, setKeptSections] = useState<Pick<InboxSpace, "id" | "botSections">[]>([]);
+  const spaceSections = retainInboxValue(
+    keptSections,
+    inboxSpaces.map(({ id, botSections }) => ({ id, botSections })),
+  );
+  if (spaceSections !== keptSections) setKeptSections(spaceSections);
   const listData = useMemo((): InboxItem[] => {
     // Only bot threads support importing shares; use the same rows for every target.
     if (onShareSelect)
@@ -668,7 +680,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const renderItem = useInboxRenderItem({
     appearance,
     botAction,
-    botSections,
     chooseInboxSpace,
     confirmDeleteSpace,
     createBotInSpace: createQuickBot,
@@ -685,6 +696,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
+    spaces: spaceSections,
     toggleCollapsed,
   });
 
@@ -769,6 +781,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                         toggledSections={collapsed}
                         onToggleSection={toggleCollapsed}
                         openChat={openChat}
+                        swipe={
+                          SWIPE_ROWS
+                            ? {
+                                botAction,
+                                groupAction,
+                                sections: botSections,
+                                onOrganize: organizeFromMenu,
+                                onEditSection: editSectionFromMenu,
+                              }
+                            : undefined
+                        }
                       />
                     ) : null}
                   </>
