@@ -64,7 +64,7 @@ Keep an installation without email on a trusted local network.
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
 appears on sign-in only when a transactional email provider is available. Rakazo uses a
-provider-neutral contract with Resend API and SMTP adapters. Templates render locally with React
+provider-neutral contract with Cloudflare, Resend API and SMTP adapters. Templates render locally with React
 Email into HTML and plain text, independent of the sending provider.
 
 To use the Resend HTTP API, verify a sending domain and create a sending-only API key restricted
@@ -79,6 +79,17 @@ EMAIL_FROM=Rakazo <hello@mail.example.com>
 Disable click and open tracking for account email in the provider's domain settings. Resend delivery
 has a ten-second deadline and bounded retries with the same idempotency key, including when a
 response is lost. Errors omit provider response bodies and credentials.
+
+For Cloudflare Email Sending, verify a sending domain and create a token with permission to send email, then configure:
+
+```env
+EMAIL_PROVIDER=cloudflare
+EMAIL_API_KEY=replace-with-sending-api-token
+EMAIL_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+EMAIL_FROM=Rakazo <hello@example.com>
+```
+
+Cloudflare requests have a ten-second deadline and are submitted once. A network failure or timeout may leave the outcome unknown; acceptance does not guarantee inbox delivery.
 
 For Amazon SES or another SMTP server, use:
 

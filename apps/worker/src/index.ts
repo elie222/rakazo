@@ -192,6 +192,7 @@ async function main() {
   const email = configuredEmailProvider({
     provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
     apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+    accountId: process.env.EMAIL_ACCOUNT_ID?.trim() || undefined,
     from: process.env.EMAIL_FROM?.trim() || undefined,
     replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
     smtpUrl: process.env.SMTP_URL?.trim() || undefined,
