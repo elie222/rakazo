@@ -78,7 +78,7 @@ it("opens Needs attention and folds Working and Unread until the user opens them
   expect(markup).toContain("Writer");
 });
 
-it("offers the inbox swipe actions on the selected space's chats and leaves out archived ones", () => {
+it("offers the inbox swipe actions on activity rows and leaves out archived chats", () => {
   const markup = renderToStaticMarkup(
     createElement(ActivitySection, {
       activity: {
@@ -86,19 +86,14 @@ it("offers the inbox swipe actions on the selected space's chats and leaves out 
         recent: [
           { runId: "a", botId: "marketing", botName: "Marketing", status: "completed" },
           { runId: "b", botId: "archived", botName: "Archived", status: "completed" },
-          { runId: "c", botId: "other", botName: "Other space", status: "completed" },
         ] as never,
       },
-      bots: [
-        { id: "marketing", name: "Marketing", status: "idle", spaceId: "space-1" },
-        { id: "other", name: "Other space", status: "idle", spaceId: "space-2" },
-      ] as never,
+      bots: [{ id: "marketing", name: "Marketing", status: "idle" }] as never,
       groups: [],
       toggledSections: new Set<string>(),
       onToggleSection: () => undefined,
       openChat: () => undefined,
       swipe: {
-        spaceId: "space-1",
         botAction: () => undefined,
         groupAction: () => undefined,
         sections: [],
@@ -111,5 +106,4 @@ it("offers the inbox swipe actions on the selected space's chats and leaves out 
     '<section data-swipe="activity:bot:marketing"><p data-actions="unread archive pin">Marketing</p></section>',
   );
   expect(markup).not.toContain("Archived");
-  expect(markup).toContain("<p>Other space</p>");
 });

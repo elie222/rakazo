@@ -20,7 +20,6 @@ type SwipeTarget = { kind: "bot"; chat: MobileBot } | { kind: "group"; chat: Mob
 type RowActions = { actions: InboxRowAction[]; onAction: (action: InboxRowAction) => void };
 
 export type ActivitySwipe = RowMenuProps & {
-  spaceId: string | undefined;
   botAction: (action: InboxRowAction, bot: MobileBot) => void;
   groupAction: (action: InboxRowAction, group: MobileGroup) => void;
 };
@@ -56,9 +55,9 @@ export function ActivitySection({
     bots,
     groups,
   });
-  // The inbox's swipe actions and menu, on the selected space's chats.
+  // The inbox's swipe actions and menu.
   const swipeable = (target: SwipeTarget, row: (actions?: RowActions) => ReactElement) => {
-    if (!swipe || target.chat.spaceId !== swipe.spaceId) return row();
+    if (!swipe) return row();
     const onAction = (action: InboxRowAction) =>
       target.kind === "bot"
         ? swipe.botAction(action, target.chat)
