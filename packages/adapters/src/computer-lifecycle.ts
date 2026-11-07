@@ -18,6 +18,7 @@ import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
+  COMPUTER_USING_RUNS,
   isRetryableError,
   parseScreenLeaseId,
   screenLeaseId,
@@ -153,6 +154,7 @@ async function hasLiveForeignRunLease(
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
       bot: { computerId },
+      ...COMPUTER_USING_RUNS,
       leaseExpiresAt: { gt: new Date() },
       ...(exceptRunId ? { id: { not: exceptRunId } } : {}),
     },
@@ -172,6 +174,30 @@ export class ComputerBusyError extends Error {
 export class ComputerSpaceDeletingError extends ComputerBusyError {}
 
 export { toComputerRef } from "./computer-support.js";
+
+/**
+ * The owner's time zone and app language for the computer's clock and browser, so pages see the
+ * account's instead of the server's. Unknown, or unreadable, leaves the provider's defaults: a
+ * computer still starts without them.
+ */
+async function computerOwnerLocale(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<{ timezone?: string; language?: string }> {
+  try {
+    const owner = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true, locale: true },
+    });
+    return {
+      ...(owner?.timezone ? { timezone: owner.timezone } : {}),
+      ...(owner?.locale ? { language: owner.locale } : {}),
+    };
+  } catch (error) {
+    getLogger().warn("computer.owner_locale_unavailable", { error });
+    return {};
+  }
+}
 
 export async function provisionComputer(
   deps: {
@@ -401,6 +427,7 @@ export async function provisionComputer(
       });
     await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
+    const owner = await computerOwnerLocale(deps.prisma, existing.userId);
     const provisionAt = (startSize: ComputerSize | undefined) =>
       getLogger().withContext(
         { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
@@ -417,6 +444,7 @@ export async function provisionComputer(
                   ? undefined
                   : (existing.homeRevisionAt ?? undefined),
               size: startSize,
+              ...owner,
             },
             context,
           ),
@@ -1073,6 +1101,7 @@ export async function replaceComputer(
       where: {
         status: { in: [...ACTIVE_RUN_STATUSES] },
         bot: { computerId },
+        ...COMPUTER_USING_RUNS,
       },
       select: { id: true },
     });
@@ -1157,6 +1186,7 @@ export async function replaceComputer(
           where: {
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId },
+            ...COMPUTER_USING_RUNS,
           },
           select: { id: true },
         });

@@ -12,6 +12,7 @@ import {
   Field,
   FieldLabel,
   Input,
+  SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -112,9 +113,9 @@ export function SkillsDialog({
         <div data-testid="skills-git-import" className="max-w-xl space-y-6">
           <div className="flex items-center gap-2">
             {back(() => setImporting(false))}
-            <h2 className="text-heading3 font-medium text-foreground">
+            <SectionHeading as="h2" variant="heading">
               <Trans>From GitHub</Trans>
-            </h2>
+            </SectionHeading>
           </div>
           <form
             className="space-y-4"
@@ -243,10 +244,7 @@ export function SkillsDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[680px] max-h-[calc(100%-2rem)] w-[920px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[920px]"
-      >
+      <DialogContent showCloseButton={false} size="xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>Skills</Trans>

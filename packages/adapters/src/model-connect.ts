@@ -18,6 +18,8 @@ import {
   cloudflareModelRouting,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
+import type { StoredModelSecret } from "./model-secret.js";
+import { modelCacheCapabilities, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
 import {
   compatibleModelSeesImages,
@@ -29,13 +31,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import {
-  CHATGPT_OAUTH_PROVIDER,
-  modelCacheCapabilities,
-  parseModelSecret,
-  serializeModelSecret,
-} from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,

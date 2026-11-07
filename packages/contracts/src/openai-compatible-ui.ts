@@ -1,5 +1,5 @@
-import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./domain.js";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
 
 /** Every hosted service the catalog offers for compatible connections. */
 export function compatibleEndpointPresets(

@@ -522,6 +522,98 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     }
   });
 
+  it("lets a stale boot be reclaimed or reset past a background helper, but not past a turn", async () => {
+    const { spaceId, botId, userId } = identity;
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-helper-lifecycle-"));
+    const deps = {
+      prisma,
+      sandbox: new FakeSandboxProvider(),
+      home: new LocalAgentHomeStore(dataDir),
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      events: { append: vi.fn() } as unknown as ThreadEvents,
+      dataDir,
+    };
+    const context = {
+      operationId: "helper-lifecycle",
+      traceId: "helper-lifecycle",
+      spaceId,
+      userId,
+      botId,
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    const helperThread = await prisma.thread.create({
+      data: { spaceId, userId, helperBotId: botId },
+    });
+    const task = await prisma.task.create({
+      data: {
+        spaceId,
+        botId,
+        threadId: helperThread.id,
+        userId,
+        prompt: "fixture",
+        status: "running",
+      },
+    });
+    // A live run lease, as the executor heartbeat keeps on every running run.
+    const helper = await prisma.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId: helperThread.id,
+        userId,
+        taskId: task.id,
+        status: "running",
+        trigger: "helper",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const abandonedBoot = () =>
+      prisma.computer.update({
+        where: { id: computerId },
+        data: { kind: "fake", state: "booting", providerRef: null, updatedAt: new Date(0) },
+      });
+    // A start that is not refused waits for the abandoned boot like any start; stop it there.
+    const startPastAbandonedBoot = async () => {
+      const waiting = new AbortController();
+      const outcome = provisionComputer(deps, computerId, {
+        ...context,
+        signal: waiting.signal,
+      }).then(
+        () => "started",
+        (error: unknown) => (error instanceof ComputerBusyError ? "busy" : "waited"),
+      );
+      setTimeout(() => waiting.abort(), 1_000);
+      return outcome;
+    };
+    try {
+      await abandonedBoot();
+      expect(await startPastAbandonedBoot()).not.toBe("busy");
+      await abandonedBoot();
+      await expect(replaceComputer(deps, computerId, "reset", context)).resolves.toBeTruthy();
+      await expect(replaceComputer(deps, computerId, "reset", context)).resolves.toBeTruthy();
+
+      // The same run as the bot's own turn still holds every one of them.
+      await prisma.run.update({ where: { id: helper.id }, data: { trigger: "user" } });
+      await abandonedBoot();
+      expect(await startPastAbandonedBoot()).toBe("busy");
+      await expect(replaceComputer(deps, computerId, "reset", context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+      await prisma.computer.update({ where: { id: computerId }, data: { state: "running" } });
+      await expect(replaceComputer(deps, computerId, "reset", context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+    } finally {
+      await prisma.run.update({ where: { id: helper.id }, data: { status: "cancelled" } });
+      await prisma.thread.delete({ where: { id: helperThread.id } });
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "stopped", providerRef: null, maintenanceId: null },
+      });
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("frees a computer a vanished update left booting, then recovers it", async () => {
     const { botId } = identity;
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-abandoned-update-"));

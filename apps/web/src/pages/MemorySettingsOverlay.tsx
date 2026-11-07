@@ -10,6 +10,7 @@ import {
   FieldLabel,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Spinner,
   Toggle,
 } from "@rakazo/ui-web";
@@ -189,9 +190,9 @@ export function MemorySettingsOverlay({
           ) : config ? (
             <section className="rounded-xl border border-border px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-heading3 font-medium text-foreground">
+                <SectionHeading variant="heading">
                   {registration?.name ?? config.provider}
-                </h3>
+                </SectionHeading>
                 <span className="text-body-sm text-success">
                   <Trans>Connected</Trans>
                 </span>
@@ -231,9 +232,9 @@ export function MemorySettingsOverlay({
             </Button>
           ) : registration ? (
             <section className="rounded-xl border border-border px-4 py-4">
-              <h3 id={providerSelectId} className="text-heading3 font-medium text-foreground">
+              <SectionHeading id={providerSelectId} variant="heading">
                 <Trans>Provider</Trans>
-              </h3>
+              </SectionHeading>
               <p className="mt-1 text-body-sm text-muted-foreground">
                 <Trans>Lets bots save and recall facts by meaning, alongside MEMORY.md.</Trans>
               </p>

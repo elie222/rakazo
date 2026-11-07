@@ -442,6 +442,7 @@ export const ES_MESSAGES: Record<string, string> = {
     "Esto elimina las {count} versiones de este artefacto. No se puede deshacer.",
   Versions: "Versiones",
   Stop: "Detener",
+  Stopped: "Detenido",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Esto elimina todos los mensajes y detiene el trabajo en curso. Se conservan el bot, la computadora, la memoria y las rutinas.",
   "Type your answer": "Escribe tu respuesta",
@@ -938,6 +939,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Call: "Llamar",
   "Calls need transcription": "Las llamadas necesitan transcripción",
   "Could not hear that.": "No se pudo escuchar eso.",
+  "Approve or deny it on screen.": "Apruébalo o deniégalo en pantalla.",
+  "Hang up, then enter the code on screen.": "Cuelga y luego ingresa el código en pantalla.",
   "Could not speak that.": "No se pudo decir eso en voz alta.",
   "Could not transcribe that.": "No se pudo transcribir eso.",
   "Hang up": "Colgar",

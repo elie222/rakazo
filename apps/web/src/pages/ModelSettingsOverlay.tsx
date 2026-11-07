@@ -443,10 +443,7 @@ export function ModelSettingsOverlay({
         if (!open) handleClose();
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
-      >
+      <DialogContent showCloseButton={false} size="2xl" className="bg-card">
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <DialogTitle className="text-heading2 font-medium text-foreground">
             <Trans>Models</Trans>

@@ -2,6 +2,7 @@ import type { NotificationMessage } from "@rakazo/adapter-kit";
 import {
   ModelAccountError,
   SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
@@ -544,8 +545,11 @@ describe("backing off a routine after its model connection refuses it", () => {
     expect(retries).toEqual([]);
   });
 
-  it("counts a spent computer allowance, without a quick retry", async () => {
-    const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
+  it.each([
+    ["a spent computer allowance", new SandboxAllowanceUsedError()],
+    ["an unusable computer provider account", new SandboxProviderAccountError()],
+  ])("counts %s, without a quick retry", async (_label, error) => {
+    const { prisma, retries } = await failRun({ error });
 
     // The run's lease is one transaction, the refusal count the other.
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);

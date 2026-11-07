@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
-import type { MobileBotSection } from "../lib/api";
 import type { InboxRowAction } from "../lib/inbox-swipe";
+import type { MobileBotSection } from "../lib/mobile-types";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
 import type { InboxChatPreviewProps } from "./inbox-chat-preview";
 

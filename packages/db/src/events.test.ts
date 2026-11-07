@@ -9,28 +9,34 @@ import { describe, expect, it, vi } from "vitest";
 import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
-import type { AnswerRunInput } from "./events.js";
+import { followThreadEvents } from "./event-stream.js";
 import {
-  AnswerTooLongError,
-  answerRunInput,
-  answerWaitingRunWithTextInTransaction,
   appendEvent,
-  claimSteering,
   clearThread,
   completedRunBlocks,
-  createPendingSteeringRun,
-  discardAnsweredSteering,
-  finalizeComputerControlRelease,
   finalizeRun,
-  followThreadEvents,
-  pauseRunForInput,
-  pauseRunForTakeover,
   sendUserMessage,
-  settleReleasedTakeoverCards,
 } from "./events.js";
 import { endTakeoverWaits } from "./expire-stuck-run.js";
 import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
+import type { AnswerRunInput } from "./thread-ask.js";
+import {
+  AnswerTooLongError,
+  answerRunInput,
+  answerWaitingRunWithTextInTransaction,
+  pauseRunForInput,
+} from "./thread-ask.js";
+import {
+  claimSteering,
+  createPendingSteeringRun,
+  discardAnsweredSteering,
+} from "./thread-steering.js";
+import {
+  finalizeComputerControlRelease,
+  pauseRunForTakeover,
+  settleReleasedTakeoverCards,
+} from "./thread-takeover.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -531,6 +537,7 @@ describe("thread lock transaction budget", () => {
   it("clears a thread with the explicit budget", async () => {
     const tx = {
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({
@@ -5205,6 +5212,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
@@ -5253,6 +5261,7 @@ describe("clearThread", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })

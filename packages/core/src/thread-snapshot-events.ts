@@ -338,7 +338,10 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
-    const without = remaining.filter((message) => !replacedSubagent(message, replacedSubagentIds));
+    // A live subagent placeholder gives way to the saved card; the saved card itself stays put.
+    const without = remaining.filter(
+      (message) => message.id === id || !replacedSubagent(message, replacedSubagentIds),
+    );
     return { ...prev, cursor, messages: upsertMessageById(without, next) };
   }
   return prev;

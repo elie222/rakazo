@@ -17,7 +17,11 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
-import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
+import {
+  messageBlocksText,
+  runAllowsSilentEmpty,
+  runPromotesMidTurnNarration,
+} from "./run-replies.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
@@ -74,11 +78,7 @@ export async function createReplyState(
   for (const message of priorProgress) {
     if (!isUserProgressClientNonce(message.clientNonce)) continue;
     const blocks = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
-    const text = blocks
-      .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-      .map((block) => block.text)
-      .join("")
-      .trim();
+    const text = messageBlocksText(blocks).trim();
     if (!text) continue;
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;

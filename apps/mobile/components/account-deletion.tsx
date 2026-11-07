@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api";
+import { deleteAccount, fetchAccountSecurity, requestAccountDeletionCode } from "../lib/api-auth";
 import { mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";

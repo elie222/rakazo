@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { hostname } from "node:os";
-import { ORPCError, onError } from "@orpc/server";
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
   AgentContextStrategy,
@@ -9,88 +8,56 @@ import type {
   ConnectorProvider,
   JobPublisher,
   ManagedConnectorProvider,
-  MessagingInboundEvent,
   MessagingSurface,
   NotificationProvider,
   RealtimeFanout,
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
-import {
-  SandboxAllowanceUsedError,
-  SandboxDamagedError,
-  SandboxRateLimitError,
-  SandboxUnavailableError,
-  SandboxUnresponsiveError,
-  VoiceAccountError,
-} from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
+  createRunExecutor,
   PluginRepoFetcher,
   PluginTextReader,
   RemoteConnectorDependencies,
+  RunRuntimeEnv,
   UserDeviceGateway,
 } from "@rakazo/adapters";
 import {
-  applyMessagingOutboundStatus,
-  auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
-  ComposioConnector,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsVoipProvider,
   createArtifactStore,
-  createAuditLogReconciler,
-  createBackgroundJobHandlers,
   createCloudAgentConnection,
-  createConnectorStack,
-  createIdleComputerSweeper,
-  createJobReconciler,
+  createConnectorRuntime,
   createMediaGenerationProvider,
-  createMessagingContextLoader,
-  createMessagingTeamChatHistory,
-  createMessagingTeamChatSender,
-  createModelCreditReconciler,
   createPaymentWalletProvider,
   createProductAnalytics,
-  createRunExecutor,
+  createRunReconciler,
+  createRunRuntime,
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
-  createStrategicInitiativeReconciler,
   createTicketChangeNotifier,
-  createWebProvider,
-  deploymentModelUsageLookup,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
-  InstalledConnectorProvider,
-  IntegrationProviderSettings,
   installedMessaging,
-  isComposioEnabled,
   isMessagingSurfaceEnabled,
-  isPipedreamEnabled,
-  McpConnector,
-  McpOAuthBroker,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
   PiOAuthLogins,
-  PipedreamConnector,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
-  pipedreamConfigFromEnv,
   piSessionsRoot,
   RunJobPublisher,
   RunStarter,
-  reconcileCloudAgents,
-  reconcileComputerUpdates,
-  reconcileMediaVideos,
-  reconcilePurchases,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -107,11 +74,11 @@ import {
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
+  buildTrustedOrigins,
   CLIENT_IP_HEADER,
   createAuth,
   createDirectory,
   isBlockedAuthPath,
-  loopbackTwinOrigins,
 } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
 import {
@@ -126,22 +93,16 @@ import {
   createBoardEvents,
   createDb,
   createPool,
-  createSecurityEventPruner,
   createThreadEvents,
   describeRowSecurity,
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
-  ProviderTransactionBusyError,
   parsePositiveInteger,
-  provisionMessagingIdentity,
   pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
-  SpaceDeletionInProgressError,
-  SpaceOwnerRequiredError,
-  securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -152,7 +113,7 @@ import {
   installLogger,
   SERVICE_NAMES,
 } from "@rakazo/logging";
-import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
+import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -185,32 +146,22 @@ import { trackInFlightRequests } from "./in-flight-requests.js";
 import { mountLocalComputerHost } from "./local-settings.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./marketing-email.js";
 import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
-import { createMessagingInboundHandler } from "./messaging-inbound.js";
-import { createMessagingReceipts } from "./messaging-receipts.js";
-import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
+import { startMessagingRuntime } from "./messaging-runtime.js";
 import { monitoringRoutes } from "./monitoring.js";
 import { pluginSubmissionRoutes } from "./plugin-submissions.js";
 import { sendReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { mountScriptAssets } from "./script-assets.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { mountSharedPages } from "./shared-pages.js";
 import { afterSpaceDeparture } from "./space-departure.js";
 import { createSpeechSummarizer } from "./speech-summary.js";
-import { TeamChatBridge } from "./team-chat-bridge.js";
-import { createTeamChatInboundHandler } from "./team-chat-inbound.js";
-import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
-import {
-  PendingTeamChatInbound,
-  prefersTeamChatSurface,
-  settleWithTimeout,
-  TEAM_CHAT_STARTUP_SHUTDOWN_MS,
-  TeamChatStartupRetries,
-} from "./team-chat-startup.js";
+import { settleWithTimeout } from "./team-chat-startup.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
-import { mountVoiceHttpRoutes, transcribeInboundVoice, voiceAccountErrorStatus } from "./voice.js";
+import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
 /**
@@ -304,6 +255,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
+  const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
@@ -423,35 +375,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       prisma,
       secrets,
     }));
-  const mcpOAuth = new McpOAuthBroker(
-    prisma,
-    secrets,
-    remoteConnectors,
-    env.mcpAllowPrivateEndpoint,
-  );
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
-  const mcp = new McpConnector(
-    prisma,
-    secrets,
-    {
-      stdioEnabled: env.mcpStdioEnabled,
-      allowedCommands: env.mcpStdioAllowedCommands,
-      ...env.mcpStdio,
-      network: remoteConnectors,
-      events,
-      allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-    },
-    mcpOAuth,
-  );
-  const pipedreamConfig = pipedreamConfigFromEnv(env);
-  const pipedream =
-    pipedreamOverride ??
-    (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
   // This process registers the inbound sink, so it must hold Telegram's getUpdates connection.
   const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true }).filter(
     (platform) => platform.provider !== "slack" || !env.slackClientId,
@@ -504,29 +433,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     update: { modelCreditsEnabled },
   });
-  const installed = new InstalledConnectorProvider(
-    prisma,
-    secrets,
-    remoteConnectors,
-    env.mcpAllowPrivateEndpoint,
+  const connectors = createConnectorRuntime(
+    runtimeEnv,
+    { prisma, secrets, events },
+    {
+      network: remoteConnectors,
+      composio: composioOverride,
+      pipedream: pipedreamOverride,
+      connectors: connectorOverrides,
+    },
   );
-  const integrationSettings = new IntegrationProviderSettings(prisma, secrets, env.encryptionKey, {
-    composio:
-      composioOverride ??
-      (isComposioEnabled(env.composioApiKey)
-        ? new ComposioConnector({ apiKey: env.composioApiKey })
-        : undefined),
-    pipedream,
-  });
-  const stack = createConnectorStack(composioOverride, [
-    installed,
-    ...integrationSettings
-      .providers()
-      .filter((provider) => !composioOverride || provider.describe().id !== "composio"),
-    mcp,
-    ...connectorOverrides,
-  ]);
-  integrationSettings.warmDirectories();
+  const { mcpOAuth, mcp, pipedream, installed, integrationSettings, stack } = connectors;
   const runtime =
     runtimeOverride ??
     (env.agentRuntime === "scripted"
@@ -678,9 +595,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const executor = createRunExecutor({
+  const { executor, jobHandlers } = createRunRuntime(runtimeEnv, connectors, {
     billingEnabled: modelCreditsEnabled,
-    maxUploadSizeBytes: env.maxUploadSizeBytes,
     mediaGeneration,
     contextStrategy,
     prisma,
@@ -691,33 +607,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     memoryProviders,
     home,
     artifacts,
-    connector: stack.connector,
-    connectors: stack.connector,
-    listConnectedPluginSlugs: (userId) => integrationSettings.listConnectedPluginSlugs(userId),
-    secrets: [
-      env.deploymentModelKey ?? "",
-      env.composioApiKey ?? "",
-      env.cursorApiKey ?? "",
-      process.env.TYPESAFE_API_KEY ?? "",
-    ].filter(Boolean),
     secretStore: secrets,
     secretHttp: remoteConnectors,
-    mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-    deploymentModelKey: env.deploymentModelKey,
-    deploymentModelConfigured: env.deploymentModelConfigured,
-    dataDir: env.dataDir,
     notifications,
     jobs,
     events,
     onTicketChange: ticketChanges,
-    ticketBoardEnabled,
-    phoneCallsEnabled: env.phoneCallsEnabled,
-    phoneCallRingSeconds: env.phoneCallRingSeconds,
-    phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
-    inboundEmailDomain: env.inboundEmail?.domain,
     email,
-    messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
-    web: createWebProvider(),
+    messaging,
     cloudAgent,
     userDevices: userDevicesOverride ?? userDevices,
     paymentWallet,
@@ -725,57 +622,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     now,
   });
 
-  const jobHandlers = createBackgroundJobHandlers({
-    executor,
-    prisma,
-    sandbox,
-    home,
-    artifacts,
-    jobs,
-    events,
-    // Every API container runs node as the same pid, and deploys run old and new side by side.
-    workerId: `${hostname()}:${process.pid}`,
-    runtime,
-    notifications: notifications instanceof ExpoPushProvider ? notifications : undefined,
-    secretStore: secrets,
-    memoryProviders,
-    deploymentModelKey: env.deploymentModelKey,
-    deploymentModelConfigured: env.deploymentModelConfigured,
-    messaging,
-    cloudAgent,
-    paymentWallet,
-    mediaGeneration,
-    maxUploadSizeBytes: env.maxUploadSizeBytes,
-  });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
   }
   runs?.attach(jobHandlers);
   const reconciler = inMemoryJobs
-    ? createJobReconciler({
+    ? createRunReconciler({
         prisma,
         jobs,
         events,
         notifications,
-        reconcileModelCredits: createModelCreditReconciler({
-          prisma,
-          lookup: deploymentModelUsageLookup(),
-        }),
-        reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
-        reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
-        reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
-        reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
-        reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
-          prisma,
-          jobs,
-          billingEnabled: modelCreditsEnabled,
-        }),
-        reconcileSecurityEventRetention: createSecurityEventPruner(
-          prisma,
-          securityEventRetentionDays(),
-        ),
-        reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
-        reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+        cloudAgent,
+        paymentWallet,
+        mediaGeneration,
+        billingEnabled: modelCreditsEnabled,
       })
     : undefined;
   reconciler?.start();
@@ -1173,290 +1033,21 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       authenticate: sessionActor,
     });
   }
-  // Shared with stop so a shutdown during retry delays does not restart polling.
-  let messagingStopped = false;
-  let stopInstalledBridges: (() => Promise<void>) | undefined;
-  let clearMessagingRetryDelay: (() => void) | undefined;
-  let messagingInitTask: Promise<void> | undefined;
-  let clearTeamChatRetryDelay: (() => void) | undefined;
-  let teamChatInitTask: Promise<void> | undefined;
-  let teamChatBridge: TeamChatBridge | undefined;
-  /** Constructed even before start() succeeds so stop() can cancel in-flight startup. */
-  let teamChatBridgeInstance: TeamChatBridge | undefined;
-  const pendingTeamChatInbound = new PendingTeamChatInbound();
-  const receipts = messaging ? createMessagingReceipts(messaging) : undefined;
-  if (messaging) {
-    const inboundDeps = {
-      prisma,
-      events,
-      jobs,
-      sandbox,
-      provision: (request, policyEnv) => provisionMessagingIdentity(prisma, request, policyEnv),
-      openSignup: env.messagingOpenSignup,
-      signupPolicy: {
-        signupsEnabled: env.signupsEnabled,
-        signupAllowlist: env.signupAllowlist,
-      },
-      acknowledge: receipts?.acknowledge,
-      storeAttachment: ({ spaceId, userId, ...input }) =>
-        storeInboundAttachment(
-          { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
-          { spaceId, userId },
-          input,
-        ),
-      transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
-        transcribeInboundVoice(
-          {
-            prisma,
-            secrets,
-            env: { mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint },
-          },
-          { spaceId, userId },
-          { audio, mimeType, signal },
-        ),
-    } satisfies Parameters<typeof createMessagingInboundHandler>[0];
-    const inbound = createMessagingInboundHandler(inboundDeps);
-    const handleTeamChatInbound = createTeamChatInboundHandler(inboundDeps, inbound);
-    const flushPendingTeamChatInbound = (bridge: TeamChatBridge) => {
-      pendingTeamChatInbound.flush((event) => handleTeamChatInbound(bridge, event));
-    };
-    const makeTeamChatBridge = (
-      botId: string,
-      installation?: { id: string; workspaceId: string },
-    ) => {
-      const judge =
-        env.teamChatJudgeProvider && env.teamChatJudgeModel
-          ? new ModelTeamChatEngagementJudge({
-              prisma,
-              runtime,
-              secrets,
-              deploymentProvider: env.defaultProvider,
-              deploymentModel: env.defaultModel,
-              deploymentModelKey: env.deploymentModelKey,
-              allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-              providerOverride: env.teamChatJudgeProvider,
-              modelOverride: env.teamChatJudgeModel,
-            })
-          : new ModelTeamChatEngagementJudge({
-              prisma,
-              runtime,
-              secrets,
-              deploymentProvider: env.defaultProvider,
-              deploymentModel: env.defaultModel,
-              deploymentModelKey: env.deploymentModelKey,
-              allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-            });
-      const bridge = new TeamChatBridge({
+  const messagingRuntime = messaging
+    ? await startMessagingRuntime({
+        app,
         prisma,
         events,
         jobs,
-        send: createMessagingTeamChatSender(messaging),
-        fetchThreadHistory: createMessagingTeamChatHistory(messaging),
-        storeAttachment: ({ spaceId, userId, ...input }) =>
-          storeInboundAttachment(
-            { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
-            { spaceId, userId },
-            input,
-          ),
-        providerId: "slack",
-        botId,
-        workspaceId: installation?.workspaceId,
-        conversationPrefix: installation ? `slack~${installation.id}:` : undefined,
-        onUnavailable: installation
-          ? () => {
-              installedBridges.delete(installation.id);
-            }
-          : undefined,
-        isAvailable: installation
-          ? async () => Boolean(await messagingInstallations?.isActive(installation.id))
-          : undefined,
-        judge,
-        acknowledge: receipts?.acknowledge,
-      });
-      return bridge;
-    };
-    const installedBridges = new Map<
-      string,
-      { bridge: TeamChatBridge; pending: Promise<TeamChatBridge> }
-    >();
-    const installedRetries = new TeamChatStartupRetries((error) =>
-      getLogger().error("installed team chat restore failed; retrying", error),
-    );
-    const retryInstalledBridge = (installation: {
-      id: string;
-      botId: string;
-      workspaceId: string;
-    }) => {
-      installedRetries.schedule(installation.id, () =>
-        runAsSystem("retry installed team chat", async () => {
-          if (messagingStopped) return;
-          const active = await messagingInstallations?.isActive(installation.id);
-          if (!active || messagingStopped) return;
-          await installedBridge(installation);
-        }),
-      );
-    };
-    const installedBridge = (installation: { id: string; botId: string; workspaceId: string }) => {
-      const existing = installedBridges.get(installation.id);
-      if (existing) return existing.pending;
-      const bridge = makeTeamChatBridge(installation.botId, installation);
-      const pending = bridge
-        .start()
-        .then(() => {
-          installedRetries.succeeded(installation.id);
-          return bridge;
-        })
-        .catch(async (error) => {
-          installedBridges.delete(installation.id);
-          await bridge.stop();
-          retryInstalledBridge(installation);
-          throw error;
-        });
-      installedBridges.set(installation.id, { bridge, pending });
-      return pending;
-    };
-    if (messagingInstallations) {
-      await Promise.all(
-        (await messagingInstallations.targets()).map((installation) =>
-          runAsSystem("resume installed team chat", () => installedBridge(installation)).catch(
-            (error) => {
-              getLogger().error("installed team chat could not resume", error);
-            },
-          ),
-        ),
-      );
-    }
-    stopInstalledBridges = async () => {
-      installedRetries.stop();
-      // Stop first so an in-flight start() is cancelled, then bound the wait
-      // as the static bridge does.
-      await Promise.all(
-        [...installedBridges.values()].map(({ bridge, pending }) =>
-          settleWithTimeout(
-            bridge
-              .stop()
-              .catch(() => undefined)
-              .then(() => pending.catch(() => undefined)),
-            TEAM_CHAT_STARTUP_SHUTDOWN_MS,
-          ),
-        ),
-      );
-    };
-    if (env.teamChatBotId) {
-      const bridge = makeTeamChatBridge(env.teamChatBotId);
-      teamChatBridgeInstance = bridge;
-      try {
-        await bridge.start();
-        teamChatBridge = bridge;
-      } catch (error) {
-        getLogger().error("team chat bridge failed to start; retrying", error);
-        teamChatInitTask = (async () => {
-          let delayMs = 2_000;
-          while (!messagingStopped) {
-            await new Promise<void>((resolve) => {
-              const timer = setTimeout(resolve, delayMs);
-              clearTeamChatRetryDelay = () => {
-                clearTimeout(timer);
-                clearTeamChatRetryDelay = undefined;
-                resolve();
-              };
-            });
-            clearTeamChatRetryDelay = undefined;
-            if (messagingStopped) return;
-            try {
-              await bridge.start();
-              if (messagingStopped) {
-                await bridge.stop();
-                return;
-              }
-              teamChatBridge = bridge;
-              flushPendingTeamChatInbound(bridge);
-              return;
-            } catch (retryError) {
-              if (
-                retryError instanceof Error &&
-                retryError.message === "Team chat bridge start cancelled"
-              ) {
-                return;
-              }
-              getLogger().error("team chat bridge failed to start; retrying", retryError);
-              delayMs = Math.min(delayMs * 5, 30_000);
-            }
-          }
-        })();
-      }
-    }
-    const handleInbound = async (event: MessagingInboundEvent) => {
-      if (event.type !== "message") {
-        await applyMessagingOutboundStatus(prisma, event);
-        return;
-      }
-      if (event.installationBotId && !event.isDirect) {
-        if (!event.installationId || !event.workspaceId) return;
-        const installation = {
-          id: event.installationId,
-          botId: event.installationBotId,
-          workspaceId: event.workspaceId,
-        };
-        await handleTeamChatInbound(await installedBridge(installation), event);
-        return;
-      }
-      if (!event.installationBotId && prefersTeamChatSurface(event, env.teamChatBotId)) {
-        const bridge = teamChatBridge;
-        if (bridge) {
-          await handleTeamChatInbound(bridge, event);
-          return;
-        }
-        // Bridge is still starting (or retrying). Do not fall through to the
-        // personal-line inbound path — that bypasses externalMessage ownership
-        // and can wake routines for unlinked TeamChat senders.
-        if (teamChatInitTask) {
-          const pending = pendingTeamChatInbound.enqueue(event);
-          if (!pending) {
-            throw new Error("Team chat inbound buffer is full");
-          }
-          await pending;
-          return;
-        }
-        throw new Error("Team chat bridge is unavailable");
-      }
-      await inbound(event);
-    };
-    messaging.onInbound((event) => runAsSystem("messaging inbound", () => handleInbound(event)));
-    mountMessagingWebhookRoutes(app, { messaging });
-    // Start polling adapters now rather than on the first webhook or send; a second poller
-    // elsewhere would fight this one for Telegram's single getUpdates slot. Bounded retries
-    // cover transient startup failures, otherwise polling-only bots stay dark.
-    messagingInitTask = (async () => {
-      const delayMs = [0, 2_000, 10_000];
-      for (let attempt = 0; attempt < delayMs.length; attempt += 1) {
-        if (messagingStopped) return;
-        if (delayMs[attempt]! > 0) {
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, delayMs[attempt]);
-            clearMessagingRetryDelay = () => {
-              clearTimeout(timer);
-              clearMessagingRetryDelay = undefined;
-              resolve();
-            };
-          });
-          clearMessagingRetryDelay = undefined;
-        }
-        if (messagingStopped) return;
-        try {
-          await messaging.initialize?.();
-          return;
-        } catch (error) {
-          getLogger().error(
-            attempt === delayMs.length - 1
-              ? "messaging surface initialize failed"
-              : "messaging surface initialize failed; retrying",
-            error,
-          );
-        }
-      }
-    })();
-  }
+        sandbox,
+        secrets,
+        artifacts,
+        runtime,
+        env,
+        messaging,
+        messagingInstallations,
+      })
+    : undefined;
 
   app.route(
     "/",
@@ -1511,22 +1102,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       const runsStopped = runs?.stop();
       await userDeviceHub?.close();
       oauthLogins.abortAll();
-      messagingStopped = true;
-      clearMessagingRetryDelay?.();
-      clearTeamChatRetryDelay?.();
-      receipts?.stop();
-      pendingTeamChatInbound.reject(new Error("Team chat bridge stopped before startup"));
-      // Cancel in-flight start() before awaiting the retry task so stop() cannot
-      // sit on DB/reconcile work that bridge.start() is still running.
-      await settleWithTimeout(
-        teamChatBridgeInstance ? teamChatBridgeInstance.stop().catch(() => undefined) : undefined,
-        TEAM_CHAT_STARTUP_SHUTDOWN_MS,
-      );
-      await messagingInitTask?.catch(() => undefined);
-      await settleWithTimeout(teamChatInitTask, TEAM_CHAT_STARTUP_SHUTDOWN_MS);
-      await messaging?.shutdown?.();
-      await teamChatBridge?.stop();
-      await stopInstalledBridges?.();
+      await messagingRuntime?.stop();
       await stopReferralEmails?.();
       await stopHomeRetention?.();
       await stopOrganizationDeletions();
@@ -1556,29 +1132,14 @@ export function isTrustedOrigin(
 ) {
   if (!origin) return true;
   if (origin.startsWith("rakazo://")) return true;
-  const allowed = new Set(
-    [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(originVariants),
-  );
-  return allowed.has(origin);
+  return new Set(trustedRequestOrigins(env)).has(origin);
 }
 
-function originVariants(origin: string): string[] {
-  if (!origin || origin === "rakazo://") return [];
-  const variants = [origin, ...loopbackTwinOrigins(origin)];
-  try {
-    const url = new URL(origin);
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      variants.push(url.origin);
-    }
-    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
-      const v6 = new URL(origin);
-      v6.hostname = "[::1]";
-      variants.push(v6.origin);
-    }
-  } catch {
-    return variants;
-  }
-  return variants;
+export function trustedRequestOrigins(env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">) {
+  return buildTrustedOrigins({
+    origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    requestOrigins: true,
+  });
 }
 
 /**
@@ -1611,92 +1172,4 @@ function emptyAuthBodyAsJson(request: Request) {
   headers.set("content-type", "application/json");
   headers.delete("content-length");
   return new Request(request, { headers, body: "{}" });
-}
-
-/**
- * Non-ORPCError failures are flattened into an opaque "Internal server error", so this log is
- * the only record of what broke. The cause chain matters: undici and most SDKs report a bare
- * "fetch failed" and keep the host and errno one level down.
- */
-export function handleRpcError(
-  error: unknown,
-  path: readonly string[],
-  signal?: AbortSignal,
-): void {
-  // A missing or foreign resource is the caller's mistake (a stale client, a deleted bot),
-  // not a server failure, so it is a warning rather than an error report.
-  if (error instanceof IsolationError) {
-    getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
-    throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
-  }
-  if (error instanceof SpaceOwnerRequiredError) {
-    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
-  }
-  // A Space being deleted takes no new work; the caller learns it, nothing failed.
-  if (error instanceof SpaceDeletionInProgressError) {
-    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
-  }
-  // The user's own voice account refused the request: theirs to fix.
-  if (error instanceof VoiceAccountError) {
-    getLogger().warn(`rpc ${path.join("/")} voice provider account rejected the request`, {
-      reason: error.code ?? error.message,
-    });
-    throw new ORPCError(error.code ?? "FORBIDDEN", {
-      status: voiceAccountErrorStatus(error.code),
-      message: error.message,
-      cause: error,
-    });
-  }
-  // The computer provider did not start the computer in time, or could not be reached: an outage
-  // on its side the user can retry, not a server failure.
-  if (error instanceof SandboxUnavailableError || error instanceof SandboxUnresponsiveError) {
-    const unavailable =
-      error instanceof SandboxUnavailableError
-        ? error
-        : new SandboxUnavailableError({ cause: error });
-    getLogger().warn(`rpc ${path.join("/")} computer unavailable`, {
-      reason: unavailable.cause instanceof Error ? unavailable.cause.message : undefined,
-    });
-    markExpectedFailure();
-    throw new ORPCError("SERVICE_UNAVAILABLE", { message: unavailable.message, cause: error });
-  }
-  // A provider kept another transaction busy past the wait; nothing failed, so the caller retries.
-  if (error instanceof ProviderTransactionBusyError) {
-    getLogger().warn(`rpc ${path.join("/")} provider transaction busy`);
-    markExpectedFailure();
-    throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
-  }
-  if (error instanceof SandboxRateLimitError) {
-    getLogger().warn(`rpc ${path.join("/")} computer rate limited`, {
-      reason: error.cause instanceof Error ? error.cause.message : undefined,
-    });
-    throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
-  }
-  // The organization spent this period's computer allowance; its message says so.
-  if (error instanceof SandboxAllowanceUsedError) {
-    getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
-    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
-  }
-  // A retry cannot fix a damaged computer; its message tells the user to Recover it.
-  if (error instanceof SandboxDamagedError) {
-    getLogger().warn(`rpc ${path.join("/")} computer damaged`);
-    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
-  }
-  // The client went away mid-request, so whatever failed next has no one waiting for it.
-  if (signal?.aborted && !(error instanceof ORPCError)) {
-    getLogger().warn(`rpc ${path.join("/")} client disconnected`, {
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    markExpectedFailure();
-    return;
-  }
-  logUnexpectedRpcError(error, path);
-}
-
-export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
-  // A procedure's own 5xx (a store it depends on is down) would otherwise reach the collector
-  // only as an anonymous failed request; report it under the procedure with its cause.
-  if (error instanceof ORPCError && error.status < 500) return;
-  const where = `rpc ${path.join("/")} failed`;
-  getLogger().error(where, error);
 }
