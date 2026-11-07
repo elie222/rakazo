@@ -154,9 +154,10 @@ token that can only read packages. The deploy
 starts each new API, web and worker container beside the running one and stops the old one only
 once the new one is healthy, so a deploy does not take the site offline or pause chat, then waits for
 `https://$RAKAZO_HOST/health` and rolls back on failure by restoring the image the previous
-containers ran. Old and new API containers serve together
-for a few seconds after migrations run, so a migration must keep working with the previous
-release: add first, and drop or rename only in a later deploy. Pull, build and
+containers ran. The old worker is not stopped: it finishes the jobs it is running, for up to 45
+minutes, while the new one takes new jobs, and the deploy waits for it before it exits. The
+previous release keeps running after migrations run, so a migration must keep working with it:
+add first, and drop or rename only in a later deploy. Pull, build and
 start are time-limited so a stuck step fails the deploy instead of holding its lock; a deploy that
 finds the lock held exits non-zero. A deploy refuses to start with less than
 `RAKAZO_DEPLOY_MIN_FREE_GB` (default `5`) free, and after a healthy rollout it keeps the current and

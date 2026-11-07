@@ -1,9 +1,12 @@
+import type { CompatibleEndpointPreset } from "@rakazo/contracts";
 import {
+  COMMANDCODE_BASE_URL,
   ipVersion,
   isCloudMetadataHost,
   isLinkLocalAddress,
   isLoopbackHost,
   isNonPublicAddress,
+  matchCompatibleEndpointPreset,
   normalizeHost,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -12,6 +15,16 @@ import {
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+
+/** Hosted compatible services the catalog offers by name. Each one needs a key. */
+export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
+  { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  { name: "CommandCode", baseUrl: COMMANDCODE_BASE_URL },
+];
+
+export function compatibleEndpointPreset(baseUrl: string | undefined) {
+  return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
+}
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";

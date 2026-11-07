@@ -107,10 +107,10 @@ describe("selectable bot icon sets", () => {
     await render("#8B5CF6::shape_2", "organic");
     await click("Customize bot avatar");
     expect(changed).not.toHaveBeenCalled();
-    await click("Color #10B981");
-    expect(changed).toHaveBeenLastCalledWith("#10B981::shape_2", undefined);
+    await click("Color #00C972");
+    expect(changed).toHaveBeenLastCalledWith("#00C972::shape_2", undefined);
     expect(button("Original").getAttribute("aria-selected")).toBe("true");
     await click("Rakazo");
-    expect(changed).toHaveBeenLastCalledWith("#10B981", "rakazo");
+    expect(changed).toHaveBeenLastCalledWith("#00C972", "rakazo");
   });
 });

@@ -18,6 +18,7 @@ import { modelPickerRequest } from "./model-picker-selection";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
+  showMenu: vi.fn(),
   scrollToLocation: vi.fn(),
   scrollTo: vi.fn(),
   reportVisibleRows: true,
@@ -94,19 +95,34 @@ vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => mocks.header
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
+vi.mock("./live-notifications", () => ({ afterChatNotifyChange: vi.fn(async () => undefined) }));
 
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => 1,
+}));
 // Cache updates reach the screen inside act instead of on a later timer.
 notifyManager.setScheduler((callback) => callback());
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async () => ({ headers: {} }),
   selectedSpaceId: () => "space-fixture",
   rpc: async (procedure: string, input?: unknown, options?: { signal?: AbortSignal }) => {
     const cloudflare = mocks.gateway
-      ? { provider: "cloudflare-ai-gateway", providerName: "Cloudflare AI Gateway" }
+      ? {
+          provider: "cloudflare-ai-gateway",
+          providerName: "Cloudflare AI Gateway",
+          routingFields: ["accountId", "gatewayId"],
+        }
       : mocks.workers
-        ? { provider: "cloudflare-workers-ai", providerName: "Cloudflare Workers AI" }
+        ? {
+            provider: "cloudflare-workers-ai",
+            providerName: "Cloudflare Workers AI",
+            routingFields: ["accountId"],
+          }
         : undefined;
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
@@ -190,6 +206,7 @@ vi.mock("./api", () => ({
                   ...entry,
                   provider: cloudflare?.provider ?? entry.provider,
                   providerName: cloudflare?.providerName ?? entry.providerName,
+                  ...(cloudflare ? { routingFields: cloudflare.routingFields } : {}),
                 })),
                 ...(mocks.extraProviders
                   ? ["Anthropic", "Google", "OpenAI", "Other", "Last"].map((name) => ({
@@ -262,13 +279,17 @@ vi.mock("react-native", () => {
     accessibilityLabel,
     accessibilityRole,
     accessibilityValue,
+    onAccessibilityAction,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
     accessibilityRole?: string;
     accessibilityValue?: { text: string };
-  }) =>
-    createElement(
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) => {
+    if (accessibilityLabel && onAccessibilityAction)
+      mocks.rowAccessibilityActions.set(accessibilityLabel, onAccessibilityAction);
+    return createElement(
       "div",
       {
         "aria-label": accessibilityLabel,
@@ -277,6 +298,7 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   return {
     AccessibilityInfo: { announceForAccessibility: mocks.announce },
     ActivityIndicator: () => createElement("i", { "data-loading": true }),
@@ -439,6 +461,8 @@ vi.mock("../components/settings-group", () => ({
       footer,
     ),
   SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
+  SettingsSwitch: ({ label }: { label: string }) =>
+    createElement("button", { type: "button", role: "switch" }, label),
   SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
   SettingsRow: ({
     title,
@@ -547,16 +571,19 @@ vi.mock("../components/text-only-mark", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
+    ref,
     title,
     actions,
     onPressAction,
     children,
   }: {
+    ref?: Ref<{ show: () => void }>;
     title: string;
     actions: { id: string; title: string }[];
     onPressAction: (event: { nativeEvent: { event: string } }) => void;
     children: ReactNode;
   }) => {
+    useImperativeHandle(ref, () => ({ show: () => mocks.showMenu(title) }), [title]);
     mocks.menus.set(title, { actions, onPressAction });
     return createElement("section", { "data-menu": title }, children);
   },
@@ -1041,6 +1068,24 @@ describe("model role lists", () => {
       button.textContent?.includes(name),
     )!;
 
+  it("opens Android model options from accessibility activation", async () => {
+    mocks.platform = "android";
+    mocks.primary = model(1);
+    await renderModels();
+    const activate = mocks.rowAccessibilityActions.get("Model 1 (OpenRouter) options")!;
+    act(() => activate({ nativeEvent: { actionName: "activate" } }));
+    expect(mocks.showMenu).toHaveBeenCalledExactlyOnceWith("Model 1");
+  });
+
+  it("keeps the native menu outside the model picker's press target", async () => {
+    mocks.primary = model(1);
+    await renderModels();
+    const menu = section("Main model").querySelector('[data-menu="Model 1"]')!;
+    expect(menu.closest("button")).toBeNull();
+    act(() => rowButton("Main model", "Model 1").click());
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/model-picker" }));
+  });
+
   it("numbers the main model and its fallbacks, then offers Add fallback", async () => {
     mocks.primary = { ...model(1), thinkingLevel: "high" };
     mocks.backups = [model(2)];
@@ -1075,8 +1120,14 @@ describe("model role lists", () => {
     act(() => rowButton("Main model", "Add fallback").click());
     expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add fallback" });
     expect(pickerRows()).toHaveLength(10);
-    searchModels("vendor/model-4");
-    await act(async () => pickerRows()[0]!.click());
+    expect(mocks.setOptions.mock.calls.some(([options]) => options.headerSearchBarOptions)).toBe(
+      false,
+    );
+    await act(async () =>
+      pickerRows()
+        .find((row) => row.textContent?.includes("Model 4"))!
+        .click(),
+    );
     expect(rowTitles()).toEqual(["Model 1", "Model 4"]);
     // Keeping the first row leaves the main model and its effort alone.
     expect(roleSaves()).toEqual([{ backups: [pinned(4)] }]);
@@ -1513,7 +1564,13 @@ describe("shared model picker presentation", () => {
     await act(async () =>
       root.render(
         <ModelPickerList
-          choices={choices}
+          choices={[
+            ...choices,
+            ...Array.from({ length: 7 }, (_, index) => ({
+              key: `extra-${index}`,
+              label: `Extra ${index}`,
+            })),
+          ]}
           selectedKey="sonnet"
           providerLabel="OpenRouter"
           onSelect={() => undefined}
@@ -1525,12 +1582,13 @@ describe("shared model picker presentation", () => {
       "Google",
     ]);
     expect(pickerRows().map((row) => row.textContent)).toEqual([
+      ...Array.from({ length: 7 }, (_, index) => `Extra ${index}`),
       "Claude Sonnet 4.5",
       "Claude Haiku",
       "Gemini",
       "Plain model",
     ]);
-    expect(pickerRows()[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(pickerRows()[7]?.getAttribute("aria-selected")).toBe("true");
     searchModels("Anthropic");
     expect(pickerRows().map((row) => row.textContent)).toEqual([
       "Claude Sonnet 4.5",
@@ -1587,7 +1645,17 @@ describe("shared model picker presentation", () => {
     mocks.platform = "android";
     await act(async () =>
       root.render(
-        <ModelPickerList choices={choices} selectedKey="sonnet" onSelect={() => undefined} />,
+        <ModelPickerList
+          choices={[
+            ...choices,
+            ...Array.from({ length: 7 }, (_, index) => ({
+              key: `extra-${index}`,
+              label: `Extra ${index}`,
+            })),
+          ]}
+          selectedKey="sonnet"
+          onSelect={() => undefined}
+        />,
       ),
     );
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Search"]')!;
@@ -1660,6 +1728,11 @@ describe("several connections for one provider", () => {
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
     ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter (Work)", "Add fallback"]);
+    expect(
+      [...section("Main model").querySelectorAll('[role="button"]')].map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Model 1 (OpenRouter) options", "Model 1 (OpenRouter, Work) options"]);
     const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
     expect(menu).toHaveLength(1);
     await act(async () =>

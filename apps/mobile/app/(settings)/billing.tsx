@@ -1,8 +1,12 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  ByokTierSchema,
+  byokTierChangeOffered,
   byokYearlySwitchSavings,
+  COMPUTER_SIZE_SPECS,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  isCancelledTrial,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
@@ -10,7 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
+import { rpc, selectedSpaceId } from "../../lib/api";
 import {
   currentPlan,
   openBillingPage,
@@ -18,6 +22,7 @@ import {
   planEndsAt,
 } from "../../lib/billing";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import { rememberReferral } from "../../lib/referral";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { useSideInsets } from "../../lib/side-insets";
 
@@ -39,12 +44,19 @@ export default function BillingScreen() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
-  const show = useCallback((next: BillingStatus) => {
-    setStatus(next);
-    setAmount(
-      ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
-    );
-  }, []);
+  // This screen shows the Space it opened in; every answer it gets, including a late one after a
+  // Space switch, is filed under that Space.
+  const [space] = useState(selectedSpaceId);
+  const show = useCallback(
+    (next: BillingStatus) => {
+      setStatus(next);
+      rememberReferral(space, next.referral);
+      setAmount(
+        ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+      );
+    },
+    [space],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -90,8 +102,59 @@ export default function BillingScreen() {
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
+  const cancelledTrial = isCancelledTrial(status);
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
+  const tiers = status.byokTiers ?? [];
+  type TierOffer = (typeof tiers)[number];
+  const currentTier = ownKeyCents
+    ? tiers.find((offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier))
+    : undefined;
+  const tierChange = byokTierChangeOffered(status);
+  const interval = status.byokInterval ?? "month";
+  const tierCents = (offer: TierOffer) =>
+    interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+  /** "$49 / month", at the plan's interval. */
+  const tierPrice = (cents: number) => {
+    const price = `$${cents / 100}`;
+    return interval === "year" ? t("{price} / year", { price }) : t("{price} / month", { price });
+  };
+  const tierComputer = (offer: TierOffer) =>
+    t("{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month", {
+      vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus,
+      memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb,
+      hours: offer.computerHours,
+    });
+  const changeTier = (offer: TierOffer, cents: number) =>
+    Alert.alert(
+      t("Switch to {name}?", { name: offer.name }),
+      // What the tier gives, then how the change bills.
+      `${tierComputer(offer)}\n\n${
+        status.state === "trialing"
+          ? t("Your plan becomes {price} when your trial ends.", { price: tierPrice(cents) })
+          : cents > (ownKeyCents ?? 0)
+            ? t("Your card is charged the prorated difference today.")
+            : t("The unused difference is credited to your next invoice.")
+      }`,
+      [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Switch"),
+          onPress: () =>
+            void action(async () => {
+              show(await rpc("billing/changeTier", { tier: offer.tier }));
+            }),
+        },
+      ],
+    );
+  const tierRow = currentTier ? (
+    <SettingsRow
+      title={currentTier.name}
+      detail={tierComputer(currentTier)}
+      chevron={tierChange ? "down" : undefined}
+      disabled={pending}
+    />
+  ) : null;
   return (
     <ScrollView
       style={sideInsets}
@@ -118,6 +181,32 @@ export default function BillingScreen() {
                   : t("None")
           }
         />
+        {currentTier && tierChange ? (
+          <MenuView
+            actions={tiers.flatMap((offer) => {
+              const cents = tierCents(offer);
+              return cents === null
+                ? []
+                : [
+                    {
+                      id: offer.tier,
+                      title: `${offer.name} · ${tierPrice(cents)}`,
+                      state: offer.tier === currentTier.tier ? ("on" as const) : ("off" as const),
+                    },
+                  ];
+            })}
+            onPressAction={({ nativeEvent }) => {
+              const offer = tiers.find((candidate) => candidate.tier === nativeEvent.event);
+              const cents = offer && tierCents(offer);
+              if (offer && cents != null && offer.tier !== currentTier.tier)
+                changeTier(offer, cents);
+            }}
+          >
+            {tierRow}
+          </MenuView>
+        ) : (
+          tierRow
+        )}
         {endsAt ? (
           <SettingsRow
             title={status.cancelAtPeriodEnd ? t("Ends") : t("Free until")}
@@ -165,7 +254,13 @@ export default function BillingScreen() {
       </SettingsGroup>
       {status.computerHoursLeft != null ? (
         <SettingsGroup
-          footer={endTrial ? t("Trials get fewer hours to prevent abuse.") : undefined}
+          footer={
+            endTrial
+              ? t("Trials get fewer hours to prevent abuse.")
+              : cancelledTrial
+                ? t("Cancelled trials have no computer hours.")
+                : undefined
+          }
         >
           <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
           {endTrial ? (
@@ -191,6 +286,18 @@ export default function BillingScreen() {
                     },
                   ],
                 )
+              }
+            />
+          ) : null}
+          {cancelledTrial && status.canManage && status.hasCustomer ? (
+            <SettingsRow
+              title={t("Renew plan")}
+              disabled={pending}
+              onPress={() =>
+                void action(async () => {
+                  const result = await rpc("billing/portal", { client: "mobile" });
+                  show(await openBillingPage(result.url));
+                })
               }
             />
           ) : null}

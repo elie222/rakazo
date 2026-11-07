@@ -125,6 +125,14 @@ describe("search helpers", () => {
     expect(snippetAroundMatch(text, "gamma", 20)).toContain("gamma");
   });
 
+  it("opens at a word instead of in the middle of one", () => {
+    const text =
+      "**Checklist** with *italic* and `code`.\n\nThe unique search phrase is marigold checklist.";
+    expect(snippetAroundMatch(text, "marigold")).toBe(
+      "…`code`.\n\nThe unique search phrase is marigold checklist.",
+    );
+  });
+
   it("keeps the match after characters that expand when lowercased", () => {
     const text = `${"İ".repeat(50)} needle result details`;
     expect(matchesSearchQuery("needle", text)).toBe(true);

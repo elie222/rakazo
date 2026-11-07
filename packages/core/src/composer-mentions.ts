@@ -140,6 +140,66 @@ export function composerMentionQuery(
   return { start, end: selectionStart + rest.length, query };
 }
 
+function pickerWords(value: string): string[] {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Picker order for a typed query: every query word must appear in the name, a word that starts
+ * a name word counts more than one inside it, and ties keep the given order. `everyone` also
+ * answers to `all`. An empty query keeps every target in order.
+ */
+export function filterComposerMentionTargets<T extends Pick<ComposerMention, "kind" | "name">>(
+  targets: readonly T[],
+  query: string,
+): T[] {
+  const words = pickerWords(query);
+  if (words.length === 0) return [...targets];
+  const scored = targets.flatMap((target, index) => {
+    const nameWords = pickerWords(target.name);
+    const name = nameWords.join(" ");
+    let score = 0;
+    for (const word of words) {
+      if (
+        target.kind === "everyone" &&
+        ["everyone", "all"].some((alias) => alias.startsWith(word))
+      ) {
+        score += 2;
+      } else if (nameWords.some((nameWord) => nameWord.startsWith(word))) {
+        score += 2;
+      } else if (name.includes(word)) {
+        score += 1;
+      } else {
+        return [];
+      }
+    }
+    return [{ target, index, score }];
+  });
+  return scored.sort((a, b) => b.score - a.score || a.index - b.index).map(({ target }) => target);
+}
+
+/** A sent message's text cut into plain runs and the `@Name` runs that name a known target. */
+export type MentionTextPart<T> = { text: string; target?: T };
+
+export function splitMentionText<T extends MentionName>(
+  text: string,
+  targets: readonly T[],
+): MentionTextPart<T>[] {
+  const spans = composerMentionSpans(text, targets);
+  if (spans.length === 0) return [{ text }];
+  const parts: MentionTextPart<T>[] = [];
+  let index = 0;
+  for (const span of spans) {
+    const target = targets.find((candidate) => candidate.name.trim().toLowerCase() === span.name);
+    if (!target) continue;
+    if (span.start > index) parts.push({ text: text.slice(index, span.start) });
+    parts.push({ text: text.slice(span.start, span.end), target });
+    index = span.end;
+  }
+  if (index < text.length) parts.push({ text: text.slice(index) });
+  return parts;
+}
+
 export function completeComposerMention(
   text: string,
   query: ComposerMentionQuery,

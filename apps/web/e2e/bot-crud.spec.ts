@@ -82,7 +82,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const studio = page.getByTestId("avatar-studio");
   await expect(studio).toBeVisible();
   await expect(studio.getByTestId("avatar-studio-bot-tab")).toBeVisible();
-  await studio.getByRole("button", { name: "Color #EAB308" }).click();
+  await studio.getByRole("button", { name: "Color #FFAF38" }).click();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await expect(studio).toBeHidden();
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
@@ -99,7 +99,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const settings = page.getByTestId("bot-settings");
   await settings.getByTestId("avatar-studio-trigger").click();
   await expect(studio).toBeVisible();
-  await expect(studio.getByRole("button", { name: "Color #EAB308" })).toHaveClass(/ring-2/);
+  await expect(studio.getByRole("button", { name: "Color #FFAF38" })).toHaveClass(/ring-2/);
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   const modelSelect = settings.getByRole("combobox", { name: "Model", exact: true });
   const teamComputer = settings.getByRole("button", { name: "Team" });
@@ -121,6 +121,13 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Export", exact: true })).toBeVisible();
   await expect(settings.locator('label[for$="-model"]')).toHaveClass("sr-only");
   await expect(modelSelect).toBeVisible();
+  const dailyCheckIns = settings.getByRole("switch", {
+    name: "Daily check-ins on unfinished work",
+    exact: true,
+  });
+  await dailyCheckIns.scrollIntoViewIfNeeded();
+  await expect(dailyCheckIns).toBeChecked();
+  await captureScreenshot(page, testInfo, "bot-settings-daily-check-ins");
   await captureScreenshot(page, testInfo, "bot-settings-sections-advanced");
   await rpc(page, "scratchpad/create", {
     botId: deletedBotPath.split("/").at(-1),
@@ -147,6 +154,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
+  const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
+  await replyMode.scrollIntoViewIfNeeded();
+  await expect(replyMode).toHaveValue("chat");
+  await replyMode.selectOption("messages");
+  await expect(replyMode).toHaveValue("messages");
+  await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
@@ -182,6 +195,27 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Atlas");
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
+
+  // Long instructions scroll inside their box instead of stretching the narrow panel.
+  const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
+  await instructionsInput.fill(
+    Array.from(
+      { length: 80 },
+      (_, index) => `${index + 1}. Cite a primary source for every claim.`,
+    ).join("\n"),
+  );
+  const instructionsSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await instructionsInput.blur();
+  await instructionsSaved;
+  await expect(instructionsInput).toBeEnabled();
+  const scrollsInside = await instructionsInput.evaluate(
+    (field) => field.scrollHeight > field.clientHeight,
+  );
+  expect(scrollsInside).toBe(true);
+  await instructionsInput.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "29a-long-bot-instructions");
 
   // Wrap in the narrow dialog without pushing Delete below the Playwright viewport.
   const longUnbrokenName = "A".repeat(48);

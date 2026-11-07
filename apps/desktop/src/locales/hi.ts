@@ -182,6 +182,12 @@ export const HI_MESSAGES: Record<string, string> = {
   "Previous Bot": "पिछला बॉट",
   "Command Menu…": "कमांड मेन्यू…",
   "Toggle Sidebar": "साइडबार दिखाएँ/छिपाएँ",
-  "Search…": "खोजें…",
+  "Find…": "खोजें…",
+  "Search Bots…": "बॉट खोजें…",
   "The window closed before the app loaded.": "ऐप लोड होने से पहले विंडो बंद हो गई।",
+  "New Group Chat": "नई समूह चैट",
+  "Connect Apps…": "ऐप्स कनेक्ट करें…",
+  "Chat Details": "चैट विवरण",
+  Help: "सहायता",
+  "Keyboard Shortcuts": "कीबोर्ड शॉर्टकट",
 };

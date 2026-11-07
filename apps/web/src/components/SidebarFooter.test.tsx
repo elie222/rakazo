@@ -161,15 +161,13 @@ it("omits Board when unavailable", async () => {
   );
 });
 
-it("offers the existing Android download on Android", async () => {
+it("offers Google Play on Android", async () => {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
   await render();
   const mobile = [...document.querySelectorAll("a")].find(
     (link) => link.textContent === "Get the mobile app",
   )!;
-  expect(mobile.href).toBe(
-    "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk",
-  );
+  expect(mobile.href).toBe("https://play.google.com/store/apps/details?id=com.rakazo.app");
 });
 
 it("falls back when app artwork fails and accepts replacement artwork", async () => {
@@ -246,4 +244,67 @@ it("keeps at most three marks with the same tile and a missing-logo fallback", a
   expect(tiles).toHaveLength(3);
   expect(new Set(tiles.map((tile) => tile.className)).size).toBe(1);
   expect(tiles[1]!.textContent).toBe("N");
+});
+
+const personal = {
+  id: "org-personal",
+  name: "Personal",
+  defaultSpaceId: "s1",
+  spaceIds: ["s1"],
+  canManage: true,
+};
+const work = {
+  id: "org-work",
+  name: "Work",
+  defaultSpaceId: "s2",
+  spaceIds: ["s2"],
+  canManage: true,
+};
+
+async function renderOrganizations(
+  organizations: (typeof personal)[],
+  onSwitchOrganization = vi.fn(),
+) {
+  await act(async () =>
+    root.render(
+      <DesktopUpdatesProvider>
+        <SidebarFooter
+          name="Demo User"
+          initials="DU"
+          email="account@rakazo.test"
+          open
+          onOpenChange={() => {}}
+          onIntegrations={() => {}}
+          onSkills={() => {}}
+          onArtifacts={() => {}}
+          onSettings={() => {}}
+          onUsage={() => {}}
+          onLogOut={() => {}}
+          signingOut={false}
+          logOutError={null}
+          organizations={organizations}
+          activeOrganizationId="org-personal"
+          onSwitchOrganization={onSwitchOrganization}
+        />
+      </DesktopUpdatesProvider>,
+    ),
+  );
+  return [...document.querySelector('[data-slot="popover-content"]')!.querySelectorAll("button")];
+}
+
+it("shows no organization rows with one organization", async () => {
+  const rows = await renderOrganizations([personal]);
+  expect(rows[0]!.textContent).toBe("Settings");
+});
+
+it("lists two organizations with the active one checked", async () => {
+  const onSwitch = vi.fn();
+  const rows = await renderOrganizations([personal, work], onSwitch);
+  expect(rows.map((row) => row.textContent).slice(0, 3)).toEqual(["Personal", "Work", "Settings"]);
+  expect(rows[0]!.getAttribute("aria-current")).toBe("true");
+  expect(rows[0]!.querySelector("svg")).not.toBeNull();
+  expect(rows[1]!.hasAttribute("aria-current")).toBe(false);
+  expect(rows[1]!.querySelector("svg")).toBeNull();
+  await act(async () => rows[1]!.click());
+  expect(onSwitch).toHaveBeenCalledWith(work);
 });

@@ -1,8 +1,15 @@
-import { createHash, randomUUID } from "node:crypto";
-import path from "node:path";
-import { PassThrough, Readable } from "node:stream";
+import { createHash } from "node:crypto";
+import type { Readable } from "node:stream";
+import { PassThrough } from "node:stream";
 import type * as KubernetesClient from "@kubernetes/client-node";
-import type { CoreV1Api, Exec, V1Pod, V1PodSpec, V1Status } from "@kubernetes/client-node";
+import type {
+  ConfigurationOptions,
+  CoreV1Api,
+  Exec,
+  V1Pod,
+  V1PodSpec,
+  V1Status,
+} from "@kubernetes/client-node";
 import type {
   AdapterContext,
   CommandRequest,
@@ -19,15 +26,11 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import type { RawExecEvent } from "./exec-computer.js";
+import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
-import { sandboxCommandArgv } from "./sandbox-command-environment.js";
-import {
-  shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
-} from "./workspace-save-policy.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 
 const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
@@ -35,7 +38,7 @@ const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // production so every pod runs the image the API was tested against.
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_READY_TIMEOUT_MS = 120_000;
-const WORKSPACE = "/home/rakazo";
+const REQUEST_TIMEOUT_MS = 10_000;
 const CONTAINER_NAME = "computer";
 // Names the bot that owns a computer pod. A pod carrying another bot's value is
 // never reused or replaced.
@@ -43,22 +46,6 @@ const BOT_ID_LABEL = "rakazo-bot-id";
 const HOME_VOLUME = "home";
 const READY_PORT = 6080;
 const DESKTOP_PORT_START = 6100;
-const MAX_FILE_BYTES = 64 * 1024 * 1024;
-const BULK_TRANSFER_TIMEOUT_MS = 30 * 60_000;
-
-// The pinned Computer image is deliberately immutable at runtime and runs as
-// uid 1000 with no privilege escalation. Validate its baked desktop tools
-// instead of using the generic sandbox bootstrap, which tries apt via sudo
-// when optional scrot is absent. ImageMagick's import is the supported capture
-// fallback in this image.
-const PREPARE_KUBERNETES_DESKTOP = [
-  'missing=""',
-  'for command in python3 flock Xvfb xdpyinfo x11vnc fluxbox xdotool wmctrl xterm websockify; do command -v "$command" >/dev/null 2>&1 || missing="$missing $command"; done',
-  'if ! command -v scrot >/dev/null 2>&1 && ! command -v import >/dev/null 2>&1; then missing="$missing scrot-or-import"; fi',
-  'if [ ! -d /usr/share/novnc ] && [ ! -d /opt/noVNC ]; then missing="$missing novnc"; fi',
-  'if [ -n "$missing" ]; then echo "computer image is missing required desktop tools:$missing" >&2; exit 1; fi',
-].join("\n");
-
 export interface KubernetesSandboxOptions {
   namespace?: string;
   runtimeClassName?: string;
@@ -85,8 +72,6 @@ export interface KubernetesSandboxSdk {
   exec: Pick<Exec, "exec">;
 }
 
-type RawExecEvent = { type: "stdout" | "stderr"; data: Buffer } | { type: "exit"; code: number };
-
 export class KubernetesSandboxProvider implements SandboxProvider {
   private readonly namespace: string;
   private readonly runtimeClassName: string | undefined;
@@ -100,6 +85,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private readonly homeColocateNamespace: string | undefined;
   private readonly homeColocateLabels: Record<string, string>;
   private clientsValue: KubernetesSandboxSdk | undefined;
+  private readonly shell = new ExecComputer((...exec) => this.execRaw(...exec), "Kubernetes");
 
   private readonly desktops = new LinuxDesktop({
     environment: async (computer, context) => {
@@ -247,15 +233,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    const command = [
-      "set -eu",
-      `mkdir -p -- ${shellQuote(WORKSPACE)} ${shellQuote(`${WORKSPACE}/.browser-profiles`)}`,
-      PREPARE_KUBERNETES_DESKTOP,
-    ].join("\n");
-    const result = await this.run(computer, ["bash", "-c", command], context, 300_000);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "could not prepare Kubernetes computer");
-    }
+    await this.shell.prepare(computer, context);
   }
 
   async *execute(
@@ -263,37 +241,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
-    const request = onBotScreen(requested, context, DISPLAY_START);
-    if (context.signal.aborted) {
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
-      return;
-    }
-    const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
-    const command = commandRequestArgv(request, timeoutMs);
-    const decoders = {
-      stdout: new TextDecoder(),
-      stderr: new TextDecoder(),
-    };
-    for await (const event of this.execRaw(
-      computer,
-      command,
-      context.signal,
-      timeoutMs,
-      undefined,
-      request.pty === true,
-    )) {
-      if (event.type === "exit") {
-        const stdoutTail = decoders.stdout.decode();
-        const stderrTail = decoders.stderr.decode();
-        if (stdoutTail) yield { type: "stdout", data: stdoutTail };
-        if (stderrTail) yield { type: "stderr", data: stderrTail };
-        yield event;
-        continue;
-      }
-      const data = decoders[event.type].decode(event.data, { stream: true });
-      if (data) yield { type: event.type, data };
-    }
+    yield* this.shell.execute(computer, onBotScreen(requested, context, DISPLAY_START), context);
   }
 
   async connectScreen(
@@ -361,30 +309,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
-    const target = workspacePath(WORKSPACE, relative);
-    const result = await this.run(
-      computer,
-      ["find", target, "-mindepth", "1", "-maxdepth", "1", "-printf", "%P\\0%y\\0%s\\0%m\\0"],
-      context,
-    );
-    if (result.code !== 0) throw new Error(result.stderr || "could not list computer files");
-    const fields = result.stdout.split("\0");
-    const entries: ComputerFileEntry[] = [];
-    for (let index = 0; index + 3 < fields.length; index += 4) {
-      const name = fields[index];
-      const kind = fields[index + 1];
-      const size = Number(fields[index + 2]);
-      const mode = Number.parseInt(fields[index + 3] ?? "", 8);
-      if (!name || (kind !== "d" && kind !== "f") || !Number.isSafeInteger(size)) continue;
-      entries.push({
-        path: normalizeWorkspacePath(path.posix.join(relative, name)),
-        kind: kind === "d" ? "dir" : "file",
-        size,
-        ...(kind === "f" && (mode & 0o111) !== 0 ? { executable: true } : {}),
-      });
-    }
-    return entries.sort((left, right) => left.path.localeCompare(right.path));
+    return this.shell.listFiles(computer, directory, context);
   }
 
   async readFile(
@@ -393,22 +318,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ): Promise<Uint8Array> {
-    const target = workspacePath(WORKSPACE, filePath);
-    const maxBytes = options?.maxBytes ?? MAX_FILE_BYTES;
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("invalid file size limit");
-    const size = await this.run(computer, ["stat", "-c", "%s", "--", target], context);
-    if (size.code !== 0) throw new Error(size.stderr || "could not inspect computer file");
-    if (Number(size.stdout.trim()) > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
-    }
-    const result = await this.collectExec(computer, ["cat", "--", target], context, maxBytes + 1);
-    if (result.code !== 0) {
-      throw new Error(result.stderr.toString("utf8") || "could not read computer file");
-    }
-    if (result.stdout.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
-    }
-    return new Uint8Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength);
+    return this.shell.readFile(computer, filePath, context, options);
   }
 
   async writeFile(
@@ -416,37 +326,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     file: PortableFile,
     context: AdapterContext,
   ): Promise<void> {
-    const target = workspacePath(WORKSPACE, file.path);
-    const command = [
-      "bash",
-      "-c",
-      [
-        "set -eu",
-        'target="$1"',
-        'mode="$2"',
-        'directory=$(dirname -- "$target")',
-        'mkdir -p -- "$directory"',
-        'temporary=$(mktemp "$directory/.rakazo-write.XXXXXX")',
-        "trap 'rm -f -- \"$temporary\"' EXIT",
-        'cat >"$temporary"',
-        'chmod "$mode" -- "$temporary"',
-        'mv -f -- "$temporary" "$target"',
-        "trap - EXIT",
-      ].join("\n"),
-      "rakazo-write",
-      target,
-      file.executable ? "700" : "600",
-    ];
-    const result = await this.collectExec(
-      computer,
-      command,
-      context,
-      1024 * 1024,
-      Readable.from(Buffer.from(file.content)),
-    );
-    if (result.code !== 0) {
-      throw new Error(result.stderr.toString("utf8") || "could not write computer file");
-    }
+    await this.shell.writeFile(computer, file, context);
   }
 
   async *exportWorkspace(
@@ -454,86 +334,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): AsyncIterable<PortableFile> {
     await this.desktops.stopBrowsers(computer, context);
-    // One exec streams the whole home as a tar archive. Per-file execs cost a
-    // Kubernetes round trip each, which took minutes for a restored home.
-    const listing = await this.run(
-      computer,
-      [
-        "bash",
-        "-c",
-        `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0'`,
-      ],
-      context,
-    );
-    if (listing.code !== 0) {
-      throw new Error(listing.stderr || "could not list computer workspace");
-    }
-    const names = listing.stdout
-      .split("\0")
-      .filter((name) => name && !shouldSkipPortableWorkspaceFile(name));
-    if (names.length === 0) return;
-    const reader = new TarReader(MAX_FILE_BYTES);
-    const list = Buffer.from(names.map((name) => `${name}\0`).join(""));
-    let code = 1;
-    let stderr = "";
-    // Kata can stall large stdout while exec also has stdin attached. Stage the
-    // NUL-delimited file list separately so the archive exec only reads stdout.
-    const listPath = `/tmp/rakazo-workspace-${randomUUID()}`;
-    try {
-      const staged = await this.collectExec(
-        computer,
-        ["bash", "-c", 'umask 077; cat > "$1"', "rakazo-export-list", listPath],
-        context,
-        1024 * 1024,
-        Readable.from([list]),
-        BULK_TRANSFER_TIMEOUT_MS,
-      );
-      if (staged.code !== 0)
-        throw new Error(staged.stderr.toString("utf8") || "could not stage workspace file list");
-      for await (const event of this.execRaw(
-        computer,
-        withTimeout(
-          [
-            "tar",
-            "--format=pax",
-            "--hard-dereference",
-            "-c",
-            "-C",
-            WORKSPACE,
-            "--null",
-            "--no-recursion",
-            "-T",
-            listPath,
-            "-f",
-            "-",
-          ],
-          BULK_TRANSFER_TIMEOUT_MS,
-        ),
-        context.signal,
-        BULK_TRANSFER_TIMEOUT_MS,
-      )) {
-        if (event.type === "exit") code = event.code;
-        else if (event.type === "stderr") stderr += event.data.toString("utf8");
-        else {
-          for (const file of reader.push(event.data)) {
-            context.signal.throwIfAborted();
-            yield file;
-          }
-        }
-      }
-    } finally {
-      await this.run(
-        computer,
-        ["rm", "-f", "--", listPath],
-        {
-          ...context,
-          signal: AbortSignal.timeout(10_000),
-        },
-        10_000,
-      );
-    }
-    if (code !== 0) throw new Error(stderr || "could not export computer workspace");
-    reader.finish();
+    yield* this.shell.exportWorkspace(computer, context);
   }
 
   async importWorkspace(
@@ -542,28 +343,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
-    // One exec extracts a tar stream; see exportWorkspace.
-    const signal = context.signal;
-    async function* archive(): AsyncIterable<Buffer> {
-      for await (const file of files) {
-        if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-        signal.throwIfAborted();
-        workspacePath(WORKSPACE, file.path);
-        yield* encodeTarEntry(normalizeWorkspacePath(file.path), file.content, file.executable);
-      }
-      yield TAR_END;
-    }
-    const result = await this.collectExec(
-      computer,
-      ["tar", "-x", "-C", WORKSPACE, "--no-same-owner", "-f", "-"],
-      context,
-      1024 * 1024,
-      Readable.from(archive()),
-      BULK_TRANSFER_TIMEOUT_MS,
-    );
-    if (result.code !== 0) {
-      throw new Error(result.stderr.toString("utf8") || "could not import computer workspace");
-    }
+    await this.shell.importWorkspace(computer, files, context);
   }
 
   async snapshot(computer: ComputerRef, context: AdapterContext) {
@@ -678,34 +458,40 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   }
 
   private async readPod(name: string, signal: AbortSignal): Promise<V1Pod | undefined> {
-    signal.throwIfAborted();
     try {
-      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
-      const request = Promise.all([loadKubernetes(), this.clients()]).then(
-        ([{ Observable }, clients]) =>
-          clients.core.readNamespacedPod(
-            { name, namespace: this.namespace },
-            {
-              middlewareMergeStrategy: "append",
-              middleware: [
-                {
-                  pre: (request) => {
-                    request.setSignal(requestSignal);
-                    return new Observable(Promise.resolve(request));
-                  },
-                  post: (response) => new Observable(Promise.resolve(response)),
-                },
-              ],
-            },
-          ),
+      return await this.request(signal, (core, options) =>
+        core.readNamespacedPod({ name, namespace: this.namespace }, options),
       );
-      const pod = await abortableRequest(request, requestSignal);
-      signal.throwIfAborted();
-      return pod;
     } catch (error) {
       if (isApiStatus(error, 404)) return undefined;
       throw error;
     }
+  }
+
+  private async request<T>(
+    signal: AbortSignal,
+    call: (core: KubernetesSandboxSdk["core"], options: ConfigurationOptions) => Promise<T>,
+  ): Promise<T> {
+    signal.throwIfAborted();
+    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
+    const request = Promise.all([loadKubernetes(), this.clients()]).then(
+      ([{ Observable }, clients]) =>
+        call(clients.core, {
+          middlewareMergeStrategy: "append",
+          middleware: [
+            {
+              pre: (request) => {
+                request.setSignal(requestSignal);
+                return new Observable(Promise.resolve(request));
+              },
+              post: (response) => new Observable(Promise.resolve(response)),
+            },
+          ],
+        }),
+    );
+    const result = await abortableRequest(request, requestSignal);
+    signal.throwIfAborted();
+    return result;
   }
 
   private async waitForReady(name: string, signal: AbortSignal): Promise<void> {
@@ -744,12 +530,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 
   private async deletePod(name: string): Promise<void> {
     try {
-      await (await this.clients()).core.deleteNamespacedPod({
-        name,
-        namespace: this.namespace,
-        gracePeriodSeconds: 0,
-        propagationPolicy: "Background",
-      });
+      // Cancellation must not skip cleanup, so only the request deadline bounds it.
+      await this.request(AbortSignal.timeout(REQUEST_TIMEOUT_MS), (core, options) =>
+        core.deleteNamespacedPod(
+          {
+            name,
+            namespace: this.namespace,
+            gracePeriodSeconds: 0,
+            propagationPolicy: "Background",
+          },
+          options,
+        ),
+      );
     } catch (error) {
       if (!isApiStatus(error, 404)) throw error;
     }
@@ -759,51 +551,8 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     computer: ComputerRef,
     command: string[],
     context: AdapterContext,
-    timeoutMs = boundedSandboxCommandTimeoutMs(undefined),
   ): Promise<{ code: number; stdout: string; stderr: string }> {
-    const result = await this.collectExec(
-      computer,
-      command,
-      context,
-      MAX_FILE_BYTES,
-      undefined,
-      timeoutMs,
-    );
-    return {
-      code: result.code,
-      stdout: result.stdout.toString("utf8"),
-      stderr: result.stderr.toString("utf8"),
-    };
-  }
-
-  private async collectExec(
-    computer: ComputerRef,
-    command: string[],
-    context: AdapterContext,
-    maxOutputBytes: number,
-    stdin?: Readable,
-    timeoutMs = boundedSandboxCommandTimeoutMs(undefined),
-  ): Promise<{ code: number; stdout: Buffer; stderr: Buffer }> {
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let outputBytes = 0;
-    let code = 1;
-    for await (const event of this.execRaw(
-      computer,
-      withTimeout(command, timeoutMs),
-      context.signal,
-      timeoutMs,
-      stdin,
-    )) {
-      if (event.type === "exit") {
-        code = event.code;
-        continue;
-      }
-      outputBytes += event.data.byteLength;
-      if (outputBytes > maxOutputBytes) throw new Error("Kubernetes command output is too large");
-      (event.type === "stdout" ? stdout : stderr).push(event.data);
-    }
-    return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
+    return this.shell.run(computer, command, context);
   }
 
   private async *execRaw(
@@ -920,44 +669,6 @@ function loadKubernetes(): Promise<typeof KubernetesClient> {
   return kubernetesModule;
 }
 
-function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {
-  const cwd = kubernetesCwd(request.cwd);
-  const environment = Object.entries({ ...COMPUTER_CACHE_ENV, ...request.env }).map(
-    ([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
-        throw new Error(`invalid environment name ${name}`);
-      return `${name}=${value}`;
-    },
-  );
-  return [
-    "bash",
-    "-c",
-    'cd -- "$1" && shift && exec env "$@"',
-    "rakazo-exec",
-    cwd,
-    ...environment,
-    ...withTimeout(sandboxCommandArgv(request), timeoutMs),
-  ];
-}
-
-function withTimeout(command: string[], timeoutMs: number): string[] {
-  return [
-    "timeout",
-    "--signal=TERM",
-    "--kill-after=5s",
-    `${Math.max(1, Math.ceil(timeoutMs / 1_000))}s`,
-    ...command,
-  ];
-}
-
-function kubernetesCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === WORKSPACE) return WORKSPACE;
-  return workspacePath(
-    WORKSPACE,
-    cwd.startsWith(`${WORKSPACE}/`) ? cwd.slice(WORKSPACE.length + 1) : cwd,
-  );
-}
-
 function podNameForBot(botId: string): string {
   const normalized = botId
     .toLowerCase()
@@ -994,9 +705,7 @@ function podMountsHome(pod: V1Pod, homeKey: string, claimName: string | undefine
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {
-  const error = new Error(`Kubernetes computer ${name} no longer exists`, { cause });
-  error.name = "SandboxNotFoundError";
-  return error;
+  return sandboxNotFoundError(`Kubernetes computer ${name} no longer exists`, { cause });
 }
 
 function isTerminalPod(pod: V1Pod): boolean {
@@ -1042,137 +751,4 @@ async function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
   });
-}
-
-const TAR_BLOCK = 512;
-const TAR_END = Buffer.alloc(TAR_BLOCK * 2);
-
-function tarHeader(name: string, type: string, size: number, mode: number): Buffer {
-  const header = Buffer.alloc(TAR_BLOCK);
-  header.write(name, 0, 100, "utf8");
-  header.write(`${mode.toString(8).padStart(7, "0")}\0`, 100);
-  header.write("0000000\0", 108);
-  header.write("0000000\0", 116);
-  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124);
-  header.write("00000000000\0", 136);
-  header.fill(0x20, 148, 156);
-  header.write(type, 156);
-  header.write("ustar\0", 257);
-  header.write("00", 263);
-  let sum = 0;
-  for (const byte of header) sum += byte;
-  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
-  return header;
-}
-
-function* tarBody(content: Uint8Array): Iterable<Buffer> {
-  if (content.byteLength > 0)
-    yield Buffer.from(content.buffer, content.byteOffset, content.byteLength);
-  const padding = (TAR_BLOCK - (content.byteLength % TAR_BLOCK)) % TAR_BLOCK;
-  if (padding) yield Buffer.alloc(padding);
-}
-
-/** One regular file as ustar blocks, with a PAX path record when the name does not fit. */
-export function* encodeTarEntry(
-  name: string,
-  content: Uint8Array,
-  executable?: boolean,
-): Iterable<Buffer> {
-  if (Buffer.byteLength(name) > 100 || /[^\x20-\x7e]/.test(name)) {
-    const body = paxRecord("path", name);
-    yield tarHeader("PaxHeader", "x", body.byteLength, 0o644);
-    yield* tarBody(body);
-  }
-  yield tarHeader(name, "0", content.byteLength, executable ? 0o700 : 0o600);
-  yield* tarBody(content);
-}
-
-function paxRecord(key: string, value: string): Buffer {
-  const rest = Buffer.from(` ${key}=${value}\n`);
-  let length = rest.byteLength + 1;
-  while (String(length).length + rest.byteLength !== length) {
-    length = String(length).length + rest.byteLength;
-  }
-  return Buffer.concat([Buffer.from(String(length)), rest]);
-}
-
-/** Incremental reader for the regular files in a ustar/PAX stream. */
-export class TarReader {
-  private buffer: Buffer = Buffer.alloc(0);
-  private pending:
-    | { name: string; mode: number; size: number; kind: "file" | "pax" | "skip" }
-    | undefined;
-  private paxPath: string | undefined;
-  private ended = false;
-
-  constructor(private readonly maxFileBytes: number) {}
-
-  push(chunk: Buffer): PortableFile[] {
-    this.buffer = this.buffer.byteLength ? Buffer.concat([this.buffer, chunk]) : chunk;
-    const files: PortableFile[] = [];
-    while (!this.ended) {
-      if (!this.pending) {
-        if (this.buffer.byteLength < TAR_BLOCK) break;
-        const header = this.buffer.subarray(0, TAR_BLOCK);
-        this.buffer = this.buffer.subarray(TAR_BLOCK);
-        if (header.every((byte) => byte === 0)) {
-          this.ended = true;
-          break;
-        }
-        this.pending = this.parseHeader(header);
-      }
-      const { size } = this.pending;
-      const padded = Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
-      if (this.buffer.byteLength < padded) break;
-      const body = this.buffer.subarray(0, size);
-      this.buffer = this.buffer.subarray(padded);
-      const { kind, name, mode } = this.pending;
-      this.pending = undefined;
-      if (kind === "pax") this.paxPath = parsePaxPath(body) ?? this.paxPath;
-      else if (kind === "file") {
-        files.push({
-          path: normalizeWorkspacePath(name),
-          content: new Uint8Array(Buffer.from(body)),
-          ...((mode & 0o111) !== 0 ? { executable: true } : {}),
-        });
-      }
-    }
-    return files;
-  }
-
-  finish(): void {
-    if (this.pending) throw new Error("workspace archive ended inside a file");
-  }
-
-  private parseHeader(header: Buffer) {
-    const field = (start: number, length: number) =>
-      header.toString("utf8", start, start + length).replace(/\0.*$/s, "");
-    const size = Number.parseInt(field(124, 12).trim() || "0", 8);
-    const mode = Number.parseInt(field(100, 8).trim() || "0", 8);
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error("invalid workspace archive");
-    const type = field(156, 1) || "0";
-    const prefix = field(345, 155);
-    const base = field(0, 100);
-    const name = this.paxPath ?? (prefix ? `${prefix}/${base}` : base);
-    if (type === "x") return { name, mode, size, kind: "pax" as const };
-    if (type !== "0") return { name, mode, size, kind: "skip" as const };
-    this.paxPath = undefined;
-    if (size > this.maxFileBytes)
-      throw new Error(`computer file exceeds ${this.maxFileBytes} bytes`);
-    return { name, mode, size, kind: "file" as const };
-  }
-}
-
-function parsePaxPath(body: Buffer): string | undefined {
-  let offset = 0;
-  while (offset < body.byteLength) {
-    const space = body.indexOf(0x20, offset);
-    if (space < 0) return undefined;
-    const length = Number(body.toString("utf8", offset, space));
-    if (!Number.isSafeInteger(length) || length <= 0) return undefined;
-    const record = body.toString("utf8", space + 1, offset + length - 1);
-    if (record.startsWith("path=")) return record.slice(5);
-    offset += length;
-  }
-  return undefined;
 }

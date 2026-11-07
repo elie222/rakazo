@@ -1,5 +1,5 @@
 import type { CronLabels, CronUnit } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, localizedClock, russianInterval } from "@rakazo/core";
+import { ENGLISH_CRON_LABELS, localizedClock, polishInterval, russianInterval } from "@rakazo/core";
 import { getActiveUiLocale, t } from "./i18n";
 import type { UiLocale } from "./ui-locale";
 
@@ -31,7 +31,7 @@ function unitLabelSingular(unit: CronUnit): string {
 
 /**
  * Schedule words for `formatCron` — routine rows, the status line, the `@`
- * picker. Russian intervals need case forms, so they share the core helper
+ * picker. Polish and Russian intervals need case forms, so they share the core helpers
  * instead of a catalog string.
  */
 export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
@@ -57,6 +57,7 @@ export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
     ],
     interval: (n, unit) => {
       if (locale === "ru") return russianInterval(n, unit);
+      if (locale === "pl") return polishInterval(n, unit);
       const unitLabel = n === 1 ? unitLabelSingular(unit) : unitLabelPlural(unit);
       // zh/ja read most naturally as one suffix phrase ("每5分钟", "5分ごと").
       if (locale === "zh-CN" || locale === "zh-TW" || locale === "ja") {

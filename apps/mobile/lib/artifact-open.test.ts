@@ -62,6 +62,9 @@ vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => state.apiBase,
@@ -96,7 +99,7 @@ beforeEach(() => {
 describe("artifact preview caches", () => {
   it("keeps the large-payload download timeout and captured auth context", async () => {
     const api = await load();
-    await api.readMobileArtifactText(target, "art-1", "text/plain");
+    await api.audioArtifactUri(target, "art-1", "audio/mpeg");
     expect(state.rpc).toHaveBeenCalledWith(
       "artifacts/get",
       { ...target, artifactId: "art-1" },
@@ -126,7 +129,7 @@ describe("artifact preview caches", () => {
     expect(artifactFetches()).toBe(1);
   });
 
-  it("downloads previews, text, and attachments without persisted cache metadata", async () => {
+  it("downloads previews, audio, and attachments without persisted cache metadata", async () => {
     let api = await load();
     const stored = await api.imageArtifactPreview(target, "art-1", "image/png");
     vi.resetModules();
@@ -135,7 +138,7 @@ describe("artifact preview caches", () => {
     const fresh = await api.imageArtifactPreview(target, "art-1", "image/png");
     expect(fresh.uri).not.toBe(stored.uri);
     expect(fresh.size).toEqual(stored.size);
-    expect(await api.readMobileArtifactText(target, "art-2", "text/plain")).toBe("aGk=");
+    expect(await api.audioArtifactUri(target, "art-2", "audio/mpeg")).toEqual(expect.any(String));
     vi.mocked(Sharing.isAvailableAsync).mockResolvedValueOnce(true);
     await api.openMobileArtifact(target, "art-3", "attachment.pdf", "application/pdf");
     expect(Sharing.shareAsync).toHaveBeenCalledWith(expect.any(String), {

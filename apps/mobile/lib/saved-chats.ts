@@ -1,5 +1,11 @@
 import { displayIdentityResult, identitySource } from "@rakazo/core";
 import { Directory, File, Paths } from "expo-file-system";
+import { currentApiBase, selectedSpaceId } from "./api";
+import { artifactCacheSession } from "./artifact-cache-session";
+import { onConversationCleared } from "./conversation-cleared";
+import { identityLabels } from "./identity-display";
+import type { IntegrationsCacheScope } from "./integrations-cache";
+import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
 import type {
   MobileBot,
   MobileBotSection,
@@ -8,12 +14,7 @@ import type {
   MobileSnapshot,
   MobileSpace,
   MobileSpaceNavigation,
-} from "./api";
-import { currentApiBase, selectedSpaceId } from "./api";
-import { artifactCacheSession } from "./artifact-cache-session";
-import { identityLabels } from "./identity-display";
-import type { IntegrationsCacheScope } from "./integrations-cache";
-import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
+} from "./mobile-types";
 import {
   currentSessionGeneration,
   loadSessionToken,
@@ -316,6 +317,28 @@ export function writeSavedThread(
       key: scopeKey(scope, target),
       snapshot: savedThreadSnapshot(snapshot),
     });
+  } catch {}
+}
+
+// A cleared chat never reopens showing its old messages, even when it was not open.
+onConversationCleared((botId) => forgetSavedThread({ botId }));
+
+/**
+ * Drops one chat's saved copy in every Space and account: bot and group IDs are unique, and the
+ * Space selected when the clear finishes need not be the one it was cleared in.
+ */
+function forgetSavedThread(target: { botId?: string; groupId?: string }) {
+  const name = `${encodeURIComponent(savedChatTarget(target))}.json`;
+  const remove = (directory: Directory) => {
+    for (const entry of directory.list()) {
+      if (entry instanceof File) {
+        if (entry.name === name) entry.delete();
+      } else remove(entry);
+    }
+  };
+  try {
+    const root = new Directory(Paths.cache, ROOT);
+    if (root.exists) remove(root);
   } catch {}
 }
 

@@ -1,9 +1,9 @@
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, RpcInput } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import type { QueryFunction } from "@tanstack/react-query";
 import { hashKey, useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { captureApiRequestContext, rpc } from "./api";
 import { queryClient, rpcQuery } from "./query";
 import { createQueuedSave } from "./queued-save";
@@ -103,7 +103,7 @@ export function setRoutineActive(
         (rows ?? []).map((row) => (row.id === routine.id ? change(row) : row)),
       );
     toggle = createQueuedSave(routine.active, {
-      onChange: (value) => void patch((row) => ({ ...row, active: value })),
+      onChange: (value) => void patch((row) => ({ ...row, active: value, scheduleDelayed: false })),
       save: async (value) => {
         const context = await requestContext;
         // Signed out or switched since the tap: that list is gone, so nothing is sent.
@@ -136,6 +136,38 @@ export function setRoutineActive(
   toggle.update(active);
 }
 
+/** Creates or edits a routine; the list shows the server's copy once it answers. */
+export async function saveBotRoutine(
+  botId: string,
+  request: { create: RpcInput<"routines/create"> } | { update: RpcInput<"routines/update"> },
+): Promise<Routine> {
+  const { queryKey } = routinesQuery(botId);
+  const scope = hashKey(queryKey);
+  const requestContext = captureApiRequestContext();
+  requestContext.catch(() => undefined);
+  countWrite(scope, 1);
+  try {
+    await queryClient.cancelQueries({ queryKey, exact: true });
+    const context = await requestContext;
+    if (hashKey(routinesQuery(botId).queryKey) !== scope) throw new Error("Space changed");
+    const saved =
+      "create" in request
+        ? await rpc("routines/create", request.create, { requestContext: context })
+        : await rpc("routines/update", request.update, { requestContext: context });
+    if (hashKey(routinesQuery(botId).queryKey) === scope) {
+      // An update only replaces its row, so a routine deleted meanwhile stays gone.
+      await writeSaved(queryClient, queryKey, (rows) =>
+        "create" in request
+          ? [...(rows ?? []), saved]
+          : (rows ?? []).map((row) => (row.id === saved.id ? saved : row)),
+      );
+    }
+    return saved;
+  } finally {
+    countWrite(scope, -1);
+  }
+}
+
 /** Deletes a routine; its row goes once the server confirms. */
 export async function removeBotRoutine(botId: string, routineId: string): Promise<void> {
   const { queryKey } = routinesQuery(botId);
@@ -161,7 +193,7 @@ export async function removeBotRoutine(botId: string, routineId: string): Promis
  * The bot's routines, shared by every screen that shows them. Each time a screen comes into
  * view it shows what is already known and reads again, then keeps reading while it stays.
  */
-export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean } = {}) {
+export function useBotRoutines(botId: string) {
   const [shownSince] = useState(Date.now);
   const { data, error, dataUpdatedAt, errorUpdatedAt } = useQuery(
     { ...routinesQuery(botId), enabled: false, select: oldestFirst },
@@ -171,16 +203,22 @@ export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean 
     useCallback(() => {
       if (!botId) return;
       void loadBotRoutines(botId);
-      if (!poll) return;
       const timer = setInterval(() => void loadBotRoutines(botId), ROUTINES_POLL_MS);
       return () => clearInterval(timer);
-    }, [botId, poll]),
+    }, [botId]),
+  );
+  const failedSinceShown = errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt;
+  // A delay seen before a failed read may already have cleared.
+  const routines = useMemo(
+    () => (failedSinceShown ? data?.map((r) => ({ ...r, scheduleDelayed: false })) : data),
+    [data, failedSinceShown],
   );
   return {
-    routines: data,
+    routines,
     error,
     /** A read answered since this screen opened, so a missing routine is really gone. */
     readSinceShown: dataUpdatedAt >= shownSince,
-    failedSinceShown: errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt,
+    /** The latest read since this screen opened failed. */
+    failedSinceShown,
   };
 }

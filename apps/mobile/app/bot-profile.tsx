@@ -4,6 +4,8 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useCallback, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
+import { useBotEmail, useBotEmailRows } from "../components/bot-email";
+import { botProfileMenuOptions, useBotProfileActions } from "../components/bot-profile-menu";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
@@ -13,13 +15,14 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../components/settings-group";
-import type { MobileBot } from "../lib/api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useBotRoutines } from "../lib/routine-store";
+import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -35,6 +38,7 @@ export default function BotProfile() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const name = displayName(bot?.name ?? nameParam, t("Bot"));
   const { routines } = useBotRoutines(botId);
+  const actions = useBotProfileActions(botId, name);
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
   const notifySaves = useRef(0);
   const notifyQueue = useRef<ReturnType<typeof createQueuedSave<boolean>> | null>(null);
@@ -88,7 +92,7 @@ export default function BotProfile() {
             currentApiBase(),
             await loadSessionToken(),
             selectedSpaceId() ?? "",
-            { threadId: bot.threadId, notify },
+            { botId, threadId: bot.threadId, notify },
           );
         } catch {
           // The server save succeeded; device reconciliation can retry later.
@@ -111,6 +115,7 @@ export default function BotProfile() {
           ...glassHeaderOptions(name),
           // The avatar and name below name the page; the bar title stays for the back menu.
           ...(Platform.OS === "ios" ? { headerTitle: "" } : null),
+          ...(botId ? botProfileMenuOptions(actions, t("Bot actions"), tokens.foreground) : null),
         }}
       />
       <View style={styles.identity}>
@@ -153,6 +158,20 @@ export default function BotProfile() {
           onPress={() => router.push({ pathname: "/routines", params: { botId, name } })}
         />
         <SettingsRow
+          key="pages"
+          accessibilityRole="button"
+          chevron="right"
+          title={t("Pages")}
+          leading={
+            <NativeSymbol
+              ios="doc.richtext"
+              android="document-text-outline"
+              color={tokens.mutedForeground}
+            />
+          }
+          onPress={() => router.push({ pathname: "/pages", params: { botId } })}
+        />
+        <SettingsRow
           key="artifacts"
           accessibilityRole="button"
           chevron="right"
@@ -184,6 +203,7 @@ export default function BotProfile() {
           onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
         />
       </SettingsGroup>
+      <BotEmailGroup botId={botId} botName={name} />
       {bot ? (
         <SettingsGroup footer={t("Get notified when this Bot finishes or needs input")}>
           <SettingsSwitch
@@ -208,4 +228,35 @@ function createStyles() {
     avatarSpace: { width: 96, height: 96 },
     name: { color: native.label, fontSize: 22, fontWeight: "600", textAlign: "center" },
   });
+}
+
+/** The bot's address; on a server that receives email, offered until claimed. */
+function BotEmailGroup({ botId, botName }: { botId: string; botName: string }) {
+  const { t } = useI18n();
+  const tokens = useMobileTokens();
+  const email = useBotEmail(botId);
+  const rows = useBotEmailRows({ botId, botName, email });
+  const [claiming, setClaiming] = useState(false);
+  if (!email.address) return null;
+  return (
+    <SettingsGroup label={t("Email")}>
+      {email.address.address || claiming
+        ? rows
+        : [
+            <SettingsRow
+              key="offer"
+              accessibilityRole="button"
+              title={t("Get an email address")}
+              leading={
+                <NativeSymbol
+                  ios="envelope"
+                  android="mail-outline"
+                  color={tokens.mutedForeground}
+                />
+              }
+              onPress={() => setClaiming(true)}
+            />,
+          ]}
+    </SettingsGroup>
+  );
 }

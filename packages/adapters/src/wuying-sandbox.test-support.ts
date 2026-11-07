@@ -32,9 +32,9 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
       this.files.set(key(dir), { path: dir, kind: "directory" });
   }
 
-  provider() {
+  provider(desktopId = "ecd-fake", referenceInUse?: () => Promise<boolean>) {
     return new WuyingSandboxProvider(
-      { desktopId: "ecd-fake", endUserId: "end-user", regionId: "cn-hangzhou" },
+      { desktopId, endUserId: "end-user", regionId: "cn-hangzhou", referenceInUse },
       this,
       this,
     );
@@ -168,9 +168,10 @@ export class FakeWuyingDesktop implements WuyingDesktopTools, WuyingControlPlane
         const exit = run && /-Destination '([^']+)'/.exec(run)?.[1];
         if (!out || !err || !exit)
           throw new WuyingToolError(tool, "invalid", "unexpected launcher");
-        this.backgroundCommand = this.read(`${parent(script ?? "")}\\command.ps1`)?.toString(
-          "utf8",
-        );
+        const encoded = /-EncodedCommand ([A-Za-z0-9+/=]+)/.exec(run)?.[1];
+        this.backgroundCommand = encoded
+          ? Buffer.from(encoded, "base64").toString("utf16le")
+          : this.read(`${parent(script ?? "")}\\command.ps1`)?.toString("utf8");
         // Unscripted, a background command echoes its arguments like process_exec does.
         const echoed = /-ArgumentList '((?:[^']|'')*)'/.exec(run)?.[1]?.replace(/''/g, "'");
         const background = this.background ?? {

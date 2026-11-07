@@ -23,7 +23,6 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       sha: ${{ steps.release.outputs.sha }}
       platforms: ${{ steps.platforms.outputs.include }}
-      windows_signed: ${{ steps.platforms.outputs.windows_signed }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -92,15 +91,11 @@ jobs:
           echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
       - name: Choose release platforms
         id: platforms
-        env:
-          # Windows ships unsigned until Azure Artifact Signing is configured.
-          WINDOWS_SIGNING: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID != '' }}
         shell: bash
         run: |
           set -euo pipefail
           include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'
           echo "include=$include" >> "$GITHUB_OUTPUT"
-          echo "windows_signed=$WINDOWS_SIGNING" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.artifact }} artifacts
@@ -121,7 +116,7 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -290,9 +285,10 @@ jobs:
           ' "$PWD/$app"
 
       - name: Require Windows signing credentials
-        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
+        if: runner.os == 'Windows'
         shell: bash
         env:
+          AZURE_CLIENT_ID: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
           SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
           SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
@@ -300,20 +296,21 @@ jobs:
           SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           set -euo pipefail
+          test -n "$AZURE_CLIENT_ID"
           test -n "$AZURE_TENANT_ID"
           test -n "$SIGNING_ENDPOINT"
           test -n "$SIGNING_ACCOUNT"
           test -n "$SIGNING_PROFILE"
           test -n "$SIGNING_PUBLISHER"
       - name: Log in to Azure for Windows signing
-        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
+        if: runner.os == 'Windows'
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
           allow-no-subscriptions: true
       - name: Package signed x64 Windows app
-        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
+        if: runner.os == 'Windows'
         shell: bash
         env:
           SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
@@ -328,16 +325,10 @@ jobs:
             "-c.win.azureSignOptions.codeSigningAccountName=$SIGNING_ACCOUNT" \
             "-c.win.azureSignOptions.certificateProfileName=$SIGNING_PROFILE" \
             "-c.win.azureSignOptions.publisherName=$SIGNING_PUBLISHER"
-      - name: Package unsigned x64 Windows app
-        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed != 'true'
-        run: >-
-          pnpm --filter @rakazo/desktop exec electron-builder
-          --win --x64 --publish never
       - name: Verify Windows Authenticode signature and publisher-bound update feed
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          SIGNED: ${{ needs.validate.outputs.windows_signed }}
           SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -352,11 +343,6 @@ jobs:
             if ($feed -notmatch "(?m)^$([regex]::Escape($expected))\r?$") {
               throw "Windows update config missing '$expected'."
             }
-          }
-          if ($env:SIGNED -ne "true") {
-            # Unsigned builds must not name a publisher, or they would reject the first signed update.
-            if ($feed -match "(?m)^publisherName:") { throw "Unsigned Windows update config names a publisher." }
-            exit 0
           }
           foreach ($executable in $executables) {
             $signature = Get-AuthenticodeSignature $executable.FullName
@@ -395,6 +381,31 @@ jobs:
           grep -Fqx "repo: rakazo" "$config"
           test -f apps/desktop/out/latest-linux.yml
           grep -Fqx "version: $RELEASE_VERSION" apps/desktop/out/latest-linux.yml
+      - name: Sign Linux AppImage updates
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.DESKTOP_LINUX_UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::DESKTOP_LINUX_UPDATE_SIGNING_KEY is not set."
+            exit 1
+          fi
+          umask 077
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$SIGNING_KEY" > "$key"
+          shopt -s nullglob
+          images=(apps/desktop/out/*.AppImage)
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "::error::No AppImage was built."
+            exit 1
+          fi
+          # Signs each AppImage and checks the result against the public key the app embeds.
+          pnpm exec tsx apps/desktop/scripts/sign-linux-update.ts "$key" "$RELEASE_VERSION" "${images[@]}"
 
       - name: Retain installers and updater metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -402,6 +413,7 @@ jobs:
           name: desktop-${{ matrix.artifact }}-${{ needs.validate.outputs.sha }}
           path: |
             apps/desktop/out/*.AppImage
+            apps/desktop/out/*.AppImage.sig
             apps/desktop/out/*.blockmap
             apps/desktop/out/*.dmg
             apps/desktop/out/*.exe
@@ -451,6 +463,12 @@ jobs:
           compgen -G 'release-artifacts/*.dmg' >/dev/null
           compgen -G 'release-artifacts/*.zip' >/dev/null
           compgen -G 'release-artifacts/*.AppImage' >/dev/null
+          for image in release-artifacts/*.AppImage; do
+            if [[ ! -s "$image.sig" ]]; then
+              echo "$image has no update signature." >&2
+              exit 1
+            fi
+          done
           test -f release-artifacts/latest.yml
           compgen -G 'release-artifacts/*.exe' >/dev/null
           feeds=(

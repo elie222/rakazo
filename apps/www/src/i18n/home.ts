@@ -28,6 +28,7 @@ export type HomeCopy = {
     menu: string;
     docs: string;
     integrations: string;
+    pricing: string;
     blog: string;
     github: string;
     getStarted: string;
@@ -116,6 +117,9 @@ export type HomeCopy = {
       changelog: string;
       submitPlugin: string;
       alternatives: string;
+      sandboxes: string;
+      integrationPlatforms: string;
+      voiceProviders: string;
       all: string;
       about: string;
       brand: string;
@@ -124,8 +128,7 @@ export type HomeCopy = {
       terms: string;
       company: string;
       blog: string;
-      iosApp: string;
-      androidApp: string;
+      download: string;
     };
   };
 };
@@ -844,6 +847,57 @@ const ZH_TW_ROSTER: RosterBot[] = [
   },
 ];
 
+const PL_ROSTER: RosterBot[] = [
+  {
+    name: "Sales Outbound",
+    color: "#F5A03C",
+    slug: "rakazo/sales-outbound",
+    desc: "Sprawdza potencjalnych klientów i przygotowuje kolejne wiadomości.",
+  },
+  {
+    name: "Inbox Manager",
+    color: "#6A6BF5",
+    slug: "rakazo/inbox-manager",
+    desc: "Porządkuje pocztę i przygotowuje odpowiedzi.",
+  },
+  {
+    name: "Talent Scout",
+    color: "#3B82F6",
+    slug: "rakazo/talent-scout",
+    desc: "Przegląda zgłoszenia i wybiera kandydatów.",
+  },
+  {
+    name: "Expense Manager",
+    color: "#F2622A",
+    slug: "rakazo/expense-manager",
+    desc: "Dopasowuje rachunki do płatności.",
+  },
+  {
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "Wprowadza zmiany w kodzie na Twoim komputerze.",
+  },
+  {
+    name: "Account Manager",
+    color: "#9B5CF6",
+    slug: "rakazo/account-manager",
+    desc: "Przygotowuje odpowiedzi i pilnuje odnowień umów.",
+  },
+  {
+    name: "Paid Media",
+    color: "#3EC5A8",
+    slug: "rakazo/paid-media",
+    desc: "Sprawdza wydatki na reklamy i raportuje zmiany.",
+  },
+  {
+    name: "Chief of Staff",
+    color: "#8B93A8",
+    slug: "rakazo/chief-of-staff",
+    desc: "Przygotowuje podsumowania i koordynuje pracę botów.",
+  },
+];
+
 const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
   {
     quote:
@@ -877,6 +931,174 @@ const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
 ];
 
 const HOME_COPY: Record<Locale, HomeCopy> = {
+  pl: {
+    title: "Rakazo | Otwarta alternatywa dla Grok Bot",
+    description:
+      "Rakazo to otwarta alternatywa dla Grok Bot. Boty AI z własną pamięcią wykonują zadania na Twoim komputerze, z wybranym przez Ciebie modelem.",
+    ogImageAlt: "Rakazo. Twój zespół AI na Twoim komputerze, z Twoimi kluczami i modelem.",
+    availableLanguage: "Polish",
+    skipToContent: "Przejdź do treści",
+    nav: {
+      home: "Strona główna Rakazo",
+      primary: "Nawigacja główna",
+      menu: "Menu",
+      docs: "Dokumentacja",
+      integrations: "Integracje",
+      pricing: "Cennik",
+      blog: "Blog",
+      github: "GitHub",
+      getStarted: "Zacznij",
+      openInNewTab: "Otwórz w nowej karcie",
+      copyWordmark: "Kopiuj logotyp jako SVG",
+      brandKit: "Materiały marki",
+    },
+    hero: {
+      eyebrow: "Otwarty kod źródłowy",
+      heading: "Otwarta alternatywa dla Grok Bot pod Twoją kontrolą",
+      lead: "Zleć botom zadanie. Śledź ich pracę z dowolnego urządzenia.",
+      getStarted: "Zacznij",
+      download: {
+        mac: "Pobierz na macOS",
+        windows: "Pobierz na Windows",
+        linux: "Pobierz na Linux",
+        ios: "Pobierz na iOS",
+        android: "Pobierz na Androida",
+      },
+      viewOnGithub: "Zobacz na GitHubie",
+      setupWithAgent: "Skonfiguruj ze swoim agentem",
+      copiedForAgent: "Skopiowano dla agenta",
+      copyFailed: "Nie udało się skopiować. Spróbuj ponownie.",
+    },
+    selfHost: {
+      heading: "Na własnym serwerze",
+      copy: "Uruchom Rakazo na swoim komputerze i wybierz modele dla swoich botów.",
+      worksWith: "Współpracuje z",
+      mock: {
+        weekdays: "W dni robocze o 9:00",
+        approval: "Wymaga zatwierdzenia",
+        approve: "Zatwierdź",
+        deny: "Odrzuć",
+      },
+      features: [
+        { title: "Twój model", body: "Wybierz inny model dla każdego bota." },
+        { title: "Praca według harmonogramu", body: "Działa także wtedy, gdy Twój komputer jest wyłączony." },
+        { title: "Ty ustalasz granice", body: "Zdecyduj, które działania wymagają Twojej zgody." },
+      ],
+    },
+    platforms: {
+      heading: "Gdziekolwiek jesteś",
+      web: "Przeglądarka",
+      desktop: "Komputer",
+      mobile: "Telefon",
+    },
+    roster: {
+      eyebrow: "Twój zespół botów",
+      heading: "Przydziel każdemu botowi zadanie",
+      copy: "Zacznij od szablonu i dostosuj go do siebie.",
+      bots: PL_ROSTER,
+    },
+    channels: {
+      heading: "Pisz do nich z dowolnego miejsca",
+      copy: "Wspomnij bota na Slacku lub napisz do niego z telefonu.",
+      mock: {
+        ask: "do kogo trzeba się dziś odezwać?",
+        reply: "Trzech potencjalnych klientów nie odpowiedziało w tym tygodniu. Szkice są w wątku.",
+      },
+    },
+    features: {
+      heading: "Rozmowa i działanie",
+      items: {
+        call: { title: "Dzwoni do Ciebie", body: "Gdy potrzebuje Twojej decyzji, bot dzwoni przez aplikację. Możecie omówić sprawę." },
+        apps: { title: "Pracuje w Twoich aplikacjach", body: "Połącz Gmail, GitHub, Notion i dowolny serwer MCP." },
+        memory: { title: "Pamięta", body: "Boty zapamiętują to, czego się uczą, i dzielą się wiedzą z zespołem." },
+        triggers: { title: "Sam zaczyna pracę", body: "Uruchamia go harmonogram, webhook, zdarzenie na GitHubie lub obserwowana zmiana." },
+        team: { title: "Przekazuje zadania", body: "Boty zlecają sobie pracę i współpracują w grupach." },
+        teach: { title: "Uczy się, obserwując", body: "Pokaż raz zadanie na komputerze bota. Zapisze kroki jako umiejętność." },
+      },
+      mock: {
+        calling: "Dzwonienie…",
+        memory: "Pamięć",
+        memoryNotes: ["Preferuje krótkie odpowiedzi", "Acme odnawia umowę w marcu"],
+        triggers: ["W dni robocze o 9:00", "Nowe zgłoszenie na GitHubie", "Webhook"],
+        recording: "Nagrywanie",
+        skillSaved: "Zapisano jako umiejętność",
+      },
+    },
+    testimonials: {
+      heading: "Opinie użytkowników",
+      pause: "Wstrzymaj",
+      play: "Odtwórz",
+      items: TESTIMONIALS,
+    },
+    faq: {
+      heading: "Pytania i odpowiedzi",
+      items: [
+        {
+          question: "Czy mogę używać subskrypcji Claude Pro/Max lub ChatGPT Plus/Pro?",
+          answer:
+            "Tak. Zaloguj się przez tę subskrypcję albo użyj klucza API, OpenRoutera lub lokalnego serwera zgodnego z OpenAI, np. Ollama lub LM Studio. Rakazo nie pokrywa kosztów modelu.",
+        },
+        {
+          question: "Czy potrzebuję klucza API, jeśli już płacę za Claude lub ChatGPT?",
+          answer:
+            "Nie. Zaloguj się przez Claude Pro/Max lub ChatGPT Plus/Pro, a model będzie rozliczany w ramach tej subskrypcji. Możesz też użyć klucza API do Anthropic, OpenAI, OpenRoutera lub Grok. W obu przypadkach koszty modelu pokrywasz samodzielnie.",
+        },
+        {
+          question: "Czy mogę uruchomić model lokalnie?",
+          answer:
+            "Tak. Połącz bota z lokalnym serwerem zgodnym z OpenAI, np. Ollama lub LM Studio. Każdy bot może korzystać z innego modelu.",
+        },
+        {
+          question: "Co obejmuje plan w chmurze?",
+          answer:
+            "Komputer w chmurze i miesięczny limit godzin pracy, który rośnie wraz z planem. Jednocześnie może działać do 5 komputerów. Nie ma opłat za przekroczenie limitu.",
+        },
+      ],
+    },
+    openSource: {
+      heading: "Otwarty kod źródłowy",
+      copy: "Licencja Apache-2.0. Uruchom Rakazo i dostosuj kod do swoich potrzeb.",
+      starOnGithub: "Dodaj gwiazdkę na GitHubie",
+      readTheDocs: "Przeczytaj dokumentację",
+      cloudTitle: "Chmura",
+      cloudBadge: "Beta",
+    },
+    cta: {
+      heading: "Poznaj swojego pierwszego bota",
+      copy: "Powierz mu kolejne zadanie.",
+      openSourceValue: "Otwarty kod",
+      selfHostValue: "Własny serwer",
+      stats: [
+        { value: "stars", label: "Gwiazdki na GitHubie" },
+        { value: "license", label: "Licencja" },
+        { value: "openSource", label: "Wszystkie funkcje za darmo" },
+        { value: "selfHost", label: "Twój komputer" },
+      ],
+    },
+    footer: {
+      navLabel: "Stopka",
+      languagesLabel: "Język",
+      links: {
+        docs: "Dokumentacja",
+        product: "Produkt",
+        changelog: "Historia zmian",
+        submitPlugin: "Zgłoś wtyczkę",
+        alternatives: "Alternatywy",
+        sandboxes: "Piaskownice",
+        integrationPlatforms: "Platformy integracyjne",
+        voiceProviders: "Dostawcy głosu",
+        all: "Wszystkie",
+        about: "O nas",
+        brand: "Marka",
+        support: "Pomoc",
+        privacy: "Prywatność",
+        terms: "Regulamin",
+        company: "Firma",
+        blog: "Blog",
+        download: "Pobierz",
+      },
+    },
+  },
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,
@@ -890,6 +1112,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menu",
       docs: "Docs",
       integrations: "Integrations",
+      pricing: "Pricing",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Get started",
@@ -984,7 +1207,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "What does the hosted plan include?",
           answer:
-            "Up to 100 computer-hours a month and 5 computers running at once. That is more than enough for most people, and there are no overage charges.",
+            "A cloud computer and a monthly allowance of computer hours that grows with your plan, with up to 5 computers running at once. There are no overage charges.",
         },
       ],
     },
@@ -1017,6 +1240,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Changelog",
         submitPlugin: "Submit a plugin",
         alternatives: "Alternatives",
+        sandboxes: "Sandboxes",
+        integrationPlatforms: "Integration platforms",
+        voiceProviders: "Voice providers",
         all: "All",
         about: "About",
         brand: "Brand",
@@ -1025,8 +1251,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Terms",
         company: "Company",
         blog: "Blog",
-        iosApp: "iPhone app",
-        androidApp: "Android app",
+        download: "Download",
       },
     },
   },
@@ -1044,6 +1269,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menü",
       docs: "Docs",
       integrations: "Integrationen",
+      pricing: "Preise",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Loslegen",
@@ -1142,7 +1368,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Was ist im gehosteten Plan enthalten?",
           answer:
-            "Bis zu 100 Computerstunden im Monat und 5 gleichzeitig laufende Computer. Das reicht den meisten mehr als aus, und es gibt keine Zusatzkosten.",
+            "Ein Cloud-Computer und ein monatliches Kontingent an Computerstunden, das mit deinem Tarif wächst, mit bis zu 5 gleichzeitig laufenden Computern. Es gibt keine Zusatzkosten.",
         },
       ],
     },
@@ -1175,6 +1401,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Änderungsprotokoll",
         submitPlugin: "Plugin einreichen",
         alternatives: "Alternativen",
+        sandboxes: "Sandboxes",
+        integrationPlatforms: "Integrationsplattformen",
+        voiceProviders: "Sprachanbieter",
         all: "Alle",
         about: "Über uns",
         brand: "Marke",
@@ -1183,8 +1412,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "AGB",
         company: "Unternehmen",
         blog: "Blog",
-        iosApp: "iPhone-App",
-        androidApp: "Android-App",
+        download: "Download",
       },
     },
   },
@@ -1201,6 +1429,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "메뉴",
       docs: "Docs",
       integrations: "통합",
+      pricing: "가격",
       blog: "블로그",
       github: "GitHub",
       getStarted: "시작하기",
@@ -1299,7 +1528,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "호스팅 플랜에는 무엇이 포함되나요?",
           answer:
-            "월 최대 100 컴퓨터 시간과 동시에 실행되는 컴퓨터 5대가 포함됩니다. 대부분의 사용자에게 충분하며 초과 요금은 없습니다.",
+            "클라우드 컴퓨터와 플랜에 따라 늘어나는 월 컴퓨터 시간이 포함되며, 컴퓨터는 최대 5대까지 동시에 실행할 수 있습니다. 초과 요금은 없습니다.",
         },
       ],
     },
@@ -1332,6 +1561,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "변경 내역",
         submitPlugin: "플러그인 제출",
         alternatives: "대안",
+        sandboxes: "샌드박스",
+        integrationPlatforms: "통합 플랫폼",
+        voiceProviders: "음성 제공업체",
         all: "전체",
         about: "소개",
         brand: "브랜드",
@@ -1340,8 +1572,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "이용약관",
         company: "회사",
         blog: "블로그",
-        iosApp: "iPhone 앱",
-        androidApp: "Android 앱",
+        download: "다운로드",
       },
     },
   },
@@ -1358,6 +1589,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "菜单",
       docs: "文档",
       integrations: "集成",
+      pricing: "价格",
       blog: "博客",
       github: "GitHub",
       getStarted: "开始使用",
@@ -1456,7 +1688,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "托管套餐包含什么？",
           answer:
-            "每月最多 100 个计算机小时，最多同时运行 5 台计算机。对大多数人来说绰绰有余，并且没有超额费用。",
+            "一台云计算机，以及随套餐增加的每月计算机小时，最多同时运行 5 台计算机。没有超额费用。",
         },
       ],
     },
@@ -1489,6 +1721,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "更新日志",
         submitPlugin: "提交插件",
         alternatives: "替代方案",
+        sandboxes: "沙箱",
+        integrationPlatforms: "集成平台",
+        voiceProviders: "语音服务商",
         all: "全部",
         about: "关于",
         brand: "品牌",
@@ -1497,8 +1732,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "条款",
         company: "公司",
         blog: "博客",
-        iosApp: "iPhone 应用",
-        androidApp: "Android 应用",
+        download: "下载",
       },
     },
   },
@@ -1516,6 +1750,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "メニュー",
       docs: "ドキュメント",
       integrations: "連携",
+      pricing: "料金",
       blog: "ブログ",
       github: "GitHub",
       getStarted: "はじめる",
@@ -1614,7 +1849,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "ホスト型プランには何が含まれますか？",
           answer:
-            "月に最大 100 コンピューター時間、同時に 5 台までのコンピューターを使えます。ほとんどの人には十分で、超過料金はありません。",
+            "クラウドコンピューターと、プランに応じて増える毎月のコンピューター時間が含まれ、同時に 5 台までコンピューターを使えます。超過料金はありません。",
         },
       ],
     },
@@ -1647,6 +1882,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "変更履歴",
         submitPlugin: "プラグインを申請",
         alternatives: "代替ツール",
+        sandboxes: "サンドボックス",
+        integrationPlatforms: "連携プラットフォーム",
+        voiceProviders: "音声プロバイダー",
         all: "すべて",
         about: "概要",
         brand: "ブランド",
@@ -1655,8 +1893,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "利用規約",
         company: "会社情報",
         blog: "ブログ",
-        iosApp: "iPhone アプリ",
-        androidApp: "Android アプリ",
+        download: "ダウンロード",
       },
     },
   },
@@ -1674,6 +1911,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menú",
       docs: "Documentación",
       integrations: "Integraciones",
+      pricing: "Precios",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Empezar",
@@ -1772,7 +2010,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "¿Qué incluye el plan alojado?",
           answer:
-            "Hasta 100 horas de computadora al mes y 5 computadoras funcionando a la vez. Es más que suficiente para la mayoría, y no hay cargos por exceso.",
+            "Una computadora en la nube y una asignación mensual de horas de computadora que crece con tu plan, con hasta 5 computadoras funcionando a la vez. No hay cargos por exceso.",
         },
       ],
     },
@@ -1805,6 +2043,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Novedades",
         submitPlugin: "Enviar un plugin",
         alternatives: "Alternativas",
+        sandboxes: "Sandboxes",
+        integrationPlatforms: "Plataformas de integración",
+        voiceProviders: "Proveedores de voz",
         all: "Todas",
         about: "Acerca de",
         brand: "Marca",
@@ -1813,8 +2054,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Términos",
         company: "Empresa",
         blog: "Blog",
-        iosApp: "App para iPhone",
-        androidApp: "App para Android",
+        download: "Descargar",
       },
     },
   },
@@ -1832,6 +2072,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menu",
       docs: "Documentation",
       integrations: "Intégrations",
+      pricing: "Tarifs",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Commencer",
@@ -1930,7 +2171,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Que comprend l’offre hébergée ?",
           answer:
-            "Jusqu’à 100 heures-ordinateur par mois et 5 ordinateurs en même temps. C’est largement suffisant pour la plupart des gens, et il n’y a aucun frais de dépassement.",
+            "Un ordinateur cloud et un forfait mensuel d’heures-ordinateur qui augmente avec votre offre, avec jusqu’à 5 ordinateurs en même temps. Il n’y a aucun frais de dépassement.",
         },
       ],
     },
@@ -1963,6 +2204,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Nouveautés",
         submitPlugin: "Proposer un plugin",
         alternatives: "Alternatives",
+        sandboxes: "Sandbox",
+        integrationPlatforms: "Plateformes d'intégration",
+        voiceProviders: "Fournisseurs de voix",
         all: "Toutes",
         about: "À propos",
         brand: "Marque",
@@ -1971,8 +2215,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Conditions",
         company: "Entreprise",
         blog: "Blog",
-        iosApp: "App iPhone",
-        androidApp: "App Android",
+        download: "Télécharger",
       },
     },
   },
@@ -1990,6 +2233,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menu",
       docs: "Documentação",
       integrations: "Integrações",
+      pricing: "Preços",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Começar",
@@ -2088,7 +2332,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "O que o plano hospedado inclui?",
           answer:
-            "Até 100 horas de computador por mês e 5 computadores rodando ao mesmo tempo. É mais que suficiente para a maioria das pessoas, e não há cobrança por excedente.",
+            "Um computador na nuvem e uma cota mensal de horas de computador que cresce com o seu plano, com até 5 computadores rodando ao mesmo tempo. Não há cobrança por excedente.",
         },
       ],
     },
@@ -2121,6 +2365,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Novidades",
         submitPlugin: "Enviar um plugin",
         alternatives: "Alternativas",
+        sandboxes: "Sandboxes",
+        integrationPlatforms: "Plataformas de integração",
+        voiceProviders: "Provedores de voz",
         all: "Todas",
         about: "Sobre",
         brand: "Marca",
@@ -2129,8 +2376,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Termos",
         company: "Empresa",
         blog: "Blog",
-        iosApp: "App para iPhone",
-        androidApp: "App para Android",
+        download: "Baixar",
       },
     },
   },
@@ -2148,6 +2394,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menu",
       docs: "Docs",
       integrations: "Integraties",
+      pricing: "Prijzen",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Aan de slag",
@@ -2246,7 +2493,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Wat zit er in het gehoste abonnement?",
           answer:
-            "Tot 100 computeruren per maand en 5 computers tegelijk. Dat is voor de meeste mensen ruim voldoende, en er zijn geen extra kosten bij overschrijding.",
+            "Een cloudcomputer en een maandelijks tegoed aan computeruren dat meegroeit met je abonnement, met tot 5 computers tegelijk. Er zijn geen extra kosten bij overschrijding.",
         },
       ],
     },
@@ -2279,6 +2526,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Wijzigingslog",
         submitPlugin: "Plugin indienen",
         alternatives: "Alternatieven",
+        sandboxes: "Sandboxes",
+        integrationPlatforms: "Integratieplatforms",
+        voiceProviders: "Spraakproviders",
         all: "Alle",
         about: "Over ons",
         brand: "Merk",
@@ -2287,8 +2537,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Voorwaarden",
         company: "Bedrijf",
         blog: "Blog",
-        iosApp: "iPhone-app",
-        androidApp: "Android-app",
+        download: "Downloaden",
       },
     },
   },
@@ -2306,6 +2555,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Меню",
       docs: "Документация",
       integrations: "Интеграции",
+      pricing: "Цены",
       blog: "Блог",
       github: "GitHub",
       getStarted: "Начать",
@@ -2404,7 +2654,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Что входит в облачный тариф?",
           answer:
-            "До 100 компьютеро-часов в месяц и до 5 компьютеров одновременно. Большинству этого более чем достаточно, и платы за превышение нет.",
+            "Облачный компьютер и месячный запас компьютеро-часов, который растёт вместе с тарифом, и до 5 компьютеров одновременно. Платы за превышение нет.",
         },
       ],
     },
@@ -2437,6 +2687,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Журнал изменений",
         submitPlugin: "Предложить плагин",
         alternatives: "Альтернативы",
+        sandboxes: "Песочницы",
+        integrationPlatforms: "Платформы интеграций",
+        voiceProviders: "Голосовые провайдеры",
         all: "Все",
         about: "О нас",
         brand: "Бренд",
@@ -2445,8 +2698,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Условия",
         company: "Компания",
         blog: "Блог",
-        iosApp: "Приложение для iPhone",
-        androidApp: "Приложение для Android",
+        download: "Скачать",
       },
     },
   },
@@ -2464,6 +2716,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "Menü",
       docs: "Belgeler",
       integrations: "Entegrasyonlar",
+      pricing: "Fiyatlar",
       blog: "Blog",
       github: "GitHub",
       getStarted: "Başlayın",
@@ -2562,7 +2815,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Barındırılan plana neler dahil?",
           answer:
-            "Ayda 100 bilgisayar saatine kadar kullanım ve aynı anda çalışan 5 bilgisayar. Bu çoğu kişi için fazlasıyla yeterli ve aşım ücreti yok.",
+            "Bir bulut bilgisayar ve planınızla birlikte artan aylık bilgisayar saati hakkı; aynı anda en fazla 5 bilgisayar çalışabilir. Aşım ücreti yok.",
         },
       ],
     },
@@ -2595,6 +2848,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "Değişiklik günlüğü",
         submitPlugin: "Eklenti gönder",
         alternatives: "Alternatifler",
+        sandboxes: "Sandbox'lar",
+        integrationPlatforms: "Entegrasyon platformları",
+        voiceProviders: "Ses sağlayıcıları",
         all: "Tümü",
         about: "Hakkımızda",
         brand: "Marka",
@@ -2603,8 +2859,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "Koşullar",
         company: "Şirket",
         blog: "Blog",
-        iosApp: "iPhone uygulaması",
-        androidApp: "Android uygulaması",
+        download: "İndir",
       },
     },
   },
@@ -2622,6 +2877,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "תפריט",
       docs: "תיעוד",
       integrations: "אינטגרציות",
+      pricing: "מחירים",
       blog: "בלוג",
       github: "GitHub",
       getStarted: "להתחיל",
@@ -2720,7 +2976,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "מה כולל המסלול המנוהל?",
           answer:
-            "עד 100 שעות מחשב בחודש ו-5 מחשבים שרצים במקביל. זה יותר ממספיק לרוב האנשים, ואין חיובים על חריגה.",
+            "מחשב ענן ומכסה חודשית של שעות מחשב שגדלה עם המסלול שלך, עם עד 5 מחשבים שרצים במקביל. אין חיובים על חריגה.",
         },
       ],
     },
@@ -2753,6 +3009,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "יומן שינויים",
         submitPlugin: "הגשת תוסף",
         alternatives: "חלופות",
+        sandboxes: "ארגזי חול",
+        integrationPlatforms: "פלטפורמות אינטגרציה",
+        voiceProviders: "ספקי קול",
         all: "הכול",
         about: "אודות",
         brand: "מותג",
@@ -2761,8 +3020,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "תנאים",
         company: "חברה",
         blog: "בלוג",
-        iosApp: "אפליקציית iPhone",
-        androidApp: "אפליקציית Android",
+        download: "הורדה",
       },
     },
   },
@@ -2780,6 +3038,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "मेनू",
       docs: "दस्तावेज़",
       integrations: "इंटीग्रेशन",
+      pricing: "मूल्य",
       blog: "ब्लॉग",
       github: "GitHub",
       getStarted: "शुरू करें",
@@ -2878,7 +3137,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "होस्टेड प्लान में क्या शामिल है?",
           answer:
-            "हर महीने 100 कंप्यूटर-घंटे तक और एक साथ चलने वाले 5 कंप्यूटर। ज़्यादातर लोगों के लिए यह काफ़ी से भी ज़्यादा है, और कोई ओवरेज शुल्क नहीं है।",
+            "एक क्लाउड कंप्यूटर और हर महीने कंप्यूटर-घंटों का कोटा, जो आपके प्लान के साथ बढ़ता है, और एक साथ 5 कंप्यूटर तक चल सकते हैं। कोई ओवरेज शुल्क नहीं है।",
         },
       ],
     },
@@ -2911,6 +3170,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "चेंजलॉग",
         submitPlugin: "प्लगइन सबमिट करें",
         alternatives: "विकल्प",
+        sandboxes: "सैंडबॉक्स",
+        integrationPlatforms: "इंटीग्रेशन प्लेटफ़ॉर्म",
+        voiceProviders: "वॉइस प्रदाता",
         all: "सभी",
         about: "हमारे बारे में",
         brand: "ब्रांड",
@@ -2919,8 +3181,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "शर्तें",
         company: "कंपनी",
         blog: "ब्लॉग",
-        iosApp: "iPhone ऐप",
-        androidApp: "Android ऐप",
+        download: "डाउनलोड",
       },
     },
   },
@@ -2937,6 +3198,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       menu: "選單",
       docs: "說明文件",
       integrations: "整合",
+      pricing: "價格",
       blog: "部落格",
       github: "GitHub",
       getStarted: "開始使用",
@@ -3035,7 +3297,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "託管方案包含哪些內容？",
           answer:
-            "每月最多 100 個電腦小時，最多同時執行 5 台電腦。對大多數人來說綽綽有餘，而且沒有超額費用。",
+            "一台雲端電腦，以及隨方案增加的每月電腦小時，最多同時執行 5 台電腦。沒有超額費用。",
         },
       ],
     },
@@ -3068,6 +3330,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         changelog: "更新紀錄",
         submitPlugin: "提交外掛",
         alternatives: "替代方案",
+        sandboxes: "沙箱",
+        integrationPlatforms: "整合平台",
+        voiceProviders: "語音服務商",
         all: "全部",
         about: "關於我們",
         brand: "品牌",
@@ -3076,8 +3341,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         terms: "條款",
         company: "公司",
         blog: "部落格",
-        iosApp: "iPhone App",
-        androidApp: "Android App",
+        download: "下載",
       },
     },
   },

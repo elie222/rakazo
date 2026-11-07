@@ -5,6 +5,7 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelApiProtocol } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
@@ -30,7 +31,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
-import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { MODEL_CONNECT_TIMEOUT_MS, modelConnectTimeoutMs } from "./pi-runtime-limits.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
@@ -88,9 +89,9 @@ export function openAiCompatibleModel(
     baseUrl: apiProtocol === "anthropic-messages" ? anthropicMessagesBaseUrl(baseUrl) : baseUrl,
     reasoning,
     ...(apiProtocol === "anthropic-messages"
-      ? // The built-in Anthropic provider passes no level map either: pi-ai derives
-        // budget-based thinking from `reasoning` alone.
-        {}
+      ? // pi-ai derives budget-based thinking from `reasoning` alone, which newer models
+        // reject; a model the built-in catalog knows keeps its own thinking settings.
+        anthropicCatalogThinking(id)
       : {
           compat: {
             // `store: false` is already the default, and Google's endpoint rejects the field.
@@ -107,6 +108,27 @@ export function openAiCompatibleModel(
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
     maxTokens,
+  };
+}
+
+let anthropicCatalog: ReturnType<typeof builtinModels> | undefined;
+
+/**
+ * The built-in Anthropic catalog's thinking settings for the same model id, if any. Only the
+ * thinking shape is copied: the catalog's other flags (mid-conversation effort and system
+ * messages, fallbacks) describe Anthropic's own API, which a compatible endpoint may not accept.
+ */
+function anthropicCatalogThinking(
+  id: string,
+): Pick<Model<"anthropic-messages">, "compat" | "thinkingLevelMap"> {
+  anthropicCatalog ??= builtinModels();
+  const known = anthropicCatalog.getModel("anthropic", id) as
+    | Model<"anthropic-messages">
+    | undefined;
+  if (known?.api !== "anthropic-messages") return {};
+  return {
+    ...(known.compat?.forceAdaptiveThinking ? { compat: { forceAdaptiveThinking: true } } : {}),
+    ...(known.thinkingLevelMap ? { thinkingLevelMap: known.thinkingLevelMap } : {}),
   };
 }
 
@@ -232,7 +254,7 @@ export function createOpenAiCompatibleFetch(
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher = new Agent({
       connect: {
-        timeout: MODEL_CONNECT_TIMEOUT_MS,
+        timeout: modelConnectTimeoutMs(),
         ...(ipVersion(hostname) === 0
           ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
           : {}),

@@ -38,6 +38,7 @@ All of these are optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
+SCIM_BEARER_TOKEN=        # lets your identity provider add and remove accounts; see self-host-accounts.md
 SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
@@ -45,6 +46,7 @@ SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
 # E2B, CreateOS and Boat still apply their own timeouts.
 COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
+COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # uptime cap for providers that do not bill while running (Docker, Kubernetes, Incus); minimum 60000; 0 (default) disables; needs SANDBOX_IDLE_MS on
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
@@ -61,6 +63,20 @@ screen lasts before control expires.
 
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
+
+Three model timeouts take milliseconds from `1000` to `300000`; other values keep the default.
+Raise them when several bots share one model server that queues requests. Five minutes is the
+ceiling because Node's HTTP client stops waiting at that point on its own.
+
+- `MODEL_STREAM_TIMEOUT_MS` (default `120000`) is the time budget for retrying the same model. It
+  is also how long a request waits for the response to start when it uses the OpenAI Chat
+  Completions, Responses or Codex API, Anthropic Messages, Mistral or Azure OpenAI. Other APIs,
+  such as Google, Vertex AI, Bedrock and some routed models, use their client's own wait.
+- `MODEL_STREAM_IDLE_TIMEOUT_MS` (default `180000`) is how long a started response may go silent,
+  for every provider.
+- `MODEL_CONNECT_TIMEOUT_MS` (default `30000`) bounds connecting to an OpenAI-compatible model or
+  speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers and built-in providers keep
+  Node's own connect wait; the other two settings apply to them as described above.
 
 ## Feature switches
 

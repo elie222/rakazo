@@ -33,6 +33,8 @@ export function deploymentModelRole(
       backups: [],
     };
   }
+  // No computer model means the main model works the screen itself.
+  if (role === "computer") return { primary: null, backups: [] };
   const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
   const modelId =
     usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);

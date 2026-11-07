@@ -345,6 +345,52 @@ members' ideas and tasks as their own and could not say which member suggested
 what. The small Anthropic model still sometimes says "you" for a task it took
 on itself.
 
+### Group routing evals
+
+```sh
+pnpm test:evals --suite group-routing --list
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+```
+
+Each case sends a group message that names nobody, so every member gets it and
+decides alone whether to answer. Every member runs the eval model. One group has
+five bots with distinct roles; another has two peer bots, each holding facts
+only it knows. The cases check that a question reaches the member whose role
+owns it, that a request for one piece of work gets one author, that a question
+nobody owns gets one or two answers, that a roll call gets every member, that a
+greeting or sign-off does not get a reply from everyone, and that a question
+about both peers gets both. Graders count which members posted after the
+message and require the owners to be among them; a handoff or ask card counts
+as a post.
+
+The November 2026 baseline over three trials per case passed every case on the
+default DeepSeek model and on a small Anthropic model, and all but two trials on
+a small OpenAI model, where a greeting and a sign-off each drew one extra
+reply. Sending every unnamed message to the first member instead missed every
+roll call, cost a handoff for any question owned by another member, and on the
+Anthropic model often answered a question about both peers with one of them.
+
+### Bot file pass-off evals
+
+```sh
+pnpm test:evals --suite bot-files --list
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+```
+
+The cases check that a bot passes a project to another bot with `files` instead
+of pasting the code. A coding bot sends a small site to a deploying bot on the
+same computer, to one with its own computer (only a zip can travel there), and
+through a group handoff. A question for that bot must go without files, and a
+deploying bot handed a shared path must open the files there. The harness writes
+the site onto the computer before the turn, and the receiving case's message
+comes through `message_bot`'s delivery path. Graders read the tool calls: the
+right tool with the expected files, and no message carrying an exact line of the
+site's code.
+
+The November 2026 baseline on a small Anthropic model passed all 15 trials. A
+bot sending to its own-computer teammate usually tried the folder with the zip
+first and, told a folder cannot be copied, sent the zip alone.
+
 ### Routine silence evals
 
 ```sh
@@ -392,6 +438,40 @@ model-call timeout errors, mostly within two seconds rather than at the trial's
 three-minute deadline. The saved report lacks transport diagnostics to establish
 the cause. No live qualification of the suite or its judge is claimed.
 
+### Initiative evals
+
+```sh
+pnpm test:evals --suite initiative --list
+pnpm test:evals --live --suite initiative --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/initiative.json
+```
+
+The four cases check that a bot follows up on an open loop without being asked,
+and only then. A promise with a due time must create exactly one one-shot routine,
+due no earlier than the promised time and within three days of it, and its wake
+must speak once with a push. When the user delivers before it is due, the bot
+should cancel the follow-up (pausing leaves it in Routines); a wake that still
+happens must stay as silent as a quiet routine check. A dated item the user
+reports as already closed, and a declined reminder, must create no routine at all. The bot authors the routine
+itself, then the scheduler wakes it as in the silence suite. Creations are counted
+from `routine.created` events, because `schedule_cancel` deletes the routine.
+
+The `initiative-meaning-v1` rubric grades the follow-up's chat and push by meaning:
+they must ask about the outstanding item without claiming it arrived or
+inventing details. Calibration anchors cover a paraphrase, another
+language, a false receipt, and a bare alert.
+
+The runner wakes the follow-up right away rather than at the promised time, and
+tells the bot the present moment is the routine's due time, so the bot does not
+see the follow-up as early and schedule another check.
+
+The November 2026 baseline, on the default small deployment model with a larger
+one judging, never set a follow-up the user declined or one for an item already
+closed. Before the woken bot was told the due time, the open-loop and
+closed-early cases passed half the time over two runs of three trials; on the
+misses the bot set no follow-up, answered the promise with a clarifying question,
+or scheduled a second check. With the due time, a run of three trials per case
+passed every case.
+
 ### Bot memory evals
 
 ```sh
@@ -421,6 +501,33 @@ fact and a wiped memory.
 The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
+
+### Earlier file recall evals
+
+```sh
+pnpm test:evals --suite recall --list
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+```
+
+Each case seeds 1,000 synthetic messages, with a lease the user uploaded at
+message 30, far outside the messages a run loads. The bot is asked for the
+lease's notice period once with the upload captioned and once with a bare file,
+and a third case asks about a contract that was never shared. Deterministic
+checks require a history lookup in the graded step and, for the lease, a read of
+the file at its `attachments/` path. The `recall-meaning-v1` judge then checks
+that the answer gives the lease's period and names the file it came from, or
+that a never-shared contract is admitted rather than invented. Calibration
+labels cover a sourced answer, a request to resend, a generic guess, a wrong
+period, an honest miss and an invented fee.
+
+The November 2026 baseline used one small model for both the bot and the judge,
+with three trials per case. Before history results listed attachments, the bot
+searched in every trial but read the lease in none, because it had no path to
+open. With the change it read the lease and gave the right period in all six
+trials, and named the source in five. Every trial admitted the never-shared
+contract on both versions; two further trials stalled waiting on the provider
+and are not counted. The offline protocol fixture checks the seeding and
+the grading path for both a read and an unread lease.
 
 ### Long conversation and cost evals
 

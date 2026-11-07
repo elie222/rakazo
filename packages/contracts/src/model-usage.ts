@@ -1,4 +1,4 @@
-import type { ModelCredential } from "./domain.js";
+import type { ModelCredential } from "./model-connections.js";
 
 /** Configured connections that can provide an upstream usage view. */
 export function connectionUsageGroups(credentials: ModelCredential[]) {

@@ -1,0 +1,106 @@
+---
+import ArticleSections from "../../components/ArticleSections.astro";
+import ArticleText from "../../components/ArticleText.astro";
+import Button from "../../components/Button.astro";
+import ProviderCard from "../../components/ProviderCard.astro";
+import { ProviderScene } from "../../components/ProviderScene";
+import SiteFrame from "../../components/SiteFrame.astro";
+import { ogPublicPath } from "../../og-pages";
+import {
+  VOICE_DOCS_PATH,
+  VOICE_PROVIDERS,
+  VOICE_PROVIDERS_HUB,
+  VOICE_PROVIDERS_UPDATED,
+  voiceProviderLink,
+  voiceProviderPath,
+} from "../../voice-providers";
+import { GITHUB_URL } from "../../site";
+---
+
+<SiteFrame
+  title={VOICE_PROVIDERS_HUB.title}
+  description={VOICE_PROVIDERS_HUB.description}
+  faq={VOICE_PROVIDERS_HUB.faq}
+  ogImage={ogPublicPath("voice-providers")}
+  markdownAlternate="/voice-providers.md"
+>
+  <h1>{VOICE_PROVIDERS_HUB.h1}</h1>
+  <p class="page-updated">Updated {VOICE_PROVIDERS_UPDATED}.</p>
+  {VOICE_PROVIDERS_HUB.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
+
+  <ProviderScene {...VOICE_PROVIDERS_HUB.scene} />
+
+  <h2>Compared</h2>
+
+  <div class="alt-table-wrap">
+    <table class="alt-table">
+      <caption class="sr-only">Voice providers for AI agents compared</caption>
+      <thead>
+        <tr>
+          <th scope="col">Option</th>
+          <th scope="col">Does</th>
+          <th scope="col">Runs</th>
+          <th scope="col">Best for</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          VOICE_PROVIDERS.map((provider) => (
+            <tr>
+              <th scope="row">
+                <a href={voiceProviderPath(provider.slug)}>{provider.name}</a>
+              </th>
+              <td>{provider.does}</td>
+              <td>{provider.runs}</td>
+              <td>{provider.bestFor}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Every option</h2>
+  <ul class="sandbox-cards">
+    {VOICE_PROVIDERS.map((provider) => <ProviderCard link={voiceProviderLink(provider)} />)}
+  </ul>
+
+  <ArticleSections sections={VOICE_PROVIDERS_HUB.sections} />
+
+  <h2>How to choose</h2>
+  {
+    VOICE_PROVIDERS_HUB.choose.map((item) => (
+      <section>
+        <h3>{item.heading}</h3>
+        <p><ArticleText text={item.text} /></p>
+      </section>
+    ))
+  }
+  <div class="alt-actions">
+    <Button href={VOICE_DOCS_PATH}>Voice and calls guide</Button>
+    <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+  </div>
+
+  <h2 id="faq">FAQ</h2>
+  {
+    VOICE_PROVIDERS_HUB.faq.map((item, index) => (
+      <section aria-labelledby={`faq-${index}`}>
+        <h3 id={`faq-${index}`}>{item.question}</h3>
+        <p><ArticleText text={item.answer} /></p>
+      </section>
+    ))
+  }
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      VOICE_PROVIDERS_HUB.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</SiteFrame>

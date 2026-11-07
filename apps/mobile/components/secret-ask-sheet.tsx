@@ -20,6 +20,7 @@ import { NativeSwitch } from "./native-switch";
 export function SecretAskSheet({
   title,
   destination,
+  replacedSite,
   loginFields,
   pending,
   onClose,
@@ -27,6 +28,8 @@ export function SecretAskSheet({
 }: {
   title: string;
   destination: string;
+  /** The site of the saved login this answer replaces. */
+  replacedSite?: string;
   /** The labels the card asks for; absent means the default username and password. */
   loginFields: readonly string[] | undefined;
   /** False once the card is answered or can no longer be answered; the sheet then closes. */
@@ -115,6 +118,11 @@ export function SecretAskSheet({
             {title}
           </Text>
           <Text style={styles.destination}>{destination}</Text>
+          {replacedSite ? (
+            <Text style={styles.replaced}>
+              {t("Replaces the login saved for {site}", { site: replacedSite })}
+            </Text>
+          ) : null}
           <LoginFieldsEditor
             fields={fields}
             onChange={setFields}
@@ -154,6 +162,7 @@ function createStyles() {
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
     title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
     destination: { color: tokens.foreground, fontSize: 15, marginBottom: 8 },
+    replaced: { color: tokens.mutedForeground, fontSize: 13, marginTop: -8, marginBottom: 8 },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", minHeight: 52, paddingHorizontal: 16 },
     switchLabel: { flex: 1, color: tokens.foreground, fontSize: 17 },

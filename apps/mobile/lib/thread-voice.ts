@@ -3,14 +3,21 @@ import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Alert, AppState } from "react-native";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { blockText, rpc } from "./api";
+import type { ApiRequestContext } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
 import { nextAutoSpeakAction } from "./auto-speak";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "./bot-switch";
-import { setCallProviderTranscribe, startCall } from "./call-session";
+import {
+  getSnapshot as getCallSnapshot,
+  setCallProviderTranscribe,
+  startCall,
+} from "./call-session";
+import { loadCallGreetingEnabled } from "./call-sounds";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { blockText } from "./mobile-types";
 import { currentSessionGeneration } from "./session";
 import { speakerColorFor } from "./thread-message-text";
 import { errorText } from "./user-error";
@@ -58,6 +65,8 @@ export function useAutoSpeakReply({
     const decision = nextAutoSpeakAction({
       botId: currentBot.id,
       autoSpeak: currentBot.autoSpeak,
+      // An active call owns the speaker; the gate only seeds while it lasts.
+      callActive: getCallSnapshot() !== null,
       focused: AppState.currentState === "active" && navigation.isFocused(),
       snapshotReady: snap?.botId === currentBot.id && !showingSaved,
       lastSpokenBotId: autoSpokenBotId.current,
@@ -77,7 +86,7 @@ export function useAutoSpeakReply({
       botId: currentBot.id,
       speaker: {
         name: currentBot.name,
-        color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
+        color: resolvePersonaColorDef(currentBot.id, currentBot.color).hex,
       },
     }).catch(() => undefined);
   }, [
@@ -123,6 +132,8 @@ export function useSpeakMessages({
   const router = useRouter();
   return useCallback(
     (message: MobileMessage) => {
+      // An active call owns the speaker; a manual read must not cut into it.
+      if (getCallSnapshot()) return;
       const startIndex = visibleMessages.findIndex((candidate) => candidate.id === message.id);
       const fromHere = startIndex === -1 ? [message] : visibleMessages.slice(startIndex);
       const items = fromHere.flatMap((candidate) => {
@@ -205,13 +216,14 @@ export function useThreadVoiceCall({
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
     try {
-      const [plan, callerName] = await Promise.all([
+      const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
           loadDeviceVoiceEnabled,
           dictationAvailable,
           loadVoiceStatus,
         }),
         loadCallCallerName(() => rpc("me")),
+        loadCallGreetingEnabled().catch(() => true),
       ]);
       if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
@@ -230,14 +242,18 @@ export function useThreadVoiceCall({
         return;
       }
       const botName = displayName ?? t("Bot");
+      // The call keeps the Space it starts in: an organization or Space switch mid-call must
+      // not move its turns, speech or hang-up to another Space.
+      const requestContext: ApiRequestContext = await captureApiRequestContext();
       const startedCallId = startCall({
         botId: targetBotId,
         botName,
         botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         botAvatarSet: mentionBots.find((bot) => bot.id === targetBotId)?.avatarSet,
         transcribe: plan.transcribe,
-        greeting: callGreeting(botName, callerName, switchedHere),
+        greeting: greet ? callGreeting(botName, callerName, switchedHere) : undefined,
         session: setupSession,
+        requestContext,
         switchBot: (text) => {
           const target = findSwitchTarget(text, mentionBotsRef.current);
           if (!target || target.id === targetBotId) return undefined;

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import type { SettingsScope } from "@rakazo/contracts";
-import { encodeLoginSecret } from "@rakazo/contracts";
+import type { BotSecretMetadata, SettingsScope } from "@rakazo/contracts";
+import { encodeCardSecret, encodeLoginSecret } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -15,6 +15,8 @@ const vault = vi.hoisted(() => ({
   remove: vi.fn(),
   reveal: vi.fn(),
 }));
+// No bot has an email address unless a test gives it one.
+const bots = vi.hoisted(() => ({ emailAddresses: vi.fn(async (): Promise<unknown> => null) }));
 
 // The dialog itself is tested on its own; here it is a pair of buttons that settle it.
 vi.mock("./ConfirmIdentityDialog", async () => {
@@ -45,9 +47,9 @@ vi.mock("./ConfirmIdentityDialog", async () => {
 });
 
 vi.mock("../lib/rpc", () => ({
-  rpc: { vault },
-  rpcForSpace: () => ({ vault }),
-  createSpaceRpc: () => ({ vault }),
+  rpc: { vault, bots },
+  rpcForSpace: () => ({ vault, bots }),
+  createSpaceRpc: () => ({ vault, bots }),
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
@@ -55,54 +57,53 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => ({
-  Button: ({
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
-  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
-  Label: ({ htmlFor: _htmlFor, ...props }: ComponentProps<"label">) => <span {...props} />,
-  Switch: ({
-    checked,
-    onCheckedChange,
-    size: _size,
-    ...props
-  }: Omit<ComponentProps<"button">, "onChange"> & {
-    checked: boolean;
-    onCheckedChange: (checked: boolean) => void;
-    size?: string;
-  }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange(!checked)}
-      {...props}
-    />
-  ),
-}));
 
 import { REVEAL_MS, VaultSettings } from "./VaultSettings";
 
 const FAKE_VALUE = "fake-value-SENTINEL-1";
 const stamp = "2026-09-01T00:00:00.000Z";
-const rows = [
-  { name: "api", origin: "https://api.example.com", auth: { type: "bearer" } },
-  {
+const item = (row: Partial<BotSecretMetadata> & Pick<BotSecretMetadata, "name" | "auth">) =>
+  ({
+    origin: "",
+    title: row.name,
+    note: "",
+    createdAt: stamp,
+    updatedAt: stamp,
+    ...row,
+  }) as BotSecretMetadata;
+const rows: BotSecretMetadata[] = [
+  item({
+    name: "github",
+    title: "github.com",
+    origin: "https://github.com",
+    auth: { type: "login" },
+    preview: { username: "octo@example.com" },
+  }),
+  item({
+    name: "visa",
+    title: "Visa ·· 4242",
+    note: "For travel",
+    auth: { type: "card" },
+    preview: {
+      card: { brand: "Visa", last4: "4242", expMonth: 8, expYear: 2030, billing: "home" },
+    },
+  }),
+  item({
+    name: "home",
+    title: "Home",
+    auth: { type: "contact" },
+    preview: {
+      contact: { name: "Alex Rivera", city: "Springfield", phone: "+1 555 0100" },
+    } as BotSecretMetadata["preview"],
+  }),
+  item({
     name: "custom",
+    title: "svc.example.com",
     origin: "https://svc.example.com",
     auth: { type: "header", name: "X-Api-Key" },
-  },
-  {
-    name: "router",
-    origin: "http://192.168.1.20:8080",
-    auth: { type: "basic", username: "admin" },
-  },
-  { name: "portal", origin: "https://portal.example.com", auth: { type: "login" } },
-].map((row) => ({ ...row, createdAt: stamp, updatedAt: stamp }));
+  }),
+  item({ name: "deploy-token", auth: { type: "command" } }),
+];
 
 let container: HTMLDivElement;
 let root: Root;
@@ -125,35 +126,72 @@ async function render(scope: SettingsScope = "account") {
   await flush();
 }
 
-function byTestId<T extends HTMLElement>(testId: string): T {
-  const found = container.querySelector<T>(`[data-testid="${testId}"]`);
+function find<T extends HTMLElement = HTMLElement>(testId: string): T | null {
+  return document.querySelector<T>(`[data-testid="${testId}"]`);
+}
+
+function byTestId<T extends HTMLElement = HTMLElement>(testId: string): T {
+  const found = find<T>(testId);
   if (!found) throw new Error(`Missing element: ${testId}`);
   return found;
 }
 
-async function type(testId: string, value: string) {
-  const element = byTestId<HTMLInputElement | HTMLSelectElement>(testId);
-  const prototype =
-    element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+async function click(target: string | HTMLElement) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(element, value);
-    element.dispatchEvent(
-      new Event(element instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }),
+    (typeof target === "string" ? byTestId(target) : target).click();
+  });
+  await flush();
+}
+
+function rowNamed(name: string) {
+  return document.querySelector<HTMLElement>(
+    `[data-testid="vault-credential-row"][data-name="${name}"]`,
+  )!;
+}
+
+function editor() {
+  return find("vault-editor");
+}
+
+function detail() {
+  return find("vault-item-detail");
+}
+
+/** The editor's field labelled `label`, found through its label as a person would. */
+function field(label: string, within: HTMLElement | null = editor()) {
+  const labelled = [...(within?.querySelectorAll("label") ?? [])].find(
+    (item) => item.textContent === label,
+  );
+  if (!labelled) throw new Error(`Missing field: ${label}`);
+  return document.getElementById(labelled.htmlFor) as HTMLInputElement | HTMLSelectElement;
+}
+
+async function type(target: HTMLInputElement | HTMLSelectElement, value: string) {
+  const prototype =
+    target instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(target, value);
+    target.dispatchEvent(
+      new Event(target instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }),
     );
   });
 }
 
-async function click(testId: string) {
-  await act(async () => {
-    byTestId<HTMLButtonElement>(testId).click();
-  });
-  await flush();
+function buttonIn(within: HTMLElement | null, name: string) {
+  return [...(within?.querySelectorAll("button") ?? [])].find((item) => item.textContent === name);
+}
+
+/** Opens New and picks a kind from its menu. */
+async function startNew(kind: string) {
+  await click("vault-new");
+  await click(`vault-new-${kind}`);
+  expect(editor()).not.toBeNull();
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vault.list.mockReset().mockResolvedValue(rows);
-  vault.put.mockReset();
+  vault.put.mockReset().mockResolvedValue(rows[0]);
   vault.remove.mockReset().mockResolvedValue({ ok: true });
   vault.reveal.mockReset();
   container = document.createElement("div");
@@ -166,415 +204,262 @@ afterEach(async () => {
   await act(async () => root.unmount());
   queryClient.clear();
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-describe("VaultSettings", () => {
-  it("lists credential metadata and no values", async () => {
+describe("VaultSettings list", () => {
+  it("shows each item's title and what tells it apart, never a value", async () => {
     await render();
+    expect(
+      [...document.querySelectorAll('[data-testid="vault-credential-row"]')].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual([
+      "Ggithub.comocto@example.com",
+      "Visa ·· 4242Expires 08/30 · For travel",
+      "HomeAlex Rivera · Springfield",
+      "svc.example.comAPI key",
+      "deploy-token$DEPLOY_TOKEN",
+    ]);
+    expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
     expect(vault.list.mock.calls[0]?.[0]).toEqual({ scope: "account" });
-    const text = container.textContent ?? "";
-    expect(container.querySelectorAll('[data-testid="vault-credential-row"]')).toHaveLength(4);
-    for (const expected of [
-      "https://api.example.com",
-      "Bearer token",
-      'Header "X-Api-Key"',
-      "http://192.168.1.20:8080",
-      "Basic auth (admin)",
-      "Website login",
-    ]) {
-      expect(text).toContain(expected);
-    }
-    expect(container.querySelectorAll("input")).toHaveLength(0);
   });
 
-  it("shows only the add action until there is something to list", async () => {
+  it("shows only New until there is something to list", async () => {
     vault.list.mockResolvedValue([]);
     await render();
-    expect(byTestId("credential-add").textContent).toBe("Add credential");
-    expect(container.querySelector('[data-testid="vault-card"]')).toBeNull();
-    await click("credential-add");
-    const form = byTestId("vault-card").querySelector('[data-testid="credential-add-form"]');
-    expect(form).not.toBeNull();
-    // The form has its own save and cancel, so the add action steps aside while it is open.
-    expect(container.querySelector('[data-testid="credential-add"]')).toBeNull();
+    expect(find("vault-new")).not.toBeNull();
+    expect(find("vault-card")).toBeNull();
+    expect(find("vault-filter-all")).toBeNull();
+  });
+
+  it("lists the bots' email addresses in the account's vault only", async () => {
+    vault.list.mockResolvedValue([]);
+    bots.emailAddresses.mockResolvedValue({
+      domain: "bots.test",
+      addresses: [{ botId: "bot-1", botName: "Scout", address: "scout@bots.test" }],
+    });
+    await render("space");
+    expect(find("vault-bot-emails")).toBeNull();
+
+    await render();
+    expect(byTestId("vault-bot-emails").textContent).toContain("scout@bots.test");
+    expect(document.querySelector('button[aria-label="Copy scout@bots.test"]')).not.toBeNull();
+  });
+
+  it("filters by kind once there are two kinds, and searches once there are many", async () => {
+    vault.list.mockResolvedValue(rows.slice(0, 1));
+    await render();
+    expect(find("vault-filter-all")).toBeNull();
+    expect(document.querySelector('input[aria-label="Search Vault"]')).toBeNull();
+
+    vault.list.mockResolvedValue(rows);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    queryClient.clear();
+    await render();
+    expect(byTestId("vault-filter-all").textContent).toBe("All5");
+    expect(byTestId("vault-filter-card").textContent).toBe("Cards1");
+    await click("vault-filter-card");
+    expect(byTestId("vault-filter-card").getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll('[data-testid="vault-credential-row"]')).toHaveLength(1);
+    expect(rowNamed("visa")).not.toBeNull();
+
+    const many = Array.from({ length: 8 }, (_, index) =>
+      item({ name: `key-${index}`, title: `Key ${index}`, auth: { type: "command" } }),
+    );
+    vault.list.mockResolvedValue(many);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    queryClient.clear();
+    await render();
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search Vault"]')!;
+    await type(search, "key 3");
+    expect(
+      [...document.querySelectorAll('[data-testid="vault-credential-row"]')].map((row) =>
+        row.getAttribute("data-name"),
+      ),
+    ).toEqual(["key-3"]);
   });
 
   it("reads and writes the Space's own vault when scoped to the Space", async () => {
-    vault.put.mockResolvedValue(rows[0]);
     await render("space");
     expect(vault.list.mock.calls[0]?.[0]).toEqual({ scope: "space" });
-    await click("credential-replace-api");
-    await type("credential-replace-value", FAKE_VALUE);
-    await click("credential-replace-save");
-    expect(vault.put).toHaveBeenCalledWith({
-      scope: "space",
-      destination: { name: "api", origin: "https://api.example.com", auth: { type: "bearer" } },
-      value: FAKE_VALUE,
-    });
-    await click("credential-remove-custom");
-    await click("credential-remove-confirm-custom");
-    expect(vault.remove).toHaveBeenCalledWith({ scope: "space", name: "custom" });
+    await click(rowNamed("deploy-token"));
+    await click("vault-item-remove");
+    await click("vault-item-remove-confirm");
+    expect(vault.remove).toHaveBeenCalledWith({ scope: "space", name: "deploy-token" });
   });
+});
 
-  it("adds a header credential and clears the value, then refetches", async () => {
-    const savedHeader = rows[1];
-    if (!savedHeader) throw new Error("missing header fixture");
-    let resolvePut: (row: typeof savedHeader) => void = () => undefined;
-    vault.put.mockReturnValue(
-      new Promise((resolve) => {
-        resolvePut = resolve;
-      }),
-    );
+describe("VaultSettings new items", () => {
+  it("saves a card as one encoded value, named by the server and billed to a contact", async () => {
     await render();
-    await click("credential-add");
-    await type("credential-name", "custom");
-    await type("credential-origin", "https://svc.example.com");
-    await type("credential-auth-type", "header");
-    await type("credential-header-name", "X-Api-Key");
-    await type("credential-value", FAKE_VALUE);
-    expect(byTestId<HTMLInputElement>("credential-value").type).toBe("password");
-    expect(byTestId<HTMLInputElement>("credential-value").autocomplete).toBe("new-password");
-    await click("credential-add-save");
-    expect(byTestId<HTMLInputElement>("credential-value").value).toBe("");
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
-
-    await act(async () => {
-      resolvePut(savedHeader);
-    });
-    await flush();
-
+    await startNew("card");
+    await type(field("Card number"), "4242 4242 4242 4242");
+    expect(byTestId("vault-card-brand").textContent).toBe("Visa");
+    await type(field("Expiry"), "08/30");
+    await type(field("Security code"), "123");
+    await type(field("Billing address"), "home");
+    await click(buttonIn(editor(), "Save")!);
     expect(vault.put).toHaveBeenCalledWith({
       scope: "account",
-      destination: {
-        name: "custom",
-        origin: "https://svc.example.com",
-        auth: { type: "header", name: "X-Api-Key" },
-      },
-      value: FAKE_VALUE,
+      destination: { name: undefined, origin: "", auth: { type: "card" } },
+      value: encodeCardSecret({
+        number: "4242424242424242",
+        expMonth: 8,
+        expYear: 2030,
+        cvc: "123",
+        billing: "home",
+      }),
     });
     expect(vault.list).toHaveBeenCalledTimes(2);
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+    expect(editor()).toBeNull();
   });
 
-  it("clears the value and shows the server error when saving fails", async () => {
-    vault.put.mockRejectedValue(
-      new Error("Invalid credential destination — origin: Expected an HTTPS origin"),
-    );
+  it("saves a contact under its label, with a note added on request", async () => {
     await render();
-    await click("credential-add");
-    await type("credential-name", "router2");
-    await type("credential-origin", "http://192.168.1.21");
-    await type("credential-value", FAKE_VALUE);
-    await click("credential-add-save");
-
-    expect(vault.put).toHaveBeenCalledTimes(1);
-    expect(byTestId<HTMLInputElement>("credential-value").value).toBe("");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Invalid credential destination",
-    );
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+    await startNew("contact");
+    await type(field("Label"), "Office");
+    await type(field("Address"), "1 Main St");
+    await click(buttonIn(editor(), "Add a note")!);
+    await type(field("When to use"), "Deliveries");
+    await click(buttonIn(editor(), "Save")!);
+    expect(vault.put).toHaveBeenCalledWith({
+      scope: "account",
+      destination: { name: undefined, origin: "", auth: { type: "contact" } },
+      value: JSON.stringify({ line1: "1 Main St" }),
+      title: "Office",
+      note: "Deliveries",
+    });
   });
 
-  const loginRows = () => [
-    ...container.querySelectorAll<HTMLElement>('[data-testid="login-field"]'),
-  ];
-
-  async function setInput(input: HTMLInputElement, value: string) {
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  }
-
-  async function fillLoginRow(index: number, label: string, value: string) {
-    const row = () => loginRows()[index]!;
-    await setInput(row().querySelector<HTMLInputElement>('input[aria-label="Label"]')!, label);
-    await setInput(row().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value);
-  }
-
-  async function clickButton(row: HTMLElement, selector: string) {
-    await act(async () => row.querySelector<HTMLElement>(selector)!.click());
-  }
-
-  it("encodes a website login's fields with encodeLoginSecret", async () => {
-    vault.put.mockResolvedValue(rows[3]);
+  it("encodes a website login's fields, and can't save until each has a label and value", async () => {
     await render();
-    await click("credential-add");
-    await type("credential-name", "portal2");
-    await type("credential-origin", "https://portal.example.com");
-    await type("credential-auth-type", "login");
-
-    expect(
-      loginRows().map((row) => [
-        row.querySelector<HTMLInputElement>('input[aria-label="Label"]')!.value,
-        row.querySelector('[role="switch"]')!.getAttribute("aria-checked"),
-      ]),
-    ).toEqual([
-      ["Username", "false"],
-      ["Password", "true"],
-    ]);
-    await fillLoginRow(0, "Account number", " 12345678 ");
-    await fillLoginRow(1, "Password", FAKE_VALUE);
-    await act(async () => {
-      [...container.querySelectorAll("button")].find((b) => b.textContent === "Add field")!.click();
-    });
-    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
-    await fillLoginRow(2, "Postcode", "AB1 2CD");
-    expect(
-      loginRows()[2]!.querySelector<HTMLInputElement>('input[aria-label="Postcode"]')!.type,
-    ).toBe("password");
-    await clickButton(loginRows()[2]!, '[role="switch"]');
-    expect(
-      loginRows()[2]!.querySelector<HTMLInputElement>('input[aria-label="Postcode"]')!.type,
-    ).toBe("text");
-    await click("credential-add-save");
-
+    await startNew("login");
+    await type(field("Site"), "https://portal.example.com");
+    const values = editor()!.querySelectorAll<HTMLInputElement>(
+      '[data-testid="login-field"] input:not([aria-label="Label"])',
+    );
+    await type(values[0]!, "jamie");
+    expect(buttonIn(editor(), "Save")!.disabled).toBe(true);
+    await type(values[1]!, FAKE_VALUE);
+    await click(buttonIn(editor(), "Save")!);
     expect(vault.put).toHaveBeenCalledWith({
       scope: "account",
       destination: {
-        name: "portal2",
+        name: undefined,
         origin: "https://portal.example.com",
         auth: { type: "login" },
       },
       value: encodeLoginSecret({
         fields: [
-          { label: "Account number", value: "12345678", hidden: false },
+          { label: "Username", value: "jamie", hidden: false },
           { label: "Password", value: FAKE_VALUE, hidden: true },
-          { label: "Postcode", value: "AB1 2CD", hidden: false },
         ],
       }),
     });
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
   });
 
-  it("can't save a login until every field has its own label and a value", async () => {
+  it("adds a header credential, clears the value, and shows the server's error", async () => {
+    vault.put.mockRejectedValueOnce(new Error("Credential limit reached"));
     await render();
-    await click("credential-add");
-    await type("credential-name", "portal2");
-    await type("credential-origin", "https://portal.example.com");
-    await type("credential-auth-type", "login");
-    await fillLoginRow(0, "Code", "fake-code");
-    await fillLoginRow(1, "code", FAKE_VALUE);
-    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
-
-    await clickButton(loginRows()[1]!, '[aria-label="Remove"]');
-    expect(loginRows()).toHaveLength(1);
-    expect(loginRows()[0]!.querySelector('[aria-label="Remove"]')).toBeNull();
-    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(false);
-  });
-
-  it("replaces a value on the same destination", async () => {
-    vault.put.mockResolvedValue(rows[2]);
-    await render();
-    const replace = byTestId<HTMLButtonElement>("credential-replace-router");
-    expect(replace.getAttribute("aria-label")).toBe("Replace value");
-    expect(replace.textContent).toBe("");
-    expect(replace.querySelector("svg")).not.toBeNull();
-    const remove = byTestId<HTMLButtonElement>("credential-remove-router");
-    expect(remove.getAttribute("aria-label")).toBe("Remove");
-    expect(remove.textContent).toBe("");
-    await click("credential-replace-router");
-    await type("credential-replace-value", FAKE_VALUE);
-    await click("credential-replace-save");
-
+    await startNew("api_key");
+    await type(field("Site"), "https://api.example.com");
+    await type(field("Type"), "header");
+    await type(field("Header name"), "X-Api-Key");
+    await type(field("Value"), FAKE_VALUE);
+    await click(buttonIn(editor(), "Save")!);
     expect(vault.put).toHaveBeenCalledWith({
       scope: "account",
       destination: {
-        name: "router",
-        origin: "http://192.168.1.20:8080",
-        auth: { type: "basic", username: "admin" },
+        name: undefined,
+        origin: "https://api.example.com",
+        auth: { type: "header", name: "X-Api-Key" },
       },
       value: FAKE_VALUE,
     });
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+    expect(editor()?.textContent).toContain("Credential limit reached");
+    expect((field("Value") as HTMLInputElement).value).toBe("");
+    expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
   });
 
-  it("shows an unreadable saved row with remove but no replace", async () => {
-    vault.list.mockResolvedValue([
-      {
-        name: "Legacy Name",
-        origin: "https://legacy.example.com",
-        auth: null,
-        createdAt: stamp,
-        updatedAt: stamp,
-      },
-    ]);
+  it("names a variable as it is exported, and refuses a reserved one", async () => {
     await render();
-    const row = byTestId("vault-credential-row");
-    expect(row.textContent).toContain("These saved settings can't be read.");
-    expect(container.querySelector('[data-testid="credential-replace-Legacy Name"]')).toBeNull();
-    await click("credential-remove-Legacy Name");
-    expect(container.textContent).toContain("Remove Legacy Name?");
-    await click("credential-remove-confirm-Legacy Name");
-    expect(vault.remove).toHaveBeenCalledWith({ scope: "account", name: "Legacy Name" });
-    expect(vault.list).toHaveBeenCalledTimes(2);
-  });
-
-  it("hides replace and shows the unreadable row when a readable auth has an invalid name", async () => {
-    vault.list.mockResolvedValue([
-      {
-        name: "Legacy Name",
-        origin: "https://legacy.example.com",
-        auth: { type: "bearer" },
-        createdAt: stamp,
-        updatedAt: stamp,
-      },
-    ]);
-    await render();
-    const row = byTestId("vault-credential-row");
-    expect(row.textContent).toContain("These saved settings can't be read.");
-    expect(container.querySelector('[data-testid="credential-replace-Legacy Name"]')).toBeNull();
-    await click("credential-remove-Legacy Name");
-    expect(container.textContent).toContain("Remove Legacy Name?");
-    await click("credential-remove-confirm-Legacy Name");
-    expect(vault.remove).toHaveBeenCalledWith({ scope: "account", name: "Legacy Name" });
-    expect(vault.list).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps the add form open when save succeeds but list reload fails", async () => {
-    vault.put.mockResolvedValue(rows[0]);
-    vault.list.mockResolvedValueOnce(rows).mockRejectedValueOnce(new Error("list failed"));
-    await render();
-    await click("credential-add");
-    await type("credential-name", "api2");
-    await type("credential-origin", "https://api.example.com");
-    await type("credential-value", FAKE_VALUE);
-    await click("credential-add-save");
-
-    expect(vault.put).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[data-testid="credential-add-form"]')).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not load credentials.",
-    );
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
-  });
-
-  it("clears a typed replace value when opening remove on another row", async () => {
-    await render();
-    await click("credential-replace-api");
-    await type("credential-replace-value", FAKE_VALUE);
-    expect(byTestId<HTMLInputElement>("credential-replace-value").value).toBe(FAKE_VALUE);
-    await click("credential-remove-custom");
-    expect(container.querySelector('[data-testid="credential-replace-value"]')).toBeNull();
-    expect(container.textContent).toContain("Remove custom?");
-    // Protected value must not linger in any live input.
-    const leaked = Array.from(container.querySelectorAll("input, textarea")).some((input) =>
-      (input as HTMLInputElement).value.includes(FAKE_VALUE),
-    );
-    expect(leaked).toBe(false);
-  });
-
-  it("removes only after an explicit confirm", async () => {
-    await render();
-    await click("credential-remove-api");
-    expect(vault.remove).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Remove api?");
-    await click("credential-remove-confirm-api");
-    expect(vault.remove).toHaveBeenCalledWith({ scope: "account", name: "api" });
-    expect(vault.list).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("VaultSettings command variables", () => {
-  const commandRow = {
-    name: "netbird-setup-key",
-    origin: "",
-    auth: { type: "command" },
-    createdAt: stamp,
-    updatedAt: stamp,
-  };
-
-  it("adds a command variable with no origin and shows its derived name", async () => {
-    vault.put.mockResolvedValue(commandRow);
-    await render();
-    await click("credential-add");
-    await type("credential-origin", "https://leftover.example.com");
-    await type("credential-auth-type", "command");
-    expect(container.querySelector('[data-testid="credential-origin"]')).toBeNull();
-    await type("credential-name", "netbird-setup-key");
-    expect(byTestId("credential-command-variable").textContent).toContain("$NETBIRD_SETUP_KEY");
-    await type("credential-value", FAKE_VALUE);
-    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(false);
-    await click("credential-add-save");
-
+    await startNew("variable");
+    await type(field("Variable name"), "PATH");
+    await type(field("Value"), FAKE_VALUE);
+    expect(byTestId("vault-editor-variable-error").textContent).toContain("$PATH is reserved");
+    expect(buttonIn(editor(), "Save")!.disabled).toBe(true);
+    await type(field("Variable name"), "NETBIRD_SETUP_KEY");
+    await click(buttonIn(editor(), "Save")!);
     expect(vault.put).toHaveBeenCalledWith({
       scope: "account",
-      destination: { name: "netbird-setup-key", auth: { type: "command" } },
-      value: FAKE_VALUE,
-    });
-    expect(vault.put.mock.calls[0]![0].destination).not.toHaveProperty("origin");
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
-  });
-
-  it("shows the blocklist error and cannot save a reserved name", async () => {
-    await render();
-    await click("credential-add");
-    await type("credential-auth-type", "command");
-    await type("credential-name", "ld_preload");
-    await type("credential-value", FAKE_VALUE);
-    expect(byTestId("credential-command-variable-error").textContent).toContain(
-      "$LD_PRELOAD is reserved",
-    );
-    expect(container.querySelector('[data-testid="credential-command-variable"]')).toBeNull();
-    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
-    await act(async () => {
-      byTestId<HTMLFormElement>("credential-add-form").requestSubmit();
-    });
-    await flush();
-    expect(vault.put).not.toHaveBeenCalled();
-  });
-
-  it("lists a command variable with its variable name and replaces its value", async () => {
-    vault.list.mockResolvedValue([commandRow]);
-    vault.put.mockResolvedValue(commandRow);
-    await render();
-    const row = byTestId("vault-credential-row");
-    expect(row.textContent).toContain("Command variable$NETBIRD_SETUP_KEY");
-    await click("credential-replace-netbird-setup-key");
-    await type("credential-replace-value", FAKE_VALUE);
-    await click("credential-replace-save");
-    expect(vault.put).toHaveBeenCalledWith({
-      scope: "account",
-      destination: { name: "netbird-setup-key", auth: { type: "command" } },
+      destination: { name: "netbird_setup_key", origin: "", auth: { type: "command" } },
       value: FAKE_VALUE,
     });
   });
 });
 
-describe("VaultSettings show", () => {
+describe("VaultSettings item details", () => {
   const confirmationRequired = Object.assign(new Error("Confirm it's you"), {
     code: "IDENTITY_CONFIRMATION_REQUIRED",
   });
-  const text = (testId: string) =>
-    container.querySelector(`[data-testid="${testId}"]`)?.textContent ?? null;
-  const shown = () => container.querySelector('[data-testid="credential-revealed"]');
 
-  it("shows a value with a copy button, then hides it on request", async () => {
+  it("shows a contact in full and a card's billing contact by its title", async () => {
+    await render();
+    await click(rowNamed("home"));
+    expect(detail()?.textContent).toContain("Alex Rivera");
+    expect(detail()?.textContent).toContain("+1 555 0100");
+    expect(vault.reveal).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    await click(rowNamed("visa"));
+    expect(detail()?.textContent).toContain("•••• 4242");
+    expect(detail()?.textContent).toContain("Billing addressHome");
+    expect(detail()?.textContent).toContain("For travel");
+  });
+
+  it("shows a value after the person confirms it's them, and hides it again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    vault.reveal.mockResolvedValue({ value: FAKE_VALUE });
+    vault.reveal
+      .mockRejectedValueOnce(confirmationRequired)
+      .mockResolvedValueOnce({ value: FAKE_VALUE });
     await render();
-    expect(byTestId("credential-show-api").getAttribute("aria-label")).toBe("Show");
-    await click("credential-show-api");
-    expect(vault.reveal).toHaveBeenCalledWith({ scope: "account", name: "api" });
-    expect(text("credential-revealed-value")).toBe(FAKE_VALUE);
-    expect(byTestId("credential-show-api").getAttribute("aria-label")).toBe("Hide");
+    await click(rowNamed("custom"));
+    expect(detail()?.textContent).toContain('Header "X-Api-Key"');
+    await click("vault-item-show");
+    await click("identity-confirm");
+    expect(vault.reveal).toHaveBeenCalledWith({ scope: "account", name: "custom" });
+    expect(byTestId("vault-item-value").textContent).toContain(FAKE_VALUE);
     // A shown value never lands in the query cache.
     const cached = queryClient
       .getQueryCache()
       .getAll()
       .map((query) => query.state.data);
     expect(JSON.stringify(cached)).not.toContain(FAKE_VALUE);
-
     await act(async () => {
-      shown()?.querySelector<HTMLButtonElement>('[aria-label="Copy"]')?.click();
+      byTestId("vault-item-value").querySelector<HTMLButtonElement>('[aria-label="Copy"]')!.click();
     });
     expect(writeText).toHaveBeenCalledWith(FAKE_VALUE);
+    await act(async () => {
+      vi.advanceTimersByTime(REVEAL_MS);
+    });
+    expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
+  });
 
-    await click("credential-show-api");
-    expect(shown()).toBeNull();
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+  it("shows nothing and no error when the confirmation is dismissed", async () => {
+    vault.reveal.mockRejectedValueOnce(confirmationRequired);
+    await render();
+    await click(rowNamed("custom"));
+    await click("vault-item-show");
+    await click("identity-cancel");
+    expect(detail()?.querySelector('[role="alert"]')).toBeNull();
+    expect(byTestId("vault-item-value").textContent).toContain("••••");
   });
 
   it("shows each field of a website login with its label", async () => {
@@ -585,92 +470,85 @@ describe("VaultSettings show", () => {
       ],
     });
     await render();
-    await click("credential-show-portal");
+    await click(rowNamed("github"));
+    await click("vault-item-show");
     expect(
-      [...container.querySelectorAll('[data-testid="credential-revealed-field"]')].map(
-        (field) => field.parentElement!.textContent,
+      [...document.querySelectorAll('[data-testid="vault-item-field"]')].map(
+        (row) => row.textContent,
       ),
     ).toEqual(["Usernamejamie", `PIN${FAKE_VALUE}`]);
   });
 
-  it("asks the person to confirm it's them, then retries", async () => {
-    vault.reveal
-      .mockRejectedValueOnce(confirmationRequired)
-      .mockResolvedValueOnce({ value: FAKE_VALUE });
+  it("edits a card from its revealed value", async () => {
+    vault.reveal.mockResolvedValue({
+      card: { number: "4242424242424242", expMonth: 8, expYear: 2030, cvc: "123" },
+    });
     await render();
-    await click("credential-show-api");
-    expect(byTestId("identity-dialog")).toBeTruthy();
-    expect(container.innerHTML).not.toContain(FAKE_VALUE);
-    await click("identity-confirm");
-    expect(vault.reveal).toHaveBeenCalledTimes(2);
-    expect(text("credential-revealed-value")).toBe(FAKE_VALUE);
-    expect(container.querySelector('[data-testid="identity-dialog"]')).toBeNull();
-  });
-
-  it("shows nothing and no error when the confirmation is dismissed", async () => {
-    vault.reveal.mockRejectedValue(confirmationRequired);
-    await render();
-    await click("credential-show-api");
-    await click("identity-cancel");
-    expect(vault.reveal).toHaveBeenCalledTimes(1);
-    expect(shown()).toBeNull();
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-  });
-
-  it("hides the value after a while and when another row action opens", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      vault.reveal.mockResolvedValue({ value: FAKE_VALUE });
-      await render();
-      await click("credential-show-api");
-      expect(text("credential-revealed-value")).toBe(FAKE_VALUE);
-      await act(async () => {
-        vi.advanceTimersByTime(REVEAL_MS);
-      });
-      expect(shown()).toBeNull();
-
-      await click("credential-show-api");
-      expect(text("credential-revealed-value")).toBe(FAKE_VALUE);
-      await click("credential-replace-custom");
-      expect(shown()).toBeNull();
-      expect(container.innerHTML).not.toContain(FAKE_VALUE);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("drops a pending show without asking to confirm once another action opens", async () => {
-    let reject: (error: unknown) => void = () => undefined;
-    vault.reveal.mockReturnValueOnce(
-      new Promise((_resolve, rejectReveal) => {
-        reject = rejectReveal;
+    await click(rowNamed("visa"));
+    await click("vault-item-edit");
+    expect(detail()).toBeNull();
+    expect((field("Expiry") as HTMLInputElement).value).toBe("08/30");
+    await type(field("Name"), "Travel card");
+    await click(buttonIn(editor(), "Save")!);
+    expect(vault.put).toHaveBeenCalledWith({
+      scope: "account",
+      destination: { name: "visa", origin: "", auth: { type: "card" } },
+      value: encodeCardSecret({
+        number: "4242424242424242",
+        expMonth: 8,
+        expYear: 2030,
+        cvc: "123",
       }),
-    );
-    await render();
-    await click("credential-show-api");
-    expect(byTestId<HTMLButtonElement>("credential-show-custom").disabled).toBe(true);
-    await click("credential-replace-custom");
-    // Cancelling frees the other Show actions right away.
-    expect(byTestId<HTMLButtonElement>("credential-show-api").disabled).toBe(false);
-    await act(async () => reject(confirmationRequired));
-    await flush();
-    expect(container.querySelector('[data-testid="identity-dialog"]')).toBeNull();
-    expect(vault.reveal).toHaveBeenCalledTimes(1);
-    expect(byTestId("credential-replace-value")).toBeTruthy();
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+      title: "Travel card",
+      note: "For travel",
+    });
   });
 
-  it("offers no show on a row whose saved settings can't be read", async () => {
-    vault.list.mockResolvedValue([
-      {
-        name: "legacy",
-        origin: "https://legacy.example.com",
-        auth: null,
-        createdAt: stamp,
-        updatedAt: stamp,
+  it("keeps a key's saved value when an edit leaves it empty", async () => {
+    await render();
+    await click(rowNamed("custom"));
+    await click("vault-item-edit");
+    expect((field("Site") as HTMLInputElement).disabled).toBe(true);
+    await type(field("Name"), "Service");
+    await click(buttonIn(editor(), "Save")!);
+    expect(vault.put).toHaveBeenCalledWith({
+      scope: "account",
+      destination: {
+        name: "custom",
+        origin: "https://svc.example.com",
+        auth: { type: "header", name: "X-Api-Key" },
       },
+      title: "Service",
+      note: "",
+    });
+  });
+
+  it("removes only after an explicit confirm", async () => {
+    await render();
+    await click(rowNamed("deploy-token"));
+    await click("vault-item-remove");
+    expect(vault.remove).not.toHaveBeenCalled();
+    expect(detail()?.textContent).toContain("Remove deploy-token?");
+    await click("vault-item-remove-confirm");
+    expect(vault.remove).toHaveBeenCalledWith({ scope: "account", name: "deploy-token" });
+    expect(detail()).toBeNull();
+  });
+
+  it("offers only Remove on an item whose saved settings can't be read", async () => {
+    vault.list.mockResolvedValue([
+      item({ name: "broken", auth: null }),
+      item({ name: "Legacy Name", origin: "https://x.example.com", auth: { type: "bearer" } }),
     ]);
     await render();
-    expect(container.querySelector('[data-testid="credential-show-legacy"]')).toBeNull();
+    expect(rowNamed("broken").textContent).toContain("can't be read");
+    for (const name of ["broken", "Legacy Name"]) {
+      await click(rowNamed(name));
+      expect(find("vault-item-edit")).toBeNull();
+      expect(find("vault-item-show")).toBeNull();
+      expect(find("vault-item-remove")).not.toBeNull();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await render();
+    }
   });
 });

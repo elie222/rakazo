@@ -24,9 +24,13 @@ export interface MessagingInstallProvider {
   provider: string;
   capabilities: MessagingCapabilities;
   authorizeUrl(state: string): string;
-  exchange(
-    code: string,
-  ): Promise<{ workspaceId: string; workspaceName: string; credential: string }>;
+  /** `ownerId` is the workspace user who authorized the install, when the platform says. */
+  exchange(code: string): Promise<{
+    workspaceId: string;
+    workspaceName: string;
+    credential: string;
+    ownerId?: string;
+  }>;
   parseWebhook(
     request: Request,
   ): Promise<{ request: Request; workspaceId?: string; challenge?: string; uninstalled?: boolean }>;

@@ -5,6 +5,12 @@ import path from "node:path";
 import * as hostComputerServer from "@rakazo/adapters/host-computer-server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prepareHostComputer } from "./host-computer.js";
+import * as setupStore from "./setup-store.js";
+
+vi.mock("./setup-store.js", async (actual) => {
+  const store = await actual<typeof setupStore>();
+  return { ...store, writePrivateFile: vi.fn(store.writePrivateFile) };
+});
 
 describe("desktop local computer consent", () => {
   let root: string;
@@ -82,6 +88,18 @@ describe("desktop local computer consent", () => {
   it("keeps a later revocation when an earlier grant is still being persisted", async () => {
     computer.activate(true);
     await Promise.all([computer.grant(), computer.revoke()]);
+    expect(computer.isEnabled()).toBe(false);
+    await computer.close();
+    computer = await prepareHostComputer(root);
+    computer.activate(true);
+    expect(computer.isEnabled()).toBe(false);
+  });
+
+  it("stays off after a relaunch when saving the revocation fails", async () => {
+    computer.activate(true);
+    await computer.grant();
+    vi.mocked(setupStore.writePrivateFile).mockRejectedValueOnce(new Error("Permission denied"));
+    await computer.revoke();
     expect(computer.isEnabled()).toBe(false);
     await computer.close();
     computer = await prepareHostComputer(root);

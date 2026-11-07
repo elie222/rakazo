@@ -5,8 +5,8 @@ import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
-import { modelLabel } from "./fleet-tools.js";
-import { connectedModelChoices, resolveModelChoice, words } from "./model-choice.js";
+import { botModelLabel } from "./fleet-tools.js";
+import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
 import { createVoiceProvider } from "./voice-factory.js";
@@ -17,6 +17,7 @@ export type OwnBotSettingsRow = {
   instructions: string;
   color: string;
   notifyOnFinish: boolean;
+  dailyCheckIns: boolean;
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
@@ -26,12 +27,27 @@ export type OwnBotSettingsRow = {
 
 /** Ids listed per connected provider; the rest are reachable by name. */
 const MODELS_PER_PROVIDER = 15;
+/** Largest instructions page a settings read returns; the rest come on request by offset. */
+const INSTRUCTIONS_PAGE_SIZE = 8_000;
+/**
+ * Ceiling for the whole serialized result of a paged read. The page competes with the description
+ * and JSON escaping for the same budget, so the page shrinks until the result fits — with
+ * headroom under the generic tool-result cut.
+ */
+const SERIALIZED_PAGE_LIMIT = 10_000;
+
+/** A page must not end inside a UTF-16 surrogate pair. */
+const endsWholeCharacter = (text: string, end: number) => {
+  const last = text.charCodeAt(end - 1);
+  return last < 0xd800 || last > 0xdbff;
+};
 
 /** `update_bot` with no fields: this bot's settings and the values it may set. */
 export async function readOwnBotSettings(
   deps: FleetPrepareDeps,
   scope: Pick<Actor, "userId" | "spaceId">,
   bot: OwnBotSettingsRow,
+  instructionsOffset = 0,
 ) {
   const modelDeps = { prisma: deps.prisma, ...deps.modelChange };
   const effective =
@@ -50,13 +66,17 @@ export async function readOwnBotSettings(
     ids.push(`${choice.provider}/${choice.id}`);
     providers.set(choice.providerName, ids);
   }
-  return {
+  const settings = (
+    instructions: string,
+    paging: { length: number; nextOffset: number | null } | null,
+  ) => ({
     name: bot.name,
     description: bot.description,
-    instructions: bot.instructions,
+    instructions,
     avatar: bot.color.startsWith("data:image/") ? "image" : bot.color,
     notifyOnFinish: bot.notifyOnFinish,
-    model: `${modelLabel(effective.provider, effective.model)}${bot.modelId ? "" : " (default)"}`,
+    dailyCheckIns: bot.dailyCheckIns,
+    model: botModelLabel(bot, effective),
     thinkingLevel: bot.thinkingLevel ?? "default",
     readAloud: bot.autoSpeak,
     voice: bot.voiceId ?? "default",
@@ -66,7 +86,44 @@ export async function readOwnBotSettings(
       ...(ids.length > MODELS_PER_PROVIDER ? { more: ids.length - MODELS_PER_PROVIDER } : {}),
     })),
     thinkingLevels: levels?.allowed ?? ThinkingLevelSchema.options,
-  };
+    ...(paging
+      ? {
+          instructionsLength: paging.length,
+          instructionsOffset,
+          instructionsNextOffset: paging.nextOffset,
+        }
+      : {}),
+  });
+  const whole = settings(bot.instructions, null);
+  if (JSON.stringify(whole).length <= SERIALIZED_PAGE_LIMIT) return whole;
+  const total = bot.instructions.length;
+  const paged = (end: number) =>
+    settings(bot.instructions.slice(instructionsOffset, end), {
+      length: total,
+      nextOffset: end < total ? end : null,
+    });
+  // Serialized length only grows as the page grows, so the largest fitting end is a search.
+  let low = instructionsOffset + 1;
+  let high = Math.min(instructionsOffset + INSTRUCTIONS_PAGE_SIZE, total);
+  let end = low;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (JSON.stringify(paged(mid)).length <= SERIALIZED_PAGE_LIMIT) {
+      end = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  if (end < total && !endsWholeCharacter(bot.instructions, end)) end -= 1;
+  // The rest of the settings can leave no room for any instructions; a page that does not
+  // advance would send the model back to the same offset forever.
+  if (end <= instructionsOffset || JSON.stringify(paged(end)).length > SERIALIZED_PAGE_LIMIT) {
+    return {
+      error: "Your settings are too large to read your instructions: shorten your description.",
+    };
+  }
+  return paged(end);
 }
 
 /** The voices the settings screen offers: those of the user's default voice connection here. */
@@ -95,7 +152,6 @@ export async function listDefaultVoices(
 }
 
 const VOICES_SHOWN = 10;
-
 /** A voice by id or name as people say it; "default" follows the account's voice. */
 export function resolveVoiceChoice(
   voices: readonly VoiceInfo[],
@@ -123,8 +179,8 @@ export function resolveVoiceChoice(
   return {
     ok: false,
     error: matches.length
-      ? `"${query}" matches several voices. Ask the user which one: ${named(matches)}.`
-      : `No voice matches "${query}". Voices: ${named(voices)}.`,
+      ? `"${echoedQuery(query)}" matches several voices. Ask the user which one: ${named(matches)}.`
+      : `No voice matches "${echoedQuery(query)}". Voices: ${named(voices)}.`,
   };
 }
 

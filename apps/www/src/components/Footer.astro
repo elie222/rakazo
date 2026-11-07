@@ -10,14 +10,15 @@ import {
   type Locale,
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
+import { INTEGRATION_PLATFORMS_PATH } from "../integration-platforms/shared";
+import { SANDBOXES_PATH } from "../sandboxes";
+import { VOICE_PROVIDERS_PATH } from "../voice-providers/shared";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
-  ANDROID_APK_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
-  IOS_APP_URL,
   PLUGIN_SUBMIT_PATH,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
@@ -57,9 +58,11 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   {
     heading: linkLabels.product,
     links: [
-      { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
-      { href: ANDROID_APK_URL, label: linkLabels.androidApp },
+      { href: "/download/", label: linkLabels.download },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: SANDBOXES_PATH, label: linkLabels.sandboxes },
+      { href: INTEGRATION_PLATFORMS_PATH, label: linkLabels.integrationPlatforms },
+      { href: VOICE_PROVIDERS_PATH, label: linkLabels.voiceProviders },
       { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
       { href: GITHUB_URL, label: "GitHub", external: true },

@@ -1,29 +1,20 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
-import {
-  compatibleThinkingLevels,
-  MODEL_SEARCH_THRESHOLD,
-  matchesSearchQuery,
-  toggleEnabledModelId,
-} from "@rakazo/core";
+import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
   Disclosure,
   Input,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
   Label,
+  ListSearchInput,
   ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
-import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -42,6 +33,7 @@ export function CompatibleModelFields({
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
+  endpointPreset,
   invalidatePreflight,
   maxImagesPerPrompt,
   maxTokens,
@@ -83,6 +75,7 @@ export function CompatibleModelFields({
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
+  | "endpointPreset"
   | "invalidatePreflight"
   | "maxImagesPerPrompt"
   | "maxTokens"
@@ -118,27 +111,20 @@ export function CompatibleModelFields({
     xhigh: t`Extra high`,
     max: t`Max`,
   } as const;
-  const [query, setQuery] = useState("");
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: visibleRows,
+    hiddenSelectedCount,
+  } = useListSearch(compatibleRows, {
+    text: (id) => id,
+    id: (id) => id,
+    selectedIds: [modelId, ...enabledModelIds],
+  });
   const hasSearchQuery = query.trim().length > 0;
-  const visibleRows = useMemo(
-    () =>
-      hasSearchQuery
-        ? compatibleRows.filter((id) => matchesSearchQuery(query, id))
-        : compatibleRows,
-    [compatibleRows, hasSearchQuery, query],
-  );
-  const hiddenSelectedCount = useMemo(
-    () =>
-      hasSearchQuery
-        ? compatibleRows.filter(
-            (id) =>
-              (id === modelId || enabledModelIds.includes(id)) && !matchesSearchQuery(query, id),
-          ).length
-        : 0,
-    [compatibleRows, enabledModelIds, hasSearchQuery, modelId, query],
-  );
   return (
-    <div className="block text-[13.5px] text-muted-foreground">
+    <div className="block text-body text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
         <Trans>Server URL</Trans>
         <Input
@@ -162,9 +148,9 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!endpointPreset ? (
         <Disclosure
-          className="mt-3 text-[13.5px] text-muted-foreground"
+          className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}
         >
           <p className="mt-1">
@@ -248,22 +234,16 @@ export function CompatibleModelFields({
         )}
         {compatibleRows.length || hasSearchQuery ? (
           <div className="mt-3 grid gap-2" data-testid="compatible-model-rows">
-            {compatibleRows.length > MODEL_SEARCH_THRESHOLD || hasSearchQuery ? (
-              <InputGroup className="h-10">
-                <InputGroupAddon>
-                  <Search size={16} strokeWidth={1.8} aria-hidden="true" />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  aria-label={t`Search models`}
-                  placeholder={t`Search`}
-                  autoComplete="off"
-                />
-              </InputGroup>
+            {showSearch ? (
+              <ListSearchInput
+                query={query}
+                setQuery={setQuery}
+                label={t`Search models`}
+                placeholder={t`Search`}
+              />
             ) : null}
             {hiddenSelectedCount > 0 ? (
-              <p className="text-[13px] leading-[1.5] text-muted-foreground">
+              <p className="text-body-sm leading-[1.5] text-muted-foreground">
                 <Plural
                   value={hiddenSelectedCount}
                   one="# selected model is hidden by your search."
@@ -296,7 +276,7 @@ export function CompatibleModelFields({
           <Button
             type="button"
             variant="link"
-            className="mt-2 h-auto px-0 text-[13px] leading-[1.5] text-muted-foreground underline"
+            className="mt-2 h-auto px-0 text-body-sm leading-[1.5] text-muted-foreground underline"
             onClick={() => {
               invalidatePreflight();
               stageCompatibleModelId(probeModels[0] ?? "");

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
@@ -40,7 +41,15 @@ export async function prepareHostComputer(userDataDir: string) {
   let consentIntent = 0;
   let consentWrites: Promise<void> = Promise.resolve();
   function persistConsent(value: string) {
-    const write = consentWrites.then(() => writePrivateFile(consentFile, value));
+    const write = consentWrites.then(() =>
+      writePrivateFile(consentFile, value).catch(async (error) => {
+        if (value) throw error;
+        // A stale token left on disk would re-enable the host computer on the next launch.
+        await rm(consentFile, { force: true }).catch(() => {
+          throw error;
+        });
+      }),
+    );
     consentWrites = write.catch(() => undefined);
     return write;
   }

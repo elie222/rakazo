@@ -6,10 +6,10 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GroupSettingsScreen from "../app/group-settings";
+import { useBotProfileActions } from "../components/bot-profile-menu";
 import { createHomeStyles } from "../components/home-styles";
 import { InboxListFooter } from "../components/inbox-render-item";
 import { ArchivedChatsRow, CompactRowsContext } from "../components/inbox-rows";
-import { useThreadHeader } from "../components/thread/thread-header";
 import type { loadAllArchivedChats } from "./archived-chats";
 import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "./archived-chats";
 import { useArchivedCount } from "./use-archived-count";
@@ -86,6 +86,9 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("./native", () => ({
   native: { tertiaryLabel: "tertiary" },
@@ -301,19 +304,11 @@ describe("archived count", () => {
   });
 });
 
-describe("thread menu archive notifications", () => {
+describe("bot profile menu archive notifications", () => {
   function renderActions() {
     let actions: { text: string; onPress: () => void }[] = [];
     function Header() {
-      actions = useThreadHeader({
-        botId: "bot-b",
-        inGroup: false,
-        readOnly: false,
-        displayName: "Bot",
-        composingBots: "",
-        styles: { headerActions: {} } as Parameters<typeof useThreadHeader>[0]["styles"],
-        onCleared: () => undefined,
-      }).botActions;
+      actions = useBotProfileActions("bot-b", "Bot");
       return null;
     }
     act(() => root.render(<Header />));

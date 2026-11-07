@@ -2,46 +2,149 @@
   {
     "id": "auth",
     "title": "Auth",
-    "flow": "flows/auth.yaml"
+    "flow": "flows/auth.yaml",
+    "screens": ["sign-in", "server"]
   },
   {
     "id": "onboarding",
     "title": "Onboarding",
-    "flow": "flows/onboarding.yaml"
+    "flow": "flows/onboarding.yaml",
+    "screens": ["index", "artifacts"]
   },
   {
     "id": "inbox",
     "title": "Inbox",
-    "flow": "flows/inbox.yaml"
+    "flow": "flows/inbox.yaml",
+    "screens": ["index", "artifacts"]
   },
   {
     "id": "thread",
     "title": "Thread",
-    "flow": "flows/thread.yaml"
+    "flow": "flows/thread.yaml",
+    "screens": ["thread", "group-thread", "artifact", "invite"]
   },
   {
     "id": "thread-errors",
     "title": "Thread error recovery",
-    "flow": "flows/thread-errors.yaml"
+    "flow": "flows/thread-errors.yaml",
+    "screens": ["thread"]
+  },
+  {
+    "id": "cards",
+    "title": "Request cards",
+    "flow": "flows/cards.yaml",
+    "screens": ["thread"]
   },
   {
     "id": "search",
     "title": "Search",
-    "flow": "flows/search.yaml"
+    "flow": "flows/search.yaml",
+    "screens": ["search"]
   },
   {
     "id": "compose",
     "title": "Compose",
-    "flow": "flows/compose.yaml"
+    "flow": "flows/compose.yaml",
+    "screens": ["new-space", "new-group"]
   },
   {
     "id": "split-view",
     "title": "Split view",
-    "flow": "flows/split-view.yaml"
+    "flow": "flows/split-view.yaml",
+    "screens": ["thread"]
   },
   {
     "id": "settings",
     "title": "Settings",
-    "flow": "flows/settings.yaml"
+    "flow": "flows/settings.yaml",
+    "screens": [
+      "account",
+      "change-password",
+      "models",
+      "integrations",
+      "voice",
+      "ai-data-sharing",
+      "routine",
+      "routine-runs",
+      "bot-settings",
+      "group-settings",
+      "computer",
+      "language",
+      "artifacts"
+    ]
+  },
+  {
+    "id": "models",
+    "title": "Models",
+    "flow": "flows/models.yaml",
+    "screens": ["models", "model-picker", "model-connection"]
+  },
+  {
+    "id": "bots",
+    "title": "Bots",
+    "flow": "flows/bots.yaml",
+    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+  },
+  {
+    "id": "files",
+    "title": "Files",
+    "flow": "flows/files.yaml",
+    "screens": ["artifact", "image"]
+  },
+  {
+    "id": "skills",
+    "title": "Skills",
+    "flow": "flows/skills.yaml",
+    "screens": ["skills", "skill", "plugin", "bot-templates", "bot-template"]
+  },
+  {
+    "id": "memory",
+    "title": "Memory",
+    "flow": "flows/memory.yaml",
+    "screens": ["memory", "memory-note"]
+  },
+  {
+    "id": "workspace",
+    "title": "Workspace",
+    "flow": "flows/workspace.yaml",
+    "screens": [
+      "board",
+      "approvals",
+      "approval-rule-add",
+      "vault",
+      "archived-bots",
+      "space",
+      "space-members"
+    ]
+  },
+  {
+    "id": "messaging",
+    "title": "Messaging",
+    "flow": "flows/messaging.yaml",
+    "screens": ["messaging", "team-conversation"]
+  },
+  {
+    "id": "billing",
+    "title": "Billing",
+    "flow": "flows/billing.yaml",
+    "screens": ["billing", "wallet", "spending-limit"]
+  },
+  {
+    "id": "new-account",
+    "title": "New account",
+    "flow": "flows/new-account.yaml",
+    "screens": ["signup-survey", "paywall"]
+  },
+  {
+    "id": "pages",
+    "title": "Pages",
+    "flow": "flows/pages.yaml",
+    "screens": ["page", "page-share", "pages"]
+  },
+  {
+    "id": "organizations",
+    "title": "Organizations",
+    "flow": "flows/organizations.yaml",
+    "screens": ["account", "new-organization", "paywall", "index", "organization"]
   }
 ]

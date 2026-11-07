@@ -9,19 +9,24 @@ test("agent-attached files appear as cards with previews and downloads", async (
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("write notes/result.txt and attach it to the thread");
+  await composer.fill("write path notes/result.txt and attach it to the thread says Result notes");
   await page.keyboard.press("Enter");
 
-  // Scope to ArtifactFileCard text (name + mime); sidebar bot status can also
-  // include the prompt path notes/result.txt once status syncs immediately.
-  const fileCard = page.getByRole("button", { name: /result\.txt text\/plain/ });
+  // Text files open in the viewer instead of downloading.
+  const fileCard = page.getByRole("button", { name: "Preview result.txt" });
   await expect(fileCard).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "current-file-card");
-
-  const downloadPromise = page.waitForEvent("download");
   await fileCard.click();
+
+  const textDialog = page.getByRole("dialog", { name: "result.txt" });
+  await expect(textDialog.getByText("Result notes")).toBeVisible();
+  await captureScreenshot(page, testInfo, "text-preview-open");
+  const downloadPromise = page.waitForEvent("download");
+  await textDialog.getByRole("button", { name: "Download result.txt" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("result.txt");
+  await page.keyboard.press("Escape");
+  await expect(textDialog).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(

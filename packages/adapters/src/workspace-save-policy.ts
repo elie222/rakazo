@@ -1,3 +1,6 @@
+import { constants } from "node:fs";
+import { lstat, open } from "node:fs/promises";
+import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 
@@ -82,11 +85,70 @@ export function shouldSkipPortableWorkspaceFile(relative: string, isDirectory = 
   );
 }
 
-/** Run find from the home with `.`; excluded directories are never descended into. */
-export function workspaceSaveFindExpression(): string {
-  const expressions = exclusions.map(({ pattern, kind }) => {
-    const type = kind === "directory" ? "-type d " : kind === "file" ? "-type f " : "";
-    return `\\( ${type}-regex ${shellQuote(`./${pattern}`)} \\)`;
-  });
-  return `-regextype posix-extended \\( ${expressions.join(" -o ")} \\) -prune -o -type f`;
+/** Cache Directory Tagging (bford.info/cachedir): build tools mark rebuildable output this way. */
+const CACHE_DIRECTORY_TAG = "CACHEDIR.TAG";
+const CACHE_DIRECTORY_SIGNATURE = "Signature: 8a477f597d28d172789f06886806bc55";
+const MAX_PRUNED_CACHE_DIRECTORIES = 1000;
+/** Real tags are a few lines; a larger file is not one, and the shell check never reads it. */
+const MAX_CACHE_DIRECTORY_TAG_BYTES = 1024;
+
+/** True when `directory` holds a cache directory tag; a save leaves the whole directory out. */
+export async function isTaggedCacheDirectory(directory: string): Promise<boolean> {
+  // Like find's -type f: a symlinked tag is not followed and a pipe named like one cannot block.
+  // Windows has no O_NOFOLLOW, so the type is checked first as well.
+  const tag = path.join(directory, CACHE_DIRECTORY_TAG);
+  const info = await lstat(tag).catch(() => null);
+  if (!info?.isFile() || info.size >= MAX_CACHE_DIRECTORY_TAG_BYTES) return false;
+  const handle = await open(
+    tag,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  ).catch(() => null);
+  if (!handle) return false;
+  try {
+    const expected = Buffer.from(CACHE_DIRECTORY_SIGNATURE);
+    const { buffer, bytesRead } = await handle.read(
+      Buffer.alloc(expected.length),
+      0,
+      expected.length,
+      0,
+    );
+    return bytesRead === expected.length && buffer.equals(expected);
+  } catch {
+    return false;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/**
+ * A shell command run from the home that walks the files a save keeps; append find actions such
+ * as `-printf '%P\\0'`. Excluded directories are never descended into. Tagged cache directories
+ * are found by a first walk, since one find cannot prune on a file inside the directory without
+ * starting a process per directory; the second walk reads the directory entries the first cached.
+ */
+export function workspaceSaveFindCommand(): string {
+  const excluded = exclusions
+    .map(({ pattern, kind }) => {
+      const type = kind === "directory" ? "-type d " : kind === "file" ? "-type f " : "";
+      return `\\( ${type}-regex ${shellQuote(`./${pattern}`)} \\)`;
+    })
+    .join(" -o ");
+  const find = "find . -regextype posix-extended";
+  const script = [
+    // Errors only cost a missed tag, which saves that directory; the second walk reports them.
+    // Like isTaggedCacheDirectory, only a tag that starts with the signature counts.
+    // A name with a newline cannot be listed one per line, so its directory is kept. The home
+    // itself is never pruned, and past the cap the remaining tagged directories are kept so the
+    // final find's arguments stay bounded.
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f -size -${MAX_CACHE_DIRECTORY_TAG_BYTES}c ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
+    "n=$#",
+    "IFS='\n'",
+    "set -f",
+    'for dir in $tags; do set -- "$@" -o -path "$dir"; done',
+    'set -- "$@" \\) \\) -prune -o -type f',
+    // Moves the caller's actions after the pruned directories.
+    'while [ "$n" -gt 0 ]; do set -- "$@" "$1"; shift; n=$((n - 1)); done',
+    `exec ${find} \\( ${excluded} -o -type d \\( -false "$@"`,
+  ].join("\n");
+  return `sh -c ${shellQuote(script)} workspace-save`;
 }

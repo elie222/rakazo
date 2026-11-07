@@ -1,6 +1,10 @@
 import { normalizeRunError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { parseRunDiagnostic, runErrorActionLabel } from "./run-error-presentation";
+import { runErrorActionLabel, runErrorDiagnostic } from "./run-error-presentation";
+
+function parseRunDiagnostic(raw: string, locale: string, now = Date.now()) {
+  return runErrorDiagnostic(normalizeRunError(raw, undefined, locale, now), locale);
+}
 
 describe("readable provider diagnostics", () => {
   it.each(["", "403: "])("parses JSON with prefix %s", (prefix) => {
@@ -67,7 +71,7 @@ describe("the one recovery action", () => {
     ['401: {"message":"Invalid API key"}', "Replace key"],
     [
       '403: {"message":"Key limit exceeded (weekly limit)","metadata":{"limit_source":"openrouter_key_limit"}}',
-      "Add Model",
+      "Add model",
     ],
     ["Request timed out.", null],
     ['429: {"message":"Too many requests"}', null],

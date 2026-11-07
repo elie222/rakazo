@@ -113,6 +113,23 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   await expect.poll(async () => (await rpc<unknown[]>(page, "models/backups", {})).length).toBe(1);
   await mainList.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-5-backup-added");
+
+  // A bot that keeps its own model sits behind a small count by the Main model heading.
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<Record<string, unknown>> };
+    const [first, ...rest] = body.json;
+    const pinned = first ? [{ ...first, modelProvider: "openrouter", modelId: firstModel }] : [];
+    await route.fulfill({ response, json: { ...body, json: [...pinned, ...rest] } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const bots = page.getByTestId("space-bots-model");
+  await expect(bots).toHaveText("1");
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-6-bot-own-model");
+  await bots.click();
+  await expect(page.getByRole("button", { name: "Use main model", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-7-bot-own-model-open");
 });
 
 function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -137,13 +154,23 @@ async function fulfillWithoutModelStep(route: Route) {
 }
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
+  let expandedModels = false;
   const completionBodies: Array<Record<string, unknown>> = [];
   const completionHeaders: Array<string | string[] | undefined> = [];
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
-        JSON.stringify({ object: "list", data: [{ id: LOCAL_MODEL_ID }, { id: SECOND_MODEL_ID }] }),
+        JSON.stringify({
+          object: "list",
+          data: [
+            { id: LOCAL_MODEL_ID },
+            { id: SECOND_MODEL_ID },
+            ...(expandedModels
+              ? Array.from({ length: 9 }, (_, index) => ({ id: `fixture-extra-${index}` }))
+              : []),
+          ],
+        }),
       );
       return;
     }
@@ -214,6 +241,12 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     if (skipModelStep) await page.unroute("**/rpc/me", fulfillWithoutModelStep);
 
     await openUserSettings(page, "models");
+    await page.getByRole("button", { name: "Add provider", exact: true }).click();
+    const providerSearch = page.getByRole("combobox", { name: "Add provider", exact: true });
+    await expect(providerSearch).toBeVisible();
+    await providerSearch.fill("compatible");
+    await captureScreenshot(page, testInfo, "add-provider-list-search");
+    await providerSearch.press("Escape");
     await openModelConnection(page, "OpenAI-compatible");
     await expect(
       page.getByText("Paste the OpenAI-compatible address", { exact: false }),
@@ -242,6 +275,17 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
+    expandedModels = true;
+    await page.getByRole("button", { name: "Find models" }).click();
+    const modelSearch = page.getByRole("textbox", { name: "Search models", exact: true });
+    await expect(modelSearch).toBeVisible();
+    await captureScreenshot(page, testInfo, "compatible-model-list-search");
+    await modelSearch.fill("fixture-extra-8");
+    await expect(page.getByText("1 selected model is hidden by your search.")).toBeVisible();
+    await captureScreenshot(page, testInfo, "compatible-model-list-search-filtered");
+    await modelSearch.fill("");
+    expandedModels = false;
+    await page.getByRole("button", { name: "Find models" }).click();
     await expect(page.getByRole("checkbox", { name: LOCAL_MODEL_ID })).toBeChecked();
     await page.getByRole("checkbox", { name: SECOND_MODEL_ID }).check();
     await page.getByText("Advanced", { exact: true }).click();

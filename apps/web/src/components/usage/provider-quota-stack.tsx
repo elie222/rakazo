@@ -1,9 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  compatibleConnectionName,
-  connectionUsageGroups,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
-} from "@rakazo/contracts";
+import { connectionUsageGroups, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
 import { modelUsageRoleRank, sortModelUsageEntries } from "@rakazo/core";
 import {
@@ -71,7 +67,7 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
           );
     const label =
       credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? compatibleConnectionName(credential.baseUrl, providerName)
+        ? (credential.endpointName ?? providerName)
         : providerName;
     const accountLabel =
       credential.label.trim() && credential.label.trim() !== label

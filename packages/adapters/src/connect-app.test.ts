@@ -89,6 +89,9 @@ describe("connect_app execution", () => {
     ]);
     expect(f.catalog).toHaveBeenCalledWith(f.context, "GMAIL");
     expect(f.deps.events.notify).toHaveBeenCalledWith("chat", 1, "run");
+    expect(f.deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
   it("does not accept model card objects or unknown apps", async () => {
     const f = fixture();

@@ -1,7 +1,6 @@
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
 import { canonicalPiProviderId } from "./model-provider.js";
-import { compatibleConnectionName } from "./openai-compatible-ui.js";
 
 export type ConnectedBackupOption = ModelBackupChoice & {
   label: string;
@@ -33,14 +32,14 @@ export function modelRoleChoiceKey(
  * does not already say which provider it is (a renamed key or a signed-in account).
  */
 export function connectionDisplayName(
-  credential: Pick<ModelCredential, "provider" | "label" | "baseUrl">,
+  credential: Pick<ModelCredential, "provider" | "label" | "endpointName">,
   providerName: string,
   /** Other names a default label may carry, such as the catalog's "Anthropic" for "Claude subscription". */
   defaultNames: readonly string[] = [],
 ): string {
   const provider =
     credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? compatibleConnectionName(credential.baseUrl, providerName)
+      ? (credential.endpointName ?? providerName)
       : providerName;
   const label = credential.label.trim();
   if (
@@ -70,6 +69,8 @@ export function withConnectionName(label: string, connection: string): string {
 export function connectedBackupOptions(
   catalog: ModelCatalogEntry[],
   credentials: ModelCredential[],
+  /** Screen work needs a model that accepts images, on a connection of the member's own. */
+  computerUse = false,
 ): ConnectedBackupOption[] {
   const connections = new Map<string, ModelCredential[]>();
   for (const credential of credentials) {
@@ -97,7 +98,8 @@ export function connectedBackupOptions(
       };
     };
     if (owners.length === 0) {
-      options.push(...models.filter((entry) => entry.managed).map((entry) => option(entry)));
+      if (!computerUse)
+        options.push(...models.filter((entry) => entry.managed).map((entry) => option(entry)));
       continue;
     }
     for (const connection of owners)
@@ -113,6 +115,7 @@ export function connectedBackupOptions(
     for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
       const modelId = raw.trim();
       if (!modelId || seen.has(modelId)) continue;
+      if (computerUse && !credential.visionModelIds?.includes(modelId)) continue;
       seen.add(modelId);
       const entry = catalog.find(
         (candidate) =>

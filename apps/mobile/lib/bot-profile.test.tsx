@@ -3,17 +3,26 @@
 import type { Routine } from "@rakazo/contracts";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArtifactsScreen from "../app/artifacts";
 import BotProfile from "../app/bot-profile";
 import RoutineDetail from "../app/routine";
+import RoutineRuns from "../app/routine-runs";
 import RoutinesScreen from "../app/routines";
+import { onConversationCleared } from "./conversation-cleared";
+import type * as NativeControls from "./native-controls";
 import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
 import { ROUTINES_POLL_MS, ROUTINES_RETRY_MS } from "./routine-store";
+
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 
 const {
   rpc,
@@ -26,6 +35,7 @@ const {
   focus,
   session,
   requestContext,
+  screen,
 } = vi.hoisted(() => ({
   rpc: vi.fn(),
   push: vi.fn(),
@@ -37,28 +47,47 @@ const {
   focus: new Set<() => (() => void) | undefined>(),
   session: { generation: 0 },
   requestContext: vi.fn(),
+  screen: {
+    options: {} as Record<string, unknown>,
+    search: null as null | { onChangeText: (event: { nativeEvent: { text: string } }) => void },
+    // A short list makes FlatList ask for more as soon as it lays out, before effects run.
+    endOnLayout: false,
+  },
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
-  loadSessionToken: async () => "token",
   selectedSpaceId: () => "space-a",
   captureApiRequestContext: requestContext,
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./session", () => ({
+  loadSessionToken: async () => "token",
+  currentSessionGeneration: () => session.generation,
+}));
 vi.mock("./live-notifications", () => ({ afterChatNotifyChange }));
 vi.mock("./artifacts", () => ({
   listSpaceArtifacts,
-  matchesArtifactQuery: () => true,
-  mimeBadgeLabel: () => "",
+  matchesArtifactQuery: (item: { name: string }, query: string) => item.name.includes(query),
   removeArtifact: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  Stack: {
+    Screen: ({ options }: { options: Record<string, unknown> }) => {
+      screen.options = options;
+      return null;
+    },
+  },
   useRouter: () => ({ push }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({
+    setOptions: (options: { headerSearchBarOptions?: typeof screen.search }) => {
+      screen.search = options.headerSearchBarOptions ?? null;
+    },
+  }),
   useLocalSearchParams: () => params.current,
   useFocusEffect: (effect: () => (() => void) | undefined) => {
     useEffect(effect, [effect]);
@@ -69,6 +98,11 @@ vi.mock("expo-router", () => ({
     }, [effect]);
   },
 }));
+// iOS 26, where the profile's menu is a native header item.
+vi.mock("./native-controls", async (importOriginal) => ({
+  ...(await importOriginal<typeof NativeControls>()),
+  iosAtLeast: () => true,
+}));
 vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   return {
@@ -77,10 +111,12 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ fontScale: 1, width: 390 }),
     ActivityIndicator: () => createElement("progress"),
     Alert: { alert },
+    BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
     RefreshControl: () => null,
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+    TextInput: ({ value }: { value?: string }) => createElement("input", { value, readOnly: true }),
     Pressable: ({
       children,
       onPress,
@@ -105,10 +141,35 @@ vi.mock("react-native", () => {
     FlatList: ({
       ListHeaderComponent,
       ListEmptyComponent,
+      data = [],
+      keyExtractor,
+      renderItem,
+      onEndReached,
     }: {
       ListHeaderComponent?: ReactNode;
       ListEmptyComponent?: ReactNode;
-    }) => createElement("div", null, ListHeaderComponent, ListEmptyComponent),
+      data?: unknown[];
+      keyExtractor?: (item: unknown) => string;
+      renderItem?: (info: { item: unknown }) => ReactNode;
+      onEndReached?: () => void;
+    }) => {
+      useLayoutEffect(() => {
+        if (screen.endOnLayout) onEndReached?.();
+      });
+      return createElement(
+        "div",
+        null,
+        ListHeaderComponent,
+        data.length === 0
+          ? ListEmptyComponent
+          : data.map((item) =>
+              createElement("div", { key: keyExtractor?.(item) }, renderItem?.({ item })),
+            ),
+        onEndReached
+          ? createElement("button", { type: "button", onClick: onEndReached }, "End of list")
+          : null,
+      );
+    },
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -161,6 +222,31 @@ vi.mock("../components/run-error-sheet", () => ({
     details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-segmented-control", () => ({
+  NativeSegmentedControl: ({
+    options,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "nav",
+      null,
+      options.map((option) =>
+        createElement(
+          "button",
+          { key: option.value, type: "button", onClick: () => onChange(option.value) },
+          option.label,
+        ),
+      ),
+    ),
+}));
+vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
+vi.mock("../components/bot-email", () => ({
+  useBotEmail: () => ({ address: null, ownerDomain: "", setAddress: () => undefined }),
+  useBotEmailRows: () => [],
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 
 const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
@@ -173,6 +259,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}) => ({
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
+  emailSenders: null,
   nextRunAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,
@@ -269,23 +356,50 @@ const listCalls = () => rpc.mock.calls.filter(([procedure]) => procedure === "ro
 const routinesRow = () => button("Routines");
 
 describe("bot profile", () => {
-  it("links the bot's settings, routines, artifacts and computer", async () => {
+  it("links the bot's settings, routines, pages, artifacts and computer", async () => {
     profileRpc(async () => []);
     await render(createElement(BotProfile));
 
     expect(container.textContent).toContain("Fixture");
     button("Edit").click();
     routinesRow().click();
+    button("Pages").click();
     button("Artifacts").click();
     button("Computer").click();
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
       [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
+      [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
       [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
     ]);
     const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 4)).toEqual(["Edit", "Routines0 on", "Artifacts", "Computer"]);
+    expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
+  });
+
+  it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {
+    profileRpc(async () => []);
+    await render(createElement(BotProfile));
+    const [menu] = (
+      screen.options.unstable_headerRightItems as () => {
+        menu: { items: { label: string; onPress: () => void }[] };
+      }[]
+    )();
+    const items = menu!.menu.items;
+    expect(items.map((item) => item.label)).toEqual(["Clear conversation", "Archive", "Delete…"]);
+    const cleared = vi.fn();
+    const stop = onConversationCleared(cleared);
+    items[0]!.onPress();
+    const [, , buttons] = alert.mock.lastCall as [
+      string,
+      string,
+      { text: string; onPress?: () => void }[],
+    ];
+    rpc.mockResolvedValueOnce({});
+    await act(async () => buttons.find((button) => button.text === "Clear")!.onPress!());
+    expect(rpc).toHaveBeenCalledWith("threads/clear", { botId: "bot-fixture" });
+    expect(cleared).toHaveBeenCalledWith("bot-fixture");
+    stop();
   });
 
   it.each([
@@ -472,7 +586,7 @@ describe("bot profile notifications", () => {
       "https://api.example",
       "token",
       "space-a",
-      { threadId: "thread-fixture", notify: true },
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: true },
     );
   });
 
@@ -590,7 +704,7 @@ describe("bot profile notifications", () => {
         "https://api.example",
         "token",
         "space-a",
-        { threadId: "thread-fixture", notify },
+        { botId: "bot-fixture", threadId: "thread-fixture", notify },
       );
     },
   );
@@ -646,7 +760,7 @@ describe("routines screen", () => {
     });
   });
 
-  it("shows a spinner, then the empty text, with no list or button", async () => {
+  it("shows a spinner, then the empty text and a way to create one", async () => {
     let load!: (rows: unknown) => void;
     profileRpc(() => new Promise((resolve) => (load = resolve)));
     await render(createElement(RoutinesScreen));
@@ -655,11 +769,15 @@ describe("routines screen", () => {
 
     await act(async () => load([]));
     expect(container.querySelector("progress")).toBeNull();
-    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.");
-    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).toBe("Ask this Bot in chat to set up a routine.New routine");
+    rowFor("New routine")!.click();
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/routine",
+      params: { botId: "bot-fixture", botName: "Fixture", origin: "profile" },
+    });
   });
 
-  it("offers Try Again after a failed read and its retry, and reloads", async () => {
+  it("offers Try again after a failed read and its retry, and reloads", async () => {
     vi.useFakeTimers();
     let fail = true;
     profileRpc(async () => {
@@ -669,10 +787,10 @@ describe("routines screen", () => {
     await render(createElement(RoutinesScreen));
     expect(container.querySelector("progress")).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(ROUTINES_RETRY_MS));
-    expect(container.textContent).toBe("Could not load routinesTry Again");
+    expect(container.textContent).toBe("Could not load routinesTry again");
 
     fail = false;
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(rowFor("Morning digest, On")).toBeTruthy();
   });
 
@@ -1013,6 +1131,9 @@ describe("routine detail", () => {
     await render(createElement(BotProfile));
     act(() => root.unmount());
     root = createRoot(container);
+    // The detail opens after that read; on a fast machine both can fall in one millisecond.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 1);
 
     let load!: (rows: unknown) => void;
     profileRpc(() => new Promise((resolve) => (load = resolve)));
@@ -1049,6 +1170,26 @@ describe("routine detail", () => {
     expect(container.textContent).toContain("This routine no longer exists");
   });
 
+  it("opens the form only from Edit routine", async () => {
+    await render(createElement(RoutineDetail));
+    const field = 'input:not([aria-label="Active"])';
+    expect(container.querySelector(field)).toBeNull();
+    expect(container.textContent).not.toContain("Delete routine");
+    await act(async () => button("Edit routine").click());
+    expect(container.querySelector(field)).toBeTruthy();
+    expect(container.textContent).toContain("Delete routine");
+    expect(container.textContent).not.toContain("Run history");
+  });
+
+  it("opens the run history from its row", async () => {
+    await render(createElement(RoutineDetail));
+    button("Run history").click();
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/routine-runs",
+      params: { routineId: "r1", botName: "Fixture" },
+    });
+  });
+
   it("lists the routine's runs and opens a reply at its message", async () => {
     const run = {
       id: "run-1",
@@ -1065,14 +1206,26 @@ describe("routine detail", () => {
       history: async () => ({
         runs: [
           run,
-          { ...run, id: "run-2", groupId: "group-1", messageId: "reply-2" },
-          { ...run, id: "run-3", status: "failed", error: "504: timed out", messageId: null },
+          {
+            ...run,
+            id: "run-2",
+            groupId: "group-1",
+            messageId: "reply-2",
+            lateSince: "2026-01-02T11:20:00Z",
+          },
+          {
+            ...run,
+            id: "run-3",
+            status: "failed",
+            error: "504: timed out",
+            messageId: null,
+            lateSince: "2026-01-02T09:00:00Z",
+          },
         ],
         nextCursor: null,
       }),
     });
-    await render(createElement(RoutineDetail));
-    expect(container.textContent).toContain("Run history");
+    await render(createElement(RoutineRuns));
     expect(container.textContent).not.toContain("1m 22s");
     expect(container.textContent).not.toContain("Done");
     expect(container.textContent).toContain("summary: 504: timed out");
@@ -1081,6 +1234,13 @@ describe("routine detail", () => {
       node.textContent?.includes("Jan 2,"),
     );
     expect(rows).toHaveLength(3);
+    // A late start is the row's detail, unless the row already explains a failure.
+    expect(rows.map((row) => row.textContent?.includes("Started 40m late"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(container.textContent).not.toContain("Started 3h late");
     rows[0]!.click();
     expect(push).toHaveBeenLastCalledWith({
       pathname: "/thread",
@@ -1114,7 +1274,7 @@ describe("routine detail", () => {
         : { runs: [run], nextCursor: cursor },
     );
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     await act(async () => button("Load older runs").click());
     expect(history).toHaveBeenLastCalledWith({ routineId: "r1", before: cursor, limit: 20 });
     expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(2);
@@ -1138,7 +1298,7 @@ describe("routine detail", () => {
       return { runs: [run], nextCursor: { id: "run-1", createdAt: run.createdAt } };
     });
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     await act(async () => button("Load older runs").click());
     expect(container.textContent).toContain("Could not load run history");
     expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(1);
@@ -1146,7 +1306,7 @@ describe("routine detail", () => {
   });
 
   it("says when a routine has not run, and when its history could not load", async () => {
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     expect(container.textContent).toContain("No runs yet");
     act(() => root.unmount());
     root = createRoot(container);
@@ -1156,10 +1316,10 @@ describe("routine detail", () => {
       throw new Error("offline");
     });
     profileRpc(async () => [routine("r1", "Morning digest")], { history });
-    await render(createElement(RoutineDetail));
+    await render(createElement(RoutineRuns));
     expect(container.textContent).toContain("Could not load run history");
     history.mockImplementation(async () => ({ runs: [], nextCursor: null }) as never);
-    await act(async () => button("Try Again").click());
+    await act(async () => button("Try again").click());
     expect(container.textContent).toContain("No runs yet");
   });
 
@@ -1186,6 +1346,184 @@ describe("artifacts opened for one bot", () => {
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
-    expect(listSpaceArtifacts).toHaveBeenCalledWith({ botId: "bot-fixture", limit: 30 });
+    expect(listSpaceArtifacts).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
   });
+
+  it("lists only what bots made while Made by bots is chosen", async () => {
+    await render(createElement(ArtifactsScreen));
+    expect(container.textContent).toContain("No artifacts yet");
+    await act(async () => button("Made by bots").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No matching artifacts");
+    expect(container.textContent).not.toContain("No artifacts yet");
+    await act(async () => button("All files").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: false,
+      limit: 30,
+    });
+    expect(container.textContent).toContain("No artifacts yet");
+  });
+
+  it("keeps Made by bots on the next page and when the screen comes back", async () => {
+    const file = (id: string, name: string) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId: `run-${id}`,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) =>
+        !input.madeByBots
+          ? { items: [], nextCursor: null }
+          : input.cursor
+            ? { items: [file("b", "second-report.md")], nextCursor: null }
+            : { items: [file("a", "first-report.md")], nextCursor: "page-2" },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Made by bots").click());
+    expect(container.textContent).toContain("first-report.md");
+
+    await act(async () => button("End of list").click());
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      cursor: "page-2",
+      limit: 30,
+    });
+    expect(container.textContent).toContain("first-report.md");
+    expect(container.textContent).toContain("second-report.md");
+
+    await act(async () => {
+      for (const effect of focus) effect();
+    });
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+      botId: "bot-fixture",
+      madeByBots: true,
+      limit: 30,
+    });
+  });
+
+  it("never pages the new filter with the old filter's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(
+      async (input: { madeByBots?: boolean; cursor?: string }) => {
+        if (input.cursor) throw new Error("page 2 failed");
+        return input.madeByBots
+          ? { items: [file("a", "report.md", "run-a")], nextCursor: null }
+          : { items: [file("u", "my-upload.txt", null)], nextCursor: "all-files-2" };
+      },
+    );
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ madeByBots: false, cursor: "all-files-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Made by bots").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.madeByBots === true && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  it("never pages another bot with the previous bot's cursor", async () => {
+    const file = (id: string, name: string, runId: string | null) => ({
+      id,
+      name,
+      botId: "bot-fixture",
+      groupId: null,
+      runId,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    });
+    listSpaceArtifacts.mockImplementation(async (input: { botId?: string; cursor?: string }) => {
+      if (input.cursor) throw new Error("page 2 failed");
+      return input.botId === "bot-fixture"
+        ? { items: [file("u", "my-upload.txt", null)], nextCursor: "fixture-2" }
+        : { items: [file("o", "other.txt", null)], nextCursor: null };
+    });
+    await render(createElement(ArtifactsScreen));
+    await act(async () =>
+      screen.search?.onChangeText({ nativeEvent: { text: "nothing-matches" } }),
+    );
+    expect(listSpaceArtifacts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ botId: "bot-fixture", cursor: "fixture-2" }),
+    );
+    screen.endOnLayout = true;
+    try {
+      await act(async () => button("Other").click());
+    } finally {
+      screen.endOnLayout = false;
+    }
+    const crossed = listSpaceArtifacts.mock.calls.filter(
+      ([input]) => input.botId !== "bot-fixture" && input.cursor !== undefined,
+    );
+    expect(crossed).toEqual([]);
+  });
+
+  for (const label of ["Fixture", "All files"]) {
+    it(`keeps paging after tapping the already chosen ${label}`, async () => {
+      listSpaceArtifacts.mockImplementation(async (input: { cursor?: string }) => ({
+        items: [
+          {
+            id: input.cursor ? "b" : "a",
+            name: input.cursor ? "second.md" : "first.md",
+            botId: "bot-fixture",
+            groupId: null,
+            runId: null,
+            description: null,
+            mimeType: "text/markdown",
+            size: 6,
+            version: 1,
+            versionCount: 1,
+            createdAt: "2026-11-01T00:00:00.000Z",
+          },
+        ],
+        nextCursor: input.cursor ? null : "page-2",
+      }));
+      await render(createElement(ArtifactsScreen));
+      expect(container.textContent).toContain("first.md");
+      await act(async () => button(label).click());
+      await act(async () => button("End of list").click());
+      expect(container.textContent).toContain("second.md");
+    });
+  }
 });

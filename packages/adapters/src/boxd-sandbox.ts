@@ -1,8 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { Machine } from "@boxd-sh/sdk";
-import { Boxd, ConflictError, FilesystemError, NotFoundError, RateLimitError } from "@boxd-sh/sdk";
+import type { Boxd, Machine } from "@boxd-sh/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -24,9 +23,18 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import {
+  BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
+  BaseSnapshotCache,
+  computerSnapshotName,
+} from "./computer-base-snapshot.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
+import { PortableFileBatcher } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
@@ -35,10 +43,12 @@ import {
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { shellExportScript, sourceEnvironmentCommand } from "./sandbox-shell-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 20;
@@ -60,12 +70,9 @@ const SCREEN_READY_TIMEOUT_MS = 90_000;
 const STOP_GRACE_MS = 5_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
-/** Bounds a base snapshot build: a fresh machine, the desktop install, and the save. */
-const SNAPSHOT_BUILD_TIMEOUT_MS = 30 * 60_000;
-/** How long a process waits before building again after a failed build. */
-const SNAPSHOT_RETRY_MS = 15 * 60_000;
-/** How long a process waits before looking again while another process saves the snapshot. */
-const SNAPSHOT_LOOKUP_RETRY_MS = 60_000;
+
+/** The SDK loads only when boxd is configured; its error classes are read after a call fails. */
+const boxdSdk = () => import("@boxd-sh/sdk");
 
 /** The boxd SDK calls this provider makes; tests pass a stand-in. */
 export interface BoxdSandboxClient {
@@ -123,14 +130,14 @@ export class BoxdSandboxProvider implements SandboxProvider {
   private readonly prepared = new Set<string>();
   private readonly preparations = new Map<string, Promise<void>>();
   private readonly screens = new Map<string, string>();
-  private baseSnapshot?: "ready";
-  private baseSnapshotBuild?: Promise<void>;
-  private baseSnapshotRetryAt = 0;
+  private readonly baseSnapshot = new BaseSnapshotCache({
+    provider: "boxd",
+    name: BOXD_COMPUTER_SNAPSHOT,
+    build: () => this.buildComputerSnapshot(),
+    warnMissingOnce: false,
+  });
 
-  constructor(
-    config: { apiKey: string; org?: string },
-    client: BoxdSandboxClient = new Boxd({ apiKey: config.apiKey }),
-  ) {
+  constructor(config: { org?: string }, client: BoxdSandboxClient) {
     this.client = client;
     this.org = config.org;
   }
@@ -189,7 +196,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     } catch (error) {
       // A lost reply can hide a machine created under this name.
       await this.client.machines.delete(name).catch(() => undefined);
-      throw providerError(error);
+      throw await providerError(error);
     }
     if (context.signal.aborted) {
       await this.destroy(this.ref(machine.id, request.botId, true), context);
@@ -203,7 +210,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
    * with the desktop tools installed and checked. The build machine is deleted afterwards.
    */
   async buildComputerSnapshot(
-    signal: AbortSignal = AbortSignal.timeout(SNAPSHOT_BUILD_TIMEOUT_MS),
+    signal: AbortSignal = AbortSignal.timeout(BASE_SNAPSHOT_BUILD_TIMEOUT_MS),
   ): Promise<{ name: string; built: boolean }> {
     const name = BOXD_COMPUTER_SNAPSHOT;
     // A save already in progress, from another process or an earlier run, may finish it.
@@ -256,9 +263,12 @@ export class BoxdSandboxProvider implements SandboxProvider {
       await this.ensureRunning(id, context.signal);
       // Added now so its certificate, about 20 seconds for a new machine, is ready by the first
       // screen. A machine created from a snapshot does not get proxies passed to create.
-      await this.client.machines.proxies.create(id, SCREEN_PROXY, SCREEN_PORT).catch((error) => {
-        if (!(error instanceof ConflictError)) throw providerError(error, id);
-      });
+      await this.client.machines.proxies
+        .create(id, SCREEN_PROXY, SCREEN_PORT)
+        .catch(async (error) => {
+          if (!(error instanceof (await boxdSdk()).ConflictError))
+            throw await providerError(error, id);
+        });
       // A computer from the snapshot already has the tools; this only checks for them.
       const result = await this.run(
         id,
@@ -288,8 +298,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
       return;
     }
     const id = this.id(computer);
@@ -309,7 +318,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         await this.client.machines.fs.write(id, envFile, environment, { mode: 0o600 });
       }
       result = await this.run(id, envFile ? sourceEnvironmentCommand(envFile, argv) : argv, {
-        cwd: boxdCwd(request.cwd),
+        cwd: workspaceCwd(WORKSPACE, request.cwd, [HOME]),
         timeoutMs,
         signal: context.signal,
       });
@@ -320,14 +329,12 @@ export class BoxdSandboxProvider implements SandboxProvider {
       }
     }
     if (result.aborted) {
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
       return;
     }
     if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.timedOut) {
-      yield { type: "stderr", data: `command timed out after ${timeoutMs} ms\n` };
-      yield { type: "exit", code: 124 };
+      yield* timedOutCommandEvents(timeoutMs);
       return;
     }
     if (result.stderr) yield { type: "stderr", data: result.stderr };
@@ -437,23 +444,16 @@ export class BoxdSandboxProvider implements SandboxProvider {
     if (files.some((file) => file.size > MAX_FILE_BYTES) || (limits && bytes > limits.maxBytes)) {
       throw new WorkspaceTooLargeError("bytes");
     }
-    let batch: typeof files = [];
-    let batchBytes = 0;
-    const flush = async () => {
+    const batcher = new PortableFileBatcher<(typeof files)[number]>(4, (file) => file.size);
+    const flush = async (batch: typeof files) => {
       context.signal.throwIfAborted();
-      const read = await Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
-      batch = [];
-      batchBytes = 0;
-      return read;
+      return Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
     };
     for (const file of files) {
-      if (batch.length >= 4 || batchBytes + file.size > PORTABLE_TRANSFER_BATCH_BYTES) {
-        for (const read of await flush()) if (read) yield read;
-      }
-      batch.push(file);
-      batchBytes += file.size;
+      const full = batcher.add(file);
+      if (full) for (const read of await flush(full)) if (read) yield read;
     }
-    for (const read of await flush()) if (read) yield read;
+    for (const read of await flush(batcher.take())) if (read) yield read;
   }
 
   async importWorkspace(
@@ -463,22 +463,17 @@ export class BoxdSandboxProvider implements SandboxProvider {
   ) {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
-    let batch: PortableFile[] = [];
-    let batchBytes = 0;
-    const flush = async () => {
+    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
+    const flush = async (batch: PortableFile[]) => {
       context.signal.throwIfAborted();
       await Promise.all(batch.map((file) => this.write(id, file)));
-      batch = [];
-      batchBytes = 0;
     };
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
-        await flush();
-      batch.push(file);
-      batchBytes += file.content.byteLength;
+      const full = batcher.add(file);
+      if (full) await flush(full);
     }
-    await flush();
+    await flush(batcher.take());
   }
 
   async snapshot(computer: ComputerRef, context: AdapterContext) {
@@ -493,8 +488,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       const machine = await this.client.machines.get(id);
       if (machine.status === "running") await this.client.machines.pause(id);
     } catch (error) {
-      if (error instanceof NotFoundError) return;
-      throw providerError(error);
+      if (error instanceof (await boxdSdk()).NotFoundError) return;
+      throw await providerError(error);
     }
   }
 
@@ -504,7 +499,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       await this.client.machines.delete(id);
     } catch (error) {
-      if (!(error instanceof NotFoundError)) throw providerError(error);
+      if (!(error instanceof (await boxdSdk()).NotFoundError)) throw await providerError(error);
     }
   }
 
@@ -517,8 +512,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       const machine = await this.machine(id);
       if (machine.status === "destroyed" || machine.status === "failed") throw machineGone(id);
       if (machine.status === "stopped") {
-        await this.client.machines.start(id).catch((error: unknown) => {
-          throw providerError(error, id);
+        await this.client.machines.start(id).catch(async (error: unknown) => {
+          throw await providerError(error, id);
         });
         started = true;
         continue;
@@ -598,7 +593,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         return { ...output, exitCode: aborted ? 130 : 124, timedOut: !aborted, aborted };
       }
       const exit = settled?.[2];
-      if (!exit || exit.status === "rejected") throw providerError(exit?.reason, id);
+      if (!exit || exit.status === "rejected") throw await providerError(exit?.reason, id);
       return { ...output, exitCode: exit.value, timedOut: false, aborted: false };
     } finally {
       clearTimeout(timer);
@@ -619,7 +614,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       return { path: file.path, executable: file.executable, content };
     } catch (error) {
       // Removed since the listing.
-      if (error instanceof FilesystemError && error.code === "ENOENT") return undefined;
+      if (error instanceof (await boxdSdk()).FilesystemError && error.code === "ENOENT")
+        return undefined;
       throw error;
     }
   }
@@ -652,65 +648,18 @@ export class BoxdSandboxProvider implements SandboxProvider {
     return origin;
   }
 
-  /** The snapshot new computers start from once it is ready; until then they install the tools. */
-  private async computerSnapshot(signal: AbortSignal): Promise<string | undefined> {
-    if (this.baseSnapshot === "ready") return BOXD_COMPUTER_SNAPSHOT;
-    if (this.baseSnapshotBuild || Date.now() < this.baseSnapshotRetryAt) return undefined;
-    let status: string | undefined;
-    try {
-      status = (await this.client.snapshots.get(BOXD_COMPUTER_SNAPSHOT, this.scope())).status;
-    } catch (error) {
-      // A cancelled boot says nothing about the snapshot.
-      if (signal.aborted) throw error;
-      if (!(error instanceof NotFoundError)) {
-        this.baseSnapshotRetryAt = Date.now() + SNAPSHOT_LOOKUP_RETRY_MS;
-        return undefined;
+  /** The snapshot new computers start from once it is ready. */
+  private computerSnapshot(signal: AbortSignal): Promise<string | undefined> {
+    return this.baseSnapshot.current(signal, async () => {
+      let status: string;
+      try {
+        status = (await this.client.snapshots.get(BOXD_COMPUTER_SNAPSHOT, this.scope())).status;
+      } catch (error) {
+        if (!signal.aborted && error instanceof (await boxdSdk()).NotFoundError) return "absent";
+        throw error;
       }
-    }
-    if (status === "ready") {
-      this.baseSnapshot = "ready";
-      return BOXD_COMPUTER_SNAPSHOT;
-    }
-    if (status === "pending") {
-      // Another process is saving it.
-      this.baseSnapshotRetryAt = Date.now() + SNAPSHOT_LOOKUP_RETRY_MS;
-      return undefined;
-    }
-    this.buildSnapshotInBackground();
-    return undefined;
-  }
-
-  private buildSnapshotInBackground(): void {
-    const started = performance.now();
-    getLogger().warn("sandbox.base_image", {
-      provider: "boxd",
-      outcome: "missing",
-      name: BOXD_COMPUTER_SNAPSHOT,
+      return status === "ready" ? "ready" : status === "pending" ? "saving" : "absent";
     });
-    this.baseSnapshotBuild = this.buildComputerSnapshot()
-      .then(
-        () => {
-          this.baseSnapshot = "ready";
-          getLogger().info("sandbox.base_image", {
-            provider: "boxd",
-            outcome: "built",
-            name: BOXD_COMPUTER_SNAPSHOT,
-            durationMs: Math.round(performance.now() - started),
-          });
-        },
-        (error: unknown) => {
-          this.baseSnapshotRetryAt = Date.now() + SNAPSHOT_RETRY_MS;
-          getLogger().warn("sandbox.base_image", {
-            provider: "boxd",
-            outcome: "build_failed",
-            name: BOXD_COMPUTER_SNAPSHOT,
-            error,
-          });
-        },
-      )
-      .finally(() => {
-        this.baseSnapshotBuild = undefined;
-      });
   }
 
   /** The snapshot's status once any save in progress has finished, or undefined when absent. */
@@ -720,8 +669,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
       try {
         status = (await this.client.snapshots.get(name, this.scope())).status;
       } catch (error) {
-        if (error instanceof NotFoundError) return undefined;
-        throw providerError(error);
+        if (error instanceof (await boxdSdk()).NotFoundError) return undefined;
+        throw await providerError(error);
       }
       if (status !== "pending") return status;
       await delay(2_000, undefined, { signal });
@@ -732,7 +681,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       return await this.client.machines.get(id);
     } catch (error) {
-      throw providerError(error, id);
+      throw await providerError(error, id);
     }
   }
 
@@ -740,8 +689,8 @@ export class BoxdSandboxProvider implements SandboxProvider {
     try {
       return (await this.client.machines.get(this.id(computer))).status;
     } catch (error) {
-      if (error instanceof NotFoundError) return undefined;
-      throw providerError(error);
+      if (error instanceof (await boxdSdk()).NotFoundError) return undefined;
+      throw await providerError(error);
     }
   }
 
@@ -764,10 +713,16 @@ export class BoxdSandboxProvider implements SandboxProvider {
   }
 }
 
+export async function createBoxdSandboxProvider(config: {
+  apiKey: string;
+  org?: string;
+}): Promise<BoxdSandboxProvider> {
+  const { Boxd } = await boxdSdk();
+  return new BoxdSandboxProvider(config, new Boxd({ apiKey: config.apiKey }));
+}
+
 function machineGone(id: string, cause?: unknown): Error {
-  return Object.assign(new Error(`boxd machine ${id} is gone`, { cause }), {
-    name: "SandboxNotFoundError",
-  });
+  return sandboxNotFoundError(`boxd machine ${id} is gone`, { cause });
 }
 
 function isMachineGone(error: unknown): boolean {
@@ -775,7 +730,8 @@ function isMachineGone(error: unknown): boolean {
 }
 
 /** boxd's rate limit and a missing machine, as the errors the computer lifecycle acts on. */
-function providerError(error: unknown, id?: string): unknown {
+async function providerError(error: unknown, id?: string): Promise<unknown> {
+  const { NotFoundError, RateLimitError } = await boxdSdk();
   if (error instanceof RateLimitError) return new SandboxRateLimitError({ cause: error });
   if (id && error instanceof NotFoundError) return machineGone(id, error);
   return error;
@@ -813,19 +769,8 @@ function commandFailure(result: BoxdCommandResult): string {
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
 }
 
-function boxdCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo" || cwd === HOME)
-    return WORKSPACE;
-  const relative = cwd.startsWith(`${WORKSPACE}/`)
-    ? cwd.slice(WORKSPACE.length + 1)
-    : cwd.startsWith("/home/rakazo/")
-      ? cwd.slice("/home/rakazo/".length)
-      : cwd;
-  return workspacePath(WORKSPACE, relative);
-}
-
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */
-const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0%m\\0%s\\0'`;
+const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && ${workspaceSaveFindCommand()} -printf '%P\\0%m\\0%s\\0'`;
 
 function parseWorkspaceListing(
   listing: string,
@@ -862,8 +807,4 @@ const BOXD_COMPUTER_SETUP = [
   VERIFY_LINUX_DESKTOP,
 ] as const;
 
-/** A snapshot name that changes with the setup it captures, so older computers keep theirs. */
-export const BOXD_COMPUTER_SNAPSHOT = `rakazo-computer-${createHash("sha256")
-  .update(BOXD_COMPUTER_SETUP.join("\0"))
-  .digest("hex")
-  .slice(0, 12)}`;
+export const BOXD_COMPUTER_SNAPSHOT = computerSnapshotName(BOXD_COMPUTER_SETUP);

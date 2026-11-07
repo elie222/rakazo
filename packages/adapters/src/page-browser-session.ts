@@ -186,7 +186,7 @@ export class PageBrowserSession {
       throw new FillRefused(
         card
           ? `The page is not on the merchant's site for this purchase. ${REOPEN_MERCHANT_SITE}`
-          : `The page is not on the site this login was saved for. ${REOPEN_SAVED_SITE}`,
+          : `This login is saved for ${saved.origin}; the page is on ${page.origin}. ${REOPEN_SAVED_SITE}`,
       );
     }
   }
@@ -250,6 +250,12 @@ export class PageBrowserSession {
         if (card) {
           if (!CARD_INPUT_TYPES.has(inputType)) {
             throw new FillRefused("A card can only be typed into a card field.");
+          }
+        } else if (action.field === "code") {
+          if (!USERNAME_INPUT_TYPES.has(inputType)) {
+            throw new FillRefused(
+              "A code can only be typed into a text, email, or telephone field.",
+            );
           }
         } else if (action.field !== "username" && inputType !== "password") {
           // A password goes only into a password field, which never displays it.

@@ -7,6 +7,8 @@ import {
 import type { CredentialField } from "@rakazo/core";
 import {
   authErrorMessage,
+  CALL_NOT_RINGING_ERROR,
+  errorHelpUrl,
   MAX_PASSWORD_LENGTH,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_IMAGE_INPUT_UNKNOWN,
@@ -25,6 +27,8 @@ export function errorText(error: unknown, fallback = t`Something went wrong. Try
     return t`This model cannot read images. Choose a model that supports images.`;
   if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_UNKNOWN)
     return t`Image input is not configured for this model.`;
+  if (typeof message === "string" && message.trim() === CALL_NOT_RINGING_ERROR)
+    return t`This call is no longer ringing.`;
   if (errorCode(error) === CONNECTOR_AUTH_UNAVAILABLE)
     return t`This app needs its own sign-in setup to connect.`;
   if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;
@@ -56,6 +60,7 @@ export function authErrorText(error: unknown, fallback: string): string {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   if (code === "SSO_UNAVAILABLE") return t`SSO is temporarily unavailable. Try again.`;
   if (code === "account_not_linked") return t`Sign in to your existing account to link SSO`;
+  if (code === "ACCOUNT_DEACTIVATED") return t`This account is deactivated`;
   if (code === "REGISTRATION_CLOSED") return t`Registration is closed`;
   if (code === "EMAIL_NOT_ALLOWED") return t`Email is not allowed to register`;
   if (code === "EMAIL_VERIFICATION_REQUIRED" || code === "unable_to_link_account")
@@ -73,3 +78,10 @@ export function authErrorText(error: unknown, fallback: string): string {
     password: credentialIssueText("password"),
   });
 }
+
+/** Keep the documented error code's help link when turning a failure into UI copy. */
+export function errorDetails(error: unknown, fallback?: string) {
+  return { message: errorText(error, fallback), helpUrl: errorHelpUrl(error) };
+}
+
+export type ErrorDetails = ReturnType<typeof errorDetails>;

@@ -4,7 +4,7 @@ import {
   GROUP_MEMBER_MIN,
   GROUP_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useEffect, useRef, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
@@ -14,12 +14,13 @@ import { GlassIconButton } from "../components/glass-icon-button";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
-import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
+import { hapticSuccess } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { addToSearchInbox, searchInboxSession } from "../lib/search-inbox";
+import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -28,6 +29,7 @@ export default function NewGroup() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
+  const navigation = useNavigation();
   const headerHeight = useHeaderHeight();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [step, setStep] = useState<"bots" | "name">("bots");
@@ -71,6 +73,7 @@ export default function NewGroup() {
         name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
         botIds: selected,
       });
+      if (navigation.isFocused() && isSearchInboxSession(askedIn)) hapticSuccess();
       addToSearchInbox({ kind: "group", group }, askedIn);
       router.replace({
         pathname: "/group-thread",

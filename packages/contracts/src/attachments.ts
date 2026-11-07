@@ -50,6 +50,30 @@ export function isAttachmentImageMimeType(mimeType: string): boolean {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
+export type ArtifactPreviewKind = "html" | "markdown" | "pdf" | "image" | "video" | "text" | "none";
+
+const TEXT_APPLICATION_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/javascript",
+  "application/x-sh",
+  "application/sql",
+]);
+
+/** How every client previews a saved file, so web and mobile show the same types. */
+export function artifactPreviewKind(mimeType: string): ArtifactPreviewKind {
+  const type = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (type === "text/html") return "html";
+  if (type === "text/markdown") return "markdown";
+  if (type === "application/pdf") return "pdf";
+  if (isAttachmentImageMimeType(type)) return "image";
+  if (type === "video/mp4") return "video";
+  if (type.startsWith("text/") || TEXT_APPLICATION_MIME_TYPES.has(type)) return "text";
+  return "none";
+}
+
 export function isAttachmentAudioMimeType(mimeType: string): boolean {
   return (ATTACHMENT_AUDIO_MIME_TYPES as readonly string[]).includes(mimeType);
 }

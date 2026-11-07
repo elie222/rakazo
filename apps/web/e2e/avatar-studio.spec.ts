@@ -40,7 +40,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-organic-avatar")).toHaveCount(1);
   await expect(studio.locator(".rakazo-organic-avatar-eyes").first()).toBeVisible();
 
-  await studio.getByRole("button", { name: "Color #EAB308" }).click();
+  await studio.getByRole("button", { name: "Color #FFAF38" }).click();
   await expect(defaultLook).toHaveAttribute("aria-pressed", "true");
   await expect(wedge).toHaveAttribute("aria-pressed", "false");
 

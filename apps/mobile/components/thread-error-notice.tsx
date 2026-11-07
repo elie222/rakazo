@@ -1,8 +1,8 @@
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
-import { RunErrorAction } from "./run-error-actions";
+import { RunErrorAction, RunErrorTextAction } from "./run-error-actions";
 
 /** A list item: its full height participates in scrolling above the composer. */
 export function ThreadErrorNotice({
@@ -38,7 +38,7 @@ export function ThreadErrorNotice({
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
-      style={[styles.card, { backgroundColor: tokens.card }]}
+      style={[styles.card, { backgroundColor: native.fill }]}
     >
       <View style={styles.header}>
         <View
@@ -66,16 +66,7 @@ export function ThreadErrorNotice({
           ) : null}
           {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
           {summary && onDetails ? (
-            <Pressable
-              accessibilityRole="link"
-              onPress={onDetails}
-              hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-              style={styles.details}
-            >
-              <Text style={{ color: tokens.link, fontSize: 14, fontWeight: "600" }}>
-                {t("Details")}
-              </Text>
-            </Pressable>
+            <RunErrorTextAction label={t("Details")} onPress={onDetails} />
           ) : null}
         </View>
       ) : null}
@@ -105,9 +96,8 @@ export function ThreadFetchErrorNotice({
 
 const styles = StyleSheet.create({
   // Fill only: cards in the thread read by tone, without an outline.
-  card: { borderRadius: 12, padding: 16, marginTop: 12, gap: 6 },
+  card: { borderRadius: 18, padding: 16, marginTop: 12, gap: 6 },
   header: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   headline: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600" },
   body: { marginLeft: 26, gap: 12 },
-  details: { alignSelf: "flex-start" },
 });

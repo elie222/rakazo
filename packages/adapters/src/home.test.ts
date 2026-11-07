@@ -171,6 +171,33 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await readFile(path.join(home, "target.txt"), "utf8")).toBe("after");
   });
 
+  it("rejects an opened file reached through a swapped parent even after the parent is restored", async () => {
+    const { root, store, home } = await fixture();
+    const directory = path.join(await realpath(home), "notes");
+    const parked = path.join(await realpath(home), "parked-notes");
+    const outside = path.join(await realpath(root), "outside");
+    const target = path.join(directory, "result.txt");
+    await mkdir(directory);
+    await mkdir(outside);
+    await writeFile(target, "inside");
+    await writeFile(path.join(outside, "result.txt"), "outside");
+    hooks.beforeOpen = async (file) => {
+      if (file !== target) return;
+      hooks.beforeOpen = undefined;
+      await rename(directory, parked);
+      await symlink(outside, directory, "junction");
+    };
+    hooks.afterOpen = async (file) => {
+      if (file !== target) return;
+      hooks.afterOpen = undefined;
+      await rm(directory);
+      await rename(parked, directory);
+    };
+
+    await expect(store.readFile("bot-1", "notes/result.txt", context)).rejects.toThrow(/escapes/i);
+    expect(await store.readFile("bot-1", "notes/result.txt", context)).toBe("inside");
+  });
+
   it("allows directory symlinks that remain inside the bot home", async () => {
     const { store, home } = await fixture();
     await mkdir(path.join(home, "target-dir"));

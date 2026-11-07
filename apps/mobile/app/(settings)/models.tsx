@@ -1,7 +1,6 @@
 import {
-  COMMANDCODE_BASE_URL,
   canonicalPiProviderId,
-  OLLAMA_CLOUD_BASE_URL,
+  compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
@@ -18,11 +17,11 @@ import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
 import { SpaceBotsModel } from "../../components/space-bots-model";
-import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import type { ModelConnectionRequest } from "../../lib/model-connection-request";
 import { closeModelConnection, openModelConnection } from "../../lib/model-connection-request";
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
@@ -160,7 +159,7 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus compatible service presets. */
+  /** Every provider, popular first, plus the hosted presets of the compatible one. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -170,33 +169,28 @@ export default function Models() {
         name: entry.providerName ?? entry.provider,
       });
     }
-    const all = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
-    if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      all.push(
-        {
-          id: OPENAI_COMPATIBLE_PROVIDER_ID,
-          name: t("Ollama Cloud"),
-          baseUrl: OLLAMA_CLOUD_BASE_URL,
-        },
-        {
-          id: OPENAI_COMPATIBLE_PROVIDER_ID,
-          name: t("CommandCode"),
-          baseUrl: COMMANDCODE_BASE_URL,
-        },
-      );
-    return all;
-  }, [catalog, t]);
+    const all = [...grouped.values()];
+    for (const preset of compatibleEndpointPresets(catalog))
+      all.push({ id: OPENAI_COMPATIBLE_PROVIDER_ID, name: preset.name, baseUrl: preset.baseUrl });
+    return popularModelProvidersFirst(
+      all,
+      (provider) => provider.id,
+      (provider) => provider.name,
+    );
+  }, [catalog]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
+    const savedPreset = (baseUrl: string) =>
+      credentials.some(
+        (entry) =>
+          entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
+          savedCompatibleEndpointMatches(entry.baseUrl ?? "", baseUrl),
+      );
     return allProviders.filter((provider) =>
       provider.baseUrl
-        ? !credentials.some(
-            (entry) =>
-              entry.provider === provider.id &&
-              savedCompatibleEndpointMatches(entry.baseUrl ?? "", provider.baseUrl),
-          )
+        ? !savedPreset(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
   }, [allProviders, credentials]);
@@ -299,6 +293,12 @@ export default function Models() {
               modelRole="approval"
               title={t("Approval model")}
               defaultLabel={t("Choose a model")}
+            />
+            <ModelRoleSettings
+              {...shared}
+              modelRole="computer"
+              title={t("Computer-use model")}
+              defaultLabel={t("Same as main model")}
             />
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (

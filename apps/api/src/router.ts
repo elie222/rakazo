@@ -3,6 +3,7 @@ import type {
   ArtifactStore,
   JobPublisher,
   MemoryStore,
+  NotificationProvider,
   PaymentWalletProvider,
   ProductAnalytics,
   SandboxProvider,
@@ -37,7 +38,9 @@ import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
 import { botsRoutes } from "./routes/bots.js";
+import { capabilitiesRoutes } from "./routes/capabilities.js";
 import { computerRoutes } from "./routes/computer.js";
+import { computerProviderRoutes } from "./routes/computer-provider.js";
 import { connectionsRoutes } from "./routes/connections.js";
 import { contentRoutes } from "./routes/content.js";
 import { createRouterContext } from "./routes/context.js";
@@ -45,9 +48,13 @@ import { mcpRoutes } from "./routes/mcp.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { messagingRoutes } from "./routes/messaging.js";
 import { modelsRoutes } from "./routes/models.js";
+import { onboardingRoutes } from "./routes/onboarding.js";
+import { organizationsRoutes } from "./routes/organizations.js";
+import { pagesRoutes } from "./routes/pages.js";
 import { paymentWalletRoutes } from "./routes/payment-wallet.js";
 import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
+import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import { threadsRoutes } from "./routes/threads.js";
 import type { VoiceDeps } from "./voice.js";
 
@@ -58,6 +65,8 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   pushTokens: PushTokenStore;
+  /** Stops a call's ring on the owner's other devices once it is settled. */
+  notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   /** The deployment's wallet provider; absent hides purchases. */
@@ -113,6 +122,8 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    /** Domain of bots' email addresses; unset when this server receives no email. */
+    inboundEmailDomain?: string;
     ticketBoardEnabled?: boolean;
     navLinks?: NavLink[];
     adminEmails?: string[];
@@ -135,6 +146,7 @@ export interface RouterDeps {
     integrationsCatalogUrl?: string;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
+    computerSettingsEnabled?: boolean;
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
   };
@@ -147,18 +159,24 @@ export function createRouter(deps: RouterDeps) {
   return os.router({
     ...accountRoutes(ctx),
     ...spacesRoutes(ctx),
+    ...organizationsRoutes(ctx),
     ...modelsRoutes(ctx),
     ...botsRoutes(ctx),
     ...threadsRoutes(ctx),
     ...computerRoutes(ctx),
+    ...computerProviderRoutes(ctx),
     ...memoryRoutes(ctx),
     ...routinesRoutes(ctx),
     ...boardsRoutes(ctx),
+    ...capabilitiesRoutes(ctx),
     ...mcpRoutes(ctx),
+    ...onboardingRoutes(ctx),
     ...availabilityRoutes(ctx),
     ...connectionsRoutes(ctx),
     ...messagingRoutes(ctx),
     ...contentRoutes(ctx),
+    ...pagesRoutes(ctx),
     ...paymentWalletRoutes(ctx),
+    ...spendingLimitRoutes(ctx),
   });
 }

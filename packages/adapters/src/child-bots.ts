@@ -5,6 +5,7 @@ import type {
   ComputerRef,
   JobPublisher,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
@@ -21,9 +22,11 @@ import {
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
+  deletePageShareSecrets,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
+  teamComputerUserId,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -37,6 +40,7 @@ import {
   withCleanupDeadline,
 } from "./computer-workspace.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
+import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -210,6 +214,8 @@ type BotLifecycleDeps = {
   jobs: JobPublisher;
   dataDir?: string;
   artifacts?: ArtifactStore;
+  /** Removes deleted page links' sealed tokens from a remote secret store. */
+  secretStore?: Pick<SecretStore, "delete">;
   messagingInstallations?: {
     removeForBot(bot: { id: string; spaceId: string; userId: string }): Promise<void>;
   };
@@ -225,21 +231,17 @@ type LifecycleBot = {
   webhookSecretId?: string | null;
 };
 
-/** Management stays within the current user's space, regardless of who created the bot. */
-export function managedBotsWhere(caller: {
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { userId: caller.userId, spaceId: caller.spaceId };
+/** Management stays within the current space, whichever member created the bot. */
+export function managedBotsWhere(caller: { spaceId: string }): Prisma.BotWhereInput {
+  return { spaceId: caller.spaceId };
 }
 
-/** Creation provenance for the roster metadata; this does not grant management permissions. */
-export function createdByWhere(caller: {
-  botId: string;
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { parentBotId: caller.botId, userId: caller.userId, spaceId: caller.spaceId };
+/**
+ * Creation provenance for the roster metadata, whichever member's run spawned the bot; this
+ * does not grant management permissions.
+ */
+export function createdByWhere(caller: { botId: string; spaceId: string }): Prisma.BotWhereInput {
+  return { parentBotId: caller.botId, spaceId: caller.spaceId };
 }
 
 export async function archiveSpawnedBot(
@@ -440,6 +442,10 @@ export async function destroyBot(
       await tx.artifact.deleteMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
       });
+      // Like its files, the bot's own pages and their links go with it; group pages stay.
+      const botPages = { botId: bot.id, groupId: null, spaceId: bot.spaceId };
+      const pageShareSecrets = await deletePageShareSecrets(tx, botPages);
+      await tx.page.deleteMany({ where: botPages });
       const groupCleanup = await detachBotFromGroups(tx, bot.id);
       await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
       await tx.computer.updateMany({
@@ -482,6 +488,7 @@ export async function destroyBot(
           ...groupCleanup.artifactKeys,
         ],
         cancelledGroupRuns: groupCleanup.cancelledRuns,
+        pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
     }),
   );
@@ -521,6 +528,7 @@ export async function destroyBot(
   if (artifactStore) {
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
+  if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
 }
 
 async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) {
@@ -596,11 +604,15 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
         select: { storageKey: true },
       })
     : [];
+  const pageShareSecrets = dissolvedGroupIds.length
+    ? await deletePageShareSecrets(tx, { groupId: { in: dissolvedGroupIds } })
+    : [];
   if (dissolvedGroupIds.length) {
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
+    pageShareSecrets,
     cancelledRuns: cancelledRuns.map((run) => ({
       id: run.id,
       botId: run.botId,
@@ -632,6 +644,7 @@ function releasedComputerLease() {
   return {
     controlHolder: "none" as const,
     controlLeaseId: null,
+    controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
     controlRunId: null,
@@ -691,6 +704,7 @@ const REMOTE_TEAM_SANDBOX_KINDS = new Set([
   "boat",
   "createos",
   "kubernetes",
+  "incus",
 ]);
 
 /**
@@ -789,14 +803,15 @@ async function removeTeamBotWorkspace(
   context: AdapterContext,
 ) {
   if (!isTeamBotFolderName(bot.id)) return;
-  // Look the owner's Team Computer up by scope: a bot moved to its own computer can still have
+  // Look the Space's Team Computer up by scope: a bot moved to its own computer can still have
   // a folder there. The space's Team Computer from before each person got their own still holds
   // the folders and browser profiles of every member's bots from then. Any other team computer
   // in the space drops them on boot (botDeletion).
+  const teamUserId = await teamComputerUserId(deps.prisma, bot);
   const [own, legacy] = await Promise.all([
     deps.prisma.computer.findUnique({
       where: {
-        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: bot.userId }),
+        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: teamUserId }),
       },
     }),
     deps.prisma.computer.findUnique({ where: { homeKey: legacyTeamHomeKey(bot.spaceId) } }),

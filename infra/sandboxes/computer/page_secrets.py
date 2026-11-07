@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import struct
 import time
@@ -20,6 +21,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 WORLD_NAME = "rakazo-page-browser"
+# The largest CDP message read whole; a larger one (a page event) is skipped.
+MAX_FRAME_BYTES = 2 * 1024 * 1024
 
 # A frame asked for, began or committed a load of another document. Same-document changes, such as
 # a new URL fragment, leave the page and its fields in place and are not counted.
@@ -101,6 +104,11 @@ class CdpClient:
         # Navigations to another document started or committed in each frame, per CDP session.
         self._navigations: dict[tuple[Any, str], int] = {}
         self._frame_sessions: dict[str, Any] = {}
+        # Navigations too large to read, which could have been in any frame.
+        self._skipped_navigations = 0
+        # What is left of an oversized frame being skipped, and the request it answers, if any.
+        self._discard = 0
+        self._discarded_reply: int | None = None
 
     def connect(self) -> None:
         parts = urlsplit(self._ws_url)
@@ -158,8 +166,26 @@ class CdpClient:
                 raise RuntimeError("CDP websocket closed")
             self._buf.extend(chunk)
 
+    def _drain(self) -> None:
+        """Drop the rest of an oversized frame, a chunk at a time, so that it is never held in memory."""
+        assert self._sock is not None
+        while self._discard:
+            if not self._buf:
+                chunk = self._sock.recv(65536)
+                if not chunk:
+                    raise RuntimeError("CDP websocket closed")
+                self._buf.extend(chunk)
+            taken = min(self._discard, len(self._buf))
+            del self._buf[:taken]
+            self._discard -= taken
+
     def _read_frame(self) -> bytes:
         while True:
+            self._drain()
+            if self._discarded_reply is not None:
+                # Our own replies are small: an oversized one is failed alone, not mistaken for an event.
+                msg_id, self._discarded_reply = self._discarded_reply, None
+                return json.dumps({"id": msg_id, "error": {"message": "CDP reply too large"}}).encode("utf-8")
             self._need(2)
             b1, b2 = self._buf[0], self._buf[1]
             opcode, masked, length, offset = b1 & 0x0F, bool(b2 & 0x80), b2 & 0x7F, 2
@@ -169,9 +195,6 @@ class CdpClient:
             elif length == 127:
                 self._need(10)
                 length, offset = struct.unpack("!Q", self._buf[2:10])[0], 10
-            # Bounded before the payload is read: these steps never ask for anything large.
-            if length > 2 * 1024 * 1024:
-                raise RuntimeError("CDP frame too large")
             if not (b1 & 0x80):
                 raise RuntimeError("Fragmented CDP message unsupported")
             mask = b""
@@ -179,6 +202,21 @@ class CdpClient:
                 self._need(offset + 4)
                 mask = bytes(self._buf[offset:offset + 4])
                 offset += 4
+            if length > MAX_FRAME_BYTES:
+                # A page's own events can be huge (a request for a multi-megabyte data: URL): skip them.
+                head_size = min(length, 256)
+                self._need(offset + head_size)
+                head = bytes(self._buf[offset:offset + head_size])
+                if masked:
+                    head = bytes(b ^ mask[i % 4] for i, b in enumerate(head))
+                reply = re.match(rb'\{"id":\s*(\d+)\s*[,}]', head)
+                if reply and opcode in (0x0, 0x1, 0x2):
+                    self._discarded_reply = int(reply.group(1))
+                elif opcode in (0x0, 0x1, 0x2):
+                    self._skipped_event(head)
+                del self._buf[:offset]
+                self._discard = length
+                continue
             self._need(offset + length)
             payload = bytes(self._buf[offset:offset + length])
             del self._buf[:offset + length]
@@ -191,6 +229,12 @@ class CdpClient:
                 continue
             if opcode in (0x0, 0x1, 0x2):
                 return payload
+
+    def _skipped_event(self, head: bytes) -> None:
+        """The first bytes of an event too large to read."""
+        method = re.match(rb'\{"method":"([^"]+)"', head)
+        if method and method.group(1).decode() in NAVIGATION_EVENTS:
+            self._skipped_navigations += 1
 
     def _handle_event(self, message: dict[str, Any]) -> None:
         method = message.get("method")
@@ -222,7 +266,7 @@ class CdpClient:
         return [child for child, parent in self._frame_sessions.items() if parent == parent_session_id]
 
     def navigations(self, session_id: str, frame_id: str) -> int:
-        return self._navigations.get((session_id, frame_id), 0)
+        return self._navigations.get((session_id, frame_id), 0) + self._skipped_navigations
 
     def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
         for context_id, context in self._contexts.items():
@@ -282,8 +326,52 @@ EVAL_HELPERS = r"""
     cardMasked.add(el);
   }
   function unmaskCard(el) {
+    for (const node of codeSlots.get(el) || []) {
+      if (cardMasked.delete(node)) node.style.removeProperty("-webkit-text-security");
+    }
+    codeSlots.delete(el);
     if (!cardMasked.delete(el)) return;
     el.style.removeProperty("-webkit-text-security");
+  }
+  // A code box often sits over slot elements that draw each digit; the nearest ancestor (up to
+  // three up) that shows the code is drawn as dots too, so a screenshot never reads it.
+  const codeSlots = new WeakMap();
+  const codeShown = (text) => String(text).replace(/[\s-]+/g, "").toLowerCase();
+  function maskCodeSlots(el, code) {
+    const digits = codeShown(code);
+    if (!digits || !el.isConnected) return;
+    const held = codeSlots.get(el) || [];
+    let node = el.parentElement;
+    for (let level = 0; level < 3 && node && node !== document.body && node !== document.documentElement;
+         level++, node = node.parentElement) {
+      if (!codeShown(node.innerText ?? node.textContent ?? "").includes(digits)) continue;
+      if (!cardMasked.has(node)) maskCard(node);
+      if (!held.includes(node)) held.push(node);
+      break;
+    }
+    codeSlots.set(el, held);
+  }
+  // Whether an input is made for a one-time code: it says so, or takes digits, or is named or
+  // labelled like one, or holds a code's length. One box per digit is not one: those need the user.
+  function looksLikeCodeBox(el) {
+    if (el.maxLength === 1) return false;
+    if ((el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes("one-time-code")) return true;
+    if ((el.getAttribute("inputmode") || "").toLowerCase() === "numeric") return true;
+    if (el.maxLength >= 4 && el.maxLength <= 12) return true;
+    const root = el.getRootNode();
+    const named = [
+      el.name, el.id, el.getAttribute("aria-label"), el.placeholder, el.title,
+      ...[...(el.labels || [])].map((label) => label.textContent),
+      ...(el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
+        .map((id) => root.getElementById?.(id)?.textContent),
+    ].join(" ");
+    return /otp|one.?time|code|token|2fa|mfa|verif|\bpin\b|passcode|קוד|אימות/i.test(named);
+  }
+  function numericBox(el) {
+    const mode = (el.getAttribute("inputmode") || "").toLowerCase();
+    const pattern = (el.getAttribute("pattern") || "").trim();
+    return mode === "numeric" || mode === "decimal" || el.type === "tel"
+      || /^(\\d|\[0-9\])([*+]|\{\d+(,\d*)?\})?$/.test(pattern);
   }
   function visible(el) {
     if (!(el instanceof Element)) return false;
@@ -315,17 +403,22 @@ EVAL_HELPERS = r"""
     // Private-LAN plain HTTP is not a login target, even when the page origin matches.
     fill(value, origin, field) {
       const card = field === "card";
+      // A code the user entered for this page: a visible field like a username, but drawn as dots
+      // and only into a box that looks made for a code.
+      const code = field === "code";
       let saved = null;
       try { saved = new URL(origin); } catch { /* rejected below */ }
       if (!saved || saved.protocol !== "https:" || location.protocol !== "https:") {
         throw refused(card
           ? "A card can only be filled on HTTPS. Open the merchant's checkout with browser_navigate, then fill again."
+          : code ? "A code can only be filled on HTTPS. Open the site with browser_navigate, then fill again."
           : "Website logins can only be filled on HTTPS. Open the saved site with browser_navigate, then fill again.");
       }
       if (location.origin !== saved.origin) {
         throw refused(card
           ? "The page is not on the merchant's site for this purchase. Open the merchant's checkout with browser_navigate, then fill again."
-          : "The page is not on the site this login was saved for. Open the saved site with browser_navigate, then fill again.");
+          : code ? "The page is not on the site this code was asked for. Open that site with browser_navigate, then fill again."
+          : `This login is saved for ${saved.origin}; the page is on ${location.origin}. Open the saved site with browser_navigate, then fill again.`);
       }
       const el = focused();
       if (!el) throw refused("The field did not keep focus, so nothing was typed. Take a fresh snapshot and fill again.");
@@ -337,28 +430,40 @@ EVAL_HELPERS = r"""
       if (card && !(input && ["text", "tel", "password"].includes(input.type))) {
         throw refused("A card can only be typed into a card field.");
       }
-      const password = !card && field !== "username";
+      const password = !card && !code && field !== "username";
       if (password && !(input && input.type === "password")) {
         throw refused("A saved password can only be typed into a password field.");
       }
       if (!card && !password && !(input && ["text", "email", "tel"].includes(input.type))) {
-        throw refused("A saved username can only be typed into a text, email, or telephone field.");
+        throw refused(code ? "A code can only be typed into a text, email, or telephone field."
+          : "A saved username can only be typed into a text, email, or telephone field.");
       }
+      if (code && !looksLikeCodeBox(input)) {
+        throw refused("This field doesn't look like a code box; ask the user to take over.");
+      }
+      // A numeric box takes the digits of a code written with dashes.
+      if (code && numericBox(input)) value = String(value).replaceAll("-", "");
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
       setter.call(input, String(value));
       if (input.value !== String(value)) {
         // A partly accepted login (an email field trimming a username) is not left on the page.
         setter.call(input, "");
         throw refused(card ? "This field didn't accept the card, so it was cleared."
+          : code ? "This field didn't accept the code, so it was cleared."
           : "This field didn't accept the saved login, so it was cleared.");
       }
       // Snapshots never show the value again, whatever the page later does with the field.
       input.setAttribute(FILLED, "");
-      // Screenshots reach the model too, so a card is drawn as dots, like a password.
-      if (card) maskCard(input);
+      // Screenshots reach the model too, so a card or a code is drawn as dots, like a password.
+      if (card || code) maskCard(input);
       else unmaskCard(input);
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      if (code) {
+        // The widget may draw its slots right away or a moment later.
+        maskCodeSlots(input, value);
+        setTimeout(() => { if (cardMasked.has(input)) maskCodeSlots(input, value); }, 50);
+      }
       return true;
     },
     payTokenAccount() {
@@ -598,8 +703,8 @@ def frame_site_check(client: CdpClient, frame: tuple[str, str, int], step: dict[
         # Served from its site but run sandboxed, without that site's own origin: not the site's page as such.
         raise Refused("This field is in a sandboxed frame, so nothing was filled.")
     if not found.get("same"):
-        raise Refused(f"This field is in a frame from {found.get('origin')}, not on the site this login was saved "
-                      "for, so nothing was filled." if login else
+        raise Refused(f"This field is in a frame from {found.get('origin')}, and this login is saved for "
+                      f"{step['origin']}, so nothing was filled." if login else
                       f"This field is in a frame from {found.get('origin')}, not on the site it is meant for, "
                       "so nothing was filled.")
 

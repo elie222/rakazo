@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewFromBlocks, primaryActiveRun } from "./thread-listing.js";
+import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
   it("preserves literal URL paths in autolinks", () => {
@@ -43,5 +43,16 @@ describe("primaryActiveRun", () => {
     const runs = statuses.map((status) => ({ status }));
     expect(primaryActiveRun(runs)?.status).toBe(expected);
     expect(primaryActiveRun([...runs].reverse())?.status).toBe(expected);
+  });
+});
+
+describe("threadRunStatus", () => {
+  it("reads only the runs in the given thread", () => {
+    const runs = [
+      { status: "running", threadId: "group-thread" },
+      { status: "queued", threadId: "own-thread" },
+    ];
+    expect(threadRunStatus(runs, "own-thread")).toBe("queued");
+    expect(threadRunStatus(runs.slice(0, 1), "own-thread")).toBe("idle");
   });
 });

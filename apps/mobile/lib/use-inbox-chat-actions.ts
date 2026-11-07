@@ -3,21 +3,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
-import type {
-  ApiRequestContext,
-  MobileBot,
-  MobileBotSection,
-  MobileGroup,
-  MobileSpace,
-  RpcArgs,
-} from "./api";
-import {
-  captureApiRequestContext,
-  currentApiBase,
-  loadSessionToken,
-  rpc,
-  selectedSpaceId,
-} from "./api";
+import type { ApiRequestContext, RpcArgs } from "./api";
+import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { notifyArchivedChatsChanged } from "./archived-chats";
 import { confirmDeleteBot, confirmDeleteGroup } from "./bot-lifecycle";
 import { confirmDeleteSection } from "./confirm-delete-section";
@@ -25,9 +12,10 @@ import { useI18n } from "./i18n";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "./live-notifications";
+import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "./mobile-types";
 import { removeFromSearchInbox } from "./search-inbox";
 import { promptSectionName } from "./section-name-prompt";
-import { currentSessionGeneration } from "./session";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 import { errorText } from "./user-error";
 
 /** Sends a request about a chat to that chat's space without switching to it. */
@@ -87,6 +75,7 @@ export function useInboxChatActions({
           await loadSessionToken(),
           selectedSpaceId() ?? "",
           {
+            botId: chat.id,
             threadId: "threadId" in chat ? chat.threadId : undefined,
             notify: update.notifyOnFinish,
           },

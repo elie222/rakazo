@@ -103,6 +103,17 @@ describePostgres("content encryption (PostgreSQL)", () => {
   );
 
   afterAll(async () => {
+    // Rotation and re-wrapping reach every space in the shared database. Hand all keys back to
+    // the derived master key, or other suites and the next run cannot unwrap them once this
+    // run's random master keys are gone.
+    await runAsSystem("test cleanup", async () => {
+      const restore = createDb(databaseUrl!, {
+        keyProvider: new LocalKeyProvider([...masterKeysFromEnv(), masterB, masterA]),
+        encryptContent: true,
+      });
+      clients.push(restore);
+      await rewrapSpaceKeys(restore.prisma, contentEncryptionOf(restore.prisma)!.ring);
+    });
     await prisma?.organization.deleteMany({ where: { id: organizationId } });
     await prisma?.user.deleteMany({ where: { id: userId } });
     for (const db of clients) {
@@ -194,6 +205,27 @@ describePostgres("content encryption (PostgreSQL)", () => {
         contentEncryptionOf(fresh.prisma)!.openRows("Message", rows),
       ).rejects.toBeInstanceOf(ContentDecryptionError);
       await raw.query(`DELETE FROM messages WHERE id = $1`, [message.id]);
+    }));
+
+  it("finds an encrypted message by its attachment's name without storing the name in plaintext", () =>
+    runAsSystem("test fixture", async () => {
+      const message = await createThreadMessage(prisma, {
+        threadId,
+        role: "user",
+        blocks: [
+          {
+            kind: "file",
+            artifactId: `enc-art-${suffix}`,
+            name: "harbor-survey.pdf",
+            mimeType: "application/pdf",
+            size: 10,
+          },
+        ],
+      });
+      expect(await rawBlocks(message.id)).not.toContain("harbor");
+      const found = await searchHistory(prisma, scope, { query: "harbor survey" });
+      expect(found.messages.map((m) => m.messageId)).toEqual([message.id]);
+      await prisma.message.delete({ where: { id: message.id }, select: { id: true } });
     }));
 
   it("reads and searches plaintext rows next to encrypted ones, then migrates them", () =>

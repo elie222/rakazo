@@ -3,8 +3,8 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 import { ArchivedBotList } from "../../components/archived-bot-list";
 import { NativeActionButton } from "../../components/native-action-button";
-import type { MobileBot, MobileGroup } from "../../lib/api";
-import { captureApiRequestContext, rpc, selectSpace } from "../../lib/api";
+import { captureApiRequestContext, rpc } from "../../lib/api";
+import { selectSpace } from "../../lib/api-server";
 import {
   loadAllArchivedChats as loadArchivedChats,
   notifyArchivedChatsChanged,
@@ -12,6 +12,7 @@ import {
 import { confirmDeleteBot } from "../../lib/bot-lifecycle";
 import { useFloatingHeaderInset } from "../../lib/floating-header";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileGroup } from "../../lib/mobile-types";
 import { useMobileTokens } from "../../lib/native";
 import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
@@ -170,7 +171,7 @@ export default function ArchivedBots() {
       Alert.alert(t("Could not load bot"), errorText(cause, t("Try again.")), [
         { text: t("Cancel"), style: "cancel" },
         {
-          text: t("Try again."),
+          text: t("Try again"),
           onPress: () => {
             if (generation === focusGeneration.current) void open(bot);
           },
@@ -186,7 +187,7 @@ export default function ArchivedBots() {
       <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
         {error}
       </Text>
-      <NativeActionButton label={t("Try again.")} onPress={() => void loadChats()} fill={false} />
+      <NativeActionButton label={t("Try again")} onPress={() => void loadChats()} fill={false} />
     </>
   ) : null;
   if (!bots?.length && !groups.length)

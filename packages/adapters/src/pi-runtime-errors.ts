@@ -115,14 +115,15 @@ export function modelFailure(error: string, message: string): Error {
 const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
 
 function modelFailureClass(error: string, message: string): number {
+  const { kind } = normalizeRunError(message);
+  // Output diagnostics can quote generated text that looks like a timeout.
+  if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   // OpenCode drops chat sessions on its side; the next send opens a new one.
   if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
     return MODEL_FAILURE_RANK.indexOf(TransientModelError);
   // A refresh token the provider no longer accepts; the credential is already retired.
   if (terminalOAuthRefreshErrorMarker(message))
     return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
-  const { kind } = normalizeRunError(message);
-  if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
   if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
   return MODEL_FAILURE_RANK.indexOf(Error);
 }

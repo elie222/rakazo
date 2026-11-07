@@ -1,16 +1,21 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   isBackgroundRunTrigger,
   plainTextFromMarkdown,
   redactSecrets,
   truncatedPlainText,
   truncatePlainText,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { notificationIdentity } from "./notification-identity.js";
+import { messageBlocksText } from "./run-replies.js";
+
+const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 
 export async function runNotificationsEnabled(
   prisma: PrismaClient,
@@ -23,7 +28,11 @@ async function runNotice(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
   routineId?: string | null,
-): Promise<{ enabled: boolean; groupId: string | null }> {
+): Promise<{
+  enabled: boolean;
+  groupId: string | null;
+  bot?: { id: string; name: string; color: string; avatarSet: string };
+}> {
   // A routine carries its own notify setting, which decides on its failures.
   const routine = routineId
     ? await prisma.routine.findUnique({ where: { id: routineId }, select: { notify: true } })
@@ -36,7 +45,7 @@ async function runNotice(
       userId: run.userId,
     },
     select: {
-      bot: { select: { notifyOnFinish: true } },
+      bot: { select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true } },
       thread: { select: { groupId: true } },
     },
   });
@@ -44,6 +53,7 @@ async function runNotice(
   return {
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
+    bot: source.bot,
   };
 }
 
@@ -61,7 +71,7 @@ export async function notifyRun(
   options: { retryOnFailure?: boolean } = {},
 ) {
   if (
-    !deps.notifications ||
+    (!deps.notifications && !deps.events.publishChatAlert) ||
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
@@ -72,19 +82,24 @@ export async function notifyRun(
     return null;
   });
   if (!notice?.enabled) return;
+  publishChatAlert(deps.events, run, message, notice.groupId);
+  if (!deps.notifications) return;
   // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
   // count the push leaves the badge as it is.
   const badge = await countUnreadInboxChats(deps.prisma, {
-    userId: run.userId,
     spaceId: run.spaceId,
+    userId: run.userId,
   }).catch((error) => {
     getLogger().error("unread chat count", error);
     return undefined;
   });
+  const bot = notice.bot;
+  const sender = bot && (await notificationIdentity(bot));
   await deps.notifications
     .send(
       {
         ...message,
+        ...(sender ? { sender } : {}),
         ...(notice.groupId ? { groupId: notice.groupId } : {}),
         ...(badge === undefined ? {} : { badge }),
       },
@@ -103,20 +118,39 @@ export async function notifyRun(
     });
 }
 
+/** Open apps alert from the same message. Not awaited, so it never holds up the push. */
+export function publishChatAlert(
+  events: Pick<ThreadEvents, "publishChatAlert"> | undefined,
+  run: { spaceId: string; userId: string },
+  message: NotificationMessage,
+  groupId: string | null,
+) {
+  void (async () =>
+    events?.publishChatAlert?.(run.userId, {
+      kind: message.kind,
+      title: truncatePlainText(message.title, COMPLETION_NOTIFICATION_MAX_CHARS),
+      body: truncatePlainText(message.body, COMPLETION_NOTIFICATION_MAX_CHARS),
+      spaceId: run.spaceId,
+      botId: message.botId,
+      threadId: message.threadId,
+      ...(groupId ? { groupId } : {}),
+    }))().catch((error) => getLogger().error("chat alert publish", error));
+}
+
 export function runSendsFinishNotification(trigger: string): boolean {
-  return trigger !== "created" && !isBackgroundRunTrigger(trigger);
+  // A background helper's result is announced by the turn that passes it on.
+  return (
+    trigger !== "created" &&
+    trigger !== BACKGROUND_HELPER_TRIGGER &&
+    !isBackgroundRunTrigger(trigger)
+  );
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */
 export function completionNotificationBody(assembled: string, blocks: MessageBlock[]): string {
   if (assembled) return assembled;
-  return blocks
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("");
+  return messageBlocksText(blocks);
 }
-
-const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
 export function completionNotificationPreview(text: string): string {

@@ -60,6 +60,16 @@ export function escapeJsonSearchWildcards(value: string): string {
   return escapeSearchWildcards(JSON.stringify(value).slice(1, -1));
 }
 
+/**
+ * A snippet that would open mid-word ("…nd code") opens at the next word instead, when one starts
+ * soon enough to keep the context before the match.
+ */
+function wordStart(text: string, start: number, match: number): number {
+  if (start === 0 || /\s/.test(text[start - 1] ?? "") || /\s/.test(text[start] ?? "")) return start;
+  const space = text.slice(start, Math.min(start + 15, match)).search(/\s/);
+  return space < 0 ? start : start + space + 1;
+}
+
 /** 按 UTF-16 长度生成搜索摘要，保持原有匹配逻辑并避免在边界切断代理对。 */
 export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
   const q = query.trim().toLowerCase();
@@ -80,7 +90,7 @@ export function snippetAroundMatch(text: string, query: string, maxLen = 120): s
       originalIndex += character.length;
     }
   }
-  const start = textBoundary(text, Math.max(0, originalIndex - 40));
+  const start = wordStart(text, textBoundary(text, Math.max(0, originalIndex - 40)), originalIndex);
   const end = textBoundary(text, Math.min(text.length, start + maxLen));
   const prefix = start > 0 ? "…" : "";
   const suffix = end < text.length ? "…" : "";

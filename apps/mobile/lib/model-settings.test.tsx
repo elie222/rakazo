@@ -53,6 +53,9 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async (spaceId = "space-fixture") => ({
@@ -75,6 +78,8 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
         needsModel: saved.needsModel,
       };
+    if (procedure === "models/probeOpenAiCompatible")
+      return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
@@ -94,7 +99,15 @@ vi.mock("./api", () => ({
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
-        { provider: "openai-compatible", id: "model-fixture", label: "Fixture" },
+        {
+          provider: "openai-compatible",
+          id: "model-fixture",
+          label: "Fixture",
+          endpointPresets: [
+            { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+            { name: "CommandCode", baseUrl: "https://api.commandcode.ai/provider/v1" },
+          ],
+        },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
         {
@@ -176,7 +189,26 @@ vi.mock("./i18n", () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
-vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    accessibilityLabel,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    accessibilityLabel: string;
+    value: boolean;
+    disabled: boolean;
+    onValueChange: (value: boolean) => void;
+  }) =>
+    createElement("input", {
+      type: "checkbox",
+      "aria-label": accessibilityLabel,
+      checked: value,
+      disabled,
+      onChange: () => onValueChange(!value),
+    }),
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null, Checkmark: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -352,8 +384,8 @@ it("offers deployment-funded providers and service presets once among providers 
   expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
     "Anthropic",
     "OpenRouter",
-    "Ollama Cloud",
     "CommandCode",
+    "Ollama Cloud",
   ]);
 });
 
@@ -373,7 +405,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
-  expect(field("API key")?.placeholder).toBe("Ollama API key");
+  expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
@@ -743,4 +775,27 @@ it("offers a retry when the first load fails, then shows the model lists", async
   } finally {
     saved.failMe = false;
   }
+});
+
+it("searches discovered models without losing the selected default", async () => {
+  expect(field("Search")).toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Find models")!
+      .click(),
+  );
+  expect(field("Search")).not.toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "found-0")!
+      .click(),
+  );
+  await act(async () => field("found-1")!.click());
+  await change("Search", "found-10");
+  expect(container.textContent).not.toContain("found-0");
+  expect(container.textContent).toContain("found-10");
+  await change("Search", "");
+  expect(container.textContent).toContain("found-0");
+  expect(field("found-0")?.checked).toBe(true);
+  expect(field("found-1")?.checked).toBe(true);
 });

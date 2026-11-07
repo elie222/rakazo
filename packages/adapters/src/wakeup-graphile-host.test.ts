@@ -48,9 +48,11 @@ function handlers(): BackgroundJobHandlers {
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
+    "messaging.progress": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
+    "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
   };
 }
@@ -327,7 +329,13 @@ describe("reserved Graphile workloads", () => {
       true,
       true,
     ]);
-    expect(configurations[2].preset).toEqual({ worker: { localQueue: { size: 10 } } });
+    // Batched job writes are what Graphile's shutdown waits for before the worker exits.
+    const batched = { completeJobBatchDelay: 0, failJobBatchDelay: 0 };
+    expect(configurations.map(({ preset }) => preset)).toEqual([
+      { worker: batched },
+      { worker: batched },
+      { worker: { ...batched, localQueue: { size: 10 } } },
+    ]);
     expect(Object.keys(configurations[0].taskList)).toEqual(["run.interactive"]);
     expect(Object.keys(configurations[1].taskList)).toEqual(["run.continue"]);
     expect(Object.keys(configurations[2].taskList)).not.toContain("run.continue");
@@ -401,6 +409,24 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     vi.mocked(process.availableMemory).mockRestore();
     vi.mocked(process.constrainedMemory).mockRestore();
     vi.useRealTimers();
+  });
+
+  it("stops waiting for a handed-off run that outlives the drain deadline", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1, drainTimeoutMs: 20 });
+    const hung = deferred();
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await hung.promise;
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "hung-run" });
+      await host.stop();
+    } finally {
+      hung.resolve();
+    }
   });
 
   it("releases dispatch slots after durable handoff and drains executions at shutdown", async () => {
@@ -733,6 +759,26 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     expect(run).toHaveBeenCalledTimes(1);
 
     first.rejectLife(tooMany);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    expect(sleeps).toEqual([200]);
+
+    await host.stop();
+    expect(second.runner.stop).toHaveBeenCalled();
+  });
+
+  it("backs off then restarts when job writes stop the runner on a pool checkout timeout", async () => {
+    const first = mockRunner();
+    const second = mockRunner();
+    run.mockResolvedValueOnce(first.runner).mockResolvedValueOnce(second.runner);
+    const sleeps: number[] = [];
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    await host.start(handlers());
+    first.rejectLife(new Error("timeout exceeded when trying to connect"));
     await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
     expect(sleeps).toEqual([200]);
 

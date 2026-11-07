@@ -1,21 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { artifactThreadTarget, matchesArtifactQuery, mimeBadgeLabel } from "./artifacts";
+import { artifactThreadTarget, matchesArtifactQuery } from "./artifacts";
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
-
-describe("mimeBadgeLabel", () => {
-  it("labels the well-known artifact mime types", () => {
-    expect(mimeBadgeLabel("text/html")).toBe("HTML");
-    expect(mimeBadgeLabel("text/markdown")).toBe("MD");
-    expect(mimeBadgeLabel("application/pdf")).toBe("PDF");
-  });
-
-  it("falls back to the subtype for anything else", () => {
-    expect(mimeBadgeLabel("image/png")).toBe("PNG");
-    expect(mimeBadgeLabel("application/json")).toBe("JSON");
-  });
-});
 
 describe("matchesArtifactQuery", () => {
   const item = { name: "Landing page draft.html", description: "Hero + pricing section" };

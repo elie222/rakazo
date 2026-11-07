@@ -5,11 +5,11 @@ import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
-import type { MobileBot, MobileGroup } from "../lib/api";
 import { rpc } from "../lib/api";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -121,6 +121,13 @@ export default function GroupSettingsScreen() {
           onPress={() => void save()}
           style={{ marginTop: 24 }}
         />
+        {groupId ? (
+          <NativeActionButton
+            label={t("Pages")}
+            onPress={() => router.push({ pathname: "/pages", params: { groupId } })}
+            style={{ marginTop: 16 }}
+          />
+        ) : null}
         <NativeActionButton
           label={t("Delete group")}
           onPress={remove}

@@ -1,134 +1,219 @@
-import { decodeLoginSecret } from "@rakazo/contracts";
+import type { BotSecretMetadata, ContactFields } from "@rakazo/contracts";
+import {
+  decodeCardSecret,
+  decodeContactSecret,
+  decodeLoginSecret,
+  vaultKind,
+} from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
+vi.mock("./i18n", () => ({
+  t: (text: string, values?: Record<string, string>) =>
+    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
+}));
 
-import type { CredentialDraft } from "./vault";
+import type { VaultDraft, VaultItem } from "./vault";
 import {
-  credentialDetail,
-  credentialNameProblem,
-  credentialValue,
-  draftDestination,
-  draftReady,
-  EMPTY_DRAFT,
-  readableCredential,
-  secretReady,
-  withCredential,
+  billingChoices,
+  draftSave,
+  emptyDraft,
+  filterVaultItems,
+  itemDraft,
+  readableItem,
+  typedCardBrand,
+  variableProblem,
+  vaultItemSubtitle,
+  vaultKindsPresent,
+  withItem,
 } from "./vault";
 
-const draft = (change: Partial<CredentialDraft>): CredentialDraft => ({
-  ...EMPTY_DRAFT,
-  ...change,
-});
-const saved = (change: Record<string, unknown>) => ({
+const item = (change: Partial<BotSecretMetadata>): BotSecretMetadata => ({
   name: "github",
   origin: "https://api.github.com",
-  auth: { type: "bearer" as const },
+  auth: { type: "bearer" },
+  title: "api.github.com",
+  note: "",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...change,
 });
-const secret = { value: "example-value", fields: [] };
-const loginFields = [
-  { label: "Username", value: " ada ", hidden: false },
-  { label: "Password", value: "example-password", hidden: true },
-];
+const card = item({
+  name: "visa",
+  origin: "",
+  auth: { type: "card" },
+  title: "Visa ·· 4242",
+  note: "For travel",
+  preview: { card: { brand: "Visa", last4: "4242", expMonth: 8, expYear: 2028, billing: "home" } },
+});
+const home = item({
+  name: "home",
+  origin: "",
+  auth: { type: "contact" },
+  title: "Home",
+  preview: {
+    contact: { name: "Alex Rivera", line1: "12 Elm St", city: "Springfield" } as ContactFields,
+  },
+});
+const login = item({
+  name: "github-login",
+  origin: "https://www.github.com",
+  auth: { type: "login" },
+  title: "github.com",
+  preview: { username: "octo@example.com" },
+});
+const variable = item({ name: "deploy_token", origin: "", auth: { type: "command" } });
+const draft = (change: Partial<VaultDraft>): VaultDraft => ({ ...emptyDraft(), ...change });
 
-describe("vault credentials", () => {
-  it("shows a site, a login's host, or the variable a command receives", () => {
-    expect(credentialDetail(saved({}))).toBe("https://api.github.com");
-    expect(
-      credentialDetail(saved({ origin: "https://login.example.test", auth: { type: "login" } })),
-    ).toBe("login.example.test");
-    expect(
-      credentialDetail(saved({ name: "netbird-key", origin: "", auth: { type: "command" } })),
-    ).toBe("Command variable $NETBIRD_KEY");
-    expect(credentialDetail(saved({ auth: null }))).toBe("https://api.github.com");
+describe("vault list", () => {
+  it("files every auth type under the kind people add and filter by", () => {
+    expect(vaultKind("bearer")).toBe("api_key");
+    expect(vaultKind("header")).toBe("api_key");
+    expect(vaultKind("command")).toBe("variable");
+    expect(vaultKind("card")).toBe("card");
   });
 
-  it("only replaces a credential whose settings and name still read", () => {
-    expect(readableCredential(saved({}))).not.toBeNull();
-    expect(readableCredential(saved({ auth: null }))).toBeNull();
-    expect(readableCredential(saved({ name: "Old Name" }))).toBeNull();
+  it("shows the same subtitles as the web vault", () => {
+    expect(vaultItemSubtitle(login)).toBe("octo@example.com");
+    expect(vaultItemSubtitle(card)).toBe("Expires 08/28 · For travel");
+    expect(vaultItemSubtitle(home)).toBe("Alex Rivera · 12 Elm St, Springfield");
+    expect(vaultItemSubtitle(item({}))).toBe("API key");
+    expect(vaultItemSubtitle(item({ title: "GitHub" }))).toBe("API key · api.github.com");
+    expect(vaultItemSubtitle(variable)).toBe("$DEPLOY_TOKEN");
+    expect(vaultItemSubtitle(item({ auth: null }))).toBe("https://api.github.com");
   });
 
-  it("reports a bad name or a reserved command variable once there is a name", () => {
-    expect(credentialNameProblem(draft({ name: "" }))).toBeUndefined();
-    expect(credentialNameProblem(draft({ name: "my key" }))).toBe("invalid");
-    expect(credentialNameProblem(draft({ name: "path", type: "command" }))).toBe("reserved");
-    expect(credentialNameProblem(draft({ name: "path" }))).toBeUndefined();
+  it("filters by kind and searches titles and subtitles", () => {
+    const all = [login, card, home, variable];
+    expect(vaultKindsPresent(all)).toEqual(["login", "card", "contact", "variable"]);
+    expect(filterVaultItems(all, "card", "")).toEqual([card]);
+    expect(filterVaultItems(all, "all", "springfield")).toEqual([home]);
+    expect(filterVaultItems(all, "all", "  ")).toEqual(all);
   });
 
-  it("needs a site except for a command variable, and each type's own field", () => {
-    expect(draftReady(draft({ name: "github" }), secret)).toBe(false);
-    expect(draftReady(draft({ name: "github", origin: "https://api.github.com" }), secret)).toBe(
-      true,
+  it("offers contacts to bill a card to, and replaces a saved item by name", () => {
+    expect(billingChoices([login, card, home])).toEqual([{ key: "home", label: "Home" }]);
+    const renamed = { ...home, title: "Our place" };
+    expect(withItem([login, home], renamed)).toEqual([login, renamed]);
+    expect(withItem([login], home)).toEqual([login, home]);
+  });
+
+  it("only edits items whose settings still read", () => {
+    expect(readableItem(item({ auth: null }))).toBeNull();
+    expect(readableItem(item({ name: "Legacy Name" }))).toBeNull();
+    expect(readableItem(card)).toEqual(card);
+  });
+});
+
+describe("saving from the editor", () => {
+  it("saves a new card under a name the server picks, as its encoded value", () => {
+    const save = draftSave(
+      "card",
+      draft({ number: "4242 4242 4242 4242", expiry: "8/28", cvc: "123", title: " Work " }),
     );
-    expect(draftReady(draft({ name: "netbird-key", type: "command" }), secret)).toBe(true);
-    const header = draft({ name: "api", origin: "https://api.example.test", type: "header" });
-    expect(draftReady(header, secret)).toBe(false);
-    expect(draftReady({ ...header, headerName: "X-Api-Key" }, secret)).toBe(true);
-    const login = draft({ name: "site", origin: "https://example.test", type: "login" });
-    expect(draftReady(login, secret)).toBe(false);
-    expect(draftReady(login, { value: "", fields: loginFields })).toBe(true);
+    expect(save?.destination).toEqual({ auth: { type: "card" } });
+    expect(save?.title).toBe("Work");
+    expect(decodeCardSecret(save!.value!)).toEqual({
+      number: "4242424242424242",
+      expMonth: 8,
+      expYear: 2028,
+      cvc: "123",
+    });
+    expect(
+      draftSave("card", draft({ number: "4242 4242 4242 4241", expiry: "8/28" })),
+    ).toBeUndefined();
+    expect(typedCardBrand("42")).toBe("Visa");
+    expect(typedCardBrand("1")).toBeUndefined();
   });
 
-  it("needs every login field named, filled and named differently", () => {
-    const ready = (fields: typeof loginFields) => secretReady("login", { value: "", fields });
-    const [username, password] = loginFields;
-    expect(ready(loginFields)).toBe(true);
-    expect(ready([{ ...username!, label: " " }, password!])).toBe(false);
-    expect(ready([{ ...username!, value: "  " }, password!])).toBe(false);
-    expect(ready([username!, { ...password!, value: "" }])).toBe(false);
-    expect(ready([username!, { ...password!, label: " username " }])).toBe(false);
-    expect(ready([])).toBe(false);
+  it("saves a contact's fields, and needs at least one", () => {
+    const save = draftSave(
+      "contact",
+      draft({ contact: { ...emptyDraft().contact, city: "Paris", phone: " " } }),
+    );
+    expect(decodeContactSecret(save!.value!)).toEqual({ city: "Paris" });
+    expect(draftSave("contact", draft({}))).toBeUndefined();
   });
 
-  it("sends no site for a command variable and trims the rest", () => {
+  it("saves a new login, API key or variable only once it has what it needs", () => {
+    const fields = [
+      { label: "Username", value: "ada", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
+    ];
+    expect(draftSave("login", draft({ fields }))).toBeUndefined();
+    const save = draftSave("login", draft({ fields, origin: "https://example.test" }));
+    expect(save?.destination).toEqual({ origin: "https://example.test", auth: { type: "login" } });
+    expect(decodeLoginSecret(save!.value!).fields).toEqual(fields);
+
     expect(
-      draftDestination(draft({ name: " netbird-key ", type: "command", origin: "x" })),
-    ).toEqual({ name: "netbird-key", auth: { type: "command" } });
+      draftSave("api_key", draft({ origin: "https://api.example.test", value: "k" })),
+    ).toMatchObject({
+      destination: { origin: "https://api.example.test", auth: { type: "bearer" } },
+      value: "k",
+    });
     expect(
-      draftDestination(
-        draft({
-          name: "api",
-          origin: " https://api.example.test ",
-          type: "header",
-          headerName: " X-Api-Key ",
-        }),
-      ),
-    ).toEqual({
-      name: "api",
-      origin: "https://api.example.test",
-      auth: { type: "header", name: "X-Api-Key" },
+      draftSave("api_key", draft({ origin: "https://x.test", apiAuth: "header", value: "k" })),
+    ).toBeUndefined();
+
+    expect(draftSave("variable", draft({ variable: "DEPLOY_TOKEN", value: "v" }))).toMatchObject({
+      destination: { name: "deploy_token", auth: { type: "command" } },
+    });
+    expect(variableProblem(draft({ variable: "PATH" }))).toBe("reserved");
+    expect(variableProblem(draft({ variable: "1X" }))).toBe("invalid");
+    expect(draftSave("variable", draft({ variable: "PATH", value: "v" }))).toBeUndefined();
+  });
+
+  it("edits a saved card from its revealed value, so every field is sent", () => {
+    const saved = readableItem(card) as VaultItem;
+    const revealed = {
+      card: { number: "4242424242424242", expMonth: 8, expYear: 2028, cvc: "123", billing: "home" },
+    };
+    const start = itemDraft(saved, [], revealed);
+    expect(start).toMatchObject({ number: "4242424242424242", expiry: "08/28", cvc: "123" });
+    const save = draftSave("card", { ...start, expiry: "09/29", title: "Work" }, saved);
+    expect(save).toMatchObject({ destination: { name: "visa" }, title: "Work" });
+    expect(decodeCardSecret(save!.value!)).toMatchObject({
+      expMonth: 9,
+      expYear: 2029,
+      cvc: "123",
     });
   });
 
-  it("saves a website login as its encoded fields", () => {
-    expect(credentialValue("bearer", { value: " token ", fields: [] })).toBe(" token ");
-    expect(
-      decodeLoginSecret(
-        credentialValue("login", {
-          value: "",
-          fields: loginFields.map((field, id) => ({ ...field, id })),
-        }),
-      ),
-    ).toEqual({
-      fields: [
-        { label: "Username", value: "ada", hidden: false },
-        { label: "Password", value: "example-password", hidden: true },
-      ],
-    });
-  });
-
-  it("replaces a saved credential with the same name or adds it", () => {
-    const list = [saved({}), saved({ name: "other" })];
-    const replaced = saved({ updatedAt: "2026-02-01T00:00:00.000Z" });
-    expect(withCredential(list, replaced)).toEqual([replaced, list[1]]);
-    expect(withCredential(list, saved({ name: "new" })).map((entry) => entry.name)).toEqual([
-      "github",
-      "other",
-      "new",
+  it("edits a saved login from all of its revealed fields", () => {
+    const saved = readableItem(login) as VaultItem;
+    const fields = [
+      { label: "Email", value: "octo@example.com", hidden: false },
+      { label: "Password", value: "fake-password-1", hidden: true },
+      { label: "PIN", value: "fake-pin-1", hidden: true },
+    ];
+    const start = itemDraft(saved, [], { fields });
+    const changed = start.fields.map((field, index) =>
+      index === 0 ? { ...field, value: "new@example.com" } : field,
+    );
+    const save = draftSave("login", { ...start, fields: changed }, saved);
+    expect(decodeLoginSecret(save!.value!).fields).toEqual([
+      { label: "Email", value: "new@example.com", hidden: false },
+      { label: "Password", value: "fake-password-1", hidden: true },
+      { label: "PIN", value: "fake-pin-1", hidden: true },
     ]);
+  });
+
+  it("keeps a key's value, which the form never shows, until a new one is typed", () => {
+    const key = readableItem(item({})) as VaultItem;
+    // The title shown is read from the item; leaving it as it was keeps it that way.
+    expect(draftSave("api_key", itemDraft(key, []), key)).toEqual({
+      destination: { name: "github", origin: "https://api.github.com", auth: { type: "bearer" } },
+      note: "",
+    });
+    expect(draftSave("api_key", { ...itemDraft(key, []), title: "GitHub" }, key)?.title).toBe(
+      "GitHub",
+    );
+    expect(draftSave("api_key", { ...itemDraft(key, []), value: "new" }, key)?.value).toBe("new");
+  });
+
+  it("always sends a contact's fields, which are not secret", () => {
+    const saved = readableItem(home) as VaultItem;
+    const save = draftSave("contact", itemDraft(saved, []), saved);
+    expect(save?.destination).toEqual({ name: "home", auth: { type: "contact" } });
+    expect(decodeContactSecret(save!.value!)).toEqual(home.preview!.contact);
   });
 });

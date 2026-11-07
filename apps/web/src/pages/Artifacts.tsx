@@ -2,23 +2,28 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, Bot } from "@rakazo/contracts";
-import { isAttachmentImageMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind } from "@rakazo/contracts";
+import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   BotAvatar,
   Button,
+  buttonVariants,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  ListSearchInput,
   NativeSelect,
   NativeSelectOption,
-  parseBotAvatar,
-  resolvePersonaColorDef,
+  OptionSelect,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
   ToggleGroup,
   ToggleGroupItem,
@@ -27,17 +32,23 @@ import { skipToken, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack
 import {
   ChevronLeft,
   Download,
-  Filter,
+  FileCode2,
+  FileText,
+  ImageIcon,
   LayoutGrid,
   List,
   Lock,
   Maximize2,
   Minimize2,
   Search,
+  SearchX,
   Trash2,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { VideoPreview } from "../components/ArtifactFileCard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -47,34 +58,23 @@ import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
+import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";
-const VIEW_MODE_STORAGE_KEY = "rakazo:artifacts-view-mode";
+const viewModePreference = createStoredPreference<ViewMode>({
+  key: "rakazo:artifacts-view-mode",
+  parse: (raw) => (raw === "list" ? "list" : "grid"),
+  serialize: (mode) => mode,
+});
 const LIST_PAGE_SIZE = 60;
 
 type ArtifactSummary = Artifact & { versionCount: number };
 
 const NO_BOTS: Bot[] = [];
-
-function readViewMode(): ViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
-  } catch {
-    return "grid";
-  }
-}
-
-function writeViewMode(mode: ViewMode): void {
-  try {
-    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-  } catch {
-    // Preference only; ignore storage failures.
-  }
-}
 
 function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
   if (filter === "all") return true;
@@ -94,10 +94,10 @@ export function ArtifactsPage() {
   const navigate = useNavigate();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const viewMode = viewModePreference.use();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [madeByBots, setMadeByBots] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ArtifactSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -115,6 +115,7 @@ export function ArtifactsPage() {
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
       botId: activeBotId ?? undefined,
+      madeByBots,
       ...(cursor ? { cursor } : {}),
       limit: LIST_PAGE_SIZE,
     }),
@@ -166,7 +167,7 @@ export function ArtifactsPage() {
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
-  }, [searchQuery, dateFilter, activeBotId]);
+  }, [searchQuery, dateFilter, activeBotId, madeByBots]);
 
   // Search and date filters only see loaded pages, so keep paging until something matches.
   useEffect(() => {
@@ -176,11 +177,6 @@ export function ArtifactsPage() {
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
   }, [clientFilterActive, nextCursor, loadingMore, items, filteredItems]);
-
-  function setMode(mode: ViewMode) {
-    setViewMode(mode);
-    writeViewMode(mode);
-  }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -209,112 +205,114 @@ export function ArtifactsPage() {
     }
   }
 
+  const serverFilterActive = activeBotId !== null || madeByBots;
+  const filtersActive = serverFilterActive || clientFilterActive;
+  // Nothing to narrow down yet, so the page stays a clean empty state.
+  const showFilters = serverFilterActive || (items !== null && (items.length > 0 || !!nextCursor));
+
+  function clearFilters() {
+    setSearchQuery("");
+    setDateFilter("all");
+    setActiveBotId(null);
+    setMadeByBots(false);
+  }
+
+  const emptyState = (
+    <EmptyArtifacts
+      filtered={filtersActive}
+      onClearFilters={clearFilters}
+      nextCursor={nextCursor}
+      loadingMore={loadingMore}
+      onLoadMore={loadMore}
+    />
+  );
+
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
-      <header className="app-drag border-b border-border px-4 py-4 md:px-6">
-        {/* Wraps so window controls and the way back stay on screen with Filters. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <div className="flex items-center gap-2">
-            {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
-            {desktopBridge() ? <WindowChrome /> : null}
+      <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
+        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
+        {desktopBridge() ? <WindowChrome /> : null}
+        <div className="flex min-w-fit flex-1 items-center gap-1">
+          <IconTooltip label={t`Back`}>
             <Link
               to="/app"
-              className="app-no-drag flex shrink-0 items-center gap-0.5 rounded-lg py-1 pe-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              aria-label={t`Back`}
+              className={buttonVariants({
+                variant: "ghost",
+                size: "icon",
+                className: "app-no-drag text-muted-foreground",
+              })}
             >
-              <ChevronLeft size={16} strokeWidth={1.9} aria-hidden="true" />
-              <Trans>Bots</Trans>
+              <ChevronLeft />
             </Link>
-            <h1 className="text-heading2 font-semibold">
-              <Trans>Artifacts</Trans>
-            </h1>
-          </div>
-          <div className="app-no-drag flex shrink-0 items-center gap-2">
-            <Button
-              variant={filtersOpen ? "default" : "outline"}
-              size="sm"
-              aria-pressed={filtersOpen}
-              onClick={() => setFiltersOpen((open) => !open)}
-            >
-              <Filter strokeWidth={1.9} />
-              <Trans>Filters</Trans>
-            </Button>
+          </IconTooltip>
+          <h1 className="font-medium text-foreground">
+            <Trans>Artifacts</Trans>
+          </h1>
+        </div>
+        {showFilters ? (
+          <div className="app-no-drag flex flex-wrap items-center gap-2">
+            <SearchToggle query={searchQuery} onQueryChange={setSearchQuery} />
+            {bots.length > 1 ? (
+              <BotFilter bots={bots} value={activeBotId} onValueChange={setActiveBotId} />
+            ) : null}
+            <OptionSelect
+              aria-label={t`Filter by date`}
+              className="w-fit"
+              value={dateFilter}
+              onValueChange={setDateFilter}
+              options={[
+                { value: "all", label: t`All time` },
+                { value: "today", label: t`Today` },
+                { value: "week", label: t`This week` },
+                { value: "month", label: t`This month` },
+              ]}
+            />
+            <OptionSelect
+              aria-label={t`Filter by who made it`}
+              className="w-fit"
+              value={madeByBots ? "bots" : "all"}
+              onValueChange={(value) => setMadeByBots(value === "bots")}
+              options={[
+                { value: "all", label: t`All files` },
+                { value: "bots", label: t`Made by bots` },
+              ]}
+            />
             {!artifactId ? (
               <ToggleGroup
                 value={[viewMode]}
                 onValueChange={([next]) => {
-                  if (next) setMode(next as ViewMode);
+                  if (next) viewModePreference.set(next as ViewMode);
                 }}
                 spacing={1}
-                size="sm"
-                className="rounded-lg border border-border p-0.5"
+                className="h-8 rounded-lg border border-input p-0.5"
               >
                 <IconTooltip label={t`Card view`}>
                   <ToggleGroupItem
                     value="grid"
                     aria-label={t`Card view`}
-                    className="size-7 min-w-7 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+                    className="aspect-square h-full w-auto min-w-0 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
                   >
-                    <LayoutGrid size={15} strokeWidth={1.9} />
+                    <LayoutGrid className="size-3.5" />
                   </ToggleGroupItem>
                 </IconTooltip>
                 <IconTooltip label={t`List view`}>
                   <ToggleGroupItem
                     value="list"
                     aria-label={t`List view`}
-                    className="size-7 min-w-7 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+                    className="aspect-square h-full w-auto min-w-0 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
                   >
-                    <List size={15} strokeWidth={1.9} />
+                    <List className="size-3.5" />
                   </ToggleGroupItem>
                 </IconTooltip>
               </ToggleGroup>
             ) : null}
           </div>
-        </div>
-
-        {filtersOpen ? (
-          <div className="app-no-drag mt-3 flex flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-[260px]">
-              <Search
-                size={14}
-                strokeWidth={1.9}
-                className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={t`Search artifacts…`}
-                className="w-full rounded-lg border border-border bg-background py-1.5 ps-8 pe-3 text-[13px] outline-none focus:border-ring"
-              />
-            </div>
-            <NativeSelect
-              aria-label={t`Filter by date`}
-              className="w-auto text-[13px]"
-              value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value as DateFilter)}
-            >
-              <NativeSelectOption value="all">{t`All time`}</NativeSelectOption>
-              <NativeSelectOption value="today">{t`Today`}</NativeSelectOption>
-              <NativeSelectOption value="week">{t`This week`}</NativeSelectOption>
-              <NativeSelectOption value="month">{t`This month`}</NativeSelectOption>
-            </NativeSelect>
-            <FilterChip active={activeBotId === null} onClick={() => setActiveBotId(null)}>
-              <Trans>All bots</Trans>
-            </FilterChip>
-            {bots.map((bot) => (
-              <BotFilterChip
-                key={bot.id}
-                bot={bot}
-                active={activeBotId === bot.id}
-                onClick={() => setActiveBotId(bot.id)}
-              />
-            ))}
-          </div>
         ) : null}
       </header>
 
       {refreshError ? (
-        <p role="alert" className="px-6 py-2 text-sm text-destructive">
+        <p role="alert" className="px-6 py-2 text-body text-destructive">
           {refreshError}
         </p>
       ) : null}
@@ -331,6 +329,7 @@ export function ArtifactsPage() {
                 nextCursor={nextCursor}
                 loadingMore={loadingMore}
                 onLoadMore={loadMore}
+                empty={emptyState}
               />
             ) : null}
             <PreviewPane
@@ -350,48 +349,30 @@ export function ArtifactsPage() {
             nextCursor={nextCursor}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
+            empty={emptyState}
           />
         )}
       </div>
 
       {pendingDelete ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) setPendingDelete(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                <Trans>Delete "{pendingDelete.name}"?</Trans>
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {pendingDelete.versionCount > 1 ? (
-                  <Trans>
-                    This deletes all {pendingDelete.versionCount} versions of this artifact. This
-                    can't be undone.
-                  </Trans>
-                ) : (
-                  <Trans>This can't be undone.</Trans>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {deleteError ? <p className="text-[13.5px] text-destructive">{deleteError}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
-              >
-                {deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setPendingDelete(null)}
+          title={<Trans>Delete "{pendingDelete.name}"?</Trans>}
+          description={
+            pendingDelete.versionCount > 1 ? (
+              <Trans>
+                This deletes all {pendingDelete.versionCount} versions of this artifact. This can't
+                be undone.
+              </Trans>
+            ) : (
+              <Trans>This can't be undone.</Trans>
+            )
+          }
+          error={deleteError}
+          busy={deleteBusy}
+          onConfirm={() => void confirmDelete()}
+          confirmLabel={deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );
@@ -406,6 +387,7 @@ function BrowsingPane({
   nextCursor,
   loadingMore,
   onLoadMore,
+  empty,
 }: {
   items: ArtifactSummary[] | null;
   loadError: string | null;
@@ -415,24 +397,16 @@ function BrowsingPane({
   nextCursor: string | null;
   loadingMore: boolean;
   onLoadMore: () => void;
+  empty: ReactNode;
 }) {
   if (items === null) {
     return (
-      <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
+      <div className="grid flex-1 place-items-center text-body text-muted-foreground/80">
         {loadError ?? <Spinner aria-label={t`Loading…`} />}
       </div>
     );
   }
-  if (items.length === 0) {
-    return (
-      <EmptyArtifacts
-        className="grid flex-1 place-items-center text-sm text-muted-foreground/80"
-        nextCursor={nextCursor}
-        loadingMore={loadingMore}
-        onLoadMore={onLoadMore}
-      />
-    );
-  }
+  if (items.length === 0) return empty;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
       {viewMode === "grid" ? (
@@ -481,36 +455,201 @@ function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () =>
 }
 
 function EmptyArtifacts({
-  className,
+  filtered,
+  onClearFilters,
   nextCursor,
   loadingMore,
   onLoadMore,
 }: {
-  className: string;
+  filtered: boolean;
+  onClearFilters: () => void;
   nextCursor: string | null;
   loadingMore: boolean;
   onLoadMore: () => void;
 }) {
-  if (!nextCursor) {
+  if (nextCursor) {
     return (
-      <div className={className}>
-        <Trans>No artifacts found.</Trans>
-      </div>
+      <Empty>
+        {loadingMore ? (
+          <Spinner aria-label={t`Loading…`} />
+        ) : (
+          <EmptyDescription>
+            <Trans>No matching artifacts on this page.</Trans>
+          </EmptyDescription>
+        )}
+        <LoadMoreButton loading={loadingMore} onClick={onLoadMore} />
+      </Empty>
+    );
+  }
+  if (filtered) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <SearchX />
+          </EmptyMedia>
+          <EmptyTitle>
+            <Trans>No matching artifacts</Trans>
+          </EmptyTitle>
+        </EmptyHeader>
+        <Button variant="outline" onClick={onClearFilters}>
+          <Trans>Clear filters</Trans>
+        </Button>
+      </Empty>
     );
   }
   return (
-    <div className={className}>
-      <div className="flex flex-col items-center gap-3">
-        <span>
-          {loadingMore ? (
-            <Spinner aria-label={t`Loading…`} />
-          ) : (
-            <Trans>No matching artifacts on this page.</Trans>
-          )}
-        </span>
-        <LoadMoreButton loading={loadingMore} onClick={onLoadMore} />
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia>
+          <ArtifactStackArt />
+        </EmptyMedia>
+        <EmptyTitle>
+          <Trans>No artifacts yet</Trans>
+        </EmptyTitle>
+        <EmptyDescription>
+          <Trans>Files your bots create, like reports, docs and images, collect here.</Trans>
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+function ArtifactStackArt() {
+  const sheet =
+    "absolute bottom-0 flex h-20 w-16 flex-col rounded-xl border border-border bg-card shadow-sm";
+  return (
+    <div aria-hidden="true" className="relative h-24 w-44">
+      <div
+        className={`${sheet} start-3 origin-bottom -rotate-10 items-start justify-center ps-3 text-muted-foreground`}
+      >
+        <ImageIcon className="size-5" strokeWidth={1.6} />
+      </div>
+      <div
+        className={`${sheet} end-3 origin-bottom rotate-10 items-end justify-center pe-3 text-muted-foreground`}
+      >
+        <FileCode2 className="size-5" strokeWidth={1.6} />
+      </div>
+      <div className={`${sheet} inset-x-0 mx-auto h-22 w-17 gap-1.5 p-2.5 shadow-md`}>
+        <FileText className="mb-1 size-4 text-foreground/80" strokeWidth={1.8} />
+        <span className="h-1 w-full rounded-full bg-muted-foreground/25" />
+        <span className="h-1 w-4/5 rounded-full bg-muted-foreground/25" />
+        <span className="h-1 w-full rounded-full bg-muted-foreground/25" />
+        <span className="h-1 w-3/5 rounded-full bg-muted-foreground/25" />
       </div>
     </div>
+  );
+}
+
+function SearchToggle({
+  query,
+  onQueryChange,
+}: {
+  query: string;
+  onQueryChange: (query: string) => void;
+}) {
+  const { t } = useLingui();
+  const [open, setOpen] = useState(query.length > 0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!query && document.activeElement !== inputRef.current) setOpen(false);
+  }, [query]);
+
+  if (!open && !query) {
+    return (
+      <IconTooltip label={t`Search`}>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t`Search`}
+          className="text-muted-foreground"
+          onClick={() => setOpen(true)}
+        >
+          <Search />
+        </Button>
+      </IconTooltip>
+    );
+  }
+  return (
+    <search
+      className="w-56 max-w-full animate-in fade-in-0 slide-in-from-right-2 duration-150"
+      onBlur={() => {
+        if (!query.trim()) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        onQueryChange("");
+        setOpen(false);
+      }}
+    >
+      <ListSearchInput
+        query={query}
+        setQuery={onQueryChange}
+        label={t`Search artifacts`}
+        placeholder={t`Search artifacts…`}
+        inputRef={inputRef}
+      />
+    </search>
+  );
+}
+
+const ALL_BOTS = "all";
+
+function BotFilter({
+  bots,
+  value,
+  onValueChange,
+}: {
+  bots: Bot[];
+  value: string | null;
+  onValueChange: (botId: string | null) => void;
+}) {
+  const { t } = useLingui();
+  const botsById = new Map(bots.map((bot) => [bot.id, bot]));
+  return (
+    <Select
+      value={value ?? ALL_BOTS}
+      onValueChange={(next) => onValueChange(next === ALL_BOTS || !next ? null : next)}
+    >
+      <SelectTrigger aria-label={t`Filter by bot`} className="max-w-44">
+        <SelectValue>
+          {(selected: string) => {
+            const bot = botsById.get(selected);
+            return bot ? <BotOption bot={bot} /> : t`All bots`;
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value={ALL_BOTS}>{t`All bots`}</SelectItem>
+          {bots.map((bot) => (
+            <SelectItem key={bot.id} value={bot.id}>
+              <BotOption bot={bot} />
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function BotOption({ bot }: { bot: Bot }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <BotAvatar
+        avatarSet={bot.avatarSet}
+        color={bot.color}
+        identity={bot.id}
+        size={16}
+        status={bot.status}
+      />
+      <span className="truncate">{bot.name}</span>
+    </span>
   );
 }
 
@@ -523,6 +662,7 @@ function IndexPane({
   nextCursor,
   loadingMore,
   onLoadMore,
+  empty,
 }: {
   items: ArtifactSummary[] | null;
   loadError: string | null;
@@ -532,20 +672,16 @@ function IndexPane({
   nextCursor: string | null;
   loadingMore: boolean;
   onLoadMore: () => void;
+  empty: ReactNode;
 }) {
   return (
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
-        <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
+        <div className="grid flex-1 place-items-center p-6 text-center text-body text-muted-foreground/80">
           {loadError ?? <Spinner aria-label={t`Loading…`} />}
         </div>
       ) : items.length === 0 ? (
-        <EmptyArtifacts
-          className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80"
-          nextCursor={nextCursor}
-          loadingMore={loadingMore}
-          onLoadMore={onLoadMore}
-        />
+        empty
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {items.map((item) => (
@@ -568,66 +704,6 @@ function IndexPane({
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      variant={active ? "default" : "outline"}
-      size="sm"
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
-  );
-}
-
-function useBotColorHex(bot: Bot): string {
-  return useMemo(() => {
-    const parsed = parseBotAvatar(bot.color, bot.id);
-    const effectiveId = bot.id || parsed.color || "agent";
-    return resolvePersonaColorDef(effectiveId, parsed.color).hex;
-  }, [bot.color, bot.id]);
-}
-
-function BotFilterChip({
-  bot,
-  active,
-  onClick,
-}: {
-  bot: Bot;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const hex = useBotColorHex(bot);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      aria-pressed={active}
-      onClick={onClick}
-      style={{ backgroundColor: active ? `${hex}26` : undefined, borderColor: `${hex}66` }}
-      className={active ? "text-foreground" : "text-muted-foreground"}
-    >
-      <BotAvatar
-        avatarSet={bot.avatarSet}
-        color={bot.color}
-        identity={bot.id}
-        size={16}
-        status={bot.status}
-      />
-      <span className="max-w-[120px] truncate">{bot.name}</span>
-    </Button>
-  );
-}
-
 function ArtifactCard({
   artifact,
   bot,
@@ -645,29 +721,29 @@ function ArtifactCard({
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
-          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-accent text-accent-foreground">
+          <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} />
           </span>
           <div className="flex items-center gap-1.5">
             {artifact.versionCount > 1 ? (
-              <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+              <span className="rounded-md bg-muted px-2 py-1 text-caption font-semibold text-muted-foreground">
                 {`v${artifact.version}`}
               </span>
             ) : null}
-            <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-              {mimeLabel(artifact.mimeType)}
+            <span className="rounded-md bg-muted px-2 py-1 text-caption font-semibold text-muted-foreground">
+              {artifactTypeLabel(artifact.mimeType)}
             </span>
           </div>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold">{artifact.name}</div>
+          <div className="truncate text-body-lg font-semibold">{artifact.name}</div>
           {artifact.description ? (
-            <div className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+            <div className="mt-1 line-clamp-2 text-body-sm leading-relaxed text-muted-foreground">
               {artifact.description}
             </div>
           ) : null}
         </div>
-        <div className="mt-auto flex items-center gap-2 text-[12px] text-muted-foreground">
+        <div className="mt-auto flex items-center gap-2 text-label text-muted-foreground">
           {bot ? (
             <>
               <BotAvatar
@@ -723,19 +799,19 @@ function ArtifactRow({
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} small />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{artifact.name}</span>
+          <span className="min-w-0 flex-1 truncate text-body font-medium">{artifact.name}</span>
           {artifact.versionCount > 1 ? (
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-caption font-semibold text-muted-foreground">
               {`v${artifact.version}`}
             </span>
           ) : null}
         </div>
         {artifact.description ? (
-          <div className="ps-8 text-[12.5px] leading-snug text-muted-foreground">
+          <div className="ps-8 text-body-sm leading-snug text-muted-foreground">
             {artifact.description}
           </div>
         ) : null}
-        <div className="flex items-center gap-1.5 ps-8 text-[11.5px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 ps-8 text-label text-muted-foreground">
           {bot ? (
             <>
               <BotAvatar
@@ -798,14 +874,6 @@ function ArtifactMimeIcon({ mimeType, small }: { mimeType: string; small?: boole
   );
 }
 
-function mimeLabel(mimeType: string): string {
-  if (mimeType === "text/html") return "HTML";
-  if (mimeType === "text/markdown") return "MD";
-  if (mimeType === "application/pdf") return "PDF";
-  const slash = mimeType.indexOf("/");
-  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
-}
-
 function PreviewPane({
   artifactId,
   maximized,
@@ -853,11 +921,11 @@ function PreviewPane({
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[16px] font-semibold">
+          <h2 className="truncate text-body-lg font-semibold">
             {state.status === "ready" ? state.artifact.name : null}
           </h2>
           {state.status === "ready" && state.artifact.description ? (
-            <p className="truncate text-[12.5px] text-muted-foreground">
+            <p className="truncate text-body-sm text-muted-foreground">
               {state.artifact.description}
             </p>
           ) : null}
@@ -865,7 +933,7 @@ function PreviewPane({
         {versions && versions.length > 1 && selectedVersionId ? (
           <NativeSelect
             aria-label={t`Version`}
-            className="w-auto shrink-0 text-[13px]"
+            className="w-auto shrink-0 text-body-sm"
             value={selectedVersionId}
             onChange={(event) => setSelectedVersionId(event.target.value)}
           >
@@ -909,7 +977,7 @@ function PreviewPane({
 
       <div className="min-h-0 flex-1 p-5">
         {state.status === "loading" ? (
-          <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+          <div className="grid h-full place-items-center text-body text-muted-foreground/80">
             <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
@@ -920,7 +988,7 @@ function PreviewPane({
           <div className="relative h-full overflow-hidden rounded-2xl border border-border">
             <ArtifactPreview artifact={state.artifact} bytes={state.bytes} />
             {state.artifact.mimeType === "text/html" ? (
-              <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-[11px] text-white">
+              <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
                   <Trans>Isolated preview — no access to your account</Trans>
@@ -935,31 +1003,40 @@ function PreviewPane({
 }
 
 function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8Array }) {
-  if (artifact.mimeType === "text/html") {
-    const html = new TextDecoder("utf-8").decode(bytes);
-    return <SandboxedHtmlViewer html={html} title={artifact.name} />;
+  switch (artifactPreviewKind(artifact.mimeType)) {
+    case "html":
+      return (
+        <SandboxedHtmlViewer html={new TextDecoder("utf-8").decode(bytes)} title={artifact.name} />
+      );
+    case "markdown":
+      return (
+        <div className="h-full overflow-y-auto bg-background">
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground">
+            <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
+          </article>
+        </div>
+      );
+    case "text":
+      return (
+        <div className="h-full overflow-auto bg-background">
+          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground">
+            {new TextDecoder("utf-8").decode(bytes)}
+          </pre>
+        </div>
+      );
+    case "pdf":
+      return <PdfViewer bytes={bytes} title={artifact.name} />;
+    case "video":
+      return <VideoPreview bytes={bytes} name={artifact.name} />;
+    case "image":
+      return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
+    case "none":
+      return (
+        <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
+          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+        </div>
+      );
   }
-  if (artifact.mimeType === "text/markdown") {
-    const text = new TextDecoder("utf-8").decode(bytes);
-    return (
-      <div className="h-full overflow-y-auto bg-background">
-        <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground">
-          <ChatMarkdown>{text}</ChatMarkdown>
-        </article>
-      </div>
-    );
-  }
-  if (artifact.mimeType === "application/pdf") {
-    return <PdfViewer bytes={bytes} title={artifact.name} />;
-  }
-  if (isAttachmentImageMimeType(artifact.mimeType)) {
-    return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
-  }
-  return (
-    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
-      <Trans>Preview isn't available for this file type — download it to view it.</Trans>
-    </div>
-  );
 }
 
 function ImagePreview({

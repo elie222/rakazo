@@ -26,6 +26,41 @@ export { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./worksp
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Groups workspace files into transfer batches of at most `maxFiles` files and
+ * PORTABLE_TRANSFER_BATCH_BYTES, or one file when it alone is larger. The caller sends
+ * each batch `add` hands back, which may be empty, and finally what `take` returns.
+ */
+export class PortableFileBatcher<T> {
+  private files: T[] = [];
+  private bytes = 0;
+
+  constructor(
+    private readonly maxFiles: number,
+    private readonly size: (file: T) => number,
+  ) {}
+
+  /** Adds `file`, first handing back the current batch when `file` would overflow it. */
+  add(file: T): T[] | undefined {
+    const size = this.size(file);
+    const full =
+      this.files.length >= this.maxFiles || this.bytes + size > PORTABLE_TRANSFER_BATCH_BYTES
+        ? this.take()
+        : undefined;
+    this.files.push(file);
+    this.bytes += size;
+    return full;
+  }
+
+  /** The batch so far, leaving an empty one. */
+  take(): T[] {
+    const files = this.files;
+    this.files = [];
+    this.bytes = 0;
+    return files;
+  }
+}
+
 /** Disk a save leaves free for everything else on the data volume. */
 const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 /** How often, in bytes written, a save checks the volume's free space again. */

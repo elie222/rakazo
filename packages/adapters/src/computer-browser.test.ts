@@ -364,6 +364,31 @@ describe("page browser safety", () => {
     expect(result).toMatchObject({ ok: outcome.ok, downloads });
   });
 
+  it("forwards the download folder with a snapshot and keeps the PDF it saved, and a new tab's note", async () => {
+    const downloads = [{ name: "4b1d.pdf", path: "bots/b1/Downloads/4b1d.pdf", size: 4 }];
+    const note =
+      'A new tab opened, and page tools now read it: "4b1d" at blob:https://bank.example/4b1d.';
+    const liveDriver = vi.fn(async (_computer: ComputerRef, _request: PageBrowserCommand) => ({
+      ok: true,
+      url: "blob:https://bank.example/4b1d",
+      title: "",
+      tree: "(no interactive elements)",
+      elements: [],
+      downloads,
+      note,
+    }));
+    const result = await new ComputerBrowserProvider({ liveDriver }).snapshot(
+      computer,
+      { downloads: "bots/b1/Downloads" },
+      baseContext,
+    );
+    expect(liveDriver.mock.calls[0]?.[1]).toEqual({
+      command: "snapshot",
+      downloads: "bots/b1/Downloads",
+    });
+    expect(result).toMatchObject({ downloads, note });
+  });
+
   it("reports a refused saved-login fill as settled, without desktop tools", async () => {
     const error = "The page is not on the site this login was saved for.";
     const provider = new ComputerBrowserProvider({
@@ -388,6 +413,113 @@ describe("page browser safety", () => {
     expect(result).toMatchObject({ ok: false, completed: 1, uncertain: false, error });
     expect(result).not.toHaveProperty("fallback");
     expect(result).not.toHaveProperty("tree");
+  });
+
+  it("passes on a refused purchase click as settled, with no desktop fallback", async () => {
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        error: "This click would complete a purchase",
+      }),
+    });
+    const result = await provider.act(
+      computer,
+      { actions: [{ kind: "click", ref: "e1" }] },
+      baseContext,
+    );
+    expect(result).toMatchObject({ ok: false, uncertain: false });
+    expect(result).not.toHaveProperty("fallback");
+  });
+
+  it("checks for a purchase without acting, and answers none when the computer cannot tell", async () => {
+    const commands: unknown[] = [];
+    const answer = {
+      ok: true,
+      url: "https://shop.example.test/pay",
+      title: "Pay",
+      site: "shop.example.test",
+      origin: "https://shop.example.test",
+      purchase: {
+        steps: [1, "x", 2.5],
+        label: "Pay $5",
+        amount: "$5",
+        amountFrom: "button",
+        reason: "card_form",
+      },
+    };
+    let reply: Record<string, unknown> = answer;
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async (_computer, request) => {
+        commands.push(request);
+        return reply;
+      },
+    });
+    const actions = [{ kind: "fill" }, { kind: "click", ref: "e1" }];
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: {
+        steps: [1],
+        site: "shop.example.test",
+        label: "Pay $5",
+        amount: "$5",
+        amountSource: "button",
+      },
+    });
+    expect(commands).toEqual([{ command: "purchase_check", actions }]);
+    // The order lines the page lists pass on; anything that is not a name and an amount is dropped.
+    const items = [{ name: "Bananas × 6", amount: "$3.00" }];
+    reply = {
+      ...answer,
+      purchase: { ...answer.purchase, items: [...items, "Tax $1", { name: 1 }] },
+    };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toMatchObject({
+      purchase: { label: "Pay $5", items },
+    });
+    reply = { ...answer, purchase: null };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // A page without a host (about:blank, data:, file:) still asks, naming no site.
+    reply = { ...answer, site: "", origin: "null" };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toMatchObject({
+      purchase: { steps: [1], site: "", label: "Pay $5" },
+    });
+    // An older image: the helper does not know the command.
+    reply = { ok: false, error: "unknown command: purchase_check", fallback: "computer_act" };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // So is a computer without a page browser, or a supervisor from before the check.
+    for (const error of [
+      "Page browser is not attached to this computer's Chrome.",
+      "page browser failed: 400",
+    ]) {
+      reply = { ok: false, error, fallback: "computer_act" };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: null,
+      });
+    }
+    // Any other failure asks, naming no page and approving no click: a check that started and broke,
+    // or a 500, which only an unhandled error answers.
+    for (const error of [
+      "unknown command: purchase_check, and then some",
+      "page browser failed: 500",
+      "Page browser timed out; the page may be busy or blocked by a dialog. Inspect the screen before continuing.",
+      "The page did not answer in time.",
+      "No unambiguous visible browser tab. Use desktop tools to select a tab.",
+      "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    ]) {
+      reply = { ok: false, error, fallback: "computer_act" };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+      });
+    }
+    const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };
+    expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    expect(commands).toHaveLength(13);
   });
 
   it("keeps the page snapshot a settled refusal sends", async () => {

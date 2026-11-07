@@ -16,6 +16,47 @@ async function addScheduleTrigger(page: Page, freq: string) {
   await page.getByRole("menuitem", { name: freq, exact: true }).click();
 }
 
+test("a delayed schedule is visible only while the routine is active", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `routine-delay-${Date.now()}@rakazo.test`, "password12", "Routine delay");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  const routine = await rpc<Routine>(page, "routines/create", {
+    botId,
+    name: "Morning report",
+    prompt: "Prepare the report.",
+    crons: ["0 8 * * *"],
+    timezone: "UTC",
+    active: false,
+  });
+  let scheduleDelayed = true;
+  await page.route("**/rpc/routines/list", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.json = body.json.map((item: Routine) =>
+      item.id === routine.id ? { ...item, active: true, scheduleDelayed } : item,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  await openBotPanelTab(page, "Routines");
+  await page.getByRole("button", { name: /Morning report/ }).click();
+  const delay = page.getByRole("status").filter({ hasText: "Schedule delayed" });
+  await expect(delay).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-schedule-delayed");
+  const name = page.locator("label:has-text('Name') input");
+  await name.fill("Unsaved report name");
+  scheduleDelayed = false;
+  await expect(delay).toHaveCount(0, { timeout: 35_000 });
+  await expect(name).toHaveValue("Unsaved report name");
+  scheduleDelayed = true;
+  await expect(delay).toBeVisible({ timeout: 35_000 });
+  await expect(name).toHaveValue("Unsaved report name");
+  await page.getByRole("switch", { name: "Active", exact: true }).click();
+  await expect(delay).toHaveCount(0);
+});
+
 async function saveAndReturn(page: Page, procedure: "routines/create" | "routines/update") {
   const saved = page.waitForResponse(
     (response) => response.url().includes(`/rpc/${procedure}`) && response.ok(),
@@ -148,6 +189,42 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     "Renamed model check",
   ]);
   await expect(updatedButton).toHaveCount(0);
+});
+
+test("an email trigger claims the bot's address and saves who can start it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-email-${stamp}@rakazo.test`, "password12", "Routine Email");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await openBotPanelTab(page, "Routines");
+
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Inbox triage");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize what I forward.");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "Email" }).click();
+
+  const name = page.getByRole("textbox", { name: "Email address" });
+  await expect(name).not.toHaveValue("");
+  await name.fill("postmaster");
+  await page.getByRole("button", { name: "Claim" }).click();
+  await expect(page.getByRole("alert")).toHaveText("That address isn't available");
+  await name.fill(`triage-${stamp}`);
+  await page.getByRole("button", { name: "Claim" }).click();
+  await expect(page.getByText(`triage-${stamp}@bots.rakazo.test`)).toBeVisible();
+  await page.getByRole("combobox", { name: "Who can start it" }).selectOption("domain");
+  await captureScreenshot(page, testInfo, "routine-email-trigger");
+
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({ emailSenders: "domain" });
+  await expect(page.getByRole("button", { name: /Inbox triage/ })).toContainText("Email");
+  const [saved] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(saved).toMatchObject({ name: "Inbox triage", crons: [], emailSenders: "domain" });
+  expect(await rpc(page, "bots/emailAddress", { botId })).toEqual({
+    domain: "bots.rakazo.test",
+    address: `triage-${stamp}@bots.rakazo.test`,
+  });
 });
 
 test("a successful routine create is not reported as failed when refresh fails", {

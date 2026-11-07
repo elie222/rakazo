@@ -29,6 +29,10 @@ To stop, choose **Unlink**.
 Choose **Connect** next to Slack to add Rakazo to your Slack workspace, then **Link DMs** so direct
 messages reach your bot.
 
+The bot uses its memory and notes only for your own messages: the Slack account that connected the
+workspace or linked its DMs. It answers anyone else in the workspace, including guests and other
+apps, the way it answers a group chat.
+
 A [routine](./routines.md) can also start from a **Slack message**.
 
 ## Group chats
@@ -36,6 +40,9 @@ A [routine](./routines.md) can also start from a **Slack message**.
 Add your bot to a group or channel in the chat app. The invite appears under **Requests** in
 **Settings → Messaging**; choose **Approve** or **Decline**. Approved groups are listed under
 **Conversations**, where you can **Leave** one at any time.
+
+You can also answer an invite or a connection request by replying YES or NO to its message, within a
+day and before anything else arrives from the line.
 
 On Telegram, groups link personally, like on iMessage: each member who has linked the app gets
 their own invite under **Requests**, and messages from approved linked members reach each approved

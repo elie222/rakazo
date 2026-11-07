@@ -14,13 +14,20 @@ name: Search
         id: "search-sheet-field"
     commands:
       - tapOn: "Search"
-- tapOn:
-    id: "search-sheet-field"
+# The field opens focused; tapping it again would raise the Paste menu over the results.
+- extendedWaitUntil:
+    visible:
+      id: "search-sheet-field"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-search-empty
 - inputText: "zzzz-no-such-fixture"
 - extendedWaitUntil:
     visible: ".*No results.*"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-search-none
 - tapOn:
     text: "Clear text"
@@ -30,6 +37,8 @@ name: Search
 - extendedWaitUntil:
     visible: ".*marigold checklist.*"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 03-search-results
 
 - tapOn:

@@ -1,19 +1,28 @@
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
-import { attachmentsForThread, newClientId, resolveComposerSendPlan } from "@rakazo/core";
+import {
+  applyThreadSendReceipt,
+  attachmentsForThread,
+  newClientId,
+  pageReply,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { ThreadComposerHandle } from "../components/thread-composer";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
+import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
+import { hapticImpact, hapticSuccess } from "./haptics";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
-import { currentSessionGeneration } from "./session";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { takePageReply } from "./pages";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 import { answerThreadMessage } from "./thread-answer";
 import type { useThreadAttachments } from "./thread-attachments";
 import type { SendAttempt, useThreadFeedback } from "./thread-feedback";
@@ -74,6 +83,7 @@ export function useThreadSend({
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
+  const replyPage = useRef<{ id: string; title: string } | null>(null);
   const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
 
@@ -82,9 +92,33 @@ export function useThreadSend({
     setReplyTarget(null);
     setReplyQuote(null);
     setQuoteTarget(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     setError(null);
   }, [threadKey]);
+
+  /** A reply tapped on one of this chat's pages lands in the composer unsent, about that page. */
+  const receivePageReply = useCallback(() => {
+    const handle = composerRef.current;
+    const reply = handle ? takePageReply(threadKey) : null;
+    if (!handle || !reply) return;
+    handle.addReply(reply.text);
+    // The page is what it answers now, not a message picked before the page opened.
+    setReplyTarget(null);
+    setReplyQuote(null);
+    replyPage.current = reply.page;
+  }, [threadKey]);
+  // An app card in this chat offers its text straight into the open composer.
+  useEffect(
+    () =>
+      threadKey
+        ? subscribeComposerOffer(threadKey, (text) => composerRef.current?.addReply(text))
+        : undefined,
+    [threadKey],
+  );
+  const composerEmptied = useCallback(() => {
+    replyPage.current = null;
+  }, []);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
@@ -129,6 +163,7 @@ export function useThreadSend({
       return;
     }
     preparingSend.current = true;
+    hapticImpact();
     try {
       await prepareUnsentSends();
     } catch (error) {
@@ -147,20 +182,30 @@ export function useThreadSend({
     );
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+    // As on the web: a page's reply goes to its card here, or names the page when none is loaded.
+    const messages = history.snapRef.current?.messages ?? [];
+    const fromPage =
+      plan.shouldSend && !reroutedToGroup
+        ? pageReply(plan.trimmed, messages, replyPage.current, replyTarget?.id)
+        : { text: plan.trimmed };
+    const pageCard = messages.find((message) => message.id === fromPage.replyToMessageId);
     let attempt: SendAttempt;
     try {
       attempt = feedback.sendAttempt({
         originThreadKey: originThreadKey!,
-        displayText: submitted.promptText,
-        replyPreview: replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null),
+        displayText: fromPage.text === plan.trimmed ? submitted.promptText : fromPage.text,
+        replyPreview: pageCard
+          ? previewMessageText(pageCard)
+          : (replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null)),
         initialBotTarget,
         botTarget,
         groupTarget,
         reroutedToGroup,
-        plan,
+        plan: { ...plan, trimmed: fromPage.text },
         attachments,
-        replyTargetId: replyTarget?.id,
-        replyQuote,
+        replyTargetId: pageCard?.id ?? replyTarget?.id,
+        replyQuote: pageCard ? null : replyQuote,
+        fromPage: pageCard ? true : undefined,
       });
     } catch (error) {
       Alert.alert(t("Failed to send message"), errorText(error));
@@ -172,6 +217,7 @@ export function useThreadSend({
     );
     setReplyTarget(null);
     setReplyQuote(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     followOwnSend();
     await deliver(attempt);
@@ -207,6 +253,7 @@ export function useThreadSend({
       !navigation.isFocused()
     )
       return;
+    hapticSuccess();
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",
@@ -215,6 +262,14 @@ export function useThreadSend({
       return;
     }
     if (isCurrentTarget(botTarget, groupTarget)) {
+      // Show the accepted run right away, but only where a refresh follows: if the run already
+      // finished and its terminal event was missed, that refresh drops the queued run shown here.
+      if (botTarget && attempt.acceptedRun) {
+        const shown = history.snapRef.current;
+        const receipt = { botId: botTarget, ...attempt.acceptedRun };
+        const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+        if (next !== shown) history.commitSnap(next);
+      }
       if (history.pinnedAroundRef.current) showLatest();
       void refresh().catch(() => undefined);
     }
@@ -263,14 +318,23 @@ export function useThreadSend({
       remember?: false,
     ) =>
       answerThreadMessage(
-        { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
         message,
         answer,
         fields,
         dismiss,
         remember,
       ),
-    [botId, groupId, readOnly],
+    [botId, groupId, readOnly, navigation],
   );
 
   async function react(message: MobileMessage, reaction: MessageReaction) {
@@ -305,6 +369,8 @@ export function useThreadSend({
     setReplyQuote,
     quoteTarget,
     setQuoteTarget,
+    receivePageReply,
+    composerEmptied,
     sending,
     send,
     retry,

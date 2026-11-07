@@ -4,6 +4,7 @@ import {
   dismissableAskMessageIds,
   groupVoiceChats,
   memberName,
+  otherAuthor,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
@@ -11,8 +12,8 @@ import {
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListRenderItemInfo } from "react-native";
 import { StyleSheet, View } from "react-native";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
 import { threadHeaderFloats } from "../../lib/thread-edges";
 import { previewMessageText } from "../../lib/thread-message-text";
 import type { useThreadTranscript } from "../../lib/thread-transcript";
@@ -47,7 +48,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
         rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
-      previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
+      previewFile: (artifactId) => rowActionsRef.current.previewFile(artifactId),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
@@ -123,7 +124,7 @@ export function useThreadRows({
       const replyBotId = message.replyPreview?.botId ?? parent?.botId;
       const replyAuthor =
         (message.replyPreview?.role ?? parent?.role) === "user"
-          ? t("You")
+          ? (otherAuthor(message.replyPreview?.author ?? parent?.author, userId)?.name ?? t("You"))
           : (memberName(snap?.members, replyBotId) ??
             mentionBots.find((bot) => bot.id === replyBotId)?.name ??
             displayName ??
@@ -162,6 +163,9 @@ export function useThreadRows({
           headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
           unreadDivider={message.id === unreadDividerId}
           markedUnread={message.id === markedUnreadMessageId}
+          authorName={
+            message.role === "user" ? otherAuthor(message.author, userId)?.name : undefined
+          }
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           waitingForUser={[...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some(
@@ -211,6 +215,7 @@ export function useThreadRows({
       unreadDividerId,
       markedUnreadMessageId,
       columnWidth,
+      userId,
       t,
       locale,
     ],

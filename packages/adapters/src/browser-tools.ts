@@ -12,7 +12,9 @@ import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
 import { MAX_ACTIONS_PER_CALL } from "./tool-loop.js";
+import { cardFillSite } from "./vault-card-use.js";
 
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
 export const BROWSER_ACT_KINDS = [
@@ -23,6 +25,7 @@ export const BROWSER_ACT_KINDS = [
   "fill_secret",
   "fill_card",
   "fill_pay_token",
+  "fill_code",
 ] as const;
 const MAX_QUERY = 200;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
@@ -34,16 +37,25 @@ export type SecretFillStep = {
   secret: string;
   field: string;
 };
-/** The model never supplies or sees the value. */
+/**
+ * One field of an approved purchase's card, or of a saved card on the checkout `site` the person
+ * approved. The model never supplies or sees the value.
+ */
 export type CardFillStep = {
   kind: "fill_card";
   ref?: string;
-  purchase: string;
   field: PurchaseCardField;
-};
+} & ({ purchase: string } | { card: string; site: string });
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
-export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | PayTokenFillStep;
+/** Types the code the user entered for the run's last code request; the model never sees it. */
+export type CodeFillStep = { kind: "fill_code"; ref: string };
+export type BrowserActInput =
+  | BrowserActStep
+  | SecretFillStep
+  | CardFillStep
+  | PayTokenFillStep
+  | CodeFillStep;
 /**
  * desktopTools: the run also has computer_act, so a page-tool failure can fall back to it.
  * downloads: the folder in the computer's home that the page's file downloads are saved to, and the
@@ -60,6 +72,17 @@ export type ResolveSecretFill = (
 export type ResolveCardFill = (
   step: CardFillStep,
 ) => Promise<{ text: string; origin: string } | { error: string }>;
+
+/** `claim` takes the code for this one fill; `restore` gives it back if the page refused. */
+export type ResolveCodeFill = (step: CodeFillStep) => Promise<
+  | {
+      text: string;
+      origin: string;
+      claim: () => Promise<boolean>;
+      restore: () => Promise<void>;
+    }
+  | { error: string }
+>;
 
 export type ResolvePayTokenFill = (
   step: PayTokenFillStep,
@@ -115,10 +138,10 @@ export async function browserSnapshotFromTool(
   try {
     const result = await browser.snapshot(
       computer,
-      { ...(query ? { query } : {}), signal: context.signal },
+      { ...(query ? { query } : {}), downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
-    return formatBrowserResult(result, options);
+    return formatBrowserResult(withBotPaths(result, options), options);
   } catch (error) {
     context.signal.throwIfAborted();
     return formatBrowserResult(
@@ -137,15 +160,29 @@ export async function browserActFromTool(
     resolveSecretFill?: ResolveSecretFill;
     resolveCardFill?: ResolveCardFill;
     resolvePayTokenFill?: ResolvePayTokenFill;
+    resolveCodeFill?: ResolveCodeFill;
     redactions?: () => string[];
     /** Maps a bot-facing workspace path to its path in the computer's home. */
     resolveUploadPath?: (path: string) => string;
     /** Trusted upload roots relative to the computer home, set by the executor. */
     uploadRoots?: string[];
+    /** The purchase the user approved for this call; its clicks alone may complete it. */
+    approvedPurchase?: PurchaseApproval;
+    /**
+     * Counts the approved purchase against the spending limit just before the page is asked; returns
+     * why it may not go ahead.
+     */
+    countPurchase?: () => Promise<string | undefined>;
+    /** Called when the counted purchase was clearly not pressed, so it no longer counts. */
+    releasePurchase?: () => Promise<void>;
   } = {},
 ) {
   try {
     const actions: BrowserActStep[] = [];
+    // The code this batch types, with the action that types it.
+    let codeTyped:
+      | { index: number; claim: () => Promise<boolean>; restore: () => Promise<void> }
+      | undefined;
     // Resolve every saved login and card before acting, so a missing one cannot leave a
     // half-filled form.
     for (const step of parseBrowserActions(args.actions)) {
@@ -181,6 +218,32 @@ export async function browserActFromTool(
         if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
         const { text, origin, merchantAccountId } = resolved;
         actions.push({ kind: "pay_token", text, origin, merchantAccountId });
+        continue;
+      }
+      if (step.kind === "fill_code") {
+        // One code is one fill: a second in the same batch would only be a replay.
+        if (codeTyped) throw new BrowserToolInputError("browser_act takes one fill_code at a time");
+        let resolved: Awaited<ReturnType<ResolveCodeFill>>;
+        try {
+          resolved = options.resolveCodeFill
+            ? await options.resolveCodeFill(step)
+            : { error: "Codes are unavailable here." };
+        } catch (error) {
+          context.signal.throwIfAborted();
+          getLogger().warn("one-time code could not be loaded for a fill", {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+          return { ...refusedInput("This code could not be loaded."), completed: 0 };
+        }
+        if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
+        codeTyped = { index: actions.length, claim: resolved.claim, restore: resolved.restore };
+        actions.push({
+          kind: "fill",
+          ref: step.ref,
+          text: resolved.text,
+          origin: resolved.origin,
+          field: "code",
+        });
         continue;
       }
       if (step.kind !== "fill_secret" && step.kind !== "fill_card") {
@@ -230,11 +293,61 @@ export async function browserActFromTool(
         });
       }
     }
+    const approved = options.approvedPurchase;
+    // A card for a page that could not be checked names no click: it covers each one, and the page
+    // browser still refuses any click it then finds buying on a known site.
+    const approvedSteps =
+      approved && !approved.site && !approved.steps.length
+        ? actions.flatMap((step, index) => (step.kind === "click" ? [index] : []))
+        : (approved?.steps ?? []);
+    for (const index of approvedSteps) {
+      const step = actions[index];
+      if (step?.kind === "click" && approved) {
+        const { site, label, amount } = approved;
+        actions[index] = {
+          ...step,
+          approved: true,
+          site,
+          label,
+          amount,
+          total: approved.total ?? "",
+        };
+      }
+    }
+    if (approved) {
+      const refused = await options.countPurchase?.();
+      if (refused) return { ...refusedInput(refused), completed: 0 };
+    }
+    // Taken just before the page is asked, by one call only, so two fills never both type it.
+    if (codeTyped && !(await codeTyped.claim())) {
+      if (approved) await options.releasePurchase?.();
+      return {
+        ...refusedInput("No code is waiting. Use request_secret with oneTimeCode."),
+        completed: 0,
+      };
+    }
     const result = await browser.act(
       computer,
       { actions, downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
+    // A purchase the page refused (it changed, or another step failed first) never went through.
+    if (
+      approvedSteps.length &&
+      result.uncertain === false &&
+      result.completed <= Math.min(...approvedSteps)
+    ) {
+      await options.releasePurchase?.();
+    }
+    // A code the page took is spent. One it clearly refused goes back, so a fill on the right page
+    // can use it; any doubt about the outcome keeps it spent, never typed twice.
+    if (codeTyped && result.uncertain === false && result.completed <= codeTyped.index) {
+      await codeTyped.restore().catch((error: unknown) =>
+        getLogger().warn("one-time code could not be restored", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        }),
+      );
+    }
     return redactBrowserResult(
       formatBrowserResult(withBotPaths(result, options), options),
       options.redactions?.() ?? [],
@@ -286,19 +399,22 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
     }
     if (kind === "fill_card") {
       const purchase = String(action.purchase ?? "").trim();
+      const card = typeof action.card === "string" ? action.card.trim() : "";
       const field = action.field;
-      if (!purchase)
+      if (!purchase === !card)
         throw new BrowserToolInputError(
-          "browser_act fill_card needs purchase: the id of an approved purchase",
+          "browser_act fill_card needs purchase: the id of an approved purchase, or card: the name of a saved card",
         );
       if (!(PURCHASE_CARD_FIELDS as readonly unknown[]).includes(field)) {
         throw new BrowserToolInputError(
           `browser_act fill_card needs field: ${PURCHASE_CARD_FIELDS.map((name) => `"${name}"`).join(", ")}`,
         );
       }
-      return { kind, ...(ref ? { ref } : {}), purchase, field: field as PurchaseCardField };
+      const step = { kind, ...(ref ? { ref } : {}), field: field as PurchaseCardField };
+      return purchase ? { ...step, purchase } : { ...step, card, site: cardFillSite(action.site) };
     }
     if (!ref) throw new BrowserToolInputError(`browser_act action ${index} requires ref`);
+    if (kind === "fill_code") return { kind, ref };
     if (kind === "upload") {
       const paths = Array.isArray(action.paths)
         ? action.paths.map((path) => (typeof path === "string" ? path.trim() : ""))

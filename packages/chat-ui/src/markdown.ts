@@ -11,7 +11,16 @@ export type ChatMarkdownProps = {
   streaming?: boolean;
   /** Draws a mention link from `withMentions`; returning nothing leaves its plain name. */
   renderMention?: (id: string, name: string) => ReactNode;
+  /** Opens a page linked as `[title](page:<pageId>)`; without it the title stays plain text. */
+  onOpenPage?: (pageId: string) => void;
 };
+
+const PAGE_URL_PATTERN = /^page:([A-Za-z0-9_-]{1,64})$/;
+
+/** The page id of a `page:<pageId>` link, if this href is one. */
+export function markdownPageId(href: string | undefined): string | undefined {
+  return href ? PAGE_URL_PATTERN.exec(href)?.[1] : undefined;
+}
 
 const MENTION_URL_PREFIX = "rakazo-mention:";
 
@@ -151,7 +160,11 @@ const safeProtocols = new Set(["http", "https", "mailto", "tel"]);
 
 export type PlainTextPart =
   | { type: "text"; value: string }
-  | { type: "link"; value: string; href: string };
+  | { type: "link"; value: string; href: string }
+  | { type: "page"; value: string; pageId: string };
+
+// The link pageReply puts before a sent reply: `[title](page:<pageId>)`, title brackets escaped.
+const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
 
 function appendPlainText(parts: PlainTextPart[], value: string) {
   if (!value) return;
@@ -164,10 +177,25 @@ function appendPlainText(parts: PlainTextPart[], value: string) {
 }
 
 /**
- * User bubbles stay plain text: markdown remains characters. Links use the bot messages'
- * autolinker, so a balanced parenthesis stays inside the URL and one wrapping the prose does not.
+ * User bubbles stay plain text: markdown remains characters, except a page link, which opens the
+ * page as it does in bot messages. Links use the bot messages' autolinker, so a balanced
+ * parenthesis stays inside the URL and one wrapping the prose does not.
  */
 export function plainTextLinkParts(text: string): PlainTextPart[] {
+  const parts: PlainTextPart[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(PLAIN_PAGE_LINK)) {
+    if (match.index > cursor) parts.push(...urlLinkParts(text.slice(cursor, match.index)));
+    const value = match[1]!.replace(/\\([\\[\]])/g, "$1");
+    parts.push({ type: "page", value, pageId: match[2]! });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor === 0) return urlLinkParts(text);
+  if (cursor < text.length) parts.push(...urlLinkParts(text.slice(cursor)));
+  return parts;
+}
+
+function urlLinkParts(text: string): PlainTextPart[] {
   const matches = plainTextLinkify.match(text);
   if (!matches || matches.length === 0) return [{ type: "text", value: text }];
 

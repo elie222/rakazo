@@ -222,8 +222,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 
   /**
    * Removes this host's copy of a remote computer's home once the bucket holds it and no export
-   * here is reading it; it is downloaded again when next needed. A home never stored keeps its
-   * only copy. Never call it for a Docker computer, which works directly in the copy.
+   * here is reading it; it is downloaded again when next needed. A copy this host downloaded from
+   * storage is still a cache when the record no longer names a revision (retention deleted the
+   * home), so it goes too, as hydrate does on read. A home never stored keeps its only copy.
+   * Never call it for a Docker computer, which works directly in the copy.
    */
   async evictCache(botId: string, { idleBefore }: { idleBefore?: number } = {}): Promise<boolean> {
     return this.withBotWrite(botId, async () => {
@@ -233,7 +235,12 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         const used = await this.revisionUsedAt(botId);
         if (used === undefined || used > idleBefore) return false;
       }
-      if (!(await this.records.load(botId))?.revision) return false;
+      const stored = await this.records.load(botId);
+      if (
+        !stored?.revision &&
+        !((await this.isDownloaded(botId)) && !(await this.isLiveCache(botId)))
+      )
+        return false;
       await this.removeCopy(botId);
       return true;
     });
@@ -255,7 +262,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
   /**
    * Brings the cached copy up to the stored revision. A home never saved to object storage
    * keeps its local copy, so homes from before object storage keep working until they are
-   * migrated or next saved.
+   * migrated or next saved. A remote computer's copy of a stored home whose stored copy was
+   * since deleted is removed, so the deleted files never reach a computer again.
    */
   async hydrate(botId: string, { keepLiveCache = false } = {}): Promise<void> {
     await this.withBotWrite(botId, async () => {
@@ -263,10 +271,15 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       // A folder whose revision was forgotten is not that copy, even once something recreates it.
       if (keepLiveCache && (await this.localRevision(botId)) && (await this.hasCache(botId)))
         return;
-      const { stored, local } = await this.loadCacheRevision(botId);
-      if (!stored?.revision) return;
+      const { stored, local, fromStorage } = await this.loadCacheRevision(botId);
+      if (!stored?.revision) {
+        if (fromStorage && !(await this.isLiveCache(botId))) await this.removeCopy(botId);
+        return;
+      }
       // A removed cache directory leaves its marker behind; only a present copy counts.
       if (local === stored.revision && (await this.hasCache(botId))) {
+        // Copies downloaded before downloads were recorded are recognized by matching the revision.
+        if (!fromStorage) await this.markDownloaded(botId);
         await this.touchRevision(botId);
         return;
       }
@@ -274,6 +287,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       await this.replaceHome(botId, (staging) =>
         unpackHome(this.download(stored, revision), staging, this.limits),
       );
+      await this.markDownloaded(botId);
       await super.writeRevision(botId, revision);
     });
   }
@@ -289,7 +303,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     // its UPDATE, even when another process saves while the database read is in flight.
     const stored = await this.records.load(botId);
     const local = await this.localRevision(botId);
-    if (!local?.startsWith("{")) return { stored, local };
+    if (!local?.startsWith("{"))
+      return { stored, local, fromStorage: await this.isDownloaded(botId) };
     const pending = JSON.parse(local) as Record<string, unknown>;
     if (
       pending.version !== 1 ||
@@ -298,23 +313,26 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       !(pending.base === null || typeof pending.base === "string")
     )
       throw new HomeSaveConflictError();
-    if (!(await this.hasCache(botId))) return { stored, local: undefined };
+    // A published proposal means the copy is, or was, stored.
+    const fromStorage = true;
+    if (!(await this.hasCache(botId))) return { stored, local: undefined, fromStorage };
     if (
       stored?.storageId !== pending.storageId ||
       (stored.revision !== pending.revision && stored.revision !== pending.base)
     ) {
       // Only a Docker computer works in the cached copy. Any other computer saves from its own
       // files, so a revision stored since the proposal supersedes this copy.
-      if (!(await this.isLiveCache(botId))) return { stored, local: undefined };
+      if (!(await this.isLiveCache(botId))) return { stored, local: undefined, fromStorage };
       // An unrelated revision cannot prove whether this save committed. Replacing the
       // cache or uploading over that revision could destroy either writer's work.
       throw new HomeSaveConflictError();
     }
-    if (stored.revision === pending.revision) return { stored, local: pending.revision };
+    if (stored.revision === pending.revision)
+      return { stored, local: pending.revision, fromStorage };
     // Still at the base: save the latest local bytes with the usual compare-and-swap.
     // Never republish the old upload: it may have been swept during the outage.
     const { revision } = await this.upload(botId, { base: stored.revision });
-    return { stored: { ...stored, revision }, local: revision };
+    return { stored: { ...stored, revision }, local: revision, fromStorage };
   }
 
   /**
@@ -394,9 +412,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         // A confirmed refusal is an ordinary stale cache again. A previous proposal
         // matching the base was confirmed by the pre-save read; otherwise it still
         // represents an uncertain save and must keep protecting the live files.
-        const rollback =
-          previous?.startsWith("{") && JSON.parse(previous).revision === base ? base : previous;
-        await super.writeRevision(botId, rollback ?? "");
+        const confirmed = previous?.startsWith("{") && JSON.parse(previous).revision === base;
+        if (confirmed) await this.markDownloaded(botId);
+        await super.writeRevision(botId, (confirmed ? base : previous) ?? "");
       }
       await discard();
       throw new HomeSaveConflictError();

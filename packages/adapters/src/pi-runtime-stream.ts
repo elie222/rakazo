@@ -12,9 +12,9 @@ import type {
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { codexComputeResidency } from "./pi-oauth.js";
 import {
-  MODEL_STREAM_IDLE_TIMEOUT_MS,
-  MODEL_STREAM_TIMEOUT_MS,
+  modelStreamIdleTimeoutMs,
   modelStreamMaxRetries,
+  modelStreamTimeoutMs,
   operatorMaxTokens,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
@@ -54,7 +54,7 @@ export interface StreamIdleWatchdog {
  */
 export function modelStreamIdleWatchdog(
   upstream: AbortSignal | undefined,
-  idleTimeoutMs: number = MODEL_STREAM_IDLE_TIMEOUT_MS,
+  idleTimeoutMs: number = modelStreamIdleTimeoutMs(),
 ): StreamIdleWatchdog {
   const controller = new AbortController();
   let timedOut = false;
@@ -224,7 +224,7 @@ export function reliableModelStream(
         signal: watchdog.signal,
         fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
           ? options?.fetch
-          : modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
+          : modelRequestFetch(options?.fetch, modelStreamIdleTimeoutMs()),
         // Only a 2xx arms the shared watchdog. Error bodies are bounded by
         // the fetch wrapper where supported; caller hooks still see every status.
         onResponse: (response, requestModel) => {
@@ -264,7 +264,7 @@ export function reliableStreamOptions(
   let next: ModelsSimpleStreamOptions = {
     ...options,
     ...(cacheRetention ? { cacheRetention } : {}),
-    timeoutMs: options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS,
+    timeoutMs: options?.timeoutMs ?? modelStreamTimeoutMs(),
     maxRetries: options?.maxRetries ?? modelStreamMaxRetries(),
     maxTokens: resolveCompletionMaxTokens(
       model.maxTokens,

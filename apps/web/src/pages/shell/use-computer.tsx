@@ -7,10 +7,10 @@ import type {
   Run,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
   createScreenReconnects,
   isRetryableError,
-  SCREEN_RECONNECT_DELAY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -28,7 +28,7 @@ import {
   probeScreen,
   probeScreenStatus,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
-  sameWuyingScreen,
+  sameEmbeddedComputerScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -146,16 +146,37 @@ export function useComputerState({
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
+    let readDeadline: ReturnType<typeof setTimeout> | undefined;
+    // One reconnect at a time: while its screen read or page wait is still on its way,
+    // further reports of the same drop only describe it again and must not start a second
+    // one, whose failure would cancel the first. A new frame or screen URL re-runs this
+    // effect and starts the next cycle.
+    let reconnectPending = false;
+    // The reconnect's screen read left. Only its completion, or its deadline below,
+    // releases the hold then, so the drop it answers for still suppresses duplicates
+    // while it is out.
+    let reconnectReadOut = false;
+    // The reconnect the flags and timers belong to; a newer grant supersedes them all.
+    let reconnectCycle = 0;
+    // Whether the reporting screen is connected, so a read deadline that lands on a
+    // reconnected screen leaves it showing instead of replacing it with the error.
+    let screenConnected = false;
     const stopped = new AbortController();
     const onMessage = (event: MessageEvent) => {
       if (event.source !== screenFrame.contentWindow) return;
       const message = screenFrameMessage(event.data);
       if (!message) return;
       if (screenFrameStarted(message)) screenFrameReported.current = true;
+      if (message.rakazoScreen === "connected") screenConnected = true;
+      else if (message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected")
+        screenConnected = false;
       const wuying = Boolean(screenUrl?.startsWith("wuying:"));
       if (wuying && message.rakazoScreen === "connected") {
         // The SDK can rejoin by itself, and a fresh read would sign that session out again.
         clearTimeout(reconnect);
+        // A reconnected screen releases a retry it kept queued; a read already out holds
+        // until it completes or runs out of time.
+        if (!reconnectReadOut) reconnectPending = false;
         liveWuyingUrl.current = screenUrl;
       }
       if (
@@ -175,12 +196,47 @@ export function useComputerState({
           document.visibilityState === "visible" &&
           screenReconnect().report(message.rakazoScreen) === "reconnect"
         ) {
+          if (reconnectPending) return;
+          reconnectPending = true;
+          reconnectCycle += 1;
+          const cycle = reconnectCycle;
           screenRefocus.current.dropped(document.activeElement === screenFrame);
           const botId = computerBotIdRef.current;
+          const delay = screenReconnect().delayMs();
           clearTimeout(reconnect);
           reconnect = setTimeout(() => {
-            if (botId && !stopped.signal.aborted) void refreshComputerScreen(botId);
-          }, SCREEN_RECONNECT_DELAY_MS);
+            if (!botId || stopped.signal.aborted) {
+              reconnectPending = false;
+              return;
+            }
+            reconnectReadOut = true;
+            // Claim this read's request token up front, so its deadline can invalidate
+            // exactly this read and never a newer one.
+            const readRequest = ++screenRequest.current;
+            // A read that never settles must not hold the reconnect forever. It gets the
+            // same silence budget a framed screen has; past it the hold is released — a
+            // dropped screen shows the error, a reconnected one keeps showing — and the
+            // hung read's answer is stale, so it cannot commit.
+            readDeadline = setTimeout(() => {
+              if (cycle !== reconnectCycle) return;
+              reconnectPending = false;
+              reconnectReadOut = false;
+              // A newer read — a takeover, a panel refresh — owns the token now; only this
+              // read's own answer is invalidated and shown as timed out.
+              if (readRequest !== screenRequest.current) return;
+              screenRequest.current += 1;
+              if (!screenConnected) {
+                screenRefocus.current.forget();
+                setScreenLoadError(fallback);
+              }
+            }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
+            void refreshComputerScreen(botId, readRequest).finally(() => {
+              if (cycle !== reconnectCycle) return;
+              clearTimeout(readDeadline);
+              reconnectPending = false;
+              reconnectReadOut = false;
+            });
+          }, delay);
           return;
         }
         screenRefocus.current.forget();
@@ -188,9 +244,12 @@ export function useComputerState({
         return;
       }
       if (screenReconnect().report(message.rakazoScreen) === "reconnect") {
+        if (reconnectPending) return;
+        reconnectPending = true;
         screenRefocus.current.dropped(document.activeElement === screenFrame);
         clearTimeout(reconnect);
         const url = embeddableScreenUrl(screenUrl);
+        const delay = screenReconnect().delayMs();
         reconnect = setTimeout(() => {
           // Wait out an API that can't be reached, so the one reconnect isn't spent on it.
           void waitForScreenPage(
@@ -206,7 +265,7 @@ export function useComputerState({
             // A refusal shows once the new frame's own check runs.
             else setScreenFrameKey((key) => key + 1);
           });
-        }, SCREEN_RECONNECT_DELAY_MS);
+        }, delay);
         return;
       }
       const error = screenFrameError(message, fallback);
@@ -223,6 +282,7 @@ export function useComputerState({
       // Closing the screen or a new screen URL (taking or releasing control) cancels a reconnect.
       stopped.abort();
       clearTimeout(reconnect);
+      clearTimeout(readDeadline);
       window.removeEventListener("message", onMessage);
       document.removeEventListener("focusin", onFocusIn);
     };
@@ -309,14 +369,14 @@ export function useComputerState({
     }
   }
 
-  async function refreshComputerScreen(id: string) {
+  async function refreshComputerScreen(id: string, request?: number) {
     if (!computerVisible.current) return null;
-    const request = ++screenRequest.current;
+    const read = request ?? ++screenRequest.current;
     const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
       load: () => rpc.computer.screenUrl({ botId: id }),
       isCurrent: () =>
-        request === screenRequest.current &&
+        read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
@@ -330,7 +390,8 @@ export function useComputerState({
           if (
             screen.url?.startsWith("wuying:") &&
             (screenAwaitsRetry.current ||
-              (current === liveWuyingUrl.current && sameWuyingScreen(current, screen.url)))
+              (current === liveWuyingUrl.current &&
+                sameEmbeddedComputerScreen(current, screen.url)))
           )
             return current;
           return screen.url;
@@ -345,6 +406,11 @@ export function useComputerState({
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
+  }
+
+  /** A retry the user pressed starts the visible screen's reconnects over. */
+  function resetScreenReconnect() {
+    screenReconnects.current.for(computerBotIdRef.current ?? "").reset();
   }
 
   return {
@@ -381,6 +447,7 @@ export function useComputerState({
     screenLoadError,
     setScreenLoadError,
     screenAwaitsRetry,
+    resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
   };
@@ -402,6 +469,7 @@ export function useComputerControls({
   sandboxProvider,
   refreshThread,
   refreshGroupThread,
+  onUpgrade,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   state: ComputerState;
@@ -415,6 +483,7 @@ export function useComputerControls({
   sandboxProvider: Me["sandboxProvider"] | undefined;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
+  onUpgrade: () => void;
 }) {
   const { t } = useLingui();
   const {
@@ -442,6 +511,7 @@ export function useComputerControls({
     screenLoadError,
     setScreenLoadError,
     screenAwaitsRetry,
+    resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
   } = state;
@@ -515,7 +585,9 @@ export function useComputerControls({
       await refreshComputerFor(targetBotId);
     } catch (error) {
       if (!stillThisBoot() || !stillThisBot()) return;
-      setComputerError(errorText(error, t`Could not take control`));
+      setComputerError(
+        errorText(error, takeControl ? t`Could not take control` : t`Computer failed to boot`),
+      );
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
@@ -711,38 +783,48 @@ export function useComputerControls({
           : !booting && computer?.state === "error"
             ? t`Computer failed to boot`
             : null));
+  // Retrying cannot help once the hours are spent; only a plan change can.
+  const allowanceUsed = computer?.state !== "running" && isComputerAllowanceUsed(computerFailure);
   const computerScreenError = computerFailure ? (
-    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-body">
       {screenFailure ? (
         <p>
           <Trans>Screen not connected</Trans>
         </p>
       ) : null}
       <p className="text-destructive">{computerFailure}</p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          if (!computerBot) return;
-          setScreenLoadError(null);
-          setScreenUrlLoadedBotId(null);
-          if (computer?.state === "running") {
-            // An explicit retry clears any error; background screen reads clear only their own.
+      {allowanceUsed ? (
+        <Button variant="outline" size="sm" onClick={onUpgrade}>
+          <Trans>Upgrade</Trans>
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (!computerBot) return;
+            setScreenLoadError(null);
+            setScreenUrlLoadedBotId(null);
+            // An explicit retry clears any error and starts the screen's reconnects over;
+            // background screen reads clear only their own error.
             screenAwaitsRetry.current = false;
-            setComputerError(null);
-            setComputerErrorFromScreen(false);
-            void refreshComputerScreen(computerBot.id);
-          } else
-            void bootComputer({
-              botId: computerBot.id,
-              takeControl: false,
-              showProgress: true,
-              force: true,
-            }).catch(() => undefined);
-        }}
-      >
-        <Trans>Retry screen</Trans>
-      </Button>
+            resetScreenReconnect();
+            if (computer?.state === "running") {
+              setComputerError(null);
+              setComputerErrorFromScreen(false);
+              void refreshComputerScreen(computerBot.id);
+            } else
+              void bootComputer({
+                botId: computerBot.id,
+                takeControl: false,
+                showProgress: true,
+                force: true,
+              }).catch(() => undefined);
+          }}
+        >
+          <Trans>Retry screen</Trans>
+        </Button>
+      )}
       {screenFailure && computer?.state === "running" && computerBot ? (
         <ComputerMaintenanceActions
           visibleRecover

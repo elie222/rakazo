@@ -32,7 +32,9 @@ function fixture() {
         )
         .map(([id]) => ({ id, botId: id, bot: { computerId: "computer" } })),
   );
-  const leases = vi.fn(async () => [] as { computerId: string; botId: string; runId: string }[]);
+  const leases = vi.fn(
+    async () => [] as { computerId: string; botId: string; runId: string; expiresAt: Date }[],
+  );
   const queueHealth = vi.fn(async () => [
     { delayedRuns: 0, oldestDueAt: null as Date | null, oldestRunId: null as string | null },
   ]);
@@ -289,7 +291,14 @@ describe("durable direct run wakeups", () => {
     const f = fixture();
     f.rows.set("busy", { status: "queued", wakeAt: null });
     f.rows.set("free", { status: "queued", wakeAt: null });
-    f.leases.mockResolvedValue([{ computerId: "computer", botId: "busy", runId: "holder" }]);
+    f.leases.mockResolvedValue([
+      {
+        computerId: "computer",
+        botId: "busy",
+        runId: "holder",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
     const handler = vi.fn(async ({ runId }) => {
       f.rows.get(runId)!.status = "completed";
     });
@@ -313,8 +322,18 @@ describe("durable direct run wakeups", () => {
     f.rows.set("resume", { status: "queued", wakeAt: null });
     f.rows.set("reassigned", { status: "queued", wakeAt: null });
     f.leases.mockResolvedValue([
-      { computerId: "computer", botId: "resume", runId: "resume" },
-      { computerId: "old-computer", botId: "reassigned", runId: "holder" },
+      {
+        computerId: "computer",
+        botId: "resume",
+        runId: "resume",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      {
+        computerId: "old-computer",
+        botId: "reassigned",
+        runId: "holder",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
     ]);
     const handler = vi.fn(async ({ runId }) => {
       f.rows.get(runId)!.status = "completed";

@@ -21,6 +21,28 @@ export function modelStreamMaxRetries(): number {
   return Number.isInteger(raw) && raw >= 0 && raw <= 5 ? raw : DEFAULT_MODEL_STREAM_MAX_RETRIES;
 }
 
+/**
+ * Whole milliseconds from 1 second to 5 minutes; blank or out of range keeps the default.
+ * Node's fetch stops waiting for headers or the next body chunk after 5 minutes, so a longer
+ * setting would not take effect for most providers.
+ */
+function timeoutMsFromEnv(value: string | undefined, fallback: number): number {
+  const raw = Number(value?.trim() || fallback);
+  return Number.isInteger(raw) && raw >= 1_000 && raw <= 300_000 ? raw : fallback;
+}
+
+export function modelStreamTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_STREAM_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS);
+}
+
+export function modelConnectTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_CONNECT_TIMEOUT_MS, MODEL_CONNECT_TIMEOUT_MS);
+}
+
+export function modelStreamIdleTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_IDLE_TIMEOUT_MS);
+}
+
 export const TOOL_RESULT_TEXT_LIMIT = 12_000;
 
 export function clipToolResultText(text: string, limit: number = TOOL_RESULT_TEXT_LIMIT): string {

@@ -43,6 +43,19 @@ describe("cronLabels", () => {
     expect(formatCron("0 21 1 * *", labels)).toBe("Monatlich am 1. um 21:00");
   });
 
+  it("uses Polish case forms for intervals and weekday lists", () => {
+    resetI18nForTests("pl");
+    const labels = cronLabels();
+    expect(formatCron("*/1 * * * *", labels)).toBe("Co minutę");
+    expect(formatCron("*/2 * * * *", labels)).toBe("Co 2 minuty");
+    expect(formatCron("*/5 * * * *", labels)).toBe("Co 5 minut");
+    expect(formatCron("*/12 * * * *", labels)).toBe("Co 12 minut");
+    expect(formatCron("*/22 * * * *", labels)).toBe("Co 22 minuty");
+    expect(formatCron("30 18 * * 2", labels)).toBe("Co tydzień: wtorek o 18:30");
+    expect(formatCron("0 8 * * 2,4", labels)).toBe("Co tydzień: wtorek i czwartek o 8:00");
+    expect(formatCron("0 8 * * 2-4", labels)).toBe("wtorek-czwartek o 8:00");
+  });
+
   it("uses Russian case forms for intervals", () => {
     resetI18nForTests("ru");
     const labels = cronLabels();

@@ -120,10 +120,9 @@ vi.mock("../lib/ui-appearance", () => ({
 import { authClient } from "../lib/auth";
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
-  getComposerEnterToSend,
-  setComposerEnterToSend,
+  composerEnterToSendPreference,
 } from "../lib/composer-enter-to-send-pref";
-import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
+import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
 
@@ -182,19 +181,19 @@ it("turns loading web images on and off from the settings toggle", async () => {
     );
     if (!toggle) throw new Error("Missing remote images toggle");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(getRemoteImagesEnabled()).toBe(false);
+    expect(remoteImagesPreference.get()).toBe(false);
 
     await act(async () => {
       toggle.click();
     });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(getRemoteImagesEnabled()).toBe(true);
+    expect(remoteImagesPreference.get()).toBe(true);
 
     await act(async () => {
       toggle.click();
     });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(getRemoteImagesEnabled()).toBe(false);
+    expect(remoteImagesPreference.get()).toBe(false);
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -259,7 +258,7 @@ it("keeps the password form closed until asked and closes it after a change", as
 
 it("updates the Enter preference from Settings and reflects external changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  setComposerEnterToSend(true);
+  composerEnterToSendPreference.set(true);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
@@ -275,10 +274,10 @@ it("updates the Enter preference from Settings and reflects external changes", a
     );
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     await act(async () => toggle.click());
-    expect(getComposerEnterToSend()).toBe(false);
+    expect(composerEnterToSendPreference.get()).toBe(false);
     expect(localStorage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("0");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    await act(async () => setComposerEnterToSend(true));
+    await act(async () => composerEnterToSendPreference.set(true));
     expect(toggle.getAttribute("aria-checked")).toBe("true");
   } finally {
     await act(async () => root.unmount());

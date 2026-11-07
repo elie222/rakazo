@@ -3,6 +3,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
 import { isChatModelId, liveModelSibling } from "./pi-live-model.js";
@@ -14,7 +15,6 @@ import {
   listPiCatalog,
   probeCatalogProviderModels,
 } from "./pi-models.js";
-import { parseModelSecret } from "./pi-oauth.js";
 
 /** Credential governing each provider/model slot, shared with the run selection path. */
 export type CatalogSpaceAuth = {
@@ -254,6 +254,26 @@ function readSecretCatalog(
   });
 }
 
+/**
+ * Rows one request reads again for every model it checks: each connection's secret and the
+ * account's saved choices. Make one per request; never keep it across requests.
+ */
+export type CatalogReads = Map<string, Promise<unknown>>;
+
+export function readOnce<T>(
+  reads: CatalogReads | undefined,
+  key: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!reads) return read();
+  let value = reads.get(key) as Promise<T> | undefined;
+  if (!value) {
+    value = read();
+    reads.set(key, value);
+  }
+  return value;
+}
+
 /** Validation reads the exact credential chosen for the user/model, through the listing cache. */
 export async function providerLiveListsModel(
   prisma: PrismaClient,
@@ -263,6 +283,7 @@ export async function providerLiveListsModel(
   provider: string,
   modelId: string,
   cache = providerCatalogCache,
+  reads?: CatalogReads,
 ): Promise<boolean> {
   provider = canonicalPiProviderId(provider);
   if (
@@ -271,15 +292,20 @@ export async function providerLiveListsModel(
     !liveCatalogEntry(provider, modelId)
   )
     return false;
-  const row = await prisma.secret.findFirst({
-    where: { id: secretId, userId, spaceId: null },
-    select: { id: true, ciphertext: true },
-  });
+  const row = await readOnce(reads, `secret:${userId}:${secretId}`, () =>
+    prisma.secret.findFirst({
+      where: { id: secretId, userId, spaceId: null },
+      select: { id: true, ciphertext: true },
+    }),
+  );
   if (!row) return false;
   const ids = await readSecretCatalog(cache, secrets, provider, row);
   if (!ids) return false;
   if (ids.includes(modelId)) return true;
-  return (await savedCatalogSelections(prisma, userId)).has(`${provider}:${modelId}`);
+  const selections = await readOnce(reads, `selections:${userId}`, () =>
+    savedCatalogSelections(prisma, userId),
+  );
+  return selections.has(`${provider}:${modelId}`);
 }
 
 /** Saved selections, the account's and every Space's, survive retirement filtering. */

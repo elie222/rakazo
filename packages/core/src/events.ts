@@ -1,6 +1,7 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
+import { payloadAuthor } from "./message-replies.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "./run-error.js";
 
 export function projectMessages(
@@ -81,6 +82,7 @@ export function projectMessages(
         role,
         blocks,
         botId: event.botId ?? undefined,
+        ...payloadAuthor(payload),
         runId: event.runId ?? undefined,
         createdAt,
       });
@@ -492,6 +494,11 @@ export function humanizeToolName(name: string): string {
   if (!spaced) return name;
   const lower = spaced.toLowerCase();
   return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+/** Reverses humanizeToolName for a typed name; rules match tool names ignoring case. */
+export function toolNameFromLabel(label: string): string {
+  return label.trim().replace(/\s+/g, "_");
 }
 
 export function progressMessageText(

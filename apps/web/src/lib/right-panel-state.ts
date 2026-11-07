@@ -1,6 +1,7 @@
 export type Panel =
   | "computer"
   | "routines"
+  | "pages"
   | "settings"
   | "routine"
   | "create-group"
@@ -13,6 +14,7 @@ export type RightPanelState = { panel: Panel; routineId?: string };
 const durablePanels: readonly Panel[] = [
   "computer",
   "routines",
+  "pages",
   "settings",
   "routine",
   "group-settings",

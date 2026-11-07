@@ -10,12 +10,26 @@ for the sharing and persistence contract.
 | --- | --- | --- |
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `novita` / `daytona` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| Managed remote desktop | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat) |
 | One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
+| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus` | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
 and remote providers. This stack credential does not replace a remote provider's API key.
+
+## Settings configuration
+
+Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
+**Settings → Computer → New computers run on** and save a supported provider's fields.
+The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
+never returned; a blank secret field keeps its saved value for the same provider and destination.
+Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
+Docker, Kubernetes, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
+for desktop and fake deployments.
+
+The account form offers only providers that declare support for account-owned computers.
+Team Computers follow their owner's account choice; Private Computers use the deployment choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
 
 ## Choosing a provider
 
@@ -88,22 +102,30 @@ Resource ceilings, network isolation and shared folders for these computers are 
 
 ### Bot browser
 
-The published computer image uses Chromium. To use Brave instead, build the image with
-`BROWSER=brave` and point Compose at it:
+The published computer image uses Chromium. To use Google Chrome or Brave instead, build the image
+with `BROWSER=chrome` or `BROWSER=brave` and point Compose at it:
 
 ```bash
-docker build --build-arg BROWSER=brave -t rakazo-computer-brave infra/sandboxes/computer
+docker build --build-arg BROWSER=chrome -t rakazo-computer-chrome infra/sandboxes/computer
 ```
 
 ```env
-RAKAZO_COMPUTER_IMAGE=rakazo-computer-brave
+RAKAZO_COMPUTER_IMAGE=rakazo-computer-chrome
 RAKAZO_COMPUTER_IMAGE_TAG=latest
 ```
 
 The image holds one browser, and `rakazo-browser` launches whichever is installed. A locally built
 image is not on a registry, so start the stack with `bash install-images.sh --pull-never` after
 pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
-policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
+policy.
+
+`BROWSER=chrome` installs Google Chrome stable from Google's apt repository and checks Google's
+signing key by fingerprint. Google publishes Chrome for amd64 only, so the build fails on other
+platforms; build those with the default. Chrome identifies itself as Google Chrome and ships the
+Widevine module that some sites expect, where Debian's Chromium reports a plain Chromium brand and
+has no Widevine. Some payment and sign-in risk checks may count that profile against the device.
+
+Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
 
 ## `kubernetes`
@@ -131,7 +153,8 @@ home as one tar archive. Screens use the image's desktop gateway on the pod IP, 
 worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
 display ports from `6100` upward. Pods are ephemeral: the
 saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
-not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them;
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
 
 ### Mounted home (optional)
 
@@ -167,13 +190,95 @@ Bind it to the service account the API and worker run as with a `RoleBinding`. A
 that admits only the API, worker and web pods to the computer pods, and denies their egress to
 private ranges, is recommended.
 
+## `incus`
+
+Each computer is an [Incus](https://linuxcontainers.org/incus/) application container started
+from the published computer image through Incus's OCI support (Incus 6.11 or newer; the start
+command's uid needs the `oci.uid` and `oci.gid` keys). The API and
+worker call the Incus REST API with a client certificate; no supervisor or Docker socket is
+involved.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `INCUS_SANDBOX_URL` | none | The Incus API, such as `https://incus.example.test:8443` |
+| `INCUS_SANDBOX_CLIENT_CERT` / `_CLIENT_KEY` | none | PEM client certificate and key; `\n` escapes are accepted. API and worker only |
+| `INCUS_SANDBOX_SERVER_CERT` | unset | The server's own certificate (`incus info` shows it), trusted exactly. Unset uses the system CAs and the URL's host name |
+| `INCUS_SANDBOX_PROJECT` | `default` | Use a project of its own, below |
+| `INCUS_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a release tag or digest in production |
+| `INCUS_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` / `_PROCESS_LIMIT` | `2` / `2GiB` / `2048` | Incus `limits.cpu`, `limits.memory` and `limits.processes` of each computer |
+
+Computers without the URL, certificate or key fall back to `none`.
+
+Each instance is unprivileged, without nesting, with an isolated id map (its own range of host
+uids) and the limits above, all set on the instance so a profile cannot loosen them. The image's
+own start command and every command run as uid 1000, set on the instance and on each exec rather
+than taken from the image's user, with no privilege
+escalation, the same boundary as a Docker computer, so a custom image must keep that command.
+
+Each start creates a new instance named `rakazo-<uuid>` and labelled `user.rakazo-bot-id=<bot id>`;
+one carrying another bot's id is never reused or deleted. Instances are ephemeral: Incus deletes
+one when it stops, and the saved workspace is the persistence boundary, copied in when a computer
+starts and saved back when it stops, as on Kubernetes. Only cache paths and the screen size are set
+in the instance environment. Incus computers do not bill while running, so
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
+The first computer downloads the image into the project, which can take a few minutes.
+
+The instance's root disk and network come from the project's default profile. Screens use the
+image's desktop gateway on the instance address, so the API, the worker and the web screen proxy
+must reach that network on port `6100`, for example by running them on the Incus host or in an
+instance on a network the host routes to the computers.
+
+### Restricted project and certificate
+
+Give Rakazo a project and a client certificate that can reach nothing else. A restricted
+certificate cannot change its project's restrictions or limits. On the Incus host:
+
+```bash
+incus network create rakazo0
+incus network acl create rakazo-computers
+# Public internet only: no host, LAN, link-local, multicast or cloud-metadata addresses.
+incus network acl rule add rakazo-computers egress action=reject \
+  destination=0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
+incus network acl rule add rakazo-computers egress action=reject protocol=tcp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
+incus network acl rule add rakazo-computers egress action=reject protocol=udp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
+incus network acl rule add rakazo-computers egress action=reject protocol=icmp6 icmp_type=128 \
+  destination=::1/128,fc00::/7,fe80::/10
+# Screens, from the address the API, worker and web connect from.
+incus network acl rule add rakazo-computers ingress action=allow protocol=tcp \
+  source=<rakazo-server-address> destination_port=6100
+
+incus project create rakazo -c features.images=true -c features.profiles=true \
+  -c restricted=true -c restricted.networks.access=rakazo0 \
+  -c restricted.images.servers=ghcr.io
+incus profile device add default root disk path=/ pool=default --project rakazo
+incus profile device add default eth0 nic network=rakazo0 --project rakazo \
+  security.acls=rakazo-computers security.acls.default.egress.action=allow \
+  security.ipv4_filtering=true security.ipv6_filtering=true
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 -nodes -days 3650 \
+  -subj /CN=rakazo -keyout rakazo.key -out rakazo.crt
+incus config trust add-certificate rakazo.crt --restricted --projects rakazo
+```
+
+The ACL sits on each computer's network device, so it also keeps computers from reaching each
+other and other instances on the bridge; it needs the `nftables` firewall driver. Connections to a
+computer are refused except to the screen port. IPv6 neighbour discovery keeps working because only
+echo requests are refused among ICMPv6 messages to private addresses; DHCP and DNS from the bridge are
+allowed by Incus before any ACL rule. The IP filtering options stop
+a computer from spoofing addresses or sending router advertisements to the host. Set
+`INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
+
 ## `wuying`
 
-Bot computers run on one existing Wuying (无影) cloud computer. Each computer's home is a folder
+Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
+**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
-screenshots and input go through the desktop's MCP gateway. Stopping the computer powers the
-desktop off; deleting it removes only its home folder, never the desktop.
+screenshots and input go through the desktop's MCP gateway. Stopping the last computer on it
+powers the desktop off; deleting one removes only its home folder, never the desktop.
 
 | Variable | Notes |
 | --- | --- |
@@ -183,7 +288,7 @@ desktop off; deleting it removes only its home folder, never the desktop.
 | `WUYING_END_USER_ID` | Screen logins are issued for this user |
 | `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
 
-The web and Electron screen is drawn by the Wuying Web SDK in `/wuying/screen.html`, served by
+The web and Electron screen is drawn by the Wuying Web SDK in `/computer-screen/screen.html`, served by
 the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
 SDK is not committed; fetch the pinned release before building the web app:
 
@@ -192,7 +297,7 @@ node scripts/wuying-web-sdk.mjs
 ```
 
 The SDK runs in an opaque-origin sandboxed frame with an in-memory storage shim and a no-op
-cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuying/` permits
+cookie accessor in both its launcher and nested runtime. A CSP scoped to `/computer-screen/` permits
 the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
 only in the URL fragment, outside HTTP requests and Referer.
 
@@ -235,8 +340,11 @@ Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An a
 at its prompt writes nothing, so it does not hold the computer. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
-Docker and this-Mac computers are never capped. The next use resumes it. Asking for
-takeover restarts the idle timer, and on providers that do not bill while running the run
+Docker, Kubernetes and Incus computers are capped only when `COMPUTER_MAX_ACTIVE_UNBILLED_MS` is set
+(off by default; minimum 60000), with the same exceptions, so an abandoned background command
+cannot keep one running for days. Like every cap, it needs idle sleep on: `SANDBOX_IDLE_MS=0`
+turns it off too. This-Mac computers are never capped. The next use resumes it.
+Asking for takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
 

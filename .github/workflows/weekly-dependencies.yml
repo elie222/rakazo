@@ -40,7 +40,7 @@ jobs:
         id: base
         if: steps.existing.outputs.count == '0'
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: steps.existing.outputs.count == '0'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.existing.outputs.count == '0'
@@ -62,6 +62,19 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/dependency-update"
           install -m 500 .github/scripts/codex-subscription-auth.py "$control/auth.py"
           sudo install -d -o codex-updater -g codex-updater -m 700 /home/codex-updater/.codex
+          # Codex can refresh its login, but sandboxed package scripts cannot read it.
+          sudo install -o codex-updater -g codex-updater -m 600 /dev/stdin /home/codex-updater/.codex/config.toml <<'TOML'
+          default_permissions = "dependency-update"
+
+          [permissions.dependency-update]
+          extends = ":workspace"
+
+          [permissions.dependency-update.filesystem]
+          "/home/codex-updater/.codex" = "deny"
+
+          [permissions.dependency-update.network]
+          enabled = true
+          TOML
           sudo chown -R codex-updater:codex-updater "$GITHUB_WORKSPACE"
       - name: Restore subscription login
         id: auth
@@ -87,10 +100,9 @@ jobs:
           timeout --kill-after=30s 40m sudo -n -H -u codex-updater env \
             -u OPENAI_API_KEY -u CODEX_API_KEY -u CODEX_ACCESS_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
             PATH="$PATH" VALIDATION_NODE="$(command -v node)" \
-            codex exec --ephemeral --sandbox workspace-write \
+            codex exec --ephemeral \
             -c 'approval_policy="never"' -c 'model_provider="openai"' \
             -c 'forced_login_method="chatgpt"' -c 'cli_auth_credentials_store="file"' \
-            -c 'sandbox_workspace_write.network_access=true' \
             --output-last-message /home/codex-updater/pr.md \
             - < .github/prompts/weekly-dependencies.md \
             > "$RUNNER_TEMP/dependency-updater-control/session.log" 2>&1

@@ -45,6 +45,7 @@ test("sidebar search opens from its icon and closes without moving chats mid-cli
   await expect(search).toHaveCount(0);
 
   await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await trigger.click();
   const runSearch = sidebar.getByRole("textbox", { name: "Search runs", exact: true });
   await runSearch.fill("kept activity search");
   const originalRunSearch = (await runSearch.elementHandle())!;
@@ -54,9 +55,9 @@ test("sidebar search opens from its icon and closes without moving chats mid-cli
     expect(await originalRunSearch.evaluate((element) => element.isConnected)).toBe(true);
     await expect(runSearch).toHaveValue("kept activity search");
   }
+  // Escape clears the run search and closes it, as it does for the space search.
   await runSearch.press("Escape");
-  await expect(runSearch).toBeVisible();
-  await expect(runSearch).toHaveValue("");
+  await expect(runSearch).toHaveCount(0);
 });
 
 test("a failed space search says so instead of No results", async ({ page }, testInfo) => {

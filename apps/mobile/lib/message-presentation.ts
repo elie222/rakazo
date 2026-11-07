@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
@@ -16,7 +16,10 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
 export function messageHasInlineControls(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) =>
-      block.kind === "ask" || block.kind === "app_connect" || block.kind === "mcp_approval",
+      block.kind === "ask" ||
+      block.kind === "app_connect" ||
+      block.kind === "mcp_approval" ||
+      block.kind === "import_setup",
   );
 }
 
@@ -27,26 +30,25 @@ export type MessagePresentationSegment = {
 
 /** Blocks the thread draws as their own native card instead of inside the text bubble. */
 function isCardBlock(block: MessageBlock): boolean {
-  return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
-}
-
-/** The import setup checklist links to web settings, so mobile leaves it out. */
-function isWebOnlyBlock(block: MessageBlock): boolean {
-  return block.kind === "import_setup";
+  return (
+    block.kind === "app_connect" ||
+    block.kind === "choice" ||
+    block.kind === "computer" ||
+    block.kind === "import_setup"
+  );
 }
 
 export function messagePresentationSegments(
   blocks: readonly MessageBlock[],
 ): MessagePresentationSegment[] {
-  const content = blocks.filter(
-    (block) => !isCardBlock(block) && !isToolActivityBlock(block) && !isWebOnlyBlock(block),
-  );
+  const content = blocks.filter((block) => !isCardBlock(block) && !isToolActivityBlock(block));
   return content.length > 0 ? [{ kind: "content", blocks: content }] : [];
 }
 
 export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
-    (block) => !isToolActivityBlock(block) && !isDismissedChoice(block) && !isWebOnlyBlock(block),
+    (block) =>
+      !isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block),
   );
 }
 
@@ -86,13 +88,14 @@ export function choiceCardOptions(block: ChoiceBlock): ChoiceBlock["options"] {
     : block.options;
 }
 
-const THREAD_HORIZONTAL_PADDING = 20;
+/** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */
+export const THREAD_COLUMN_GUTTER = 20;
 const MESSAGE_COLUMN_RATIO = 0.9;
 const CARD_MAX_WIDTH = 340;
 
 /** Width of a card in a normal bot row: thread padding, then the 90% column cap. */
 export function threadCardWidth(windowWidth: number): number {
-  const contentWidth = Math.max(0, windowWidth - THREAD_HORIZONTAL_PADDING * 2);
+  const contentWidth = Math.max(0, windowWidth - THREAD_COLUMN_GUTTER * 2);
   return Math.min(CARD_MAX_WIDTH, Math.floor(contentWidth * MESSAGE_COLUMN_RATIO));
 }
 

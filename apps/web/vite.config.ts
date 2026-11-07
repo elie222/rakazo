@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { ClientRequest, IncomingMessage } from "node:http";
+import type { ClientRequest, IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -11,6 +11,8 @@ import type { DesktopStackProbeResponse } from "@rakazo/contracts";
 import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
+  COMPUTER_SCREEN_PREFIX,
+  COMPUTER_SCREEN_RUNTIME_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
@@ -25,10 +27,17 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
+import { wuyingScreenAssets } from "../../packages/adapters/src/wuying-screen-assets.ts";
+import { wuyingScreenPolicy } from "../../packages/adapters/src/wuying-screen-policy.ts";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { apiProxy } from "./src/api-proxy.js";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
+import {
+  instanceThemeIndexMiddleware,
+  instanceThemeMiddleware,
+  withInstanceThemeLink,
+} from "./src/instance-theme.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -100,6 +109,14 @@ function attachDesktopStackProbe(
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify(body));
   });
+}
+
+function sharedPageHeaders(req: IncomingMessage, res: ServerResponse, next: () => void) {
+  if (req.url?.startsWith("/p/")) {
+    res.setHeader("x-robots-tag", "noindex, nofollow");
+    res.setHeader("referrer-policy", "no-referrer");
+  }
+  next();
 }
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
@@ -486,6 +503,12 @@ export default defineConfig(({ command, mode }) => {
   const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   const desktopStackToken =
     process.env.RAKAZO_DESKTOP_STACK_TOKEN ?? rootEnv.RAKAZO_DESKTOP_STACK_TOKEN ?? "";
+  const themeFile = process.env.RAKAZO_THEME ?? rootEnv.RAKAZO_THEME;
+  const instanceTheme =
+    themeFile &&
+    instanceThemeMiddleware(themeFile, (reason) =>
+      screenLog.warn("web.instance_theme_ignored", { reason }),
+    );
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
   // Invalid origins throw here, so the server refuses to start rather than serve a wider policy.
   const appPolicy = appContentSecurityPolicy({
@@ -531,17 +554,57 @@ export default defineConfig(({ command, mode }) => {
       tailwindcss(),
       rakazoPwa(buildId),
       {
-        // Production only: the dev server injects inline scripts for React Refresh.
+        // Dev keeps React Refresh unrestricted in app pages; screen documents always use CSP.
         name: "rakazo-content-security-policy",
+        generateBundle() {
+          for (const [pathname, asset] of Object.entries(wuyingScreenAssets)) {
+            this.emitFile({ type: "asset", fileName: pathname.slice(1), source: asset.source });
+          }
+        },
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const pathname = req.url?.split("?", 1)[0] ?? "/";
+            if (pathname.startsWith(COMPUTER_SCREEN_PREFIX)) {
+              res.setHeader(
+                "content-security-policy",
+                contentSecurityPolicyFor(pathname, appPolicy, wuyingScreenPolicy)!,
+              );
+              if (pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+                res.setHeader("x-frame-options", "SAMEORIGIN");
+            }
+            const asset = Object.hasOwn(wuyingScreenAssets, pathname)
+              ? wuyingScreenAssets[pathname]
+              : undefined;
+            if (asset) {
+              res.setHeader("content-type", asset.type);
+              res.end(asset.source);
+              return;
+            }
+            next();
+          });
+        },
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
-            const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/", appPolicy);
+            const pathname = req.url?.split("?", 1)[0] ?? "/";
+            if (pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+              res.setHeader("x-frame-options", "SAMEORIGIN");
+            const policy = contentSecurityPolicyFor(pathname, appPolicy, wuyingScreenPolicy);
             if (policy) {
               res.setHeader("content-security-policy", policy);
               res.setHeader("reporting-endpoints", CSP_REPORTING_ENDPOINTS);
             }
             next();
           });
+        },
+      },
+      {
+        // A shared page's link is its only key: keep it out of search results and Referer.
+        name: "rakazo-shared-page-headers",
+        configureServer(server) {
+          server.middlewares.use(sharedPageHeaders);
+        },
+        configurePreviewServer(server) {
+          server.middlewares.use(sharedPageHeaders);
         },
       },
       {
@@ -563,6 +626,22 @@ export default defineConfig(({ command, mode }) => {
           middlewares.use(
             missingAssetMiddleware(assetsDir, `${config.base}${config.build.assetsDir}/`, archive),
           );
+        },
+      },
+      {
+        // Without RAKAZO_THEME the page never links the theme, so the default deploy is unchanged.
+        name: "rakazo-instance-theme",
+        transformIndexHtml: (html) =>
+          command === "serve" && instanceTheme ? withInstanceThemeLink(html) : html,
+        configureServer: (server) => {
+          if (instanceTheme) server.middlewares.use(instanceTheme);
+        },
+        configurePreviewServer: ({ config, middlewares }) => {
+          if (!instanceTheme) return;
+          middlewares.use(instanceTheme);
+          const outDir = path.resolve(config.root, config.build.outDir);
+          // A post hook, so it runs after Vite's SPA fallback has resolved the page.
+          return () => middlewares.use(instanceThemeIndexMiddleware(outDir));
         },
       },
       {

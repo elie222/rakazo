@@ -9,6 +9,8 @@ import { sendThreadMessage } from "./thread-target.js";
 function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
+    space: { findUnique: vi.fn(async () => null) },
+    user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
     $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
     chatGroup: {
@@ -81,7 +83,13 @@ function fixture(group = false) {
     imageHandling: "confirm" | "file" | null = "confirm",
   ) =>
     sendThreadMessage(
-      { prisma, events: { notify } as never, jobs: { enqueue } as never, imageAdmission },
+      {
+        prisma,
+        sandbox: {} as never,
+        events: { notify } as never,
+        jobs: { enqueue } as never,
+        imageAdmission,
+      },
       { userId: "user-1", spaceId: "space-1" } as Actor,
       (group
         ? { kind: "group", groupId: "group-1", threadId: "thread-1" }
@@ -351,6 +359,7 @@ describe("current image send admission", () => {
         taskId: "task-active",
         status: "running",
         trigger: "user",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: false,
@@ -437,6 +446,7 @@ describe("current image send admission", () => {
         taskId: "task-waiting",
         status: "waiting_input",
         trigger: "routine",
+        userId: "user-1",
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         modelPinned: true,
@@ -459,6 +469,7 @@ describe("current image send admission", () => {
           id: "obsolete",
           taskId: "obsolete-task",
           status: "waiting_input",
+          userId: "user-1",
           trigger: "routine",
           modelProvider: "openrouter",
           modelId: "deepseek/deepseek-v4-pro",

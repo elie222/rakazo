@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { hapticImpact } from "../lib/haptics";
 import { useI18n } from "../lib/i18n";
 import { messageMenuPlacement } from "../lib/message-menu-placement";
 import { useMobileTokens } from "../lib/native";
@@ -40,6 +41,7 @@ function setMenu(next: MessageMenuSpec | null) {
 
 /** Opens the reaction and action menu for a long-pressed message (Android). */
 export function presentMessageMenu(spec: MessageMenuSpec) {
+  hapticImpact();
   setMenu(spec);
 }
 

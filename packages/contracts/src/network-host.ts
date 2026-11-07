@@ -166,6 +166,19 @@ export function isLoopbackHost(hostname: string): boolean {
   return isLocalhostOrLoopbackIp(host) || host.endsWith(".localhost");
 }
 
+/** HTTPS or this machine's HTTP origin; suitable for native permissions and credentials. */
+export function secureHttpOrigin(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))
+      ? url.origin
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * This machine or the person's LAN: loopback hosts, `.local` mDNS names, and private-network
  * IP literals. Where cleartext HTTP to a self-hosted server is acceptable.

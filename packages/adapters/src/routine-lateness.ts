@@ -10,15 +10,15 @@ import { routineTimerScheduledFor } from "./routine-coalescing.js";
 export const LATE_ROUTINE_RUN_MS = 15 * 60_000;
 
 /**
- * Tells a recurring timer run that it started materially late (for example after the
- * host was offline at its scheduled time), with both times in the routine's timezone.
- * Returns undefined for on-time runs and for any run that is not a recurring timer tick.
+ * The occurrence a recurring timer run was due at when it started materially late (for
+ * example after the host was offline at its scheduled time). Undefined for on-time runs
+ * and for any run that is not a recurring timer tick.
  */
-export function lateRoutineRunInstruction(
+export function lateRoutineRunDueAt(
   run: { routineId: string | null; clientNonce: string | null },
   routine: { crons: string[]; timezone: string },
   now: Date,
-): string | undefined {
+): Date | undefined {
   if (!run.routineId) return undefined;
   const scheduledFor = routineTimerScheduledFor(run.routineId, run.clientNonce);
   if (!scheduledFor) return undefined;
@@ -44,13 +44,18 @@ export function lateRoutineRunInstruction(
     latest = after;
   }
   if (now.getTime() - latest < LATE_ROUTINE_RUN_MS) return undefined;
-  const zone = localDateTime(now, routine.timezone) ? routine.timezone : undefined;
+  return new Date(latest);
+}
+
+/** Tells a run that started late when it was due and when it started, in the routine's timezone. */
+export function lateRoutineRunInstruction(dueAt: Date, now: Date, timezone: string): string {
+  const zone = localDateTime(now, timezone) ? timezone : undefined;
   const format = (date: Date) =>
     zone
       ? `${localDateTime(date, zone)} (${zone})`
       : `${date.toISOString().replace(/\.\d{3}Z$/, "Z")} (UTC)`;
   return [
-    `This scheduled run started late: it was due ${format(new Date(latest))} and started ${format(now)}.`,
+    `This scheduled run started late: it was due ${format(dueAt)} and started ${format(now)}.`,
     "Adapt anything that depends on the time of day to the actual time, skip steps that no longer make sense, and mention the delay when it matters to the user.",
   ].join(" ");
 }

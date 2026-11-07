@@ -3,4 +3,6 @@
   <string name="rakazo_call_channel">Ongoing call</string>
   <string name="rakazo_call_title">Rakazo call</string>
   <string name="rakazo_call_text">Microphone is active</string>
+  <string name="rakazo_call_answer">Answer</string>
+  <string name="rakazo_call_decline">Decline</string>
 </resources>

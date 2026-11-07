@@ -6,8 +6,11 @@ export type HistoryMessage = {
   role: "user" | "bot";
   /** A group member bot that wrote this bot message; absent means the bot under test did. */
   author?: string;
+  /** Empty when the message carries only a file. */
   text: string;
   subagentResult?: string;
+  /** A synthetic file the user attached, uploaded through the product before seeding. */
+  file?: { name: string; mimeType: string; content: string };
   createdAt: Date;
 };
 export type HistoryScenario =

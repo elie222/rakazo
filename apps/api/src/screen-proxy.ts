@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { hasActiveComputerControl } from "@rakazo/adapters";
 import { openScreenCapability, SCREEN_TARGET_ENDPOINT } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
@@ -11,7 +11,14 @@ export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: strin
     c.header("cache-control", "no-store");
     const supplied = Buffer.from(c.req.header("authorization") ?? "");
     const expected = Buffer.from(`Bearer ${secret}`);
-    if (!secret || supplied.length !== expected.length || !timingSafeEqual(supplied, expected))
+    if (
+      !secret ||
+      supplied.length === 0 ||
+      !timingSafeEqual(
+        createHash("sha256").update(supplied).digest(),
+        createHash("sha256").update(expected).digest(),
+      )
+    )
       return c.body(null, 403);
     const body = await c.req.json().catch(() => null);
     if (typeof body?.path !== "string") return c.body(null, 403);

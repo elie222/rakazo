@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import type {
   AdapterContext,
   CommandRequest,
@@ -278,8 +279,16 @@ export class LinuxDesktop {
         }`,
       );
     }
-    if (result.code !== 0 || Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
+    if (Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
       throw new Error("Page browser unavailable or interrupted");
+    // Exit 2 is the page browser refusing the command before touching the page (an older
+    // computer image does not know it). Pass its reply on, so a caller can tell "cannot
+    // check" from a check that failed.
+    if (result.code === 2) {
+      const refused = refusedCommand(result.stdout);
+      if (refused) return refused;
+    }
+    if (result.code !== 0) throw new Error("Page browser unavailable or interrupted");
     return JSON.parse(result.stdout) as PageBrowserResult;
   }
 
@@ -329,17 +338,29 @@ function browserActionCommand(
     if (isChromiumBrowser(action.application)) return command;
     return `cd ${shellQuote(env.workspaceDir)}\n${command}`;
   }
-  const browser =
-    action.kind === "open" && /^https?:\/\//i.test(action.path)
-      ? action.path
-      : action.kind === "launch" && BROWSER_APPLICATIONS.has(action.application.toLowerCase())
-        ? (action.uri ?? "about:blank")
-        : undefined;
-  if (browser !== undefined) {
-    return `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(browser)} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`;
-  }
   const workspace = env.workspaceDir;
-  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action.kind === "open" ? { ...action, path: workspacePath(workspace, action.path) } : action)}`;
+  const file =
+    action.kind === "open" && !/^https?:\/\//i.test(action.path)
+      ? workspacePath(workspace, action.path)
+      : undefined;
+  const browser =
+    file !== undefined
+      ? pathToFileURL(file, { windows: false }).href
+      : action.kind === "open"
+        ? action.path
+        : action.kind === "launch" && BROWSER_APPLICATIONS.has(action.application.toLowerCase())
+          ? (action.uri ?? "about:blank")
+          : undefined;
+  if (browser !== undefined) {
+    // A workspace file is a tab in this screen's browser, as on Docker computers. xdg-open
+    // ran the image's viewer in the foreground and held the action until the command timeout.
+    const exists =
+      file === undefined
+        ? ""
+        : `[ -e ${shellQuote(file)} ] || { echo ${shellQuote(`file '${file}' does not exist`)} >&2; exit 2; }\n`;
+    return `${exists}nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(browser)} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`;
+  }
+  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action)}`;
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
@@ -444,12 +465,16 @@ const FIND_MISSING_DESKTOP_TOOLS = [
 
 /**
  * Same as infra/sandboxes/computer/browser-policy.json. Rakazo keeps credentials itself, so
- * the browser's save-password, address, and card prompts only cover the page.
+ * the browser's save-password, address, and card prompts only cover the page. Pop-ups open: a
+ * page that opens a report once it has made it is past the click's user activation, and the
+ * pop-up blocker would drop it without a sign the page tools can see. Only the hosted sandboxes
+ * that are the bot's own computer are prepared with it, never the person's own computer.
  */
 export const BROWSER_POLICY = JSON.stringify({
   PasswordManagerEnabled: false,
   AutofillAddressEnabled: false,
   AutofillCreditCardEnabled: false,
+  DefaultPopupsSetting: 1,
 });
 
 /** Managed policy directories for Chromium, Ubuntu's Chromium, Google Chrome, and Brave. */
@@ -514,3 +539,15 @@ export const VERIFY_LINUX_DESKTOP = [
   'wait "$xvfb" 2>/dev/null || true',
   'if [ "$ready" -ne 1 ]; then echo "Xvfb did not start" >&2; exit 1; fi',
 ].join("\n");
+
+/** The page browser's own reply when it refused a command, or nothing when the output is not one. */
+function refusedCommand(stdout: string): PageBrowserResult | undefined {
+  try {
+    const reply = JSON.parse(stdout) as { ok?: unknown; error?: unknown };
+    return reply && reply.ok === false && typeof reply.error === "string"
+      ? (reply as PageBrowserResult)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}

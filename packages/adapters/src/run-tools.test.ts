@@ -34,6 +34,7 @@ function dispatchContext(tainted: boolean) {
   return {
     deps: {
       prisma: {
+        bot: { findUnique: async () => null },
         user: {
           findUniqueOrThrow: async () => ({
             timezone: "UTC" as string | null,
@@ -65,6 +66,50 @@ beforeEach(() => {
 });
 
 describe("dispatchTool audit outcomes", () => {
+  it("dispatches a connector named delete_bot to its connector instead of local archival", async () => {
+    const execute = vi.fn(async function* () {
+      yield { type: "result", data: { deleted: "remote-object" } };
+    });
+    const base = dispatchContext(false);
+    const ctx = {
+      ...base,
+      deps: { ...base.deps, connector: { execute } },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      source: { ownerStartedRun: false },
+    };
+    ctx.tools.connector.set("delete_bot", {
+      name: "delete_bot",
+      route: { connectorId: "remote", resourceId: "server-1", toolName: "delete_bot" },
+    });
+
+    await expect(
+      applyTool(ctx as never, "delete_bot", { id: "remote-object" }, "call-1"),
+    ).resolves.toEqual({ deleted: "remote-object" });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: "delete_bot", args: { id: "remote-object" } }),
+      ctx.context,
+    );
+  });
+
+  it("does not read the owner's private routines for a shared-channel request", async () => {
+    const findMany = vi.fn(async () => []);
+    const base = dispatchContext(false);
+    const ctx = {
+      ...base,
+      deps: { ...base.deps, prisma: { ...base.deps.prisma, routine: { findMany } } },
+      run: { userId: "owner", spaceId: "space-1" },
+      bot: { id: "bot-1" },
+      thread: { id: "private-thread", groupId: null },
+      source: { ownerStartedRun: false, messagingChannelRun: true },
+    };
+
+    await expect(applyTool(ctx as never, "schedule_list", {}, "call-1")).resolves.toEqual({
+      error: "This tool is unavailable after a shared-channel message.",
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");
@@ -156,5 +201,28 @@ describe("isToolError", () => {
     expect(isToolError({ details: { refused: "owner-settings" } })).toBe(false);
     expect(isToolError({ terminate: true, details: { refused: "repeat" } })).toBe(false);
     expect(isToolError({ terminate: true, details: { refused: "owner-settings" } })).toBe(false);
+  });
+});
+
+describe("daily check-in dispatch restriction", () => {
+  it.each([
+    "computer_shell",
+    "browser_act",
+    "load_skill",
+    "run_subagent",
+    "cloud_agent_start",
+    "catalog_execute",
+    "update_bot",
+    "update_preferences",
+    "gmail_send",
+  ])("rejects %s before resolving, approving or executing it", async (name) => {
+    const ctx = {
+      ...dispatchContext(false),
+      run: { trigger: "routine", clientNonce: "strategic-initiative:bot-1:1" },
+    };
+    expect(await applyTool(ctx as never, name, {}, "call-1")).toEqual({
+      error: "Daily check-ins can only ask or message the user.",
+    });
+    expect(audited).toEqual([]);
   });
 });

@@ -1,8 +1,8 @@
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices } from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
 import { useNavigation } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ViewToken } from "react-native";
 import {
   AccessibilityInfo,
@@ -11,7 +11,6 @@ import {
   SectionList,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +18,8 @@ import { useFloatingHeaderInset } from "../lib/floating-header";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
+import { useListSearch } from "../lib/use-list-search";
+import { ListSearchInput } from "./list-search-input";
 import { Checkmark } from "./row-accessories";
 import { SettingsLabel, SettingsRow } from "./settings-group";
 import { TextOnlyMark } from "./text-only-mark";
@@ -68,7 +69,16 @@ export function ModelPickerList({
     },
     [],
   );
-  const [query, setQuery] = useState("");
+  const rows = [
+    ...(choices ?? []).map((choice) => ({ choice, connect: false })),
+    ...(connectChoices ?? []).map((choice) => ({
+      choice: { ...choice, providerLabel: undefined },
+      connect: true,
+    })),
+  ];
+  const { query, setQuery, showSearch, visible } = useListSearch(rows, {
+    text: (row) => modelChoiceSearchText(row.choice),
+  });
   const changeQuery = useCallback(
     (text: string) => {
       cancelInitialScroll();
@@ -79,22 +89,27 @@ export function ModelPickerList({
   useLayoutEffect(() => {
     if (Platform.OS === "android") return;
     navigation.setOptions({
-      headerSearchBarOptions: {
-        placeholder: t("Search"),
-        hideWhenScrolling: false,
-        hideNavigationBar: false,
-        autoCapitalize: "none",
-        onChangeText: (event: { nativeEvent: { text: string } }) =>
-          changeQuery(event.nativeEvent.text),
-        onCancelButtonPress: () => changeQuery(""),
-        onClose: () => changeQuery(""),
-      },
+      headerSearchBarOptions: showSearch
+        ? {
+            placeholder: t("Search"),
+            hideWhenScrolling: false,
+            hideNavigationBar: false,
+            autoCapitalize: "none",
+            onChangeText: (event: { nativeEvent: { text: string } }) =>
+              changeQuery(event.nativeEvent.text),
+            onCancelButtonPress: () => changeQuery(""),
+            onClose: () => changeQuery(""),
+          }
+        : undefined,
     });
-  }, [navigation, t, changeQuery]);
+  }, [navigation, t, changeQuery, showSearch]);
 
   const sections = useMemo(() => {
     if (!choices) return [];
-    const models = groupModelChoices(choices, query).map((section) => ({
+    const models = groupModelChoices(
+      visible.flatMap((row) => (row.connect ? [] : [row.choice])),
+      "",
+    ).map((section) => ({
       ...section,
       connect: false,
       heading:
@@ -105,13 +120,13 @@ export function ModelPickerList({
             : section.heading,
     }));
     const connect = groupModelChoices(
-      (connectChoices ?? []).map((choice) => ({ ...choice, providerLabel: undefined })),
-      query,
+      visible.flatMap((row) => (row.connect ? [row.choice] : [])),
+      "",
     ).flatMap((section) => section.data);
     return connect.length
       ? [...models, { key: "connect", heading: undefined, connect: true, data: connect }]
       : models;
-  }, [choices, connectChoices, query, providerLabel]);
+  }, [choices, visible, providerLabel]);
   useLayoutEffect(() => {
     const state = initialScroll.current;
     if (state.handled || state.cancelled || choices === null) return;
@@ -218,18 +233,8 @@ export function ModelPickerList({
         </View>
       )}
       ListHeaderComponent={
-        Platform.OS === "android" ? (
-          <TextInput
-            accessibilityLabel={t("Search")}
-            placeholder={t("Search")}
-            placeholderTextColor={native.secondaryLabel}
-            value={query}
-            onChangeText={changeQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            style={styles.search}
-          />
+        Platform.OS === "android" && showSearch ? (
+          <ListSearchInput query={query} setQuery={changeQuery} />
         ) : null
       }
       ListEmptyComponent={
@@ -289,14 +294,6 @@ function createStyles() {
       height: StyleSheet.hairlineWidth,
       marginStart: 16,
       backgroundColor: native.separator,
-    },
-    search: {
-      color: native.label,
-      backgroundColor: native.fill,
-      borderRadius: 10,
-      padding: 12,
-      marginBottom: 16,
-      fontSize: 17,
     },
     empty: {
       color: native.secondaryLabel,

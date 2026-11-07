@@ -30,6 +30,9 @@ dbTests("deferred migrations", () => {
   const lockAdded = `29990101000005_lock_${stamp}`;
   const indexAdded = `29990101000006_index_${stamp}`;
   const indexTable = `deferred_index_${stamp}`;
+  const rolloutTable = `deferred_rollout_${stamp}`;
+  const rolloutAdded = `29990101000007_rollout_add_${stamp}`;
+  const rolloutDropped = `29990101000008_rollout_drop_${stamp}`;
   const freshSchema = `deferred_fresh_${stamp}`;
   const dir = mkdtempSync(path.join(tmpdir(), "deferred-migrations-"));
   let client: Client;
@@ -61,11 +64,22 @@ dbTests("deferred migrations", () => {
     await client.query(`DROP TABLE IF EXISTS "${laterTable}"`);
     await client.query(`DROP TABLE IF EXISTS "${lockTable}"`);
     await client.query(`DROP TABLE IF EXISTS "${indexTable}"`);
+    await client.query(`DROP TABLE IF EXISTS "${rolloutTable}"`);
     await client.query("DELETE FROM _prisma_migrations WHERE migration_name = ANY($1)", [
-      [added, dropped, broken, laterAdded, laterDropped, lockAdded, indexAdded],
+      [
+        added,
+        dropped,
+        broken,
+        laterAdded,
+        laterDropped,
+        lockAdded,
+        indexAdded,
+        rolloutAdded,
+        rolloutDropped,
+      ],
     ]);
     await client.query('DELETE FROM "_deferred_migrations" WHERE name = ANY($1)', [
-      [dropped, laterDropped],
+      [dropped, laterDropped, rolloutDropped],
     ]);
     await client.query(`DROP SCHEMA "${freshSchema}"`);
     await client.end();
@@ -76,6 +90,7 @@ dbTests("deferred migrations", () => {
     const fresh = new URL(databaseUrl!);
     fresh.searchParams.set("options", `-c search_path=${freshSchema}`);
     await expect(heldBackMigrations(fresh.toString(), dir)).resolves.toEqual([]);
+    await expect(heldBackMigrations(fresh.toString(), dir, [])).resolves.toEqual([]);
   });
 
   it("applies ordinary migrations at once and a deferred drop on the next run", async () => {
@@ -83,6 +98,35 @@ dbTests("deferred migrations", () => {
     expect(await columns()).toEqual(["gone", "id"]);
     await deployMigrations({ migrationUrl: databaseUrl!, dbPackageDir, migrationsDir: dir });
     expect(await columns()).toEqual(["id"]);
+  });
+
+  it("holds a failed rollout's deferred drop until a successful deployment contains it", async () => {
+    migration(rolloutAdded, `CREATE TABLE "${rolloutTable}" (id INT, gone INT);\n`);
+    migration(
+      rolloutDropped,
+      `${DEFERRED_MIGRATION_MARKER}\nALTER TABLE "${rolloutTable}" DROP COLUMN gone;\n`,
+    );
+    const previousMigrations = [added, dropped];
+    const input = {
+      migrationUrl: databaseUrl!,
+      dbPackageDir,
+      migrationsDir: dir,
+      previousMigrations,
+    };
+    // B's migrations succeed, but its later health check fails and A remains deployed.
+    await deployMigrations(input);
+    expect(await columns(rolloutTable)).toEqual(["gone", "id"]);
+    // Retrying B or deploying C must still use A's successful migration inventory.
+    await deployMigrations(input);
+    await deployMigrations(input);
+    expect(await columns(rolloutTable)).toEqual(["gone", "id"]);
+    await expect(heldBackMigrations(databaseUrl!, dir, [])).resolves.toContain(rolloutDropped);
+    // Once B has deployed successfully, the following rollout may apply its deferred drop.
+    await deployMigrations({
+      ...input,
+      previousMigrations: [...previousMigrations, rolloutDropped],
+    });
+    expect(await columns(rolloutTable)).toEqual(["id"]);
   });
 
   it("keeps holding a deferred drop back after a failed run", async () => {

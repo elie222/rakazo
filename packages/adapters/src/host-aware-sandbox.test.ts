@@ -254,3 +254,23 @@ describe("host-aware sandbox", () => {
     await sandbox.destroy(computer, ctx);
   });
 });
+
+it("starts even when the saved computer settings cannot be read", async () => {
+  const sandbox = await createRunSandbox("docker", {
+    prisma: {
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          computerProvider: "wuying",
+          computerProviderCipher: "c",
+        })),
+      },
+    } as unknown as PrismaClient,
+    secrets: {
+      load: async () => {
+        throw new Error("secret store unavailable");
+      },
+      onChange: () => () => {},
+    },
+  });
+  expect(sandbox.describe().id).toBe("docker");
+});

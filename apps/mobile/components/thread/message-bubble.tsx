@@ -1,20 +1,19 @@
-import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
-import { isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   formatFileSize,
   isApprovalAskBlock,
   memberName,
+  messagingProviderLabel,
   selectedAskActionLabel,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
-import { memo, useState } from "react";
+import { memo, useContext, useMemo, useState } from "react";
 import type { TextProps } from "react-native";
 import { Alert, Pressable, Text, View } from "react-native";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
-import { blockText, messagingProviderLabel } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { openMobileArtifact } from "../../lib/artifact-open";
@@ -22,7 +21,15 @@ import { allowsSpace } from "../../lib/ask-action-label";
 import { plainAskTitle } from "../../lib/ask-title";
 import { t, useI18n } from "../../lib/i18n";
 import { isInlineImageBlock } from "../../lib/inline-image";
+import {
+  mentionedBots,
+  textWithMentions,
+  UserMentionsContext,
+  userMentionTargets,
+} from "../../lib/message-mentions";
 import { messagePresentationSegments } from "../../lib/message-presentation";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
+import { blockText } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import { speakerColorFor } from "../../lib/thread-message-text";
 import type { UserBubble } from "../../lib/user-bubble";
@@ -30,19 +37,22 @@ import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
 import { AppConnectCard } from "../AppConnectCard";
 import { AskActions } from "../AskActions";
+import { AskReceiptView } from "../ask-receipt";
 import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../change-undo";
+import { ImportSetupCard } from "../ImportSetupCard";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
 import { McpApprovalCard } from "../McpApprovalCard";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
+import { PageCard } from "../pages/page-card";
 import { PeerReceiptLine } from "../peer-receipt-line";
 import { AskBlock } from "./ask-block";
+import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
 
@@ -73,7 +83,32 @@ export type MessageActionProps = Pick<
 export const MessageBubble = memo(function MessageBubble({
   mentions,
   ...props
-}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+}: ComponentProps<typeof MessageBubbleContent> & {
+  mentions?: readonly ChildBotBlock[];
+}) {
+  const { members, onOpenBot } = props;
+  const userMentions = useMemo(
+    () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
+    [members, onOpenBot],
+  );
+  const body = (
+    <MarkdownLongPressContext.Provider value={props.actionProps.onLongPress}>
+      <MessageBubbleWithMentions mentions={mentions} {...props} />
+    </MarkdownLongPressContext.Provider>
+  );
+  return props.message.role === "user" && userMentions ? (
+    <UserMentionsContext.Provider value={userMentions}>{body}</UserMentionsContext.Provider>
+  ) : (
+    body
+  );
+});
+
+function MessageBubbleWithMentions({
+  mentions,
+  ...props
+}: ComponentProps<typeof MessageBubbleContent> & {
+  mentions?: readonly ChildBotBlock[];
+}) {
   if (!mentions?.length) return <MessageBubbleBody {...props} />;
   return (
     <MessageMentions
@@ -101,16 +136,21 @@ export const MessageBubble = memo(function MessageBubble({
       />
     </MessageMentions>
   );
-});
+}
+
+/** Blocks drawn as their own card between the message's text pieces. */
+function isOwnCardBlock(block: MessageBlock): boolean {
+  return isSpecialMessageBlock(block) || block.kind === "page" || block.kind === "app";
+}
 
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
-  if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
+  if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
 
   const pieces: MessageBlock[][] = [];
   for (const block of message.blocks) {
     const previous = pieces.at(-1);
-    if (isSpecialMessageBlock(block) || !previous || isSpecialMessageBlock(previous[0]!)) {
+    if (isOwnCardBlock(block) || !previous || isOwnCardBlock(previous[0]!)) {
       pieces.push([block]);
     } else {
       previous.push(block);
@@ -118,6 +158,16 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   }
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
+    if (first.kind === "page")
+      return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "app")
+      return (
+        <McpAppCard
+          key={`app-${index}`}
+          block={first}
+          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
+        />
+      );
     return isSpecialMessageBlock(first) ? (
       <SpecialMessageCard
         key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
@@ -128,6 +178,12 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
         onOpenBot={props.onOpenBot}
         onHelperToggle={props.onHelperToggle}
         userBubble={props.userBubble}
+        // A saved running card is a background helper's; a live one belongs to this turn.
+        stopHelper={
+          first.kind === "subagent" && message.botId && !message.id.startsWith("subagent:")
+            ? { botId: message.botId, messageId: message.id }
+            : undefined
+        }
       />
     ) : (
       <MessageBubbleContent
@@ -147,6 +203,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
 
 const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
+  authorName,
   botName,
   showBotSenderName,
   bots,
@@ -158,7 +215,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onAnswer,
   onOpenComputer,
   onChoiceDismissed,
-  onPreviewMarkdown,
+  onPreviewFile,
   onPreviewImage,
   peerExchange,
   onOpenPeerChat,
@@ -168,6 +225,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }: {
   onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
+  /** Someone else in a shared space wrote this message: named and set apart. */
+  authorName?: string;
   botName?: string;
   showBotSenderName: boolean;
   bots: MobileBot[];
@@ -186,7 +245,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
-  onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  /** Opens a file the app can show; other types go to the share sheet. */
+  onPreviewFile: (artifactId: string) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
@@ -198,6 +258,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  const outgoing = message.role === "user" && !authorName;
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -370,7 +431,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
-              {askBlock.detail ? (
+              {askBlock.receipt ? (
+                <AskReceiptView receipt={askBlock.receipt} />
+              ) : askBlock.detail ? (
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{
@@ -466,23 +529,23 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     .join("\n");
   if (attachments.length > 0) {
     const speaker =
-      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     const hasInlineImages = attachments.some(isInlineImageBlock);
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
-      backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+      backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
       paddingHorizontal: 14,
       paddingVertical: 12,
       gap: 8,
     } as const;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
-        {(showBotSenderName && speaker) || caption ? (
+        {((showBotSenderName || authorName) && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
-            {showBotSenderName && speaker ? (
+            {(showBotSenderName || authorName) && speaker ? (
               <Text
                 style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
@@ -492,6 +555,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             {caption ? (
               <MessageCaption
                 role={message.role}
+                received={!outgoing}
                 text={caption}
                 tokens={tokens}
                 colorScheme={colorScheme}
@@ -512,9 +576,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   artifactId={attachment.artifactId}
                   name={attachment.name ?? t("Image")}
                   mimeType={attachment.mimeType ?? "image/png"}
-                  labelColor={
-                    message.role === "user" ? tokens.chatUserForeground : tokens.foreground
-                  }
+                  labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
                   pressableProps={actionProps}
                   onOpen={() =>
                     onPreviewImage({
@@ -542,8 +604,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 >
                   <Text
                     style={{
-                      color:
-                        message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                      color: outgoing ? tokens.chatUserForeground : tokens.foreground,
                       fontSize: 15,
                     }}
                   >
@@ -558,19 +619,15 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 artifactId={attachment.artifactId}
                 name={attachment.name ?? t("File")}
                 mimeType={attachment.mimeType!}
-                labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
+                labelColor={outgoing ? tokens.chatUserForeground : undefined}
               />
             ) : (
               <Pressable
                 {...actionProps}
                 onPress={() =>
                   attachment.artifactId
-                    ? attachment.mimeType === "text/markdown"
-                      ? onPreviewMarkdown({
-                          artifactId: attachment.artifactId,
-                          name: attachment.name ?? t("Markdown file"),
-                          mimeType: attachment.mimeType,
-                        })
+                    ? artifactPreviewKind(attachment.mimeType ?? "") !== "none"
+                      ? onPreviewFile(attachment.artifactId)
                       : void openMobileArtifact(
                           artifactTarget,
                           attachment.artifactId,
@@ -584,7 +641,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               >
                 <Text
                   style={{
-                    color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                    color: outgoing ? tokens.chatUserForeground : tokens.foreground,
                     fontSize: 15,
                   }}
                 >
@@ -593,10 +650,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 {formatFileSize(attachment.size) ? (
                   <Text
                     style={{
-                      color:
-                        message.role === "user"
-                          ? tokens.chatUserForeground
-                          : tokens.mutedForeground,
+                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
                       marginTop: 4,
                       fontSize: 13,
                     }}
@@ -634,9 +688,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
-    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
+  const showSpeaker = showBotSenderName || Boolean(authorName);
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",
@@ -644,14 +699,19 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const computerBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "computer" }> => block.kind === "computer",
   );
+  const setupBlocks = message.blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "import_setup" }> =>
+      block.kind === "import_setup",
+  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
         <MessageTextCard
           key={`${message.id}-content-${index}`}
           message={{ ...message, blocks: segment.blocks }}
-          speaker={showBotSenderName && index === firstContent ? speaker : undefined}
-          speakerColor={showBotSenderName && index === firstContent ? speakerColor : undefined}
+          outgoing={outgoing}
+          speaker={showSpeaker && index === firstContent ? speaker : undefined}
+          speakerColor={showSpeaker && index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
           doubleTapSurface={doubleTapSurface}
           userBubble={userBubble}
@@ -689,12 +749,25 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           onAccessibilityAction={actionProps.onAccessibilityAction}
         />
       ))}
+      {setupBlocks.map((block, index) => (
+        <ImportSetupCard
+          key={`import-setup-${index}`}
+          botId={cardBotId}
+          botName={speaker}
+          block={block}
+          accessibilityActions={actionProps.accessibilityActions}
+          onAccessibilityAction={actionProps.onAccessibilityAction}
+        />
+      ))}
     </View>
   );
 });
 
+const OPEN_BOT_ACTION = "open-bot:";
+
 function MessageTextCard({
   message,
+  outgoing,
   speaker,
   speakerColor,
   actionProps,
@@ -702,6 +775,7 @@ function MessageTextCard({
   userBubble,
 }: {
   message: MobileMessage;
+  outgoing: boolean;
   speaker?: string;
   speakerColor?: string;
   actionProps: MessageActionProps;
@@ -711,19 +785,43 @@ function MessageTextCard({
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const contentText = blockText(message);
+  const { t } = useI18n();
+  const userMentions = useContext(UserMentionsContext);
   if (!contentText) return null;
+  // The surface is one accessibility element, so the bots a message names are offered as its
+  // actions too; a tap on the name still opens the chat for everyone else.
+  const bots =
+    message.role === "user" && userMentions
+      ? mentionedBots(textWithMentions(contentText, userMentions.targets))
+      : [];
+  const accessibilityActions = bots.length
+    ? [
+        ...(actionProps.accessibilityActions ?? []),
+        ...bots.map((bot) => ({
+          name: `${OPEN_BOT_ACTION}${bot.id}`,
+          label: t("Open {name}", { name: bot.name }),
+        })),
+      ]
+    : actionProps.accessibilityActions;
   // The menu wrapper owns surface gestures; links and code controls remain responders.
   const Surface = doubleTapSurface ? View : Pressable;
   return (
     <Surface
       {...actionProps}
       accessible
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={(event) => {
+        const actionName = event.nativeEvent.actionName;
+        const bot = bots.find((candidate) => `${OPEN_BOT_ACTION}${candidate.id}` === actionName);
+        if (bot) userMentions?.onOpenBot(bot.id, bot.name);
+        else actionProps.onAccessibilityAction?.(event);
+      }}
       onLongPress={doubleTapSurface ? undefined : actionProps.onLongPress}
       style={{
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+        backgroundColor: outgoing ? tokens.chatUser : tokens.muted,
         paddingHorizontal: 14,
         paddingVertical: 9,
         borderRadius: 20,
@@ -742,6 +840,7 @@ function MessageTextCard({
       ) : null}
       <MessageCaption
         role={message.role}
+        received={!outgoing}
         text={contentText}
         tokens={tokens}
         colorScheme={colorScheme}

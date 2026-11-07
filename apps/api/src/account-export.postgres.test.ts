@@ -130,6 +130,67 @@ describePostgres("account export (PostgreSQL)", () => {
         botId: `mine-${suffix}`,
         blocks: [{ kind: "text", text: "Noted" }],
       });
+      const source = (heading: string) => `export default () => <Page title="${heading}" />;`;
+      const page = await prisma.page.create({
+        data: {
+          spaceId: ownedSpace,
+          userId: exporter,
+          botId: `mine-${suffix}`,
+          title: "Launch plan",
+          currentVersion: 2,
+          pinnedAt: now,
+          visibility: "link",
+          shareTokenHash: `share-hash-${suffix}`,
+          versions: {
+            create: [1, 2].map((version) => ({
+              version,
+              title: "Launch plan",
+              source: source(`Draft ${version}`),
+              code: "",
+            })),
+          },
+        },
+      });
+      await createThreadMessage(prisma, {
+        threadId: thread.id,
+        role: "bot",
+        botId: `mine-${suffix}`,
+        blocks: [
+          { kind: "page", pageId: page.id, version: 2, title: "Launch plan" },
+          { kind: "text", text: `Updated [Launch plan](page:${page.id}).` },
+          // Messages to other bots name pages too; their links must follow the page's new id.
+          {
+            kind: "bot_message_sent",
+            toBotId: `elsewhere-${suffix}`,
+            toBotName: "Elsewhere",
+            text: `Built [Launch plan](page:${page.id}) for you.`,
+          },
+        ],
+      });
+      // A background helper works in a thread of its own; its id sorts after the bot's thread.
+      const helperThread = await prisma.thread.create({
+        data: {
+          id: `zz-helper-${suffix}`,
+          spaceId: ownedSpace,
+          userId: exporter,
+          helperBotId: `mine-${suffix}`,
+        },
+      });
+      await createThreadMessage(prisma, {
+        threadId: helperThread.id,
+        role: "bot",
+        botId: `mine-${suffix}`,
+        blocks: [{ kind: "text", text: "Helper found SAFFRON" }],
+      });
+      const theirHelperThread = await prisma.thread.create({
+        data: { spaceId: sharedSpace, userId: other, helperBotId: `theirs-${suffix}` },
+      });
+      await createThreadMessage(prisma, {
+        threadId: theirHelperThread.id,
+        role: "bot",
+        botId: `theirs-${suffix}`,
+        blocks: [{ kind: "text", text: "Their helper's notes" }],
+      });
       const theirThread = await prisma.thread.create({
         data: { spaceId: sharedSpace, userId: other, botId: `theirs-${suffix}` },
       });
@@ -229,6 +290,26 @@ describePostgres("account export (PostgreSQL)", () => {
     await db.pool.end();
   });
 
+  it("refuses a link once the account is deactivated", async () => {
+    const app = new Hono();
+    mountAccountExportRoute(app, {
+      prisma,
+      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
+      artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
+      home: { exportHome: async function* () {} },
+    });
+    const setDeactivated = (deactivatedAt: Date | null) =>
+      runAsSystem("test fixture", () =>
+        prisma.user.update({ where: { id: exporter }, data: { deactivatedAt } }),
+      );
+    await setDeactivated(new Date());
+    try {
+      expect((await app.request("/api/account/export?token=good")).status).toBe(410);
+    } finally {
+      await setDeactivated(null);
+    }
+  });
+
   it("downloads only the exporter's content, decrypted", async () => {
     const app = new Hono();
     mountAccountExportRoute(app, {
@@ -259,8 +340,14 @@ describePostgres("account export (PostgreSQL)", () => {
     const owned = records(ownedSpace);
     expect(owned.map((record) => record.type)).toEqual([
       "bot",
+      "page",
+      "page_version",
+      "page_version",
       "thread",
       "message",
+      "message",
+      "message",
+      "thread",
       "message",
       "artifact",
       "artifact",
@@ -276,9 +363,25 @@ describePostgres("account export (PostgreSQL)", () => {
         (record): record is Extract<AccountExportRecord, { type: T }> => record.type === type,
       );
     expect(owns("thread")[0]!.historyCompactionSummary).toBe("Summary mentions PERIWINKLE");
+    expect(owns("thread")[1]).toMatchObject({
+      id: `zz-helper-${suffix}`,
+      botId: null,
+      groupId: null,
+      helperBotId: `mine-${suffix}`,
+    });
+    expect(owns("message")[3]).toMatchObject({
+      threadId: `zz-helper-${suffix}`,
+      blocks: [{ kind: "text", text: "Helper found SAFFRON" }],
+    });
     expect(owns("message")[0]!.blocks).toEqual([
       { kind: "text", text: "The codeword is MARIGOLD" },
     ]);
+    expect(owns("page_version").map((version) => version.source)).toEqual([
+      'export default () => <Page title="Draft 1" />;',
+      'export default () => <Page title="Draft 2" />;',
+    ]);
+    // A page's link belongs to this install, so nothing of it leaves.
+    expect(decode(accountExportPaths.records(ownedSpace))).not.toContain(`share-hash-${suffix}`);
     expect(owns("memory_document")[0]!.content).toBe("Remember TANGERINE");
     expect(owns("memory_revision")[0]!.content).toBe("Remember TANGERINE");
     expect(owns("artifact").map((artifact) => artifact.version)).toEqual([1, 2]);
@@ -325,6 +428,38 @@ describePostgres("account export (PostgreSQL)", () => {
       expect(listed).not.toContain(late.id);
     } finally {
       await runAsSystem("test fixture", () => prisma.artifact.delete({ where: { id: late.id } }));
+    }
+  });
+
+  it("leaves out a page version saved after the page was read", async () => {
+    const source = await readAccountExport(prisma, exporter);
+    const owned = source.spaces.find((space) => space.id === ownedSpace)!;
+    const versions: number[] = [];
+    let saved: { id: string; pageId: string } | undefined;
+    try {
+      for await (const record of owned.records()) {
+        if (record.type === "page_version") versions.push(record.version);
+        if (record.type !== "page") continue;
+        expect(record.currentVersion).toBe(2);
+        // A save commits between the page row and its versions being read.
+        saved = await runAsSystem("test fixture", () =>
+          prisma.$transaction(async (tx) => {
+            await tx.page.update({ where: { id: record.id }, data: { currentVersion: 3 } });
+            return tx.pageVersion.create({
+              data: { pageId: record.id, version: 3, title: "Launch plan", source: "", code: "" },
+            });
+          }),
+        );
+      }
+      expect(versions).toEqual([1, 2]);
+    } finally {
+      if (saved)
+        await runAsSystem("test fixture", () =>
+          prisma.$transaction(async (tx) => {
+            await tx.pageVersion.delete({ where: { id: saved!.id } });
+            await tx.page.update({ where: { id: saved!.pageId }, data: { currentVersion: 2 } });
+          }),
+        );
     }
   });
 
@@ -384,8 +519,14 @@ describePostgres("account export (PostgreSQL)", () => {
           .filter(Boolean)
           .map((line) => AccountExportRecordSchema.parse(JSON.parse(line)));
       /** What a person sees: content and structure, not ids, owners or default rows. */
-      const content = (list: AccountExportRecord[]) =>
-        list.flatMap((record) => {
+      const content = (list: AccountExportRecord[]) => {
+        // A page is named by its title, so a message still pointing at the old id shows.
+        const pages = list.flatMap((record) =>
+          record.type === "page" ? [[record.id, record.title] as const] : [],
+        );
+        const named = (text: string) =>
+          pages.reduce((out, [id, title]) => out.replaceAll(id, `<${title}>`), text);
+        return list.flatMap((record) => {
           switch (record.type) {
             case "bot":
               return [`bot ${record.name} ${record.instructions}`];
@@ -395,7 +536,13 @@ describePostgres("account export (PostgreSQL)", () => {
                 ? [`thread ${record.historyCompactionSummary}`]
                 : [];
             case "message":
-              return [`message ${record.seq} ${record.role} ${JSON.stringify(record.blocks)}`];
+              return [
+                `message ${record.seq} ${record.role} ${named(JSON.stringify(record.blocks))}`,
+              ];
+            case "page":
+              return [`page ${record.title} v${record.currentVersion} ${record.pinnedAt !== null}`];
+            case "page_version":
+              return [`page version ${named(record.pageId)} v${record.version} ${record.source}`];
             case "artifact":
               return [`artifact ${record.name} v${record.version}`];
             case "memory_document":
@@ -414,6 +561,7 @@ describePostgres("account export (PostgreSQL)", () => {
               return [];
           }
         });
+      };
 
       const again = await download(importer);
       const imported = new Map(result.spaces.map((space) => [space.name, space.id]));
@@ -434,6 +582,23 @@ describePostgres("account export (PostgreSQL)", () => {
       expect(artifactBytes(again, imported.get("Mine")!)).toEqual(
         artifactBytes(archive, ownedSpace),
       );
+      // The page arrives private, with its viewer code compiled for this install.
+      expect(
+        await runAsSystem("test check", () =>
+          prisma.page.findFirst({
+            where: { spaceId: imported.get("Mine")! },
+            select: {
+              visibility: true,
+              shareTokenHash: true,
+              versions: { where: { version: 2 }, select: { code: true } },
+            },
+          }),
+        ),
+      ).toEqual({
+        visibility: "private",
+        shareTokenHash: null,
+        versions: [{ code: expect.stringContaining('title: "Draft 2"') }],
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

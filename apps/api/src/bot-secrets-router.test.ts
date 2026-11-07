@@ -27,7 +27,11 @@ const actor = {
 const FAKE_VALUE = "fake-value-SENTINEL-1";
 
 function matches(row: Row, where: Row = {}) {
-  return Object.entries(where).every(([key, value]) => row[key] === value);
+  return Object.entries(where).every(([key, value]) =>
+    value && typeof value === "object" && "startsWith" in value
+      ? String(row[key]).startsWith(String(value.startsWith))
+      : row[key] === value,
+  );
 }
 
 function pick(row: Row, select?: Record<string, boolean>) {
@@ -39,7 +43,7 @@ function botSecretDeps(seed: Row[] = []) {
   const now = new Date("2026-09-01T00:00:00.000Z");
   const bots: Row[] = [
     { id: "bot-1", userId: "user-1", spaceId: "space-1", archivedAt: null },
-    { id: "bot-other", userId: "user-2", spaceId: "space-1", archivedAt: null },
+    { id: "bot-other", userId: "user-2", spaceId: "space-2", archivedAt: null },
   ];
   const rows: Row[] = seed.map((row) => ({ ...row }));
   const botSecret = {
@@ -64,6 +68,14 @@ function botSecretDeps(seed: Row[] = []) {
       const row = rows.find((entry) => entry.id === args.where.id);
       Object.assign(row ?? {}, args.data, { updatedAt: now });
       return {};
+    }),
+    updateMany: vi.fn(async (args: { where: Row; data: Row }) => {
+      // As Prisma does, an unknown column fails the update.
+      const unknown = Object.keys(args.data).filter((key) => !["title", "note"].includes(key));
+      if (unknown.length) throw new Error(`Unknown argument ${unknown.join(", ")}`);
+      const matched = rows.filter((row) => matches(row, args.where));
+      for (const row of matched) Object.assign(row, args.data, { updatedAt: now });
+      return { count: matched.length };
     }),
     deleteMany: vi.fn(async (args: { where: Row }) => {
       const before = rows.length;
@@ -182,7 +194,7 @@ describe("botSecrets router", () => {
     expect(prisma.vaultCredential.create).toHaveBeenCalledOnce();
   });
 
-  it("rejects another user's bot and a missing bot before any secret access", async () => {
+  it("rejects another space's bot and a missing bot before any secret access", async () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     const { prisma, secrets, call } = botSecretDeps();
     for (const botId of ["bot-other", "missing-bot"]) {
@@ -198,7 +210,7 @@ describe("botSecrets router", () => {
     }
     expect(prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ userId: "user-1", spaceId: "space-1", archivedAt: null }),
+        where: expect.objectContaining({ spaceId: "space-1", archivedAt: null }),
       }),
     );
     expect(secrets.put).not.toHaveBeenCalled();
@@ -209,9 +221,9 @@ describe("botSecrets router", () => {
     expect(prisma.vaultCredential.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("lists metadata only, selecting neither the ciphertext nor the row id", async () => {
+  it("lists metadata only, never returning the ciphertext or the row id", async () => {
     const created = new Date("2026-08-01T00:00:00.000Z");
-    const { prisma, call } = botSecretDeps([
+    const { call } = botSecretDeps([
       {
         id: "row-1",
         userId: "user-1",
@@ -226,25 +238,20 @@ describe("botSecrets router", () => {
     ]);
     const result = await call("list", { botId: "bot-1" });
     expect(result.status).toBe(200);
-    const select = prisma.vaultCredential.findMany.mock.calls[0]?.[0].select ?? {};
-    expect(Object.keys(select).sort()).toEqual([
-      "auth",
-      "createdAt",
-      "name",
-      "origin",
-      "updatedAt",
-    ]);
     expect(result.body.json).toEqual([
       {
         name: "github",
         origin: "https://api.github.com",
         auth: { type: "basic", username: "octocat" },
+        title: "api.github.com",
+        note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
       },
     ]);
     expect(result.text).not.toContain("enc:");
     expect(result.text).not.toContain("ciphertext");
+    expect(result.text).not.toContain("row-1");
   });
 
   it("stores a LAN http origin only with the private-HTTP opt-in", async () => {
@@ -256,6 +263,8 @@ describe("botSecrets router", () => {
       name: "router",
       origin: "http://192.168.1.20:8080",
       auth: { type: "bearer" },
+      title: "192.168.1.20:8080",
+      note: "",
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     });
@@ -419,13 +428,15 @@ describe("botSecrets router", () => {
         name: "router",
         origin: "http://192.168.1.20:8080",
         auth: null,
+        title: "192.168.1.20:8080",
+        note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
       },
     ]);
   });
 
-  it("removes a non-regex stored name for the owned bot and rejects another user's bot", async () => {
+  it("removes a non-regex stored name for the owned bot and rejects another space's bot", async () => {
     const owned = botSecretDeps();
     const removed = await owned.call("remove", { botId: "bot-1", name: "Legacy Name" });
     expect(removed.status).toBe(200);
@@ -501,6 +512,50 @@ describe("vault router", () => {
     origin: "https://portal.example.test",
     auth: { type: "bearer" },
   };
+
+  it("names a new item from its title and never replaces one saved under that name", async () => {
+    const { rows, prisma, call } = botSecretDeps();
+    const home = (city: string) => ({
+      destination: { auth: { type: "contact" } },
+      value: JSON.stringify({ city }),
+      title: "Home",
+    });
+    const first = await call("vault/put", home("Springfield"));
+    expect(first.body.json).toMatchObject({ name: "home", title: "Home" });
+    // Another save took "home" after this one looked: it is created under the next free name.
+    prisma.vaultCredential.findMany.mockResolvedValueOnce([]);
+    const second = await call("vault/put", home("Shelbyville"));
+    expect(second.status).toBe(200);
+    expect(second.body.json).toMatchObject({ name: "home-2", title: "Home" });
+    expect(rows.map((row) => row.name)).toEqual(["home", "home-2"]);
+    const listed = (await call("vault/list", {})).body.json as { preview?: unknown }[];
+    expect(listed.map((item) => item.preview)).toEqual([
+      { contact: { city: "Springfield" } },
+      { contact: { city: "Shelbyville" } },
+    ]);
+  });
+
+  it("changes only the title or note of a saved item when no value is sent", async () => {
+    const { call } = botSecretDeps();
+    await call("vault/put", { destination, value: FAKE_VALUE });
+    const relabeled = await call("vault/put", { destination, title: "Portal", note: "For work" });
+    expect(relabeled.body.json).toMatchObject({
+      name: "portal",
+      title: "Portal",
+      note: "For work",
+    });
+    expect((await call("vault/reveal", { name: "portal" })).status).not.toBe(200);
+    const missing = await call("vault/put", {
+      destination: { ...destination, name: "missing" },
+      title: "Missing",
+    });
+    expect(missing.status).toBe(404);
+    const unnamed = await call("vault/put", {
+      destination: { auth: { type: "contact" } },
+      title: "Home",
+    });
+    expect(unnamed.status).toBe(400);
+  });
 
   it("saves, lists and removes in the account vault by default", async () => {
     const { rows, call } = botSecretDeps();
@@ -594,6 +649,36 @@ describe("vault router", () => {
     expect(secrets.put).toHaveBeenCalledOnce();
     const prepared = await secrets.put.mock.results[0]!.value;
     expect(secrets.delete).toHaveBeenCalledWith(prepared.ciphertext, expect.anything());
+  });
+
+  it("keeps a saved login on its site when saved again for another one", async () => {
+    const login = {
+      name: "portal",
+      origin: "https://www.portal.example.test",
+      auth: { type: "login" },
+    };
+    const saved = {
+      id: "login-1",
+      userId: "user-1",
+      spaceId: null,
+      ...login,
+      ciphertext: "enc:login-1",
+    };
+    const { rows, call } = botSecretDeps([saved]);
+    const value = JSON.stringify({ username: "fake-user", password: FAKE_VALUE });
+    for (const path of ["vault/put", "put"]) {
+      const refused = await call(path, {
+        ...(path === "put" ? { botId: "bot-1" } : {}),
+        destination: { ...login, origin: "https://login.portal.example.test" },
+        value,
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.text).toContain(
+        "Remove the existing credential before changing its destination",
+      );
+      expect(refused.text).not.toContain(FAKE_VALUE);
+    }
+    expect(rows).toEqual([saved]);
   });
 
   it("refuses to save into a Space's own vault the Space no longer uses", async () => {

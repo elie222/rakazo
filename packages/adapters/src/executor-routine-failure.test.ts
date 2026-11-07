@@ -2,6 +2,7 @@ import type { NotificationMessage } from "@rakazo/adapter-kit";
 import {
   ModelAccountError,
   SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
@@ -42,6 +43,12 @@ interface Scenario {
   switchToBackup?: { provider: string; modelId: string };
   personalKey?: boolean;
   pinnedTo?: { provider: string; modelId: string };
+  clientNonce?: string;
+  lateSince?: Date;
+  startedAt?: Date;
+  resumeAfterScheduleEdit?: boolean;
+  lateLookupFails?: boolean;
+  setupFailsOnce?: boolean;
 }
 
 async function failRun(scenario: Scenario) {
@@ -61,7 +68,10 @@ async function failRun(scenario: Scenario) {
     trigger,
     routineId: trigger === "routine" ? "routine-1" : null,
     retryOfRunId: scenario.retryOfRunId ?? null,
+    clientNonce: scenario.clientNonce ?? null,
+    lateSince: scenario.lateSince ?? null,
     leaseFence: 0,
+    startedAt: scenario.startedAt ?? null,
     ...(scenario.pinnedTo
       ? {
           modelPinned: true,
@@ -70,36 +80,57 @@ async function failRun(scenario: Scenario) {
         }
       : {}),
   };
+  const queuedRow = { ...run };
   const runtimeRun = vi.fn(async function* (request: {
     onModelChange?: (provider: string, modelId: string) => Promise<void>;
   }) {
-    yield* [];
+    if (scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 1) {
+      yield { type: "ask" as const, text: "Continue?" };
+      return;
+    }
     const backup = scenario.switchToBackup;
     if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
     throw scenario.error;
   });
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
-      findUniqueOrThrow: vi.fn(async () => run),
+      findUniqueOrThrow: vi.fn(async () => ({ ...run })),
       findFirst: vi.fn(async () => ({
-        bot: { notifyOnFinish: scenario.notifyOnFinish ?? true },
+        bot: {
+          id: "bot-1",
+          name: "Assistant",
+          color: "blue",
+          avatarSet: "default",
+          notifyOnFinish: scenario.notifyOnFinish ?? true,
+        },
         thread: { groupId: null },
       })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        Object.assign(run, data);
+        // Prisma leaves a field unchanged when its value is undefined.
+        for (const [key, value] of Object.entries(data))
+          if (value !== undefined) Object.assign(run, { [key]: value });
         return { count: 1 };
       }),
     },
     routine: {
-      findUnique: vi.fn(async () => ({
-        notify: scenario.routineNotify ?? true,
-        nextRunAt:
-          scenario.nextRunAt === undefined
-            ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
-            : scenario.nextRunAt,
-      })),
+      findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean } }) => {
+        if (scenario.lateLookupFails && select?.crons) throw new Error("lookup unavailable");
+        return {
+          crons:
+            scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
+              ? ["0 * * * *"]
+              : ["0 8 * * *"],
+          timezone: "UTC",
+          notify: scenario.routineNotify ?? true,
+          nextRunAt:
+            scenario.nextRunAt === undefined
+              ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
+              : scenario.nextRunAt,
+        };
+      }),
     },
     chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
@@ -138,7 +169,13 @@ async function failRun(scenario: Scenario) {
       findUnique: vi.fn(async () => null),
       count: vi.fn(async () => scenario.botMessages ?? 0),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
+    task: {
+      findUniqueOrThrow: vi.fn(async () => {
+        if (scenario.setupFailsOnce && prisma.task.findUniqueOrThrow.mock.calls.length === 1)
+          throw Object.assign(new Error("too many connections"), { code: "53300" });
+        return { id: run.taskId, prompt: "Sweep the inbox" };
+      }),
+    },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
@@ -192,7 +229,9 @@ async function failRun(scenario: Scenario) {
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
-    $transaction: vi.fn(async () => null),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
@@ -215,13 +254,34 @@ async function failRun(scenario: Scenario) {
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     artifacts: { get: vi.fn() },
-    events: { append: vi.fn(async () => undefined), finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      finalizeRun,
+      pauseRunForInput: vi.fn(async () => {
+        run.status = "waiting_input";
+        return { continuationRunId: null };
+      }),
+    },
     jobs: { enqueue },
     notifications: { send },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
+  if (scenario.setupFailsOnce) {
+    expect(run.status).toBe("queued");
+    expect(runtimeRun).not.toHaveBeenCalled();
+    // The retry's job read the row before the first attempt stamped it, so only the row read
+    // after the claim carries the first start.
+    prisma.run.findUnique.mockResolvedValueOnce({ ...queuedRow });
+    await executor.continueRun(run.id, "worker-1");
+  }
+  if (scenario.resumeAfterScheduleEdit) {
+    expect(run.status).toBe("waiting_input");
+    expect(run.startedAt).toEqual(NOW);
+    expect(run.lateSince).toBeNull();
+    await executor.continueRun(run.id, "worker-1");
+  }
   expect(finalizeRun).toHaveBeenCalledWith(
     expect.objectContaining({
       outcome: "failed",
@@ -231,7 +291,7 @@ async function failRun(scenario: Scenario) {
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send, prisma };
+  return { retries, send, prisma, runtimeRun, run };
 }
 
 const overloaded = () =>
@@ -261,6 +321,17 @@ describe("routine failure notifications", () => {
     );
   });
 
+  it("keeps a failed daily check-in quiet", async () => {
+    const { send } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
+  });
+
   it("puts the unread chats across the user's Spaces on the app icon", async () => {
     const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
     expect(send).toHaveBeenCalledWith(
@@ -268,8 +339,8 @@ describe("routine failure notifications", () => {
       expect.anything(),
     );
     expect(countUnreadInboxChats).toHaveBeenCalledWith(prisma, {
-      userId: "user-1",
       spaceId: "space-1",
+      userId: "user-1",
     });
   });
 
@@ -287,6 +358,98 @@ describe("routine failure notifications", () => {
     });
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("a scheduled run that starts late", () => {
+  const timer = (scheduledFor: string) => `routine-timer:routine-1:${scheduledFor}`;
+  const lateWrites = (prisma: Awaited<ReturnType<typeof failRun>>["prisma"]) =>
+    prisma.run.updateMany.mock.calls.filter(([args]) => args.data.lateSince !== undefined);
+  const prompt = (runtimeRun: Awaited<ReturnType<typeof failRun>>["runtimeRun"]) =>
+    (runtimeRun.mock.calls[0]?.[0] as { prompt?: string } | undefined)?.prompt ?? "";
+
+  it("records the occurrence it was due at once, and tells the agent", async () => {
+    // Created for Saturday's 08:00 while the host was down; starts Monday at 09:00.
+    const { prisma, runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-02-28T08:00:00.000Z"),
+    });
+    expect(lateWrites(prisma)).toEqual([
+      [
+        expect.objectContaining({
+          data: { startedAt: NOW, lateSince: new Date("2026-03-02T08:00:00.000Z") },
+        }),
+      ],
+    ]);
+    expect(prompt(runtimeRun)).toContain("it was due Monday, 2026-03-02 08:00");
+  });
+
+  it("keeps the classification and the note when the first attempt's setup fails", async () => {
+    const { prisma, runtimeRun, run } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-02-28T08:00:00.000Z"),
+      setupFailsOnce: true,
+    });
+    expect(lateWrites(prisma)).toHaveLength(1);
+    expect(run.lateSince).toEqual(new Date("2026-03-02T08:00:00.000Z"));
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(prompt(runtimeRun)).toContain("it was due Monday, 2026-03-02 08:00");
+  });
+
+  it("does not reclassify an on-time run after input and a schedule edit", async () => {
+    const { prisma, runtimeRun, run } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-03-02T08:00:00.000Z"),
+      resumeAfterScheduleEdit: true,
+    });
+    expect(runtimeRun).toHaveBeenCalledTimes(2);
+    expect(lateWrites(prisma)).toEqual([]);
+    expect(run.lateSince).toBeNull();
+  });
+
+  it("leaves an already-started legacy null row unlabelled", async () => {
+    const { prisma, run } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-02-28T08:00:00.000Z"),
+      startedAt: new Date("2026-03-02T08:50:00.000Z"),
+    });
+    expect(lateWrites(prisma)).toEqual([]);
+    expect(run.lateSince).toBeNull();
+  });
+
+  it("still runs and follows its normal outcome when the lateness lookup rejects", async () => {
+    const { prisma, runtimeRun, run, send } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-02-28T08:00:00.000Z"),
+      lateLookupFails: true,
+    });
+    expect(lateWrites(prisma)).toEqual([]);
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(run.startedAt).toEqual(NOW);
+    expect(run.lateSince).toBeNull();
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps the recorded time when a late run resumes, and records nothing for an on-time run", async () => {
+    const resumed = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-02-28T08:00:00.000Z"),
+      lateSince: new Date("2026-03-01T08:00:00.000Z"),
+      startedAt: new Date("2026-03-01T09:00:00.000Z"),
+    });
+    expect(lateWrites(resumed.prisma)).toEqual([]);
+    expect(resumed.run.startedAt).toEqual(new Date("2026-03-01T09:00:00.000Z"));
+    expect(prompt(resumed.runtimeRun)).toContain("it was due Sunday, 2026-03-01 08:00");
+    expect(prompt(resumed.runtimeRun)).toContain("started Sunday, 2026-03-01 09:00");
+    const onTime = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: timer("2026-03-02T08:50:00.000Z"),
+    });
+    expect(lateWrites(onTime.prisma)).toEqual([]);
+    expect(prompt(onTime.runtimeRun)).not.toContain("started late");
   });
 });
 
@@ -350,7 +513,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   it("counts a refusal of the user's own key", async () => {
     const { prisma } = await failRun({ error: refusedKey(), personalKey: true });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a run pinned to a provider the user has no connection for", async () => {
@@ -359,7 +523,8 @@ describe("backing off a routine after its model connection refuses it", () => {
       pinnedTo: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it("counts a daily quota that resets hours from now, without a quick retry", async () => {
@@ -375,14 +540,19 @@ describe("backing off a routine after its model connection refuses it", () => {
       personalKey: true,
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
-  it("counts a spent computer allowance, without a quick retry", async () => {
-    const { prisma, retries } = await failRun({ error: new SandboxAllowanceUsedError() });
+  it.each([
+    ["a spent computer allowance", new SandboxAllowanceUsedError()],
+    ["an unusable computer provider account", new SandboxProviderAccountError()],
+  ])("counts %s, without a quick retry", async (_label, error) => {
+    const { prisma, retries } = await failRun({ error });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(retries).toEqual([]);
   });
 
@@ -400,7 +570,8 @@ describe("backing off a routine after its model connection refuses it", () => {
   ] satisfies Array<[string, Scenario]>)("does not count %s", async (_label, scenario) => {
     const { prisma } = await failRun(scenario);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // Only the run's lease.
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
 });
 
@@ -417,6 +588,7 @@ interface RetryScenario {
   enqueueFails?: boolean;
   routineNotify?: boolean;
   missingRoutine?: boolean;
+  routineOwner?: string;
   missingTask?: boolean;
   pausedBeforeCreate?: boolean;
   archivedBeforeCreate?: boolean;
@@ -446,6 +618,8 @@ function retryHarness(scenario: RetryScenario = {}) {
     error: overloaded().message,
   };
   const tx = {
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     routine: {
       updateMany: vi.fn(async () => ({
         count: scenario.pausedBeforeCreate || scenario.archivedBeforeCreate ? 0 : 1,
@@ -470,6 +644,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     },
   };
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => failed),
@@ -479,7 +654,16 @@ function retryHarness(scenario: RetryScenario = {}) {
             (scenario.laterRunBeforeCreate && prisma.$transaction.mock.calls.length > 0)
             ? { id: "run-later" }
             : null
-          : { bot: { notifyOnFinish: true }, thread: { groupId: null } },
+          : {
+              bot: {
+                id: "bot-1",
+                name: "Assistant",
+                color: "blue",
+                avatarSet: "default",
+                notifyOnFinish: true,
+              },
+              thread: { groupId: null },
+            },
       ),
     },
     routine: {
@@ -489,6 +673,7 @@ function retryHarness(scenario: RetryScenario = {}) {
           : {
               notify: scenario.routineNotify ?? true,
               active: scenario.active ?? true,
+              userId: scenario.routineOwner ?? "user-1",
               crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
               nextRunAt:
                 scenario.nextRunAt === undefined
@@ -526,6 +711,7 @@ describe("running a routine retry", () => {
         prisma.routine.findUnique.mockResolvedValueOnce({
           notify: true,
           active: false,
+          userId: "user-1",
           crons: ["0 9 * * *"],
           nextRunAt: null,
           bot: { archivedAt: null },
@@ -547,6 +733,7 @@ describe("running a routine retry", () => {
     ["paused", { active: false }],
     ["archived", { archived: true }],
     ["missing its routine", { missingRoutine: true }],
+    ["now someone else's", { routineOwner: "user-2" }],
     ["missing its task", { missingTask: true }],
   ] satisfies Array<[string, RetryScenario]>)(
     "notifies when the retry is abandoned because it is %s",
@@ -564,6 +751,7 @@ describe("running a routine retry", () => {
           badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
+          sender: expect.objectContaining({ botId: "bot-1", name: "Assistant" }),
         },
         expect.objectContaining({ userId: "user-1" }),
       );
@@ -619,7 +807,7 @@ describe("running a routine retry", () => {
       await executor.retryRoutineRun("run-1");
 
       expect(tx.routine.updateMany).toHaveBeenCalledWith({
-        where: { id: "routine-1", active: true, bot: { archivedAt: null } },
+        where: { id: "routine-1", userId: "user-1", active: true, bot: { archivedAt: null } },
         data: { active: true },
       });
       expect(tx.task.create).not.toHaveBeenCalled();
@@ -742,6 +930,7 @@ describe("running a routine retry", () => {
     expect(tx.routine.updateMany).toHaveBeenCalledWith({
       where: {
         id: "routine-1",
+        userId: "user-1",
         active: false,
         crons: { equals: ["@once"] },
         bot: { archivedAt: null },

@@ -1,5 +1,9 @@
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_APPROVAL_DETAIL_LENGTH } from "../../adapters/src/approval-ask.js";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
 import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
 import { PiAgentRuntime } from "../../adapters/src/pi-runtime.js";
@@ -225,6 +229,384 @@ describe("paused turn context", () => {
       await model.close();
     }
   });
+  it("redacts a known run secret in ask_user detail before it is checkpointed or recorded", async () => {
+    const secret = "fixture-secret-value-123";
+    let capture: (() => string) | undefined;
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-detail-"));
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail: `The token is ${secret}.`,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+    };
+    try {
+      const events = await collect(
+        new PiAgentRuntime({ sessionRoot }).run(request, {
+          operationId: "ask-detail",
+          traceId: "ask-detail",
+          spaceId: "fixture-space",
+          userId: "fixture-user",
+          signal: new AbortController().signal,
+        }),
+      );
+      // The card itself shows the redacted draft.
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "ask",
+          detail: expect.stringContaining("[redacted]"),
+        }),
+      );
+      // The persisted turn checkpoint holds the tool call's arguments.
+      const saved = capture!();
+      expect(saved).not.toContain(secret);
+      expect(saved).toContain("[redacted]");
+      // The recorded session transcript holds the streamed tool call.
+      const entries = await readdir(sessionRoot, { recursive: true });
+      const transcripts = await Promise.all(
+        entries
+          .filter((entry) => String(entry).endsWith(".jsonl"))
+          .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+      );
+      expect(transcripts.join("\n")).not.toContain(secret);
+      model.assertComplete();
+    } finally {
+      await model.close();
+      await rm(sessionRoot, { recursive: true, force: true });
+    }
+  });
+  it("keeps a near-limit secret-bearing detail a valid ask on dispatch and restore", async () => {
+    // A short secret expands under redaction ([redacted] is longer), so a draft
+    // at the schema limit grows past it once redacted; the capped result must
+    // still validate, in live dispatch and again on checkpoint restore.
+    const secret = "s3cr3t9";
+    const head = `The token is ${secret}. `;
+    const detail = head + "x".repeat(MAX_APPROVAL_DETAIL_LENGTH - head.length);
+    expect(detail.length).toBe(MAX_APPROVAL_DETAIL_LENGTH);
+    let capture: (() => string) | undefined;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+        {
+          expect(request) {
+            expect(request.messages.at(-1)).toMatchObject({
+              role: "tool",
+              tool_call_id: "question",
+            });
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-cap",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      const ask = events.find((event) => event.type === "ask");
+      expect(ask).toMatchObject({ detail: expect.stringContaining("[redacted]") });
+      expect(String((ask as { detail?: string } | undefined)?.detail).length).toBeLessThanOrEqual(
+        MAX_APPROVAL_DETAIL_LENGTH,
+      );
+      const saved = capture!();
+      expect(saved).not.toContain(secret);
+      expect(saved).toContain("[redacted]");
+      const resumed = await collect(
+        new PiAgentRuntime().run({
+          ...request,
+          turnCheckpoint: saved,
+          resumeToolResult: { content: [{ type: "text", text: "Send it" }] },
+        }),
+      );
+      expect(resumed.at(-1)).toEqual({ type: "done", text: "Done." });
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it("keeps a draft at the exact schema limit unchanged", async () => {
+    const detail = `${"x".repeat(MAX_APPROVAL_DETAIL_LENGTH - 1)}Z`;
+    expect(detail.length).toBe(MAX_APPROVAL_DETAIL_LENGTH);
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-exact",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      const ask = events.find((event) => event.type === "ask");
+      expect((ask as { detail?: string } | undefined)?.detail).toBe(detail);
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it("does not split a surrogate pair when cutting a redacted draft", async () => {
+    // The short secret expands under redaction past the limit, so the cut lands
+    // inside the emoji's surrogate pair.
+    const secret = "q";
+    const detail = `${"x".repeat(MAX_APPROVAL_DETAIL_LENGTH - 2)}😀y${secret}`;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: {
+              question: "Send this email?",
+              detail,
+              options: ["Send it", "Show me first"],
+            },
+          },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-ask-detail-surrogate",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Confirm the draft.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      secrets: [secret],
+    };
+    try {
+      const events = await collect(new PiAgentRuntime().run(request));
+      const capped = String(
+        (events.find((event) => event.type === "ask") as { detail?: string } | undefined)?.detail,
+      );
+      expect(capped.length).toBeLessThanOrEqual(MAX_APPROVAL_DETAIL_LENGTH);
+      expect(capped).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it.each([
+    ["number", 971334409, "971334409"],
+    ["object", { token: "topsecret9" }, "topsecret9"],
+  ])(
+    "drops a non-string ask_user detail (%s) so nothing unredacted is kept",
+    async (_shape, rawDetail, secret) => {
+      const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-shape-"));
+      let capture: (() => string) | undefined;
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "question",
+              name: "ask_user",
+              arguments: {
+                question: "Send this email?",
+                detail: rawDetail,
+                options: ["Send it", "Show me first"],
+              },
+            },
+          },
+        ],
+      });
+      const request: AgentRunRequest = {
+        runId: "fixture-ask-detail-shape",
+        botId: "fixture-bot",
+        threadId: "fixture-thread",
+        instructions: "Complete fixtures.",
+        prompt: "Confirm the draft.",
+        history: [],
+        model: model.model,
+        tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+        secrets: [secret],
+        onCheckpoint: async (snapshot) => {
+          capture = snapshot;
+        },
+      };
+      try {
+        // The authenticated context starts session recording, so the transcript
+        // assertions below inspect a real recording, not an empty file list.
+        const events = await collect(
+          new PiAgentRuntime({ sessionRoot }).run(request, {
+            operationId: "ask-shape",
+            traceId: "ask-shape",
+            spaceId: "fixture-space",
+            userId: "fixture-user",
+            signal: new AbortController().signal,
+          }),
+        );
+        // The card still asks, without a draft.
+        const ask = events.find((event) => event.type === "ask");
+        expect(ask).toMatchObject({ text: "Send this email?" });
+        expect((ask as { detail?: string } | undefined)?.detail).toBeUndefined();
+        // Neither the checkpoint nor the recorded session keeps the raw value.
+        expect(capture!()).not.toContain(secret);
+        const entries = await readdir(sessionRoot, { recursive: true });
+        const transcripts = await Promise.all(
+          entries
+            .filter((entry) => String(entry).endsWith(".jsonl"))
+            .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+        );
+        expect(transcripts.length).toBeGreaterThan(0);
+        expect(transcripts.join("\n")).not.toContain(secret);
+        model.assertComplete();
+      } finally {
+        await model.close();
+        await rm(sessionRoot, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each([
+    ["string", "The token is wrapped-secret-value.", "wrapped-secret-value"],
+    ["number", 971334409, "971334409"],
+  ])(
+    "sanitizes a use_tool-wrapped ask_user detail (%s) before it is kept",
+    async (shape, rawDetail, secret) => {
+      const sessionRoot = await mkdtemp(path.join(tmpdir(), "rakazo-ask-wrapped-"));
+      let capture: (() => string) | undefined;
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "wrapped-question",
+              name: "use_tool",
+              arguments: {
+                name: "ask_user",
+                arguments: {
+                  question: "Send this email?",
+                  detail: rawDetail,
+                  options: ["Send it", "Show me first"],
+                },
+              },
+            },
+          },
+        ],
+      });
+      const request: AgentRunRequest = {
+        runId: "fixture-ask-detail-wrapped",
+        botId: "fixture-bot",
+        threadId: "fixture-thread",
+        instructions: "Complete fixtures.",
+        prompt: "Confirm the draft.",
+        history: [],
+        model: model.model,
+        // list_secrets is deferred, so use_tool is listed and can wrap the
+        // core ask_user, whose nested arguments the model writes verbatim.
+        tools: builtinAgentTools.filter((tool) => ["ask_user", "list_secrets"].includes(tool.name)),
+        secrets: [secret],
+        onCheckpoint: async (snapshot) => {
+          capture = snapshot;
+        },
+      };
+      try {
+        const events = await collect(
+          new PiAgentRuntime({ sessionRoot }).run(request, {
+            operationId: "ask-wrapped",
+            traceId: "ask-wrapped",
+            spaceId: "fixture-space",
+            userId: "fixture-user",
+            signal: new AbortController().signal,
+          }),
+        );
+        // The wrapped call still asks, with the sanitized detail.
+        const ask = events.find((event) => event.type === "ask");
+        expect(ask).toMatchObject({ text: "Send this email?" });
+        const detail = (ask as { detail?: string } | undefined)?.detail;
+        if (shape === "string") {
+          expect(detail).toContain("[redacted]");
+        } else {
+          expect(detail).toBeUndefined();
+        }
+        // Neither the checkpoint nor the recorded session keeps the raw value.
+        expect(capture!()).not.toContain(secret);
+        const entries = await readdir(sessionRoot, { recursive: true });
+        const transcripts = await Promise.all(
+          entries
+            .filter((entry) => String(entry).endsWith(".jsonl"))
+            .map((entry) => readFile(path.join(sessionRoot, String(entry)), "utf8")),
+        );
+        expect(transcripts.length).toBeGreaterThan(0);
+        expect(transcripts.join("\n")).not.toContain(secret);
+        model.assertComplete();
+      } finally {
+        await model.close();
+        await rm(sessionRoot, { recursive: true, force: true });
+      }
+    },
+  );
   it("resumes from the pending result when the newest stored message is the bot's own reply", async () => {
     let capture: (() => string) | undefined;
     const model = await startModelEmulator({

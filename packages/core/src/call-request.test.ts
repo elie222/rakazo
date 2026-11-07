@@ -1,8 +1,15 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { blocksToAgentHistoryText } from "./attachments.js";
 import { callIdFromClientNonce } from "./call-nonce.js";
-import { callRequestClientNonce, phoneCallSettings, ringingCall } from "./call-request.js";
+import {
+  callIsRinging,
+  callRequestClientNonce,
+  nextIncomingCall,
+  phoneCallSettings,
+  respondToIncomingCall,
+  ringingCall,
+} from "./call-request.js";
 
 const NOW = Date.parse("2026-10-14T18:30:00Z");
 
@@ -96,4 +103,29 @@ describe("phone call server settings", () => {
       ).toMatchObject({ phoneCallCooldownMinutes: 2, phoneCallRingSeconds: 45 });
     },
   );
+});
+
+describe("incoming call lifecycle", () => {
+  it("uses one strict expiry boundary, including invalid timestamps", () => {
+    expect(callIsRinging({ expiresAt: new Date(NOW).toISOString() }, NOW)).toBe(false);
+    expect(callIsRinging({ expiresAt: "invalid" }, NOW)).toBe(false);
+    expect(callIsRinging({ expiresAt: new Date(NOW + 1).toISOString() }, NOW)).toBe(true);
+  });
+  it("skips handled calls and selects the next live request", () => {
+    const bots = ["first", "second"].map((callId) => ({
+      incomingCall: { callId, expiresAt: new Date(NOW + 1000).toISOString() },
+    }));
+    expect(nextIncomingCall(bots, new Set(["first"]), NOW)).toBe(bots[1]);
+    expect(nextIncomingCall(bots, new Set(), NOW + 1000)).toBeUndefined();
+  });
+  it("rejects stale actions before RPC and propagates authoritative server results", async () => {
+    const send = vi.fn(async () => ({ opening: "Hello" }));
+    await expect(
+      respondToIncomingCall({ expiresAt: new Date(0).toISOString() }, send),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+    await expect(
+      respondToIncomingCall({ expiresAt: new Date(Date.now() + 10000).toISOString() }, send),
+    ).resolves.toEqual({ opening: "Hello" });
+  });
 });

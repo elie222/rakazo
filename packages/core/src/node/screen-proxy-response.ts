@@ -1,15 +1,40 @@
 import type { IncomingHttpHeaders } from "node:http";
 
 const SENSITIVE_RESPONSE_HEADERS = new Set(["clear-site-data", "set-cookie", "set-cookie2"]);
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
 const SCREEN_SANDBOX = "sandbox allow-scripts allow-pointer-lock";
 
 /** Screen listeners are untrusted even when their capability URL is opened outside an iframe. */
 export function safeScreenProxyResponseHeaders(headers: IncomingHttpHeaders) {
   const safe: IncomingHttpHeaders = {};
   const policies: string[] = [];
+  const connectionHeaders = new Set<string>();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== "connection" || value == null) continue;
+    for (const connection of Array.isArray(value) ? value : [value]) {
+      for (const name of connection.split(",")) connectionHeaders.add(name.trim().toLowerCase());
+    }
+  }
   for (const [key, value] of Object.entries(headers)) {
     const name = key.toLowerCase();
-    if (value == null || name.startsWith(":") || SENSITIVE_RESPONSE_HEADERS.has(name)) continue;
+    if (
+      value == null ||
+      name.startsWith(":") ||
+      SENSITIVE_RESPONSE_HEADERS.has(name) ||
+      HOP_BY_HOP_HEADERS.has(name) ||
+      connectionHeaders.has(name)
+    )
+      continue;
     if (name === "content-security-policy") {
       policies.push(...(Array.isArray(value) ? value : [value]));
     } else {

@@ -6,6 +6,9 @@ import {
   GithubWebhookEmulator,
   InfisicalSecretStore,
 } from "@rakazo/adapters";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
+import { createLogger, createTestSink } from "@rakazo/logging";
+import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { infisicalFake } from "../../../packages/adapters/src/secret-store-fake.js";
@@ -23,6 +26,7 @@ import {
 import { loadWebhookTarget } from "./webhook-inbound.js";
 
 const SECRET = "webhook-test-secret-value-32chars!!";
+const WEBHOOK_ROUTINE = { id: "routine-1", name: "Triage", prompt: "Triage this event." };
 
 function createDeps(
   overrides: {
@@ -41,6 +45,8 @@ function createDeps(
       spaceId: string;
     } | null;
     load?: (ciphertext: string) => string | Promise<string>;
+    /** The bot owner's account is deactivated. */
+    deactivated?: boolean;
     routines?: Array<{
       id: string;
       name: string;
@@ -86,6 +92,11 @@ function createDeps(
 
   return {
     prisma: {
+      user: {
+        findUnique: vi.fn(async () => ({
+          deactivatedAt: overrides.deactivated ? new Date() : null,
+        })),
+      },
       bot: {
         findUnique: vi.fn(async () => bot),
       },
@@ -237,6 +248,18 @@ describe("inbound webhook HTTP route", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("refuses a deactivated owner's bot with the same unauthorized response", async () => {
+    const deps = createDeps({ deactivated: true });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "hi" }),
+    });
+    expect(res.status).toBe(401);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown bots with the same unauthorized response", async () => {
     const deps = createDeps({ bot: null });
     const app = mount(deps);
@@ -299,7 +322,7 @@ describe("inbound webhook HTTP route", () => {
   );
 
   it("accepts a valid secret and JSON payload", async () => {
-    const deps = createDeps();
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     const res = await app.request("/api/v1/bots/bot-1/webhook", {
       method: "POST",
@@ -351,6 +374,10 @@ describe("inbound webhook HTTP route", () => {
       body: JSON.stringify({ event: "ping" }),
     });
     expect(res.status).toBe(200);
+    // The delivery runs as the bot's creator, so another member's routine never rides on it.
+    expect(deps.findRoutines).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+    );
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         modelPin: {
@@ -396,8 +423,29 @@ describe("inbound webhook HTTP route", () => {
     expect(deps.sendUserMessage.mock.calls[0]?.[0]).not.toHaveProperty("modelPin");
   });
 
-  it("accepts a plain text payload as untrusted delivery data", async () => {
+  it("ignores a delivery when no active webhook routine matches", async () => {
     const deps = createDeps();
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ event: "ping" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+    expect(deps.findRoutines).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ active: true, webhookEnabled: true }),
+      }),
+    );
+  });
+
+  it("accepts a plain text payload as untrusted delivery data", async () => {
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     const res = await app.request("/api/v1/bots/bot-1/webhook", {
       method: "POST",
@@ -419,7 +467,7 @@ describe("inbound webhook HTTP route", () => {
   });
 
   it("fences malformed JSON instead of promoting it to instructions", async () => {
-    const deps = createDeps();
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     const res = await app.request("/api/v1/bots/bot-1/webhook", {
       method: "POST",
@@ -441,7 +489,7 @@ describe("inbound webhook HTTP route", () => {
   });
 
   it("hashes idempotency keys into a fixed-length clientNonce", async () => {
-    const deps = createDeps();
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     const longKey = `event-${"a".repeat(240)}-unique-suffix`;
     const res = await app.request("/api/v1/bots/bot-1/webhook", {
@@ -463,7 +511,7 @@ describe("inbound webhook HTTP route", () => {
   });
 
   it("collapses only byte-identical retries of payloads that reuse an id", async () => {
-    const deps = createDeps();
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     const post = (body: string) =>
       app.request("/api/v1/bots/bot-1/webhook", {
@@ -485,7 +533,7 @@ describe("inbound webhook HTTP route", () => {
   });
 
   it("deduplicates on standard webhook delivery headers", async () => {
-    const deps = createDeps();
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
     const app = mount(deps);
     for (const status of ["paid", "shipped"]) {
       const res = await app.request("/api/v1/bots/bot-1/webhook", {
@@ -657,7 +705,7 @@ describe("GitHub event HTTP route", () => {
     expect(JSON.parse(fenced![1]!)).toEqual(metadata);
   });
 
-  it("reuses the same clientNonce for duplicate GitHub deliveries", async () => {
+  it("runs a signed GitHub body once even when replayed with a new delivery id", async () => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
     });
@@ -666,21 +714,33 @@ describe("GitHub event HTTP route", () => {
       after: "c".repeat(40),
       repository: { id: 9 },
     });
+    const seen = new Set<string>();
+    deps.sendUserMessage.mockImplementation(async (input: { clientNonce?: string }) => {
+      const duplicate = seen.has(input.clientNonce ?? "");
+      seen.add(input.clientNonce ?? "");
+      return { messageId: "msg-1", runId: duplicate ? null : "run-1", seq: 3 };
+    });
     const first = await app.request(
       "/api/v1/bots/bot-1/github",
       await githubRequest(raw, SECRET, "delivery-dup-1"),
     );
-    const second = await app.request(
+    const replay = await app.request(
       "/api/v1/bots/bot-1/github",
-      await githubRequest(raw, SECRET, "delivery-dup-1"),
+      await githubRequest(raw, SECRET, "delivery-dup-2"),
     );
     expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    expect(replay.status).toBe(200);
     const firstNonce = deps.sendUserMessage.mock.calls[0]![0].clientNonce;
-    const secondNonce = deps.sendUserMessage.mock.calls[1]![0].clientNonce;
-    expect(firstNonce).toBe(secondNonce);
     expect(firstNonce).toMatch(/^github:bot-1:/);
+    expect(deps.sendUserMessage.mock.calls[1]![0].clientNonce).toBe(firstNonce);
+    expect(deps.enqueue).toHaveBeenCalledTimes(1);
+
+    await app.request(
+      "/api/v1/bots/bot-1/github",
+      await githubRequest(JSON.stringify({ after: "d".repeat(40) }), SECRET, "delivery-dup-1"),
+    );
+    expect(deps.sendUserMessage.mock.calls[2]![0].clientNonce).not.toBe(firstNonce);
+    expect(deps.enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a signature made with the wrong secret", async () => {
@@ -701,21 +761,6 @@ describe("GitHub event HTTP route", () => {
       await githubRequest(raw, SECRET, "delivery-1", "push", "missing"),
     );
     expect(unknown.status).toBe(401);
-  });
-
-  it("rejects a signed delivery that omits X-GitHub-Delivery", async () => {
-    const deps = createDeps({
-      routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
-    });
-    const app = mount(deps);
-    const raw = JSON.stringify({ ref: "refs/heads/main" });
-    const request = await githubRequest(raw);
-    const headers = { ...request.headers };
-    delete headers["x-github-delivery"];
-    const res = await app.request("/api/v1/bots/bot-1/github", { ...request, headers });
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("acknowledges signed deliveries when no active GitHub routine matches", async () => {
@@ -747,7 +792,7 @@ describe("GitHub event HTTP route", () => {
       await githubRequest(raw, SECRET, "delivery-abc"),
     );
     expect(res.status).toBe(200);
-    const digest = createHash("sha256").update("delivery-abc").digest("base64url");
+    const digest = createHash("sha256").update(raw).digest("base64url");
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         botId: "bot-1",
@@ -790,6 +835,44 @@ describe("GitHub event HTTP route", () => {
     expect(deps.prisma.bot.findUnique).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
+});
+
+describe("deliveries to a Space that is being deleted", () => {
+  const githubEmulator = new GithubWebhookEmulator();
+
+  it.each(["webhook", "github"] as const)(
+    "answers an authenticated %s delivery with 409 and logs no error",
+    async (route) => {
+      const deps = createDeps({
+        routines: [{ id: "routine-1", name: "Review PRs", prompt: "Inspect the change" }],
+      });
+      deps.sendUserMessage.mockRejectedValue(new SpaceDeletionInProgressError());
+      const sink = createTestSink();
+      const app = new Hono();
+      app.use("*", requestLogging(createLogger({ service: "rakazo-api", sinks: [sink] })));
+      mountWebhookHttpRoutes(app, deps);
+
+      const res =
+        route === "webhook"
+          ? await app.request("/api/v1/bots/bot-1/webhook", {
+              method: "POST",
+              headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+              body: JSON.stringify({ event: "ci.failed" }),
+            })
+          : await app.request(
+              githubEmulator.buildDeliveryRequest({
+                botId: "bot-1",
+                event: "push",
+                deliveryId: "delivery-deleting",
+                secret: SECRET,
+                payload: { ref: "refs/heads/main" },
+              }),
+            );
+
+      expect(res.status).toBe(409);
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    },
+  );
 });
 
 describe("webhook secret decryption", () => {
@@ -1152,6 +1235,7 @@ describe("webhook secret cache", () => {
     );
     const deps = {
       prisma: {
+        user: { findUnique: vi.fn(async () => ({ deactivatedAt: null })) },
         bot: {
           findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
             const webhookSecretId = bots.get(where.id);

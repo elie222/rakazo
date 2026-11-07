@@ -453,7 +453,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
           unread: true,
           runs: [{ id: "run-failed", status: "failed" }],
         },
-        runs: [{ status: "running" }],
+        runs: [{ status: "running", threadId: "group-thread" }],
       },
     ]);
     const repos = createRepos({
@@ -478,7 +478,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         ]),
     } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+    await expect(repos.listSpaceBotsForSpaces(["ws-2"])).resolves.toEqual([
       {
         id: "bot-2",
         spaceId: "ws-2",
@@ -493,6 +493,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",
+        threadStatus: "idle",
         runErrorId: "run-failed",
         updatedAt: "2026-08-19T12:00:00.000Z",
       },
@@ -505,9 +506,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         }),
       }),
     );
-    expect(query.where).toEqual(
-      expect.objectContaining({ spaceId: { in: ["ws-2"] }, userId: actor.userId }),
-    );
+    expect(query.where).toEqual(expect.objectContaining({ spaceId: { in: ["ws-2"] } }));
     expect(query.select).not.toHaveProperty("description");
     expect(query.select).not.toHaveProperty("instructions");
     expect(query.select).not.toHaveProperty("computer");

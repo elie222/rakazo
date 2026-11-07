@@ -1,4 +1,32 @@
-/** UI preset only; saved connections use the OpenAI-compatible provider. */
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
+
+/** Every hosted service the catalog offers for compatible connections. */
+export function compatibleEndpointPresets(
+  catalog: readonly Pick<ModelCatalogEntry, "endpointPresets">[],
+): CompatibleEndpointPreset[] {
+  // Every compatible catalog entry carries the same presets: offer each address once.
+  const presets = catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  return presets.filter(
+    (preset, index) => presets.findIndex((other) => other.baseUrl === preset.baseUrl) === index,
+  );
+}
+
+/** The offered hosted service at this address, if any. */
+export function matchCompatibleEndpointPreset(
+  presets: readonly CompatibleEndpointPreset[],
+  baseUrl: string | undefined,
+): CompatibleEndpointPreset | undefined {
+  let normalized: string;
+  try {
+    normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
+  } catch {
+    return undefined;
+  }
+  return presets.find((preset) => preset.baseUrl === normalized);
+}
+
+/** Hosted services whose usage limits Rakazo reads. Matched strictly, so a lookalike host
+ * never receives the key. */
 export const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
 
 export function isOpenCodeGoBaseUrl(baseUrl: string | undefined): boolean {
@@ -21,53 +49,18 @@ export function isSyntheticBaseUrl(baseUrl: string | undefined): boolean {
   }
 }
 
-function normalizedBaseUrl(baseUrl: string | undefined): string | undefined {
-  try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
-  } catch {
-    return undefined;
-  }
-}
-
-/** Typed URLs normalize before comparison, so a key is never skipped for an equivalent address. */
-export function compatibleApiKeyRequired(baseUrl: string | undefined): boolean {
-  const normalized = normalizedBaseUrl(baseUrl);
-  return (
-    normalized === OLLAMA_CLOUD_BASE_URL ||
-    normalized === COMMANDCODE_BASE_URL ||
-    normalized === OPENCODE_GO_BASE_URL
-  );
-}
-
-export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
-
-export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
-  return normalizedBaseUrl(baseUrl) === OLLAMA_CLOUD_BASE_URL;
-}
-
-export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return isOllamaCloudBaseUrl(baseUrl)
-    ? "Ollama Cloud"
-    : isCommandCodeBaseUrl(baseUrl)
-      ? "CommandCode"
-      : isOpenCodeGoBaseUrl(baseUrl)
-        ? "OpenCode Go"
-        : fallback;
-}
-
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
-/** Connect when base URL and model id are set. */
+/** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
+  keyRequired?: boolean;
 }): boolean {
   return Boolean(
-    input.baseUrl.trim() &&
-      input.modelId.trim() &&
-      (!compatibleApiKeyRequired(input.baseUrl) || input.apiKey?.trim()),
+    input.baseUrl.trim() && input.modelId.trim() && (!input.keyRequired || input.apiKey?.trim()),
   );
 }
 

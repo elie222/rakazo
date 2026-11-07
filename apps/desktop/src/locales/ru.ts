@@ -191,6 +191,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Previous Bot": "Предыдущий бот",
   "Command Menu…": "Меню команд…",
   "Toggle Sidebar": "Показать или скрыть боковую панель",
-  "Search…": "Найти…",
+  "Find…": "Найти…",
+  "Search Bots…": "Поиск ботов…",
   "The window closed before the app loaded.": "Окно закрылось до загрузки приложения.",
+  "New Group Chat": "Новый групповой чат",
+  "Connect Apps…": "Подключить приложения…",
+  "Chat Details": "Сведения о чате",
+  Help: "Справка",
+  "Keyboard Shortcuts": "Сочетания клавиш",
 };

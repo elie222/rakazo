@@ -129,6 +129,7 @@ services:
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
       COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
+      COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:
       data-init:
         condition: service_completed_successfully
@@ -154,6 +155,7 @@ services:
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
       COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
+      COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:
       data-init:
         condition: service_completed_successfully

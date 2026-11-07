@@ -1,23 +1,11 @@
-import { isLoopbackHost } from "@rakazo/contracts/network-host";
+import { COMPUTER_SCREEN_PATH } from "@rakazo/contracts/content-security-policy";
+import { secureHttpOrigin as httpOrigin } from "@rakazo/contracts/network-host";
 import type { Session, WebContents } from "electron";
 
 type AppPermissionTarget = {
   webContents: WebContents;
   url: string;
 };
-
-function httpOrigin(value: string | undefined): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    // LAN HTTP remains a supported server target, but cannot safely receive host permissions.
-    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))
-      ? url.origin
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Install before loading any content, including setup, storage probes and OAuth popups. */
 export function installSessionPermissions(
@@ -36,6 +24,11 @@ export function installSessionPermissions(
 
   targetSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const app = currentApp();
+    if (permission === "clipboard-read" && app && contents === app.webContents) {
+      // Electron asks for read access when the bot's screen copies to the host clipboard.
+      callback(!details.isMainFrame && isScreenFrame(details.requestingUrl, app.origin));
+      return;
+    }
     if (
       !app ||
       contents !== app.webContents ||
@@ -87,4 +80,11 @@ export function installSessionPermissions(
     if (permission === "media") return details.mediaType === "audio";
     return permission === "notifications" || permission === "clipboard-sanitized-write";
   });
+}
+
+/** The app's own computer screen, which syncs its clipboard with the host's. */
+function isScreenFrame(url: string, origin: string) {
+  if (httpOrigin(url) !== origin) return false;
+  const { pathname } = new URL(url);
+  return pathname.startsWith("/novnc/") || pathname === COMPUTER_SCREEN_PATH;
 }

@@ -55,8 +55,10 @@ const STEP_TIMEOUT_MS: Record<string, number> = {
   checkout: 60_000,
   merge: 60_000,
   pull: 600_000,
-  recreate: 1_800_000,
-  recover: 1_800_000,
+  // A recreate can build, wait up to the worker's 50-minute stop_grace_period for its running
+  // jobs, and then wait for the new services to become healthy.
+  recreate: 5_400_000,
+  recover: 5_400_000,
 };
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -802,8 +804,8 @@ export function createUpdaterApp(
   }
 }
 
-function startUpdater() {
-  const logger = createRootLogger(SERVICE_NAMES.updater);
+async function startUpdater() {
+  const logger = await createRootLogger(SERVICE_NAMES.updater);
   const config = resolveUpdaterConfig(process.env);
   const app = createUpdaterApp(config, { logger });
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => {
@@ -851,5 +853,6 @@ export function restoreCheckoutArgv(fromBranch: string | null, fromCommit: strin
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  startUpdater();
+  // A rejected startup keeps Node's default: the error is printed and the process exits.
+  void startUpdater();
 }

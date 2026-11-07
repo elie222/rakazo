@@ -42,7 +42,7 @@ export function ringingCall(
     if (message.role !== "bot" || !Array.isArray(message.blocks)) continue;
     const block = callRequestBlock(message.blocks as MessageBlock[]);
     if (block?.status !== "ringing") continue;
-    if (Date.parse(block.expiresAt) <= now) continue;
+    if (!callIsRinging(block, now)) continue;
     return {
       callId: block.callId,
       reason: block.reason,
@@ -51,4 +51,31 @@ export function ringingCall(
     };
   }
   return null;
+}
+
+/** One expiry rule for roster state, foreground UI, and native push handoffs. */
+export function callIsRinging(call: { expiresAt: string }, now = Date.now()): boolean {
+  return Date.parse(call.expiresAt) > now;
+}
+
+export function nextIncomingCall<
+  T extends { incomingCall?: { callId: string; expiresAt: string } | null },
+>(bots: readonly T[], handled: ReadonlySet<string>, now = Date.now()): T | undefined {
+  return bots.find(
+    (bot) =>
+      bot.incomingCall &&
+      !handled.has(bot.incomingCall.callId) &&
+      callIsRinging(bot.incomingCall, now),
+  );
+}
+
+export const CALL_NOT_RINGING_ERROR = "This call is no longer ringing.";
+
+/** Both surfaces use the same action and reject stale answers before opening audio. */
+export async function respondToIncomingCall<T>(
+  call: { expiresAt: string },
+  respond: () => Promise<T>,
+): Promise<T> {
+  if (!callIsRinging(call)) throw new Error(CALL_NOT_RINGING_ERROR);
+  return respond();
 }

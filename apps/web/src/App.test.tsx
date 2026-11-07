@@ -46,8 +46,7 @@ vi.mock("./pages/Auth", async () => {
 });
 vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
 vi.mock("./lib/remote-images-preference", () => ({
-  getRemoteImagesEnabled: () => false,
-  subscribeRemoteImages: () => () => {},
+  remoteImagesPreference: { use: () => false },
 }));
 vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
 vi.mock("./lib/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
@@ -55,6 +54,10 @@ vi.mock("./components/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({ ShellPage: () => <div>Shell</div> }));
+vi.mock("./components/call/CallLayout", async () => {
+  const { Outlet } = await import("react-router-dom");
+  return { CallLayout: () => <Outlet /> };
+});
 vi.mock("./components/markdown-link-prompt", () => ({
   MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
 }));

@@ -6,6 +6,244 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting an MCP server whose OAuth asks for many permissions, such as PostHog's, no longer fails with "MCP URL exceeds 2048 characters". The browser sign-in link now has its own, larger limit, while MCP server addresses keep the 2,048-character one.
+
+## [0.8.0] - 2026-11-04
+
+### Added
+
+- On iPhone and iPad, an image pasted into a chat's message field is added as an attachment, as on web. Text copied with it still goes into the field. This needs the new app build.
+- On iPhone and iPad, Rakazo appears in the share sheet. Share a link, text, photos or files from any app, pick a bot, and it lands in that bot's message field as a draft. This needs the new app build.
+- More keyboard shortcuts on web and desktop: start a group chat, connect apps, open the chat's details panel, jump to the message box and dictate. Cmd/Ctrl+/ lists every shortcut, as do **Keyboard shortcuts** in the command menu and **Help** in the desktop app.
+- Cmd/Ctrl+F in the desktop app finds text in the open chat, highlighting every match and stepping through them. Searching bots moves to Cmd/Ctrl+Shift+F.
+- The web app is fully translated into Turkish. Before, large parts of it fell back to English.
+- When the desktop app runs its own local server, **Settings** now shows the **Let bots use this computer** switch, as it does when connected to another server.
+- Self-hosters can make DeepSeek the deployment's default model with `PI_DEFAULT_PROVIDER=deepseek` and `DEEPSEEK_API_KEY` ([self-hosted models](docs/self-host-models.md)).
+- The long-wait "still needs an answer" reminder, and the notice that a waiting chat was stopped, now show as browser and desktop alerts, not only on phones.
+
+### Changed
+
+- A group message that names no bot now reaches every bot in the group, instead of only the first ([groups](docs/groups.md)). Each bot decides whether the message is for it, and a bot with nothing to add stays quiet. Replying to a bot's message or tagging a bot still sends to that bot alone. An untagged message can now start a run for each bot in the group, up to ten.
+
+### Fixed
+
+- Pressing Stop ends a quiet model call or a long-running tool within about a second. Before, it could keep running, and billing, for up to a minute.
+- Connector and category approval rules now apply to tools named with a hyphen, like `<app>-<action>`, and loading a connected app's tool description no longer asks for approval.
+- Switching to another chat on web no longer deletes attachments you picked but hadn't sent, and archiving a chat keeps them for when it's restored.
+- Renaming a model connection no longer resets unsaved edits in the same form.
+- Voice calls that use provider transcription now send a server's configured extra headers, so servers behind a gateway that needs them can transcribe calls.
+- On Linux, a brief network drop while checking a downloaded desktop update no longer shows an update error. The update is kept and verified on the next check.
+- On self-hosted Docker setups, a computer still running an older image no longer asks for payment approval on every browser click.
+
+## [0.7.0] - 2026-11-04
+
+### Security
+
+- Updated Better Auth to 1.7.16 for its November security fixes. The most serious one was in mobile sign-in, where the authorization proxy could sign values it did not issue. The others fix OAuth sign-in treating an unverified provider email as verified, email codes whose attempt limit could be raced, email-change links that stayed valid after the address changed hands, and passkey checks that skipped origin and user verification.
+- Signing out, signing in to another account, or switching server on mobile now stops read-aloud and clears the replies still waiting to be read. Before, the phone kept reading the previous account's bot replies over the sign-in screen.
+- Disconnecting an MCP server's OAuth stays in effect even when a sign-in was still finishing, including the first sign-in to a server. A late token no longer marks the server as connected again, and a sign-in the disconnect ended can't be completed.
+- A connected tool named `delete_bot` now runs on its own service. Before, it was sent to Rakazo's built-in bot archiving instead.
+- After signing in as another account on mobile, the call card no longer shows the previous account's initial.
+- The Android app limits how much a notification check can download in the background, so a faulty server or proxy can't make it use unbounded memory.
+- When a computer's saved files are deleted after the retention period, a copy cached on a computer host is deleted too.
+- Two computer pairings that arrive at the same moment can no longer both get past the limit of ten computers per account.
+- On Incus, stopping or deleting a computer checks that the instance belongs to it, so a wrong stored reference can't tear down another bot's computer.
+
+### Added
+
+- One login can own several organizations, such as "Personal" and "Work", each with its own billing. Create one in **Settings → Organization** and switch between them from the account menu.
+- Rakazo is available in Polish on web, desktop and mobile, including account emails.
+- The own-model plan comes in three tiers. Standard is the existing plan. **Pro** and **Max** give bigger cloud computers and more computer hours each month. Choose a tier when you subscribe, and move between tiers from **Billing** on web and mobile.
+- Bots can hand screen and browser work to a second model. Set a **Computer-use model** in **Settings → Models** and a bot on a text-only or self-hosted model passes visual tasks to it in the middle of a reply, then answers you. When it's left empty, nothing changes.
+- The web and desktop app notifies you when an agent in another chat finishes a reply, asks you something, asks you to take over its screen, or fails. Clicking the notification opens that chat, and muted chats stay quiet. Web and desktop notifications now show the agent's avatar.
+- Self-hosters can run bot computers as Incus application containers with `SANDBOX_PROVIDER=incus`, without Docker or Kubernetes on the host ([computer providers](docs/self-host-sandbox-providers.md)).
+
+### Changed
+
+- Changing your account timezone now moves your routines with it, so a Monday 09:00 routine still runs at 09:00 local time. Routines pinned to a specific timezone stay where they are.
+- A bot's notification picture on the phone now matches its avatar in the app.
+- Long bot instructions no longer stretch the settings panel. The box grows up to a set height, then scrolls.
+- Android release builds are smaller and faster, because unused code is now removed when the app is built.
+
+### Fixed
+
+- A computer still running an older image no longer asks "Complete a payment on this page?" on every click after a server upgrade.
+- During a voice call, a silent turn no longer leaves the microphone off for the rest of the call.
+- On a self-hosted server opened over plain HTTP on a local network, importing an agent, the disk **Clean up** button and desktop single sign-on work again.
+- Tapping **Add custom** on Integrations does something again on Android.
+- Wide tables and code blocks in chat scroll sideways on Android.
+- When many new visitors arrive at once, readers opening a shared page are no longer rate limited from their first request.
+- A bot reading its own settings gets them in one piece whenever they fit, even with long instructions.
+- iOS builds that self-hosters make with `expo prebuild` open in Xcode and install on a phone again.
+- Removing one of two attached files that share a name, size and date no longer removes both.
+- Signing in with a model subscription now notices when the sign-in tab opened, instead of always showing the steps for a blocked popup.
+
+## [0.6.0] - 2026-11-04
+
+### Security
+
+- Every desktop update now has to be signed. Windows releases can no longer be built unsigned. Linux AppImage updates now come with a signature, and the app refuses to install an update whose signature is missing or does not match. Linux installs from before this release can't check signatures yet, so they accept this update the same way as before. Every update after it is checked.
+
+### Added
+
+- The vault holds payment cards and contacts (addresses, phones and emails) next to logins, API keys and variables. Each item has a title you choose, such as "Home" or "Work card", and an optional note on when the bot should use it. **Settings → Vault** is one list that opens each item in place, and a chat request is a short row with an **Add** button.
+- In **Approvals** settings you can add a rule for a tool by name before the bot ever asks about it, and switch any saved tool, connector or site rule between **Allow**, **Ask** and **Block**.
+- Phone notifications show which agent sent them, with its name and picture. On iOS a push from an agent appears like a message from a contact, and on Android as a conversation message.
+- Activity groups chats into **Needs attention**, **Working**, **Unread** and **Recent**. Each section folds, and empty ones are hidden.
+- A routine run can create new schedules for follow-up work. It still can't change existing ones.
+- A bot is told when its computer's disk is 85% full. From 90% you see a warning on that computer, with a button that asks the bot to clean up.
+
+### Changed
+
+- Dark mode has clearer contrast, chat text is a little larger, and each bot has one bright color shared by its avatar, name and your message bubbles.
+- How your bots look is now one account setting, **Bot style** in Settings (Original or Rakazo), instead of a choice on every new bot. Changing it restyles all your bots, except one you gave its own style in its avatar editor.
+- Text fields no longer have a grey fill that made them look disabled.
+- A bot rewriting its own instructions no longer posts an "Instructions updated" card in the chat.
+- A failed daily check-in no longer notifies the bot's owner, and the bot isn't tried again for a week.
+- Usage moved out of the account menu; it is still in Settings.
+- Computer saves skip folders that build tools mark as rebuildable caches, so build output no longer pushes a home past the save limit.
+- On deployments with hosted billing, the saved copy of a computer's files is deleted 30 days after a paid plan ends, or after 90 days without use on accounts that never paid. The organization's owner gets a warning email about a week before, and choosing a plan, buying credits or using the computer cancels it. Self-hosted deployments without billing are not affected.
+
+### Fixed
+
+- Opening a chat with a busy bot no longer makes the conversation jump when the row saying what the bot is doing appears.
+- Deleting a group always removes its stored files and its page links, even when stopping its cancelled runs fails.
+- A bot with long instructions can edit them again. It now reads them in full before rewriting, instead of getting a shortened copy and refusing to make the edit.
+- The Android app builds from source again.
+
+## [0.5.0] - 2026-11-03
+
+### Security
+
+- When you turn on **Let bots use this computer** in the desktop app, the computer stays connected only as long as the sign-in that connected it. Signing out, resetting your password or signing out everywhere disconnects it. Signing back in as the same person reconnects it without asking, and anyone else who signs in on that app starts with access off. A computer paired before this update is tied to the desktop's sign-in the next time the updated app opens, and until then it disconnects only once you have no sign-in left. The **This computer** server that the desktop app runs locally now accepts only its first account. Before, another user on the same machine could sign up and have their bots run as the owner.
+- The desktop app's native speech recognition and Local Computer Access now need an HTTPS server, unless the server runs on the same machine. Before, someone who could tamper with traffic on the local network could use consent you had already given to start recognition or send commands to your computer.
+- Turning off computer access in the desktop app now stays off even when the app can't save the choice to disk. This covers both remote computer access and the local computer. Before, requests already running kept going, and access came back after switching servers or restarting.
+- An account whose email address is not verified can no longer link SSO. Before, someone who signed up with another person's address could keep getting into that account through SSO. A password reset on an unverified account now also removes the SSO links, passkeys and paired devices added before the reset. An SSO sign-in with an unverified email claim no longer moves an existing account onto a new address.
+- Approval cards now show every argument the bot wants to send. Recipients, attendees, channels and repositories appear at the top, so you can see where an action is going. Replying YES or NO in a chat app answers a group invite or agent connection request only when that request is the latest message the line sent you, and only within a day. Older requests are answered in **Requests** in Settings.
+- Before a bot clicks a button that pays on a website, such as Pay, Buy now, Place order or the submit button of a form with card fields, it shows an approval card and acts only after **Allow once**. This happens in every approval mode, Never ask included, and the card has no Always allow. It needs the updated computer image and supervisor.
+- A bot connected to Slack uses the owner's memory and notes, and its memory and note tools, only when the owner writes to it. Coworkers, guests in shared channels and other apps get group-chat treatment: no owner memory, no notes, and nothing that writes to them. Owners of workspaces connected before this update who never used **Link DMs** get these restricted replies until they link DMs or reconnect the workspace.
+- When a run has read outside content, such as a channel message, a webhook or another bot's reply, the bot still can't change your model, thinking level, voice, read-aloud or account settings. If it keeps trying, it now stops and tells you to make the change in Settings or ask again in a fresh chat, instead of repeating the same error.
+- Previews of files on a stopped computer now check that the file actually opened is inside the computer's home folder. A guest could swap a folder for a link while the computer was stopping and make the API read an unrelated file on the server.
+- Computer screen pages stay sandboxed when Rakazo runs behind another reverse proxy. A computer can no longer get a downstream proxy to strip the sandbox policy and run its content as the app.
+- The computer screen proxy now forwards only the request headers noVNC needs, so headers meant for an access proxy, such as a service token's client ID and secret, no longer reach the bot's computer. Its credential check no longer reveals the length of its secret through response timing.
+- One unusual input can no longer keep a shared server process busy for minutes or crash it. This covers very long Slack messages, web pages with unclosed tags, chart specs with very fine intervals, and large request bodies from signed-out callers. Slack messages over 8,000 characters reach the bot as raw Slack markup. Chart specs beyond the new limits fail with an error, and specs that set `aspectRatio` are asked to use `height` instead.
+- A remote MCP server can send back at most 16 MB per response, so one broken or hostile server can no longer use up the memory of the API or worker it talks to.
+- A GitHub event sent again with a different delivery ID no longer runs a routine twice. Repeats are now spotted by the event's signed contents.
+- Shortcuts and Siri actions on iPhone no longer follow redirects, so your sign-in can't be passed on to another site.
+- Web search, link icons, the plugin marketplace and plugin installs now go through the proxy set in `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, while the private-network guard still applies. Before, they always connected directly, so behind a corporate proxy the marketplace showed "Some plugins could not be loaded" and installs failed ([configuration](docs/self-host-configuration.md)).
+- undici, the HTTP library that several dependencies pull in, is updated past a batch of new advisories, two of them critical.
+- Log and error-report redaction no longer stalls on long text full of malformed sign-in tokens. Before, one unauthenticated monitoring report could block the API process.
+- A message in a shared channel can no longer use or change the bot owner's private routines and saved skills, or pull a private skill's contents into the reply.
+
+### Added
+
+- Bots can build pages, like dashboards, from a fixed set of components. A page appears as a card in the chat and opens full screen with the chat docked below. The Library lists pages to rename, pin, delete or share by link, on web and mobile.
+- When a conversation leaves something open until a known time, such as "I'll send you the lease on Friday at 5", the bot can set itself one follow-up for then without being asked. It stays silent if the item is already done, and the daily check-in skips a bot that already has a follow-up pending.
+- When a bot calls you, the iOS and Android apps now ring. While the app is open you get a full-screen call with Answer and Decline. When the app is in the background or the phone is locked, iOS rings through the system call screen and Android shows a lock-screen call notification. Self-hosters can set `APNS_VOIP_*` so iPhones ring while locked ([mobile incoming calls](docs/self-host-clients.md#mobile-incoming-calls)).
+- When a site texts or emails a sign-in code, the bot asks for it with a "Code for" card in the chat and fills it into the page without seeing it. You no longer have to take over the screen for each code. Boxes with one input per digit and fields inside another site's frame still need a takeover.
+- Telegram bots can take part in group chats. A group shows up under **Requests**, and each member approves it from their own **Messaging** settings. A message in the group then goes to every approved member's bot, and each forum topic is its own conversation ([chat apps](docs/messaging-apps.md#group-chats)).
+- Voice notes sent to a bot in a direct message over a chat app such as Telegram now arrive with a transcript beside the audio file. This uses the voice provider you already set up for dictation.
+- Bots check in once a day on unfinished work. If a bot has open scratchpad items nobody has touched for 12 hours, it either asks you one question, posts one short update with a next step, or stays silent. Each bot can turn this off with "Daily check-ins on unfinished work" on web and mobile.
+- Bots can edit or delete a note in their own memory instead of only adding new ones. A bot's own memory is capped at 4 KB; when it is full, the bot has to merge or remove notes before it can save another. When a bot's memory is larger than the 32 KiB it can read, the memory view says roughly how much of the oldest part it doesn't see ([memory](docs/memory.md)).
+- Bots can use each connected account of the same app, choosing the account through its tools. Approvals for these tools may need to be given again.
+- Pages in the bot's browser can open new tabs and pop-ups, for example a report that opens in a new window. The bot is told when a tab opens, and a PDF shown in a tab is saved to its Downloads folder. More than three new tabs at once are closed, and at most eight stay open.
+- When a click or `browser_navigate` downloads a file, the file is saved in the bot's Downloads folder, and the result gives its name, path, size and type.
+- Bots on Boat computers get the page tools (`browser_navigate`, `browser_snapshot`, `browser_act`), which Docker computers already had.
+- In **Settings → Computer**, admins can choose where new computers run without editing environment variables. Any account can also send its own Team Computers to a Wuying cloud desktop it brings ([Wuying cloud computers](docs/wuying-computers.md)).
+- `COMPUTER_MAX_ACTIVE_UNBILLED_MS` limits how long a Docker or Kubernetes computer stays up in one stretch, even if background work or an open screen is keeping it awake. The computer resumes the next time it is used. It is off by default ([sandbox providers](docs/self-host-sandbox-providers.md)).
+- Self-hosters can use a local model listed in `RAKAZO_LOCAL_MODELS` as the deployment default with no API key. Set `PI_DEFAULT_PROVIDER=local`, `PI_DEFAULT_MODEL` and `PI_DEFAULT_CREDENTIALS=host` ([models](docs/self-host-models.md)).
+- On iPhone, a Record Message action for Shortcuts and the Action button. You talk, and the words go to the bot you talked to last, with a Live Activity in the Dynamic Island and on the Lock Screen showing its progress.
+- The mobile app opens text files, PDFs and videos inside the app on iOS and Android instead of a download or share screen, including attachments you tap in a chat. Android PDFs can be zoomed.
+- The own-key plan ("Your subscription or API key") can be paid yearly. A Monthly / Yearly switch on the paywall shows how much yearly saves, and monthly subscribers can switch from Billing on web and mobile with "Switch to yearly −20%".
+- The plan-choice screen and onboarding have an account menu with **Log out** and **Delete account**, so you can delete an account without starting a trial. Mobile has the same choices on the paywall.
+- The desktop app's menus, dialogs, connection window and update messages, and account emails such as sign-in codes, verification and password reset, now come in every app language. Hebrew reads right to left in the connection window and in emails. On Apple devices set to Spanish, the system permission prompts are in Spanish.
+- When you sign up with an email domain that looks mistyped, like `name@gmial.com`, the form offers the likely address.
+- Long model and provider lists can be searched on web and mobile.
+- The mobile Models screen lists bots that use their own model, with "Use space default" to move them onto the main model, as web already does.
+- A routine shows "Schedule delayed" when its next scheduled run is more than five minutes overdue, and its run history marks scheduled runs that started late, for example "Started 2h late", on web and mobile.
+- Messaging your bot just "stop" or "stop now" while it works stops it, as if you had pressed Stop. This works in the app chat and in your private chat with the bot on a chat app, where it replies "Nothing is running." when the bot is idle.
+- Self-hosters can set `MODEL_STREAM_TIMEOUT_MS`, `MODEL_STREAM_IDLE_TIMEOUT_MS` and `MODEL_CONNECT_TIMEOUT_MS` (defaults 120 s, 180 s and 30 s), for example when bots share one local model server and queue for minutes.
+- Invited friends get two weeks free. A gift button in the chat header opens a short invite sheet on web and mobile, and tapping the bot's name opens a simpler bot profile that holds the actions the old menu had.
+- Self-hosters can list local models that support thinking in `RAKAZO_LOCAL_REASONING_MODELS`. Those models get thinking levels, and the chosen level is sent to the local server ([models](docs/self-host-models.md)).
+
+### Changed
+
+- When a bot needs your computer and it isn't connected, the bot tells you to open the desktop app and turn on **Let bots use this computer**, instead of guessing why it can't reach it.
+- When several messages are waiting for a busy bot, messages from the app and the owner's direct line are answered before webhook deliveries and group texts. A bot can also answer each mid-task message as it picks it up. The once-a-minute and three-per-run limits now apply only to updates nobody asked for.
+- When bots message each other or work in a group, a bot now weighs what another bot says instead of agreeing by default. It checks the premise, disagrees plainly with evidence, says how sure it is, and may decline a peer's request it thinks is wrong.
+- When a bot asks for a website login under a new name and you have exactly one login saved for that site, the bot gets the saved one instead of showing the sign-in card again.
+- A bot starting a browser or desktop task that will take a few minutes can tell you right away that it will take a while.
+- The bot management switch, the `list_fleet` tool and the docs now say that a managing bot can change every bot of yours in the space, not only the bots it created ([fleet management](docs/fleet-management.md)).
+- On long pages, the bot's page browser can look for controls by a few words ("newsletter", "postal code") and find them anywhere on the page. On a scrolled page, the list of controls starts at what's on screen.
+- Computer hours now reset when the team's billing period renews instead of on the 1st of the month. A free trial includes some computer time. Cancelling a trial stops computer time right away, but the rest of the trial keeps working. Owners on a trial can press "Start plan now" to start paying and get the full allowance.
+- The app now shows the price you actually pay for the own-key plan. Web billing settings show your plan with its price and renewal date, and the mobile plan picker marks the plan you're on.
+- When a Space has used up this month's computer allowance, routines that need the computer wait longer between attempts, up to a day, and stop sending a failure notice every few minutes.
+- Opening Rakazo while signed out goes straight to sign up, or to sign in if you have used the app on that browser or desktop before. The welcome screen is gone.
+- When the server refuses an old web app version, the page no longer reloads at once if that would lose work: during a call, while a send is waiting, while you type, or while a dialog is open. A small notice offers to reload now.
+- When you pick a model provider, the popular ones still come first, and the rest are now in alphabetical order on web, onboarding and mobile.
+- Fenced blocks marked `text`, `txt` or `plaintext` in chat now wrap and use the message font, so drafts such as emails read without scrolling sideways.
+- Streaming replies with many tables and code blocks redraw only the part that is still growing, so long replies stay smooth on slower machines.
+- On mobile, `@` mentions read as part of the sentence, sent messages show the bot's avatar before its name, and tapping a mention opens that bot's chat. Messages scroll under the floating message box, buttons in chat cards look the same everywhere, a bot's per-room settings in a team chat are simpler, and each saved credential in Settings → Vault shows that it has a menu.
+- Mobile error reports now include a short trail of what happened just before the error: which screen was open, app backgrounding, memory warnings, and API calls with their status codes. Nothing you wrote or saw is included.
+- When a deploy or self-hosted update replaces the worker, the old worker finishes its running jobs, for up to 45 minutes, before it stops, while the new worker takes new jobs ([upgrading](docs/self-host-upgrading.md)).
+- A deploy's database migration gives up on a lock after five seconds and tries again later instead of holding up live requests. When a migration collides with live traffic (a deadlock or lock timeout), the upgrade marks that attempt rolled back and tries up to two more times instead of blocking every later upgrade.
+- The API and worker load optional vendor SDKs only when they are configured, not on every boot.
+- Android download links on the website, in the app and in the welcome email now go to Google Play instead of an APK.
+- Long screen tasks carry at most nine screenshots per model call instead of seventeen, so each step is faster. A screenshot removed this way keeps its text result.
+
+### Removed
+
+- The routine trigger menu no longer lists the disabled "coming soon" entries: "Teams message", "Linear issue", "Sentry alert" and "PagerDuty incident".
+
+### Fixed
+
+- A desktop app whose computer pairing was ended by a sign-out somewhere else now asks once, with the usual prompt, the next time a bot needs the computer, instead of staying off until you found the setting.
+- Text a bot writes just before asking you a question is no longer lost. It now appears above the question card.
+- In group chats, bots no longer mistake another bot's earlier messages for their own, and can tell who said what.
+- A text you send your bot from Telegram, SMS, iMessage or a group while it is busy with something you started in the app is now answered in that chat, not inside the app.
+- When Rakazo fails to handle a Telegram message, Telegram's retry is now processed instead of being dropped.
+- Choosing "Always allow" for a site on a paid request card now saves that site, so later runs stop asking.
+- Pipedream read-only tools with hyphenated names, like `gmail-find-email`, no longer ask for approval in Ask mode. Pipedream apps connected before account pinning get their tools back when the person has exactly one account for that app.
+- Tools from connected servers whose input schema points to another part of itself can be called again instead of failing with "Reference not found". A stale or failed MCP session no longer blocks tool listing or a run until discovery times out.
+- Deleting a group now stops its runs and frees their computers. Before, a bot could be stuck with every message queued for up to a day.
+- Two edits to the same routine at once no longer silently overwrite each other. The second edit gets a conflict and can be retried.
+- A webhook signing secret now appears only in the routine editor of the bot it was created for.
+- Starting a computer no longer fails on every boot when a leftover container still holds its name. A bot whose computer start failed partway, with a git repository cloned in its home, can run again.
+- Opening a bot's computer screen starts the browser again if it closes while the screen is coming up, instead of failing with "computer browser CDP not ready".
+- Bot commands that pass environment variables work again on Boat computers.
+- Page browser: steps are about half a second faster. It reads pages that had already loaded, waits for a site's sign-in check, reads the tab that is on screen, and points the bot to `fill_card` for card fields inside a payment frame. Disabled controls get a plain answer instead of a screenshot fallback or a cleared field, a whole SMS code is typed into split boxes in one step, alert and confirm boxes are reported, and a page that navigates away stops the bot's typing.
+- Answering a card no longer fails now and then with a database error when the Space's content keys are wrapped by a key manager.
+- Requests still running when the API shuts down during a deploy now finish instead of failing. A query or usage save that hits a database deadlock is retried instead of failing.
+- A `-- deferred` migration now stays held back after a failed migration run or a failed rollout, until the release that stopped reading it has deployed.
+- A provider timing out while downloading a linked file is now retried. A model that isn't a chat model, or that needs a region the workspace hasn't enabled, now tells you to pick another model. A reply with a broken header is reported as an unusable model response instead of a server fault.
+- A web voice call answers the turn you just spoke instead of going quiet or reading an older message again. During a voice call, the call card and incoming call prompts show on every signed-in page.
+- Ask Bot in Shortcuts waits for the bot's reply reliably, and a voice call started from a shortcut opens with a fresh greeting.
+- Connecting a model provider with an API key from the iOS or Android app no longer fails with "Could not reach the server" when the provider is slow to answer.
+- Changing your password on mobile no longer deletes unsent messages. On Android, a reply notification is no longer lost when the app restarts its checks, and muting a bot from any screen also drops its pending replies.
+- When a Space search fails, web, desktop and mobile show the error with "Try again" instead of "No results".
+- Triple-clicking a paragraph in a chat shows the Reply button, including on the last paragraph of a message.
+- On desktop, secret requests and MCP server approvals no longer make the chat scroll sideways.
+- Keyboard shortcuts no longer throw an error when autofill or a password manager sends a key press with no key.
+- On Windows, the desktop app tells a failed Docker Compose check apart from a missing Compose plugin.
+- Tables in mobile messages keep one height while you scroll them sideways, and on iOS the chat scroll indicator sits on the screen edge.
+- When the mobile app can't reach a bot computer's screen, the Computer page keeps showing the error and its Retry button instead of flashing back to a blank card every few seconds.
+- A saved login kept for the wrong site, such as `www.` instead of the `login.` host the form is on, can be moved to the right site from one login card instead of saving a second copy. A fill refused on another site now names both sites.
+
+### Self-host upgrade notes
+
+- The **This computer** server that the desktop app runs locally now refuses a second account. To have several people on one server, run a regular self-hosted server.
+- Desktop apps older than this release turn computer access off when a sign-out ends their pairing. Update the desktop app; it asks again the next time a bot needs the computer.
+- If you reach your server over plain HTTP on a local network, add HTTPS to keep native speech recognition and Local Computer Access working in the desktop app.
+- If you route outbound traffic through `HTTP_PROXY` or `HTTPS_PROXY`, the proxy must allow CONNECT to the hosts web search, link icons and plugins use, including port 80 for plain-HTTP sites. SOCKS proxy URLs are refused for these requests.
+- The Compose worker now has `stop_grace_period: 50m`, so updates can wait up to about 45 minutes for the old worker's running jobs. The first deploy after upgrading replaces a worker started without it, so that one gets only about a minute ([upgrading](docs/self-host-upgrading.md)).
+- A migration on a table that stays busy past the retries now fails the deploy instead of stalling traffic. Rerun the deploy at a quieter time.
+- Daily check-ins start on for every bot, so bots with stale open scratchpad items start one model run a day.
+- The pay-click approval and the in-chat sign-in code card need the updated computer image, supervisor and API deployed together. Until then, pay clicks are not checked and code fills fail safely.
+- On Wuying, the RAM user now also needs `ecd:StopDesktops`.
+- Incoming calls on iOS and in-app video playback need a new native app build; an over-the-air update cannot add them.
+
 ## [0.4.0] - 2026-11-01
 
 ### Security

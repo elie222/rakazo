@@ -126,13 +126,13 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             />
             <div className="min-w-0 flex-1">
               <div
-                className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
                 dir="auto"
               >
                 {item.title}
               </div>
               {item.notes ? (
-                <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
+                <div className="mt-0.5 text-body-sm text-muted-foreground/80" dir="auto">
                   {item.notes}
                 </div>
               ) : null}
@@ -186,7 +186,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           </form>
         ) : null}
       </div>
-      {error ? <div className="mt-2 text-[13px] text-destructive">{error}</div> : null}
+      {error ? <div className="mt-2 text-body-sm text-destructive">{error}</div> : null}
     </div>
   );
 }

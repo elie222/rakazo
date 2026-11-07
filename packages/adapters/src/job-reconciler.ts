@@ -2,15 +2,17 @@ import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { stuckWorkStatusMessages } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { reconcileComputerRuns } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
+import { messageBlocksText } from "./run-replies.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
@@ -116,8 +118,10 @@ export function createJobReconciler(
     reconcileComputerUpdates?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
     reconcilePurchases?: () => Promise<void>;
+    reconcileMediaVideos?: () => Promise<void>;
     reconcileModelCredits?: () => Promise<void>;
     reconcileRoutineRetryNotices?: () => Promise<void>;
+    reconcileStrategicInitiatives?: () => Promise<void>;
     reconcileSecurityEventRetention?: () => Promise<void>;
     reconcileAuditLog?: () => Promise<void>;
     reconcileHomeStorage?: () => Promise<void>;
@@ -142,6 +146,32 @@ export function createJobReconciler(
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
   let controlScanDeadline: Date | undefined;
+  // Housekeeping that waits on storage or another service runs beside the scans, never before
+  // them, so a hung call cannot hold back recovery. Each skips a tick while its last pass runs.
+  const housekeeping = [
+    deps.reconcileCloudAgents,
+    deps.reconcilePurchases,
+    deps.reconcileMediaVideos,
+    deps.reconcileModelCredits,
+    deps.reconcileComputerUpdates,
+    deps.reconcileRoutineRetryNotices,
+    deps.reconcileStrategicInitiatives,
+    deps.reconcileSecurityEventRetention,
+    deps.reconcileAuditLog,
+    deps.reconcileHomeStorage,
+    deps.reconcileIdleComputers,
+    deps.reconcileDeadJobs,
+  ].filter((reconcile) => reconcile !== undefined);
+  const housekeepingRunning = new Map<() => Promise<void>, Promise<void>>();
+  const startHousekeeping = () => {
+    for (const reconcile of housekeeping) {
+      if (housekeepingRunning.has(reconcile)) continue;
+      const pass = (async () => reconcile())()
+        .catch((error) => getLogger().error("auxiliary reconciliation", error))
+        .finally(() => housekeepingRunning.delete(reconcile));
+      housekeepingRunning.set(reconcile, pass);
+    }
+  };
 
   const reconcileOnce = async () => {
     if (reconciling) return reconciling;
@@ -149,22 +179,11 @@ export function createJobReconciler(
     reconciling = (async () => {
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
-      const auxiliary = await Promise.allSettled(
-        [
-          () => reconcileCallRequests(deps),
-          () => reconcileComputerRuns(deps.prisma),
-          deps.reconcileCloudAgents,
-          deps.reconcilePurchases,
-          deps.reconcileModelCredits,
-          deps.reconcileComputerUpdates,
-          deps.reconcileRoutineRetryNotices,
-          deps.reconcileSecurityEventRetention,
-          deps.reconcileAuditLog,
-          deps.reconcileHomeStorage,
-          deps.reconcileIdleComputers,
-          deps.reconcileDeadJobs,
-        ].map(async (reconcile) => reconcile?.()),
-      );
+      startHousekeeping();
+      const auxiliary = await Promise.allSettled([
+        reconcileCallRequests(deps),
+        reconcileComputerRuns(deps.prisma),
+      ]);
       for (const result of auxiliary) {
         if (result.status === "rejected")
           getLogger().error("auxiliary reconciliation", result.reason);
@@ -215,6 +234,7 @@ export function createJobReconciler(
             status: true,
             updatedAt: true,
             botId: true,
+            trigger: true,
             bot: { select: { computerId: true } },
           },
         }),
@@ -303,6 +323,53 @@ export function createJobReconciler(
             }
           }),
         );
+        // A background helper whose result did not go back yet: a crash after it ended, or a
+        // stop. A stopped helper only settles its card; anything else answers in the chat.
+        const helpers = await deps.prisma.run.findMany({
+          where: {
+            trigger: BACKGROUND_HELPER_TRIGGER,
+            status: { in: ["completed", "failed", "cancelled"] },
+            botOutcomeReturnedAt: null,
+          },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: {
+            id: true,
+            spaceId: true,
+            botId: true,
+            userId: true,
+            sourceMessageId: true,
+            status: true,
+            error: true,
+          },
+        });
+        for (const run of helpers) {
+          const expired =
+            run.status === "cancelled" && stuckWorkStatusMessages().includes(run.error ?? "");
+          await (async () => {
+            const outcome =
+              run.status === "completed"
+                ? {
+                    status: "completed" as const,
+                    text: (await botRunOutcomeText(deps.prisma, run.id)).text,
+                  }
+                : run.status === "failed" || expired
+                  ? { status: "failed" as const, text: run.error ?? "unknown error" }
+                  : { status: "stopped" as const, text: "" };
+            await returnHelperOutcome(
+              { prisma: deps.prisma, jobs: deps.jobs, events },
+              run,
+              outcome,
+            );
+          })().catch(async (error) => {
+            getLogger().error("background helper outcome reconciliation", error);
+            // Like a bot message outcome: retry later without holding the head of the queue.
+            await deps.prisma.run.updateMany({
+              where: { id: run.id, botOutcomeReturnedAt: null },
+              data: { updatedAt: new Date() },
+            });
+          });
+        }
       }
 
       // A queued run already has a job while it waits out failure backoff.
@@ -479,6 +546,8 @@ export function createJobReconciler(
       if (timer) clearInterval(timer);
       timer = undefined;
       await reconciling?.catch(() => undefined);
+      // Read only after the pass settles: one waiting on leadership starts housekeeping late.
+      await Promise.all(housekeepingRunning.values());
       await deps.leadership?.release();
     },
   };
@@ -529,9 +598,5 @@ async function botRunOutcomeText(
 
 function messageText(blocks: unknown): string {
   if (!Array.isArray(blocks)) return "";
-  return (blocks as MessageBlock[])
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("")
-    .trim();
+  return messageBlocksText(blocks as MessageBlock[]).trim();
 }

@@ -2,6 +2,7 @@ import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCatalogModelId } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import {
   catalogModelLabel,
   catalogModelServesAgents,
@@ -175,6 +176,8 @@ describe("catalog provider authentication", () => {
   it("bounds a stalled check and lets it through as inconclusive", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    // The app gives up on saving a connection after 60 seconds, so key checks ignore the setting.
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "90000");
     try {
       const result = verifyCatalogProviderApiKey(
         { provider: "openrouter", apiKey: "fixture-key" },
@@ -189,6 +192,7 @@ describe("catalog provider authentication", () => {
       await assertion;
     } finally {
       timeout.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 
@@ -226,7 +230,7 @@ describe("Pi model catalog", () => {
       expect.arrayContaining([
         { provider: "openai-codex", id: "gpt-6-luna" },
         { provider: "openai", id: "gpt-6-luna" },
-        { provider: "openrouter", id: "openai/gpt-6-luna" },
+        { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },
       ]),
     );
@@ -356,7 +360,11 @@ describe("Pi model catalog", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
-    expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+    expect(openAiCompatible).toMatchObject({
+      id: "custom",
+      placeholder: true,
+      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS,
+    });
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 
@@ -376,6 +384,12 @@ describe("Pi model catalog", () => {
     expect(
       listPiCatalog().find((entry) => entry.provider === "cloudflare-workers-ai")?.catalogProbe,
     ).toBeUndefined();
+
+    const routing = (provider: string) =>
+      listPiCatalog().find((entry) => entry.provider === provider)?.routingFields;
+    expect(routing("cloudflare-workers-ai")).toEqual(["accountId"]);
+    expect(routing("cloudflare-ai-gateway")).toEqual(["accountId", "gatewayId"]);
+    expect(routing("anthropic")).toBeUndefined();
 
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";

@@ -76,8 +76,35 @@ export function workspacePath(root: string, relative: string): string {
   return normalized ? path.posix.join(root, normalized) : root;
 }
 
+/** The workspace path bots see on every computer. */
+const VIRTUAL_HOME = "/home/rakazo";
+
+/**
+ * The directory a command runs in. Empty, ".", "/", the workspace root and any home alias
+ * mean the root; absolute paths under one of them keep their tail; anything else is taken
+ * relative to the root. "." and ".." segments throw, so a cwd cannot leave the workspace.
+ */
+export function workspaceCwd(
+  root: string,
+  cwd: string | undefined,
+  homes: readonly string[] = [],
+): string {
+  if (!cwd || cwd === "." || cwd === "/") return root;
+  for (const prefix of [root, VIRTUAL_HOME, ...homes]) {
+    if (cwd === prefix) return root;
+    if (cwd.startsWith(`${prefix}/`)) return workspacePath(root, cwd.slice(prefix.length + 1));
+  }
+  return workspacePath(root, cwd);
+}
+
 export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
+}
+
+export function teamWorkspaceInstruction(botId: string): string {
+  const home = teamBotWorkspaceDirectory(botId);
+  const sharedFromShell = `${path.posix.relative(home, "shared")}/`;
+  return `Your Team Computer home is ${home}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. File tools resolve shared/ and bots/ from the Team root, but shell commands do not: from your home, a shell command reaches shared work as ${sharedFromShell}, and a shell cwd of shared starts in it. Other bots' folders are visible under bots/; treat them as their working areas.`;
 }
 
 export function resolveBotWorkspacePath(

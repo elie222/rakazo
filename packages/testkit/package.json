@@ -11,17 +11,20 @@
     "test": "vitest run --root ../.. packages/testkit/src"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/page-kit": "workspace:*",
     "@testcontainers/postgresql": "12.2.1",
+    "fflate": "0.8.3",
     "pngjs": "7.0.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "3.1161.0",
     "@playwright/test": "1.64.1",
     "@rakazo/api": "workspace:*",
     "@rakazo/sandbox-supervisor": "workspace:*",

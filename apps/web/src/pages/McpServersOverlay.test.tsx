@@ -11,6 +11,7 @@ import { McpServersOverlay } from "./McpServersOverlay";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  create: vi.fn(),
   test: vi.fn(),
   update: vi.fn(),
   agents: vi.fn(),
@@ -129,8 +130,17 @@ vi.mock("@rakazo/ui-web", async () => {
     ],
     [
       "Input",
-      ({ id, value, placeholder }: { id?: string; value?: string; placeholder?: string }) =>
-        createElement("input", { id, value, placeholder, readOnly: true }),
+      ({
+        id,
+        value,
+        placeholder,
+        onChange,
+      }: {
+        id?: string;
+        value?: string;
+        placeholder?: string;
+        onChange?: () => void;
+      }) => createElement("input", { id, value, placeholder, onChange, readOnly: !onChange }),
     ],
     ["Textarea", () => null],
     [
@@ -622,5 +632,92 @@ it("says when reopening could not refresh, while still showing the cached server
     expect(host.textContent).toContain("cached");
   } finally {
     await act(async () => second.unmount());
+  }
+});
+
+it("keeps the first server's form open until saving it has finished", async () => {
+  const created = {
+    ...server("docs"),
+    transport: "streamable_http",
+    endpoint: "https://mcp.example.test/mcp",
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+  } as McpServer;
+  mocks.list.mockReset().mockResolvedValueOnce([]).mockResolvedValue([created]);
+  mocks.create.mockReset().mockResolvedValue(created);
+  mocks.test.mockReset().mockResolvedValue(created);
+  let releaseBots = () => {};
+  access.bots
+    .mockResolvedValueOnce([])
+    .mockImplementationOnce(() => new Promise((resolve) => (releaseBots = () => resolve([]))));
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const type = (selector: string, value: string) => {
+    const input = host.querySelector<HTMLInputElement>(selector)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const addServer = () =>
+    Array.from(host.querySelectorAll("button")).find((item) => item.textContent === "Add server");
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).not.toBeNull());
+    await act(async () => {
+      type("#mcp-name", "docs");
+      type("#mcp-endpoint", "https://mcp.example.test/mcp");
+    });
+    await act(async () => addServer()?.click());
+    const listed = () =>
+      client
+        .getQueryCache()
+        .getAll()
+        .some((query) => (query.state.data as McpServer[] | undefined)?.[0]?.id === "docs");
+    await vi.waitFor(() => expect(listed()).toBe(true));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    // The list arrives before the rest of the refresh; the form must not give way to it yet,
+    // or an "Add server" click there is undone when the save finishes.
+    expect(host.querySelector("#mcp-name")).not.toBeNull();
+
+    await act(async () => releaseBots());
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).toBeNull());
+    await act(async () => addServer()?.click());
+    await act(async () => {});
+    expect(host.querySelector<HTMLInputElement>("#mcp-name")?.value).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("links callback mismatches in MCP settings to the shared recovery guide", async () => {
+  mocks.list.mockReset().mockResolvedValue([
+    {
+      ...server("remote"),
+      transport: "streamable_http",
+      endpoint: "https://mcp.example.test/mcp",
+    },
+  ]);
+  vi.mocked(connectMcpOauth).mockRejectedValueOnce(
+    Object.assign(new Error("Sign-in configuration mismatch"), {
+      code: "MCP_OAUTH_REDIRECT_MISMATCH",
+    }),
+  );
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const connectButton = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Connect OAuth",
+    );
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(connectButton()).toBeDefined());
+    await act(async () => connectButton()?.click());
+    expect(host.querySelector('[role="alert"] a')?.getAttribute("href")).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+    expect(connectButton()?.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
   }
 });

@@ -40,7 +40,18 @@ export const BotSecretAuth = z.discriminatedUnion("type", [
   z.object({ type: z.literal("login") }),
   // A value exported to this bot's shell commands as an environment variable. It has no site.
   z.object({ type: z.literal("command") }),
+  // A payment card. Typed only into a checkout the person approves each time; the bot sees only
+  // its brand, last four digits and expiry.
+  z.object({ type: z.literal("card") }),
+  // A person's name, address, phone or email. Not secret: the bot reads it to fill in forms.
+  z.object({ type: z.literal("contact") }),
 ]);
+export type BotSecretAuthType = z.infer<typeof BotSecretAuth>["type"];
+
+/** Kinds saved without a site: command variables reach shell commands, cards and contacts any page. */
+export function isSitelessAuth(type: BotSecretAuthType): type is "command" | "card" | "contact" {
+  return type === "command" || type === "card" || type === "contact";
+}
 
 // Names that change how shells and common runtimes start, where they load code from, or how
 // they reach the network. A bot's command variable must never override them. The list is not
@@ -182,25 +193,26 @@ export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: 
   return z
     .object({
       name: BotSecretName,
-      // Empty for a command variable, which has no site. Every other type needs an origin.
+      // Empty for a command variable, card or contact, which have no site. Every other type needs one.
       origin: z
         .string()
         .max(2048)
         .default("")
         .describe(
-          "The site's address, such as https://www.example.com. Required unless auth is command.",
+          "The site's address, such as https://www.example.com. Required unless auth is command, card or contact.",
         ),
       auth: BotSecretAuth,
     })
     .superRefine((destination, ctx) => {
-      if (destination.auth.type === "command") {
+      if (isSitelessAuth(destination.auth.type)) {
         if (destination.origin !== "") {
           ctx.addIssue({
             code: "custom",
             path: ["origin"],
-            message: "Command variables have no site; leave origin empty",
+            message: `A ${destination.auth.type === "command" ? "command variable" : destination.auth.type} has no site; leave origin empty`,
           });
         }
+        if (destination.auth.type !== "command") return;
         const nameIssue = commandVariableNameIssue(destination.name);
         if (nameIssue) ctx.addIssue({ code: "custom", path: ["name"], message: nameIssue });
         return;
@@ -239,6 +251,27 @@ export const BotSecretDestination = botSecretDestinationSchema();
 export type BotSecretDestination = z.infer<typeof BotSecretDestination>;
 
 export const BOT_SECRET_VALUE_MAX_LENGTH = 16_384;
+
+/** The one page a texted or emailed code may be typed into: HTTPS only, and it is never saved. */
+export const OneTimeCodeTarget = z.object({ origin: botSecretOriginSchema(false) });
+export type OneTimeCodeTarget = z.infer<typeof OneTimeCodeTarget>;
+
+export const ONE_TIME_CODE_MIN_LENGTH = 4;
+export const ONE_TIME_CODE_MAX_LENGTH = 12;
+
+/**
+ * The code as typed into a page: spaces dropped ("123 456"), then groups of letters and digits
+ * joined by single dashes, at least 4 of them and at most 12 characters in all. Anything shorter
+ * or odder is not a code, so it is never kept or redacted.
+ */
+export function normalizeOneTimeCode(answer: string): string | undefined {
+  const code = answer.replace(/\s+/g, "");
+  return code.length <= ONE_TIME_CODE_MAX_LENGTH &&
+    code.replaceAll("-", "").length >= ONE_TIME_CODE_MIN_LENGTH &&
+    /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/.test(code)
+    ? code
+    : undefined;
+}
 
 export const LOGIN_FIELD_LIMIT = 8;
 export const LoginFieldLabel = z.string().trim().min(1).max(64);
@@ -535,22 +568,27 @@ export function botSecretSubmissionSchema(options?: { allowPrivateHttpOrigin?: b
 }
 export const BotSecretSubmission = botSecretSubmissionSchema();
 
+const destinationInputShape = {
+  name: BotSecretName,
+  // Omitted or empty for a command variable, card or contact, which have no site.
+  origin: z.string().max(2048).default(""),
+  auth: BotSecretAuth,
+};
+
+function requireSite(
+  destination: { origin: string; auth: { type: BotSecretAuthType } },
+  ctx: z.RefinementCtx,
+) {
+  if (!isSitelessAuth(destination.auth.type) && destination.origin.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["origin"], message: "A site is required" });
+  }
+}
+
 /**
  * Owner-facing destination input. Structural only: the origin rules depend on the server's
  * private-HTTP opt-in, so the server enforces them when it stores the value.
  */
-export const BotSecretDestinationInput = z
-  .object({
-    name: BotSecretName,
-    // Omitted or empty for a command variable, which has no site.
-    origin: z.string().max(2048).default(""),
-    auth: BotSecretAuth,
-  })
-  .superRefine((destination, ctx) => {
-    if (destination.auth.type !== "command" && destination.origin.length === 0) {
-      ctx.addIssue({ code: "custom", path: ["origin"], message: "A site is required" });
-    }
-  });
+export const BotSecretDestinationInput = z.object(destinationInputShape).superRefine(requireSite);
 
 export const BotSecretPutInput = z.object({
   botId: Id,
@@ -559,34 +597,213 @@ export const BotSecretPutInput = z.object({
 });
 export type BotSecretPutInput = z.infer<typeof BotSecretPutInput>;
 
-/** A credential the owner saves in a vault: the account's or, with scope "space", the Space's. */
+// ---- Cards and contacts ----
+
+/** Trimmed text, or undefined when empty, so an untouched form field is not saved as "". */
+function optionalText(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max)
+    .transform((value) => value || undefined)
+    .optional();
+}
+
+/** The fields of a contact. Every one is optional, but a contact holds at least one. */
+export const ContactFields = z.object({
+  name: optionalText(200),
+  line1: optionalText(200),
+  line2: optionalText(200),
+  city: optionalText(100),
+  region: optionalText(100),
+  postalCode: optionalText(20),
+  country: optionalText(100),
+  phone: optionalText(40),
+  email: optionalText(254),
+});
+export type ContactFields = z.output<typeof ContactFields>;
+export const CONTACT_FIELDS = Object.keys(ContactFields.shape) as (keyof ContactFields)[];
+
+export const ContactSecretValue = ContactFields.strict().refine(
+  (contact) => Object.values(contact).some(Boolean),
+  "Fill in at least one field",
+);
+export type ContactSecretValue = z.output<typeof ContactSecretValue>;
+
+/** Whether a card number passes the Luhn check every issuer's numbers do. */
+export function luhnValid(digits: string): boolean {
+  let sum = 0;
+  for (let index = 0; index < digits.length; index++) {
+    let digit = Number(digits[digits.length - 1 - index]);
+    if (index % 2 === 1) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return sum % 10 === 0;
+}
+
+/** Card numbers as people type them, with spaces or dashes, kept as digits only. */
+export const CardNumber = z
+  .string()
+  .transform((value) => value.replace(/[\s-]/g, ""))
+  .refine((digits) => /^\d{12,19}$/.test(digits) && luhnValid(digits), "Check the card number");
+
+export const CardSecretValue = z
+  .object({
+    number: CardNumber,
+    expMonth: z.number().int().min(1).max(12),
+    expYear: z.number().int().min(2000).max(2100),
+    cvc: z
+      .string()
+      .trim()
+      .regex(/^(\d{3,4})?$/, "Check the security code")
+      .optional()
+      .transform((value) => value || undefined),
+    name: optionalText(200),
+    /** The name of a saved contact whose address bills this card. */
+    billing: BotSecretName.optional(),
+  })
+  .strict();
+export type CardSecretValue = z.output<typeof CardSecretValue>;
+
+const CARD_BRANDS: [RegExp, string][] = [
+  [/^4/, "Visa"],
+  [/^(5[1-5]|222[1-9]|22[3-9]|2[3-6]|27[01]|2720)/, "Mastercard"],
+  [/^3[47]/, "Amex"],
+  [/^(6011|65|64[4-9]|622)/, "Discover"],
+  [/^3(0[0-5]|[68])/, "Diners Club"],
+  [/^35(2[89]|[3-8])/, "JCB"],
+  [/^62/, "UnionPay"],
+];
+
+/** The card network a number belongs to, by its first digits; "Card" when it is not known. */
+export function cardBrand(number: string): string {
+  const digits = number.replace(/\D/g, "");
+  return CARD_BRANDS.find(([prefix]) => prefix.test(digits))?.[1] ?? "Card";
+}
+
+export function cardSummary(card: CardSecretValue): CardSummary {
+  return {
+    brand: cardBrand(card.number),
+    last4: card.number.slice(-4),
+    expMonth: card.expMonth,
+    expYear: card.expYear,
+    ...(card.name ? { name: card.name } : {}),
+    ...(card.billing ? { billing: card.billing } : {}),
+  };
+}
+
+/** MM/YY, as checkouts and card faces show an expiry. */
+export function cardExpiry(card: Pick<CardSummary, "expMonth" | "expYear">): string {
+  return `${String(card.expMonth).padStart(2, "0")}/${String(card.expYear % 100).padStart(2, "0")}`;
+}
+
+/** "Visa ·· 4242", what a card is called when its owner gave it no title. */
+export function cardTitle(card: Pick<CardSummary, "brand" | "last4">): string {
+  return `${card.brand} ·· ${card.last4}`;
+}
+
+export function encodeCardSecret(value: z.input<typeof CardSecretValue>): string {
+  return JSON.stringify(CardSecretValue.parse(value));
+}
+
+export function decodeCardSecret(plaintext: string): CardSecretValue {
+  return CardSecretValue.parse(JSON.parse(plaintext));
+}
+
+export function encodeContactSecret(value: z.input<typeof ContactSecretValue>): string {
+  return JSON.stringify(ContactSecretValue.parse(value));
+}
+
+export function decodeContactSecret(plaintext: string): ContactSecretValue {
+  return ContactSecretValue.parse(JSON.parse(plaintext));
+}
+
+/**
+ * Parse an expiry as people type it ("08/28", "8/2028", "0828") into a month and four-digit year,
+ * or undefined when it is not one.
+ */
+export function parseCardExpiry(text: string): { expMonth: number; expYear: number } | undefined {
+  const match = /^\s*(\d{1,2})\s*[/\-. ]?\s*(\d{2}|\d{4})\s*$/.exec(text);
+  if (!match) return undefined;
+  const expMonth = Number(match[1]);
+  const year = Number(match[2]);
+  if (expMonth < 1 || expMonth > 12) return undefined;
+  return { expMonth, expYear: year < 100 ? 2000 + year : year };
+}
+
+/** What people call a vault item, such as "Home" or "Work card"; empty uses a default. */
+export const VaultItemTitle = z.string().trim().max(80);
+/** When the bot should use an item, such as "For travel". */
+export const VaultItemNote = z.string().trim().max(200);
+
+/**
+ * An item the owner saves in a vault: the account's or, with scope "space", the Space's. Without a
+ * name it is a new item, named from its title. With the name of a saved item, `value` may be left
+ * out to change only its title or note.
+ */
 export const VaultPutInput = settingsScopeInput.extend({
-  destination: BotSecretDestinationInput,
-  value: BotSecretPutInput.shape.value,
+  destination: z
+    .object({ ...destinationInputShape, name: BotSecretName.optional() })
+    .superRefine(requireSite),
+  value: BotSecretPutInput.shape.value.optional(),
+  title: VaultItemTitle.optional(),
+  note: VaultItemNote.optional(),
 });
 export type VaultPutInput = z.infer<typeof VaultPutInput>;
 
 export const VaultRevealInput = settingsScopeInput.extend({ name: StoredBotSecretName });
 
-/** A saved value shown to its owner after they confirm it's them: a login's fields, or the value. */
+/**
+ * A saved value shown to its owner after they confirm it's them: a login's fields, a card, or the
+ * value. A contact needs no reveal: its fields are in the list.
+ */
 export const VaultRevealed = z.union([
   z.object({
     fields: z.array(z.object({ label: z.string(), value: z.string(), hidden: z.boolean() })),
   }),
+  z.object({ card: CardSecretValue }),
   z.object({ value: z.string() }),
 ]);
 export type VaultRevealed = z.infer<typeof VaultRevealed>;
+
+/** What anyone who may see the item sees of a card: never the number or security code. */
+export const CardSummary = z.object({
+  brand: z.string(),
+  last4: z.string(),
+  expMonth: z.number().int(),
+  expYear: z.number().int(),
+  name: z.string().optional(),
+  /** The saved contact whose address bills this card. */
+  billing: z.string().optional(),
+});
+export type CardSummary = z.infer<typeof CardSummary>;
+
+/** What a list shows under an item's title, read from its saved value. */
+export const VaultPreview = z.object({
+  /** A login's first visible field, usually the username or email. */
+  username: z.string().optional(),
+  card: CardSummary.optional(),
+  contact: ContactFields.optional(),
+});
+export type VaultPreview = z.infer<typeof VaultPreview>;
 
 /**
  * What the owner can see about a saved credential. It never carries the protected value.
  * `name` is read loosely and `auth` is nullable so one stored row that no longer passes the
  * current schema cannot fail the whole list call and lock the owner out of removing it.
- * A null `auth` means the stored settings can't be read.
+ * A null `auth` means the stored settings can't be read. `title` is never empty: one the owner
+ * left empty is filled from the item itself.
  */
 export const BotSecretMetadata = z.object({
   name: StoredBotSecretName,
   origin: z.string(),
   auth: BotSecretAuth.nullable(),
+  title: z.string().default(""),
+  note: z.string().default(""),
+  preview: VaultPreview.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

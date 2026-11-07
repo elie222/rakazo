@@ -36,8 +36,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "יש שאלות? אפשר להשיב לאימייל הזה.",
   Unsubscribe: "ביטול המינוי",
   "Invite a friend": "הזמנת חבר",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "אפשר להזמין חבר ל-Rakazo ולקבל חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "אפשר להזמין חבר ל-Rakazo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
   "Open Rakazo": "פתיחת Rakazo",
   "and choose Invite friends for your link.": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
   "Have any questions? Just reply to this email.": "יש שאלות? פשוט משיבים לאימייל הזה.",
@@ -65,4 +65,9 @@ export const HE_MESSAGES: Record<string, string> = {
   "Your changes to the {name} page are approved.": "השינויים שלך בדף {name} אושרו.",
   "We couldn't approve your changes to the {name} page.":
     "לא הצלחנו לאשר את השינויים שלך בדף {name}.",
+  "Your saved computer files will be deleted": "קבצי המחשב השמורים שלך יימחקו",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תחדש את המינוי.",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תבחר תוכנית.",
 };

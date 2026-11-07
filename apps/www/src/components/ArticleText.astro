@@ -1,0 +1,50 @@
+---
+import type { RichPart } from "../grok-alternative";
+import { richParts } from "../grok-alternative";
+import { splitInlineCode } from "../inline-code";
+
+/** Renders `code` spans, **bold** text and [label](href) links inside a sentence. */
+type Props = {
+  text: string;
+};
+
+type Part = { kind: "code"; value: string } | { kind: "bold"; parts: RichPart[] } | RichPart;
+
+const { text } = Astro.props;
+const parts: Part[] = splitInlineCode(text).flatMap((part): Part[] => {
+  if (part.kind === "code") return [{ kind: "code", value: part.value }];
+  return part.value
+    .split(/\*\*([^*]+)\*\*/)
+    .flatMap((piece, index): Part[] =>
+      index % 2 === 1 ? [{ kind: "bold", parts: richParts(piece) }] : richParts(piece),
+    )
+    .filter((piece) => piece.kind !== "text" || piece.value !== "");
+});
+
+function external(href: string): boolean {
+  return href.startsWith("http") && !href.startsWith("https://rakazo.com");
+}
+---
+
+{
+  parts.map((part) =>
+    part.kind === "code" ? (
+      <code>{part.value}</code>
+    ) : part.kind === "bold" ? (
+      <strong>
+        {part.parts.map((inner) =>
+          inner.kind === "link" ? <a href={inner.href}>{inner.label}</a> : inner.value,
+        )}
+      </strong>
+    ) : part.kind === "link" ? (
+      <a
+        href={part.href}
+        {...(external(part.href) ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      >
+        {part.label}
+      </a>
+    ) : (
+      part.value
+    ),
+  )
+}

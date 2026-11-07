@@ -10,6 +10,8 @@ name: Split view
 - extendedWaitUntil:
     visible: ".*The fixture workspace is ready.*"
     timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-chat-beside-list
 - runFlow:
     when:
@@ -19,5 +21,7 @@ name: Split view
       - extendedWaitUntil:
           visible: "Show chats"
           timeout: 5000
+      - waitForAnimationToEnd:
+          timeout: 3000
       - takeScreenshot: 02-chats-hidden
       - tapOn: "Show chats"

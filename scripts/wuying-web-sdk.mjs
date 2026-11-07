@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Downloads the Wuying Web SDK files the Wuying screen page loads into apps/web/public/wuying/.
+ * Downloads the Wuying Web SDK files the Wuying screen page loads into apps/web/public/computer-screen/.
  *
  *   node scripts/wuying-web-sdk.mjs
  *
@@ -17,7 +17,7 @@ const FILES = {
   "WuyingWebSDK.js": "2dfdd1b8bf0aad432ca4697a8fc04213fcbf544d741ed0d27d9815c3c4824a61",
   "sdk/ASP/container.html": "f69b03e9f8de93c5c3cce48df9399a3c8097179e0291a41520fb6dc58cb490b9",
 };
-const target = path.join(import.meta.dirname, "..", "apps", "web", "public", "wuying");
+const target = path.join(import.meta.dirname, "..", "apps", "web", "public", "computer-screen");
 
 for (const [file, sha256] of Object.entries(FILES)) {
   const response = await fetch(new URL(file, BASE));

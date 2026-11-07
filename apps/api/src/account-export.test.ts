@@ -62,7 +62,9 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   teamChatAmbientEnabled: false,
   teamChatRules: "",
   crossSpaceCommunication: false,
+  dailyCheckIns: false,
   fleetManagement: true,
+  replyMode: "chat",
   createdAt,
 });
 
@@ -144,6 +146,14 @@ function stores(): AccountExportStores & { contexts: unknown[] } {
 }
 
 describe("account export archive", () => {
+  it("preserves the check-in opt-out and defaults older archives to on", () => {
+    expect(AccountExportRecordSchema.parse(botRecord("bot-1"))).toMatchObject({
+      dailyCheckIns: false,
+    });
+    const { dailyCheckIns: _dailyCheckIns, ...olderRecord } = botRecord("bot-1");
+    expect(AccountExportRecordSchema.parse(olderRecord)).toMatchObject({ dailyCheckIns: true });
+  });
+
   it("streams manifest, then each space's records, artifacts and homes", async () => {
     const fakes = stores();
     const entries = await unzipStream(
@@ -211,6 +221,15 @@ describe("account export archive", () => {
       { botId: "bot-1", path: "run.sh" },
     ]);
     expect(names).not.toContain(accountExportPaths.executables("space-b"));
+  });
+
+  it("compresses files that start with zero bytes into data that reads back", async () => {
+    // Leading zeros (fonts, many binary formats) let unpatched streaming deflate refer back
+    // into its empty window, which every inflater rejects as an invalid distance.
+    const content = new Uint8Array(4 + 2048);
+    for (let i = 4; i < content.length; i++) content[i] = i % 37 < 8 ? (i * 11) & 0xff : 0;
+    const entries = await unzipStream(zipStream(generate([{ path: "font.ttf", data: [content] }])));
+    expect(entries).toEqual([{ name: "font.ttf", data: Buffer.from(content) }]);
   });
 
   it("fails instead of writing an archive past the zip size limit", async () => {

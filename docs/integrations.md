@@ -45,6 +45,16 @@ window and within the server's own pause window (Executor keeps a pause for abou
 After ten idle minutes, or when the run continues on another instance, the next call opens a fresh
 session.
 
+## Apps in chat
+
+Some MCP servers come with an app: a small interactive view of a tool's result, such as a chart,
+map or board. When a bot uses one of those tools, the app shows in the chat above the bot's reply,
+in the web, desktop and mobile apps.
+
+Apps run sandboxed. An app sees only that tool call and its result, reaches only the sites its
+server declares, and can't call tools or see your account. A link in an app asks before it opens,
+and a message an app suggests goes into the message box for you to send.
+
 ## Choose which bots use what
 
 Bots pick the apps they need. To add an MCP server to the bot you're chatting with, open it in

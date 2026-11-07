@@ -209,6 +209,18 @@ describe("screen proxy", () => {
     ).toEqual({ upgrade: "websocket", "sec-websocket-key": "key" });
   });
 
+  it("keeps headers meant for an access proxy in front of the server", () => {
+    expect(
+      safeProxyHeaders({
+        "x-access-client-id": "fake-id",
+        "x-access-client-secret": "fake-secret",
+        "x-api-key": "fake-key",
+        accept: "text/html",
+        upgrade: "websocket",
+      }),
+    ).toEqual({ accept: "text/html", upgrade: "websocket" });
+  });
+
   it("does not forward HTTP/2 pseudo-headers to the HTTP/1 upstream", () => {
     expect(
       safeProxyHeaders({

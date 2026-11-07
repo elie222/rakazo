@@ -6,21 +6,26 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Web type: the system font and a 14/20 base scale. Mobile sets its own type natively. */
+/* Web type: the system font and one type scale, so sizes stay consistent and a theme can change
+   them in one place. Tailwind's default sizes are switched off; use these. A size off the scale
+   needs an `off-scale:` comment saying why (see type-scale.test.ts). Mobile sets its own type. */
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
+  --text-*: initial;
   --text-caption: 11px;
   --text-caption--line-height: 16px;
   --text-caption--letter-spacing: 0.005em;
   --text-label: 12px;
   --text-label--line-height: 16px;
-  --text-body2: 13px;
-  --text-body2--line-height: 18px;
-  --text-body1: 14px;
-  --text-body1--line-height: 20px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 22px;
   --text-heading3: 17px;
   --text-heading3--line-height: 24px;
   --text-heading3--letter-spacing: -0.008em;
@@ -30,6 +35,9 @@
   --text-heading1: 26px;
   --text-heading1--line-height: 32px;
   --text-heading1--letter-spacing: -0.015em;
+  --text-display: 32px;
+  --text-display--line-height: 40px;
+  --text-display--letter-spacing: -0.02em;
 }
 
 /* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */

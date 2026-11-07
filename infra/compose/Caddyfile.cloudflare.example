@@ -31,7 +31,7 @@
 			resp_headers>Set-Cookie delete
 			# Native sign-in redirects carry the session cookie in the app callback URL.
 			resp_headers>Location delete
-			request>uri regexp "(/reset-password/|/novnc/session/[a-z]+/)[^/?#&]*|([?&](?:token|_token|code|state|ticket|access_token|id_token|hub\.verify_token|path)=)[^&#]*" "${1}${2}REDACTED"
+			request>uri regexp "(/reset-password/|/novnc/session/[a-z]+/|/api/v1/pages/shared/|^/p/)[^/?#&]*|([?&](?:token|_token|code|state|ticket|access_token|id_token|hub\.verify_token|path)=)[^&#]*" "${1}${2}REDACTED"
 		}
 	}
 }
@@ -58,10 +58,16 @@ http://{$RAKAZO_HOST:app.example.com} {
 	# A localhost trial must not pin HTTPS onto every local dev server.
 	@hsts not host localhost 127.0.0.1
 	header @hsts Strict-Transport-Security "max-age=31536000"
-	# SAMEORIGIN still lets the app frame its own /novnc/ screen.
-	header {
-		X-Content-Type-Options nosniff
-		X-Frame-Options SAMEORIGIN
+	# SAMEORIGIN still lets the app frame its own /novnc/ screen. The embedded screen frames its runtime
+	# from an opaque sandboxed page, which SAMEORIGIN rejects; only that exact runtime path omits ancestor restrictions.
+	header X-Content-Type-Options nosniff
+	@framed not path /computer-screen/sdk/ASP/container.html
+	header @framed X-Frame-Options SAMEORIGIN
+	# A shared page's link is its only key: keep it out of search results and Referer headers.
+	@sharedPage path /p/*
+	header @sharedPage {
+		X-Robots-Tag "noindex, nofollow"
+		Referrer-Policy no-referrer
 	}
 
 	handle /health {

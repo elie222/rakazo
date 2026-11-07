@@ -34,8 +34,8 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Have any questions? Reply to this email.": "有任何问题？请回复此邮件。",
   Unsubscribe: "退订",
   "Invite a friend": "邀请好友",
-  "Invite a friend to Rakazo and earn a free month when they start a qualifying subscription with a new card.":
-    "邀请好友加入 Rakazo，当对方使用新卡开始符合条件的订阅时，你将获得一个月免费使用。",
+  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
+    "邀请朋友加入 Rakazo：对方可免费使用 {weeks} 周；当对方用新卡开始符合条件的订阅时，你将获得一个月免费。",
   "Open Rakazo": "打开 Rakazo",
   "and choose Invite friends for your link.": "并选择“邀请好友”获取你的链接。",
   "Have any questions? Just reply to this email.": "有任何问题？直接回复此邮件即可。",
@@ -60,4 +60,9 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Your Rakazo page claim: {name}": "你在 Rakazo 的页面认领：{name}",
   "Your changes to the {name} page are approved.": "你对 {name} 页面的修改已获批准。",
   "We couldn't approve your changes to the {name} page.": "我们无法批准你对 {name} 页面的修改。",
+  "Your saved computer files will be deleted": "你保存的电脑文件将被删除",
+  "Your saved computer files will be deleted on {date} unless you resubscribe.":
+    "除非你重新订阅，否则你保存的电脑文件将于 {date} 被删除。",
+  "Your saved computer files will be deleted on {date} unless you choose a plan.":
+    "除非你选择一个套餐，否则你保存的电脑文件将于 {date} 被删除。",
 };

@@ -51,8 +51,20 @@ x-app-environment: &app-environment
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
+  # The worker names each bot's address to it and sends its email; the API receives the mail.
+  INBOUND_EMAIL_DOMAIN:
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
+  APNS_VOIP_KEY_ID:
+  APNS_VOIP_TEAM_ID:
+  APNS_VOIP_PRIVATE_KEY:
+  APNS_VOIP_ENVIRONMENT:
+  APNS_VOIP_BUNDLE_ID:
   # Secret storage
   SECRET_STORE: ${SECRET_STORE:-encrypted}
   INFISICAL_URL: ${INFISICAL_URL:-}
@@ -97,9 +109,13 @@ x-app-environment: &app-environment
   TYPESAFE_API_KEY:
   MAX_TOOL_CALLS_PER_TURN:
   MODEL_STREAM_MAX_RETRIES:
+  MODEL_STREAM_TIMEOUT_MS:
+  MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
   RAKAZO_LOCAL_VISION_MODELS:
+  RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
   RAKAZO_LOCAL_MAX_TOKENS:
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
@@ -184,6 +200,7 @@ x-app-environment: &app-environment
   SANDBOX_IDLE_MS:
   SANDBOX_MAX_COMPUTERS_PER_USER:
   COMPUTER_MAX_ACTIVE_MS:
+  COMPUTER_MAX_ACTIVE_UNBILLED_MS:
   COMPUTER_TAKEOVER_TTL_MS:
   BROWSER_PROVIDER:
   NOVITA_API_KEY:
@@ -208,6 +225,15 @@ x-app-environment: &app-environment
   WUYING_MCP_TOKEN:
   WUYING_MCP_URL:
   WUYING_REGION_ID:
+  INCUS_SANDBOX_URL:
+  INCUS_SANDBOX_CLIENT_CERT:
+  INCUS_SANDBOX_CLIENT_KEY:
+  INCUS_SANDBOX_SERVER_CERT:
+  INCUS_SANDBOX_PROJECT:
+  INCUS_SANDBOX_COMPUTER_IMAGE:
+  INCUS_SANDBOX_CPU_LIMIT:
+  INCUS_SANDBOX_MEMORY_LIMIT:
+  INCUS_SANDBOX_PROCESS_LIMIT:
   CREATEOS_SANDBOX_API_KEY:
   CREATEOS_SANDBOX_BASE_URL:
   CREATEOS_SANDBOX_ROOTFS:
@@ -231,6 +257,8 @@ x-app-environment: &app-environment
   MCP_STDIO_STARTUP_TIMEOUT_MS:
   MCP_STDIO_IDLE_MS:
   MCP_DISCOVERY_TIMEOUT_MS:
+  MCP_MAX_TOOLS:
+  MCP_MAX_PAGES:
   MCP_PACKAGES_DIR:
   MCP_ALLOW_PRIVATE_ENDPOINT:
   # Messaging (outbound delivery runs in the worker)
@@ -413,6 +441,7 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
+      COMPUTER_SETTINGS_ENABLED:
       # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
       # proxy and a reverse proxy on the host. See docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES:
@@ -423,6 +452,7 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      SCIM_BEARER_TOKEN: ${SCIM_BEARER_TOKEN:-}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
@@ -430,11 +460,7 @@ services:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
+      INBOUND_EMAIL_SECRET:
       WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
@@ -482,6 +508,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
       interval: 30s
@@ -545,6 +574,7 @@ services:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
+      RAKAZO_THEME: ${RAKAZO_THEME:-}
       CRISP_WEBSITE_ID:
     ports:
       - "${RAKAZO_WEB_BIND:-127.0.0.1}:${RAKAZO_WEB_PORT:-5173}:5173"

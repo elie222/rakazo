@@ -1,7 +1,15 @@
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { requireOptionalNativeModule } from "expo-modules-core";
 
-export type DroppedFile = { uri?: string; name: string; mimeType: string; size: number };
+export type DroppedFile = {
+  uri?: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  /** Pixel size of an image, when known, so a large photo can be shrunk before the size check. */
+  width?: number;
+  height?: number;
+};
 export type DropPayload = { files: DroppedFile[]; skipped?: string[] };
 
 export type DropLimits = { enabled: boolean; maxBytes: number; maxFiles: number };
@@ -12,7 +20,7 @@ type FileDropModule = {
   addListener(event: "onDropStarted", listener: () => void): { remove(): void };
 };
 
-// Android only: absent on iOS, on web, and in binaries built before the module existed.
+// Android drops and iOS image pastes. Absent on web and in binaries built before the module existed.
 function nativeFileDrop(): FileDropModule | null {
   return requireOptionalNativeModule<FileDropModule>("RakazoFileDrop");
 }

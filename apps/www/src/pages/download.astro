@@ -1,0 +1,59 @@
+---
+import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import {
+  availableDesktopPlatforms,
+  desktopDownloadHref,
+  fetchDesktopDownloads,
+  githubStarsLabel,
+} from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { APP_URL, IOS_APP_URL, SELF_HOST_GUIDE_PATH } from "../site";
+
+const [starsLabel, downloads] = await Promise.all([githubStarsLabel(), fetchDesktopDownloads()]);
+
+const DESKTOP_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
+const platforms = [
+  ...availableDesktopPlatforms(downloads).map((platform) => ({
+    name: DESKTOP_NAMES[platform],
+    action: "Download",
+    href: desktopDownloadHref(platform),
+    attr: platform,
+  })),
+  { name: "iPhone", action: "App Store", href: IOS_APP_URL, attr: "ios" },
+  { name: "Android", action: "Google Play", href: ANDROID_APP_STORE_URL, attr: "android" },
+  { name: "Web", action: "Open", href: APP_URL, attr: "web" },
+];
+---
+
+<BaseLayout title="Download · Rakazo" description="Get Rakazo for macOS, Windows, Linux, iPhone, Android, and the web.">
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="privacy-copy">
+      <h1>Download Rakazo</h1>
+      <ul class="platform-list">
+        {
+          platforms.map((platform) => (
+            <li>
+              <span>{platform.name}</span>
+              <a
+                class="button button--secondary button--small"
+                href={platform.href}
+                aria-label={`${platform.action}: ${platform.name}`}
+                data-attr={`download-page-${platform.attr}`}
+              >
+                {platform.action}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <p>
+        Running your own server? The apps connect to it too. See the{" "}
+        <a href={SELF_HOST_GUIDE_PATH}>self-hosting guide</a>.
+      </p>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

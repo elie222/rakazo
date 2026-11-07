@@ -110,4 +110,15 @@ describe("OpenRouter attribution and usage recovery", () => {
       ).lookupUsage("gen_fixture"),
     ).rejects.toThrow("different generation");
   });
+  it("refuses an oversized usage response without reading it", async () => {
+    const response = Response.json(
+      { data: { id: "gen_fixture", total_cost: 0.01, is_byok: false } },
+      { headers: { "content-length": String(1024 * 1024 * 1024) } },
+    );
+    const cancel = vi.spyOn(response.body!, "cancel");
+    await expect(
+      new OpenRouterUsageLookup("fixture", async () => response).lookupUsage("gen_fixture"),
+    ).rejects.toThrow();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });

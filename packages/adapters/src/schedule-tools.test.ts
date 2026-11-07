@@ -1,7 +1,10 @@
+import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
+  changeUserTimezone,
   commandWatchFromTool,
   compactScheduleInput,
   createScheduleFromTool,
@@ -12,11 +15,27 @@ import {
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
   SCHEDULE_TOOL_NAMES,
+  scheduleCreateError,
+  scheduleCreateFields,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 
 const noRoutines = async () => [];
 const impossibleOffsetDates = ["2030-02-30T10:00Z", "2030-04-31T10:00+05:30"];
+
+/**
+ * A prisma fake whose account zone answers the share lock a creation takes inside its
+ * insert transaction. `timezone` is the saved account zone, or null for none.
+ */
+function accountZonePrisma(prisma: Record<string, unknown>, timezone: string | null) {
+  const client = {
+    ...prisma,
+    $transaction: async (run: (client: unknown) => Promise<unknown>) => run(client),
+    $queryRaw: async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone }] : [],
+  };
+  return client;
+}
 
 describe("resolveScheduleTiming", () => {
   beforeEach(() => vi.useFakeTimers({ now: new Date("2026-10-20T00:11:59.999Z") }));
@@ -243,23 +262,21 @@ describe("filterBuiltinToolsForThread", () => {
     ]);
   });
 
-  it("hides schedule creation from routine runs without removing schedule management", () => {
+  it("allows schedule creation in routine runs but hides schedule updates", () => {
     expect(filterBuiltinToolsForRun(tools, "routine").map((tool) => tool.name)).toEqual([
       "handoff_to_bot",
       "message_bot",
+      "schedule_create",
       "schedule_list",
       "schedule_cancel",
       "remember",
     ]);
-    expect(filterBuiltinToolsForRun(tools, "user").map((tool) => tool.name)).toContain(
-      "schedule_create",
-    );
     const withUpdate = [...tools, { name: "schedule_update" }];
     expect(filterBuiltinToolsForRun(withUpdate, "routine").map((tool) => tool.name)).not.toContain(
       "schedule_update",
     );
-    expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toContain(
-      "schedule_update",
+    expect(filterBuiltinToolsForRun(withUpdate, "user").map((tool) => tool.name)).toEqual(
+      withUpdate.map((tool) => tool.name),
     );
   });
 
@@ -268,7 +285,13 @@ describe("filterBuiltinToolsForThread", () => {
       filterBuiltinToolsForThread(tools, "group-1"),
       "routine",
     ).map((tool) => tool.name);
-    expect(groupTools).toEqual(["handoff_to_bot", "schedule_list", "schedule_cancel", "remember"]);
+    expect(groupTools).toEqual([
+      "handoff_to_bot",
+      "schedule_create",
+      "schedule_list",
+      "schedule_cancel",
+      "remember",
+    ]);
     expect(
       filterBuiltinToolsForRun(filterBuiltinToolsForThread(tools, "group-1"), "user").map(
         (tool) => tool.name,
@@ -373,13 +396,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          create,
-          findMany,
-        },
-      },
+      prisma: accountZonePrisma({ routine: { create, findMany } }, null),
       events: { append: vi.fn() },
       jobs: { enqueue: vi.fn() },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -461,11 +478,13 @@ describe("schedule tool persistence", () => {
       nextRunAt: args.data.nextRunAt,
     }));
     const deps = {
-      prisma: {
-        user: noTimezone,
-        bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-        routine: { create, findMany: noRoutines },
-      },
+      prisma: accountZonePrisma(
+        {
+          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+          routine: { create, findMany: noRoutines },
+        },
+        null,
+      ),
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -508,10 +527,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: {
-        user: { findUnique: vi.fn(async () => ({ timezone: saved })) },
-        routine: { create, findMany: noRoutines },
-      },
+      prisma: accountZonePrisma({ routine: { create, findMany: noRoutines } }, saved),
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -545,7 +561,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: { user: noTimezone, routine: { create, findMany: noRoutines } },
+      prisma: accountZonePrisma({ routine: { create, findMany: noRoutines } }, null),
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -581,19 +597,21 @@ describe("schedule tool persistence", () => {
     const cancel = vi.fn(async () => undefined);
     const remove = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: remove,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: remove,
+          },
         },
-      },
+        null,
+      ),
       events: {
         append: vi.fn(async () => {
           throw new Error("event failed");
@@ -620,19 +638,21 @@ describe("schedule tool persistence", () => {
   it("rolls back routine when enqueue fails", async () => {
     const remove = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: remove,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: remove,
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -659,22 +679,24 @@ describe("schedule tool persistence", () => {
   it("deactivates when enqueue fails and delete also fails", async () => {
     const update = vi.fn(async () => undefined);
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: vi.fn(async () => {
-            throw new Error("delete failed");
-          }),
-          update,
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: vi.fn(async () => {
+              throw new Error("delete failed");
+            }),
+            update,
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -703,24 +725,26 @@ describe("schedule tool persistence", () => {
 
   it("propagates when enqueue rollback cannot deactivate", async () => {
     const deps = {
-      prisma: {
-        user: noTimezone,
-        routine: {
-          findMany: noRoutines,
-          create: vi.fn(async () => ({
-            id: "routine-1",
-            name: "Morning joke",
-            crons: ["*/1 * * * *"],
-            nextRunAt: new Date(),
-          })),
-          delete: vi.fn(async () => {
-            throw new Error("delete failed");
-          }),
-          update: vi.fn(async () => {
-            throw new Error("deactivate failed");
-          }),
+      prisma: accountZonePrisma(
+        {
+          routine: {
+            findMany: noRoutines,
+            create: vi.fn(async () => ({
+              id: "routine-1",
+              name: "Morning joke",
+              crons: ["*/1 * * * *"],
+              nextRunAt: new Date(),
+            })),
+            delete: vi.fn(async () => {
+              throw new Error("delete failed");
+            }),
+            update: vi.fn(async () => {
+              throw new Error("deactivate failed");
+            }),
+          },
         },
-      },
+        null,
+      ),
       events: { append: vi.fn(async () => undefined) },
       jobs: {
         enqueue: vi.fn(async () => {
@@ -743,8 +767,12 @@ describe("schedule tool persistence", () => {
     ).rejects.toThrow("deactivate failed");
   });
 
-  it("scopes group list and cancel to the current thread without narrowing DMs", async () => {
-    const findMany = vi.fn(async () => []);
+  it("lists a group's routines from every chat but cancels only the group's own", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "routine-dm", name: "Daily check", crons: ["0 8 * * *"], threadId: "dm-thread-1" },
+      { id: "routine-group", name: "Digest", crons: ["0 9 * * *"], threadId: "group-thread-1" },
+      { id: "routine-default", name: "Weekly", crons: ["0 9 * * 1"], threadId: null },
+    ]);
     const findFirst = vi.fn(async () => null);
     const deps = {
       prisma: {
@@ -755,27 +783,26 @@ describe("schedule tool persistence", () => {
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
 
-    await listSchedulesFromTool(deps, {
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
-      threadId: "group-thread-1",
+      groupThreadId: "group-thread-1",
     });
     expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          spaceId: "ws-1",
-          botId: "bot-1",
-          userId: "user-1",
-          threadId: "group-thread-1",
-        },
-      }),
+      expect.objectContaining({ where: { spaceId: "ws-1", botId: "bot-1" } }),
+    );
+    expect(listed.routines.map(({ routineId, inThisChat }) => [routineId, inThisChat])).toEqual([
+      ["routine-dm", false],
+      ["routine-group", true],
+      ["routine-default", false],
+    ]);
+    expect(listed.note).toBe(
+      "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.",
     );
 
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       routineId: "routine-1",
     });
@@ -785,7 +812,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
           id: "routine-1",
         },
@@ -793,23 +819,24 @@ describe("schedule tool persistence", () => {
     );
 
     findMany.mockClear();
-    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    const direct = await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+        where: { spaceId: "ws-1", botId: "bot-1" },
       }),
     );
+    expect(direct.routines[0]).not.toHaveProperty("inThisChat");
+    expect(direct).not.toHaveProperty("note");
 
     findFirst.mockClear();
     await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       routineId: "routine-1",
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1", id: "routine-1" },
+        where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1" },
       }),
     );
   });
@@ -826,12 +853,14 @@ describe("schedule_create with a watch", () => {
       create,
       enqueue,
       deps: {
-        prisma: {
-          user: { findUnique: vi.fn(async () => null) },
-          connection: { findMany: vi.fn(async () => []) },
-          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-          routine: { create, findMany: noRoutines },
-        },
+        prisma: accountZonePrisma(
+          {
+            connection: { findMany: vi.fn(async () => []) },
+            bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+            routine: { create, findMany: noRoutines },
+          },
+          null,
+        ),
         events: { append: vi.fn(async () => undefined) },
         jobs: { enqueue, cancel: vi.fn(async () => undefined) },
       } as unknown as Parameters<typeof createScheduleFromTool>[0],
@@ -899,7 +928,7 @@ describe("schedule_create with a watch", () => {
     expect(result).toMatchObject({ error: "Bot not found." });
     expect(d.prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: base.botId, spaceId: base.spaceId, userId: base.userId, archivedAt: null },
+        where: { id: base.botId, spaceId: base.spaceId, archivedAt: null },
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -922,7 +951,10 @@ describe("schedule_create with a watch", () => {
         ...base,
         schedule: { cron: "0 9 * * *", watch: { kind: "files", paths: ["inbox"] } },
       }),
-    ).toHaveProperty("error");
+    ).toEqual({
+      error:
+        "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without cron.",
+    });
     expect(
       await createScheduleFromTool(d, { ...base, schedule: { watch: { kind: "files" } } }),
     ).toHaveProperty("error");
@@ -943,7 +975,6 @@ describe("cancelScheduleFromTool", () => {
     const input = {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       name: "Daily",
     };
@@ -957,7 +988,6 @@ describe("cancelScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
       },
@@ -970,6 +1000,58 @@ describe("cancelScheduleFromTool", () => {
       error: "Schedule not found.",
     });
     expect(cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("scheduleCreateError", () => {
+  const prisma = {
+    user: { findUnique: vi.fn(async () => ({ timezone: "America/Denver" })) },
+    routine: {
+      findMany: vi.fn(async () => [
+        { id: "routine-1", name: "Daily digest", threadId: "thread-1" },
+      ]),
+    },
+  } as unknown as Parameters<typeof scheduleCreateError>[0];
+  const check = (args: Record<string, unknown>) =>
+    scheduleCreateError(prisma, {
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      ...scheduleCreateFields(args),
+    });
+  const named = { name: "Inbox check", prompt: "Summarize what changed" };
+  const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
+
+  it("names the timing a watch was sent with and where its interval goes", async () => {
+    await expect(check({ ...named, every: 15, watch })).resolves.toBe(
+      "A watch takes no schedule: it checks every watch.everyMinutes minutes (5 to 1440). Call again without every.",
+    );
+    await expect(
+      check({ ...named, every: 1440, unit: "minutes", startAt: "2030-01-01", watch }),
+    ).resolves.toMatch(/Call again without every, unit or startAt\.$/);
+  });
+
+  it("refuses what the handler refuses before it reads or writes a routine", async () => {
+    await expect(check({ ...named, name: " ", watch })).resolves.toBe("name is required.");
+    await expect(check({ ...named, prompt: "", watch })).resolves.toBe("prompt is required.");
+    await expect(check({ ...named, name: "daily digest", watch })).resolves.toBe(
+      'An active routine named "Daily digest" already exists (routine-1). Update or cancel it instead.',
+    );
+    await expect(check({ ...named, timezone: "Mars/Base", watch })).resolves.toBe(
+      "Unknown timezone",
+    );
+    await expect(check({ ...named, watch: "{kind" })).resolves.toMatch(/^watch must be an object/);
+    await expect(check({ ...named, watch: { ...watch, everyMinutes: 1 } })).resolves.toMatch(/5/);
+    await expect(
+      check({ ...named, every: 1, unit: "days", runAt: "2030-01-01T09:00" }),
+    ).resolves.toBe("Provide either a repeating schedule or a one-shot time, not both.");
+  });
+
+  it("accepts a valid watch or schedule, ignoring blank leftovers", async () => {
+    await expect(check({ ...named, watch, every: null, startAt: "" })).resolves.toBeUndefined();
+    await expect(check({ ...named, watch: JSON.stringify(watch) })).resolves.toBeUndefined();
+    await expect(check({ ...named, every: 1, unit: "days" })).resolves.toBeUndefined();
   });
 });
 
@@ -1009,7 +1091,10 @@ describe("updateScheduleFromTool", () => {
     const cancel = vi.fn(async () => undefined);
     const append = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, updateMany } },
+      prisma: {
+        routine: { findFirst, updateMany, count: vi.fn(async () => 0) },
+        run: { updateManyAndReturn: vi.fn(async () => []) },
+      },
       events: { append },
       jobs: { enqueue, cancel },
     } as unknown as Parameters<typeof updateScheduleFromTool>[0];
@@ -1042,6 +1127,26 @@ describe("updateScheduleFromTool", () => {
       expect(append).not.toHaveBeenCalled();
     },
   );
+
+  it("takes over another member's schedule and restarts its watch baseline", async () => {
+    const { findFirst, updateMany, update } = setup();
+    await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        id: "routine-1",
+        bot: { archivedAt: null },
+      },
+      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+    });
+  });
 
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
@@ -1214,11 +1319,23 @@ describe("updateScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
         bot: { archivedAt: null },
       },
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("tells a group run that a routine from another chat is changed there", async () => {
+    const { findFirst, updateMany, update } = setup(null);
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "routine-1" } as never);
+    await expect(update({ prompt: "x", scopeThreadId: "group-thread-1" })).resolves.toEqual({
+      error: "That routine is not this group chat's. Change it from the bot's own chat.",
+    });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+      select: { id: true },
     });
     expect(updateMany).not.toHaveBeenCalled();
   });
@@ -1243,8 +1360,345 @@ describe("updateScheduleFromTool", () => {
       watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
     });
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
-      error: "A watch checks on its own interval; cancel it and create a schedule.",
+      error:
+        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
     });
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+});
+
+describe("changeUserTimezone", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  /** A user on Africa/Cairo whose routines live in an in-memory table. */
+  function account(seeded: Record<string, unknown>[] = []) {
+    const user = { id: "user-1", timezone: "Africa/Cairo" as string | null };
+    const rows: Record<string, unknown>[] = seeded.map((row, index) => ({
+      id: `routine-${index + 1}`,
+      ...row,
+    }));
+    const enqueue = vi.fn(async () => undefined);
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
+    const userUpdate = vi.fn(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        if (where.id !== user.id) throw new Error("unknown user");
+        Object.assign(user, data);
+        return { ...user };
+      },
+    );
+    const prisma = {
+      user: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          where.id === user.id ? { timezone: user.timezone } : null,
+        update: userUpdate,
+      },
+      bot: { findFirst: async () => ({ computer: null }) },
+      connection: { findMany: async () => [] },
+      routine: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          const row = { id: `routine-${rows.length + 1}`, ...data };
+          rows.push(row);
+          return row;
+        },
+        findMany: async ({ where }: { where: Record<string, unknown> }) =>
+          rows.filter((row) => matches(row, where)),
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          let count = 0;
+          for (const [index, row] of rows.entries()) {
+            if (!matches(row, where)) continue;
+            rows[index] = { ...row, ...data };
+            count += 1;
+          }
+          return { count };
+        },
+      },
+      // The row locks of changeUserTimezone and the share lock of a creation: answer each
+      // with what the real database would return, bound parameters included.
+      $transaction: async (run: (client: unknown) => Promise<unknown>) => run(prisma),
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return rows
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      },
+    };
+    const deps = {
+      prisma,
+      events: { append: async () => undefined },
+      jobs: { enqueue, cancel: async () => undefined },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+    return { deps, rows, user, userUpdate, enqueue };
+  }
+  const base = {
+    spaceId: "ws-1",
+    botId: "bot-1",
+    userId: "user-1",
+    threadId: "thread-1",
+    prompt: "Check",
+  };
+
+  it("moves a routine that took the account zone, keeping its local schedule", async () => {
+    const { deps, rows, user, enqueue } = account();
+    const created = await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+    expect(created).toMatchObject({ ok: true, timezone: "Africa/Cairo" });
+    const pinned = await createScheduleFromTool(deps, {
+      ...base,
+      name: "Pinned",
+      timezone: "Asia/Tokyo",
+      schedule: { cron: "0 9 * * 1" },
+    });
+    expect(pinned).toMatchObject({ ok: true, timezone: "Asia/Tokyo" });
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    // Monday 09:00 held in London, not Cairo's 07:00 UTC; the pinned routine stays.
+    expect(rows.find((row) => row.name === "Weekly")).toMatchObject({
+      timezone: "Europe/London",
+      nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+    });
+    expect(rows.find((row) => row.name === "Pinned")).toMatchObject({
+      timezone: "Asia/Tokyo",
+      nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+    });
+    expect(user.timezone).toBe("Europe/London");
+    expect(enqueue).toHaveBeenCalledWith(
+      routineWakeupJob("routine-1", new Date("2026-11-09T09:00:00.000Z")),
+    );
+  });
+
+  it("keeps the pending run's local time when moving to a zone ahead", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", "Asia/Tokyo");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Asia/Tokyo",
+      nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+    });
+  });
+
+  it("keeps a one-shot's saved instant; only its zone label moves", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Once",
+      schedule: { runAt: "2026-11-09T09:00" },
+    });
+    expect(rows[0]!.nextRunAt).toEqual(new Date("2026-11-09T07:00:00.000Z"));
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+    });
+  });
+
+  it("keeps a watch on its own rhythm; only its zone label moves", async () => {
+    const { deps, rows } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Watch",
+      schedule: { watch: { kind: "files", paths: ["inbox"] } },
+    });
+    const nextRunAt = rows[0]!.nextRunAt;
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", nextRunAt });
+  });
+
+  it.each([
+    {
+      case: "several crons, zone behind",
+      crons: ["0 9 * * 1", "0 12 * * 1"],
+      nextRunAt: "2026-11-09T07:00:00.000Z",
+      to: "Europe/London",
+      moved: "2026-11-09T09:00:00.000Z",
+    },
+    {
+      case: "several crons, zone ahead",
+      crons: ["0 9 * * 1", "0 12 * * 1"],
+      nextRunAt: "2026-11-09T07:00:00.000Z",
+      to: "Asia/Tokyo",
+      moved: "2026-11-09T00:00:00.000Z",
+    },
+  ])(
+    "retimes the pending run of an active routine with $case",
+    async ({ crons, nextRunAt, to, moved }) => {
+      const { deps, rows } = account([
+        {
+          spaceId: base.spaceId,
+          botId: base.botId,
+          userId: base.userId,
+          name: "Weekly",
+          crons,
+          timezone: "Africa/Cairo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date(nextRunAt),
+        },
+      ]);
+
+      await changeUserTimezone(deps, "user-1", to);
+
+      expect(rows[0]).toMatchObject({ timezone: to, crons, nextRunAt: new Date(moved) });
+    },
+  );
+
+  it("moves only the zone label of an inactive routine", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Weekly",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: false,
+        watch: null,
+        nextRunAt: null,
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      crons: ["0 9 * * 1"],
+      nextRunAt: null,
+    });
+  });
+
+  it("moves nothing when the account had no saved zone", async () => {
+    const { deps, rows, user } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Weekly",
+        crons: ["0 9 * * 1"],
+        timezone: "UTC",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+      },
+    ]);
+    user.timezone = null;
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(user.timezone).toBe("Europe/London");
+    expect(rows[0]).toMatchObject({ timezone: "UTC" });
+  });
+
+  it("leaves the account as it was when the zone does not change", async () => {
+    const { deps, rows, user } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", "Africa/Cairo");
+
+    expect(user.timezone).toBe("Africa/Cairo");
+    expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
+  });
+
+  it("writes the accompanying preference fields in the same save as the zone", async () => {
+    const { deps, userUpdate } = account();
+    await changeUserTimezone(deps, "user-1", "Europe/London", { locale: "pt-BR" });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", locale: "pt-BR" },
+    });
+  });
+
+  it("still writes accompanying fields when the zone itself does not change", async () => {
+    const { deps, rows, userUpdate } = account();
+    await changeUserTimezone(deps, "user-1", "Africa/Cairo", { locale: "pt-BR" });
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Africa/Cairo", locale: "pt-BR" },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps the committed save when a wakeup enqueue fails, and tries the rest", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "One",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Two",
+        crons: ["0 9 * * 1"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+      },
+    ]);
+    const jobs = deps.jobs as unknown as { enqueue: ReturnType<typeof vi.fn> };
+    jobs.enqueue.mockImplementation(async (job: { payload: { routineId: string } }) => {
+      if (job.payload.routineId === "routine-1") throw new Error("queue down");
+    });
+
+    await expect(changeUserTimezone(deps, "user-1", "Europe/London")).resolves.toBeUndefined();
+
+    // Both wakeups were attempted and the move itself stands.
+    expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+    for (const row of rows) expect(row.timezone).toBe("Europe/London");
+  });
+
+  it("only clears the account when the zone is cleared; routines cannot hold no zone", async () => {
+    const { deps, rows, user } = account();
+    await createScheduleFromTool(deps, {
+      ...base,
+      name: "Weekly",
+      schedule: { cron: "0 9 * * 1" },
+    });
+
+    await changeUserTimezone(deps, "user-1", null);
+
+    expect(user.timezone).toBeNull();
+    expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
   });
 });

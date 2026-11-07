@@ -1,14 +1,20 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, stableStringify, validateRoutineWatch } from "@rakazo/adapters";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import {
+  finishRoutineHandover,
+  parseRoutineWatch,
+  stableStringify,
+  validateRoutineWatch,
+} from "@rakazo/adapters";
+import { canonicalPiProviderId, ROUTINE_TRIGGER_REQUIRED } from "@rakazo/contracts";
 import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
 } from "@rakazo/core";
-import { IsolationError, Prisma } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { assertEmailTrigger } from "../bot-email-address.js";
 import { assertRoutineModel } from "../model-pins.js";
 import { listRoutineRuns } from "../routine-runs.js";
 import {
@@ -18,14 +24,12 @@ import {
   listRoutinesDto,
   mapRoutine,
   nextRoutineDate,
-  routineDto,
   routineNextRunAt,
   routineRowData,
   routineTestRunNonce,
   routineTestTarget,
 } from "../routines.js";
 import type { RouterContext } from "./context.js";
-import { isRecordNotFound } from "./shared.js";
 
 export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
@@ -38,7 +42,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: { in: input.botIds },
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -48,7 +51,7 @@ export function routinesRoutes(ctx: RouterContext) {
         });
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map((row) => routineDto(row, actor)),
+          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -75,6 +78,9 @@ export function routinesRoutes(ctx: RouterContext) {
             });
           }
         }
+        if (input.emailSenders) {
+          await assertEmailTrigger(deps.prisma, deps.env.inboundEmailDomain, bot.id);
+        }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
         const row = await deps.prisma.routine.create({
           data: routineRowData(context.actor, input, routineNextRunAt(input)),
@@ -88,7 +94,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             bot: { archivedAt: null },
           },
         });
@@ -101,6 +106,11 @@ export function routinesRoutes(ctx: RouterContext) {
         const githubEnabled = input.githubEnabled ?? existing.githubEnabled;
         const messageProvider =
           input.messageProvider === undefined ? existing.messageProvider : input.messageProvider;
+        const emailSenders =
+          input.emailSenders === undefined ? existing.emailSenders : input.emailSenders;
+        if (input.emailSenders && input.emailSenders !== existing.emailSenders) {
+          await assertEmailTrigger(deps.prisma, deps.env.inboundEmailDomain, bot.id);
+        }
         const modelProvider =
           input.modelProvider === undefined ? existing.modelProvider : input.modelProvider;
         const modelId = input.modelId === undefined ? existing.modelId : input.modelId;
@@ -149,10 +159,15 @@ export function routinesRoutes(ctx: RouterContext) {
         const watchChanged =
           input.watch !== undefined &&
           stableStringify(input.watch) !== stableStringify(parseRoutineWatch(existing.watch));
-        if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider && !watch) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Add a schedule, webhook, GitHub, message, or change trigger",
-          });
+        if (
+          crons.length === 0 &&
+          !webhookEnabled &&
+          !githubEnabled &&
+          !messageProvider &&
+          !emailSenders &&
+          !watch
+        ) {
+          throw new ORPCError("BAD_REQUEST", { message: ROUTINE_TRIGGER_REQUIRED });
         }
         if (watch && crons.length > 0) {
           throw new ORPCError("BAD_REQUEST", {
@@ -230,6 +245,10 @@ export function routinesRoutes(ctx: RouterContext) {
             where: {
               id: existing.id,
               bot: { archivedAt: null },
+              // Optimistic fence: every write must match the snapshot it was
+              // computed from, so concurrent edits never silently overwrite
+              // each other's prompt/name/notify/any other field.
+              updatedAt: existing.updatedAt,
               ...(touchesModel
                 ? {
                     modelProvider: existing.modelProvider,
@@ -241,6 +260,8 @@ export function routinesRoutes(ctx: RouterContext) {
               ...(writesActive ? { active: existing.active } : {}),
             },
             data: {
+              // A routine runs with its owner's accounts, so whoever edits it takes it over.
+              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
@@ -250,30 +271,30 @@ export function routinesRoutes(ctx: RouterContext) {
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
+              emailSenders: input.emailSenders,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline.
+              // A changed watch starts from a fresh baseline, and so does one that now reads
+              // a different person's accounts.
               ...(input.watch === undefined
                 ? {}
-                : {
-                    watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
-                    ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
-                  }),
+                : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
+              ...(watchChanged || existing.userId !== context.actor.userId
+                ? { watchState: Prisma.DbNull }
+                : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
             },
           })
           .catch(async (error: unknown) => {
             if (isRecordNotFound(error)) {
               if (
-                (touchesModel || writesSchedule || writesActive) &&
-                (await deps.prisma.routine.findFirst({
+                await deps.prisma.routine.findFirst({
                   where: {
                     id: existing.id,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                     bot: { archivedAt: null },
                   },
                   select: { id: true },
-                }))
+                })
               ) {
                 throw new ORPCError("CONFLICT", { message: "Routine changed; retry." });
               }
@@ -281,6 +302,13 @@ export function routinesRoutes(ctx: RouterContext) {
             }
             throw error;
           });
+        if (existing.userId !== context.actor.userId) {
+          await finishRoutineHandover(deps, {
+            id: row.id,
+            previousUserId: existing.userId,
+            userId: context.actor.userId,
+          });
+        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -306,12 +334,9 @@ export function routinesRoutes(ctx: RouterContext) {
         return mapRoutine(row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
+        // Any member can change a routine, so any member can delete one.
         const existing = await deps.prisma.routine.findFirst({
-          where: {
-            id: input.routineId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
+          where: { id: input.routineId, spaceId: context.actor.spaceId },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });

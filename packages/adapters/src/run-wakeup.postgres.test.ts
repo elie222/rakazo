@@ -117,11 +117,34 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     const waitingOnBot = host();
     const handoff = host();
     const unblocked = host();
+    // A queue check that settles only after stop() drops its result without logging,
+    // so a fixed sleep cannot prove the quiet phases below stay quiet. The queue
+    // check is the host's only raw query; wait for it to settle while its host
+    // still runs, then stop and assert.
+    const queryRaw = db.prisma.$queryRaw.bind(db.prisma);
+    let queueChecksSettled = 0;
+    const querySpy = vi.spyOn(db.prisma, "$queryRaw").mockImplementation((async (
+      query: unknown,
+      ...values: unknown[]
+    ) => {
+      const result = queryRaw(query as never, ...(values as never[]));
+      const settle = () => {
+        queueChecksSettled += 1;
+      };
+      // A failed check counts too, and this side branch must not leave an
+      // unhandled rejection: the host catches the error on its own branch.
+      void Promise.resolve(result).then(settle, settle);
+      return result;
+    }) as never);
+    const runOneQueueCheck = async (host: RunWorkerHost) => {
+      const settled = queueChecksSettled;
+      await host.start({} as BackgroundJobHandlers);
+      await wait(() => expect(queueChecksSettled).toBeGreaterThan(settled));
+      await host.stop();
+    };
     try {
       // Waiting for the bot's own earlier run is expected, not a failure to start.
-      await waitingOnBot.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await waitingOnBot.stop();
+      await runOneQueueCheck(waitingOnBot);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       // A release moments ago is the handoff to the bot's next run.
@@ -129,9 +152,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
         where: { id: lease.id },
         data: { expiresAt: new Date(0) },
       });
-      await handoff.start({} as BackgroundJobHandlers);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      await handoff.stop();
+      await runOneQueueCheck(handoff);
       expect(sink.events.some((event) => event.message === "run.queue_delayed")).toBe(false);
 
       await system.computerExecutionLease.update({
@@ -149,6 +170,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       expect(warning["queue.oldest_wait_ms"]).toBeGreaterThanOrEqual(45_000);
       expect(warning["queue.oldest_wait_ms"]).toBeLessThan(60_000);
     } finally {
+      querySpy.mockRestore();
       await waitingOnBot.stop();
       await handoff.stop();
       await unblocked.stop();
@@ -350,6 +372,102 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
         data: { status: "cancelled" },
       });
       await system.computerExecutionLease.delete({ where: { id: lease.id } });
+    }
+  });
+
+  it("frees a computer held for a takeover by a run that was deleted or ended", async () => {
+    const computer = await system.computer.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        scopeKey: `dispatch-abandoned-${randomUUID()}`,
+        homeKey: `dispatch-abandoned-${randomUUID()}`,
+        kind: "fake",
+      },
+    });
+    const bot = await system.bot.update({
+      where: { id: identity.botId },
+      data: { computerId: computer.id },
+    });
+    const otherBot = (name: string) =>
+      system.bot.create({
+        data: {
+          spaceId: identity.spaceId,
+          userId: identity.userId,
+          name,
+          color: "test",
+          computerId: computer.id,
+        },
+      });
+    const ended = await otherBot("Ended");
+    const booting = await otherBot("Booting");
+    const cancelled = await system.run.update({
+      where: { id: (await createRun({ status: "cancelled" })).id },
+      data: { botId: ended.id },
+    });
+    const day = new Date(Date.now() + 24 * 60 * 60_000);
+    // Leases name their run without a relation, so deleting the run leaves the hold behind.
+    const orphan = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId: bot.id,
+        runId: randomUUID(),
+        fence: 4,
+        expiresAt: day,
+      },
+    });
+    const stale = await system.computerExecutionLease.create({
+      data: { computerId: computer.id, botId: ended.id, runId: cancelled.id, expiresAt: day },
+    });
+    // A computer operation holds a short lease under an id that is not a run.
+    const operation = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId: booting.id,
+        runId: `boot:${randomUUID()}`,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      },
+    });
+    const reply = await createRun();
+    const endedReply = await system.run.update({
+      where: { id: (await createRun()).id },
+      data: { botId: ended.id },
+    });
+    const bootingReply = await system.run.update({
+      where: { id: (await createRun()).id },
+      data: { botId: booting.id },
+    });
+    const fanout = new InMemoryRealtimeFanout();
+    const host = new RunWorkerHost(db.prisma, fanout, new RunStarter(fanout), { intervalMs: 25 });
+    const entered: string[] = [];
+    try {
+      await host.start({
+        "run.continue": async ({ runId }) => {
+          entered.push(runId);
+          await system.run.update({ where: { id: runId }, data: { status: "completed" } });
+        },
+      } as BackgroundJobHandlers);
+      await wait(() => expect(entered).toEqual(expect.arrayContaining([reply.id, endedReply.id])));
+      expect(entered).not.toContain(bootingReply.id);
+      // Expired as tombstones, so the next lease on each still raises the fence.
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: orphan.id } }),
+      ).toMatchObject({ fence: 4, expiresAt: new Date(0) });
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: stale.id } }),
+      ).toMatchObject({ expiresAt: new Date(0) });
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: operation.id } }),
+      ).toMatchObject({ expiresAt: operation.expiresAt });
+    } finally {
+      await host.stop();
+      await system.run.updateMany({
+        where: { id: { in: [reply.id, endedReply.id, bootingReply.id] } },
+        data: { status: "cancelled" },
+      });
+      await system.computerExecutionLease.deleteMany({
+        where: { id: { in: [orphan.id, stale.id, operation.id] } },
+      });
     }
   });
 

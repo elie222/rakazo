@@ -62,7 +62,7 @@ describe("saved logins and cards in the focused field", () => {
       /Refused: A card can only be typed into a card field/,
     );
     expect(fill("Password", "fake-password", "https://other.example.test", "password")).toThrow(
-      /Refused: The page is not on the site this login was saved for/,
+      /Refused: This login is saved for https:\/\/other\.example\.test; the page is on https:\/\/portal\.example\.test\./,
     );
     expect(fill("Password", "fake-password", "http://portal.example.test", "password")).toThrow(
       /Refused: Website logins can only be filled on HTTPS/,

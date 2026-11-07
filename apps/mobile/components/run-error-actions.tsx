@@ -9,7 +9,6 @@ export function RunErrorAction({ label, onPress }: { label: string; onPress: () 
       label={label}
       onPress={onPress}
       prominence="primary"
-      variant="rectangular"
       fill={fontScale > 1.3}
     />
   );

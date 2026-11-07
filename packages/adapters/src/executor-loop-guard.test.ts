@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { isLoopGuardStopText, MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS } from "./tool-loop.js";
@@ -173,6 +174,7 @@ async function runLoop(
   };
   const prisma = {
     externalEffect,
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     $transaction: async (work: unknown): Promise<unknown> =>
       typeof work === "function" ? work(proxied) : Promise.all(work as unknown[]),
     run: {
@@ -314,7 +316,8 @@ async function runLoop(
     deploymentModelKey: "fake-deployment-key",
     runtime: new PiAgentRuntime(),
     sandbox,
-    home: { commit: vi.fn(async () => "fixture-revision") },
+    // A real save takes a while, and the model must not keep going while it runs.
+    home: { commit: vi.fn(() => delay(200, "fixture-revision")) },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     artifacts: { get: vi.fn(async () => new Uint8Array()) },
@@ -389,10 +392,12 @@ describe("over-limit computer_act batches through the run loop", () => {
     // over, over, in-limit, then over until the run is stopped.
     const { requests, act, finalText } = await runWithBatches([30, 30, 24, 30]);
 
-    // Not stopped by the first two, nor by the three after the reset: the fourth ends it. The
-    // checkpoint flush of the executed batch lets a few more requests out before the abort lands.
-    expect(requests.length).toBeGreaterThanOrEqual(2 + 1 + MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS);
-    expect(requests.length).toBeLessThan(REQUEST_CAP);
+    // Not stopped by the first two, nor by the three after the reset: the fourth ends it, and no
+    // more requests go out while the executed batch is saved. The stop lands while the runtime
+    // may already be sending the next request.
+    const stoppedAt = 2 + 1 + MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+    expect(requests.length).toBeGreaterThanOrEqual(stoppedAt);
+    expect(requests.length).toBeLessThanOrEqual(stoppedAt + 1);
     expect(act).toHaveBeenCalledTimes(1);
     expect(act.mock.calls[0]![1].actions).toHaveLength(24);
     expect(finalText).toContain("with too many actions 4 times in a row");

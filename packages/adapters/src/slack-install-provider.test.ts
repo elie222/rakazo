@@ -60,6 +60,17 @@ it("exchanges the authorization code without exposing provider errors or secrets
   fetcher.mockResolvedValue(Response.json({ ok: false, error: "private-provider-error" }));
   await expect(provider.exchange("code")).rejects.toThrow(/^Slack workspace authorization failed$/);
 });
+it("refuses an oversized authorization response without reading it", async () => {
+  const response = Response.json(
+    { ok: true, access_token: "fake-token", team: { id: "T1" } },
+    { headers: { "content-length": String(1024 * 1024 * 1024) } },
+  );
+  const cancel = vi.spyOn(response.body!, "cancel");
+  await expect(
+    new SlackInstallProvider(config, async () => response).exchange("code"),
+  ).rejects.toThrow(/^Slack workspace authorization failed$/);
+  expect(cancel).toHaveBeenCalledOnce();
+});
 it.each([{ is_enterprise_install: true }, { refresh_token: "rotating-token" }])(
   "rejects unsupported installation lifecycles explicitly",
   async (extra) => {

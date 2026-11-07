@@ -80,6 +80,16 @@ export async function appendToolCompletionAudit(
   completion: AgentToolCompletion,
   secrets: string[] = [],
 ): Promise<void> {
+  const payload = toolCompletionAuditPayload(completion, secrets);
+  getLogger().info("agent.tool.completed", {
+    "run.id": target.runId,
+    "space.id": target.spaceId,
+    "thread.id": target.threadId,
+    "bot.id": target.botId,
+    tool: payload.name,
+    "tool.outcome": payload.outcome,
+    "tool.duration_ms": payload.durationMs,
+  });
   try {
     await deps.events.append({
       spaceId: target.spaceId,
@@ -87,7 +97,7 @@ export async function appendToolCompletionAudit(
       botId: target.botId,
       runId: target.runId,
       type: "agent.tool.completed",
-      payload: toolCompletionAuditPayload(completion, secrets),
+      payload,
     });
   } catch (error) {
     // A tool that finishes after its run was cancelled has no history to join.

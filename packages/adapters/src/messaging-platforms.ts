@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { createSlackAdapter } from "@chat-adapter/slack";
 import type { TelegramAdapter } from "@chat-adapter/telegram";
 import {
   createTelegramAdapter,
@@ -17,11 +16,13 @@ import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/a
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
 import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
-import { createSendblueAdapter } from "chat-adapter-sendblue";
+import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { boundInboundMarkdown } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
+import { lazyChatAdapter } from "./lazy-chat-adapter.js";
 import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -188,7 +189,7 @@ export function messagingPlatformsFromEnv(
     env.sendbluePhoneNumber
   ) {
     const lineNumber = env.sendbluePhoneNumber;
-    const adapter = createSendblueAdapter({
+    const config: Partial<SendblueAdapterConfig> = {
       apiKey: env.sendblueApiKeyId,
       apiSecret: env.sendblueApiSecret,
       defaultFromNumber: lineNumber,
@@ -198,36 +199,47 @@ export function messagingPlatformsFromEnv(
       ...(env.apiUrl?.startsWith("https://")
         ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", env.apiUrl).href }
         : {}),
-    });
+    };
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM
     // hook, and chat-adapter-sendblue@0.2.0 omits it — without this every
     // 1:1 message would route as a group. Derive it from the thread id.
-    // The SDK's own retries (twice, no idempotency key) would duplicate
-    // texts and stall the outbox drain; the outbox owns retries instead.
-    Object.assign(adapter, {
-      isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-      sdk: adapter.getSdk().withOptions({
-        maxRetries: 0,
-        timeout: MESSAGING_SEND_TIMEOUT_MS,
-        ...options.sendblueTransport,
-      }),
-    });
+    const isDM = (threadId: string) => !decodeSendblueThreadId(threadId).groupId;
+    const adapter = lazyChatAdapter(
+      "sendblue",
+      async () => {
+        const { createSendblueAdapter } = await import("chat-adapter-sendblue");
+        const sendblue = createSendblueAdapter(config);
+        // The SDK's own retries (twice, no idempotency key) would duplicate
+        // texts and stall the outbox drain; the outbox owns retries instead.
+        Object.assign(sendblue, {
+          isDM,
+          sdk: sendblue.getSdk().withOptions({
+            maxRetries: 0,
+            timeout: MESSAGING_SEND_TIMEOUT_MS,
+            ...options.sendblueTransport,
+          }),
+        });
+        return sendblue;
+      },
+      { encodeThreadId: encodeSendblueThreadId, decodeThreadId: decodeSendblueThreadId, isDM },
+    );
     platforms.push({
       provider: "sendblue",
       capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
       address: lineNumber,
       directThreadId: (address) =>
-        adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
+        encodeSendblueThreadId({ fromNumber: lineNumber, contactNumber: address }),
       peekStatuses: parseSendblueStatuses,
       participants: (raw) => sendblueParticipants(raw, lineNumber),
+      rosterAt: (raw) => sendblueRosterAt(raw),
       channelName: (raw) => sendblueGroupName(raw),
       transport: (raw) => sendblueTransport(raw),
     });
   }
 
   if (env.slackBotToken && env.slackSigningSecret) {
-    const adapter = createSlackAdapter({
+    const config = {
       botToken: env.slackBotToken,
       signingSecret: env.slackSigningSecret,
       // WebClient defaults to ten retries over ~30 minutes with no timeout,
@@ -238,15 +250,21 @@ export function messagingPlatformsFromEnv(
         rejectRateLimitedCalls: true,
         timeout: MESSAGING_SEND_TIMEOUT_MS,
       },
+    };
+    const adapter = lazyChatAdapter("slack", async () => {
+      const { createSlackAdapter } = await import("@chat-adapter/slack");
+      const slack = createSlackAdapter(config);
+      boundInboundMarkdown(slack);
+      // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
+      const addReaction = slack.addReaction.bind(slack);
+      Object.assign(slack, {
+        addReaction: (threadId, messageId, emoji) =>
+          addReaction(threadId, messageId, emoji).catch((error: unknown) => {
+            if (slackPlatformError(error) !== "already_reacted") throw error;
+          }),
+      } satisfies Pick<Adapter, "addReaction">);
+      return slack;
     });
-    // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
-    const addReaction = adapter.addReaction.bind(adapter);
-    Object.assign(adapter, {
-      addReaction: (threadId, messageId, emoji) =>
-        addReaction(threadId, messageId, emoji).catch((error: unknown) => {
-          if (slackPlatformError(error) !== "already_reacted") throw error;
-        }),
-    } satisfies Pick<Adapter, "addReaction">);
     platforms.push({
       provider: "slack",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
@@ -400,6 +418,24 @@ export function isMessagingSurfaceEnabled(
 
 /** Bounds one vendor send so a hung request cannot stall the sequential outbox drain. */
 const MESSAGING_SEND_TIMEOUT_MS = 10_000;
+
+/** chat-adapter-sendblue's thread ids, available before its module loads. */
+function encodeSendblueThreadId({ fromNumber, contactNumber, groupId }: SendblueThreadId): string {
+  const from = Buffer.from(fromNumber).toString("base64url");
+  if (groupId) return `sendblue:${from}:g:${Buffer.from(groupId).toString("base64url")}`;
+  return `sendblue:${from}:${Buffer.from(contactNumber ?? "").toString("base64url")}`;
+}
+
+function decodeSendblueThreadId(threadId: string): SendblueThreadId {
+  const [prefix, from, rest, group] = threadId.split(":");
+  if (prefix !== "sendblue" || from === undefined || rest === undefined) {
+    throw new Error(`Invalid Sendblue thread ID: ${threadId}`);
+  }
+  const fromNumber = Buffer.from(from, "base64url").toString();
+  return rest === "g" && group
+    ? { fromNumber, groupId: Buffer.from(group, "base64url").toString() }
+    : { fromNumber, contactNumber: Buffer.from(rest, "base64url").toString() };
+}
 
 /** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
 const SLACK_PERMANENT_ERRORS = new Set([
@@ -680,6 +716,15 @@ function sendblueParticipants(raw: unknown, lineNumber: string): string[] {
   return participants.filter(
     (entry): entry is string => typeof entry === "string" && entry !== lineNumber,
   );
+}
+
+/** When Sendblue says the roster was current: the message's send time. */
+function sendblueRosterAt(raw: unknown): Date | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const sent = (raw as { date_sent?: unknown }).date_sent;
+  if (typeof sent !== "string") return null;
+  const at = new Date(sent);
+  return Number.isNaN(at.getTime()) ? null : at;
 }
 
 function sendblueGroupName(raw: unknown): string | null {

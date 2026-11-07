@@ -289,7 +289,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const toolSources = page.getByTestId("tool-sources");
 
   await addSource("Treg");
-  await form.getByLabel("Treg token", { exact: true }).fill("fake-treg-browser-credential");
+  await form.getByLabel("Bearer token", { exact: true }).fill("fake-treg-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/MCP\s*https:\/\/treg\.to\/mcp\//)).toBeVisible();
 
@@ -310,7 +310,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await addSource("Executor");
   await expect(form.getByLabel("Name", { exact: true })).toHaveValue("Executor");
   await form.getByLabel("URL", { exact: true }).fill("https://executor.example.test/mcp");
-  await form.getByLabel("Executor token", { exact: true }).fill("fake-executor-browser-credential");
+  await form.getByLabel("Bearer token", { exact: true }).fill("fake-executor-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11d-provider-emulators");

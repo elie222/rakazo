@@ -56,6 +56,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
       events: createThreadEvents(prisma),
       jobs: { enqueue, cancel: vi.fn(), close: async () => undefined },
       secrets: { load: vi.fn() },
+      sandbox: {},
       env: { agentRuntime: "pi", deploymentModelConfigured: false },
     } as unknown as RouterDeps;
     const handler = new RPCHandler(createRouter(deps));
@@ -143,6 +144,23 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     expect(await userMessages(thread.id)).toBe(3);
   });
 
+  it("lets a bare stop end active work without a model, and refuses it when idle", async () => {
+    const thread = await system.thread.findFirstOrThrow({ where: { botId } });
+    await expectRefused(await send({ botId, text: "stop" }));
+    const work = { spaceId: actor.spaceId, botId, threadId: thread.id, userId: actor.userId };
+    const task = await system.task.create({ data: { ...work, prompt: "work", status: "queued" } });
+    const run = await system.run.create({
+      data: { ...work, taskId: task.id, status: "running", trigger: "user" },
+    });
+    await expectRefused(await send({ botId, text: "stop please" }));
+    expect((await send({ botId, text: "Stop now" })).status).toBe(200);
+    expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).status).toBe(
+      "cancelled",
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(await userMessages(thread.id)).toBe(1);
+  });
+
   it("lets a group send through only when every bot it wakes runs its own model", async () => {
     await system.bot.update({ where: { id: botId }, data: { name: "Alpha" } });
     await useModel(botId, "openrouter");
@@ -163,10 +181,33 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     expect((await send({ groupId: group.id, text: "@Alpha hello" })).status).toBe(200);
     await expectRefused(await send({ groupId: group.id, text: "@Beta hello" }));
     await expectRefused(await send({ groupId: group.id, text: "@everyone hello" }));
+    // A group "stop" is no stop, so a bot without a model still refuses it.
+    await expectRefused(
+      await send({ groupId: group.id, text: "stop", mentions: [{ kind: "bot", id: beta.id }] }),
+    );
     await expectRefused(
       await send({ groupId: group.id, text: "hello", mentions: [{ kind: "bot", id: beta.id }] }),
     );
+    // A message that names nobody wakes every member, Beta included.
+    await expectRefused(await send({ groupId: group.id, text: "hello" }));
     expect(await userMessages(group.thread!.id)).toBe(1);
+    // A reply to a member's message wakes that member alone.
+    const reply = (author: string) =>
+      createThreadMessage(system, {
+        threadId: group.thread!.id,
+        role: "bot",
+        botId: author,
+        blocks: [{ kind: "text", text: "Which colour?" }],
+      });
+    const alphaReply = await reply(botId);
+    const betaReply = await reply(beta.id);
+    expect(
+      (await send({ groupId: group.id, text: "blue", replyToMessageId: alphaReply.id })).status,
+    ).toBe(200);
+    await expectRefused(
+      await send({ groupId: group.id, text: "blue", replyToMessageId: betaReply.id }),
+    );
+    expect(await userMessages(group.thread!.id)).toBe(2);
     // A reaction wakes the bot that wrote the message.
     expect(await react({ groupId: group.id }, group.thread!.id, beta.id)).toEqual([]);
     expect(await react({ groupId: group.id }, group.thread!.id, botId)).toHaveLength(1);

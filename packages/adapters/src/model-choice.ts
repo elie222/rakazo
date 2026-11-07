@@ -13,6 +13,10 @@ export type ModelChoiceResult =
   | { ok: false; error: string };
 
 const CANDIDATE_LIMIT = 5;
+/** Errors echo the query back to the model; a huge one must not inflate the tool result. */
+const ECHOED_QUERY_LIMIT = 200;
+export const echoedQuery = (query: string) =>
+  query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
 /** The catalog models this user's connections, or hosted credits, can run. */
 export async function connectedModelChoices(
@@ -32,9 +36,21 @@ export async function connectedModelChoices(
   });
 }
 
-/** Words and version numbers: "Gemini 3.8 Flash" is gemini, 3.8, flash. */
+/**
+ * A version an id writes with a hyphen, as in "claude-sonnet-5-5" or "llama3-1-8b": its first
+ * number and one more short number, standing on their own. Sizes ("llama-3-8b"), build numbers
+ * ("gpt-4-0613") and later dates ("gpt-4o-2024-11-20", "gemini-2.5-pro-preview-11-20") stay apart.
+ */
+const HYPHENATED_VERSION = /^(\D*)([1-9]?\d)[-_]([1-9]?\d)(?![\p{L}\d.]|[-_]\d{1,2}(?![\p{L}\d]))/u;
+
+/** Words and version numbers: "Gemini 3.8 Flash" and "gemini-3-8-flash" are gemini, 3.8, flash. */
 export function words(text: string): string[] {
-  return text.toLowerCase().match(/\p{L}+|\d+(?:\.\d+)*/gu) ?? [];
+  return (
+    text
+      .replace(HYPHENATED_VERSION, "$1$2.$3")
+      .toLowerCase()
+      .match(/\p{L}+|\d+(?:\.\d+)*/gu) ?? []
+  );
 }
 
 const isVersion = (word: string) => /^\d/.test(word);
@@ -118,7 +134,7 @@ export async function resolveModelChoice(
   if (ranked.length)
     return {
       ok: false,
-      error: `"${input.model}" matches several models. Ask the user which one, or pass its id as model: ${ranked
+      error: `"${echoedQuery(input.model)}" matches several models. Ask the user which one, or pass its id as model: ${ranked
         .slice(0, CANDIDATE_LIMIT)
         .map((choice) => `${choiceKey(choice)} (${choice.label})`)
         .join(", ")}.`,
@@ -138,7 +154,7 @@ export async function resolveModelChoice(
   return {
     ok: false,
     error: providers.length
-      ? `No connected model matches "${input.model}". The user needs to connect ${providers.join(" or ")} in Settings first.`
-      : `No model matches "${input.model}".`,
+      ? `No connected model matches "${echoedQuery(input.model)}". The user needs to connect ${providers.join(" or ")} in Settings first.`
+      : `No model matches "${echoedQuery(input.model)}".`,
   };
 }

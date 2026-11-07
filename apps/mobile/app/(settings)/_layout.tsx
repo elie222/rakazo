@@ -77,10 +77,18 @@ export default function SettingsLayout() {
       <Stack.Screen name="usage" options={glassHeaderOptions(t("Usage"))} />
       <Stack.Screen name="voice" options={glassHeaderOptions(t("Voice"))} />
       <Stack.Screen name="wallet" options={glassHeaderOptions(t("Wallet"))} />
+      <Stack.Screen name="spending-limit" options={glassHeaderOptions(t("Spending limit"))} />
       <Stack.Screen
         name="approvals"
         options={{
           ...glassHeaderOptions(t("Rules")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
+        name="approval-rule-add"
+        options={{
+          ...glassHeaderOptions(t("Add rule")),
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />
@@ -101,12 +109,37 @@ export default function SettingsLayout() {
           contentStyle: { backgroundColor: native.groupedPage },
         })}
       />
+      <Stack.Screen
+        name="organization"
+        options={{
+          ...glassHeaderOptions(t("Organization")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="messaging" options={glassHeaderOptions(t("Messaging"))} />
       <Stack.Screen name="team-conversation" />
       <Stack.Screen name="integrations" options={glassHeaderOptions(t("Integrations"))} />
       <Stack.Screen name="skills" options={glassHeaderOptions(t("Skills"))} />
+      <Stack.Screen name="bot-templates" options={glassHeaderOptions(t("Bot templates"))} />
+      {/* The template's name heads the page itself. */}
+      <Stack.Screen
+        name="bot-template"
+        options={{
+          ...glassHeaderOptions(""),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       {/* Titled by the screen once the skill loads. */}
       <Stack.Screen name="skill" options={glassHeaderOptions("")} />
+      <Stack.Screen
+        name="memory"
+        options={{
+          ...glassHeaderOptions(t("Memory")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      {/* Titled by the screen once the note loads. */}
+      <Stack.Screen name="memory-note" options={glassHeaderOptions("")} />
       <Stack.Screen
         name="plugin"
         // Named after the plugin it opened.

@@ -9,11 +9,12 @@ import {
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "./composio-connector.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
 import { DIRECT_TOOL_LIMIT } from "./lazy-tool-catalog.js";
+import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
@@ -148,6 +149,71 @@ function mcpFetch(
 }
 
 describe("MCP connector session cache", () => {
+  it.each([
+    "revision",
+    "discovery failure",
+    "call failure",
+    "expired listing",
+    "expired call",
+  ] as const)("does not let a stuck close block %s or the next session", async (scenario) => {
+    vi.useFakeTimers();
+    const state = { failNext: false, initializations: 0, sessionNotFound: 0 };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER } };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+    };
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const connector = new McpConnector(prisma as never, {} as never, { network: TEST_NETWORK });
+    const execute = async () => {
+      const events: unknown[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "mcp__demo__echo",
+          args: {},
+          route: { connectorId: "mcp", resourceId: SERVER.id, toolName: "echo" },
+        } as never,
+        context,
+      ))
+        events.push(event);
+      return events;
+    };
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      expect(await connector.discoverTools(context)).toMatchObject([{ name: "mcp__demo__echo" }]);
+      close = vi
+        .spyOn(McpSession.prototype, "close")
+        .mockImplementationOnce(() => new Promise(() => {}));
+      if (scenario === "revision") assignment.server.revision += 1;
+      else if (scenario.startsWith("expired")) state.sessionNotFound = 1;
+      else state.failNext = true;
+      const result = scenario.includes("call") ? execute() : connector.discoverTools(context);
+      await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+      if (scenario === "call failure") expect(await result).toMatchObject([{ type: "error" }]);
+      else if (scenario === "discovery failure") expect(await result).toEqual(unavailableOnly());
+      else if (scenario === "expired call")
+        expect(await result).toMatchObject([{ type: "result" }]);
+      else expect(await result).toMatchObject([{ name: "mcp__demo__echo" }]);
+      expect(close).toHaveBeenCalled();
+      state.failNext = false;
+      expect(await execute()).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+    } finally {
+      close?.mockRestore();
+      await connector.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
     vi.useFakeTimers();
     const fake = infisicalFake();
@@ -855,6 +921,128 @@ describe("MCP connector session cache", () => {
         clock.mockReturnValue(now + 2 * 60 * 60_000);
         await connector.discoverTools(context);
         expect(requests.mock.calls.length).toBeGreaterThan(retried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it.each([
+      [
+        "a failure",
+        "ok",
+        (): Promise<Response> => Promise.resolve(new Response("unauthorized", { status: 401 })),
+      ],
+      ["a success", "error", null],
+    ] as const)(
+      "keeps %s from a discovery begun before sign-in off the new revision",
+      async (_case, fresh, answer) => {
+        let release!: () => void;
+        let entered!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const server = mcpFetch({ failNext: false, initializations: 0 }, SERVER.endpoint);
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            entered();
+            await waiting;
+            return answer ? answer() : server(input, init);
+          }),
+        );
+        const row = { revision: 1, healthStatus: "unknown" };
+        const writes = vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { revision?: number };
+            data: { healthStatus: string };
+          }) => {
+            if (where.revision !== undefined && where.revision !== row.revision)
+              return { count: 0 };
+            row.healthStatus = data.healthStatus;
+            return { count: 1 };
+          },
+        );
+        const connector = new McpConnector(
+          {
+            botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+            mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+          } as never,
+          {} as never,
+          { network: TEST_NETWORK },
+        );
+        try {
+          const discovering = connector.discoverTools(context);
+          await started;
+          // Sign-in bumps the revision and the new revision's check records its own result.
+          row.revision = 2;
+          row.healthStatus = fresh;
+          release();
+          await discovering;
+          await vi.waitFor(() => expect(writes).toHaveBeenCalled());
+          expect(row.healthStatus).toBe(fresh);
+        } finally {
+          release();
+          vi.restoreAllMocks();
+          await connector.close();
+        }
+      },
+    );
+
+    it("writes an identical observation again once the revision changes", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }, SERVER.endpoint));
+      const server = { ...SERVER };
+      const writes = vi.fn().mockResolvedValue({ count: 1 });
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      const revisions = () => writes.mock.calls.map(([call]) => call.where.revision);
+      try {
+        await connector.discoverTools(context);
+        await connector.discoverTools(context);
+        // The same result for the same revision within a minute is not rewritten.
+        await vi.waitFor(() => expect(revisions()).toEqual([1]));
+        // Signing in bumps the revision; its first, identical result must still be recorded.
+        server.revision = 2;
+        await connector.discoverTools(context);
+        await vi.waitFor(() => expect(revisions()).toEqual([1, 2]));
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("records a check only for the revision it probed", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("unauthorized", { status: 401 })),
+      );
+      const writes = vi.fn().mockResolvedValue({ count: 0 });
+      const connector = new McpConnector(
+        {
+          botMcpServer: { findMany: vi.fn(async () => []) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+        } as never,
+        {} as never,
+        { network: TEST_NETWORK },
+      );
+      try {
+        // Signing in bumps the revision, so a check of revision 1 must not land on revision 2.
+        await connector.probe({ ...SERVER, revision: 1 } as never, { spaceId: "w1", userId: "u1" });
+        expect(writes).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: SERVER.id, revision: 1 } }),
+        );
       } finally {
         vi.restoreAllMocks();
         await connector.close();
@@ -2361,6 +2549,30 @@ describe("MCP connector stdio OAuth", () => {
     },
   );
 
+  it("redacts a credential still held in a legacy row's launch arguments", async () => {
+    const token = "FAKE-TOKEN-0000000000000000";
+    vi.spyOn(McpSession.prototype, "connectStdio").mockRejectedValue(
+      new Error(`invalid --api-key ${token}`),
+    );
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    const server = { ...STDIO_SERVER, secretId: null, args: ["--api-key", token] };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]) },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, {
+      stdioEnabled: true,
+      allowedCommands: ["mail-mcp"],
+    });
+
+    const tools = await connector.discoverTools(context);
+
+    expect(tools).toEqual(unavailableOnly("mail"));
+    expect(tools[0]?.description).not.toContain(token);
+    expect(tools[0]?.description).toContain("[redacted]");
+    await connector.close();
+  });
+
   it("waits for active calls before replacing an expiring process", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const launches = stubSession();
@@ -2691,7 +2903,9 @@ describe("MCP connector stdio credential files", () => {
       await connect?.();
     });
     vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
-    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    vi.spyOn(McpSession.prototype, "close").mockImplementation(async (afterClose) => {
+      await afterClose?.();
+    });
     return launches;
   }
 
@@ -2735,6 +2949,39 @@ describe("MCP connector stdio credential files", () => {
     expect(JSON.stringify(events)).toContain(text);
     await connector.close();
   });
+
+  it.each([false, true])(
+    "keeps files until a delayed SDK shutdown settles (rejects: %s)",
+    async (rejects) => {
+      const launches = stubSession();
+      vi.mocked(McpSession.prototype.close).mockRestore();
+      const connector = connectorFor(stored());
+      await connector.discoverTools(context);
+      const session = vi.mocked(McpSession.prototype.connectStdio).mock.contexts[0] as McpSession;
+      let finish!: () => void;
+      vi.spyOn(session.client, "close").mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            finish = () => (rejects ? reject(new Error("shutdown failed")) : resolve());
+          }),
+      );
+      const dir = launches[0]!.files.MAIL_CREDENTIALS!.dir;
+      vi.useFakeTimers();
+      try {
+        const closing = connector.close();
+        await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
+        await closing;
+        expect(existsSync(dir)).toBe(true);
+        finish();
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(existsSync(dir)).toBe(false));
+      } finally {
+        finish();
+        vi.useRealTimers();
+        await connector.close();
+      }
+    },
+  );
 
   it("removes credentials when reconnect replaces a session", async () => {
     const launches = stubSession();

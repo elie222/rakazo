@@ -12,7 +12,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../lib/rpc", () => {
   const rpc = {
-    bots: { get: vi.fn(), update: vi.fn(), restoreInstructions: vi.fn() },
+    bots: {
+      get: vi.fn(),
+      update: vi.fn(),
+      restoreInstructions: vi.fn(),
+      // This server receives no email, so the panel offers no address.
+      emailAddress: vi.fn(async () => null),
+    },
     voice: { voices: vi.fn().mockResolvedValue([]) },
     models: {
       credentials: vi.fn().mockResolvedValue([]),
@@ -33,6 +39,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  useCopyText: () => [false, () => {}],
   SectionHeading: ({
     variant: _variant,
     ...props
@@ -165,6 +172,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     teamChatAmbientEnabled: false,
     teamChatRules: "",
     fleetManagement: false,
+    replyMode: "chat",
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
@@ -264,6 +272,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
   expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
     "Computer",
     "Routines",
+    "Pages",
     "Advanced",
   ]);
   expect(
@@ -284,6 +293,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
     voice: "Voice",
     readAloud: "Read replies aloud",
     fleetManagement: "Manage other bots",
+    replyMode: "Replies",
   };
   const controls = [...advanced.querySelectorAll("h3, span, label, div")].flatMap((node) =>
     Object.entries(labels)
@@ -301,10 +311,34 @@ it("shows the profile and the Advanced tab's controls", async () => {
     "voice",
     "readAloud",
     "fleetManagement",
+    "replyMode",
   ]);
 });
 
 describe("BotSettings model choices", () => {
+  it("offers an email address under the name until the bot has one", async () => {
+    vi.mocked(rpc.bots.emailAddress).mockResolvedValueOnce({ domain: "bots.test", address: null });
+    await render();
+    const offer = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Get an email address",
+    );
+    expect(document.querySelector('[data-testid="bot-email"]')).toBeNull();
+    await act(async () => offer?.click());
+    expect(document.querySelector<HTMLInputElement>('[data-testid="bot-email"] input')?.value).toBe(
+      "ada",
+    );
+
+    vi.mocked(rpc.bots.emailAddress).mockResolvedValueOnce({
+      domain: "bots.test",
+      address: "scout@bots.test",
+    });
+    queryClient.clear();
+    await render();
+    expect(document.querySelector('[data-testid="bot-email"]')?.textContent).toContain(
+      "scout@bots.test",
+    );
+  });
+
   it("submits DeepSeek API ids and does not offer a display label", async () => {
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
       {
@@ -445,6 +479,17 @@ describe("BotSettings bot management saves", () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
     await clickSave();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+
+  it("saves only the reply mode when it changes", async () => {
+    await render();
+    const select = container.querySelector<HTMLSelectElement>('select[id$="-reply-mode"]');
+    if (!select) throw new Error("Missing reply mode");
+    await act(async () => {
+      select.value = "messages";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ replyMode: "messages" });
   });
 });
 

@@ -47,7 +47,7 @@ export function FailedSendBubble({
 
   function showActions(manage = true) {
     const actions = [
-      ...(modelRequired ? [{ text: t("Add Model"), onPress: openModelSettings }] : []),
+      ...(modelRequired ? [{ text: t("Add model"), onPress: openModelSettings }] : []),
       ...(attempt.imageConfirmation
         ? [
             {
@@ -61,13 +61,13 @@ export function FailedSendBubble({
         : []),
       // Retrying can't help until a model is added; tapping the bubble still retries.
       ...(retryable && !modelRequired && !attempt.imageConfirmation
-        ? [{ text: t("Try Again"), onPress: onRetry }]
+        ? [{ text: t("Try again"), onPress: onRetry }]
         : []),
       ...(attempt.imageConfirmation && !manage
-        ? [{ text: t("Try Again"), onPress: onRetry }]
+        ? [{ text: t("Try again"), onPress: onRetry }]
         : [{ text: t("Delete"), style: "destructive" as const, onPress: onDelete }]),
     ];
-    // No header for a missing-model failure: Add Model says it, and once connected it's stale.
+    // No header for a missing-model failure: Add model says it, and once connected it's stale.
     // A file choice must not suggest the model will understand the picture.
     const message = isModelRequiredSendError(attempt.error)
       ? undefined

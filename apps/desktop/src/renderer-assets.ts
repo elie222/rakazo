@@ -1,5 +1,7 @@
 import path from "node:path";
+import { wuyingScreenPolicy } from "@rakazo/adapters/wuying-screen-policy";
 import {
+  COMPUTER_SCREEN_RUNTIME_PATH,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
 } from "@rakazo/contracts/content-security-policy";
@@ -64,7 +66,13 @@ export function bundledRendererHeaders(file: string, requestUrl: string): Header
     "content-type": contentType(file),
     "x-content-type-options": "nosniff",
   });
-  const policy = contentSecurityPolicyFor(new URL(requestUrl).pathname);
+  if (new URL(requestUrl).pathname !== COMPUTER_SCREEN_RUNTIME_PATH)
+    headers.set("x-frame-options", "SAMEORIGIN");
+  const policy = contentSecurityPolicyFor(
+    new URL(requestUrl).pathname,
+    undefined,
+    wuyingScreenPolicy,
+  );
   if (policy) {
     headers.set("content-security-policy", policy);
     // Reports go to /api on this origin, which is forwarded to the API like every other call.

@@ -50,6 +50,7 @@ describe("mobile i18n", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("falls back to the English source message when a translation is missing", async () => {
@@ -115,6 +116,59 @@ describe("mobile i18n", () => {
     expect(t("Delete {name}?", { name: "Scout" })).toBe("¿Eliminar Scout?");
   });
 
+  it("translates Polish chrome and preserves interpolations", async () => {
+    const { resetI18nForTests, t, dateLocaleForUi } = await import("./i18n");
+    const { PL_MESSAGES } = await import("./locales/pl");
+    resetI18nForTests("pl");
+    expect(t("Account")).toBe(PL_MESSAGES.Account);
+    expect(t("Account")).not.toBe("Account");
+    expect(t("Delete {name}?", { name: "Scout" })).toBe(
+      PL_MESSAGES["Delete {name}?"]?.replace("{name}", "Scout"),
+    );
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      PL_MESSAGES["{runs} runs, {tokens} tokens"]?.replace("{runs}", "3").replace("{tokens}", "12"),
+    );
+    expect(dateLocaleForUi()).toBe("pl");
+  });
+
+  it.each([
+    [0, "many"],
+    [2, "few"],
+    [4, "few"],
+    [5, "many"],
+    [12, "many"],
+    [14, "many"],
+    [21, "many"],
+    [22, "few"],
+    [25, "many"],
+    [101, "many"],
+    [112, "many"],
+    [122, "few"],
+    [1.5, "other"],
+  ] as const)(
+    "uses the Polish %s exchange count form %s without Intl.PluralRules",
+    async (count, form) => {
+      const { peerExchangeLabel, resetI18nForTests } = await import("./i18n");
+      const { PEER_MESSAGE_FORMS } = await import("./locales/pl");
+      vi.stubGlobal("Intl", { PluralRules: undefined });
+      resetI18nForTests("pl");
+      for (const direction of ["sent", "received"] as const) {
+        expect(peerExchangeLabel(count, direction, "Scout")).toBe(
+          PEER_MESSAGE_FORMS[form]?.replace("{count}", String(count)).replace("{peer}", "Scout"),
+        );
+      }
+    },
+  );
+
+  it("keeps the direction of a single Polish peer message", async () => {
+    const { peerExchangeLabel, resetI18nForTests, t } = await import("./i18n");
+    resetI18nForTests("pl");
+    expect(peerExchangeLabel(1, "sent", "Scout")).toBe(t("Messaged {peer}", { peer: "Scout" }));
+    expect(peerExchangeLabel(1, "received", "Scout")).toBe(
+      t("Message from {peer}", { peer: "Scout" }),
+    );
+  });
+
   it("preserves interpolations in every non-English catalog", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
     const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
@@ -123,6 +177,7 @@ describe("mobile i18n", () => {
     const { NL_MESSAGES } = await import("./locales/nl");
     const { JA_MESSAGES } = await import("./locales/ja");
     const { ES_MESSAGES } = await import("./locales/es");
+    const { PL_MESSAGES } = await import("./locales/pl");
     for (const messages of [
       ZH_MESSAGES,
       ZH_TW_MESSAGES,
@@ -131,6 +186,7 @@ describe("mobile i18n", () => {
       NL_MESSAGES,
       JA_MESSAGES,
       ES_MESSAGES,
+      PL_MESSAGES,
     ]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
@@ -151,6 +207,7 @@ describe("mobile i18n", () => {
     const { NL_MESSAGES } = await import("./locales/nl");
     const { JA_MESSAGES } = await import("./locales/ja");
     const { ES_MESSAGES } = await import("./locales/es");
+    const { PL_MESSAGES } = await import("./locales/pl");
     const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
       "@rakazo/core"
     );
@@ -215,6 +272,7 @@ describe("mobile i18n", () => {
       NL_MESSAGES,
       JA_MESSAGES,
       ES_MESSAGES,
+      PL_MESSAGES,
     ]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
@@ -259,6 +317,20 @@ describe("mobile i18n", () => {
     expect(t("Language")).toBe("Language");
     expect(setItemAsync).toHaveBeenCalledWith("rakazo.uiLocale", "en");
     expect(applyMobileUiDirection).toHaveBeenCalledWith("en");
+  });
+
+  it("restores Polish from a regional stored locale and persists a new choice", async () => {
+    const { getItemAsync, setItemAsync } = await import("expo-secure-store");
+    const { applyMobileUiDirection } = await import("./ui-direction");
+    const { bootstrapI18n, getActiveUiLocale, setUiLocale } = await import("./i18n");
+    vi.mocked(getItemAsync).mockResolvedValue("pl-PL");
+    await expect(bootstrapI18n()).resolves.toBe("pl");
+    expect(getActiveUiLocale()).toBe("pl");
+    expect(applyMobileUiDirection).toHaveBeenLastCalledWith("pl");
+    await setUiLocale("en");
+    await setUiLocale("pl");
+    expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "pl");
+    expect(getActiveUiLocale()).toBe("pl");
   });
 
   it("normalizes a regional Russian stored locale before activation", async () => {

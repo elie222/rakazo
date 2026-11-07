@@ -113,7 +113,7 @@ export function AppConnectCard({
         {view.showAuthorize && !readOnly && threadId ? (
           <NativeActionButton
             label={view.actionLabel}
-            accessibilityLabel={t("Authorize {name}", { name: block.name })}
+            accessibilityLabel={t("Connect {name}", { name: block.name })}
             fill={false}
             busy={busy}
             style={{ alignSelf: "center" }}

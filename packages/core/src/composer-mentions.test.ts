@@ -4,11 +4,13 @@ import {
   appendConnectorIntent,
   buildComposerMentionOptions,
   connectorIntentLine,
+  filterComposerMentionTargets,
   mentionChipKey,
   mentionConnectorsFrom,
   partitionComposerMentions,
   resolveComposerSendPlan,
   routineScheduleSubtitle,
+  splitMentionText,
   stripMentionKinds,
   stripMentionToken,
   toThreadMentionPayload,
@@ -278,6 +280,60 @@ describe("mentionConnectorsFrom", () => {
     ).toEqual([
       { id: "c1", name: "Gmail", authStatus: "connected", connectionId: "c1" },
       { id: "catalog:k:notion", name: "Notion", authStatus: "needs_auth" },
+    ]);
+  });
+});
+
+describe("filterComposerMentionTargets", () => {
+  const everyone = { kind: "everyone", name: "everyone" } as const;
+  const targets = [
+    everyone,
+    { kind: "bot", name: "Research Bot" },
+    { kind: "bot", name: "Chef" },
+    { kind: "bot", name: "Robot Arm" },
+    { kind: "bot", name: "Zoë Rivera" },
+  ] as const;
+  const names = (query: string) => filterComposerMentionTargets(targets, query).map((t) => t.name);
+
+  it("keeps the given order for an empty query", () => {
+    expect(names("  ")).toEqual(targets.map((target) => target.name));
+  });
+
+  it("ranks a word that starts a name word above one inside it, ties in given order", () => {
+    expect(names("bo")).toEqual(["Research Bot", "Robot Arm"]);
+    expect(names("ro")).toEqual(["Robot Arm"]);
+  });
+
+  it("requires every word and ignores accents and case", () => {
+    expect(names("research bo")).toEqual(["Research Bot"]);
+    expect(names("zoe")).toEqual(["Zoë Rivera"]);
+    expect(names("chef bot")).toEqual([]);
+  });
+
+  it("answers to all and everyone for the everyone row only", () => {
+    expect(names("al")).toEqual(["everyone"]);
+    expect(names("every")).toEqual(["everyone"]);
+  });
+});
+
+describe("splitMentionText", () => {
+  const targets = [{ name: "Ada" }, { name: "Ada Lovelace" }, { name: "everyone" }];
+
+  it("cuts out each known @Name, longest name first, and keeps the rest as plain runs", () => {
+    expect(splitMentionText("hi @Ada Lovelace and @ada, @everyone!", targets)).toEqual([
+      { text: "hi " },
+      { text: "@Ada Lovelace", target: targets[1] },
+      { text: " and " },
+      { text: "@ada", target: targets[0] },
+      { text: ", " },
+      { text: "@everyone", target: targets[2] },
+      { text: "!" },
+    ]);
+  });
+
+  it("leaves text without a known name, an email address and a longer word alone", () => {
+    expect(splitMentionText("mail ada@example.test or @Adam", targets)).toEqual([
+      { text: "mail ada@example.test or @Adam" },
     ]);
   });
 });

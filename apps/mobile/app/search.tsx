@@ -20,7 +20,8 @@ import { GroupAvatar } from "../components/group-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { readableGutters } from "../lib/adaptive-layout";
-import { currentApiBase, selectedSpaceId, selectSpace, spaceSelectionSeq } from "../lib/api";
+import { currentApiBase, selectedSpaceId, spaceSelectionSeq } from "../lib/api";
+import { selectSpace } from "../lib/api-server";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
@@ -239,7 +240,7 @@ export default function SearchSheet() {
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${item.title}, ${item.label}`}
+            accessibilityLabel={[item.title, item.label, item.preview].filter(Boolean).join(", ")}
             onPress={() => void open(item)}
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
           >
@@ -264,7 +265,8 @@ export default function SearchSheet() {
                 </Text>
                 <Text style={styles.time}>{item.label}</Text>
               </View>
-              <Text numberOfLines={1} style={styles.preview}>
+              {/* Two lines, so the matched words fit after the text before them. */}
+              <Text numberOfLines={2} style={styles.preview}>
                 {item.preview}
               </Text>
             </View>

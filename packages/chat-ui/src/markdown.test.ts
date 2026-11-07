@@ -108,6 +108,16 @@ describe("plainTextLinkParts", () => {
     }
   });
 
+  it("reads a page link a sent reply starts with, and keeps other markdown links literal", () => {
+    expect(plainTextLinkParts("[Plan \\[v2\\]](page:pg_1)\nsee https://example.com")).toEqual([
+      { type: "page", value: "Plan [v2]", pageId: "pg_1" },
+      { type: "text", value: "\nsee " },
+      { type: "link", value: "https://example.com", href: "https://example.com" },
+    ]);
+    const other = "[docs](https://example.com) [x](page:bad id)";
+    expect(plainTextLinkParts(other).some((part) => part.type === "page")).toBe(false);
+  });
+
   it("scans a long alphanumeric run without an at-sign quickly", () => {
     const text = "a".repeat(40_000);
     const started = performance.now();

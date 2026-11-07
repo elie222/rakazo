@@ -391,6 +391,18 @@ export function pageBrowserNotReady(result: { code: number; stdout: string }) {
   }
 }
 
+/** The page helper's own reply when it refused a command (exit 2), or nothing when the output is not one. */
+export function refusedCommand(stdout: string): { ok: false; error: string } | undefined {
+  try {
+    const reply = JSON.parse(stdout) as { ok?: unknown; error?: unknown };
+    return reply && reply.ok === false && typeof reply.error === "string"
+      ? (reply as { ok: false; error: string })
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** How long a page-browser request trusts the last setup instead of rerunning it. */
 export const SCREEN_REUSE_MS = 30_000;
 

@@ -37,7 +37,13 @@ import {
 import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
-import { quoteDraftForSelection } from "../../lib/quote-selection";
+import { projectPageCards } from "../../lib/page-cards";
+import {
+  isDetachedRange,
+  lastSelectedText,
+  quoteDraftForSelection,
+} from "../../lib/quote-selection";
+import type { createSpaceRpc } from "../../lib/rpc";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/transcript-layout";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
@@ -60,6 +66,7 @@ export const Transcript = memo(function Transcript({
   followRequest,
   artifactTarget,
   transcript,
+  meId,
   showToolActivity,
   olderCursor,
   unreadAfterSeq,
@@ -68,6 +75,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingBots,
+  workingRoutine,
   userBubble,
   onCallBack,
   onLoadOlder,
@@ -87,9 +95,11 @@ export const Transcript = memo(function Transcript({
   onAddRoutine,
   voiceReady,
   speakingMessageId,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
+  rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollRequest: { messageId: string; nonce: number } | null;
@@ -98,6 +108,7 @@ export const Transcript = memo(function Transcript({
   followRequest: number;
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
+  meId?: string;
   showToolActivity: boolean;
   olderCursor: number | null;
   /** The seq read up to when this chat opened; null when nothing was unread. */
@@ -107,6 +118,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
   userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
@@ -136,9 +148,11 @@ export const Transcript = memo(function Transcript({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -181,22 +195,40 @@ export const Transcript = memo(function Transcript({
     }
     return view;
   }, [messages]);
-  // A progress tick rebuilds this view. The jump still reads the latest fold, without a new
-  // callback that would rerender every memoized message.
-  const mentionViewRef = useRef(mentionView);
-  useLayoutEffect(() => {
-    mentionViewRef.current = mentionView;
-    committedMentions.current = mentionView.mentions;
+  const committedPages = useRef<ReturnType<typeof projectPageCards> | null>(null);
+  const pageView = useMemo(() => {
+    const view = projectPageCards(mentionView.visibleMessages);
+    const committed = committedPages.current;
+    if (!committed) return view;
+    for (const [id, pages] of view.pages) {
+      const previous = committed.pages.get(id);
+      if (
+        previous?.length === pages.length &&
+        pages.every((block, index) => block === previous[index])
+      ) {
+        view.pages.set(id, previous);
+      }
+    }
+    if (committed.cardsKey === view.cardsKey) view.isSuperseded = committed.isSuperseded;
+    return view;
   }, [mentionView]);
+  // A progress tick rebuilds these views. The jump still reads the latest folds, without a new
+  // callback that would rerender every memoized message.
+  const foldViews = useRef({ mentionView, pageView });
+  useLayoutEffect(() => {
+    foldViews.current = { mentionView, pageView };
+    committedMentions.current = mentionView.mentions;
+    committedPages.current = pageView;
+  }, [mentionView, pageView]);
   const jumpToMessage = useCallback(
-    (messageId: string) =>
-      onJumpToMessage(mentionViewRef.current.foldedInto.get(messageId) ?? messageId),
+    (messageId: string) => {
+      const views = foldViews.current;
+      const target = views.mentionView.foldedInto.get(messageId) ?? messageId;
+      onJumpToMessage(views.pageView.foldedInto.get(target) ?? target);
+    },
     [onJumpToMessage],
   );
-  const reactionView = useMemo(
-    () => projectMessageReactions(mentionView.visibleMessages),
-    [mentionView],
-  );
+  const reactionView = useMemo(() => projectMessageReactions(pageView.visibleMessages), [pageView]);
   const visibleReceipts = reactionView.visibleMessages.filter((message) =>
     messageHasVisibleBlocks(message.blocks, showToolActivity),
   );
@@ -206,13 +238,27 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
-  const workingLabel = liveActivityLine(messages) ?? t`Working…`;
+  const workingLabel =
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
     range: Range;
+    /** The range's text when armed: a rewrite that removes one endpoint moves it without collapsing. */
+    rangeText: string;
   } | null>(null);
   const selectingWithMouse = useRef(false);
+
+  // A streaming edit can replace the selected nodes without firing selectionchange: replacing
+  // both endpoints collapses the range, replacing one moves it; the pill must not keep its
+  // stale placement either way.
+  useLayoutEffect(() => {
+    setQuoteDraft((prev) =>
+      prev && (isDetachedRange(prev.range) || prev.range.toString() !== prev.rangeText)
+        ? null
+        : prev,
+    );
+  }, [messages]);
 
   const evaluateSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -226,7 +272,7 @@ export const Transcript = memo(function Transcript({
         "[data-quote-message-id]",
       ) ?? null;
     const startContent = contentOf(range.startContainer);
-    const endContent = contentOf(range.endContainer);
+    const endContent = contentOf(lastSelectedText(range));
     // selection.toString() serializes the whole range (a Ctrl+A transcript is
     // unbounded), so it only runs once both endpoints sit in one message.
     const draft = quoteDraftForSelection(
@@ -252,7 +298,7 @@ export const Transcript = memo(function Transcript({
       ) {
         return prev;
       }
-      return { ...draft, range };
+      return { ...draft, range, rangeText: range.toString() };
     });
   }, [messageById]);
 
@@ -547,14 +593,17 @@ export const Transcript = memo(function Transcript({
                               (block) => block.kind === "ask" || block.kind === "mcp_approval",
                             )
                           ? "relative w-full min-w-0 max-w-xl"
-                          : `relative ${message.blocks.some((block) => block.kind === "app_connect") ? "w-full" : "w-fit"} min-w-0 ${bubbleFrameWidth(message.role)}`
+                          : `relative ${message.blocks.some((block) => block.kind === "app_connect" || block.kind === "page") || pageView.pages.has(message.id) ? "w-full" : "w-fit"} min-w-0 ${bubbleFrameWidth(message.role)}`
                     }
                   >
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
+                      meId={meId}
                       markedUnread={message.id === markedUnreadMessageId}
                       mentions={mentionView.mentions.get(message.id)}
+                      pages={pageView.pages.get(message.id)}
+                      isPageSuperseded={pageView.isSuperseded}
                       canAnswer={answerableAskIds.has(message.id)}
                       canDismiss={dismissableAskIds.has(message.id)}
                       onOpenBot={onOpenBot}
@@ -581,9 +630,11 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
+                      callHoldsSpeaker={callHoldsSpeaker}
                       onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}
+                      rpc={rpc}
                       showToolActivity={showToolActivity}
                       onReply={onReply}
                       onMarkUnread={onMarkUnread}
@@ -602,7 +653,7 @@ export const Transcript = memo(function Transcript({
                     {[...messageReactions].map(([emoji, count]) => (
                       <span
                         key={emoji}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"
+                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
                       >
                         {emoji}
                         {count > 1 ? ` ${count}` : ""}

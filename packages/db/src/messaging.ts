@@ -4,6 +4,7 @@ import type { SignupPolicyEnv } from "./bootstrap-user.js";
 import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { createRepos } from "./repos.js";
 
 export interface MessagingIdentityRequest {
@@ -86,13 +87,16 @@ export async function provisionMessagingIdentity(
         },
       })
       .catch((error: unknown) => {
-        if (!isUniqueViolationError(error)) throw error;
+        if (!isUniqueViolation(error)) throw error;
         // Only join the internal identity key, never an email someone supplied.
         return prisma.user.findUniqueOrThrow({ where: { id } });
       });
   }
 
-  const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
+  const membership = await prisma.spaceMember.findFirst({
+    where: { userId: user.id, space: { deletingAt: null } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
   const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;
@@ -297,11 +301,93 @@ export async function redeemMessagingLinkCode(
     // botId is unique (one chat app per bot) and (provider, address) can race
     // a concurrent inbound; either way the code is spent and the sender can
     // request a fresh one.
-    if (isUniqueViolationError(error)) return null;
+    if (isUniqueViolation(error)) return null;
     throw error;
   }
 }
 
-function isUniqueViolationError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+/** Run nonce of a team-chat message: `teamchat:<provider>:<provider event id>`. */
+export function teamChatRunClientNonce(provider: string, providerEventId: string): string {
+  return `teamchat:${provider}:${providerEventId}`;
+}
+
+/**
+ * The other messages a team-chat run answers alongside its waking one, or null when the batch
+ * predates recording them.
+ */
+function teamChatBatchMessageIds(batchContext: string | null): string[] | null {
+  if (!batchContext) return [];
+  try {
+    const ids = (JSON.parse(batchContext) as { messageIds?: unknown } | null)?.messageIds;
+    return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether every person a team-chat run answers is the bot's owner: the person who installed
+ * the workspace, or a sender the owner linked to their own account. Other people, other apps
+ * and bots, and anything that cannot be traced to its messages are not.
+ */
+export async function teamChatRunFromOwner(
+  prisma: PrismaClient,
+  input: { externalConversationId: string; sourceClientNonce: string | null | undefined },
+): Promise<boolean> {
+  const conversation = await prisma.externalConversation.findUnique({
+    where: { id: input.externalConversationId },
+    select: { provider: true, workspaceId: true, userId: true, botId: true },
+  });
+  if (!conversation) return false;
+  const prefix = teamChatRunClientNonce(conversation.provider, "");
+  if (!input.sourceClientNonce?.startsWith(prefix)) return false;
+  const waking = await prisma.externalMessage.findUnique({
+    where: {
+      externalConversationId_providerEventId: {
+        externalConversationId: input.externalConversationId,
+        providerEventId: input.sourceClientNonce.slice(prefix.length),
+      },
+    },
+    select: { id: true, senderId: true, senderIsBot: true, batchContext: true },
+  });
+  if (!waking) return false;
+  const batchIds = teamChatBatchMessageIds(waking.batchContext)?.filter((id) => id !== waking.id);
+  if (!batchIds) return false;
+  const batch = batchIds.length
+    ? await prisma.externalMessage.findMany({
+        where: { id: { in: batchIds }, externalConversationId: input.externalConversationId },
+        select: { senderId: true, senderIsBot: true },
+      })
+    : [];
+  if (batch.length !== batchIds.length) return false;
+  const senders = [waking, ...batch];
+  if (senders.some((sender) => sender.senderIsBot)) return false;
+  const addresses = [...new Set(senders.map((sender) => sender.senderId))];
+  const [installation, identities] = await Promise.all([
+    prisma.messagingInstallation.findUnique({
+      where: {
+        provider_workspaceId: {
+          provider: conversation.provider,
+          workspaceId: conversation.workspaceId,
+        },
+      },
+      select: { ownerAddress: true, userId: true, botId: true },
+    }),
+    prisma.messagingIdentity.findMany({
+      where: {
+        provider: conversation.provider,
+        address: { in: addresses },
+        userId: conversation.userId,
+      },
+      select: { address: true },
+    }),
+  ]);
+  const owner = new Set(identities.map((identity) => identity.address));
+  if (
+    installation?.ownerAddress &&
+    installation.userId === conversation.userId &&
+    installation.botId === conversation.botId
+  )
+    owner.add(installation.ownerAddress);
+  return addresses.every((address) => owner.has(address));
 }

@@ -29,6 +29,12 @@ let corruptSignature = false;
 let omitIdToken = false;
 let replayedIdToken: string | undefined;
 let userInfoClaims: Record<string, unknown>;
+/** Directory-made accounts by user id: the profile source the directory manages, or null when adopted. */
+let directorySubjects: Map<string, string | null>;
+/** Users the directory currently provisions. */
+let provisionedUsers: Set<string>;
+/** Users who have a workspace, which every first sign-in creates. */
+let signedInUsers: Set<string>;
 const codes = new Map<
   string,
   { challenge: string; nonce: string; claims: Record<string, unknown> }
@@ -61,12 +67,44 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     spaceMember: {
-      findFirst: vi.fn(async () => (hasMembership ? { id: "existing-space" } : null)),
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        hasMembership || signedInUsers.has(where.userId) ? { id: "existing-space" } : null,
+      ),
+      findMany: vi.fn(async () => []),
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
+    messagingLinkCode: { deleteMany: vi.fn(async () => ({})) },
+    userDevice: { updateMany: vi.fn(async () => ({})) },
     passkey: { deleteMany: vi.fn(async () => ({})) },
+    account: {
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const kept = rows("account").filter(
+          (row) => row.userId !== where.userId || row.providerId === "credential",
+        );
+        state.db.account!.splice(0, state.db.account!.length, ...kept);
+        return {};
+      }),
+    },
     organization: { deleteMany: vi.fn(async () => ({})) },
+    scimSubject: {
+      findUnique: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        directorySubjects.has(where.userId)
+          ? { profileSourceId: directorySubjects.get(where.userId) }
+          : null,
+      ),
+    },
+    user: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          rows("user").find((row) => row.id === where.id) ?? null,
+      ),
+    },
+    scimUser: {
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
+      ),
+    },
   };
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),
@@ -215,6 +253,9 @@ beforeEach(() => {
   omitIdToken = false;
   replayedIdToken = undefined;
   userInfoClaims = { sub: "subject-1", email: "sso@example.test", email_verified: true };
+  directorySubjects = new Map();
+  provisionedUsers = new Set();
+  signedInUsers = new Set();
   codes.clear();
   vi.stubGlobal(
     "fetch",
@@ -430,7 +471,7 @@ describe("OIDC callbacks", () => {
     expect(rows("user")).toHaveLength(1);
     expect(rows("account")).toHaveLength(1);
   });
-  it("links only through an authenticated link flow", async () => {
+  it("links only through an authenticated link flow from a verified account", async () => {
     setup();
     expect(
       (await request("/link-social", { provider: "oidc", callbackURL: `${origin}/app` })).status,
@@ -440,6 +481,9 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    const unverified = await request(await start(undefined, true));
+    expect(unverified.headers.get("location")).toContain("error=unable_to_link_account");
+    rows("user")[0]!.emailVerified = true;
     const response = await request(await start(undefined, true));
     expect(response.headers.get("location")).toBe(`${origin}/app`);
     expect(rows("account")).toHaveLength(2);
@@ -452,6 +496,7 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    rows("user")[0]!.emailVerified = true;
     await request(await start(undefined, true));
     expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
     const oldAccountId = rows("account").find(
@@ -502,14 +547,117 @@ describe("OIDC callbacks", () => {
     expect(response.headers.get("location")).toContain("error=unable_to_link_account");
     expect(rows("account")).toHaveLength(1);
   });
+  it("refuses a link to an unverified account finished in another browser", async () => {
+    setup();
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Squatter",
+    });
+    const callback = await start(undefined, true);
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    const response = await request(callback);
+    expect(response.headers.get("location")).toContain("error=unable_to_link_account");
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(0);
+  });
+  it("links an unverified account from its own browser when nothing can verify it", async () => {
+    setup({ email: undefined });
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Local",
+    });
+    const session = cookies;
+    const planted = await start(undefined, true);
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${planted}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    expect((await request(planted)).headers.get("location")).toContain(
+      "error=unable_to_link_account",
+    );
+    cookies = session;
+    expect((await request(await start(undefined, true))).headers.get("location")).toBe(
+      `${origin}/app`,
+    );
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(1);
+  });
+  it("links a verified account from the native browser", async () => {
+    setup();
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Local",
+    });
+    rows("user")[0]!.emailVerified = true;
+    const callback = await start(undefined, true, "rakazo://account");
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    expect(new URL((await request(callback)).headers.get("location")!).protocol).toBe("rakazo:");
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(1);
+  });
+  it("drops an unverified account's SSO links when its mailbox owner resets the password", async () => {
+    setup();
+    const squatter = { sub: "subject-1", email: "sso@example.test", email_verified: false };
+    await signIn(squatter);
+    cookies = "";
+    await request("/request-password-reset", {
+      email: "sso@example.test",
+      redirectTo: `${origin}/reset`,
+    });
+    const token = sentCodes.at(-1)!.match(/reset-password\/([^?\s]+)/)![1]!;
+    expect(
+      (await request("/reset-password", { newPassword: "owner-password-123", token })).status,
+    ).toBe(200);
+    expect(rows("account").map((account) => account.providerId)).toEqual(["credential"]);
+    expect((await signIn(squatter)).headers.get("location")).toContain("error=account_not_linked");
+  });
+  it("keeps the stored email when an unverified claim names a new one", async () => {
+    setup();
+    await signIn();
+    cookies = "";
+    await signIn({ sub: "subject-1", email: "other@example.test", email_verified: false });
+    expect(rows("user")[0]).toMatchObject({ email: "sso@example.test", emailVerified: false });
+    cookies = "";
+    const owner = await request("/sign-up/email", {
+      email: "other@example.test",
+      password: "owner-password-123",
+      name: "Owner",
+    });
+    expect(owner.status).toBe(200);
+  });
   it("hands the native browser callback to Expo with a valid bearer session", async () => {
     setup();
+    const context = await auth.$context;
+    const createVerificationValue = context.internalAdapter.createVerificationValue;
+    vi.spyOn(context.internalAdapter, "createVerificationValue").mockImplementation(
+      async (input) => {
+        if (typeof input.value !== "string" || input.value.length === 0) {
+          throw new Error("verification values must be non-empty strings");
+        }
+        return createVerificationValue.call(context.internalAdapter, input);
+      },
+    );
     const callback = await start(undefined, false, "rakazo://sign-in");
     const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    const callbackMarkers = rows("verification").filter((row) =>
+      String(row.identifier).startsWith("oidc-callback-"),
+    ).length;
     const proxy = await request(
       `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
     );
     expect(proxy.headers.get("location")).toBe(authorize);
+    expect(
+      rows("verification").filter((row) => String(row.identifier).startsWith("oidc-callback-")),
+    ).toHaveLength(callbackMarkers);
     const returned = await request(callback);
     const destination = new URL(returned.headers.get("location")!);
     expect(destination.protocol).toBe("rakazo:");
@@ -1370,4 +1518,128 @@ it("counts only stored OIDC subjects bound to the current issuer", async () => {
   expect(await isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer, secret)).toBe(
     false,
   );
+});
+
+describe("directory accounts", () => {
+  const now = () => new Date();
+
+  /** An account the directory made: no login yet, its profile managed by the directory. */
+  function provisionedAccount(id = "provisioned-1", email = "sso@example.test") {
+    rows("user").push({
+      id,
+      name: "Provisioned",
+      email,
+      emailVerified: false,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    directorySubjects.set(id, `scim-${id}`);
+    provisionedUsers.add(id);
+    return id;
+  }
+
+  it("refuses a deactivated account's sign-in and its existing sessions", async () => {
+    setup();
+    const credentials = { email: "local@example.test", password: "test-password-123" };
+    expect((await request("/sign-up/email", { ...credentials, name: "Local" })).status).toBe(200);
+    expect(await (await request("/get-session")).json()).toMatchObject({
+      user: { email: "local@example.test" },
+    });
+    rows("user")[0]!.deactivatedAt = now();
+
+    expect(await (await request("/get-session")).json()).toBeNull();
+    cookies = "";
+    const refused = await request("/sign-in/email", credentials);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
+
+    delete rows("user")[0]!.deactivatedAt;
+    expect((await request("/sign-in/email", credentials)).status).toBe(200);
+  });
+
+  it("refuses a deactivated account's SSO sign-in", async () => {
+    setup();
+    await signIn();
+    rows("user")[0]!.deactivatedAt = now();
+    cookies = "";
+    const sessions = rows("session").length;
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=ACCOUNT_DEACTIVATED");
+    expect(rows("session")).toHaveLength(sessions);
+  });
+
+  it("claims an account the directory made on its first SSO sign-in", async () => {
+    setup({ directoryProvisioning: true }, false);
+    const userId = provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toBe(`${origin}/app`);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toEqual([expect.objectContaining({ userId, providerId: "oidc" })]);
+    expect(rows("user")[0]?.emailVerified).toBe(true);
+    // The link is now the account's own; signing in again needs no claim.
+    cookies = "";
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+  });
+
+  it("admits a directory account while registration is closed", async () => {
+    setup({ directoryProvisioning: true, signupsEnabled: "false" }, false);
+    provisionedAccount();
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+
+    // An account the directory no longer provisions follows the signup policy again.
+    cookies = "";
+    provisionedAccount("provisioned-2", "second@example.test");
+    provisionedUsers.delete("provisioned-2");
+    const refused = await signIn({
+      sub: "subject-2",
+      email: "second@example.test",
+      email_verified: true,
+    });
+    expect(refused.headers.get("location")).toContain("error=REGISTRATION_CLOSED");
+  });
+
+  it.each([
+    [
+      "the provider email is unverified",
+      () => provisionedAccount(),
+      { sub: "subject-1", email: "sso@example.test", email_verified: false },
+    ],
+    [
+      // An emailed code leaves no login row, only the workspace the first sign-in made.
+      "someone already signed in to it",
+      () => signedInUsers.add(provisionedAccount()),
+      undefined,
+    ],
+    [
+      // Nothing is linked to an account while it is off, so turning it back on adds no login.
+      "the account is deactivated",
+      () => {
+        const userId = provisionedAccount();
+        rows("user").find((row) => row.id === userId)!.deactivatedAt = now();
+      },
+      undefined,
+    ],
+    [
+      "the directory adopted an account it did not make",
+      () => {
+        const userId = provisionedAccount();
+        directorySubjects.set(userId, null);
+      },
+      undefined,
+    ],
+  ])("does not claim the account when %s", async (_case, seed, claims) => {
+    setup({ directoryProvisioning: true }, false);
+    seed();
+    const response = await signIn(claims);
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account").filter((row) => row.providerId === "oidc")).toHaveLength(0);
+  });
+
+  it("never links by email without directory provisioning", async () => {
+    setup({}, false);
+    provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account")).toHaveLength(0);
+  });
 });

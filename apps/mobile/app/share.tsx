@@ -1,16 +1,16 @@
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
-import { Image, Platform, Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
-import type { MobileBot } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   cancelIncomingShare,
   getIncomingShare,
   subscribeIncomingShare,
 } from "../lib/incoming-share";
+import type { MobileBot } from "../lib/mobile-types";
 import { useMobileTokens } from "../lib/native";
 import { sharePreview } from "../lib/share-preview";
 import { HomeSession } from "./index";
@@ -71,7 +71,7 @@ export default function ShareRoute() {
       style={{
         flex: 1,
         backgroundColor: tokens.background,
-        paddingTop: Platform.OS === "ios" ? 16 : insets.top + 8,
+        paddingTop: insets.top + 8,
       }}
     >
       <View

@@ -1,4 +1,3 @@
-import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   botsWithOwnModel,
@@ -9,26 +8,14 @@ import {
   connectedModelChoices,
   connectionMaxTokensField,
   credentialForModel,
-  filterModelCatalog,
   filterModelChoices,
   groupModelChoices,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
   savedCompatibleModelIds,
-  selectedProviderOutsideSearchResults,
   toggleEnabledModelId,
 } from "./model-providers.js";
-
-function provider(provider: string): ModelCatalogEntry {
-  return {
-    provider,
-    providerName: provider,
-    id: `${provider}-model`,
-    label: `${provider} model`,
-    billing: "",
-  };
-}
 
 it("counts only bots that pick both a provider and a model", () => {
   expect(
@@ -41,15 +28,30 @@ it("counts only bots that pick both a provider and a model", () => {
 });
 
 describe("popularModelProvidersFirst", () => {
-  it("lists subscriptions and the common API providers first", () => {
-    const ids = ["azure", "google", "openai", "anthropic", "openai-codex", "openrouter"];
-    expect(popularModelProvidersFirst(ids, (id) => id)).toEqual([
-      "openai-codex",
-      "anthropic",
-      "openai",
-      "openrouter",
-      "google",
-      "azure",
+  it("lists the popular providers in curated order first, then the rest by name", () => {
+    const providers = [
+      { id: "openai-compatible", name: "OpenAI-compatible" },
+      { id: "azure", name: "Azure OpenAI" },
+      { id: "google", name: "Google" },
+      { id: "openai-compatible", name: "Ollama Cloud" },
+      { id: "groq", name: "Groq" },
+      { id: "openrouter", name: "OpenRouter" },
+      { id: "openai-codex", name: "ChatGPT" },
+    ];
+    expect(
+      popularModelProvidersFirst(
+        providers,
+        (provider) => provider.id,
+        (provider) => provider.name,
+      ).map((provider) => provider.name),
+    ).toEqual([
+      "ChatGPT",
+      "OpenRouter",
+      "Google",
+      "Azure OpenAI",
+      "Groq",
+      "Ollama Cloud",
+      "OpenAI-compatible",
     ]);
   });
 });
@@ -108,24 +110,6 @@ describe("pickCatalogModelId", () => {
 
   it("returns an empty string for an unknown provider", () => {
     expect(pickCatalogModelId(catalog, "nope", "openai/gpt-6-luna")).toBe("");
-  });
-});
-
-describe("selectedProviderOutsideSearchResults", () => {
-  it("returns the active provider separately from unrelated search results", () => {
-    const providers = [provider("openrouter"), provider("anthropic"), provider("bedrock")];
-
-    expect(
-      selectedProviderOutsideSearchResults(providers.slice(1), providers, "openrouter"),
-    ).toMatchObject({ provider: "openrouter" });
-  });
-
-  it("returns nothing when the active provider matches the search", () => {
-    const providers = [provider("openrouter"), provider("anthropic")];
-
-    expect(
-      selectedProviderOutsideSearchResults(providers, providers, "openrouter"),
-    ).toBeUndefined();
   });
 });
 
@@ -365,45 +349,6 @@ describe("connected model choices", () => {
       "deepseek-v4-pro",
     );
     expect(resolveSelectableModelId(deepseek, "deepseek", "my-finetune")).toBe("my-finetune");
-  });
-});
-
-describe("filterModelCatalog", () => {
-  const models: ModelCatalogEntry[] = [
-    {
-      provider: "openrouter",
-      providerName: "OpenRouter",
-      id: "anthropic/claude-sonnet",
-      label: "Claude Sonnet",
-      billing: "",
-    },
-    { provider: "openrouter", id: "openai/gpt-mini", label: "GPT Mini", billing: "" },
-  ];
-
-  it("keeps every model for a blank query", () => {
-    expect(filterModelCatalog(models, "")).toBe(models);
-    expect(filterModelCatalog(models, "   ")).toBe(models);
-  });
-
-  it("matches the label, id, or provider name, ignoring case and surrounding space", () => {
-    expect(filterModelCatalog(models, " sonnet ").map((entry) => entry.id)).toEqual([
-      "anthropic/claude-sonnet",
-    ]);
-    expect(filterModelCatalog(models, "OPENAI/").map((entry) => entry.id)).toEqual([
-      "openai/gpt-mini",
-    ]);
-    expect(filterModelCatalog(models, "OpenRouter").map((entry) => entry.id)).toEqual([
-      "anthropic/claude-sonnet",
-      "openai/gpt-mini",
-    ]);
-  });
-
-  it("falls back to the provider id when there is no provider name", () => {
-    expect(filterModelCatalog([models[1]!], "router")).toHaveLength(1);
-  });
-
-  it("returns nothing when no model matches", () => {
-    expect(filterModelCatalog(models, "gemini")).toEqual([]);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { RakazoDesktopSpeechEvent } from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 import type { AppTarget } from "./app-frame.js";
 import { fromAppFrame } from "./app-frame.js";
@@ -57,8 +58,10 @@ export function createSystemSpeech(
 
   return {
     start(event: InvokeEvent, language: unknown, session: unknown): boolean {
+      const target = getTarget();
       if (
-        !fromAppFrame(getTarget(), event) ||
+        !secureHttpOrigin(target?.url) ||
+        !fromAppFrame(target, event) ||
         // Language tags only: the value becomes the recognizer's argument.
         !isLanguageTag(language) ||
         !Number.isSafeInteger(session) ||

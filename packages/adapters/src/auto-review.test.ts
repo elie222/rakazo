@@ -183,6 +183,40 @@ describe("parseAutoReviewJudgeText", () => {
       reason: "Sends email outside scope.",
     });
     expect(parseAutoReviewJudgeText("not json")).toEqual({ decision: "error" });
+    expect(parseAutoReviewJudgeText('{"decision":"pass"')).toEqual({ decision: "error" });
+  });
+
+  it.each([
+    [
+      "pass then a cut-off ask",
+      '{"decision":"pass","reason":"initial"}\n{"decision":"ask","reason":"private data',
+      { decision: "ask" },
+    ],
+    [
+      "ask then a cut-off pass",
+      '{"decision":"ask","reason":"Sends email."}\n{"decision":"pass","reason":"fi',
+      { decision: "ask", reason: "Sends email." },
+    ],
+    ["a cut-off pass alone", '{"decision":"pass","reason":"Fits', { decision: "error" }],
+    [
+      "one fenced object",
+      '```json\n{"decision":"pass","reason":"Fits."}\n```',
+      { decision: "pass", reason: "Fits." },
+    ],
+    [
+      "one fenced object with CRLF line endings",
+      '```json\r\n{"decision":"pass","reason":"Fits."}\r\n```',
+      { decision: "pass", reason: "Fits." },
+    ],
+    [
+      "prose around a pass",
+      'Sure:\n{"decision":"pass","reason":"Fits."}\nDone.',
+      { decision: "ask" },
+    ],
+    ["repeated keys", '{"decision":"ask","decision":"pass"}', { decision: "ask" }],
+    ["a pass that needs repair", '{"decision":"pass",reason:"Fits.",}', { decision: "ask" }],
+  ])("reads %s", (_name, text, expected) => {
+    expect(parseAutoReviewJudgeText(text)).toEqual(expected);
   });
 
   it("strips em dashes from reasons", () => {
@@ -394,6 +428,37 @@ describe("runAutoReviewJudge instructions", () => {
       threadId: "thread",
     });
     expect(captured?.model?.thinkingLevel).toBe("low");
+  });
+});
+
+describe("runAutoReviewJudge unreadable verdict", () => {
+  const judge = (replies: string[]) => {
+    const run = vi.fn(() =>
+      (async function* () {
+        yield { type: "done", text: replies.shift() } as never;
+      })(),
+    );
+    const result = runAutoReviewJudge({
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run } as never,
+      checker: { provider: "openrouter", model: "x" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    return { run, result };
+  };
+
+  it("asks the checker once more before giving up", async () => {
+    const recovered = judge(["I think this is fine.", '{"decision":"pass","reason":"Fits."}']);
+    expect(await recovered.result).toMatchObject({ decision: "pass", reason: "Fits." });
+    expect(recovered.run).toHaveBeenCalledTimes(2);
+
+    const unreadable = judge(["I think this is fine.", "Still fine."]);
+    expect((await unreadable.result).decision).toBe("error");
+    expect(unreadable.run).toHaveBeenCalledTimes(2);
   });
 });
 

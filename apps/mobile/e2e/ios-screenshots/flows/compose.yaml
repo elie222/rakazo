@@ -9,6 +9,8 @@ name: Compose
 - extendedWaitUntil:
     visible: "Customer support|Create space"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-new-space
 - tapOn: "Cancel"
 - openLink: "rakazo:///new-group"
@@ -17,8 +19,12 @@ name: Compose
     timeout: 15000
 - tapOn: "Researcher"
 - tapOn: "Writer"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 03-new-group
 - tapOn: "Next"
 - assertVisible: "Skip"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 04-new-group-name
 - openLink: "rakazo:///"

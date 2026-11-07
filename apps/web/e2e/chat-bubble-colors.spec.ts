@@ -19,7 +19,18 @@ test("colored user bubbles keep white text in both themes", async ({ page }, tes
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(bubble).toHaveCSS("color", "rgb(255, 255, 255)");
-    await expect(bubble).toHaveCSS("background-color", "rgb(151, 76, 222)");
+    // #A855F7 deepened in OKLCH to #9C47E9 for AA contrast with white text.
+    await expect(bubble).toHaveCSS("background-color", "rgb(156, 71, 233)");
+    // The send button stays quiet on an empty draft...
+    const send = page.getByRole("button", { name: "Send", exact: true });
+    await expect(send).toBeDisabled();
+    await expect(send).not.toHaveCSS("background-color", "rgb(156, 71, 233)");
     await captureScreenshot(page, testInfo, `chat-bubble-white-text-${theme}`);
+    // ...and wears the bubble's color once there is something to send.
+    await composer.fill("And the week after.");
+    await expect(send).toHaveCSS("background-color", "rgb(156, 71, 233)");
+    await expect(send).toHaveCSS("color", "rgb(255, 255, 255)");
+    await captureScreenshot(page, testInfo, `chat-send-button-bot-color-${theme}`);
+    await composer.fill("");
   }
 });

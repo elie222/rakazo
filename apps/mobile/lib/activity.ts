@@ -1,4 +1,5 @@
-import type { RunActivityRow } from "@rakazo/contracts";
+import type { RoutineRun, RunActivityRow } from "@rakazo/contracts";
+import { routineRunLateness } from "@rakazo/core";
 import { rpc } from "../lib/api";
 import { dateLocaleForUi, t } from "./i18n";
 
@@ -25,6 +26,15 @@ export function formatActivityRelativeTime(iso: string, now = new Date()): strin
   const days = Math.floor(hours / 24);
   if (days < 7) return t("{count}d ago", { count: days });
   return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+}
+
+/** "Started 2h late" for a scheduled run that started well after its time; else undefined. */
+export function routineRunLateLabel(run: RoutineRun): string | undefined {
+  const late = routineRunLateness(run);
+  if (!late) return undefined;
+  if (late.unit === "minutes") return t("Started {count}m late", { count: late.count });
+  if (late.unit === "hours") return t("Started {count}h late", { count: late.count });
+  return t("Started {count}d late", { count: late.count });
 }
 
 export function activityStatusLabel(status: RunActivityRow["status"]): string {

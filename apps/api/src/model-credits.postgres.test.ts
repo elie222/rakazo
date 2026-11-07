@@ -1,6 +1,6 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -79,7 +79,7 @@ dbTests("model credit billing service", () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
-      byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+      byokPriceCents: BYOK_TIERS.standard.monthlyPriceCents,
       byokFreeUntil: null,
     });
   });

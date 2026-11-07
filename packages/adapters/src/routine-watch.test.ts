@@ -6,6 +6,7 @@ import { encodeLoginSecret, RoutineWatchSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
+import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { RoutineWatchTickDeps } from "./routine-watch.js";
 import {
   checkRoutineWatch,
@@ -206,6 +207,20 @@ describe("tickRoutineWatch", () => {
     );
     expect(deps.jobs.enqueue).toHaveBeenCalledTimes(2);
     expect(messages).toHaveLength(0);
+  });
+
+  it("saves a check only for the owner it started with", async () => {
+    const { deps, routine, updateMany } = setup({ data: { changes: [] } });
+    // Someone else taking the routine over mid-check makes this write miss.
+    updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(tickRoutineWatch(deps, routine, target, scheduledAt)).resolves.toEqual({
+      run: false,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: routine.id, userId: "user-1", active: true, nextRunAt: scheduledAt },
+      }),
+    );
   });
 
   it("posts 'no changes' when loud", async () => {
@@ -1060,6 +1075,33 @@ describe("tickRoutineWatch on a computer", () => {
         expect.anything(),
       );
     }
+  });
+
+  it("runs a Windows check in PowerShell without the bash desktop guard", async () => {
+    const computer = {
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "desktop" as const,
+      providerRef: "ecd-1",
+    };
+    vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
+    const command = "(Get-ChildItem inbox).Count";
+    expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
+    const { deps, routine, execute } = setupComputer(
+      { kind: "command", command },
+      { stdout: "3\n" },
+      { id: "computer-1", scope: "team", kind: "desktop" },
+      { shell: { platform: "win32", shell: "powershell.exe", home: "C:\\Users\\rakazo" } },
+    );
+    deps.commandRefusal = protectedComputerLifecycleRefusal;
+    await checkRoutineWatch(deps, routine);
+    expect(execute).toHaveBeenCalledWith(
+      computer,
+      expect.objectContaining({
+        argv: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      }),
+      expect.anything(),
+    );
   });
 
   it("retries in a minute without pausing when the computer is busy", async () => {

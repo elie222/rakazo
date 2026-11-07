@@ -132,6 +132,59 @@ describe("E2B computer backend", () => {
     expect(globalStream).not.toHaveBeenCalled();
   });
 
+  it("e2b-screen-traffic-token sends the traffic token for screen and terminal", async () => {
+    const computer = {
+      id: "existing",
+      providerRef: "existing",
+      kind: "e2b" as const,
+      botId: "bot",
+    };
+    const provider = (trafficAccessToken?: string) => {
+      const desktop = {
+        sandboxId: "existing",
+        getHost: (port: number) => `${port}-desktop.test`,
+        setTimeout: async () => undefined,
+        commands: {
+          run: async () => ({
+            stdout: "RAKAZO_DESKTOP=0:savedkey\n",
+            stderr: "",
+            exitCode: 0,
+          }),
+        },
+        files: {
+          makeDir: async () => true,
+          list: async () => [],
+          getInfo: async () => ({ name: "x", size: 0, mode: 0 }),
+          read: async () => new Uint8Array(),
+          write: async () => undefined,
+        },
+        ...(trafficAccessToken !== undefined ? { trafficAccessToken } : {}),
+      } satisfies E2BDesktop;
+      const sdk = {
+        create: async () => desktop,
+        connect: async () => desktop,
+        pause: async () => undefined,
+        kill: async () => true,
+      } satisfies E2BSandboxSdk;
+      return new E2BSandboxProvider("test-key", sdk);
+    };
+
+    const restricted = provider("tok");
+    const screen = await restricted.connectScreen(computer, { view: "stream" }, context);
+    expect(screen.headers?.["e2b-traffic-access-token"]).toBe("tok");
+    const terminal = await restricted.connectTerminal(
+      computer,
+      { controlToken: "lease-1" },
+      context,
+    );
+    expect(terminal.headers?.["e2b-traffic-access-token"]).toBe("tok");
+
+    const open = await provider().connectScreen(computer, { view: "stream" }, context);
+    expect(open.headers).toBeUndefined();
+    const blank = await provider("").connectScreen(computer, { view: "stream" }, context);
+    expect(blank.headers).toBeUndefined();
+  });
+
   it("only filters transient cache files inside portable browser profiles", () => {
     expect(shouldSkipPortableWorkspaceFile("project/Cache/important.txt")).toBe(false);
     expect(shouldSkipPortableWorkspaceFile("project/lock")).toBe(false);

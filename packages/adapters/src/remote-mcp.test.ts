@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_MCP_RESPONSE_BYTES } from "./mcp-response-limit.js";
 import {
   assertSafeRemoteUrl,
   ConnectorRedirectError,
@@ -631,6 +632,13 @@ describe("remote MCP tool result", () => {
       {},
     );
   }
+
+  it("fails a tool result body larger than the response limit before parsing it", async () => {
+    const fetch = toolResultFetch(
+      `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":"${"x".repeat(MAX_MCP_RESPONSE_BYTES)}"}]}}`,
+    );
+    await expect(callTool(fetch)).rejects.toThrow("MCP server response exceeds 16 MB");
+  });
 
   const memory = { results: [{ text: "first memory" }, { text: "second memory" }] };
 

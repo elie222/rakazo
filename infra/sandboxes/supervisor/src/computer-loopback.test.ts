@@ -461,6 +461,39 @@ describe("provisioning network rollback", () => {
     expect(mocks.docker.createContainer).not.toHaveBeenCalled();
   });
 
+  it("starts the computer on an IPv4-only network when the daemon cannot do IPv6", async () => {
+    fixture();
+    mocks.docker.createNetwork
+      .mockRejectedValueOnce(
+        new Error(
+          "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+        ),
+      )
+      .mockResolvedValueOnce({});
+    const response = await provision();
+    expect(response.status).toBe(200);
+    expect(mocks.docker.createNetwork).toHaveBeenCalledTimes(2);
+    const [dualStack, ipv4Only] = mocks.docker.createNetwork.mock.calls;
+    expect(dualStack?.[0].EnableIPv6).toBe(true);
+    expect(ipv4Only?.[0]).not.toHaveProperty("EnableIPv6");
+  });
+
+  it("removes the IPv4-fallback network when the container fails to start", async () => {
+    const { container } = fixture();
+    const fallbackNetwork = { remove: vi.fn().mockResolvedValue(undefined) };
+    mocks.docker.createNetwork
+      .mockRejectedValueOnce(
+        new Error(
+          "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+        ),
+      )
+      .mockResolvedValueOnce(fallbackNetwork);
+    container.start.mockRejectedValue(new Error("start failed"));
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(fallbackNetwork.remove).toHaveBeenCalledOnce();
+  });
+
   it("does not remove an existing network after failed creation", async () => {
     const { network } = fixture();
     mocks.docker.createNetwork.mockRejectedValue(new Error("network already exists"));
@@ -2312,7 +2345,7 @@ describe("computer network reclaim", () => {
 
   describe("on startup", () => {
     async function reclaim() {
-      const { reclaimIdleComputerNetworks } = await import("./index.js");
+      const { reclaimIdleComputerNetworks } = await import("./networks.js");
       return reclaimIdleComputerNetworks();
     }
 
@@ -2469,6 +2502,166 @@ describe("computer network reclaim", () => {
         expectReconnected(existing, network);
       },
     );
+
+    it("tries IPv6 again when it recreates the reclaimed network after an IPv4 fallback", async () => {
+      const { existing } = stoppedComputer({});
+      const network = botNetwork();
+      network.inspect.mockRejectedValue(
+        Object.assign(new Error("no such network"), { statusCode: 404 }),
+      );
+      mocks.docker.getNetwork.mockReturnValue(network);
+      mocks.docker.createNetwork
+        .mockRejectedValueOnce(
+          new Error(
+            "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+          ),
+        )
+        .mockResolvedValueOnce({ remove: vi.fn() });
+
+      const response = await provision();
+      expect(await response.json()).toMatchObject({ id: "existing", resumed: true });
+      // A stop gave this network back, so its recreation starts from the
+      // dual-stack attempt again; only the create error falls back to IPv4.
+      expect(mocks.docker.createNetwork).toHaveBeenCalledTimes(2);
+      const [dualStack, ipv4Only] = mocks.docker.createNetwork.mock.calls;
+      expect(dualStack?.[0].EnableIPv6).toBe(true);
+      expect(ipv4Only?.[0]).not.toHaveProperty("EnableIPv6");
+      expectReconnected(existing, network);
+    });
+
+    it("gives back an IPv4-only network a crash left behind, then retries IPv6 on resume", async () => {
+      // Phase 1: a fresh provision falls back to IPv4 (the daemon has no IPv6 pool).
+      const fresh = {
+        id: "new-computer",
+        start: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      mocks.docker.getImage.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({ Id: "image" }),
+      });
+      mocks.docker.listContainers.mockResolvedValue([]);
+      mocks.docker.createNetwork
+        .mockRejectedValueOnce(
+          new Error(
+            "could not find an available, non-overlapping IPv6 address pool among the defaults to assign to the network",
+          ),
+        )
+        .mockResolvedValueOnce({ remove: vi.fn() });
+      mocks.docker.createContainer.mockResolvedValue(fresh);
+      expect((await provision()).status).toBe(200);
+
+      // Phase 2: a crash without /stop leaves the stopped container on the
+      // IPv4-only network; startup cleanup keeps it (a stopped computer still
+      // references the network).
+      const existing = {
+        id: "existing",
+        inspect: vi.fn().mockResolvedValue({
+          Image: "image",
+          Config: {
+            User: hostComputerUser(),
+            Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+          },
+          HostConfig: { NetworkMode: botNet, PortBindings: {} },
+          State: { Running: false },
+          NetworkSettings: { Networks: { [botNet]: { NetworkID: "net-v4" } } },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      let v4Gone = false;
+      const network = {
+        inspect: vi.fn(() =>
+          v4Gone
+            ? Promise.reject(Object.assign(new Error("no such network"), { statusCode: 404 }))
+            : Promise.resolve({ Id: "net-v4", EnableIPv6: false }),
+        ),
+        connect: vi.fn().mockResolvedValue(undefined),
+        disconnect: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn(() => {
+          v4Gone = true;
+          return Promise.resolve(undefined);
+        }),
+      };
+      mocks.docker.getContainer.mockReturnValue(existing);
+      mocks.docker.getNetwork.mockReturnValue(network);
+      mocks.docker.listContainers.mockReset().mockResolvedValue([{ Id: existing.id }]);
+      const { reclaimIdleComputerNetworks } = await import("./networks.js");
+      mocks.docker.listNetworks.mockResolvedValue([
+        {
+          Name: botNet,
+          Labels: {
+            "rakazo.computerOwner": computerNetworkOwnerFor(process.env.DATA_DIR!, undefined),
+            "rakazo.botId": "bot",
+          },
+        },
+      ]);
+      await reclaimIdleComputerNetworks();
+      expect(network.remove).not.toHaveBeenCalled();
+
+      // Phase 3: the resume must hand the IPv4-only network back and retry
+      // IPv6-first, rejoining the same container.
+      const createsBefore = mocks.docker.createContainer.mock.calls.length;
+      mocks.docker.createNetwork.mockReset().mockResolvedValue({ remove: vi.fn() });
+      const response = await provision();
+      expect(await response.json()).toMatchObject({ id: "existing", resumed: true, started: true });
+      expect(network.remove).toHaveBeenCalledOnce();
+      expect(mocks.docker.createNetwork).toHaveBeenCalledTimes(1);
+      expect(mocks.docker.createNetwork.mock.calls[0]?.[0].EnableIPv6).toBe(true);
+      expect(network.connect).toHaveBeenCalledWith({ Container: existing.id });
+      expect(existing.start).toHaveBeenCalledOnce();
+      expect(mocks.docker.createContainer.mock.calls.length).toBe(createsBefore);
+    });
+
+    it("reconnects the computer when a failed cleanup left it off its IPv4-only network", async () => {
+      // The crash leaves the stopped computer on the IPv4-only fallback network.
+      // The resume's cleanup disconnects the computer but cannot remove the
+      // network, so the resume must rejoin it before starting.
+      let detached = false;
+      const existing = {
+        id: "existing",
+        inspect: vi.fn(() =>
+          Promise.resolve({
+            Image: "image",
+            Config: {
+              User: hostComputerUser(),
+              Labels: {
+                "rakazo.managed": "true",
+                "rakazo.botId": "bot",
+                "rakazo.spaceId": "space",
+              },
+            },
+            HostConfig: { NetworkMode: botNet, PortBindings: {} },
+            State: { Running: false },
+            NetworkSettings: {
+              Networks: detached ? {} : { [botNet]: { NetworkID: "net-v4" } },
+            },
+          }),
+        ),
+        start: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      const network = {
+        inspect: vi.fn().mockResolvedValue({ Id: "net-v4", EnableIPv6: false }),
+        connect: vi.fn().mockResolvedValue(undefined),
+        disconnect: vi.fn(async ({ Container }: { Container: string }) => {
+          if (Container === existing.id) detached = true;
+        }),
+        remove: vi.fn().mockRejectedValue(new Error("network has active endpoints elsewhere")),
+      };
+      mocks.docker.getImage.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({ Id: "image" }),
+      });
+      mocks.docker.getContainer.mockReturnValue(existing);
+      mocks.docker.getNetwork.mockReturnValue(network);
+      mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
+      mocks.docker.createNetwork.mockResolvedValue({ remove: vi.fn() });
+
+      const response = await provision();
+      expect(await response.json()).toMatchObject({ id: "existing", resumed: true, started: true });
+      expect(network.remove).toHaveBeenCalledOnce();
+      expect(network.connect).toHaveBeenCalledExactlyOnceWith({ Container: existing.id });
+      expect(existing.start).toHaveBeenCalledOnce();
+    });
 
     it.each([
       ["removed", Object.assign(new Error("no such network"), { statusCode: 404 })],

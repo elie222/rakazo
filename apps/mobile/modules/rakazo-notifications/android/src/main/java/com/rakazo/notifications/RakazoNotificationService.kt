@@ -33,6 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -43,27 +44,15 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-private data class RunRecord(
-  val runId: String,
-  val spaceId: String,
-  val botId: String,
-  val botName: String,
-  val groupId: String?,
-  val groupName: String?,
-  val threadId: String,
-  val status: String,
-  val prompt: String,
-  val trigger: String,
-  val notificationsEnabled: Boolean,
-)
-
 private class ApiException(val status: Int) : IOException()
+private const val MAX_RPC_RESPONSE_BYTES = 16 * 1024 * 1024
 
 class RakazoNotificationService : Service() {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private lateinit var manager: NotificationManager
   private var pollJob: Job? = null
   private val knownCompleted = mutableSetOf<String>()
+  private val completions = PollCompletions(knownCompleted)
   private val alertedAttention = mutableSetOf<String>()
   private var historySpaceId: String? = null
   private val tokenCache = PollTokenCache()
@@ -77,14 +66,22 @@ class RakazoNotificationService : Service() {
       manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Channel names follow the current locale; recreating an existing channel updates its copy.
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
+      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
+        // Only a seeded poll can hold pending replies, and a discard always changes the
+        // seen set, so the mute persists here instead of waiting for the next poll.
+        completions.muteBot(botId) {
+          val stored = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(SEEN_RUNS_SPACE_ID, null)
+          if (ownsStoredHistory(stored, historySpaceId)) persistCompleted(seeded = true)
+        }
+      }
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
@@ -127,8 +124,8 @@ class RakazoNotificationService : Service() {
         stopIfCurrent(generation)
         return
       }
-      val seeded = prepareHistorySpace(generation, storage.spaceId) ?: return
-      val copyContext = localizedContext(storage.locale)
+      val seeded = prepareHistorySpace(generation, storage.endpoint, storage.spaceId, token) ?: return
+      val copyContext = localizedContext(this, storage.locale)
       var recentPageBusy = true
       try {
         if (generation != sessionGeneration.get()) return
@@ -140,7 +137,7 @@ class RakazoNotificationService : Service() {
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
-        val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
+        var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
             recentPageBusy = recent.size >= RECENT_LIMIT && recent.any { it.runId !in knownCompleted }
@@ -148,30 +145,10 @@ class RakazoNotificationService : Service() {
             if (visibleWorking.isEmpty()) clearLive() else {
               showLive(visibleWorking, avatarStyle, copyContext)
             }
-            if (!seeded) {
-              knownCompleted += recent.map { it.runId }
-            } else {
-              recent.asReversed().filter { knownCompleted.add(it.runId) }.forEach { run ->
-                when {
-                  !run.notificationsEnabled || isOpenThread(run) -> Unit
-                  run.status == "failed" && settings.needsAttention ->
-                    immediate += run to attentionCopy(copyContext, run)
-                  run.status != "completed" -> Unit
-                  run.trigger == "routine" && settings.scheduledTasks ->
-                    replyLookups += run to true
-                  run.trigger != "routine" && settings.messages ->
-                    replyLookups += run to false
-                }
-              }
+            replyLookups = completions.prepare(recent, seeded, settings, ::isOpenThread) { run ->
+              immediate += run to attentionCopy(copyContext, run)
             }
-            knownCompleted.retainAll(recent.map { it.runId }.toSet())
-            val nextSeen = knownCompleted.toSet()
-            historyWrites.persistIfChanged(seeded, nextSeen) { seen ->
-              getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
-                .putStringSet(SEEN_RUNS, seen)
-                .putBoolean(SEEN_RUNS_SEEDED, true)
-                .apply()
-            }
+            persistCompleted(seeded)
             if (settings.needsAttention) {
               active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
                 .filter { it.notificationsEnabled }
@@ -184,26 +161,35 @@ class RakazoNotificationService : Service() {
         ) {
           return
         }
-        for ((run, scheduled) in replyLookups) {
+        for (run in replyLookups) {
           if (generation != sessionGeneration.get()) return
           val reply = runCatching {
             latestReply(storage.endpoint, token, storage.spaceId, storage.headers, run)
           }.getOrDefault("")
-          if (reply == null) continue
           if (!runIfCurrent(generation) {
-              post(
-                run,
-                NotificationCopy(
-                  title = when {
-                    scheduled -> copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
-                    run.groupName != null ->
-                      copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
-                    else -> copyContext.getString(R.string.rakazo_replied, run.botName)
-                  },
-                  body = reply.ifBlank { run.prompt },
-                  channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
-                ),
-              )
+              completions.complete(run, alreadyPosted = {
+                manager.activeNotifications.any {
+                  it.notification.extras.getString(EXTRA_RUN_ID) == run.runId
+                }
+              }) {
+                if (reply != null) {
+                  post(
+                    run,
+                    NotificationCopy(
+                      title = when {
+                        run.trigger == "routine" ->
+                          copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                        run.groupName != null ->
+                          copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                        else -> copyContext.getString(R.string.rakazo_replied, run.botName)
+                      },
+                      body = reply.ifBlank { run.prompt },
+                      channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
+                    ),
+                  )
+                }
+              }
+              persistCompleted(true)
             }
           ) {
             return
@@ -244,9 +230,19 @@ class RakazoNotificationService : Service() {
     }
   }
 
-  private fun prepareHistorySpace(generation: Long, spaceId: String): Boolean? =
+  private fun persistCompleted(seeded: Boolean) {
+    historyWrites.persistIfChanged(seeded, knownCompleted) { seen ->
+      getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
+        .putStringSet(SEEN_RUNS, seen)
+        .putBoolean(SEEN_RUNS_SEEDED, true)
+        .apply()
+    }
+  }
+
+  private fun prepareHistorySpace(generation: Long, endpoint: String, spaceId: String, token: String): Boolean? =
     synchronized(sessionLock) {
       if (generation != sessionGeneration.get()) return null
+      completions.useSession(endpoint, spaceId, token, sessionEpoch)
       val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
       if (historySpaceId != spaceId) {
         knownCompleted.clear()
@@ -275,6 +271,7 @@ class RakazoNotificationService : Service() {
       .setStyle(Notification.BigTextStyle().bigText(copy.body))
       .setContentIntent(openApp(run))
       .addExtras(Bundle().apply {
+        if (run.status == "completed") putString(EXTRA_RUN_ID, run.runId)
         putString("rakazo.spaceId", run.spaceId)
         putString("rakazo.botId", run.botId)
         putString("rakazo.threadId", run.threadId)
@@ -354,9 +351,7 @@ class RakazoNotificationService : Service() {
     manager.cancel(LIVE_NOTIFICATION_ID)
   }
 
-  private fun isOpenThread(run: RunRecord): Boolean = synchronized(sessionLock) {
-    if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId
-  }
+  private fun isOpenThread(run: RunRecord): Boolean = isOpenThread(run.botId, run.threadId)
 
   @Suppress("DEPRECATION")
   private fun builder(channel: String): Notification.Builder =
@@ -384,39 +379,6 @@ class RakazoNotificationService : Service() {
     )
   }
 
-  private fun localizedContext(tag: String): Context {
-    if (tag.isBlank()) return this
-    val configuration = Configuration(resources.configuration)
-    configuration.setLocale(Locale.forLanguageTag(tag))
-    return createConfigurationContext(configuration)
-  }
-
-  private fun createChannels(context: Context) {
-    if (Build.VERSION.SDK_INT < 26) return
-    listOf(
-      NotificationChannel(
-        Channels.LIVE,
-        context.getString(R.string.rakazo_channel_live),
-        NotificationManager.IMPORTANCE_LOW,
-      ),
-      NotificationChannel(
-        Channels.MESSAGES,
-        context.getString(R.string.rakazo_channel_messages),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.SCHEDULED,
-        context.getString(R.string.rakazo_channel_scheduled),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.ATTENTION,
-        context.getString(R.string.rakazo_channel_attention),
-        NotificationManager.IMPORTANCE_HIGH,
-      ),
-    ).forEach(manager::createNotificationChannel)
-  }
-
   private fun stop() {
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
@@ -433,20 +395,24 @@ class RakazoNotificationService : Service() {
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
     private const val RECENT_LIMIT = 20 // Keep in sync with apps/api/src/runs.ts.
     private const val EXTRA_RESET_TOKEN = "com.rakazo.notifications.RESET_TOKEN"
+    private const val EXTRA_MUTED_BOT_ID = "com.rakazo.notifications.MUTED_BOT_ID"
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
     private const val SEEN_RUNS_SPACE_ID = "seen_runs_space_id"
+    internal const val EXTRA_RUN_ID = "rakazo.runId"
     private const val THREAD_NOTIFICATION_IDS = "thread_notification_ids"
     private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
+    private var sessionEpoch = 0L
     private var openBotId: String? = null
     private var openThreadId: String? = null
 
-    fun start(context: Context, resetToken: Boolean = true, action: String? = null) {
+    fun start(context: Context, resetToken: Boolean = true, action: String? = null, mutedBotId: String? = null) {
       val intent = Intent(context, RakazoNotificationService::class.java)
         .putExtra(EXTRA_RESET_TOKEN, resetToken)
       if (action != null) intent.action = action
+      if (mutedBotId != null) intent.putExtra(EXTRA_MUTED_BOT_ID, mutedBotId)
       runCatching { context.startService(intent) }
         .onFailure { error -> Log.w(TAG, "Could not start notification poller", error) }
     }
@@ -455,13 +421,19 @@ class RakazoNotificationService : Service() {
       context.stopService(Intent(context, RakazoNotificationService::class.java))
     }
 
+    fun isOpenThread(botId: String, threadId: String): Boolean = synchronized(sessionLock) {
+      if (openThreadId != null) openThreadId == threadId else openBotId == botId
+    }
+
     fun setOpenThread(context: Context, botId: String?, threadId: String?) {
       synchronized(sessionLock) {
         openBotId = botId
         openThreadId = threadId
       }
       if (threadId != null) {
-        context.getSystemService(NotificationManager::class.java).cancel(threadId.hashCode())
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(threadId.hashCode())
+        manager.cancel(SenderPush.notificationId(threadId))
       }
       start(context, resetToken = false, action = ACTION_THREAD_CHANGED)
     }
@@ -469,6 +441,7 @@ class RakazoNotificationService : Service() {
     fun clearSession(context: Context) {
       synchronized(sessionLock) {
         sessionGeneration.incrementAndGet()
+        sessionEpoch++
         openBotId = null
         openThreadId = null
         stop(context)
@@ -499,7 +472,7 @@ private fun attentionCopy(context: Context, run: RunRecord): NotificationCopy = 
   )
 }
 
-private object Channels {
+internal object Channels {
   const val LIVE = "rakazo_live"
   const val MESSAGES = "rakazo_messages"
   const val SCHEDULED = "rakazo_scheduled"
@@ -1013,7 +986,7 @@ internal fun markdownToPreview(markdown: String): String {
   return restore(text).replace(Regex("\\s+"), " ").trim()
 }
 
-private fun rpc(
+internal fun rpc(
   endpoint: String,
   token: String,
   spaceId: String,
@@ -1043,7 +1016,17 @@ private fun rpc(
     }
     val status = connection.responseCode
     if (status !in 200..299) throw ApiException(status)
-    val body = connection.inputStream.bufferedReader().use { it.readText() }
+    val body = connection.inputStream.use { stream ->
+      val bytes = ByteArrayOutputStream()
+      val buffer = ByteArray(8_192)
+      while (true) {
+        val count = stream.read(buffer, 0, minOf(buffer.size, MAX_RPC_RESPONSE_BYTES - bytes.size() + 1))
+        if (count == -1) break
+        if (bytes.size() + count > MAX_RPC_RESPONSE_BYTES) throw IOException("Server response too large")
+        bytes.write(buffer, 0, count)
+      }
+      bytes.toString(Charsets.UTF_8.name())
+    }
     val root = try {
       JSONObject(body)
     } catch (_: JSONException) {
@@ -1073,3 +1056,37 @@ private fun JSONObject.requiredString(name: String): String =
 
 private fun JSONObject.optionalString(name: String): String? =
   if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+internal fun localizedContext(base: Context, tag: String): Context {
+  if (tag.isBlank()) return base
+  val configuration = Configuration(base.resources.configuration)
+  configuration.setLocale(Locale.forLanguageTag(tag))
+  return base.createConfigurationContext(configuration)
+}
+
+internal fun createRakazoChannels(base: Context) {
+  if (Build.VERSION.SDK_INT < 26) return
+  val context = localizedContext(base, NotificationStorage(base).locale)
+  listOf(
+    NotificationChannel(
+      Channels.LIVE,
+      context.getString(R.string.rakazo_channel_live),
+      NotificationManager.IMPORTANCE_LOW,
+    ),
+    NotificationChannel(
+      Channels.MESSAGES,
+      context.getString(R.string.rakazo_channel_messages),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.SCHEDULED,
+      context.getString(R.string.rakazo_channel_scheduled),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.ATTENTION,
+      context.getString(R.string.rakazo_channel_attention),
+      NotificationManager.IMPORTANCE_HIGH,
+    ),
+  ).forEach(context.getSystemService(NotificationManager::class.java)::createNotificationChannel)
+}

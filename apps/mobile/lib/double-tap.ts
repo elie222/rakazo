@@ -59,6 +59,6 @@ export function canDoubleTapReact(
     includeReact &&
     !waitingForUser &&
     blocks.length > 0 &&
-    blocks.every((block) => ["text", "image", "file", "chart"].includes(block.kind))
+    blocks.every((block) => ["text", "image", "file", "chart", "page"].includes(block.kind))
   );
 }

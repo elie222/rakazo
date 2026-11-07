@@ -19,6 +19,9 @@ export function localVisionModelIds(): ReadonlySet<string> {
   return declaredVisionModelIds(LOCAL_VISION_MODELS_ENV);
 }
 
+/** Model ids the local server serves with OpenAI-style `reasoning_effort`, declared by the operator. */
+export const LOCAL_REASONING_MODELS_ENV = "RAKAZO_LOCAL_REASONING_MODELS";
+
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_CONTEXT_WINDOW = 32_768;
 const DEFAULT_MAX_TOKENS = 4_096;
@@ -49,14 +52,20 @@ function tokenLimit(name: string, fallback: number): number {
 }
 
 function localModel(id: string): Model<"openai-completions"> {
+  // Same comma-separated id list as the vision opt-in.
+  const reasoning = declaredVisionModelIds(LOCAL_REASONING_MODELS_ENV).has(id);
   return {
     id,
     name: id,
     api: "openai-completions",
     provider: LOCAL_PROVIDER_ID,
     baseUrl: localBaseUrl(),
-    reasoning: false,
-    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
+    reasoning,
+    compat: reasoning
+      ? { supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: "openai" }
+      : { supportsDeveloperRole: false, supportsReasoningEffort: false },
+    // Mirrors openAiCompatibleModel's reasoning levels.
+    ...(reasoning ? { thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" } } : {}),
     input: inputModalities(localVisionModelIds().has(id)),
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

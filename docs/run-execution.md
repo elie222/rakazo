@@ -82,10 +82,13 @@ A bounded pass cancels redundant marked timer rows with no attempts, effects,
 output, steering, checkpoint, or live computer ownership, preserving historical
 rows and terminal events. The `routine.coalesced` log records reuse without
 another `routine.fired` event.
-A timer run whose first start is more than 15 minutes after the most recent occurrence
+A timer run whose first start is at least 15 minutes after the most recent occurrence
 due by then (counted from the occurrence in its marker) tells the agent both
 times in the routine's timezone, so a catch-up after downtime can adapt instead
-of assuming it is still the scheduled time. Late runs are never skipped.
+of assuming it is still the scheduled time. Late runs are never skipped. The due time is
+recorded on the run at that first start, so a resume reuses it and a later schedule edit
+does not change it, and the routine's run history shows it ("Started 40m late").
+Already-started runs with no recorded lateness remain unlabelled on resume.
 Committed timer runs and their advanced schedules remain intact when publication
 fails. Recovery repairs delivery for every driver; a notification failure never
 rolls back work that another tick or dispatcher can already own.

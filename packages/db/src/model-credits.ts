@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "./client.js";
-import { Prisma } from "./generated/prisma/client.js";
+import type { Prisma } from "./generated/prisma/client.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
@@ -12,6 +12,7 @@ import {
   returnCreditLots,
   syncLotBalance,
 } from "./model-credit-lots.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 
 export const MICROS_PER_DOLLAR = 1_000_000;
 
@@ -23,8 +24,7 @@ export async function creditAccount(prisma: PrismaClient, organizationId: string
       update: {},
     });
   } catch (error) {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"))
-      throw error;
+    if (!isUniqueViolation(error)) throw error;
     // Empty-update upserts can race; the organization primary key is the only unique constraint.
     return prisma.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } });
   }

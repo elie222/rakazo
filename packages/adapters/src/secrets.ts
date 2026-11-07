@@ -28,6 +28,12 @@ function legacyKeyFrom(secret: string): Buffer {
 }
 
 const SCRYPT_OPTIONS: ScryptOptions = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+/**
+ * Keys derived for recent reads. A derivation holds a threadpool thread for tens of
+ * milliseconds, so a list that opens every vault item would otherwise stall the process's
+ * file and DNS work on each view. A derived key opens only its own record.
+ */
+const DERIVED_KEY_CACHE_SIZE = 1_000;
 
 function keyFrom(secret: string, salt: Buffer): Buffer {
   return scryptSync(secret, salt, 32, SCRYPT_OPTIONS);
@@ -65,6 +71,7 @@ function openSealed(sealed: SealedSecret, key: Buffer, recordId: string): string
 
 export class EncryptedSecretStore extends SecretChanges implements SecretStore {
   private warnedRemoteRef = false;
+  private readonly derivedKeys = new Map<string, Promise<Buffer>>();
 
   constructor(private readonly encryptionKey: string) {
     super();
@@ -129,9 +136,29 @@ export class EncryptedSecretStore extends SecretChanges implements SecretStore {
     }
     if (!ciphertext.startsWith(VERSION_PREFIX)) return this.loadLegacy(ciphertext);
     const sealed = parseSealed(ciphertext);
-    const key = await keyFromAsync(this.encryptionKey, sealed.salt);
+    const key = await this.derivedKey(sealed.salt);
     if (typeof context !== "string") context.signal?.throwIfAborted();
     return openSealed(sealed, key, recordId);
+  }
+
+  /** The salt's key, derived once and kept for the most recent reads. */
+  private derivedKey(salt: Buffer): Promise<Buffer> {
+    const id = salt.toString("base64");
+    const cached = this.derivedKeys.get(id);
+    if (cached) {
+      this.derivedKeys.delete(id);
+      this.derivedKeys.set(id, cached);
+      return cached;
+    }
+    const key = keyFromAsync(this.encryptionKey, salt);
+    key.catch(() => {
+      if (this.derivedKeys.get(id) === key) this.derivedKeys.delete(id);
+    });
+    this.derivedKeys.set(id, key);
+    if (this.derivedKeys.size > DERIVED_KEY_CACHE_SIZE) {
+      this.derivedKeys.delete(this.derivedKeys.keys().next().value!);
+    }
+    return key;
   }
 
   async start(): Promise<void> {}

@@ -1,0 +1,106 @@
+---
+import ArticleSections from "../../components/ArticleSections.astro";
+import ArticleText from "../../components/ArticleText.astro";
+import Button from "../../components/Button.astro";
+import ProviderCard from "../../components/ProviderCard.astro";
+import { ProviderScene } from "../../components/ProviderScene";
+import SiteFrame from "../../components/SiteFrame.astro";
+import { ogPublicPath } from "../../og-pages";
+import {
+  COMPUTER_PROVIDERS_DOCS_PATH,
+  SANDBOXES,
+  SANDBOXES_HUB,
+  SANDBOXES_UPDATED,
+  sandboxLink,
+  sandboxPath,
+} from "../../sandboxes";
+import { GITHUB_URL } from "../../site";
+---
+
+<SiteFrame
+  title={SANDBOXES_HUB.title}
+  description={SANDBOXES_HUB.description}
+  faq={SANDBOXES_HUB.faq}
+  ogImage={ogPublicPath("sandboxes")}
+  markdownAlternate="/sandboxes.md"
+>
+  <h1>{SANDBOXES_HUB.h1}</h1>
+  <p class="page-updated">Updated {SANDBOXES_UPDATED}.</p>
+  {SANDBOXES_HUB.intro.map((paragraph) => <p><ArticleText text={paragraph} /></p>)}
+
+  <ProviderScene {...SANDBOXES_HUB.scene} />
+
+  <h2>Compared</h2>
+
+  <div class="alt-table-wrap">
+    <table class="alt-table">
+      <caption class="sr-only">Sandboxes for AI agents compared</caption>
+      <thead>
+        <tr>
+          <th scope="col">Sandbox</th>
+          <th scope="col">Runs on</th>
+          <th scope="col">Keeps between sessions</th>
+          <th scope="col">Best for</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          SANDBOXES.map((sandbox) => (
+            <tr>
+              <th scope="row">
+                <a href={sandboxPath(sandbox.slug)}>{sandbox.name}</a>
+              </th>
+              <td>{sandbox.runsOn}</td>
+              <td>{sandbox.keeps}</td>
+              <td>{sandbox.bestFor}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <ArticleSections sections={SANDBOXES_HUB.sections} />
+
+  <h2>Every option</h2>
+  <ul class="sandbox-cards">
+    {SANDBOXES.map((sandbox) => <ProviderCard link={sandboxLink(sandbox)} />)}
+  </ul>
+
+  <h2>How to choose</h2>
+  {
+    SANDBOXES_HUB.choose.map((item) => (
+      <section>
+        <h3>{item.heading}</h3>
+        <p><ArticleText text={item.text} /></p>
+      </section>
+    ))
+  }
+  <div class="alt-actions">
+    <Button href={COMPUTER_PROVIDERS_DOCS_PATH}>Computer providers guide</Button>
+    <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+  </div>
+
+  <h2 id="faq">FAQ</h2>
+  {
+    SANDBOXES_HUB.faq.map((item, index) => (
+      <section aria-labelledby={`faq-${index}`}>
+        <h3 id={`faq-${index}`}>{item.question}</h3>
+        <p><ArticleText text={item.answer} /></p>
+      </section>
+    ))
+  }
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      SANDBOXES_HUB.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</SiteFrame>

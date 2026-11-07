@@ -117,6 +117,29 @@ describe("home archive", () => {
     expect(await tree(source)).toEqual(before);
   });
 
+  it("leaves out directories tagged as caches", async () => {
+    const source = await tempDir();
+    const dest = await tempDir();
+    const files = {
+      "app/src/main.rs": "fn main() {}",
+      "app/target/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55",
+      "app/target/debug/app": "binary",
+      "notes/CACHEDIR.TAG": "not a tag",
+    };
+    for (const [name, content] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(source, name)), { recursive: true });
+      await writeFile(path.join(source, name), content);
+    }
+    await unpackHome(packHome(source), dest);
+    expect(await tree(dest)).toEqual({
+      "app/": "",
+      "app/src/": "",
+      "app/src/main.rs": "fn main() {}",
+      "notes/": "",
+      "notes/CACHEDIR.TAG": "not a tag",
+    });
+  });
+
   it("uses the shared 5 GiB save limit even with larger archive read bounds", async () => {
     const source = await tempDir();
     const handle = await open(path.join(source, "large.bin"), "w");

@@ -43,6 +43,36 @@ test(
     await captureScreenshot(page, testInfo, "signup-ready");
   },
 );
+test("signup suggests a fix for a mistyped email domain", async ({ page }, testInfo) => {
+  let signups = 0;
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
+    }),
+  );
+  await page.route("**/api/auth/sign-up/email", (route) => {
+    signups += 1;
+    return route.fulfill({
+      json: { token: null, user: { id: "pending-user", emailVerified: false } },
+    });
+  });
+  await page.goto("/sign-up");
+  await page.getByLabel("Name").fill("Typo User");
+  await page.getByLabel("Email").fill("typo@gmial.com");
+  await page.getByLabel("Password", { exact: true }).fill("password12");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  const fix = page.getByRole("button", { name: "typo@gmail.com" });
+  await expect(fix).toBeVisible();
+  expect(signups).toBe(0);
+  await captureScreenshot(page, testInfo, "signup-email-typo");
+  await fix.click();
+  await expect(page.getByLabel("Email")).toHaveValue("typo@gmail.com");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  expect(signups).toBe(1);
+});
+
 test(
   "restricted signup waits for mailbox verification",
   { tag: "@nightly" },
@@ -74,7 +104,7 @@ test(
 );
 
 test(
-  "signed-out welcome fits a narrow phone and offers sign in",
+  "a new visitor opening the app lands on sign up, fits a narrow phone, and can switch to sign in",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
@@ -85,16 +115,23 @@ test(
     );
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto("/");
-    const main = page.getByRole("main");
-    await expect(main.getByRole("heading", { name: "Rakazo", level: 1 })).toBeVisible();
-    await expect(main.getByRole("button", { name: "Sign up", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-up$/);
+    await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 320);
-    await captureScreenshot(page, testInfo, "logged-out-welcome-phone");
-    await main.getByRole("link", { name: "Sign in", exact: true }).click();
+    await captureScreenshot(page, testInfo, "logged-out-sign-up-phone");
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/sign-in$/);
     await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   },
 );
+
+test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  // Where a refused SSO sign-in lands; password and code sign-in show the same text.
+  await page.goto("/sign-in?error=ACCOUNT_DEACTIVATED");
+  await expect(page.getByText("This account is deactivated")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
+});
 
 test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
@@ -102,7 +139,7 @@ test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await captureScreenshot(page, testInfo, "not-found");
   await page.getByRole("link", { name: "Go home" }).click();
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/sign-up$/);
 });
 
 test("logout protects bot deep links and sign-in restores the session", async ({
@@ -130,7 +167,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "36-account-menu");
 
@@ -160,14 +196,11 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
+  // Someone who has signed in here before reopens the app to sign in, not to a new account.
   await page.goto("/");
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
-  await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
-  await page.getByRole("button", { name: /Sign up/ }).click();
-  await expect(page).toHaveURL(/\/sign-up$/);
-  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
-  await page.goto("/");
-  await captureScreenshot(page, testInfo, "37-logged-out-welcome");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "37-logged-out-returning");
 
   await page.goto(protectedBotPath);
   await page.waitForURL((url) => url.pathname === "/sign-in");

@@ -3,16 +3,16 @@ import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/api";
 import type { ResolvedAppearance } from "../lib/appearance";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
 import type { InboxItem, InboxSpace } from "../lib/inbox-spaces";
 import { canDeleteInboxSpace, inboxItemKey } from "../lib/inbox-spaces";
+import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import type { useInboxChatActions } from "../lib/use-inbox-chat-actions";
 import { createHomeStyles } from "./home-styles";
-import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionChevron } from "./inbox-rows";
+import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionToggle } from "./inbox-rows";
 import { NativeSymbol } from "./native-symbol";
 
 // Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
@@ -47,6 +47,7 @@ export function useInboxRenderItem({
   botSections,
   chooseInboxSpace,
   confirmDeleteSpace,
+  createBotInSpace,
   day,
   deleteSection,
   editSectionFromMenu,
@@ -69,6 +70,7 @@ export function useInboxRenderItem({
   botSections: MobileBotSection[];
   chooseInboxSpace: (spaceId: string) => void;
   confirmDeleteSpace: (space: InboxSpace) => void;
+  createBotInSpace: (spaceId: string) => void;
   day: number;
   /** The selected space: only its chats get swipe actions and the row menu. */
   spaceId: string | undefined;
@@ -121,6 +123,13 @@ export function useInboxRenderItem({
             {sharing ? null : (
               <MenuView
                 actions={[
+                  {
+                    id: "new-bot",
+                    title: t("New bot"),
+                    image: "person.crop.circle.badge.plus",
+                    attributes: { disabled: spaceBusy || !!spaceRecoveryId },
+                  },
+                  { id: "members", title: t("Members"), image: "person.2" },
                   { id: "settings", title: t("Settings"), image: "gearshape" },
                   ...(canDeleteInboxSpace(item.space)
                     ? [
@@ -139,10 +148,11 @@ export function useInboxRenderItem({
                 colorScheme={appearance}
                 onPressAction={({ nativeEvent }) => {
                   if (!item.space) return;
-                  if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
+                  if (nativeEvent.event === "new-bot") createBotInSpace(item.space.id);
+                  else if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
                   else
                     router.push({
-                      pathname: "/space",
+                      pathname: nativeEvent.event === "members" ? "/space-members" : "/space",
                       params: { spaceId: item.space.id, name: item.space.name },
                     });
                 }}
@@ -159,22 +169,12 @@ export function useInboxRenderItem({
           </View>
         ) : (
           <View style={styles.sectionHeadingRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                item.collapsed
-                  ? t("Expand {name}", { name: item.title })
-                  : t("Collapse {name}", { name: item.title })
-              }
-              accessibilityState={{ expanded: !item.collapsed }}
-              accessibilityValue={item.collapsed ? { text: String(item.count ?? 0) } : undefined}
+            <SectionToggle
+              title={item.title}
+              count={item.collapsed ? (item.count ?? 0) : undefined}
+              collapsed={item.collapsed === true}
               onPress={() => toggleCollapsed(item.key)}
-              style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
-            >
-              <Text style={styles.sectionTitle}>{item.title}</Text>
-              {item.collapsed ? <Text style={styles.sectionCount}>{item.count ?? 0}</Text> : null}
-              <SectionChevron collapsed={item.collapsed === true} />
-            </Pressable>
+            />
             {sharing || !item.sectionId ? null : Platform.OS === "android" ? (
               // A plain button, like the create control: the Android menu trigger can collapse to
               // zero width on an older binary, which would hide the only way to delete an empty section.
@@ -243,6 +243,7 @@ export function useInboxRenderItem({
       botSections,
       chooseInboxSpace,
       confirmDeleteSpace,
+      createBotInSpace,
       deleteSection,
       day,
       editSectionFromMenu,

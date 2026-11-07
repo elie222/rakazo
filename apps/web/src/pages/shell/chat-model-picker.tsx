@@ -1,13 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices, MODEL_SEARCH_THRESHOLD } from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
+  ListSearchInput,
   NativeSelect,
   NativeSelectOption,
   Popover,
@@ -17,6 +17,7 @@ import {
 import { ChevronDownIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
+import { useListSearch } from "../../lib/use-list-search";
 
 /** A chat's model: a native select, or a searchable list once there are too many to scan. */
 export function ChatModelPicker({
@@ -33,13 +34,15 @@ export function ChatModelPicker({
   const { t } = useLingui();
   const imagesHintId = useId();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const sections = useMemo(() => groupModelChoices(choices, query), [choices, query]);
+  const { query, setQuery, showSearch, visible } = useListSearch(choices, {
+    text: modelChoiceSearchText,
+  });
+  const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
   const imagesHint = <span id={imagesHintId} hidden>{t`Can't read images`}</span>;
 
-  if (choices.length <= MODEL_SEARCH_THRESHOLD) {
+  if (!showSearch) {
     return (
       <div className="mt-2 flex items-center gap-2">
         {imagesHint}
@@ -76,7 +79,7 @@ export function ChatModelPicker({
       <PopoverTrigger
         id={id}
         aria-describedby={textOnly ? imagesHintId : undefined}
-        className="mt-2 flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent pr-2.5 pl-2.5 text-start text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
+        className="mt-2 flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent pr-2.5 pl-2.5 text-start text-body text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
       >
         <span className="min-w-0 truncate">{selected?.label}</span>
         <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
@@ -95,11 +98,12 @@ export function ChatModelPicker({
             shouldFilter={false}
             className="h-auto min-h-0 max-h-(--available-height) rounded-none bg-popover *:data-[slot=command-input-wrapper]:shrink-0"
           >
-            <CommandInput
-              value={query}
-              onValueChange={setQuery}
+            <ListSearchInput
+              command
+              query={query}
+              setQuery={setQuery}
+              label={t`Search models`}
               placeholder={t`Search`}
-              aria-label={t`Search models`}
             />
             <CommandList className="min-h-0 max-h-80 flex-1 overflow-y-auto">
               <CommandEmpty>

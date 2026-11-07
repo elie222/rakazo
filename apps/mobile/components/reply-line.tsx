@@ -1,5 +1,5 @@
 import type { ReplyPreview } from "@rakazo/contracts";
-import { replyLabel } from "@rakazo/core";
+import { isPageOriginReply, replyLabel } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
@@ -26,6 +26,7 @@ export function ReplyLine({
   onJump?: (id: string) => void;
 }) {
   if (!targetId && quote == null) return null;
+  if (isPageOriginReply({ replyQuote: quote, replyPreview: preview })) return null;
   const unavailable = preview === null || !targetId;
   const text = replyLabel(
     quote,

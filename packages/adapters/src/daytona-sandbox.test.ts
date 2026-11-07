@@ -31,10 +31,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("forwards an optional snapshot name to create()", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider(
-      { apiKey: "test-key", snapshot: "rakazo-computer" },
-      fixture.client,
-    );
+    const provider = new DaytonaSandboxProvider({ snapshot: "rakazo-computer" }, fixture.client);
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     expect(fixture.create).toHaveBeenCalledWith(
       expect.objectContaining({ snapshot: "rakazo-computer" }),
@@ -45,7 +42,7 @@ describe("DaytonaSandboxProvider", () => {
   it("falls back to DAYTONA_SNAPSHOT when config.snapshot is unset", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", " env-snapshot ");
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     expect(fixture.create).toHaveBeenCalledWith(
       expect.objectContaining({ snapshot: "env-snapshot" }),
@@ -56,10 +53,7 @@ describe("DaytonaSandboxProvider", () => {
   it("prefers config.snapshot over DAYTONA_SNAPSHOT", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", "env-snapshot");
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider(
-      { apiKey: "test-key", snapshot: " config-snapshot " },
-      fixture.client,
-    );
+    const provider = new DaytonaSandboxProvider({ snapshot: " config-snapshot " }, fixture.client);
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     expect(fixture.create).toHaveBeenCalledWith(
       expect.objectContaining({ snapshot: "config-snapshot" }),
@@ -69,7 +63,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("prunes excluded directories before listing their contents and keeps project core", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     for (const file of [
       "project/node_modules/pkg/index.js",
@@ -102,14 +96,14 @@ describe("DaytonaSandboxProvider", () => {
   it("omits snapshot from create() when unset", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", "   ");
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     expect(fixture.create.mock.calls[0]?.[0]).not.toHaveProperty("snapshot");
   });
 
   it("preserves desktop command output in failures", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
     fixture.executeCommand.mockResolvedValueOnce({ exitCode: 1, result: "could not start Xvfb" });
@@ -119,7 +113,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("implements the portable command, file, screen, and computer-use contract", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
 
@@ -236,7 +230,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("reconnects stopped sandboxes and replaces missing ones", async () => {
     const existing = daytonaFixture({ id: "existing", state: "stopped" });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, existing.client);
+    const provider = new DaytonaSandboxProvider({}, existing.client);
     const reconnected = await provider.provision(
       {
         botId: "bot-a",
@@ -254,10 +248,7 @@ describe("DaytonaSandboxProvider", () => {
     });
 
     const replacement = daytonaFixture({ id: "replacement" });
-    const replacingProvider = new DaytonaSandboxProvider(
-      { apiKey: "test-key" },
-      replacement.client,
-    );
+    const replacingProvider = new DaytonaSandboxProvider({}, replacement.client);
     const replaced = await replacingProvider.provision(
       {
         botId: "bot-b",
@@ -340,7 +331,7 @@ describe("DaytonaSandboxProvider", () => {
         recoverable: testCase.recoverable,
         later: testCase.later,
       });
-      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
 
       const computer = await drive(provider.provision(request, context));
 
@@ -463,7 +454,7 @@ describe("DaytonaSandboxProvider", () => {
         desiredState: "stopped",
       });
       arrange(fixture);
-      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
       const provisioning = drive(provider.provision(request, context));
 
       if (expected instanceof Error) {
@@ -514,7 +505,7 @@ describe("DaytonaSandboxProvider", () => {
     it.each(cases)("$state", async ({ state, later, stops }) => {
       vi.useFakeTimers();
       const fixture = daytonaFixture({ id: "existing", state, later });
-      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
 
       await expect(drive(provider.stop(computer, context))).resolves.toBeUndefined();
       expect(fixture.stop).toHaveBeenCalledTimes(stops ? 1 : 0);
@@ -587,7 +578,7 @@ describe("DaytonaSandboxProvider", () => {
       vi.useFakeTimers();
       const fixture = daytonaFixture({ id: "existing", state: state ?? "started", later });
       arrange(fixture);
-      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
       const stopping = drive(provider.stop(computer, context));
 
       if (expected) await expect(stopping).rejects.toThrow(expected.message);
@@ -606,7 +597,7 @@ describe("DaytonaSandboxProvider", () => {
       fixture.remote.state = "creating";
       throw timeout;
     });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
 
     await expect(provider.provision({ botId: "bot-a", homePath: "/unused" }, context)).rejects.toBe(
       timeout,
@@ -622,7 +613,7 @@ describe("DaytonaSandboxProvider", () => {
     const fixture = daytonaFixture();
     const rejected = new DaytonaRateLimitError("Too many requests", 429);
     fixture.create.mockRejectedValueOnce(rejected);
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
 
     await expect(provider.provision({ botId: "bot-a", homePath: "/unused" }, context)).rejects.toBe(
       rejected,
@@ -633,7 +624,7 @@ describe("DaytonaSandboxProvider", () => {
   it("drops a cached handle once Daytona reports the sandbox gone", async () => {
     vi.useFakeTimers();
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
     fixture.remote.missing = true;
@@ -659,7 +650,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("re-validates a cached handle when the computer is provisioned again", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
     // Stopped outside Rakazo, for example from the Daytona dashboard.
@@ -676,7 +667,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("coalesces concurrent reconnect and workspace preparation", async () => {
     const fixture = daytonaFixture({ id: "shared", state: "stopped" });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const request = {
       botId: "bot-a",
       homePath: "/unused",
@@ -701,7 +692,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("returns a fresh reference before workspace preparation fails", async () => {
     const fixture = daytonaFixture({ prepareFails: true });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
 
     expect(computer).toMatchObject({ providerRef: "daytona-box", fresh: true });
@@ -713,7 +704,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("surfaces transient stop failures so cleanup can retry", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
     fixture.stop.mockRejectedValueOnce(new Error("temporary Daytona outage"));
@@ -726,7 +717,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("reports only a started sandbox as running, without starting it", async () => {
     const fixture = daytonaFixture({ id: "remote", state: "stopped" });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = {
       id: "remote",
       botId: "bot-a",
@@ -747,7 +738,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("distinguishes transient lookup failures from an already deleted sandbox", async () => {
     const fixture = daytonaFixture({ id: "remote" });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = {
       id: "remote",
       botId: "bot-a",
@@ -763,7 +754,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("accepts definitive deletion while preserving transient teardown failures", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
     const failure = new Error("temporary Daytona outage");
     fixture.deleteSandbox
@@ -781,7 +772,7 @@ describe("DaytonaSandboxProvider", () => {
 
   it("gives Team bots distinct Daytona previews using the shared runtime", async () => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
     const computer = await provider.provision({ botId: "team-home", homePath: "/unused" }, context);
     await provider.prepare(computer, context);
     const writer = { ...context, botId: "writer" };

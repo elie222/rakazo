@@ -10,9 +10,9 @@ import { ConnectionQuota } from "../../components/connection-quota";
 import { MenuPicker } from "../../components/menu-picker";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import type { MobileModel, MobileModelCredential } from "../../lib/api";
 import { rpc } from "../../lib/api";
 import { dateLocaleForUi, useI18n } from "../../lib/i18n";
+import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import {
   loadModelUsageSort,
   loadModelUsageSortInverted,

@@ -6,6 +6,7 @@ import {
   mergeRoutineRunPages,
   routineHistoryPage,
   routineRunAt,
+  routineRunLateness,
 } from "./routine-runs.js";
 
 const run: RoutineRun = {
@@ -16,6 +17,7 @@ const run: RoutineRun = {
   error: null,
   createdAt: "2026-01-02T11:59:00Z",
   startedAt: "2026-01-02T12:00:00Z",
+  lateSince: null,
   completedAt: "2026-01-02T12:01:22Z",
   messageId: null,
 };
@@ -46,6 +48,19 @@ describe("formatCompactDuration", () => {
 });
 
 describe("routine runs", () => {
+  it("says how late a scheduled run started in its largest whole unit", () => {
+    const late = (lateSince: string | null, startedAt: string | null = run.startedAt) =>
+      routineRunLateness({ ...run, lateSince, startedAt });
+    expect(late(null)).toBeNull();
+    expect(late("2026-01-02T11:00:00Z", null)).toBeNull();
+    expect(late("2026-01-02T11:44:30Z")).toEqual({ unit: "minutes", count: 15 });
+    expect(late("2026-01-02T11:00:01Z")).toEqual({ unit: "minutes", count: 59 });
+    expect(late("2026-01-02T11:00:00Z")).toEqual({ unit: "hours", count: 1 });
+    expect(late("2026-01-01T12:00:01Z")).toEqual({ unit: "hours", count: 23 });
+    expect(late("2026-01-01T12:00:00Z")).toEqual({ unit: "days", count: 1 });
+    expect(late("2025-12-30T09:00:00Z")).toEqual({ unit: "days", count: 3 });
+  });
+
   it("dates a run by its start, else by when it was queued", () => {
     expect(routineRunAt(run)).toBe(run.startedAt);
     expect(routineRunAt({ ...run, startedAt: null })).toBe(run.createdAt);

@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SearchSheet from "../app/search";
-import { selectSpace } from "./api";
+import { selectSpace } from "./api-server";
 import type { InboxSpace } from "./inbox-spaces";
 import { searchKindLabel } from "./search-sheet";
 
@@ -64,11 +64,15 @@ vi.mock("expo-router", () => ({
       return cleanup;
     }, [effect]),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   selectSpace: (id: string) => {
     state.selectionSeq++;
     return state.selectSpace(id);
   },
+}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   spaceSelectionSeq: () => state.selectionSeq,
   selectedSpaceId: () => state.spaceId,
   currentApiBase: () => state.apiBase,
@@ -205,8 +209,11 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+/** A button by its label; a result row's label starts with its title and kind, then the preview. */
 function row(label: string) {
-  return container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  return container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"], button[aria-label^="${label}, "]`,
+  )!;
 }
 async function type(text: string) {
   await act(async () => {
@@ -235,7 +242,7 @@ it("debounces typing, renders server hits and preserves the message jump destina
   expect(state.search).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTime(1));
   expect(state.search).toHaveBeenCalledWith("matching");
-  expect(container.querySelectorAll('button[aria-label="Found note, Message"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Found note, Message, "]')).toHaveLength(1);
   expect(row("Found note, Message").textContent).toContain("Scout: A matching line");
   await act(async () => row("Found note, Message").click());
   expect(state.selectSpace).toHaveBeenCalledWith("space-a");
@@ -252,7 +259,7 @@ it("keeps local name matching and does not duplicate conversation hits", async (
   state.search.mockResolvedValue([{ ...message, kind: "conversation", title: "Scout" }]);
   await type("Scout");
   await act(async () => vi.advanceTimersByTime(200));
-  expect(container.querySelectorAll('button[aria-label="Scout, Bot"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Scout, Bot, "]')).toHaveLength(1);
   expect(row("Team, Group")).toBeNull();
 });
 it("opens a group after switching spaces and keeps the sheet on switch failure", async () => {

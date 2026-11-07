@@ -5,6 +5,7 @@ import {
   callIdFromClientNonce,
   groupVoiceChats,
   INTERIM_BARGE_IN_MS,
+  reduceThreadSnapshot,
   runThreadSubscription,
 } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +13,6 @@ import { pickUp } from "./call-pickup.js";
 import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
 import { dictation } from "./dictation.js";
 import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
-import { reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 
 // The macro compiles away in the app build; tests run the source, so tag the template as-is.
@@ -119,6 +119,19 @@ describe("call session", () => {
     speech?.({ status: "speaking", caption: "Are you there?" });
     await Promise.resolve();
     expect(listen).toHaveBeenCalledTimes(2);
+  });
+
+  it("reopens listening when a finished turn transcribes to nothing", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
+    // The dictation session ends an empty attempt by publishing idle, then the final.
+    const watcher = vi.mocked(dictation.subscribe).mock.calls.at(-1)?.[0];
+    watcher?.({ status: "idle", transcript: "" });
+    await heard("");
+
+    expect(listen).toHaveBeenCalledTimes(2);
+    expect(send).not.toHaveBeenCalled();
+    expect(followUp).not.toHaveBeenCalled();
+    expect(getSnapshot()?.phase).toBe("listening");
   });
 
   it("keeps recovered active work when an older call refresh finishes late", async () => {

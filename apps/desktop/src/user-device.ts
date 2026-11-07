@@ -3,12 +3,18 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
+import type { UserDeviceClientOptions } from "@rakazo/adapters/user-device-client";
 import type {
   RakazoDesktopDevice,
   UserDevicePairRequest,
   UserDevicePairResponse,
 } from "@rakazo/contracts";
-import { USER_DEVICE_PAIR_PATH, USER_DEVICE_PATH } from "@rakazo/contracts";
+import {
+  USER_DEVICE_PAIR_PATH,
+  USER_DEVICE_PATH,
+  USER_DEVICE_SESSION_PATH,
+} from "@rakazo/contracts";
+import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export interface DeviceTokenCipher {
@@ -23,10 +29,20 @@ const MAX_TOKEN_LENGTH = 1024;
 export interface PairedDevice {
   token: string;
   deviceId: string | null;
+  /** The account it was paired for; null when paired before the server reported it. */
+  userId: string | null;
 }
 
 /** Only the native prompt sets "allowed". */
 export type DeviceConsent = "allowed" | "declined";
+
+/** "allowed" holds only for the account it was given for. */
+export interface SavedConsent {
+  consent: DeviceConsent;
+  userId: string | null;
+}
+
+const optionalString = (value: unknown) => (typeof value === "string" ? value : null);
 
 function deviceFile(userDataDir: string, origin: string, suffix = "") {
   const key = createHash("sha256").update(origin).digest("hex").slice(0, 32);
@@ -45,7 +61,11 @@ export async function readPairedDevice(
     if (saved?.origin !== origin || typeof saved.token !== "string") return null;
     const token = await cipher.decrypt(Buffer.from(saved.token, "base64"));
     if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return null;
-    return { token, deviceId: typeof saved.deviceId === "string" ? saved.deviceId : null };
+    return {
+      token,
+      deviceId: optionalString(saved.deviceId),
+      userId: optionalString(saved.userId),
+    };
   } catch {
     return null;
   }
@@ -61,7 +81,10 @@ export async function savePairedDevice(
   const file = deviceFile(userDataDir, origin);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const token = (await cipher.encrypt(device.token)).toString("base64");
-  await writePrivateFile(file, JSON.stringify({ origin, token, deviceId: device.deviceId }));
+  await writePrivateFile(
+    file,
+    JSON.stringify({ origin, token, deviceId: device.deviceId, userId: device.userId }),
+  );
 }
 
 export async function deletePairedDevice(userDataDir: string, origin: string): Promise<void> {
@@ -71,7 +94,7 @@ export async function deletePairedDevice(userDataDir: string, origin: string): P
 export async function readDeviceConsent(
   userDataDir: string,
   origin: string,
-): Promise<DeviceConsent | null> {
+): Promise<SavedConsent | null> {
   const raw = await readPrivateFile(
     deviceFile(userDataDir, origin, ".consent"),
     MAX_DEVICE_FILE_BYTES,
@@ -79,7 +102,12 @@ export async function readDeviceConsent(
   try {
     const saved = raw === null ? null : JSON.parse(raw);
     if (saved?.origin !== origin) return null;
-    return saved.consent === "allowed" || saved.consent === "declined" ? saved.consent : null;
+    // Versions before accounts were saved also wrote "declined" when the server ended a pairing,
+    // so that answer may not be the person's: ask again.
+    if (saved.consent === "declined" && !("userId" in saved)) return null;
+    return saved.consent === "allowed" || saved.consent === "declined"
+      ? { consent: saved.consent, userId: optionalString(saved.userId) }
+      : null;
   } catch {
     return null;
   }
@@ -88,11 +116,11 @@ export async function readDeviceConsent(
 export async function saveDeviceConsent(
   userDataDir: string,
   origin: string,
-  consent: DeviceConsent,
+  { consent, userId }: SavedConsent,
 ): Promise<void> {
   const file = deviceFile(userDataDir, origin, ".consent");
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  await writePrivateFile(file, JSON.stringify({ origin, consent }));
+  await writePrivateFile(file, JSON.stringify({ origin, consent, userId }));
 }
 
 export async function deviceName(platform = process.platform): Promise<string> {
@@ -121,19 +149,28 @@ export function createUserDeviceAccess(deps: {
   connect: (
     origin: string,
     token: string,
-    events: { onRevoked: () => void; authorize: () => Promise<boolean> },
+    events: {
+      onRevoked: UserDeviceClientOptions["onRevoked"];
+      authorize: () => Promise<boolean>;
+    },
   ) => { close(): void; cancelAll(): void };
 }) {
   let current: string | null = null;
   let generation = 0;
   let client: { origin: string; close(): void; cancelAll(): void } | undefined;
-  const paired = new Map<string, string | null>();
-  const consent = new Map<string, DeviceConsent | null>();
+  const paired = new Map<string, Omit<PairedDevice, "token">>();
+  const consent = new Map<string, SavedConsent | null>();
   /** Bumped on every consent change, so a prompt answered after one is ignored. */
   const changes = new Map<string, number>();
+  const consentSaves = new Map<string, Promise<void>>();
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
+  const untied = new Map<string, string>();
+  const tying = new Map<string, { again: boolean }>();
+  /** A revoked token's file deletion, which a new pairing's save must follow. */
+  const removals = new Map<string, Promise<void>>();
 
   function disconnect() {
     client?.close();
@@ -148,22 +185,55 @@ export function createUserDeviceAccess(deps: {
       cancelAll: () => connection.cancelAll(),
     };
     const connection = deps.connect(origin, token, {
-      // Revoked by the server or its token was rejected: stay unpaired until turned back on.
-      onRevoked: () => {
+      onRevoked: (reason) => {
         if (client === active) client = undefined;
         paired.delete(origin);
-        void deletePairedDevice(deps.userDataDir, origin).catch(() => undefined);
-        void decide(origin, "declined").catch(() => undefined);
+        untied.delete(origin);
+        removals.set(
+          origin,
+          deletePairedDevice(deps.userDataDir, origin).catch(() => undefined),
+        );
+        // Signing out ends the pairing but keeps the answer for that account's next sign-in;
+        // a prompt still open belongs to the ended sign-in. Removed or rejected otherwise:
+        // stay unpaired until turned back on.
+        if (reason !== "session-ended") {
+          void decide(origin, "declined").catch(() => undefined);
+          return;
+        }
+        changes.set(origin, (changes.get(origin) ?? 0) + 1);
+        // Whoever signed in next may have loaded the page before this arrived.
+        if (current === origin) void pair();
       },
       authorize: () => authorize(origin),
     });
     client = active;
   }
 
+  function isAllowed(origin: string) {
+    const choice = consent.get(origin);
+    const device = paired.get(origin);
+    return choice?.consent === "allowed" && device !== undefined && choice.userId === device.userId;
+  }
+
   async function decide(origin: string, choice: DeviceConsent) {
-    consent.set(origin, choice);
+    const saved = { consent: choice, userId: paired.get(origin)?.userId ?? null };
+    consent.set(origin, saved);
     changes.set(origin, (changes.get(origin) ?? 0) + 1);
-    await saveDeviceConsent(deps.userDataDir, origin, choice);
+    const save = (consentSaves.get(origin) ?? Promise.resolve()).then(() =>
+      saveDeviceConsent(deps.userDataDir, origin, saved).catch(async (error) => {
+        // An earlier "allowed" left on disk would be honoured on the next launch.
+        if (choice === "declined")
+          await rm(deviceFile(deps.userDataDir, origin, ".consent"), { force: true }).catch(
+            () => undefined,
+          );
+        throw error;
+      }),
+    );
+    consentSaves.set(
+      origin,
+      save.catch(() => undefined),
+    );
+    await save;
   }
 
   function ask(origin: string) {
@@ -179,20 +249,66 @@ export function createUserDeviceAccess(deps: {
   }
 
   async function authorize(origin: string) {
-    const choice = consent.get(origin);
-    if (choice) return choice === "allowed";
+    if (consent.get(origin)?.consent === "declined") return false;
+    if (isAllowed(origin)) return true;
     const seen = changes.get(origin);
-    const allowed = await ask(origin);
+    const answer = await ask(origin);
     // Turned off, revoked, or already answered while the prompt was open.
-    if (changes.get(origin) !== seen) return consent.get(origin) === "allowed";
-    await decide(origin, allowed ? "allowed" : "declined").catch(() => undefined);
-    return allowed;
+    if (changes.get(origin) !== seen) return isAllowed(origin);
+    await decide(origin, answer ? "allowed" : "declined").catch(() => undefined);
+    return answer;
   }
 
   function pair() {
     const origin = current;
-    if (origin === null || consent.get(origin) === "declined") return Promise.resolve();
+    if (origin === null) return Promise.resolve();
+    void tieToSignIn(origin);
+    if (consent.get(origin)?.consent === "declined") return Promise.resolve();
     return pairOnce(origin);
+  }
+
+  /**
+   * Retries on each sign-in until the server ties it; already tied, the server leaves it alone.
+   * A sign-in during a request asks again once that request ends.
+   */
+  async function tieToSignIn(origin: string) {
+    const running = tying.get(origin);
+    if (running) {
+      running.again = true;
+      return;
+    }
+    const state = { again: false };
+    tying.set(origin, state);
+    try {
+      for (;;) {
+        const token = untied.get(origin);
+        if (!token) return;
+        state.again = false;
+        if (await requestTie(origin, token)) {
+          if (untied.get(origin) === token) untied.delete(origin);
+          return;
+        }
+        if (!state.again) return;
+      }
+    } finally {
+      tying.delete(origin);
+    }
+  }
+
+  async function requestTie(origin: string, token: string) {
+    try {
+      const response = await deps.fetch(new URL(USER_DEVICE_SESSION_PATH, origin).href, {
+        method: "POST",
+        credentials: "include",
+        headers: { authorization: `Bearer ${token}` },
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+      await response.body?.cancel();
+      return response.status === 204;
+    } catch {
+      return false;
+    }
   }
 
   function pairOnce(origin: string) {
@@ -210,7 +326,7 @@ export function createUserDeviceAccess(deps: {
       unavailable.add(origin);
       return;
     }
-    let device: UserDevicePairResponse;
+    let device: PairedDevice;
     try {
       const response = await deps.fetch(new URL(USER_DEVICE_PAIR_PATH, origin).href, {
         method: "POST",
@@ -238,11 +354,12 @@ export function createUserDeviceAccess(deps: {
         unavailable.add(origin);
         return;
       }
-      device = { token: body.token, deviceId: body.deviceId };
+      device = { token: body.token, deviceId: body.deviceId, userId: optionalString(body.userId) };
     } catch {
       return;
     }
     try {
+      await removals.get(origin);
       await savePairedDevice(deps.userDataDir, origin, device, deps.cipher);
     } catch {
       // A token that cannot be kept must not stay valid on the server.
@@ -250,7 +367,7 @@ export function createUserDeviceAccess(deps: {
       unavailable.add(origin);
       return;
     }
-    paired.set(origin, device.deviceId);
+    paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
     if (current === origin) start(origin, device.token);
   }
 
@@ -272,6 +389,7 @@ export function createUserDeviceAccess(deps: {
   return {
     /** Switches to a server origin (or none), connecting or pairing unless this computer declined it. */
     async select(origin: string | null) {
+      origin = secureHttpOrigin(origin ?? undefined);
       if (origin === current) return;
       const selection = ++generation;
       disconnect();
@@ -282,10 +400,12 @@ export function createUserDeviceAccess(deps: {
         readDeviceConsent(deps.userDataDir, origin),
       ]);
       if (selection !== generation) return;
-      consent.set(origin, choice);
+      if (consent.get(origin)?.consent !== "declined") consent.set(origin, choice);
       if (device) {
-        paired.set(origin, device.deviceId);
+        paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
+        untied.set(origin, device.token);
         start(origin, device.token);
+        void tieToSignIn(origin);
       } else {
         paired.delete(origin);
         void pair();
@@ -295,10 +415,7 @@ export function createUserDeviceAccess(deps: {
     pair,
     state(origin: string): Omit<RakazoDesktopDevice, "name"> | null {
       if (origin !== current) return null;
-      return {
-        deviceId: paired.get(origin) ?? null,
-        allowed: consent.get(origin) === "allowed" && paired.has(origin),
-      };
+      return { deviceId: paired.get(origin)?.deviceId ?? null, allowed: isAllowed(origin) };
     },
     /**
      * Turning it on asks with the native prompt and keeps the answer only once this computer is
@@ -307,13 +424,14 @@ export function createUserDeviceAccess(deps: {
     async setAllowed(origin: string, allowed: boolean) {
       if (origin !== current) return;
       if (!allowed) {
-        await decide(origin, "declined");
+        const saving = decide(origin, "declined");
         if (client?.origin === origin) client.cancelAll();
+        await saving;
         return;
       }
       const seen = changes.get(origin);
-      if (consent.get(origin) !== "allowed" && !(await ask(origin))) return;
-      if (changes.get(origin) !== seen && consent.get(origin) !== "allowed") return;
+      if (!isAllowed(origin) && !(await ask(origin))) return;
+      if (changes.get(origin) !== seen && consent.get(origin)?.consent !== "allowed") return;
       unavailable.delete(origin);
       await pairOnce(origin);
       if (!paired.has(origin)) throw new Error("Could not pair this computer");

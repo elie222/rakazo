@@ -16,6 +16,8 @@ import {
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
 
+import { BACKGROUND_HELPER_TASK_CUE } from "./background-helpers.js";
+
 const running = new Map<string, AbortController>();
 
 export class ScriptedAgentRuntime implements AgentRuntime {
@@ -40,7 +42,8 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.set(request.runId, controller);
     const signal = context?.signal ?? controller.signal;
     try {
-      if (shouldFail(request.prompt)) {
+      const relaysOutcome = helperOutcome(request.prompt) !== undefined;
+      if (!relaysOutcome && shouldFail(request.prompt)) {
         throw new Error(scriptedFailure(request.prompt));
       }
       // Like Pi, a run first takes the messages waiting for it. A continuation exists only to
@@ -54,15 +57,20 @@ export class ScriptedAgentRuntime implements AgentRuntime {
       const prompt = steeredPrompt ?? request.prompt;
       // A run hangs on its own words: a peer's wake on the peer's text, a reply without the
       // message it quotes.
-      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
+      const hangMs = relaysOutcome
+        ? undefined
+        : hangDuration(peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, ""));
       if (hangMs !== undefined) {
-        // Long-running work happens on the computer, which starts it like any real run would.
-        yield {
-          type: "tool",
-          name: "list_files",
-          args: { path: "" },
-          executionId: `${request.runId}:list_files:hang`,
-        };
+        // Long-running work happens on the computer, which starts it like any real run would;
+        // a background helper has none and works with what it was given.
+        if (!prompt.startsWith(BACKGROUND_HELPER_TASK_CUE)) {
+          yield {
+            type: "tool",
+            name: "list_files",
+            args: { path: "" },
+            executionId: `${request.runId}:list_files:hang`,
+          };
+        }
         yield { type: "progress", text: "still working…", activity: true };
         const hangUntil = Date.now() + hangMs;
         while (!controller.signal.aborted && !signal.aborted && Date.now() < hangUntil) {
@@ -91,7 +99,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         }
         for (const call of turn.toolCalls ?? []) {
           const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
-          if (call.name === "run_subagent") {
+          if (call.name === "run_subagent" && call.args.background !== true) {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
             const task = String(call.args.task ?? request.prompt);
@@ -162,14 +170,76 @@ export class ScriptedAgentRuntime implements AgentRuntime {
   }
 }
 
+/** A JSON object written in a message, or undefined for anything else, malformed text included. */
+function jsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function inferScript(
   prompt: string,
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
+  // A helper's brief and the result it sends back are generated prompts that quote other words,
+  // so they are recognized before any phrase inside them can pick another action.
+  if (prompt.toLowerCase().startsWith(BACKGROUND_HELPER_TASK_CUE.toLowerCase())) {
+    const task = prompt.split("Task from the bot (not from the user):\n").at(-1) ?? prompt;
+    const url = /\bfetch (https?:\/\/\S+)/i.exec(task)?.[1];
+    const write = /\bcrm\b/i.test(task);
+    return [
+      ...(url ? [{ toolCalls: [{ name: "web_fetch", args: { url } }] }] : []),
+      ...(write
+        ? [
+            {
+              toolCalls: [
+                {
+                  name: "destination.write",
+                  args: { collection: "notes", title: "Helper note", body: task },
+                },
+              ],
+            },
+          ]
+        : []),
+      { assistant: `helper result: ${summarize(task)}`, complete: true },
+    ];
+  }
+  const outcome = helperOutcome(prompt);
+  if (outcome) {
+    return [
+      {
+        assistant:
+          outcome.status === "failed"
+            ? `your helper could not finish: ${outcome.text}`
+            : `your helper finished: ${outcome.text}`,
+        complete: true,
+      },
+    ];
+  }
   // A bot-message wake embeds the sender's name and id around the peer's words, and an
   // ordinary reply opens with the quoted target; a generated id can contain a journey
   // keyword by chance ("crm" inside a cuid), so the branches key on the words alone.
-  const lower = (peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "")).toLowerCase();
+  const words = peerMessage(prompt)?.text ?? prompt.replace(REPLY_CONTEXT, "");
+  const lower = words.toLowerCase();
+  // In a group the words open with the mention that picked this bot.
+  const page = /^(?:@\S+\s+)?call save_page with (.+?)(?:\nthen say ([\s\S]+))?$/s.exec(
+    words.trim(),
+  );
+  const pageArgs = page ? jsonObject(page[1]!) : undefined;
+  if (page && pageArgs) {
+    return [
+      {
+        assistant: page[2],
+        toolCalls: [{ name: "save_page", args: pageArgs }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {
@@ -388,6 +458,48 @@ export function inferScript(
       },
     ];
   }
+  // A wallet purchase: the wallet owner approves it in the wallet, so no card asks here.
+  if (lower.includes("buy from the fixture shop")) {
+    return [
+      {
+        assistant: "i will ask your wallet for that purchase.",
+        toolCalls: [
+          {
+            name: "request_purchase",
+            args: {
+              merchantName: "Fixture Shop",
+              merchantUrl: "https://shop.example.test/checkout",
+              amount: 2_340,
+              currency: "usd",
+              reason:
+                "The owner asked to buy the groceries already in the cart at this shop, and the checkout page shows this total.",
+            },
+          },
+        ],
+      },
+    ];
+  }
+  // The site is not in the message, so the owner did not name it and the call asks.
+  const paidRequest = /paid request card(?: on (\w+))?/.exec(lower);
+  if (paidRequest) {
+    const url = `https://api.${paidRequest[1] ?? "example"}.test/quote`;
+    return [
+      {
+        assistant: "i will call that paid api.",
+        toolCalls: [
+          {
+            name: "paid_request",
+            args: {
+              url,
+              method: "GET",
+              reason:
+                "The owner asked for a live price quote from this paid API, which answers only after a small per-request payment.",
+            },
+          },
+        ],
+      },
+    ];
+  }
   if (lower.includes("mcp approval card")) {
     return [
       {
@@ -428,6 +540,23 @@ code-b
       },
     ];
   }
+  if (lower.includes("send the draft on the card")) {
+    // Background resumes retain the task and append the answered question.
+    if (/\nAnswer:/.test(prompt)) return [{ assistant: "thanks. sent.", complete: true }];
+    return [
+      {
+        assistant: "the draft is on the card. pick one to continue.",
+        ask: {
+          text: "Send this email to Ana?",
+          detail: "To: ana@example.test\nSubject: Demo\n\nThe draft body.",
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
+      },
+    ];
+  }
   const hasChoices =
     lower.includes("tappable choices") ||
     lower.includes("choice buttons") ||
@@ -448,7 +577,6 @@ code-b
         ask: hasChoices
           ? {
               text: "Which city should I use?",
-              detail: "Tap one option.",
               actions: [
                 { id: "choice-1", label: "Berlin" },
                 { id: "choice-2", label: "Seoul" },
@@ -577,6 +705,22 @@ code-b
       },
     ];
   }
+  // A peer's own reply can say it works in the background, and a question only asks about it;
+  // only a person's request starts one.
+  if (
+    lower.includes("in the background") &&
+    !lower.trimEnd().endsWith("?") &&
+    !peerMessage(prompt)
+  ) {
+    const task = prompt.replace(/\s*in the background/i, "").trim();
+    return [
+      {
+        assistant: "a background helper is on it; ask me anything meanwhile.",
+        toolCalls: [{ name: "run_subagent", args: { name: "helper", task, background: true } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
     return [
       {
@@ -618,7 +762,8 @@ code-b
       },
     ];
   }
-  if (/^run\s+/.test(lower)) {
+  // An inbound routine run opens with "Run routine"; its payload picks the branch, not this one.
+  if (/^run\s+(?!routine ")/.test(lower)) {
     return [
       {
         assistant:
@@ -715,6 +860,18 @@ code-b
   ];
 }
 
+/** The outcome a helper-result turn relays, from the block its prompt wraps it in. */
+function helperOutcome(
+  prompt: string,
+): { status: "completed" | "failed"; text: string } | undefined {
+  if (prompt.startsWith(BACKGROUND_HELPER_TASK_CUE)) return undefined;
+  const match =
+    /<helper_result from="[^"]*" status="(completed|failed)">\n([\s\S]*?)\n<\/helper_result>/.exec(
+      prompt,
+    );
+  return match ? { status: match[1] as "completed" | "failed", text: match[2]! } : undefined;
+}
+
 function shouldFail(prompt: string): boolean {
   return prompt.toLowerCase().includes("fail this run");
 }
@@ -751,8 +908,12 @@ function scriptedFailure(prompt: string): string {
 /** How long a scripted run keeps working before it finishes; undefined runs its script. */
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
-  // Asking another bot to keep working makes that bot's run hang, not this one.
-  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
+  // Asking another bot or a background helper to keep working makes that run hang, not this one.
+  if (
+    lower.includes("message the bot named") ||
+    lower.includes("message bot named") ||
+    lower.includes("in the background")
+  ) {
     return undefined;
   }
   const seconds = /\bwork for (\d+) seconds?\b/.exec(lower)?.[1];

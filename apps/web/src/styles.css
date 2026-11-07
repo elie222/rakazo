@@ -97,3 +97,27 @@ body,
     opacity: 0.3;
   }
 }
+
+/* A page prints alone and light: the app under an open page, its popups and its backdrop stay
+   off the paper, and the paper stays white past the page's end, whatever the app's theme. */
+@media print {
+  html:has([data-page-print]),
+  html:has([data-page-print]) body,
+  html:has([data-page-print]) #root {
+    height: auto;
+    background: #fff;
+  }
+  body:has([data-page-print]) > :not(:has([data-page-print])),
+  [data-slot="dialog-overlay"]:has(~ [data-page-print]) {
+    display: none;
+  }
+}
+
+/* Find in chat (pages/shell/chat-find-bar.tsx) paints its matches without touching the transcript. */
+::highlight(rk-find) {
+  background-color: color-mix(in oklab, var(--foreground) 18%, transparent);
+}
+::highlight(rk-find-current) {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}

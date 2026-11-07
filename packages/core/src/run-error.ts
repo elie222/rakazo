@@ -1,6 +1,7 @@
 import type { RunErrorKind } from "@rakazo/contracts";
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   providerQuotaResetAt,
 } from "@rakazo/contracts";
@@ -115,6 +116,7 @@ const APP_RUN_ERRORS = new Set([
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
 
@@ -191,7 +193,7 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -227,6 +229,10 @@ export function normalizeRunError(
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
+  /** The provider's HTTP status, when it reported one. */
+  status?: number;
+  /** The provider's own message, unwrapped from its JSON envelope. */
+  providerMessage?: string;
 } {
   const trimmed = details.trim();
   if ([MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN].includes(trimmed)) {
@@ -245,7 +251,13 @@ export function normalizeRunError(
   const record = asRecord(parseJson(body));
   const fallback = parseModelFallbackFailure(trimmed);
   if (fallback) {
-    const primary = normalizeRunError(fallback.primaryError, translate, locale, now);
+    // The details below list every model's failure, so the primary's message alone would hide them.
+    const { providerMessage: _primaryMessage, ...primary } = normalizeRunError(
+      fallback.primaryError,
+      translate,
+      locale,
+      now,
+    );
     const failed = fallback.backups.some((item) => item.status === "failed");
     const skipped = fallback.backups.some((item) => item.status === "skipped");
     const message = failed
@@ -308,6 +320,27 @@ export function normalizeRunError(
     typeof payload.message === "string" ? asRecord(asRecord(parseJson(payload.message)).error) : {};
   if (Object.keys(wrapped).length) payload = wrapped;
   const message = typeof payload.message === "string" ? payload.message : body;
+  const status =
+    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
+      .map(Number)
+      .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
+    // Bedrock names its modeled exception instead of reporting the HTTP status.
+    (/^AccessDeniedException\b/.test(trimmed) ? 403 : undefined);
+  // Output diagnostics can quote generated text that mentions a timeout or a quota.
+  if (
+    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
+    MODEL_OUTPUT_FAILURE.test(trimmed) ||
+    MODEL_OUTPUT_FAILURE.test(message)
+  ) {
+    return {
+      summary: translate("The model returned an unusable response. Try again."),
+      details,
+      recovery: "model",
+      kind: "output",
+      ...(status !== undefined ? { status } : {}),
+      providerMessage: message,
+    };
+  }
   const metadata = asRecord(payload.metadata ?? record.metadata);
   const signals = [
     message,
@@ -317,12 +350,6 @@ export function normalizeRunError(
       String(value ?? ""),
     ),
   ].join(" ");
-  const status =
-    [prefix?.[1], prefix?.[2], record.status, record.code, payload.code, payload.httpCode]
-      .map(Number)
-      .find((value) => Number.isInteger(value) && value >= 100 && value <= 599) ??
-    // Bedrock names its modeled exception instead of reporting the HTTP status.
-    (/^AccessDeniedException\b/.test(trimmed) ? 403 : undefined);
   const provider = /\bopenrouter\b|openrouter_/i.test(signals)
     ? translate("Your OpenRouter")
     : /\bopenai\b|openai_/i.test(signals)
@@ -365,9 +392,13 @@ export function normalizeRunError(
     const limitPeriod = message.match(
       /\b(daily|weekly|monthly)\b(?:\s+\w+){0,2}\s+(?:limit|quota|cap|budget)|\b(?:limit|quota)\b[^.]{0,20}?\b(daily|weekly|monthly)\b|\bper[ -](day)\b/i,
     );
+    // Some envelopes name the period in a top-level or metadata `limit` field instead.
+    const namedPeriod = /^(daily|weekly|monthly)$/i.exec(
+      String(payload.limit ?? metadata.limit),
+    )?.[1];
     period = limitPeriod?.[3]
       ? "daily"
-      : (((limitPeriod?.[1] ?? limitPeriod?.[2])?.toLowerCase() as
+      : (((limitPeriod?.[1] ?? limitPeriod?.[2] ?? namedPeriod)?.toLowerCase() as
           | "daily"
           | "weekly"
           | "monthly"
@@ -393,7 +424,9 @@ export function normalizeRunError(
         /\bresets?(?:\s+at|\s+on)?\s*[:=]?\s*(\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?)/i,
       )?.[1] ??
       metadata.reset_at ??
-      metadata.reset;
+      metadata.reset ??
+      payload.reset_at ??
+      payload.reset;
     if (typeof reset === "string" && /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?$/.test(reset)) {
       const date = new Date(reset);
       if (
@@ -489,12 +522,7 @@ export function normalizeRunError(
     )
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
-  } else if (
-    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
-    MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message) ||
-    MODEL_OUTPUT_LIMIT_REACHED.test(message)
-  ) {
+  } else if (MODEL_OUTPUT_LIMIT_REACHED.test(message)) {
     recovery = "model";
     kind = "output";
     summary = translate("The model returned an unusable response. Try again.");
@@ -506,6 +534,8 @@ export function normalizeRunError(
     ...(period ? { period } : {}),
     ...(recovery ? { recovery } : {}),
     ...(resetAt ? { resetAt } : {}),
+    ...(status !== undefined ? { status } : {}),
+    providerMessage: message,
   };
 }
 

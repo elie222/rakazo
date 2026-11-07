@@ -5,20 +5,20 @@
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![加入 Discord 社区](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![在 App Store 下载 iPhone 版](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
-[![下载 Android APK](https://img.shields.io/badge/Android-Download%20APK-black?labelColor=black&style=for-the-badge&logo=android&logoColor=white)](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk)
+[![在 Google Play 下载 Android 版](https://img.shields.io/badge/Google%20Play-Get%20the%20app-black?labelColor=black&style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.rakazo.app)
 
 ![Rakazo：由你掌控的 AI 队友](./docs/readme-hero.png)
 
 Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI 队友，也可以作为自托管 AI 助手在自己的电脑上运行。
 它提供网页版、Electron 桌面应用，以及 [iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
-[Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 应用。
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 应用。
 你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
 
 它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
 
 Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
 
-本文是 [英文 README](./README.md) 的简体中文译文，链接指向的其他文档目前仍为英文。
+本文是 [英文 README](./README.md) 的简体中文译文。[自托管指南](./docs/zh-CN/self-host.md)已提供中文。
 
 ## 与其他产品的比较
 
@@ -46,7 +46,7 @@ Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 
 - 机器人可将任务委派给其他机器人或临时子智能体
 - 通过 Pi 接入自己的模型凭据
 - 通过 Composio 或 Pipedream Connect 集成应用，也支持用户自行安装的 Treg、远程 MCP 和 OpenAPI 工具来源
-- 支持 Docker、E2B、Daytona、CreateOS、Box，以及受信任的本机计算环境
+- 支持 Docker、E2B、Daytona、CreateOS、Boat，以及受信任的本机计算环境
 
 ## 演示
 
@@ -62,7 +62,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Better Auth
 - Graphile Worker
 - Pi
-- Docker、E2B、Daytona、CreateOS 和 Box
+- Docker、E2B、Daytona、CreateOS 和 Boat
 - Composio、Pipedream Connect、MCP 和 OpenAPI 集成
 
 ## 部署到 Railway
@@ -87,15 +87,14 @@ bash install-images.sh
 再次运行时会保留已有的 `.env`。
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)，创建账号并连接模型。
-默认启用本地 Docker 计算机。也可以选择远程提供商 `e2b`、`daytona`、`createos`、`box` 或 `railway`，
-并配置相应的 API 密钥。
+默认启用本地 Docker 计算机。远程计算机所需的凭据、模板和准备步骤见[计算机提供商（英文）](./docs/self-host-sandbox-providers.md)。
 
 默认镜像标签为 `edge`，由主分支构建，支持 `linux/amd64` 和 `linux/arm64`。
-镜像详情与标签见[自托管指南](./docs/self-host.md#published-images-no-checkout)。
+镜像详情与标签见[自托管指南](./docs/zh-CN/self-host.md#已发布镜像无需检出源码)。
 
 在受限网络中，可以覆盖安装器的下载地址前缀（`RAKAZO_DOWNLOAD_BASE`），跳过已有的 Compose 文件
 （`--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING`），或使用引导脚本的镜像地址。
-参见[受限网络与镜像下载](./docs/self-host.md#restricted-networks--mirror-downloads)。
+参见[受限网络与镜像下载](./docs/zh-CN/self-host-restricted-network.md)。
 
 如需让智能体协助安装，请使用 [SETUP_PROMPT.md](./SETUP_PROMPT.md)。
 
@@ -115,7 +114,7 @@ bash install-images.sh
 
 ## 本地开发（从源码运行）
 
-需要 Node.js 22.x（至少 22.22.2）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 9 和 Docker。
+需要 Node.js 22.x（至少 22.22.2）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
 不支持 Node.js 23.x 和 25.x。
 
 ```bash
@@ -172,7 +171,7 @@ docker compose --env-file .env \
 
 打开终端打印的地址（默认是 [http://127.0.0.1:5173](http://127.0.0.1:5173)），创建账号、连接模型，并创建第一个机器人。
 
-部署、提供商选择、备份与升级说明见[自托管指南](./docs/self-host.md)。
+部署、提供商选择、备份与升级说明见[自托管指南](./docs/zh-CN/self-host.md)。
 
 使用 CreateOS 时，设置 `SANDBOX_PROVIDER=createos` 和 `CREATEOS_SANDBOX_API_KEY`。
 可选配置 `CREATEOS_SANDBOX_BASE_URL`、`CREATEOS_SANDBOX_SHAPE` 和 `CREATEOS_SANDBOX_ROOTFS`
@@ -233,13 +232,14 @@ chmod +x Rakazo-*.AppImage
 ## 界面语言
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
-印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语和日语。
-Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语和日语翻译，**Account → Language**（账号 → 语言）列出这七种语言。
+印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语和波兰语。
+Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语、日语、西班牙语和波兰语翻译，**Account → Language**（账号 → 语言）列出这九种语言。
 在用户保存选择之前，移动端的初始语言由设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 决定。
 
-官网首页（`apps/www`）提供英语、德语、韩语、中文和日语版本，可通过页脚语言链接切换，
-对应路径为 `/`、`/de/`、`/ko/`、`/zh/` 和 `/ja/`；其他官网页面仍为英文。
-俄语官网首页，以及 Electron 原生设置窗口和菜单的本地化仍有待完成。
+Electron 原生设置窗口和菜单也支持上述网页版语言，并跟随应用中保存的选择；首次启动使用系统语言。
+
+官网首页（`apps/www`）可通过页脚切换全部 15 种语言，简体中文路径为 `/zh/`，繁体中文为 `/zh-tw/`。
+其他官网页面主要仍为英文。
 
 ## 开发
 
@@ -264,13 +264,16 @@ pnpm test:e2e
 
 ## 文档
 
-- [自托管](./docs/self-host.md)
-- [自托管密钥管理](./docs/self-host-secrets.md)
-- [计算机运行时与隔离](./docs/computer-runtime.md)
-- [桌面端发布](./docs/desktop-release.md)
-- [移动端发布](./docs/mobile-release.md)
-- [性能测试](./docs/performance.md)
-- [管理机器人的机器人](./docs/fleet-management.md)
+- [自托管](./docs/zh-CN/self-host.md)
+- [模型接入、审批与语音](./docs/zh-CN/self-host-models.md)
+- [备份与恢复](./docs/zh-CN/self-host-backups.md)
+- [升级](./docs/zh-CN/self-host-upgrading.md)
+- [受限网络与镜像下载](./docs/zh-CN/self-host-restricted-network.md)
+- [部署配置](./docs/self-host-configuration.md)、[密钥管理](./docs/self-host-secrets.md)、[账号与登录](./docs/self-host-accounts.md)（英文）
+- [工具集成](./docs/self-host-integrations.md)、[计算机提供商](./docs/self-host-sandbox-providers.md)、[Docker 计算机](./docs/self-host-docker-computers.md)（英文）
+- [存储与加密](./docs/self-host-storage.md)、[生产部署](./docs/self-host-production.md)、[日志与监控](./docs/self-host-observability.md)、[审计日志](./docs/self-host-audit-log.md)（英文）
+- [客户端](./docs/self-host-clients.md)、[计费](./docs/self-host-billing.md)、[计算机运行时与隔离](./docs/computer-runtime.md)（英文）
+- [桌面端发布](./docs/desktop-release.md)、[移动端发布](./docs/mobile-release.md)、[性能测试](./docs/performance.md)、[管理机器人的机器人](./docs/fleet-management.md)（英文）
 
 ## 参与贡献
 

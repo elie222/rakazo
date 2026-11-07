@@ -114,7 +114,7 @@ struct StartVoiceChatIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult {
-    guard let target = target(bot) else { throw MessageBotError.noBot }
+    guard let target = try await target(bot) else { throw MessageBotError.noBot }
     let botId = target.botId
     UserDefaults.standard.set(
       ["botId": botId, "at": String(Date().timeIntervalSince1970)],
@@ -125,12 +125,34 @@ struct StartVoiceChatIntent: AppIntent {
   }
 }
 
-/// The chosen bot, or the one whose chat was opened last, with the Space it was opened in.
-private func target(_ bot: BotEntity?) -> (botId: String, spaceId: String?)? {
+/// The single record written by lib/last-bot.ts; legacy ids have no verified owner.
+private struct SavedLastBot: Decodable {
+  let botId: String
+  let spaceId: String?
+  let apiBase: String
+  let userId: String
+}
+
+/// The chosen bot, or a saved bot owned by this authenticated account and server. Throws the
+/// verification failure (signed out, server unreachable), so a shortcut reports what went
+/// wrong; returns nil only when no bot was saved or the saved one is not this account's, which
+/// ask for a chat first.
+private func target(
+  _ bot: BotEntity?, with snapshot: RakazoSession? = nil
+) async throws -> (botId: String, spaceId: String?)? {
   if let bot { return (bot.botId, bot.spaceId) }
-  guard let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty else { return nil }
-  let space = secureStoreItem("rakazo.last_bot_space_id")
-  return (last, space?.isEmpty == false ? space : nil)
+  let session = try snapshot ?? RakazoSession.load()
+  guard
+    let data = secureStoreItem("rakazo.last_bot_id")?.data(using: .utf8),
+    let last = try? JSONDecoder().decode(SavedLastBot.self, from: data),
+    !last.botId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    !last.userId.isEmpty, last.apiBase == session.apiBase
+  else { return nil }
+  let userId = try await session.currentUserId()
+  guard userId == last.userId else { return nil }
+  let current = try RakazoSession.load()
+  guard current.token == session.token, current.apiBase == session.apiBase else { return nil }
+  return (last.botId, last.spaceId)
 }
 
 @MainActor
@@ -151,11 +173,18 @@ private struct Delivery {
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
 private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
-  guard let target = target(bot) else { throw MessageBotError.noBot }
-  let botId = target.botId
   let session = try RakazoSession.load()
+  guard let target = try await target(bot, with: session) else { throw MessageBotError.noBot }
+  return try await send(message, file: file, to: target, with: session, timeout: 60)
+}
+
+private func send(
+  _ message: String, file: IntentFile?, to target: (botId: String, spaceId: String?),
+  with session: RakazoSession, timeout: TimeInterval
+) async throws -> Delivery {
+  let botId = target.botId
   let spaceId = target.spaceId ?? session.selectedSpaceId
-  try await session.requireConsent(["botId": botId], spaceId: spaceId)
+  try await session.requireConsent(["botId": botId], spaceId: spaceId, timeout: timeout)
   var input: [String: Any] = [
     "botId": botId,
     "text": message.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -174,8 +203,20 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
     input["artifactIds"] = [artifact.id]
     input["imageHandling"] = "confirm"
   }
-  let sent: Sent = try await session.rpc("threads/send", input, spaceId: spaceId)
+  let sent: Sent = try await session.rpc(
+    "threads/send", input, spaceId: spaceId, timeout: timeout)
   return Delivery(session: session, botId: botId, spaceId: spaceId, runId: sent.runId)
+}
+
+/// A voice message goes to the bot whose chat was opened last; its reply arrives as a notification.
+/// The bot and session are read now, while unlocked. Its island waits on the send, so a lost
+/// connection gives up sooner than a typed message would.
+func lastBotSender() async throws -> (String) async throws -> Void {
+  let session = try RakazoSession.load()
+  guard let target = try await target(nil, with: session) else { throw MessageBotError.noBot }
+  return { message in
+    _ = try await send(message, file: nil, to: target, with: session, timeout: 15)
+  }
 }
 
 /// The bot's text for the run, once it finishes or stops to wait for the user; nil if it is still
@@ -234,6 +275,11 @@ struct RakazoShortcuts: AppShortcutsProvider {
       phrases: ["Start a voice chat in \(.applicationName)"],
       shortTitle: "Start Voice Chat",
       systemImageName: "waveform")
+    AppShortcut(
+      intent: RecordVoiceMessageIntent(),
+      phrases: ["Record a message in \(.applicationName)"],
+      shortTitle: "Record Message",
+      systemImageName: "mic")
   }
 }
 
@@ -361,12 +407,33 @@ private struct RakazoSession {
     return saved.headers
   }
 
+  /// Verify the account using this exact server and bearer before using a saved shortcut.
+  func currentUserId() async throws -> String {
+    guard let url = URL(string: "\(apiBase)/api/auth/get-session") else {
+      throw MessageBotError.signedOut
+    }
+    var request = URLRequest(url: url, timeoutInterval: 5)
+    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    request.setValue("rakazo://", forHTTPHeaderField: "origin")
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    let (data, response) = try await Self.transport.data(for: request)
+    try checkResponse(response)
+    // An expired bearer can answer 200 with no user; that is a sign-in prompt, not a retry.
+    guard let userId = try? JSONDecoder().decode(SessionIdentity.self, from: data).user.id,
+      !userId.isEmpty
+    else { throw MessageBotError.signedOut }
+    return userId
+  }
+
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
-  func requireConsent(_ target: [String: String], spaceId: String?) async throws {
+  func requireConsent(
+    _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
+  ) async throws {
     let uses = ["model", "memory"]
     var input: [String: Any] = target
     input["uses"] = uses
-    let consent: ConsentStatus = try await rpc("aiConsent/status", input, spaceId: spaceId)
+    let consent: ConsentStatus = try await rpc(
+      "aiConsent/status", input, spaceId: spaceId, timeout: timeout)
     guard consent.recipients.allSatisfy({ $0.allowed || !uses.contains($0.use) }) else {
       throw MessageBotError.consentRequired
     }
@@ -502,6 +569,11 @@ private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
     case .server(nil): "Something went wrong. Try again."
     }
   }
+}
+
+private struct SessionIdentity: Decodable {
+  struct User: Decodable { let id: String }
+  let user: User
 }
 
 private struct SavedHeaders: Decodable {

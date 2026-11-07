@@ -20,6 +20,7 @@ import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
 import { droppedTableHtmlText } from "@rakazo/contracts";
+import { cssVariableName, pageIconBars } from "@rakazo/ui-tokens";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  CopyTextFallback,
+  useCopyText,
 } from "@rakazo/ui-web";
 import { CheckIcon, CopyIcon, GlobeIcon, ImageIcon } from "./icons";
 import type { ChatMarkdownProps } from "./markdown";
@@ -43,6 +46,7 @@ import {
   markdownLinkNeedsPrompt,
   markdownLinkSite,
   markdownMentionId,
+  markdownPageId,
   markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
@@ -56,6 +60,7 @@ import { useMarkdownLinkCopy, useMarkdownLinkTrust } from "./markdown-link-promp
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
+import { PAGE_ICON } from "./page-icon";
 
 function preserveSkippedTableText() {
   return (tree: HastNode) => {
@@ -77,30 +82,25 @@ function preserveSkippedTableText() {
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
   const copy = useMarkdownCopy();
-  const resetTimerRef = useRef<number | undefined>(undefined);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard
-      .writeText(read())
-      .then(() => {
-        setCopied(true);
-        window.clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {});
-  }, [read]);
+  const [copied, copyText, copyFailed, resetCopy, failedText] = useCopyText();
 
   return (
-    <button
-      type="button"
-      className="rk-chat-markdown-copy"
-      onClick={handleCopy}
-      aria-label={copied ? copy.copied : label}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-    </button>
+    <>
+      <button
+        type="button"
+        className="rk-chat-markdown-copy"
+        onClick={() => copyText(read())}
+        aria-label={copied ? copy.copied : label}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={failedText}
+        label={label}
+      />
+    </>
   );
 }
 
@@ -307,10 +307,23 @@ function useExternalLinkConfirm() {
   return { request, dialog };
 }
 
-/** Sends clicks on links drawn inside an element, such as a chart's SVG, through the prompt. */
-export function useLinkPrompt(container: RefObject<HTMLElement | null>): ReactNode {
+/** Opens a link the way a chat link opens: through the prompt unless it is in-app or trusted. */
+export function useExternalLinkOpener(): { open: (url: string) => void; dialog: ReactNode } {
   const { request, dialog } = useExternalLinkConfirm();
   const { sites } = useMarkdownLinkTrust();
+  const open = useCallback(
+    (url: string) => {
+      if (markdownLinkNeedsPrompt(url, pageOrigin(), sites)) request(url);
+      else openExternalLink(url);
+    },
+    [request, sites],
+  );
+  return { open, dialog };
+}
+
+/** Sends clicks on links drawn inside an element, such as a chart's SVG, through the prompt. */
+export function useLinkPrompt(container: RefObject<HTMLElement | null>): ReactNode {
+  const { open, dialog } = useExternalLinkOpener();
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -320,9 +333,7 @@ export function useLinkPrompt(container: RefObject<HTMLElement | null>): ReactNo
       const href = anchor && element.contains(anchor) ? anchor.getAttribute("href") : null;
       if (!href) return;
       event.preventDefault();
-      const url = new URL(href, document.baseURI).href;
-      if (markdownLinkNeedsPrompt(url, pageOrigin(), sites)) request(url);
-      else openExternalLink(url);
+      open(new URL(href, document.baseURI).href);
     };
     element.addEventListener("click", hold);
     element.addEventListener("auxclick", hold);
@@ -330,7 +341,7 @@ export function useLinkPrompt(container: RefObject<HTMLElement | null>): ReactNo
       element.removeEventListener("click", hold);
       element.removeEventListener("auxclick", hold);
     };
-  }, [container, request, sites]);
+  }, [container, open]);
   return dialog;
 }
 
@@ -554,8 +565,16 @@ function MarkdownAnchor({
   ...props
 }: React.ComponentPropsWithoutRef<"a"> & { node?: MarkdownHast }) {
   const loadRemote = useContext(RemoteImagesContext);
-  const renderMention = useContext(MentionContext);
+  const { renderMention, onOpenPage: openPage } = useContext(InlineChipsContext);
   const href = typeof props.href === "string" ? props.href : "";
+  const pageId = markdownPageId(href);
+  if (pageId) {
+    return (
+      <PageChip pageId={pageId} openPage={openPage}>
+        {props.children}
+      </PageChip>
+    );
+  }
   const mentionId = markdownMentionId(href);
   if (mentionId) {
     const name = hastText(node) ?? "";
@@ -585,7 +604,70 @@ function MarkdownAnchor({
   );
 }
 
-const MentionContext = createContext<ChatMarkdownProps["renderMention"]>(undefined);
+function PageChip({
+  pageId,
+  openPage,
+  children,
+}: {
+  pageId: string;
+  openPage: ((pageId: string) => void) | undefined;
+  children: ReactNode;
+}) {
+  return openPage ? (
+    <button type="button" className="rk-chat-page-chip" onClick={() => openPage(pageId)}>
+      <PageIcon className="rk-chat-page-chip-icon" />
+      <span className="rk-chat-page-chip-title">{children}</span>
+    </button>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
+/** What a chip in the text does: a mention's rendering, and opening a linked page. */
+const InlineChipsContext = createContext<Pick<ChatMarkdownProps, "renderMention" | "onOpenPage">>(
+  {},
+);
+
+/** The page icon (see `PAGE_ICON`), sized by its container. */
+export function PageIcon({ className }: { className?: string }) {
+  const { width: w, height: h, radius: r, foldX, foldY } = PAGE_ICON;
+  return (
+    <svg aria-hidden="true" viewBox={`0 0 ${w} ${h}`} className={className}>
+      <path
+        d={`M${r} 0.25H${foldX}L${w - 0.25} ${foldY}V${h - r}A${r - 0.25} ${r - 0.25} 0 0 1 ${w - r} ${h - 0.25}H${r}A${r - 0.25} ${r - 0.25} 0 0 1 0.25 ${h - r}V${r}A${r - 0.25} ${r - 0.25} 0 0 1 ${r} 0.25Z`}
+        fill="var(--page-icon-sheet)"
+        stroke="var(--page-icon-edge)"
+        strokeWidth="0.5"
+      />
+      <path
+        d={`M${foldX} 0.25L${w - 0.25} ${foldY}H${foldX + 2}A2 2 0 0 1 ${foldX} ${foldY - 2}Z`}
+        fill="var(--page-icon-fold)"
+      />
+      {PAGE_ICON.lines.map((line) => (
+        <rect
+          key={line.y}
+          x={line.x}
+          y={line.y}
+          width={line.width}
+          height={line.height}
+          rx={line.height / 2}
+          fill={`var(${cssVariableName(line.token)})`}
+        />
+      ))}
+      {PAGE_ICON.bars.map((bar, index) => (
+        <rect
+          key={bar.x}
+          x={bar.x}
+          y={bar.y}
+          width={PAGE_ICON.barWidth}
+          height={bar.height}
+          rx={PAGE_ICON.barWidth / 2}
+          fill={pageIconBars[index]}
+        />
+      ))}
+    </svg>
+  );
+}
 
 const components: Components = {
   a: MarkdownAnchor,
@@ -627,13 +709,23 @@ class PlainTextOnFailure extends Component<{ text: string; children: ReactNode }
   }
 }
 
-export function LinkifiedText({ children }: { children: string }) {
+export function LinkifiedText({
+  children,
+  onOpenPage,
+}: {
+  children: string;
+  onOpenPage?: (pageId: string) => void;
+}) {
   const { request, dialog } = useExternalLinkConfirm();
   return (
     <ConfirmLinkContext.Provider value={request}>
       {plainTextLinkParts(children).map((part, index) =>
         part.type === "text" ? (
           part.value
+        ) : part.type === "page" ? (
+          <PageChip key={index} pageId={part.pageId} openPage={onOpenPage}>
+            {part.value}
+          </PageChip>
         ) : linkFaviconOrigin(part.href) ? (
           <WebsiteLink key={index} href={part.href} className="rk-chat-link-in-bubble">
             {linkLabel(part.value, part.href)}
@@ -654,7 +746,9 @@ const rehypePlugins = [preserveSkippedTableText];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.
 function urlTransform(url: string, key: string) {
-  return key === "src" || markdownMentionId(url) ? url : (sanitizeMarkdownUrl(url, true) ?? "");
+  return key === "src" || markdownMentionId(url) || markdownPageId(url)
+    ? url
+    : (sanitizeMarkdownUrl(url, true) ?? "");
 }
 
 const MarkdownBlock = memo(function MarkdownBlock({
@@ -682,7 +776,9 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-type SourceBlock = { start: number; source: string };
+// A block is keyed by its kind and how many of that kind precede it, as react-markdown keys
+// elements, so a table keeps its sort, page and dialog when text before it changes.
+type SourceBlock = { start: number; source: string; type: string; key: string };
 type SplitSource = { text: string; blocks: SourceBlock[] };
 
 const blockParser = unified().use(remarkParse).use(remarkGfm);
@@ -694,30 +790,37 @@ const definition = /\]:/;
  * one before it (a list continued after a blank line), so only those two are parsed again.
  */
 function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
-  const whole = { text, blocks: [{ start: 0, source: text }] };
+  const whole = { text, blocks: [{ start: 0, source: text, type: "root", key: "root-0" }] };
   if (definition.test(text)) return whole;
   const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
   const from = previous?.blocks[kept.length]?.start ?? 0;
   const tail = text.slice(from);
-  let starts: number[];
+  let parsed: { start: number; type: string }[];
   try {
-    starts = blockParser
-      .parse(tail)
-      .children.map((child, index) =>
-        index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
-      );
+    parsed = blockParser.parse(tail).children.map((child, index) => ({
+      start: index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
+      type: child.type,
+    }));
   } catch {
     return whole;
   }
-  if (starts.length === 0) starts = [0];
+  if (parsed.length === 0) parsed = [{ start: 0, type: "root" }];
+  const counts = new Map<string, number>();
+  for (const block of kept) counts.set(block.type, (counts.get(block.type) ?? 0) + 1);
   return {
     text,
     blocks: [
       ...kept,
-      ...starts.map((start, index) => ({
-        start: from + start,
-        source: tail.slice(start, starts[index + 1] ?? tail.length),
-      })),
+      ...parsed.map(({ start, type }, index) => {
+        const count = counts.get(type) ?? 0;
+        counts.set(type, count + 1);
+        return {
+          start: from + start,
+          source: tail.slice(start, parsed[index + 1]?.start ?? tail.length),
+          type,
+          key: `${type}-${count}`,
+        };
+      }),
     ],
   };
 }
@@ -726,6 +829,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
   renderMention,
+  onOpenPage,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   // A streamed reply stays split once it finishes, so its blocks are not drawn again.
@@ -738,9 +842,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     return previousSplit.current.blocks;
   }, [children, split]);
 
+  const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
   return (
     <ConfirmLinkContext.Provider value={request}>
-      <MentionContext.Provider value={renderMention}>
+      <InlineChipsContext.Provider value={inlineChips}>
         <div
           className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
         >
@@ -748,7 +853,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
             <PlainTextOnFailure text={children}>
               {blocks ? (
                 blocks.map((block, index) => (
-                  <Fragment key={block.start}>
+                  <Fragment key={block.key}>
                     {/* The line break react-markdown puts between blocks, so the DOM matches. */}
                     {index > 0 ? "\n" : null}
                     <MarkdownBlock
@@ -764,7 +869,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
           </LinkFaviconsPausedContext.Provider>
           {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
         </div>
-      </MentionContext.Provider>
+      </InlineChipsContext.Provider>
       {dialog}
     </ConfirmLinkContext.Provider>
   );

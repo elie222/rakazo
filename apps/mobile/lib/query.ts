@@ -72,3 +72,9 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
 export function clearQueries(): void {
   queryClient.clear();
 }
+
+/** Forgets the reads sent to these Spaces, as when leaving their organization. */
+export function removeSpaceQueries(spaceIds: readonly string[]): void {
+  const scopes = new Set(spaceIds.map((id) => `space:${id}`));
+  queryClient.removeQueries({ predicate: (query) => scopes.has(String(query.queryKey[2])) });
+}

@@ -18,14 +18,22 @@ import {
   isLocalhostOrLoopbackIp,
   isLoopbackAddress,
   isNonPublicAddress,
+  MCP_APP_READ_TIMEOUT_MS,
   normalizeHost,
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
-import { Agent } from "undici";
+import type { Dispatcher } from "undici";
+import { Agent, EnvHttpProxyAgent, Pool } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
+import {
+  MCP_APP_CLIENT_CAPABILITIES,
+  mcpToolAppResourceUri,
+  mcpToolVisibleToModel,
+} from "./mcp-app.js";
+import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
   createAddressCheckedLookup,
@@ -34,8 +42,8 @@ import {
 } from "./network-address.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
-const MAX_MCP_TOOLS = 250;
-const MAX_MCP_PAGES = 20;
+const DEFAULT_MAX_MCP_TOOLS = 250;
+const DEFAULT_MAX_MCP_PAGES = 20;
 const MCP_TIMEOUT_MS = 30_000;
 const MAX_RESULT_BYTES = 1_000_000;
 
@@ -91,25 +99,52 @@ export interface SafeRemoteFetch {
 const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
+/** The ConnectorTool fields every MCP server's tool maps the same way; name, description
+ * and app routing differ by caller. */
+export function mcpToolFields(
+  tool: Tool,
+): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch"> {
+  return {
+    inputSchema: tool.inputSchema as Record<string, unknown>,
+    readOnly: tool.annotations?.readOnlyHint,
+    batch: composioToolBatch(tool.name),
+  };
+}
+
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
   const list = async (client: Client, signal: AbortSignal | undefined): Promise<ConnectorTool[]> =>
     (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
-      inputSchema: tool.inputSchema,
-      readOnly: tool.annotations?.readOnlyHint,
-      batch: composioToolBatch(tool.name),
+      ...mcpToolFields(tool),
+      appResourceUri: mcpToolAppResourceUri(tool),
     }));
   return withScopedMcpClient(options, list);
 }
 
-/** Follow `tools/list` cursors, bounded by the shared page and tool caps. */
+function newMcpClient(): Client {
+  return new Client(
+    { name: "rakazo", version: "0.1.0" },
+    { capabilities: MCP_APP_CLIENT_CAPABILITIES },
+  );
+}
+
+function positiveIntegerOrDefault(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** Follow `tools/list` cursors, bounded by the shared page and tool caps. Tools only a
+ * server's own app may call are left out: the model never sees them. */
 export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
+  const maxTools = positiveIntegerOrDefault(process.env.MCP_MAX_TOOLS, DEFAULT_MAX_MCP_TOOLS);
+  const maxPages = positiveIntegerOrDefault(process.env.MCP_MAX_PAGES, DEFAULT_MAX_MCP_PAGES);
   const tools: Tool[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < MAX_MCP_PAGES && tools.length < MAX_MCP_TOOLS; page += 1) {
+  for (let page = 0; page < maxPages && tools.length < maxTools; page += 1) {
     const result = await client.listTools(cursor ? { cursor } : undefined, options);
-    tools.push(...result.tools.slice(0, MAX_MCP_TOOLS - tools.length));
+    const visible = result.tools.filter(mcpToolVisibleToModel);
+    tools.push(...visible.slice(0, maxTools - tools.length));
     cursor = result.nextCursor;
     if (!cursor) break;
   }
@@ -125,6 +160,17 @@ export async function callRemoteMcpTool(
 ): Promise<unknown> {
   return withScopedMcpClient(options, (client, signal) =>
     callMcpTool(client, signal, toolName, args, projectResult),
+  );
+}
+
+/** Read one resource through the same guarded transport and run-scoped session as calls. */
+export async function readRemoteMcpResource(
+  options: RemoteMcpOptions,
+  uri: string,
+): Promise<{ contents?: unknown }> {
+  return withScopedMcpClient(options, (client, signal) =>
+    // The call already answered; its app gets a shorter wait than a call.
+    client.readResource({ uri }, { signal, timeout: MCP_APP_READ_TIMEOUT_MS }),
   );
 }
 
@@ -276,9 +322,9 @@ async function withRemoteMcpClient<T>(
       redirect: "manual",
       signal,
     },
-    fetch: safeFetch,
+    fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init), init?.headers),
   });
-  const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
+  const client = newMcpClient();
   try {
     await client.connect(transport, { signal, timeout: MCP_TIMEOUT_MS });
     return await run(client, signal);
@@ -460,8 +506,9 @@ export class RemoteMcpSessionCache {
         redirect: "manual",
       },
       fetch: async (input, init) => {
+        let response: Response;
         try {
-          return await safeFetch(input, init);
+          response = await safeFetch(input, init);
         } catch (error) {
           if (error instanceof ConnectorRedirectError) throw error;
           throw new RemoteMcpTransportError(
@@ -469,9 +516,10 @@ export class RemoteMcpSessionCache {
             { cause: error },
           );
         }
+        return limitMcpResponseBody(response, init?.headers);
       },
     });
-    const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
+    const client = newMcpClient();
     const session: ScopedMcpSession = {
       key,
       client,
@@ -616,12 +664,80 @@ function literalAddresses(hostname: string): ResolvedAddress[] | undefined {
   return [{ address: hostname, family }];
 }
 
+/**
+ * Honors HTTP(S)_PROXY / NO_PROXY. Every proxied request is tunneled with CONNECT to the checked
+ * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
+ */
+function createRemoteDispatcher(resolve: ResolveHostname, policy: RemoteUrlPolicy): Dispatcher {
+  const { env } = process;
+  const proxy = env.http_proxy ?? env.HTTP_PROXY ?? env.https_proxy ?? env.HTTPS_PROXY;
+  if (proxy && !/^https?:\/\//i.test(proxy)) {
+    throw new Error("Only HTTP proxies are supported");
+  }
+  if (!proxy) {
+    return new Agent({ connect: { lookup: createSafeLookup(resolve, policy) } });
+  }
+  return new EnvHttpProxyAgent({
+    connect: { lookup: createSafeLookup(resolve, policy) },
+    proxyTunnel: true,
+    clientFactory: (origin, options) => {
+      const pool = new Pool(origin, options);
+      const connect = pool.connect.bind(pool) as (
+        options: Dispatcher.ConnectOptions,
+      ) => Promise<Dispatcher.ConnectData>;
+      return Object.assign(pool, {
+        connect: async (options: Dispatcher.ConnectOptions) => {
+          const authority = await checkedAuthority(options.path, resolve, policy);
+          return connect({
+            ...options,
+            path: authority,
+            headers: { ...(options.headers as Record<string, string>), host: authority },
+          });
+        },
+      });
+    },
+  });
+}
+
+async function checkedAuthority(
+  authority: string,
+  resolve: ResolveHostname,
+  policy: RemoteUrlPolicy,
+): Promise<string> {
+  const separator = authority.lastIndexOf(":");
+  const [first] = await resolvePublicHost(authority.slice(0, separator), resolve, policy);
+  const address = first?.address ?? "";
+  const host = ipVersion(address) === 6 ? `[${address}]` : address;
+  return `${host}${authority.slice(separator)}`;
+}
+
+async function resolvePublicHost(
+  host: string,
+  resolve: ResolveHostname,
+  policy: RemoteUrlPolicy,
+): Promise<ResolvedAddress[]> {
+  const hostname = host.replace(/^\[|\]$/g, "");
+  const addresses = await resolve(hostname);
+  try {
+    // The CONNECT tunnel bypasses createSafeLookup's own per-address check, so
+    // re-apply the same policy: loopback stays allowed under the private-endpoint escape.
+    if (policy.allowPrivateEndpoint === true && isLocalhostOrLoopbackIp(hostname)) {
+      assertLoopbackAddresses(addresses);
+    } else {
+      assertAllowedAddresses(addresses, policy);
+    }
+  } catch (error) {
+    throw egressRefused(hostname, error);
+  }
+  return addresses;
+}
+
 export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve, policy) } });
+  const dispatcher = createRemoteDispatcher(resolve, policy);
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
   const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;

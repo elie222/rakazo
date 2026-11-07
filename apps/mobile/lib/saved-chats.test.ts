@@ -1,8 +1,8 @@
 import { displayIdentityResult, displayMessageBlock } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { MobileMe, MobileSnapshot, MobileSpaceNavigation } from "./api";
 import { resetI18nForTests } from "./i18n";
 import { identityLabels } from "./identity-display";
+import type { MobileMe, MobileSnapshot, MobileSpaceNavigation } from "./mobile-types";
 import type { SavedChatsScope } from "./saved-chats";
 import {
   clearSavedChats,
@@ -27,6 +27,9 @@ const state = vi.hoisted(() => ({
   namespace: "ns-1",
 }));
 vi.mock("./artifact-cache-session", () => ({ artifactCacheSession: async () => state.namespace }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   selectedSpaceId: () => state.selection,
@@ -131,7 +134,14 @@ const navigation = {
   current: {
     id: "space-a",
     name: "Personal",
-    bots: [{ ...bot, instructions: "Private bot instructions", teamChatRules: "Private rules" }],
+    bots: [
+      {
+        ...bot,
+        instructions: "Private bot instructions",
+        teamChatRules: "Private rules",
+        threadStatus: "running",
+      },
+    ],
     groups: [{ ...group, createdAt: "2026-10-01T09:00:00.000Z" }],
     externalConversations: [],
     botSections: [],

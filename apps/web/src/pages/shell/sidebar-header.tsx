@@ -47,7 +47,7 @@ export function SidebarHeader({
       className={`app-drag flex items-center ${mini ? `flex-col gap-2 px-0 pb-2 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-[18px] pb-3 pt-4"}`}
     >
       {!mini || hasWindowChrome ? <WindowChrome /> : null}
-      <div className={`relative flex items-center ${mini ? "flex-col gap-0.5" : "gap-2.5"}`}>
+      <div className={`relative flex items-center ${mini ? "flex-col gap-0.5" : "gap-1"}`}>
         {onSearch ? (
           <IconTooltip label={t`Search`}>
             <Button
@@ -57,7 +57,7 @@ export function SidebarHeader({
               aria-pressed={searchOpen}
               data-testid="sidebar-search-trigger"
               onClick={onSearch}
-              className="app-no-drag flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75"
+              className="app-no-drag text-muted-foreground"
             >
               <Search size={15} strokeWidth={1.8} aria-hidden="true" />
             </Button>
@@ -71,12 +71,9 @@ export function SidebarHeader({
             aria-pressed={activityMode}
             data-activity-mode={activityMode ? "on" : "off"}
             onClick={toggleActivityMode}
-            className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
-              activityMode
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground/70 hover:text-foreground/75"
-            }`}
+            className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
           >
+            {/* A filled bell marks Activity on, so on and hovered never look alike. */}
             <Bell
               size={15}
               strokeWidth={1.8}
@@ -89,7 +86,7 @@ export function SidebarHeader({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="app-no-drag hidden h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75 md:inline-flex"
+            className="app-no-drag hidden text-muted-foreground md:inline-flex"
             aria-label={toggleLabel}
             data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
             onClick={() => setBotsSidebarCollapsedPref(!mini)}
@@ -104,7 +101,13 @@ export function SidebarHeader({
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
           <IconTooltip label={t`Create`}>
             <PopoverTrigger
-              className="app-no-drag flex size-7 items-center justify-center rounded-full text-muted-foreground/70 outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="app-no-drag text-muted-foreground"
+                />
+              }
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
             >

@@ -461,10 +461,10 @@ describe("append-only run transcript boundaries", () => {
     expect(rebuildPaysOff(kept, fresh, 31_996, 3)).toBe(false);
   });
 
-  it("rebuilds once sixteen stale images could be dropped, not at fifteen", () => {
+  it("rebuilds once eight stale images could be dropped, not at seven", () => {
     const fresh = { tokens: 1_000, images: 2 };
-    expect(rebuildPaysOff({ tokens: 1_000, images: 17 }, fresh, 1_000, 0)).toBe(false);
-    expect(rebuildPaysOff({ tokens: 1_000, images: 18 }, fresh, 1_000, 0)).toBe(true);
+    expect(rebuildPaysOff({ tokens: 1_000, images: 9 }, fresh, 1_000, 0)).toBe(false);
+    expect(rebuildPaysOff({ tokens: 1_000, images: 10 }, fresh, 1_000, 0)).toBe(true);
   });
 
   it("never rebuilds when the rebuilt transcript would be larger", () => {
@@ -743,15 +743,15 @@ describe("append-only run transcript boundaries", () => {
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
   });
 
-  it("rebuilds an unlimited run once sixteen stale screenshots could be dropped", () => {
+  it("rebuilds an unlimited run once eight stale screenshots could be dropped", () => {
     const input = request({ contextStrategy: "retrieval" }, 0);
     const steps: Step[] = Array.from({ length: 24 }, () => ({
       tool: "computer_observe",
       screenshot: true,
     }));
     const sent = simulateRun(input, steps);
-    expect(Math.max(...sent.map(imageCount))).toBe(17);
-    expect(rewrites(sent)).toEqual([18]);
-    expect(imageCount(sent[18]!)).toBe(2);
+    expect(Math.max(...sent.map(imageCount))).toBe(9);
+    expect(rewrites(sent)).toEqual([10, 18]);
+    expect(imageCount(sent[10]!)).toBe(2);
   });
 });

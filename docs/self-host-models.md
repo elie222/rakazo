@@ -3,6 +3,8 @@
 Choose the deployment's default model, connect local or OpenAI-compatible servers, and configure
 approvals, media generation and voice.
 
+English | [简体中文](./zh-CN/self-host-models.md)
+
 ## Deployment model
 
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`
@@ -10,8 +12,9 @@ picks the provider and `PI_DEFAULT_MODEL` the model:
 
 | `PI_DEFAULT_PROVIDER` | Key | Default model |
 | --- | --- | --- |
-| `openrouter` (default) | `OPENROUTER_API_KEY` | `openai/gpt-6-luna` |
+| `openrouter` (default) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
 
 Pick a vision-capable model so screenshot computer tools stay available.
 
@@ -33,11 +36,13 @@ the API and worker, for models that have no stored credential.
 
 ## Approvals
 
-Approvals have three modes in **Settings → Approvals**: Never ask runs every action, Auto lets an
+Approvals have three modes in **Settings → Approvals**: Never ask skips ordinary approval prompts, Auto lets an
 approval model pass actions that fit the request, and Ask asks before any change. A space starts
 in Auto, which asks like Ask until an approval model is available. Each
 person can allow or block single tools and sites in every mode, and a space can customize its
 approvals apart from the account.
+All modes still enforce block rules and safety checks. Purchases always require a person's approval;
+unattended runs that cannot request approval refuse them.
 
 In **Settings → Models → Approval model**, each user can select a model
 from an existing connection and add ordered backups, independently of their main model. Personal
@@ -68,7 +73,13 @@ RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).
 RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
+# Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
+RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 ```
+
+A model in `RAKAZO_LOCAL_REASONING_MODELS` offers thinking levels and sends the chosen level as
+`reasoning_effort` (`medium` by default, `none` when thinking is off). Other local models never
+receive the field.
 
 `RAKAZO_LOCAL_MAX_TOKENS` is the output limit sent with every request to a local model, unless the
 connection sets its own max-tokens value. It never exceeds a quarter of
@@ -121,8 +132,9 @@ managed endpoints, the deployment-wide fallback remains
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
-Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
-via **Settings → Models** and turn it on; the old environment list is no longer read.
+Existing connections default to disabled. Deployment-local models opt in through
+`RAKAZO_LOCAL_REASONING_MODELS`; reconnect through **Settings → Models** only to move to a personal
+connection.
 
 Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
 advanced settings; mobile inherits the same backend policy. Rakazo sends standard
@@ -170,11 +182,12 @@ fal queue API and Flux/Wan input and output shapes. Credentials stay on the serv
 your deployment secret configuration; never commit actual credentials.
 
 Bots use `generate_image` to attach one PNG or `generate_video` to submit a
-four-second MP4. The video tool returns a job ID and queued/running status; call it
-again with `jobId` to check progress and attach the completed video. Saved jobs
-can be polled after worker restarts by the same owner/bot/thread. The first version
-requires polling through the bot; it does not automatically deliver jobs in the
-background. Use the existing per-bot tool switches and action approval rules to
+four-second MP4. The video tool returns a job ID and queued/running status. The
+worker keeps checking the job in the background, including after a restart, and
+posts the finished video to the chat that asked for it, once; the bot then gets a
+turn to follow up. A video that fails, or is still unfinished after an hour, is
+marked failed and the bot gets a turn to say so. The bot can also call the tool
+again with `jobId` to check progress. Use the existing per-bot tool switches and action approval rules to
 control access. Both tools require approval by default. Ticket board runs keep
 these chat-only media tools unavailable so ticket work stays on the board.
 
@@ -212,3 +225,5 @@ Bots can call a user in the app, and users can hold to talk, when `PHONE_CALLS_E
 the API and worker. `PHONE_CALL_COOLDOWN_MINUTES` (default `2`) is the minimum time between a bot's
 calls to the same person, and `PHONE_CALL_RING_SECONDS` (default `45`) how long an unanswered call
 rings.
+
+For native mobile ringing and optional APNs VoIP configuration, see [Mobile incoming calls](./self-host-clients.md#mobile-incoming-calls).

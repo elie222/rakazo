@@ -10,6 +10,7 @@ import {
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
+  SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
@@ -106,13 +107,30 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   function send(target: ThreadTarget, text = "Paris", clientNonce: string = randomUUID()) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
         actor,
         target,
         { text, mentions: target.kind === "group" ? [botId] : [], clientNonce },
       ),
     );
   }
+  it.each(["bot", "group"] as const)(
+    "refuses a %s chat message in a Space that is being deleted",
+    async (kind) => {
+      await system.space.update({
+        where: { id: actor.spaceId },
+        data: {
+          deletingAt: new Date(),
+          deletionClaimId: `organization-deletion:${actor.spaceId}:x`,
+        },
+      });
+      await expect(send(kind === "bot" ? privateTarget() : groupTarget)).rejects.toBeInstanceOf(
+        SpaceDeletionInProgressError,
+      );
+      await expect(system.run.count({ where: { spaceId: actor.spaceId } })).resolves.toBe(0);
+    },
+  );
+
   it("serializes simultaneous text sends into one run and steering", async () => {
     const [first, second] = await Promise.all([
       send(privateTarget(), "First simultaneous message", "parallel-send-first"),
@@ -317,7 +335,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     });
     const result = await runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
         actor,
         groupTarget,
         {
@@ -377,7 +395,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   function sendConfirmedImage(artifactId: string, text: string) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
         actor,
         privateTarget(),
         { text, artifactIds: [artifactId], imageHandling: "confirm", clientNonce: randomUUID() },
@@ -423,7 +441,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       });
       const result = await runAsTenant(actor, () =>
         sendThreadMessage(
-          { prisma, events: { notify } as never, jobs: { enqueue } as never },
+          { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
           actor,
           target,
           {
@@ -608,6 +626,145 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("saves a typed stop only together with its cancel, so a retry finishes it", async () => {
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId,
+        threadId,
+        userId: actor.userId,
+        prompt: "work",
+        status: "queued",
+      },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const failing = prisma.$extends({
+      query: {
+        run: {
+          updateManyAndReturn() {
+            throw new Error("synthetic stop failure");
+          },
+        },
+      },
+    });
+    const send = (db: PrismaClient) =>
+      runAsTenant(actor, () =>
+        sendThreadMessage(
+          {
+            prisma: db,
+            sandbox: {} as never,
+            events: { notify } as never,
+            jobs: { enqueue } as never,
+          },
+          actor,
+          privateTarget(),
+          { text: "stop", clientNonce: "typed-stop" },
+        ),
+      );
+    await expect(send(failing as PrismaClient)).rejects.toThrow("synthetic stop failure");
+    expect(await system.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+      status: "running",
+    });
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(0);
+    expect(await system.steeringMessage.count({ where: { botId } })).toBe(0);
+
+    await send(prisma);
+    expect(await system.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(1);
+  });
+
+  it("tears down a typed stop's computer work and wakes the chat, as Stop does", async () => {
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId,
+        threadId,
+        userId: actor.userId,
+        prompt: "work",
+        status: "queued",
+      },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const computer = await system.computer.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        scopeKey: `typed-stop-${run.id}`,
+        homeKey: `typed-stop-${run.id}`,
+        kind: "fake",
+        state: "running",
+        providerRef: `ref-${run.id}`,
+      },
+    });
+    const lease = await system.computerExecutionLease.create({
+      data: {
+        computerId: computer.id,
+        botId,
+        runId: run.id,
+        fence: 5,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    const sandbox = {
+      execute: vi.fn(async function* () {
+        yield { type: "exit", code: 0 };
+      }),
+      releaseScreen: vi.fn().mockResolvedValue(undefined),
+    };
+    await runAsTenant(actor, () =>
+      sendThreadMessage(
+        {
+          prisma,
+          sandbox: sandbox as never,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+        },
+        actor,
+        privateTarget(),
+        { text: "stop" },
+      ),
+    );
+    expect(sandbox.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: `ref-${run.id}` }),
+      expect.objectContaining({
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", computer.id, run.id]),
+      }),
+      expect.objectContaining({ cancelRunWork: true, runId: run.id }),
+    );
+    expect(sandbox.releaseScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: `ref-${run.id}` }),
+      expect.objectContaining({ runId: run.id, screenLeaseId: `${run.id}:5` }),
+    );
+    expect(
+      (
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: lease.id } })
+      ).expiresAt.getTime(),
+    ).toBeLessThanOrEqual(Date.now());
+    expect(notify).toHaveBeenCalledWith(threadId, expect.any(Number));
+  });
+
   it("rolls back retirement if accepting the new run fails", async () => {
     const fixture = await waitingCard();
     await createThreadMessage(system, {
@@ -630,6 +787,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         sendThreadMessage(
           {
             prisma: failing as PrismaClient,
+            sandbox: {} as never,
             events: { notify } as never,
             jobs: { enqueue } as never,
           },

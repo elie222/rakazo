@@ -8,8 +8,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchivedBots from "../app/(settings)/archived-bots";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
-import type { MobileBot, MobileGroup } from "./api";
 import { onArchivedChatsChanged } from "./archived-chats";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 import { registerSettingsSheet } from "./settings-sheet";
 
 const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selectSpace } =
@@ -27,15 +27,19 @@ const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selec
 const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
 const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
-  selectSpace,
   rpc: (procedure: string, ...args: unknown[]) =>
     procedure === "spaces/list"
       ? Promise.resolve({ spaces: [{ id: "space-a" }] })
       : procedure.startsWith("groups/")
         ? groupRpc(procedure, ...args)
         : rpc(procedure, ...args),
+}));
+vi.mock("./api-server", () => ({
+  selectSpace,
 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
@@ -153,7 +157,7 @@ describe("archived chat read failures", () => {
       expect(push).not.toHaveBeenCalled();
       expect(alert).toHaveBeenCalledWith("Could not load bot", expect.any(String), [
         { text: "Cancel", style: "cancel" },
-        { text: "Try again.", onPress: expect.any(Function) },
+        { text: "Try again", onPress: expect.any(Function) },
       ]);
       rpc.mockResolvedValueOnce({});
       await act(async () => alert.mock.calls[0]![2][1].onPress());
@@ -338,7 +342,7 @@ describe("archived chat read failures", () => {
     expect(container.textContent).toContain(bot.name);
     expect(container.textContent).toContain("Could not reach the server");
     const retry = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Try again.",
+      (item) => item.textContent === "Try again",
     )!;
     rpc.mockResolvedValueOnce([]);
     await act(async () => retry.click());
@@ -494,7 +498,7 @@ describe("archived chat read failures", () => {
       (item) => item.textContent === "Restore Crew",
     )!;
     await act(async () => restore.click());
-    expect(container.textContent).toBe("Could not load chatsTry again.");
+    expect(container.textContent).toBe("Could not load chatsTry again");
   });
 
   it("keeps the groups load error after restoring the last bot", async () => {
@@ -508,7 +512,7 @@ describe("archived chat read failures", () => {
       (item) => item.textContent === "Restore",
     )!;
     await act(async () => restore.click());
-    expect(container.textContent).toBe("Could not load chatsTry again.");
+    expect(container.textContent).toBe("Could not load chatsTry again");
   });
 
   it("keeps a bots retry that is running when a group is restored", async () => {
@@ -525,7 +529,7 @@ describe("archived chat read failures", () => {
     );
     groupRpc.mockResolvedValueOnce([group]);
     const retry = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "Try again.",
+      (item) => item.textContent === "Try again",
     )!;
     await act(async () => retry.click());
     groupRpc.mockResolvedValueOnce({ ok: true });
@@ -600,7 +604,7 @@ describe("archived chat read failures", () => {
       );
       rpc.mockResolvedValueOnce([bot]);
       const retry = [...container.querySelectorAll("button")].find(
-        (item) => item.textContent === "Try again.",
+        (item) => item.textContent === "Try again",
       )!;
       await act(async () => retry.click());
       rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);

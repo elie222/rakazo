@@ -1,3 +1,32 @@
+import { botEyeColor } from "@rakazo/ui-tokens";
+import type { AvatarEyes } from "./avatar-shape.js";
+import { contrastRatio } from "./bot-avatar-colors.js";
+
+export const LOGO_AVATAR_VIEWBOX = "0 0 100 100";
+
+/** The body (and the eyes on it) sits this far down its plate. */
+export const LOGO_AVATAR_BODY_Y = 9;
+
+/** Oval eyes, in the body's own coordinates. */
+export const LOGO_AVATAR_EYES: AvatarEyes = {
+  width: 10.4,
+  height: 16,
+  leftCx: 40.5,
+  rightCx: 59.5,
+  cy: 40,
+};
+
+/** Dark eyes while they read on the body, otherwise whichever page color contrasts more. */
+export function logoAvatarEyeInk(
+  bodyColor: string,
+  page: { background: string; foreground: string },
+): string {
+  if (contrastRatio(bodyColor, botEyeColor) >= 3.5) return botEyeColor;
+  return contrastRatio(bodyColor, page.foreground) >= contrastRatio(bodyColor, page.background)
+    ? page.foreground
+    : page.background;
+}
+
 /** Smooth cubic fit to the canonical silhouette; no raster image is embedded. */
 export const LOGO_BODY_PATH =
   "M-1.759 76.330C0.959 69.782 7.117 63.647 10.602 56.566C14.086 49.486 14.898 41.460 17.063 33.747C19.227 26.034 22.744 18.634 28.465 13.175C34.186 7.716 42.110 4.197 50.032 4.183C57.954 4.169 65.874 7.660 71.581 13.121C77.288 18.582 80.783 26.014 82.945 33.732C85.107 41.449 85.935 49.451 89.402 56.543C92.869 63.634 98.975 69.814 101.767 76.305L108 108H-8Z";

@@ -1,16 +1,18 @@
 import type { AvatarMotionMode, AvatarPoke, LogoAvatarActivity } from "@rakazo/core";
 import {
   avatarPokeFrame,
-  contrastRatio,
+  LOGO_AVATAR_BODY_Y,
+  LOGO_AVATAR_EYES,
+  LOGO_AVATAR_VIEWBOX,
   LOGO_BODY_PATH,
   LOGO_LEFT_HAND_PATH,
   LOGO_RIGHT_HAND_PATH,
   LOGO_AVATAR_LIGHTING as lighting,
+  logoAvatarEyeInk,
   logoAvatarFrame,
   logoAvatarPaint,
   logoAvatarTraits,
 } from "@rakazo/core";
-import { botEyeColor } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo } from "react";
 import { Pressable } from "react-native";
@@ -88,23 +90,18 @@ export function LogoAvatar({
       frame.value.bodyY + 84 * (1 - frame.value.bodyScale),
     ],
   }));
-  const eyeInk =
-    contrastRatio(traits.color, botEyeColor) >= 3.5
-      ? botEyeColor
-      : contrastRatio(traits.color, tokens.foreground) >=
-          contrastRatio(traits.color, tokens.background)
-        ? tokens.foreground
-        : tokens.background;
-  const leftEye = useAnimatedProps(() => ({
-    cx: 40.5 + frame.value.eyeX,
-    cy: 49 + frame.value.eyeY,
-    ry: 8 * frame.value.lid * frame.value.blink,
-  }));
-  const rightEye = useAnimatedProps(() => ({
-    cx: 59.5 + frame.value.eyeX,
-    cy: 49 + frame.value.eyeY,
-    ry: 8 * frame.value.lid * frame.value.blink,
-  }));
+  const eyeInk = logoAvatarEyeInk(traits.color, tokens);
+  const eyes = LOGO_AVATAR_EYES;
+  const eyeProps = (cx: number) => () => {
+    "worklet";
+    return {
+      cx: cx + frame.value.eyeX,
+      cy: eyes.cy + LOGO_AVATAR_BODY_Y + frame.value.eyeY,
+      ry: (eyes.height / 2) * frame.value.lid * frame.value.blink,
+    };
+  };
+  const leftEye = useAnimatedProps(eyeProps(eyes.leftCx));
+  const rightEye = useAnimatedProps(eyeProps(eyes.rightCx));
   const page = useAnimatedProps(() => ({
     opacity: 1,
     matrix: [1, 0, 0, 1, frame.value.pageX, frame.value.pageY],
@@ -125,7 +122,7 @@ export function LogoAvatar({
   const stroke = Math.max(2.4, 100 / Math.max(1, size));
   const compact = size <= 38;
   const artwork = (
-    <Svg width={size} height={size} viewBox="0 0 100 100" accessible={false}>
+    <Svg width={size} height={size} viewBox={LOGO_AVATAR_VIEWBOX} accessible={false}>
       <Defs>
         <ClipPath id={`plate-${id}`}>
           <Rect width={100} height={100} rx={23} />
@@ -305,7 +302,7 @@ export function LogoAvatar({
       <G clipPath={`url(#plate-${id})`}>
         <Rect width={100} height={100} rx={23} fill={tokens.sidebar} />
         <AnimatedG animatedProps={body}>
-          <G transform="translate(0 9)">
+          <G transform={`translate(0 ${LOGO_AVATAR_BODY_Y})`}>
             <Path d={LOGO_BODY_PATH} fill={`url(#fill-${id})`} />
             <Path d={LOGO_BODY_PATH} fill={`url(#shade-${id})`} />
             <Path d={LOGO_BODY_PATH} fill={`url(#light-${id})`} />
@@ -328,8 +325,8 @@ export function LogoAvatar({
               <Path d={LOGO_RIGHT_HAND_PATH} fill={`url(#right-light-${id})`} />
             </G>
           </G>
-          <AnimatedEllipse animatedProps={leftEye} rx={5.2} fill={eyeInk} />
-          <AnimatedEllipse animatedProps={rightEye} rx={5.2} fill={eyeInk} />
+          <AnimatedEllipse animatedProps={leftEye} rx={eyes.width / 2} fill={eyeInk} />
+          <AnimatedEllipse animatedProps={rightEye} rx={eyes.width / 2} fill={eyeInk} />
           {size >= 24 ? (
             <G
               fill="none"

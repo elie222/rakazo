@@ -5,10 +5,10 @@ import {
   Command,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
   Input,
+  ListSearchInput,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -19,6 +19,7 @@ import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { ModelCredential } from "../../lib/model-auth";
 import { useSpaceRpc } from "../../lib/space-rpc";
+import { useListSearch } from "../../lib/use-list-search";
 import { errorText } from "../../lib/user-error";
 import type { ConnectableProvider } from "./role-model-picker";
 
@@ -63,11 +64,11 @@ export function ProvidersSection({
                 onClick={() => onOpen(credential)}
                 className="flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <span className="min-w-0 flex-1 truncate text-[15px] text-foreground">
+                <span className="min-w-0 flex-1 truncate text-body-lg text-foreground">
                   {nameOf(credential)}
                 </span>
                 {credential.reconnectRequired ? (
-                  <span className="shrink-0 text-[13px] text-warning">
+                  <span className="shrink-0 text-body-sm text-warning">
                     <Trans>Sign in again</Trans>
                   </span>
                 ) : null}
@@ -119,7 +120,7 @@ export function ConnectionNameField({
           .finally(() => setSaving(false));
       }}
     >
-      <label htmlFor={nameId} className="block text-[13.5px] text-muted-foreground">
+      <label htmlFor={nameId} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
       </label>
       <div className="mt-2 flex gap-2">
@@ -136,7 +137,7 @@ export function ConnectionNameField({
           </Button>
         ) : null}
       </div>
-      {error ? <p className="mt-2 text-[13.5px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-body text-destructive">{error}</p> : null}
     </form>
   );
 }
@@ -153,9 +154,12 @@ function AddProvider({
   const { t } = useLingui();
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
-  const matching = providers.filter((provider) => provider.name.toLowerCase().includes(needle));
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: matching,
+  } = useListSearch(providers, { text: (provider) => provider.name });
   return (
     <Popover
       open={open}
@@ -169,7 +173,7 @@ function AddProvider({
         render={
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-[14px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <Plus className="size-4" aria-hidden />
             <Trans>Add provider</Trans>
@@ -179,17 +183,25 @@ function AddProvider({
       <PopoverContent
         align="start"
         sideOffset={6}
-        initialFocus={searchRef}
+        initialFocus={showSearch ? searchRef : undefined}
         className="w-[min(360px,var(--available-width))] gap-0 overflow-hidden p-0 motion-reduce:animate-none"
       >
-        <Command label={t`Add provider`} shouldFilter={false} loop>
-          <CommandInput
-            ref={searchRef}
-            value={query}
-            onValueChange={setQuery}
-            aria-label={t`Add provider`}
-            placeholder={t`Search`}
-          />
+        <Command
+          tabIndex={showSearch ? undefined : 0}
+          label={t`Add provider`}
+          shouldFilter={false}
+          loop
+        >
+          {showSearch ? (
+            <ListSearchInput
+              command
+              inputRef={searchRef}
+              query={query}
+              setQuery={setQuery}
+              label={t`Add provider`}
+              placeholder={t`Search`}
+            />
+          ) : null}
           <CommandList className="rk-scroll max-h-80">
             <CommandEmpty>
               <Trans>No results</Trans>

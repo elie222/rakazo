@@ -90,6 +90,9 @@ From `.env.images.example` (images installer). Leave blank if unused:
 | `EXPO_ACCESS_TOKEN` | Mobile push when the Expo project enables enhanced push security |
 | Messaging tokens (Slack, Telegram, …) | Only if you enable those surfaces |
 
+Optional `APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID`, and `APNS_VOIP_PRIVATE_KEY` enable
+[iOS VoIP ringing](./self-host-clients.md#mobile-incoming-calls). Keep the `.p8` contents in the secret manager.
+
 Blank optional keys are normal for a minimal published-images boot. Pipedream
 Connect keys appear only in source/Compose `.env.example`, not the images
 example.

@@ -1,4 +1,3 @@
-import path from "node:path";
 import type {
   AdapterContext,
   CommandRequest,
@@ -17,6 +16,7 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import { INVALID_BROWSER_REQUEST, SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import {
   boundedSandboxCommandTimeoutMs,
   cancelResponseBody,
@@ -29,8 +29,10 @@ import {
   clampRounded,
   computerObservation,
   normalizeWorkspacePath,
+  workspaceCwd,
 } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
@@ -93,9 +95,7 @@ function encodedFileResponseLimit(maxBytes: number | undefined): number {
 
 /** Named so the API's isSandboxGoneError recognizes it and clears the dead computer row. */
 function sandboxGoneError(computer: ComputerRef): Error {
-  return Object.assign(new Error(`sandbox ${computer.id} is not running`), {
-    name: "SandboxNotFoundError",
-  });
+  return sandboxNotFoundError(`sandbox ${computer.id} is not running`);
 }
 
 export class DockerSandboxProvider implements SandboxProvider {
@@ -141,7 +141,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async provision(
-    request: { botId: string; homePath: string },
+    request: { botId: string; homePath: string; timezone?: string; language?: string },
     context: AdapterContext,
   ): Promise<ComputerRef> {
     const res = await fetch(this.url("/computers"), {
@@ -151,6 +151,8 @@ export class DockerSandboxProvider implements SandboxProvider {
         botId: request.botId,
         homePath: request.homePath,
         spaceId: context.spaceId,
+        timezone: request.timezone,
+        language: request.language,
       }),
       signal: context.signal,
     });
@@ -196,7 +198,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       body: JSON.stringify({
         ...request,
         argv: sandboxCommandArgv(request),
-        cwd: dockerCwd(request.cwd),
+        cwd: workspaceCwd("/home/rakazo", request.cwd),
         timeoutMs,
       }),
       signal: context.signal,
@@ -247,7 +249,16 @@ export class DockerSandboxProvider implements SandboxProvider {
       redirect: "error",
       signal: context.signal,
     });
-    if (!res.ok) throw new Error(`page browser failed: ${res.status}`);
+    if (!res.ok) {
+      // Only the supervisor's own refusal of a malformed request proves nothing ran.
+      if (res.status === 400) {
+        const refused = await readSandboxJson<{ code?: unknown }>(res, context.signal, 4096).catch(
+          () => undefined,
+        );
+        if (refused?.code === INVALID_BROWSER_REQUEST) throw new SandboxRequestRejectedError();
+      }
+      throw new Error(`page browser failed: ${res.status}`);
+    }
     return readSandboxJson<PageBrowserResult>(res, context.signal, 512 * 1024);
   }
 
@@ -691,12 +702,4 @@ function parseProcessLine(line: string): ProcessEvent | undefined {
     return { type: "exit", code: record.code };
   }
   return undefined;
-}
-
-function dockerCwd(cwd: string | undefined) {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo") return "/home/rakazo";
-  const relative = cwd.startsWith("/home/rakazo/")
-    ? cwd.slice("/home/rakazo/".length)
-    : normalizeWorkspacePath(cwd);
-  return path.posix.join("/home/rakazo", relative);
 }

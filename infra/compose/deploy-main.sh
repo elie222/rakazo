@@ -17,8 +17,9 @@ fi
 APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
-# CI allows 45 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
-# rollback, which only pulls or builds when the previous image is gone.
+# CI allows 140 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
+# rollback, which only pulls or builds when the previous image is gone, + up to 50m (the worker's
+# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
@@ -105,36 +106,102 @@ container_healthy() {
   return 1
 }
 
+# Starts one more container of a service beside the given ones and waits for its health check.
+start_beside() {
+  local service="$1" running="$2" new
+  compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
+    --scale "${service}=$(($(wc -w <<<"${running}") + 1))" "${service}"
+  new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${running}")"
+  container_healthy "${new}"
+}
+
+# A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
+# is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the new
+# worker takes new ones; killing it would leave each job locked for hours. A restart policy of
+# "no" keeps Docker from starting it again and marks it as draining for later runs. Prints the
+# worker containers that are live, or draining (still finishing, or exited and not yet removed).
+worker_containers() {
+  local ids
+  ids="$(compose 1m ps --all --quiet worker)"
+  [[ -n "${ids}" ]] || return 0
+  # shellcheck disable=SC2086 # one container ID per word
+  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
+    awk -v wanted="$1" '($2 == "no" ? "draining" : "live") == wanted { print $1 }'
+}
+
+# Waits for draining workers to exit and removes them. docker stop gives each the rest of the
+# worker's stop_grace_period before it kills one.
+finish_draining() {
+  local workers
+  workers="$(worker_containers draining)"
+  [[ -n "${workers}" ]] || return 0
+  echo "Waiting for the previous worker to finish its running jobs."
+  # shellcheck disable=SC2086
+  sudo docker stop ${workers} >/dev/null
+  # shellcheck disable=SC2086
+  sudo docker rm ${workers} >/dev/null
+}
+
+drain_workers() {
+  # shellcheck disable=SC2086 # one container ID per word
+  sudo docker update --restart no $1 >/dev/null
+  # One that is not running has nothing to finish; finish_draining removes it.
+  # shellcheck disable=SC2086
+  sudo docker kill --signal SIGTERM $1 >/dev/null 2>&1 || true
+}
+
+replace_worker() {
+  local live
+  live="$(worker_containers live)"
+  if [[ -n "$(worker_containers draining)" ]]; then
+    # Only a rollback finds a worker still draining: the one its deploy replaced. The failed
+    # release's worker stops claiming jobs too, and the restored one starts once both exit,
+    # because a scale-up would also start a drained worker that exited in the meantime.
+    [[ -z "${live}" ]] || drain_workers "${live}"
+    finish_draining
+    live=""
+  fi
+  if [[ -z "${live}" ]]; then
+    compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
+    return
+  fi
+  start_beside worker "${live}"
+  drain_workers "${live}"
+}
+
 # Replaces the API, web and worker without a gap: one new container starts beside the running
 # ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
 # the old one hands back the runs it was executing. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
+# Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {
-  local service old new
+  local service old
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
-  # A rollback to a release without that service has nothing to run: its API migrates on start.
+  # On older releases the API migrates on start, so only start its database here.
   if compose 1m config --services | grep -qx migrate; then
-    compose "${UP_TIMEOUT}" run --rm -T migrate
+    compose "${UP_TIMEOUT}" run --rm -T -e "RAKAZO_DEPLOYED_MIGRATIONS=${deployed_migrations}" migrate
+  else
+    compose "${UP_TIMEOUT}" up -d --wait postgres
   fi
-  for service in api web worker; do
+  for service in api web; do
     old="$(compose 1m ps --all --quiet "${service}")"
     if [[ -z "${old}" ]]; then
-      # Nothing to keep serving, so start it with its dependencies (the database on a new host).
-      compose "${UP_TIMEOUT}" up -d --wait "${service}"
+      # The migration run already started the database; do not rerun it through dependencies.
+      compose "${UP_TIMEOUT}" up -d --no-deps --wait "${service}"
       continue
     fi
-    compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
-      --scale "${service}=$(($(wc -w <<<"${old}") + 1))" "${service}"
-    new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${old}")"
-    container_healthy "${new}"
+    start_beside "${service}" "${old}"
     # shellcheck disable=SC2086 # one container ID per word
     sudo docker stop --time 30 ${old} >/dev/null
     # shellcheck disable=SC2086
     sudo docker rm ${old} >/dev/null
   done
-  compose "${UP_TIMEOUT}" up -d --remove-orphans
+  replace_worker
+  # shellcheck disable=SC2046 # one service name per word
+  # A second migration run would consume a deferred drop before the old worker has drained.
+  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(worker|migrate)$')
 }
 
 # Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a
@@ -180,6 +247,14 @@ if [[ "${previous_revision}" == "${target_revision}" && "${deployed_revision}" =
   exit 0
 fi
 
+# A failed rollout may have already seen its deferred drops. Only a release that actually ran
+# can make those drops safe; retrying it, or skipping to another release, must keep holding them.
+# Unknown deployment history fails closed until a successful release records its revision.
+deployed_migrations=""
+if [[ "${deployed_revision}" =~ ^[[:xdigit:]]{40}$ ]]; then
+  deployed_migrations="$(git ls-tree --name-only "${deployed_revision}:packages/db/prisma/migrations" 2>/dev/null | paste -sd, -)" || deployed_migrations=""
+fi
+
 app_image=""
 # The image the running API uses, which can differ from the configured tag if someone pulled a
 # newer one without recreating the containers.
@@ -203,6 +278,7 @@ rollback() {
   fi
   roll_out
   apply_caddyfile "${target_revision}" "${previous_revision}"
+  finish_draining || echo "Could not remove the replaced worker; the next deploy will." >&2
   exit 1
 }
 trap rollback ERR
@@ -257,6 +333,9 @@ fi
 app_image="$(compose_app_image)"
 [[ -n "${app_image}" ]] || { echo "Could not find the api image in ${COMPOSE_FILE}." >&2; false; }
 use_revision_image "${target_revision}" "${BUILD_TIMEOUT}"
+# A worker still draining from a deploy that stopped early runs code older than the previous
+# release, which these migrations need not support.
+finish_draining
 roll_out
 apply_caddyfile "${previous_revision}" "${target_revision}"
 
@@ -265,6 +344,9 @@ for _ in {1..30}; do
     printf '%s\n' "${target_revision}" >"${APP_DIR}/.last-deployed-revision"
     trap - ERR
     prune_docker
+    # Production already runs the new release; this only holds the next deploy until the
+    # replaced worker has finished its jobs.
+    finish_draining || echo "Could not remove the replaced worker; the next deploy will." >&2
     echo "Deployed ${target_revision} successfully."
     exit 0
   fi

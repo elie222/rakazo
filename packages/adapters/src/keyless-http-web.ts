@@ -183,16 +183,75 @@ function extractWithReadability(html: string, url: string): { title: string; tex
   }
 }
 
+/** Visible text of an HTML document: entities decoded, scripts and styles dropped, blocks on lines. */
+export function htmlToPlainText(html: string): string {
+  // JSDOM runs no scripts and loads nothing unless asked to.
+  const { document } = new JSDOM(html).window;
+  for (const element of document.querySelectorAll("head, script, style, template")) {
+    element.remove();
+  }
+  for (const element of document.querySelectorAll("br")) element.replaceWith("\n");
+  for (const element of document.querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6")) {
+    element.append("\n");
+  }
+  return normalizeArticleText(document.body?.textContent ?? "");
+}
+
+// These scans give the same result as the obvious regexes (/<title[^>]*>([\s\S]*?)<\/title>/i,
+// /<script[^>]*>[\s\S]*?<\/script>/gi, /<[^>]+>/g), which backtrack quadratically on unclosed tags.
 function stripHtmlFallback(html: string): { title: string; text: string } {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = normalizeWhitespace(titleMatch?.[1] ?? "") || "Untitled";
-  const text = normalizeArticleText(
-    html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " "),
-  );
-  return { title, text };
+  const titleOpen = forwardSearch(html, "<title")(0);
+  const titleEnd = titleOpen === -1 ? -1 : html.indexOf(">", titleOpen);
+  const titleClose = titleEnd === -1 ? -1 : forwardSearch(html, "</title>")(titleEnd + 1);
+  const title = titleClose === -1 ? "" : html.slice(titleEnd + 1, titleClose);
+  return {
+    title: normalizeWhitespace(title) || "Untitled",
+    text: normalizeArticleText(stripTags(removeElements(removeElements(html, "script"), "style"))),
+  };
+}
+
+/** Finds a case-insensitive literal at or after `from`; calls must not move backwards. */
+function forwardSearch(text: string, literal: string): (from: number) => number {
+  const pattern = new RegExp(literal, "gi");
+  let found = -2;
+  return (from) => {
+    if (found === -1 || found >= from) return found;
+    pattern.lastIndex = from;
+    found = pattern.exec(text)?.index ?? -1;
+    return found;
+  };
+}
+
+function removeElements(html: string, name: string): string {
+  const open = forwardSearch(html, `<${name}`);
+  const end = forwardSearch(html, ">");
+  const close = forwardSearch(html, `</${name}>`);
+  let kept = "";
+  let position = 0;
+  for (;;) {
+    const start = open(position);
+    const startEnd = start === -1 ? -1 : end(start);
+    const finish = startEnd === -1 ? -1 : close(startEnd + 1);
+    // A later opener cannot find a closer this one missed.
+    if (finish === -1) break;
+    kept += html.slice(position, start);
+    position = finish + name.length + 3;
+  }
+  return kept + html.slice(position);
+}
+
+function stripTags(html: string): string {
+  let text = "";
+  let position = 0;
+  for (;;) {
+    const start = html.indexOf("<", position);
+    const end = start === -1 ? -1 : html.indexOf(">", start + 1);
+    if (end === -1) break;
+    // "<>" is text, not an empty tag.
+    text += end === start + 1 ? html.slice(position, end) : `${html.slice(position, start)} `;
+    position = end === start + 1 ? end : end + 1;
+  }
+  return text + html.slice(position);
 }
 
 function normalizeWhitespace(text: string): string {
@@ -200,9 +259,10 @@ function normalizeWhitespace(text: string): string {
 }
 
 function normalizeArticleText(text: string): string {
+  // Collapse runs before trimming line ends: /[ \t]+\n/ rescans long runs quadratically.
   return text
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

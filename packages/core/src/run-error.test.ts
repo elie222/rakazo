@@ -1,4 +1,4 @@
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR, COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -18,6 +18,42 @@ import {
   userRunError,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
+
+/** The classification alone, without the provider's own status and message. */
+function classify(details: string) {
+  const {
+    status: _status,
+    providerMessage: _message,
+    ...classification
+  } = normalizeRunError(details);
+  return classification;
+}
+
+it("returns the provider's status and the message unwrapped from its envelope", () => {
+  expect(normalizeRunError('403: {"error":{"message":"Weekly key limit exceeded"}}')).toMatchObject(
+    { status: 403, providerMessage: "Weekly key limit exceeded" },
+  );
+  const plain = normalizeRunError("Request timed out.");
+  expect(plain.status).toBeUndefined();
+  expect(plain.providerMessage).toBe("Request timed out.");
+});
+
+it("keeps the provider's status and message on unusable-output errors", () => {
+  expect(
+    normalizeRunError('403: {"error":{"message":"Provider returned an empty response"}}'),
+  ).toMatchObject({
+    kind: "output",
+    status: 403,
+    providerMessage: "Provider returned an empty response",
+  });
+});
+
+it("reads a limit period and reset date from top-level envelope fields", () => {
+  const error = normalizeRunError(
+    '402: {"error":{"message":"Usage limit exceeded","limit":"weekly","reset_at":"2099-01-01"}}',
+  );
+  expect(error).toMatchObject({ period: "weekly", resetAt: Date.parse("2099-01-01") });
+});
 
 describe("normalizeRunError", () => {
   beforeEach(() => {
@@ -207,7 +243,7 @@ describe("normalizeRunError", () => {
       ["Model stream ended without a terminal event", tookTooLong],
       ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary,
         details,
         ...(summary === tooLong ? { kind: "context" } : {}),
@@ -225,7 +261,7 @@ describe("normalizeRunError", () => {
       "getaddrinfo EAI_AGAIN vllm",
       "Connection refused",
     ])("says an unreachable provider %s should be checked", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "Your model provider couldn't be reached. Check that it's running.",
         details,
       });
@@ -397,6 +433,10 @@ describe("normalizeRunError", () => {
       "This request triggered restrictions on violative cyber content and was blocked under Anthropic's Usage Policy. To learn more, see the refusals guide.",
       "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
       "Provider returned an empty response",
+      'unexpected tokens remaining in message header: Some("to=functions.example")',
+      'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+      '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+      'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
@@ -407,7 +447,7 @@ describe("normalizeRunError", () => {
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
-      expect(normalizeRunError(details)).toEqual({
+      expect(classify(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
         details,
         kind: "output",
@@ -431,6 +471,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
+      "Internal failure while handling unexpected tokens remaining in message header: unknown",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',
@@ -598,8 +639,10 @@ it.each([
       reason: "fake-diagnostic",
     })),
   );
+  // The listed details replace the primary's own message.
+  const { providerMessage: _message, ...primary } = normalizeRunError(primaryError);
   expect(normalizeRunError(details)).toEqual({
-    ...normalizeRunError(primaryError),
+    ...primary,
     details: [
       primaryError,
       ...statuses.map(() => "fake-provider fake-model: fake-diagnostic"),
@@ -618,12 +661,12 @@ it.each([
   });
 });
 
-it("shows the computer rate limit as written", () => {
-  expect(normalizeRunError(COMPUTER_RATE_LIMIT_ERROR)).toEqual({
-    summary: COMPUTER_RATE_LIMIT_ERROR,
-    details: COMPUTER_RATE_LIMIT_ERROR,
-  });
-});
+it.each([COMPUTER_RATE_LIMIT_ERROR, COMPUTER_PROVIDER_UNAVAILABLE_ERROR])(
+  "shows the computer error %j as written",
+  (message) => {
+    expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
+  },
+);
 
 it("does not expose malformed fallback metadata as user-facing copy", () => {
   expect(

@@ -1,8 +1,10 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
-import { botSecretDestinationSchema, LoginFieldLabels } from "./bot-secrets.js";
+import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { McpAppCspSchema } from "./mcp-app.js";
+import { PAGE_TITLE_MAX_LENGTH } from "./pages.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -104,6 +106,21 @@ export const BotSettingsValuesSchema = z.object({
 });
 export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
 
+/** A payment's order as read from the page: every value is page text, none of it checked. */
+export const AskReceipt = z.object({
+  /** The pay button's label. */
+  button: z.string().max(200).optional(),
+  items: z.array(z.object({ name: z.string().max(200), amount: z.string().max(100) })).max(30),
+  /** Order lines the card leaves out; `atLeast` when the page may list even more. */
+  more: z.object({ count: z.number().int().positive(), atLeast: z.boolean() }).optional(),
+  /** What is paid: the amount the button names, or else the page's total. */
+  amount: z.string().max(100).optional(),
+  amountSource: z.enum(["button", "page"]),
+  /** The page's total beside a button that names its own amount. */
+  total: z.string().max(100).optional(),
+});
+export type AskReceipt = z.infer<typeof AskReceipt>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -129,6 +146,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
+    /** On a payment card, the order as the page shows it, drawn as a receipt in place of `detail`. */
+    receipt: AskReceipt.optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
@@ -136,8 +155,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** A texted or emailed code for this site's page; answered once, never saved. */
+    oneTimeCode: OneTimeCodeTarget.optional(),
+    /** On a login card, the saved login this card replaces and the site it is saved for. */
+    replaces: z.object({ id: z.string().max(64), origin: z.string().max(2048) }).optional(),
     /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
     loginFields: LoginFieldLabels.optional(),
+    /** On a login card in a shared Space: the site stays signed in for everyone in it. */
+    sharedBrowser: z.literal(true).optional(),
     /** On a fetch approval, the site an "always" answer allows. */
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
@@ -307,6 +332,28 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     size: z.number().int().nonnegative(),
   }),
   z.object({
+    /**
+     * An MCP server's app showing one tool call. The app's HTML is a hidden artifact; the
+     * arguments and result are what its view receives, the result as the bot got it (credentials
+     * redacted).
+     */
+    kind: z.literal("app"),
+    artifactId: Id,
+    server: z.string().max(200),
+    tool: z.string().max(200),
+    toolArguments: z.record(z.string(), z.any()),
+    toolResult: z.record(z.string(), z.any()),
+    csp: McpAppCspSchema.optional(),
+    prefersBorder: z.boolean().optional(),
+  }),
+  z.object({
+    /** A page the bot saved. Title and version are as sent; read the page for its latest. */
+    kind: z.literal("page"),
+    pageId: Id,
+    version: z.number().int().positive(),
+    title: z.string().max(PAGE_TITLE_MAX_LENGTH),
+  }),
+  z.object({
     kind: z.literal("handoff"),
     fromBotId: Id,
     toBotId: Id,
@@ -425,9 +472,16 @@ export const ProductEventSchema = z
   });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
+/** The person who wrote a user message, when known. */
+export const MessageAuthorSchema = z.object({ id: Id, name: z.string() });
+export type MessageAuthor = z.infer<typeof MessageAuthorSchema>;
+
 export const ReplyPreviewSchema = z.object({
   role: MessageRole,
+  /** The parent is a page card. */
+  page: z.literal(true).optional(),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   text: z.string(),
   attachment: z
     .object({
@@ -447,6 +501,7 @@ export const ThreadMessageSchema = z.object({
   role: MessageRole,
   blocks: z.array(MessageBlock),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
   replyPreview: ReplyPreviewSchema.nullable().optional(),

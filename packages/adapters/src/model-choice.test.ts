@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelChoice } from "./model-choice.js";
-import { matchModelChoice, resolveModelChoice } from "./model-choice.js";
+import { matchModelChoice, resolveModelChoice, words } from "./model-choice.js";
 
 const choice = (provider: string, providerName: string, id: string, label: string) => ({
   provider,
@@ -63,6 +63,56 @@ describe("matchModelChoice", () => {
   });
 });
 
+describe("hyphenated versions in ids", () => {
+  it.each([
+    ["claude-sonnet-5-5", ["claude", "sonnet", "5.5"]],
+    ["gemini-2-0-flash", ["gemini", "2.0", "flash"]],
+    ["claude-sonnet-4-5-20250929", ["claude", "sonnet", "4.5", "20250929"]],
+    ["llama-3-1-8b", ["llama", "3.1", "8", "b"]],
+    ["llama-3-8b", ["llama", "3", "8", "b"]],
+    ["gpt-4-1106-preview", ["gpt", "4", "1106", "preview"]],
+    ["gpt-4-0613", ["gpt", "4", "0613"]],
+    ["o3-mini", ["o", "3", "mini"]],
+    ["model-2026-11-05", ["model", "2026", "11", "05"]],
+    ["gemini-2.5-flash-preview-05-20", ["gemini", "2.5", "flash", "preview", "05", "20"]],
+    ["model-1-2-3", ["model", "1", "2", "3"]],
+    ["deepseek-v3-1", ["deepseek", "v", "3.1"]],
+    ["meta.llama3-1-8b", ["meta", "llama", "3.1", "8", "b"]],
+    ["gemini-2-5-pro-preview-11-20", ["gemini", "2.5", "pro", "preview", "11", "20"]],
+    ["gpt-4o-2024-11-20", ["gpt", "4", "o", "2024", "11", "20"]],
+  ])("reads %s as %j", (id, expected) => {
+    expect(words(id)).toEqual(expected);
+  });
+
+  // Custom servers list models by id alone, so the id is the label.
+  const ids = [
+    "claude-sonnet-5",
+    "claude-sonnet-5-5",
+    "claude-sonnet-4-5-20250929",
+    "llama-3-1-8b",
+    "llama-3-8b",
+    "ministral-3-8b",
+  ].map((id) => choice("openai-compatible", "OpenAI-compatible", id, id));
+  const matchedId = (query: string) => matchModelChoice(ids, query).match?.id;
+
+  it.each(["sonnet5.5", "Sonnet 5.5", "claude sonnet 5.5", "sonnet 5-5"])(
+    "matches %s to claude-sonnet-5-5",
+    (query) => {
+      expect(matchedId(query)).toBe("claude-sonnet-5-5");
+    },
+  );
+
+  it("keeps a spoken version exact and prefers the newest for a bare family", () => {
+    expect(matchedId("sonnet 5")).toBe("claude-sonnet-5");
+    expect(matchedId("sonnet 4.5")).toBe("claude-sonnet-4-5-20250929");
+    expect(matchedId("sonnet")).toBe("claude-sonnet-5-5");
+    expect(matchedId("llama 3.1")).toBe("llama-3-1-8b");
+    expect(matchedId("llama 3")).toBe("llama-3-8b");
+    // Spaced numbers stay apart, as they do against catalog labels: "3 8" is a size here.
+    expect(matchedId("ministral 3 8")).toBe("ministral-3-8b");
+  });
+});
+
 function connected(providers: string[]) {
   const credentials = providers.map((provider) => ({
     id: `cred-${provider}`,
@@ -116,5 +166,21 @@ describe("resolveModelChoice", () => {
       ok: false,
       error: 'No model matches "zzz-unknown".',
     });
+  });
+
+  it("bounds the echoed query in errors", async () => {
+    const elsewhere = await resolveModelChoice(connected(["google"]), scope, {
+      model: `${"claude ".repeat(10_000)}sonnet`,
+    });
+    expect(elsewhere).toMatchObject({ ok: false });
+    if (!elsewhere.ok) {
+      expect(elsewhere.error).toContain("No connected model matches");
+      expect(elsewhere.error.length).toBeLessThan(600);
+    }
+    const nowhere = await resolveModelChoice(connected([]), scope, {
+      model: "z".repeat(60_000),
+    });
+    expect(nowhere).toMatchObject({ ok: false });
+    if (!nowhere.ok) expect(nowhere.error.length).toBeLessThan(400);
   });
 });

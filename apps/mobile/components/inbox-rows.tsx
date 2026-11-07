@@ -11,13 +11,13 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/api";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
 import { formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
+import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
@@ -143,6 +143,38 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
 }
 
 /** Points right while a section is collapsed and turns down as it opens. */
+/** A folding section header's title, count, and chevron; `count` shows when given. */
+export function SectionToggle({
+  title,
+  count,
+  collapsed,
+  onPress,
+}: {
+  title: string;
+  count?: number;
+  collapsed: boolean;
+  onPress: () => void;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
+  const { t } = useI18n();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        collapsed ? t("Expand {name}", { name: title }) : t("Collapse {name}", { name: title })
+      }
+      accessibilityState={{ expanded: !collapsed }}
+      accessibilityValue={count === undefined ? undefined : { text: String(count) }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
+    >
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {count === undefined ? null : <Text style={styles.sectionCount}>{count}</Text>}
+      <SectionChevron collapsed={collapsed} />
+    </Pressable>
+  );
+}
+
 export function SectionChevron({ collapsed }: { collapsed: boolean }) {
   const rotation = useSharedValue(collapsed ? 0 : 90);
   useEffect(() => {
