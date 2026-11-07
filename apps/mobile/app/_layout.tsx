@@ -444,7 +444,9 @@ function LayoutContent() {
                       name="server"
                       options={{
                         title: t("Server"),
-                        presentation: "formSheet",
+                        // Android formSheet does not show the header Save; use a card
+                        // like settings and search so trailingHeaderOptions can render.
+                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
                       }}
