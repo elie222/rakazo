@@ -259,8 +259,9 @@ export function useInboxChatActions({
         );
       };
       apply(until);
-      // One chat's changes go one at a time, latest choice next; a failure sends nothing after it,
-      // so the chat goes back to what the server still has.
+      // What the server last saved, so a failure puts the chat back to that.
+      let saved = chat.snoozedUntil ?? null;
+      // One chat's changes go one at a time, latest choice next; a failure sends nothing after it.
       await sendSnooze(
         unreadOverrideKey(kind, chat.id),
         until,
@@ -269,11 +270,12 @@ export function useInboxChatActions({
             ...chatTarget(kind, chat.id),
             until: value,
           });
+          saved = value;
         },
         // Reload once nothing is left to send, so a stale list can't cover a pending choice.
         () => void loadBots().catch(() => undefined),
       ).catch((err) => {
-        apply(chat.snoozedUntil ?? null);
+        apply(saved);
         Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
       });
     },

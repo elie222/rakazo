@@ -7,7 +7,8 @@ const MAX_WAIT_MS = 60 * 60 * 1000;
 /** The time the roster reads snoozes against, moved forward when one of these chats wakes. */
 export function useSnoozeClock(chats: Iterable<{ snoozedUntil?: string | null }>) {
   const [now, setNow] = useState(Date.now);
-  const next = nextChatWake(chats, Date.now());
+  // Against the clock the roster reads, so a wake that passed since it last moved ticks at once.
+  const next = nextChatWake(chats, now);
   useEffect(() => {
     const tick = () => setNow(Date.now());
     window.addEventListener("focus", tick);
