@@ -193,6 +193,7 @@ describePages("pages", () => {
       pageId,
       version: 3,
       title: "KPIs",
+      format: "jsx",
       mention: `Mention it in your reply as [KPIs](page:${pageId})`,
     });
     // A page that saves but has a likely mistake carries the kit's warnings back to the bot.
