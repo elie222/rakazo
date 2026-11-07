@@ -167,21 +167,27 @@ function isLaunchSecret(name: string, value: string): boolean {
 }
 
 /** A flag, query, or header value under a credential name. Only explicit credential names
- * (`api_key`, `password`) take numeric values, so `?key=0` cannot redact every zero. */
+ * (`api_key`, `password`, `access_key`) take numeric values, so `?key=0` cannot redact every zero. */
 function isCredentialArg(name: string, value: string): boolean {
   const normalized = snakeName(name);
   return (
     isCredentialName(normalized) &&
-    looksLikeSecretValue(value, { allowNumeric: isExplicitCredentialKey(normalized) })
+    looksLikeSecretValue(value, {
+      allowNumeric: isExplicitCredentialKey(normalized) || NAMED_KEY.test(normalized),
+    })
   );
 }
 
-/** Flag and query names that carry a credential (`api_key`, `token`, `private_key`, `pat`). */
+/** Key names that say which credential they hold (`access_key`, not a bare `key`). */
+const NAMED_KEY = /(?:^|_)(access_key|private_key|secret_key)$/;
+
+/** Flag and query names that carry a credential (`api_key`, `token`, `client_auth`, `pat`). */
 function isCredentialName(normalized: string): boolean {
   return (
     isExplicitCredentialKey(normalized) ||
     isAmbiguousCredentialKey(normalized) ||
-    /(?:^|_)(access_key|private_key|secret_key)$|^(key|pat|auth)$/.test(normalized)
+    NAMED_KEY.test(normalized) ||
+    /(?:^|_)auth$|^(key|pat)$/.test(normalized)
   );
 }
 
