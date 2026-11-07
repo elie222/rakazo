@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTranslations, findMismatches, listGaps } from "./catalog-gaps.ts";
+import { applyTranslations, findMismatches, listGaps, translationsOf } from "./catalog-gaps.ts";
 
 const po = `msgid ""
 msgstr ""
@@ -58,6 +58,16 @@ describe("catalog gaps", () => {
     expect(filled).toContain('msgstr "<0>{name}</0> öffnen"');
     expect(listGaps(filled)).toHaveLength(2);
     expect(applyTranslations(po, {}).po).toBe(po);
+  });
+
+  it("fills one catalog's gaps from another's translations", () => {
+    const other = po
+      .replace('msgid "Save"\nmsgstr "Speichern"', 'msgid "Save"\nmsgstr "Sichern"')
+      .replace('msgid "Run"\nmsgstr ""', 'msgid "Run"\nmsgstr "Ausführen"');
+    expect(translationsOf(other)).toMatchObject({ Save: "Sichern", "verb\u0004Run": "Ausführen" });
+    const { po: merged } = applyTranslations(po, translationsOf(other));
+    expect(merged).toContain('msgid "Save"\nmsgstr "Speichern"');
+    expect(merged).toContain('msgid "Run"\nmsgstr "Ausführen"');
   });
 
   it("reads multi-line entries whole and fills them in place", () => {

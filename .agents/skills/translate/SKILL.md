@@ -9,7 +9,12 @@ description: Fill untranslated strings in the web translation catalogs (`apps/we
 
 ## 1. Pick the branch
 
-If an open pull request from `i18n/catalog-sync` exists (`gh pr list --head i18n/catalog-sync --state open`), check out that branch; otherwise branch `i18n/translate-<date>` from `origin/main`. Either way, bring in the newest strings before translating: merge `origin/main`, taking main's side of any `messages.po` conflict, then run `pnpm --filter @rakazo/web intl:extract` and commit the result.
+If an open pull request from `i18n/catalog-sync` exists (`gh pr list --head i18n/catalog-sync --state open`), check out that branch; otherwise branch `i18n/translate-<date>` from `origin/main`. Either way, bring in the newest strings before translating:
+
+1. Merge `origin/main`. If a `messages.po` conflicts, keep the branch's copy (`git checkout --ours -- <file>`) so its translations survive, and finish the merge.
+2. Run `pnpm --filter @rakazo/web intl:extract`. It adds main's new strings and drops removed ones, keeping every existing translation.
+3. Fill in anything main translated that the branch had not, for each locale: `git show origin/main:apps/web/src/locales/<locale>/messages.po > /tmp/main-<locale>.po`, then `node .agents/skills/translate/catalog-gaps.ts apply <locale> /tmp/main-<locale>.po`.
+4. Commit the result.
 
 Run `node .agents/skills/translate/catalog-gaps.ts check`. If every locale shows 0 untranslated, stop.
 

@@ -2,7 +2,8 @@
 // Lists, fills and checks untranslated entries in the web Lingui catalogs.
 //
 //   node catalog-gaps.ts list <locale>          JSON array of untranslated entries
-//   node catalog-gaps.ts apply <locale> <json>  fill empty entries from {key: translation}
+//   node catalog-gaps.ts apply <locale> <file>  fill empty entries from a {key: translation}
+//                                               JSON file, or from another messages.po
 //   node catalog-gaps.ts check [locale...]      count gaps and placeholder mismatches
 //
 // A key is the msgid, or `msgctxt\u0004msgid` when the entry has a context. `apply` only
@@ -52,6 +53,17 @@ export function listGaps(po: string): Gap[] {
     .map(parseEntry)
     .filter((entry): entry is Entry => entry !== null && entry.msgstr === "")
     .map(({ key, msgctxt, msgid, notes }) => ({ key, msgctxt, msgid, notes }));
+}
+
+// Every non-empty translation in a catalog, keyed like `listGaps`.
+export function translationsOf(po: string): Record<string, string> {
+  return Object.fromEntries(
+    po
+      .split("\n\n")
+      .map(parseEntry)
+      .filter((entry): entry is Entry => entry !== null && entry.msgstr !== "")
+      .map((entry) => [entry.key, entry.msgstr]),
+  );
 }
 
 export function applyTranslations(po: string, translations: Record<string, unknown>) {
@@ -109,7 +121,10 @@ function main([command, ...args]: string[]) {
   }
   if (command === "apply" && args.length === 2) {
     const path = catalogPath(args[0]);
-    const translations = JSON.parse(readFileSync(args[1], "utf8")) as Record<string, unknown>;
+    const source = readFileSync(args[1], "utf8");
+    const translations: Record<string, unknown> = args[1].endsWith(".po")
+      ? translationsOf(source)
+      : JSON.parse(source);
     const result = applyTranslations(readFileSync(path, "utf8"), translations);
     writeFileSync(path, result.po);
     console.log(`${args[0]}: filled ${result.filled}`);
@@ -127,7 +142,7 @@ function main([command, ...args]: string[]) {
     }
     return failed ? 1 : 0;
   }
-  console.error("usage: catalog-gaps.ts list <locale> | apply <locale> <json> | check [locale...]");
+  console.error("usage: catalog-gaps.ts list <locale> | apply <locale> <file> | check [locale...]");
   return 2;
 }
 
