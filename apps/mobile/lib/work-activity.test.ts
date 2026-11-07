@@ -14,6 +14,9 @@ const app = vi.hoisted(() => ({
   appState: undefined as undefined | ((state: string) => void),
   session: undefined as undefined | (() => void),
   token: "session-token",
+  generation: 1,
+  ready: 1,
+  readFails: false,
 }));
 const rpc = vi.hoisted(() => vi.fn());
 
@@ -29,7 +32,10 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./session", () => ({
-  loadSessionToken: async () => app.token,
+  currentSessionGeneration: () => app.generation,
+  currentReadySessionGeneration: () => app.ready,
+  snapshotSessionToken: async () =>
+    app.readFails ? { ok: false } : { ok: true, value: app.token },
   subscribeSessionGeneration: (listener: () => void) => {
     app.session = listener;
     return () => undefined;
@@ -80,6 +86,15 @@ it("asks again on launch and whenever the app opens, and ends the card on sign-o
   await settle();
   expect(native.endWorkActivity).not.toHaveBeenCalled();
   app.token = "";
+  // A change still landing, or a keychain read that failed, is not a sign-out.
+  app.ready = 0;
+  app.session!();
+  app.ready = 1;
+  app.readFails = true;
+  app.session!();
+  await settle();
+  expect(native.endWorkActivity).not.toHaveBeenCalled();
+  app.readFails = false;
   app.session!();
   await settle();
   expect(native.endWorkActivity).toHaveBeenCalledOnce();

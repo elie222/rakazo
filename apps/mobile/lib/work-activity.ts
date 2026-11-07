@@ -1,7 +1,12 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { AppState, Platform } from "react-native";
 import { rpc } from "./api";
-import { loadSessionToken, subscribeSessionGeneration } from "./session";
+import {
+  currentReadySessionGeneration,
+  currentSessionGeneration,
+  snapshotSessionToken,
+  subscribeSessionGeneration,
+} from "./session";
 
 type NativeWorkActivities = {
   startWorkActivity(
@@ -46,10 +51,14 @@ export function startWorkActivities(): () => void {
   const opens = AppState.addEventListener("change", (state) => {
     if (state === "active") refresh();
   });
-  // Signed out: the card shows the last account's bots.
+  // Signed out: the card shows the last account's bots. Only a finished change counts; one still
+  // landing, or a keychain read that failed, says nothing about the account.
   const sessions = subscribeSessionGeneration(() => {
-    void loadSessionToken().then((token) => {
-      if (!token) return card.endWorkActivity();
+    const generation = currentSessionGeneration();
+    if (currentReadySessionGeneration() !== generation) return;
+    void snapshotSessionToken().then((session) => {
+      if (generation !== currentSessionGeneration()) return;
+      if (session.ok && !session.value) return card.endWorkActivity();
     });
   });
   refresh();

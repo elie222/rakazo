@@ -55,6 +55,11 @@ describe("APNs work activity", () => {
       "10",
       "10",
     ]);
+    // An end waits for an offline phone; a step update is soon replaced.
+    expect(transport.mock.calls.map(([, headers]) => headers["apns-expiration"])).toEqual([
+      "1300",
+      String(1_001 + 8 * 60 * 60),
+    ]);
     expect(JSON.parse(transport.mock.calls[1]![2]).aps).toMatchObject({
       event: "end",
       "dismissal-date": 1_001,

@@ -92,8 +92,9 @@ struct WorkLiveActivity: Widget {
       ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
         Link(destination: row.link ?? URL(string: "rakazo://")!) {
           HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // A long name gives way to the status, never the other way round.
             Text(row.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-              .lineLimit(1).fixedSize()
+              .lineLimit(1).layoutPriority(1)
             line(row, limit: 1).font(.system(size: 15))
             Spacer(minLength: 8)
             status(row)
