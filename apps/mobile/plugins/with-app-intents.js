@@ -11,15 +11,22 @@ const APP_FILES = [
   "VoiceMessageActivity.swift",
 ];
 const WIDGET_TARGET = "RakazoWidgets";
-const WIDGET_FILES = ["RakazoWidgets.swift", "VoiceMessageActivity.swift"];
+const NOTIFICATIONS = path.join(__dirname, "..", "modules", "rakazo-notifications", "ios");
+const WIDGET_FILES = [
+  "RakazoWidgets.swift",
+  "WorkLiveActivity.swift",
+  "VoiceMessageActivity.swift",
+  "WorkActivityAttributes.swift",
+];
 
 /**
  * Adds the Shortcuts and Siri actions. App Intents must be compiled into the app target for
  * Shortcuts to find them, so the Swift files go there rather than into a local module's pod.
  * The app's default server is copied into Info.plist for a session that never chose one.
  *
- * Record Message shows a Live Activity while it listens, which needs a widget extension: the
- * activity's attributes are compiled into both, and the widget draws it.
+ * Record Message shows a Live Activity while it listens, and the user's bots at work show
+ * one. Both need a widget extension: each activity's attributes are compiled into the code
+ * that starts it and into the widget, which draws it.
  */
 function withAppIntents(config) {
   config = withInfoPlist(config, (config) => {
@@ -49,6 +56,11 @@ function withAppIntents(config) {
     fs.copyFileSync(
       path.join(INTENTS, "VoiceMessageActivity.swift"),
       path.join(widgetDir, "VoiceMessageActivity.swift"),
+    );
+    // The notifications module starts the bots-at-work card; the widget draws it.
+    fs.copyFileSync(
+      path.join(NOTIFICATIONS, "WorkActivityAttributes.swift"),
+      path.join(widgetDir, "WorkActivityAttributes.swift"),
     );
     if (!project.pbxTargetByName(WIDGET_TARGET)) addWidgetTarget(config, project);
     setWidgetBuildSettings(config, project);
@@ -86,7 +98,7 @@ function setWidgetBuildSettings(config, project) {
       CURRENT_PROJECT_VERSION: config.ios?.buildNumber ?? "1",
       GENERATE_INFOPLIST_FILE: "NO",
       INFOPLIST_FILE: `${WIDGET_TARGET}/Info.plist`,
-      // Record Message needs iOS 18, and the widget only draws its activity.
+      // Record Message needs iOS 18, as does the bots-at-work card, and the widget only draws activities.
       IPHONEOS_DEPLOYMENT_TARGET: "18.0",
       MARKETING_VERSION: config.version ?? "1.0",
       SWIFT_VERSION: "5.0",

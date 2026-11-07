@@ -81,8 +81,26 @@ export async function* followThreadEvents(
   }
 }
 
+const THREAD_TOPIC = "thread:";
+
 function threadTopic(threadId: string): string {
-  return `thread:${threadId}`;
+  return `${THREAD_TOPIC}${threadId}`;
+}
+
+/** The same fanout, also telling `onThread` about each thread change this process publishes. */
+export function observeThreadChanges(
+  realtime: RealtimeFanout,
+  onThread: (threadId: string) => void,
+): RealtimeFanout {
+  return {
+    describe: () => realtime.describe(),
+    publish: async (topic, payload) => {
+      await realtime.publish(topic, payload);
+      if (topic.startsWith(THREAD_TOPIC)) onThread(topic.slice(THREAD_TOPIC.length));
+    },
+    subscribe: (topic, onMessage) => realtime.subscribe(topic, onMessage),
+    close: () => realtime.close(),
+  };
 }
 
 export function mapProductEvent(event: {

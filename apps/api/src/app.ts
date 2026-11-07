@@ -29,6 +29,7 @@ import {
   CodexCatalogCache,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsActivityProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -71,6 +72,7 @@ import {
   userDeviceInternalAddress,
   verifyModelServesAgents,
   withSecretPersistence,
+  WorkActivities,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
@@ -301,9 +303,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       masterKeyIds: unreadableMasterKeys,
     });
   const analytics = createProductAnalytics();
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
   const events = createThreadEvents(prisma, realtime, {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
+    onThreadChanged: (threadId) => workActivities?.threadChanged(threadId),
   });
   const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
@@ -460,6 +465,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       accessToken: env.expoAccessToken,
       voip: await createApnsVoipProvider(env.apnsVoip),
     });
+  const activityPush = await createApnsActivityProvider(env.apnsVoip);
+  if (activityPush)
+    workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
   const userDeviceHub = env.userDevicesEnabled
     ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })
@@ -690,6 +698,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     notifications,
     pushTokens,
+    workActivities,
     events,
     ticketChanges,
     boardEvents,

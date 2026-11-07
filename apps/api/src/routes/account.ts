@@ -426,6 +426,12 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
+      followWorkActivity: authed.notifications.followWorkActivity.handler(
+        async ({ context, input }) => ({
+          following:
+            (await deps.workActivities?.register(context.actor.userId, input.token)) ?? false,
+        }),
+      ),
     },
     voice: {
       catalog: authed.voice.catalog.handler(async () =>
