@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const include = [
-  ".agents/skills/pr-watch/*.test.ts",
+  ".agents/skills/*/*.test.ts",
   "packages/*/src/**/*.test.{ts,tsx}",
   "infra/sandboxes/supervisor/src/**/*.test.ts",
   "infra/updater/src/**/*.test.ts",
