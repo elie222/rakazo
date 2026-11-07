@@ -17,9 +17,11 @@ const LOGO_SIZE = 32;
 export function IntegrationCatalogSearch({
   query,
   onConnected,
+  onFound,
 }: {
   query: string;
   onConnected: () => Promise<void>;
+  onFound: (found: boolean) => void;
 }) {
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
@@ -34,6 +36,11 @@ export function IntegrationCatalogSearch({
     setServers(null);
     setError(null);
   }, [trimmed]);
+
+  useEffect(() => {
+    onFound(Boolean(servers?.length));
+    return () => onFound(false);
+  }, [servers, onFound]);
 
   if (!trimmed) return null;
 

@@ -1102,6 +1102,8 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find((node) => node.textContent === label);
 
+  expect(container.textContent).toContain("No apps match your search.");
+
   await act(async () => button("Search integrations.sh")?.click());
 
   expect(state.rpc).toHaveBeenCalledWith("capabilities/catalogSearch", {
@@ -1110,6 +1112,7 @@ it("finds a server on integrations.sh and connects it by signing in", async () =
   });
   const results = container.querySelector('[data-testid="integration-catalog-search"]');
   expect(results?.textContent).toBe("TTrackerSign in");
+  expect(container.textContent).not.toContain("No apps match your search.");
 
   await act(async () => button("Sign in")?.click());
 

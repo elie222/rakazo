@@ -113,6 +113,7 @@ export default function Integrations() {
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState<string | null>(null);
+  const [catalogFound, setCatalogFound] = useState(false);
   const [signInError, setSignInError] = useState<{ serverId: string; message: string } | null>(
     null,
   );
@@ -1214,6 +1215,7 @@ export default function Integrations() {
                 pluginMatches.length === 0 &&
                 brandMatches.length === 0 &&
                 savedServerMatches.length === 0 &&
+                !catalogFound &&
                 filtering ? (
                   <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
                 ) : null}
@@ -1227,7 +1229,11 @@ export default function Integrations() {
                 ) : null}
 
                 {!category ? (
-                  <IntegrationCatalogSearch query={query} onConnected={() => retryRefresh()} />
+                  <IntegrationCatalogSearch
+                    query={query}
+                    onConnected={() => retryRefresh()}
+                    onFound={setCatalogFound}
+                  />
                 ) : null}
                 <PluginSection
                   pluginsState={pluginsState}
