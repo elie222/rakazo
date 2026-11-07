@@ -33,6 +33,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
         windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
         updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
         badgeKeys: desktop?.badge ? Object.keys(desktop.badge) : [],
+        mcpBrowserKeys: desktop?.mcpBrowser ? Object.keys(desktop.mcpBrowser).sort() : [],
         passkeyRpIds: await desktop?.passkeys?.rpIds(),
         platform: desktop?.platform,
         nativeWindowFrame: desktop?.nativeWindowFrame,
@@ -51,6 +52,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       "computer",
       "device",
       "locale",
+      "mcpBrowser",
       "menu",
       "monitoring",
       "nativeWindowFrame",
@@ -74,6 +76,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
     expect(renderer.badgeKeys).toEqual(["set"]);
+    expect(renderer.mcpBrowserKeys).toEqual(["clear", "onOAuthCallback"]);
     expect(renderer.platform).toBe(process.platform);
     expect(renderer.nativeWindowFrame).toBe(process.platform === "win32");
     expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
