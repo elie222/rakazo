@@ -142,14 +142,15 @@ export function createModelCreditReconciler(deps: {
                 reason = error instanceof Error ? error.message : String(error);
               }
             }
-            // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run.
+            // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run,
+            // and a stuck-run cancel records why in `error`.
             let stoppedByUser = false;
             if (call.runId && ((!usage && lastAttempt) || usage?.countedTokens?.ifStopped)) {
               const run = await prisma.run.findUnique({
                 where: { id: call.runId },
-                select: { status: true, leaseExpiresAt: true },
+                select: { status: true, leaseExpiresAt: true, error: true },
               });
-              stoppedByUser = run?.status === "cancelled";
+              stoppedByUser = run?.status === "cancelled" && run.error == null;
               running =
                 !usage &&
                 (run?.status === "leased" || run?.status === "running") &&

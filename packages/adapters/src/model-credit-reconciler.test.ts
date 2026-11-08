@@ -172,9 +172,14 @@ describe("model credit reconciler", () => {
   });
 
   it.each([
-    ["the user stopped its run", "cancelled", 0.22],
-    ["a deploy or stalled stream aborted it", "queued", 0.04],
-  ])("prices an aborted call at full rates only when %s", async (_case, status, costUsd) => {
+    ["the user stopped its run", { status: "cancelled", error: null }, 0.22],
+    ["a deploy or stalled stream aborted it", { status: "queued", error: null }, 0.04],
+    [
+      "the system cancelled a stuck run",
+      { status: "cancelled", error: "Run stopped responding" },
+      0.04,
+    ],
+  ])("prices an aborted call at full rates only when %s", async (_case, run, costUsd) => {
     await reconcile(
       {
         usage: {
@@ -183,7 +188,7 @@ describe("model credit reconciler", () => {
         },
       },
       undefined,
-      { status },
+      run,
     );
     // Full: 100k prompt at the input rate. Low: at the cache-read rate. Both add 2k output.
     expect(charged()?.costUsd).toBeCloseTo(costUsd);
