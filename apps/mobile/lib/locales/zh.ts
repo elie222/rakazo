@@ -1149,6 +1149,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Available credits": "可用额度",
   "Computer hours left": "剩余电脑时长",
   Upgrade: "升级",
+  "Your trial's computer hours are used up.": "你的试用电脑时长已用完。",
+  "This month's computer hours are used up.": "本月的电脑时长已用完。",
   "Cancelled trials have no computer hours.": "已取消的试用没有电脑时长。",
   "Renew plan": "续订方案",
   "Trials get fewer hours to prevent abuse.": "为防止滥用，试用期的时长较少。",

@@ -1082,6 +1082,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Available credits": "Créditos disponibles",
   "Computer hours left": "Horas de computadora restantes",
   Upgrade: "Mejorar plan",
+  "Your trial's computer hours are used up.": "Las horas de computadora de tu prueba se agotaron.",
+  "This month's computer hours are used up.": "Las horas de computadora de este mes se agotaron.",
   "Cancelled trials have no computer hours.":
     "Las pruebas canceladas no tienen horas de computadora.",
   "Renew plan": "Renovar plan",
