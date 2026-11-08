@@ -2499,6 +2499,7 @@ describe("computer execution leases", () => {
       },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn(async () => []),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
