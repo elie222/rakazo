@@ -283,6 +283,23 @@ dbTests("durable model credit audit", () => {
     );
     expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
   });
+  it("replaces a released hold with the real usage of a call that outlived the reconciler", async () => {
+    const f = await fixture();
+    let now = Date.now() + 10 * 60_000;
+    const reconcile = createModelCreditReconciler({ prisma, now: () => new Date(now) });
+    for (let i = 0; i < 6; i++) {
+      await reconcile();
+      now += 60 * 60_000;
+    }
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+    await recordModelCreditReceipt(prisma, f.callId, f.usage);
+    await recordUsage(prisma, f.event, f);
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9_750_000n);
+    expect(await prisma.usageRecord.findUnique({ where: { callId: f.callId } })).toMatchObject({
+      costUsd: 0.25,
+      costSource: "provider-reported",
+    });
+  });
   it("charges a stopped call for its counted tokens when the provider has no record", async () => {
     const f = await fixture();
     await recordModelCreditReceipt(prisma, f.callId, {

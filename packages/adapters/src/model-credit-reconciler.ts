@@ -92,6 +92,8 @@ export function createModelCreditReconciler(deps: {
           // Why this attempt could not settle the hold, for whoever reviews it.
           let reason = "usage unavailable";
           const lastAttempt = call.reconciliationAttempts >= 5;
+          // A call with no receipt whose run still holds its lease may still be streaming.
+          let running = false;
           try {
             if (!call.callId || !call.userId || !call.spaceId || !call.provider || !call.model)
               throw new Error("Legacy reservation requires manual attribution");
@@ -111,8 +113,23 @@ export function createModelCreditReconciler(deps: {
                 reason = error instanceof Error ? error.message : String(error);
               }
             }
+            if (!usage && lastAttempt && call.runId) {
+              const run = await prisma.run.findUnique({
+                where: { id: call.runId },
+                select: { status: true, leaseExpiresAt: true },
+              });
+              running =
+                (run?.status === "leased" || run?.status === "running") &&
+                !!run.leaseExpiresAt &&
+                run.leaseExpiresAt > now;
+              if (running) reason = "call is still running";
+            }
             // Without a receipt the call may still be running, so only the last attempt settles it.
-            if (!(usage && hasFinalModelCost(usage)) && (lastAttempt || (usage && !canLookUp))) {
+            if (
+              !(usage && hasFinalModelCost(usage)) &&
+              !running &&
+              (lastAttempt || (usage && !canLookUp))
+            ) {
               usage = fallbackUsage(usage, -call.amountMicros);
               reconciled = true;
               getLogger().info("Model credit hold settled without a provider cost", {
@@ -148,7 +165,7 @@ export function createModelCreditReconciler(deps: {
               );
               complete = hasFinalModelCost(usage);
               if (!complete) reason = "cost is not final";
-            } else if (usage) {
+            } else if (usage && reason === "usage unavailable") {
               reason = usage.costUsd == null ? "cost unavailable" : "cost is not final";
             }
           } catch (error) {
@@ -158,7 +175,7 @@ export function createModelCreditReconciler(deps: {
               reason,
             });
           }
-          const needsReview = !complete && call.reconciliationAttempts >= 5;
+          const needsReview = !complete && !running && lastAttempt;
           await prisma.modelCreditEntry.updateMany({
             where: { id: call.id, reconciliationState: "pending" },
             data: {

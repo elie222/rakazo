@@ -10,9 +10,10 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordUsage: vi.fn(),
 }));
 
-function harness(call: Record<string, unknown>) {
+function harness(call: Record<string, unknown>, run: Record<string, unknown> | null = null) {
   const updateMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = {
+    run: { findUnique: vi.fn().mockResolvedValue(run) },
     modelCreditLot: { findMany: vi.fn().mockResolvedValue([]) },
     modelCreditEntry: { findMany: vi.fn().mockResolvedValue([call]), updateMany },
     modelCreditAccount: { findMany: vi.fn().mockResolvedValue([]) },
@@ -53,8 +54,12 @@ const lookup = (lookupUsage: ModelUsageLookup["lookupUsage"]): ModelUsageLookup 
   provider: "fake",
   lookupUsage,
 });
-const reconcile = (call: Record<string, unknown>, usageLookup?: ModelUsageLookup) => {
-  const { prisma, updateMany } = harness({ ...baseCall, ...call });
+const reconcile = (
+  call: Record<string, unknown>,
+  usageLookup?: ModelUsageLookup,
+  run?: Record<string, unknown>,
+) => {
+  const { prisma, updateMany } = harness({ ...baseCall, ...call }, run);
   return createModelCreditReconciler({
     prisma,
     lookup: usageLookup,
@@ -154,6 +159,39 @@ describe("model credit reconciler", () => {
     expect(recordUsage).not.toHaveBeenCalled();
     await reconcile({ reconciliationAttempts: 5 });
     expect(charged()).toMatchObject({ costUsd: 0, inputTokens: null, outputTokens: null });
+  });
+
+  it("keeps holding a call without a receipt while its run is still live", async () => {
+    const updateMany = await reconcile({ reconciliationAttempts: 5 }, undefined, {
+      status: "running",
+      leaseExpiresAt: new Date(60_000),
+    });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconciliationState: "pending" }),
+      }),
+    );
+    await reconcile({ reconciliationAttempts: 5 }, undefined, {
+      status: "running",
+      leaseExpiresAt: new Date(-1),
+    });
+    expect(charged()).toMatchObject({ costUsd: 0 });
+  });
+
+  it("reports why the provider could not price a call", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    await reconcile(
+      { usage: stopped, providerRequestId: "gen-fixture", reconciliationAttempts: 5 },
+      lookup(async () => null),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "Model credit hold settled without a provider cost",
+        reason: "provider has no usage for the request",
+      }),
+    );
   });
 
   it("flags a hold it cannot attribute for review with the reason", async () => {
