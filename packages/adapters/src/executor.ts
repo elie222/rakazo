@@ -16,6 +16,7 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
+  paidServicesAllowed,
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
@@ -1271,7 +1272,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
-            paidServicesEnabled: Boolean(paidServices),
+            paidServicesEnabled:
+              Boolean(paidServices) &&
+              paidServicesAllowed(run.trigger, ownerStartedRun, nonOwnerChatRun),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,

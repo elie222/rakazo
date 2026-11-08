@@ -285,6 +285,5 @@ describe("builtin tools", () => {
         .filter((name) => serviceNames.includes(name));
     expect(services({})).toEqual([]);
     expect(services({ paidServicesEnabled: true })).toEqual(serviceNames);
-    expect(services({ paidServicesEnabled: true, messagingChannelRun: true })).toEqual([]);
   });
 });

@@ -211,6 +211,17 @@ export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): b
   return trigger === "user" || trigger === "call_end";
 }
 
+/** Paid services spend the owner's credits, so only runs the owner drove get them: never runs
+ * another person, bot, webhook or ticket can steer, directly or through a bot they spawn. */
+export function paidServicesAllowed(
+  trigger: string,
+  ownerStartedRun: boolean,
+  nonOwnerChatRun: boolean,
+): boolean {
+  if (nonOwnerChatRun) return false;
+  return ownerStartedRun || trigger === "routine" || trigger === "messaging";
+}
+
 /** External webhook runs may inspect state unattended, but side effects always need the owner. */
 export function unattendedTriggerToolRequiresApproval(
   trigger: string,

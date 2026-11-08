@@ -129,6 +129,11 @@ async function showConnectorApp(
   }
 }
 
+// A runtime can emit a tool name it was not offered; this run may not be one that can spend credits.
+function paidServicesOffered(ctx: RunContext): boolean {
+  return ctx.tools.offered.some((tool) => tool.name === "service_call");
+}
+
 /** Idempotent on the call's effect key, so an interrupted call can be replayed to settle its hold. */
 export async function callPaidService(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
@@ -163,7 +168,9 @@ export const integrationTools: ToolHandlers = {
   },
   async service_search(ctx, call) {
     const provider = ctx.providers.paidServices;
-    if (!provider) return call.finish({ error: "Paid services are unavailable." });
+    if (!provider || !paidServicesOffered(ctx)) {
+      return call.finish({ error: "Paid services are unavailable." });
+    }
     return call.finish(
       await serviceSearchFromTool(
         provider,
@@ -174,6 +181,7 @@ export const integrationTools: ToolHandlers = {
     );
   },
   async service_call(ctx, call) {
+    if (!paidServicesOffered(ctx)) return call.finish({ error: "Paid services are unavailable." });
     return call.finish(await callPaidService(ctx, call));
   },
   async add_mcp_server(ctx, call) {
