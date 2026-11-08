@@ -2456,10 +2456,6 @@ msgstr "Die Seite konnte nicht angeheftet werden. Versuche es erneut."
 msgid "Could not play a test clip"
 msgstr "Testclip konnte nicht abgespielt werden"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Plugin-Vorschau konnte nicht geladen werden"

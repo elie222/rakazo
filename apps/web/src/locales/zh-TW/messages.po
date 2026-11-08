@@ -2457,10 +2457,6 @@ msgstr "無法置頂此頁面。請再試一次。"
 msgid "Could not play a test clip"
 msgstr "無法播放測試片段"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "無法預覽外掛"

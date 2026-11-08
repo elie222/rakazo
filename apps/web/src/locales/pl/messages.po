@@ -2456,10 +2456,6 @@ msgstr "Nie udało się przypiąć tej strony. Spróbuj ponownie."
 msgid "Could not play a test clip"
 msgstr "Nie udało się odtworzyć próbki"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr "Nie udało się odtworzyć tego nagrania."
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Nie udało się wyświetlić podglądu wtyczki"

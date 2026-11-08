@@ -2456,10 +2456,6 @@ msgstr "Deze pagina kon niet worden vastgezet. Probeer het opnieuw."
 msgid "Could not play a test clip"
 msgstr "Testfragment afspelen mislukt"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Voorbeeld van plugin tonen mislukt"

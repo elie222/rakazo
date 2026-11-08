@@ -2456,10 +2456,6 @@ msgstr "Não foi possível fixar esta página. Tente novamente."
 msgid "Could not play a test clip"
 msgstr "Não foi possível reproduzir um clipe de teste"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Não foi possível pré-visualizar o plugin"

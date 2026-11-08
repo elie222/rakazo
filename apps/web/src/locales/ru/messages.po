@@ -2456,10 +2456,6 @@ msgstr "Не удалось закрепить страницу. Попробу�
 msgid "Could not play a test clip"
 msgstr "Не удалось воспроизвести тестовый клип."
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Не удалось открыть предпросмотр плагина"

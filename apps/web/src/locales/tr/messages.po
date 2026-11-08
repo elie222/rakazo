@@ -2456,10 +2456,6 @@ msgstr "Bu sayfa sabitlenemedi. Yeniden deneyin."
 msgid "Could not play a test clip"
 msgstr "Deneme sesi çalınamadı"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Eklenti önizlenemedi"

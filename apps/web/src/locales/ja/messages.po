@@ -2456,10 +2456,6 @@ msgstr "このページをピン留めできませんでした。もう一度お
 msgid "Could not play a test clip"
 msgstr "テスト音声を再生できませんでした"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "プラグインをプレビューできませんでした"

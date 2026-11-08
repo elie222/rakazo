@@ -2456,10 +2456,6 @@ msgstr "यह पेज पिन नहीं हो सका। फिर �
 msgid "Could not play a test clip"
 msgstr "टेस्ट क्लिप नहीं चलाई जा सकी"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "प्लगइन का प्रीव्यू नहीं हो सका"

@@ -2456,10 +2456,6 @@ msgstr "Impossible d'épingler cette page. Réessayez."
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Impossible de prévisualiser le plugin"

@@ -2456,10 +2456,6 @@ msgstr "无法置顶此页面。请重试。"
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "无法预览插件"

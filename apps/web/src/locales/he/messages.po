@@ -2456,10 +2456,6 @@ msgstr "לא ניתן להצמיד את הדף הזה. נסו שוב."
 msgid "Could not play a test clip"
 msgstr "לא ניתן להשמיע קטע בדיקה"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "לא ניתן להציג תצוגה מקדימה של התוסף"

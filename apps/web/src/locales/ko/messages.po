@@ -2456,10 +2456,6 @@ msgstr "이 페이지를 고정하지 못했습니다. 다시 시도하세요."
 msgid "Could not play a test clip"
 msgstr "샘플 음성을 재생하지 못했습니다."
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr ""
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "플러그인을 미리 보지 못했습니다"

@@ -2456,10 +2456,6 @@ msgstr "Could not pin this page. Try again."
 msgid "Could not play a test clip"
 msgstr "Could not play a test clip"
 
-#: src/lib/tts.ts
-msgid "Could not play that clip."
-msgstr "Could not play that clip."
-
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not preview plugin"
 msgstr "Could not preview plugin"
