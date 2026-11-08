@@ -194,6 +194,27 @@ describe("model credit reconciler", () => {
     expect(charged()?.costUsd).toBeCloseTo(costUsd);
   });
 
+  it("charges the output it received over a placeholder output count", async () => {
+    await reconcile(
+      {
+        usage: {
+          ...stopped,
+          inputTokens: 10_000,
+          outputTokens: 1,
+          countedTokens: {
+            inputTokens: 10_000,
+            outputTokens: 200,
+            ifStopped: { inputTokens: 10_000, outputTokens: 5_000 },
+          },
+        },
+      },
+      undefined,
+      { status: "cancelled", error: null },
+    );
+    // 10k reported input at the full rate plus the 5k output tokens the user received.
+    expect(charged()?.costUsd).toBeCloseTo(0.07);
+  });
+
   it("caps a stopped call's full-rate charge at the hold", async () => {
     await reconcile(
       {

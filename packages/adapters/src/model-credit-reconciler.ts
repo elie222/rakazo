@@ -43,7 +43,8 @@ function fallbackUsage(
         // call, assume the rest was served from cache too. A zero cache price means none.
         Math.max(0, (counted?.inputTokens ?? 0) - cacheRead - cacheWrite) *
         (counted?.fullRate ? rate("input") : rate("cacheRead") || rate("input"))) +
-    (usage?.outputTokens ?? counted?.outputTokens ?? 0) * rate("output");
+    // A stream's first frame can report a placeholder output count; what we received is a floor.
+    Math.max(usage?.outputTokens ?? 0, counted?.outputTokens ?? 0) * rate("output");
   const knownCost =
     usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0
       ? usage.costUsd
