@@ -157,7 +157,8 @@ new container of each side by side, so leave room for both.
 The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
 container (default `2560m`), `POSTGRES_SHARED_BUFFERS` sets its cache (default `1GB`, which counts
 against that cap) and `POSTGRES_EFFECTIVE_CACHE_SIZE` tells the planner how much data stays cached
-(default `2GB`). On a 4 GB host, try `1536m`, `384MB` and `1GB`. Changing them restarts Postgres.
+(default `2GB`). On a smaller host, lower them along with the API and worker caps above. Changing
+them restarts Postgres.
 
 ## Listening addresses
 
