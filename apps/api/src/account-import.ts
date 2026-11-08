@@ -1069,6 +1069,7 @@ class AccountImporter implements ArchiveSink {
           storageKey: stored.storageKey,
           rootArtifactId: space.optional(record.rootArtifactId),
           version: record.version,
+          standalone: record.standalone === true,
           createdAt: new Date(record.createdAt),
         });
       }
