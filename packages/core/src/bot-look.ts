@@ -43,7 +43,8 @@ export function newBotLookInput(
   avatarSet: BotAvatarSet,
   look: NewBotLook,
 ): { color: string; id?: string; avatarFamily?: number } {
-  if (avatarSet === "rakazo") return { color: look.color, id: look.id };
+  // The logo has no studio shapes, so a shape picked before the set was known is dropped.
+  if (avatarSet === "rakazo") return { color: botLookState(look.color).color, id: look.id };
   // A studio shape replaces the organic body, so the family would mean nothing.
   if (botLookState(look.color).shapeIndex !== null) return { color: look.color };
   return { color: look.color, avatarFamily: organicAvatarFamily(look.identity) };

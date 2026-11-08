@@ -30,6 +30,7 @@ describe("newBotLook", () => {
     });
     const shaped = { ...look, color: "#2A92FE::shape_2" };
     expect(newBotLookInput("organic", shaped)).toEqual({ color: shaped.color });
+    expect(newBotLookInput("rakazo", shaped)).toEqual({ color: look.color, id: look.id });
   });
 });
 

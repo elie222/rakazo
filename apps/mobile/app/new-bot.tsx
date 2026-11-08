@@ -1,6 +1,7 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
+  botLookState,
   newBotLook,
   newBotLookInput,
   newBotPreviewIdentity,
@@ -44,7 +45,12 @@ export default function NewBot() {
     gone.current = false;
     void rpc("me")
       .then((me) => {
-        if (!gone.current) setAvatarSet(resolveBotAvatarSet(me.botAvatarSet));
+        if (gone.current) return;
+        const set = resolveBotAvatarSet(me.botAvatarSet);
+        setAvatarSet(set);
+        // The logo has no studio shapes; drop one picked while the Original set was shown.
+        if (set === "rakazo")
+          setLook((current) => ({ ...current, color: botLookState(current.color).color }));
       })
       .catch(() => undefined);
     return () => {

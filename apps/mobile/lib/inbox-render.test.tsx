@@ -10,6 +10,7 @@ import { BotRow } from "../components/inbox-rows";
 import { createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
+import { onInboxChanged } from "./inbox-changes";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
@@ -1010,6 +1011,20 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
   ]);
   expect(ui.hapticSuccess).toHaveBeenCalledOnce();
+});
+
+it("tells the inbox to reload once the bot exists", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) =>
+      method === "bots/create" ? { id: "bot-new", name: "Scout" } : [{ id: "bot-existing" }],
+    );
+  const changed = vi.fn();
+  const stop = onInboxChanged(changed);
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
+  stop();
+  expect(changed).toHaveBeenCalledOnce();
 });
 
 it("does not confirm a failed inbox bot creation with success feedback", async () => {
