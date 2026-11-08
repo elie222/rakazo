@@ -549,7 +549,7 @@ msgstr "/ חודש"
 
 #: src/pages/BotContextMenu.tsx
 msgid "1 hour"
-msgstr ""
+msgstr "שעה"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -557,7 +557,7 @@ msgstr "מרחב אחד"
 
 #: src/pages/BotContextMenu.tsx
 msgid "3 hours"
-msgstr ""
+msgstr "3 שעות"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -2251,7 +2251,7 @@ msgstr "לא ניתן ליצור את הבוט"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not create the webhook key"
-msgstr ""
+msgstr "לא ניתן ליצור את מפתח ה-webhook"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -4775,7 +4775,7 @@ msgstr "מקטעי ההגדרות הבאים"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Next week"
-msgstr ""
+msgstr "בשבוע הבא"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
@@ -5017,7 +5017,7 @@ msgstr "רק אני"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
-msgstr ""
+msgstr "רק יוצר הבוט יכול להגדיר את מפתח ה-webhook שלו."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5886,7 +5886,7 @@ msgstr "שחזור"
 
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
-msgstr ""
+msgstr "שחזור {name}"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6530,11 +6530,11 @@ msgstr "החלקה למעלה לנעילה"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Snooze"
-msgstr ""
+msgstr "נודניק"
 
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Snoozed"
-msgstr ""
+msgstr "בנודניק"
 
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -7069,7 +7069,7 @@ msgstr "החודש"
 
 #: src/pages/shell/composer-error.tsx
 msgid "This month's computer hours are used up."
-msgstr ""
+msgstr "שעות המחשב של החודש נוצלו במלואן."
 
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
@@ -7191,7 +7191,7 @@ msgstr "טוקנים"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Tomorrow"
-msgstr ""
+msgstr "מחר"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7342,12 +7342,12 @@ msgstr "לא נקראו"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze"
-msgstr ""
+msgstr "ביטול נודניק"
 
 #. placeholder {0}: chat.name
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze {0}"
-msgstr ""
+msgstr "ביטול נודניק עבור {0}"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -7731,7 +7731,7 @@ msgstr "מי יכול להפעיל"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Woke"
-msgstr ""
+msgstr "תזכורת"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -7896,7 +7896,7 @@ msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב 
 
 #: src/pages/shell/composer-error.tsx
 msgid "Your trial's computer hours are used up."
-msgstr ""
+msgstr "שעות המחשב של תקופת הניסיון נוצלו במלואן."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

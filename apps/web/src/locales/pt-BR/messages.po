@@ -549,7 +549,7 @@ msgstr "/ mês"
 
 #: src/pages/BotContextMenu.tsx
 msgid "1 hour"
-msgstr ""
+msgstr "1 hora"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -557,7 +557,7 @@ msgstr "1 espaço"
 
 #: src/pages/BotContextMenu.tsx
 msgid "3 hours"
-msgstr ""
+msgstr "3 horas"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -2251,7 +2251,7 @@ msgstr "Não foi possível criar o bot"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not create the webhook key"
-msgstr ""
+msgstr "Não foi possível criar a chave de webhook"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -4775,7 +4775,7 @@ msgstr "Próximas seções de configurações"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Next week"
-msgstr ""
+msgstr "Próxima semana"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
@@ -5017,7 +5017,7 @@ msgstr "Só eu"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
-msgstr ""
+msgstr "Somente quem criou o bot pode definir a chave de webhook."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5886,7 +5886,7 @@ msgstr "Restaurar"
 
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
-msgstr ""
+msgstr "Restaurar {name}"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6530,11 +6530,11 @@ msgstr "Deslize para cima para travar"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Snooze"
-msgstr ""
+msgstr "Adiar"
 
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Snoozed"
-msgstr ""
+msgstr "Adiado"
 
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -7069,7 +7069,7 @@ msgstr "Este mês"
 
 #: src/pages/shell/composer-error.tsx
 msgid "This month's computer hours are used up."
-msgstr ""
+msgstr "As horas de computador deste mês acabaram."
 
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
@@ -7191,7 +7191,7 @@ msgstr "Tokens"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Tomorrow"
-msgstr ""
+msgstr "Amanhã"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7342,12 +7342,12 @@ msgstr "Não lidas"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze"
-msgstr ""
+msgstr "Cancelar adiamento"
 
 #. placeholder {0}: chat.name
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze {0}"
-msgstr ""
+msgstr "Cancelar adiamento de {0}"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -7731,7 +7731,7 @@ msgstr "Quem pode iniciar"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Woke"
-msgstr ""
+msgstr "Reativado"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -7896,7 +7896,7 @@ msgstr "Seu teste termina e seu cartão será cobrado hoje."
 
 #: src/pages/shell/composer-error.tsx
 msgid "Your trial's computer hours are used up."
-msgstr ""
+msgstr "As horas de computador do seu teste acabaram."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

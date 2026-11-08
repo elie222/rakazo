@@ -549,7 +549,7 @@ msgstr "/ महीना"
 
 #: src/pages/BotContextMenu.tsx
 msgid "1 hour"
-msgstr ""
+msgstr "1 घंटा"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -557,7 +557,7 @@ msgstr "1 स्पेस"
 
 #: src/pages/BotContextMenu.tsx
 msgid "3 hours"
-msgstr ""
+msgstr "3 घंटे"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -2251,7 +2251,7 @@ msgstr "बॉट नहीं बनाया जा सका"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not create the webhook key"
-msgstr ""
+msgstr "वेबहुक कुंजी नहीं बनाई जा सकी"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -4775,7 +4775,7 @@ msgstr "अगले सेटिंग्स अनुभाग"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Next week"
-msgstr ""
+msgstr "अगले हफ़्ते"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
@@ -5017,7 +5017,7 @@ msgstr "सिर्फ़ मैं"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
-msgstr ""
+msgstr "केवल बॉट बनाने वाला ही इसकी वेबहुक कुंजी सेट कर सकता है।"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5886,7 +5886,7 @@ msgstr "बहाल करें"
 
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
-msgstr ""
+msgstr "{name} बहाल करें"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6530,11 +6530,11 @@ msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Snooze"
-msgstr ""
+msgstr "स्नूज़ करें"
 
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Snoozed"
-msgstr ""
+msgstr "स्नूज़ किए गए"
 
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -7069,7 +7069,7 @@ msgstr "इस महीने"
 
 #: src/pages/shell/composer-error.tsx
 msgid "This month's computer hours are used up."
-msgstr ""
+msgstr "इस महीने के कंप्यूटर घंटे खत्म हो गए।"
 
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
@@ -7191,7 +7191,7 @@ msgstr "टोकन"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Tomorrow"
-msgstr ""
+msgstr "कल"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7342,12 +7342,12 @@ msgstr "अपठित"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze"
-msgstr ""
+msgstr "स्नूज़ हटाएँ"
 
 #. placeholder {0}: chat.name
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze {0}"
-msgstr ""
+msgstr "{0} का स्नूज़ हटाएँ"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -7731,7 +7731,7 @@ msgstr "कौन शुरू कर सकता है"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Woke"
-msgstr ""
+msgstr "स्नूज़ खत्म"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -7896,7 +7896,7 @@ msgstr "आपका ट्रायल खत्म होगा और आज 
 
 #: src/pages/shell/composer-error.tsx
 msgid "Your trial's computer hours are used up."
-msgstr ""
+msgstr "आपके ट्रायल के कंप्यूटर घंटे खत्म हो गए।"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

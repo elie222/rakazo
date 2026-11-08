@@ -549,7 +549,7 @@ msgstr "/ 月"
 
 #: src/pages/BotContextMenu.tsx
 msgid "1 hour"
-msgstr ""
+msgstr "1時間"
 
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -557,7 +557,7 @@ msgstr "1個のスペース"
 
 #: src/pages/BotContextMenu.tsx
 msgid "3 hours"
-msgstr ""
+msgstr "3時間"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -2251,7 +2251,7 @@ msgstr "ボットを作成できませんでした"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not create the webhook key"
-msgstr ""
+msgstr "Webhookキーを作成できませんでした"
 
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
@@ -4775,7 +4775,7 @@ msgstr "次の設定セクション"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Next week"
-msgstr ""
+msgstr "来週"
 
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
@@ -5017,7 +5017,7 @@ msgstr "自分のみ"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can set its webhook key."
-msgstr ""
+msgstr "Webhookキーを設定できるのはボットの作成者のみです。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5886,7 +5886,7 @@ msgstr "復元"
 
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore {name}"
-msgstr ""
+msgstr "{name}を復元"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6530,11 +6530,11 @@ msgstr "上にスライドしてロック"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Snooze"
-msgstr ""
+msgstr "スヌーズ"
 
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Snoozed"
-msgstr ""
+msgstr "スヌーズ中"
 
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
@@ -7069,7 +7069,7 @@ msgstr "今月"
 
 #: src/pages/shell/composer-error.tsx
 msgid "This month's computer hours are used up."
-msgstr ""
+msgstr "今月のコンピューター時間を使い切りました。"
 
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
@@ -7191,7 +7191,7 @@ msgstr "トークン"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Tomorrow"
-msgstr ""
+msgstr "明日"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7342,12 +7342,12 @@ msgstr "未読"
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze"
-msgstr ""
+msgstr "スヌーズを解除"
 
 #. placeholder {0}: chat.name
 #: src/pages/shell/snoozed-chats.tsx
 msgid "Unsnooze {0}"
-msgstr ""
+msgstr "{0}のスヌーズを解除"
 
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
@@ -7731,7 +7731,7 @@ msgstr "開始できる人"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Woke"
-msgstr ""
+msgstr "再表示"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -7896,7 +7896,7 @@ msgstr "トライアルが終了し、本日カードに請求されます。"
 
 #: src/pages/shell/composer-error.tsx
 msgid "Your trial's computer hours are used up."
-msgstr ""
+msgstr "トライアルのコンピューター時間を使い切りました。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
