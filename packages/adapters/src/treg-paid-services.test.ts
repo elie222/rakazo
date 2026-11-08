@@ -209,10 +209,14 @@ describe("TregPaidServiceProvider", () => {
   });
 
   it("answers a deeply nested routing record without overflowing", async () => {
-    let routing: Record<string, unknown> = { served_by: "a" };
-    for (let depth = 0; depth < 5_000; depth += 1) routing = { next: routing };
-    const { services } = provider(() =>
-      json({ output: { ok: true }, _treg: routing }, 200, { "X-Treg-Cost-Micro": "150" }),
+    const depth = 5_000;
+    // Written as text: building it with JSON.stringify would itself overflow a small stack.
+    const routing = `${'{"next":'.repeat(depth)}{"served_by":"a"}${"}".repeat(depth)}`;
+    const { services } = provider(
+      () =>
+        new Response(`{"output":{"ok":true},"_treg":${routing}}`, {
+          headers: { "content-type": "application/json", "X-Treg-Cost-Micro": "150" },
+        }),
     );
     const result = await services.call(
       mapsService,
