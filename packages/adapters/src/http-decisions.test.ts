@@ -116,6 +116,26 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
 });
 
 describe("decision provider failures", () => {
+  it("keeps a prompt count for a response without usage", async () => {
+    const afterCall = vi.fn();
+    await new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        Response.json({
+          answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
+        }),
+      callObserver: { beforeCall: () => "reservation", afterCall },
+    }).decide(request, context);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        costUsd: null,
+        pricingSnapshot: { input: expect.any(Number) },
+        countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 },
+      }),
+    );
+  });
+
   it("does not count a request that never connected", async () => {
     const afterCall = vi.fn();
     await expect(

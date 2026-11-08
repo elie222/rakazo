@@ -147,6 +147,12 @@ describe("model credit reconciler", () => {
     expect(charged()?.costUsd).toBeCloseTo(0.04);
   });
 
+  it("charges reported cache buckets without counting them twice", async () => {
+    await reconcile({ usage: { ...stopped, cacheReadTokens: 50_000, cacheWriteTokens: 10_000 } });
+    // 50k read at 0.2, 10k written at 2.5, the other 40k prompt at 0.2, and 2k output at 10.
+    expect(charged()?.costUsd).toBeCloseTo(0.063);
+  });
+
   it("ignores an invalid stored cost and prices the tokens instead", async () => {
     await reconcile({ usage: { ...stopped, costUsd: -1 } });
     expect(charged()?.costUsd).toBeCloseTo(0.04);

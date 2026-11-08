@@ -24,13 +24,17 @@ function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage
   };
   const counted = usage?.countedTokens;
   // Provider-reported buckets first; our own count fills any the provider never sent.
+  const cacheRead = usage?.cacheReadTokens ?? 0;
+  const cacheWrite = usage?.cacheWriteTokens ?? 0;
   const tokenCost =
+    cacheRead * rate("cacheRead") +
+    cacheWrite * rate("cacheWrite") +
     (usage?.inputTokens != null
-      ? usage.inputTokens * rate("input") +
-        (usage.cacheReadTokens ?? 0) * rate("cacheRead") +
-        (usage.cacheWriteTokens ?? 0) * rate("cacheWrite")
-      : // A partial prompt may have been served from cache; assume it was.
-        (counted?.inputTokens ?? 0) * (rate("cacheRead") || rate("input"))) +
+      ? usage.inputTokens * rate("input")
+      : // Our prompt count includes any reported cache buckets. The rest may have been served
+        // from cache too; assume it was. A zero cache price means the model has none.
+        Math.max(0, (counted?.inputTokens ?? 0) - cacheRead - cacheWrite) *
+        (rate("cacheRead") || rate("input"))) +
     (usage?.outputTokens ?? counted?.outputTokens ?? 0) * rate("output");
   const knownCost =
     usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0

@@ -60,6 +60,11 @@ export class HttpDecisionProvider implements DecisionProvider {
     });
     let usage: AgentUsage | null = null;
     const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
+    // Deliberately low, for a sent request whose usage never arrives.
+    const countedTokens = {
+      inputTokens: Math.floor(Buffer.byteLength(body, "utf8") / 5),
+      outputTokens: 0,
+    };
     let sent = false;
     try {
       sent = true;
@@ -110,6 +115,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         costUsd: parsed.usage?.cost ?? null,
         costSource: parsed.usage?.cost === undefined ? null : "provider-reported",
         pricingSnapshot,
+        ...(parsed.usage?.cost === undefined ? { countedTokens } : {}),
         providerRequestId: parsed.id ?? null,
         usageSource: "response",
         operationKind: "setup",
@@ -137,7 +143,6 @@ export class HttpDecisionProvider implements DecisionProvider {
             callId,
           });
       } finally {
-        // A sent request with no reported usage keeps a deliberately low count of its prompt.
         if (reservation)
           await this.options.callObserver?.afterCall(
             reservation,
@@ -148,10 +153,7 @@ export class HttpDecisionProvider implements DecisionProvider {
                     outputTokens: null,
                     costUsd: null,
                     pricingSnapshot,
-                    countedTokens: {
-                      inputTokens: Math.floor(Buffer.byteLength(body, "utf8") / 5),
-                      outputTokens: 0,
-                    },
+                    countedTokens,
                   }
                 : null),
           );
