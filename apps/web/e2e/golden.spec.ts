@@ -4,6 +4,7 @@ import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   expectCardWidth,
   openBotPanelTab,
@@ -274,7 +275,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const form = page.getByTestId("integrations-source-form");
   await expect(form.getByLabel("Name", { exact: true })).toHaveValue("GitHub");
   await expect(form.getByLabel("URL", { exact: true })).toHaveValue("https://mcp.example.test/mcp");
-  await expect(form.getByLabel("Authentication", { exact: true })).toHaveValue("bearer");
+  await expect(form.getByLabel("Authentication", { exact: true })).toContainText("Bearer token");
   await form.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
   await page
@@ -302,7 +303,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await addSource("OpenAPI");
   await form.getByLabel("Name", { exact: true }).fill("Browser API");
   await form.getByLabel("URL", { exact: true }).fill("https://api.example.test/openapi.json");
-  await form.getByLabel("Authentication", { exact: true }).selectOption("bearer");
+  await chooseOption(form.getByLabel("Authentication", { exact: true }), "Bearer token");
   await form.getByLabel("Credential", { exact: true }).fill("fake-openapi-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/OpenAPI\s*https:\/\/api\.example\.test\/v1/)).toBeVisible();

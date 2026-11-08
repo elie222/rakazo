@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("saves a contact, a card billed to it, and a login from Settings, showing no protected value", async ({
   page,
@@ -31,7 +38,7 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await expect(editor.getByTestId("vault-card-brand")).toHaveText("Visa");
   await editor.getByLabel("Expiry", { exact: true }).fill("0830");
   await editor.getByLabel("Security code", { exact: true }).fill("123");
-  await editor.getByLabel("Billing address", { exact: true }).selectOption({ label: "Home" });
+  await chooseOption(editor.getByLabel("Billing address", { exact: true }), "Home");
   await editor.getByRole("button", { name: "Add a note", exact: true }).click();
   await editor.getByLabel("When to use", { exact: true }).fill("For travel");
   await captureScreenshot(page, testInfo, "vault-new-card");
