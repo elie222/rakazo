@@ -89,6 +89,7 @@ model User {
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
+  botEmailSends               BotEmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
   devices                     UserDevice[]
@@ -1538,10 +1539,26 @@ model BotEmailMessage {
   /// Kept files ({ artifactId, name, mimeType, size }) and names of refused ones ({ name }).
   attachments Json      @default("[]")
   receivedAt  DateTime  @default(now())
+  /// Blind-index search tokens for the encrypted sender, subject and text; NULL until encrypted.
+  searchTokens Int[]
 
   @@unique([botId, key])
   @@index([botId, receivedAt])
   @@map("bot_email_messages")
+}
+
+/// One email a bot sent, for the daily send limits. Kept apart from the bot and its Space, so
+/// deleting a bot or spreading bots over Spaces never resets what its owner has sent.
+model BotEmailSend {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// No relation: a deleted bot's sends still count toward its owner's limit.
+  botId  String
+  sentAt DateTime @default(now())
+
+  @@index([userId, sentAt])
+  @@map("bot_email_sends")
 }
 
 model ScratchpadItem {

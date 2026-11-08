@@ -128,6 +128,11 @@ async function dispatchTool(
   }
   const request = await resolveToolRequest(ctx, name, args, executionId);
   if ("error" in request) return request;
+  // A catalog call resolves to a connector tool after the checks above; one named like a local
+  // tool (message_agent, ...) would otherwise run the local handler under the connector's name.
+  if (request.catalogRemapped && TOOL_HANDLERS.has(request.name)) {
+    return { error: "Connector tool name conflicts with a built-in tool" };
+  }
   const refused = await prepareToolRequest(ctx, request);
   if (refused) return refused;
   noteComputerTaskStep(ctx.state.reply, request.name);

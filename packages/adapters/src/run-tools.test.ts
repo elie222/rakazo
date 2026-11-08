@@ -1,5 +1,7 @@
+import { BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApprovedEffectReplayQueue, terminatingToolResult } from "./approval-effect.js";
+import { CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 
 const audited = vi.hoisted(() => [] as { tool: string; outcome: string; metadata: unknown }[]);
 vi.mock("./run-tool-gate.js", async (importOriginal) => ({
@@ -90,6 +92,33 @@ describe("dispatchTool audit outcomes", () => {
       expect.objectContaining({ tool: "delete_bot", args: { id: "remote-object" } }),
       ctx.context,
     );
+  });
+
+  it("refuses a catalog call that resolves to a local tool's name", async () => {
+    const execute = vi.fn();
+    const resolveCall = vi.fn(async () => ({
+      tool: { name: "message_agent", route: { connectorId: "remote" } },
+      call: { tool: "message_agent", args: { message: "hi" }, executionId: "call-1" },
+    }));
+    const base = dispatchContext(false);
+    const ctx = {
+      ...base,
+      deps: { ...base.deps, connector: { execute, resolveCall } },
+      run: { userId: "user-1", trigger: BACKGROUND_HELPER_TRIGGER },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+    };
+    ctx.tools.connector.set("installed_execute_tool", {
+      name: "installed_execute_tool",
+      route: { connectorId: "remote", toolName: CATALOG_EXECUTE },
+    });
+
+    await expect(
+      applyTool(ctx as never, "installed_execute_tool", { id: "x:message_agent" }, "call-1"),
+    ).resolves.toEqual({ error: "Connector tool name conflicts with a built-in tool" });
+    expect(resolveCall).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+    expect(audited).toEqual([]);
   });
 
   it("does not read the owner's private routines for a shared-channel request", async () => {

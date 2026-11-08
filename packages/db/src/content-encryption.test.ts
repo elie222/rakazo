@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "./client.js";
 import { contentEncryptionOf, withContentEncryption } from "./content-encryption.js";
-import type { SpaceKeyStore } from "./content-keys.js";
+import type { SpaceKeyRecord, SpaceKeyStore } from "./content-keys.js";
 import { ContentKeyRing, LocalKeyProvider } from "./content-keys.js";
 
 // No query reaches the database: every case fails before the driver is used.
@@ -131,5 +131,64 @@ describe("withContentEncryption with encryption off", () => {
         },
       }),
     ).rejects.toThrow(/nested write/);
+  });
+});
+
+describe("withContentEncryption for bot inbox mail", () => {
+  const records: SpaceKeyRecord[] = [];
+  const memory: SpaceKeyStore = {
+    forSpace: async (spaceId) => records.filter((record) => record.spaceId === spaceId),
+    byId: async (id) => records.find((record) => record.id === id),
+    insert: async (record) => {
+      records.push(record);
+      return record;
+    },
+    rowContext: unreachable,
+    sampleByMasterKey: unreachable,
+  };
+  const keys = new ContentKeyRing(
+    new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]),
+    memory,
+  );
+  const writes: Array<Record<string, unknown>> = [];
+  const sealed = withContentEncryption(
+    new PrismaClient({ adapter: new PrismaPg(pool) }),
+    keys,
+  ).$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ args }) {
+          const data = (args as { data: Record<string, unknown> }).data;
+          writes.push(data);
+          return { ...data };
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
+
+  it("seals the sender, subject and text, and indexes them for search", async () => {
+    const mail = {
+      spaceId: "s",
+      botId: "b",
+      key: "k",
+      fromAddress: "grace@harbor.test",
+      fromName: "Grace",
+      verified: true,
+      to: ["scout@bots.test"],
+      subject: "Pelican survey",
+      text: "The pelicans nest on Friday",
+    };
+    const row = await sealed.botEmailMessage.create({ data: mail });
+    expect(row).toMatchObject(mail);
+    const stored = writes[0]!;
+    for (const field of ["fromAddress", "fromName", "subject", "text"])
+      expect(stored[field]).toMatch(/^rkz1:/);
+    expect(stored.to).toEqual(mail.to);
+    const tokens = new Set(stored.searchTokens as number[]);
+    const encryption = contentEncryptionOf(sealed)!;
+    for (const query of ["harbor", "grace", "pelic", "friday"]) {
+      const [queryTokens] = await encryption.messageSearchTokens("s", query, "prefix");
+      expect(queryTokens!.every((token) => tokens.has(token))).toBe(true);
+    }
   });
 });

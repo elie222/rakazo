@@ -81,6 +81,14 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
+  BotEmailMessage: {
+    table: "bot_email_messages",
+    fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "bot",
+    searchTokens: true,
+  },
 };
 
 /** Rows whose id → space mapping the ring learns from results, for child writes. */
@@ -341,6 +349,8 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     if (!fields.length) return data;
     const key: DataKey = await ring.current(context.spaceId);
     const next = { ...data };
+    const words: string[] = [];
+    const strings: string[] = [];
     for (const field of fields) {
       const location: ContentLocation = {
         table: spec.table,
@@ -354,15 +364,18 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       if (!plainKeys && isRecord(value) && "set" in value) value = value.set;
       if (value === null) next[field] = null;
       else if (plainKeys) {
-        if (spec.searchTokens)
-          next.searchTokens = searchTokens(key, {
-            words: historySearchText(value as Prisma.JsonValue),
-            strings: stringsIn(value),
-          });
+        words.push(historySearchText(value as Prisma.JsonValue));
+        strings.push(...stringsIn(value));
         next[field] = sealJson(value, plainKeys, encrypt);
-      } else if (typeof value === "string") next[field] = encrypt(value);
-      else throw new Error(`Unsupported write to encrypted ${spec.table}.${field}`);
+      } else if (typeof value === "string") {
+        words.push(value);
+        strings.push(value);
+        next[field] = encrypt(value);
+      } else throw new Error(`Unsupported write to encrypted ${spec.table}.${field}`);
     }
+    // Tokens cover the fields written here: indexed models write all of them together.
+    if (spec.searchTokens)
+      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
     ring.remember(spec.table, rowId, context);
     return next;
   }

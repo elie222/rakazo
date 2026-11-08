@@ -1,7 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema } from "@rakazo/contracts";
-import { attachmentComputerPath, redactSecrets } from "@rakazo/core";
-import { claimBotEmailName } from "@rakazo/db";
+import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
+import {
+  claimBotEmailName,
+  contentEncryptionOf,
+  releaseBotEmailSend,
+  reserveBotEmailSend,
+} from "@rakazo/db";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
@@ -17,6 +22,9 @@ const PREVIEW_CHARS = 160;
 const POLL_MS = 3_000;
 /** Emails one delete_email call removes. */
 const DELETE_EMAIL_MAX_IDS = 50;
+/** Emails a search fetches to check once decrypted, as blind-index matches can be false. */
+const SEARCH_CANDIDATES = 100;
+const SEARCHED_FIELDS = ["fromAddress", "fromName", "subject", "text"] as const;
 
 const ReadEmailSchema = z
   .object({
@@ -41,6 +49,28 @@ function sender(email: { fromName: string; fromAddress: string }): string {
 }
 
 type SavedFile = { name: string; artifactId?: string; mimeType?: string; size?: number };
+
+/**
+ * Plaintext mail matches the query inside any field. Encrypted mail matches on blind-index
+ * prefix tokens and is checked against its decrypted fields afterwards (`check`), so text inside
+ * a word only matches mail that is still plaintext, as in Space search.
+ */
+async function emailQuery(ctx: RunContext, query: string) {
+  const plaintext = SEARCHED_FIELDS.map((field) => ({
+    [field]: { contains: query, mode: "insensitive" as const },
+  }));
+  const encryption = contentEncryptionOf(ctx.deps.prisma);
+  const keyTokens = encryption
+    ? await encryption.messageSearchTokens(ctx.bot.spaceId, query, "prefix")
+    : [];
+  // No keys: nothing in the Space was ever encrypted.
+  if (!keyTokens.length) return { where: { OR: plaintext }, check: false };
+  const tokenSets = keyTokens.filter((tokens) => tokens.length);
+  // No term long enough to be indexed: check the newest mail.
+  if (!tokenSets.length) return { where: {}, check: true };
+  const encrypted = tokenSets.map((tokens) => ({ searchTokens: { hasEvery: tokens } }));
+  return { where: { OR: [...encrypted, ...plaintext] }, check: true };
+}
 
 async function readEmail(ctx: RunContext, call: ToolCall) {
   const parsed = ReadEmailSchema.safeParse(call.args);
@@ -122,20 +152,16 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
           },
         }
       : {}),
-    ...(input.query
-      ? {
-          OR: (["fromAddress", "fromName", "subject", "text"] as const).map((field) => ({
-            [field]: { contains: input.query, mode: "insensitive" as const },
-          })),
-        }
-      : {}),
   };
-  const list = () =>
-    deps.prisma.botEmailMessage.findMany({
-      where,
+  const limit = input.limit ?? 10;
+  // Asked again on every look: a Space's first key can appear while the bot waits.
+  const list = async () => {
+    const search = input.query ? await emailQuery(ctx, input.query) : undefined;
+    const found = await deps.prisma.botEmailMessage.findMany({
+      where: { ...where, ...search?.where },
       // After since, oldest first, so following nextSince reads every new email in order.
       orderBy: { receivedAt: input.since ? ("asc" as const) : ("desc" as const) },
-      take: input.limit ?? 10,
+      take: search?.check ? SEARCH_CANDIDATES : limit,
       select: {
         id: true,
         fromAddress: true,
@@ -148,6 +174,13 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         attachments: true,
       },
     });
+    if (!search?.check) return found;
+    return found
+      .filter((email) =>
+        matchesSearchQuery(input.query!, ...SEARCHED_FIELDS.map((field) => email[field])),
+      )
+      .slice(0, limit);
+  };
   let emails = await list();
   const deadline = startedAt + (input.waitSeconds ?? 0) * 1000;
   // The last look lands on the deadline, so a wait shorter than one poll still waits.
@@ -240,7 +273,6 @@ export const SEND_EMAIL_OWNER_DAILY_LIMIT = 200;
 const SEND_RECIPIENTS_MAX = 10;
 const SEND_TEXT_MAX_CHARS = 20_000;
 const SUBJECT_MAX_CHARS = 500;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_REFERENCES = 20;
 
 const Recipients = z.union([z.email(), z.array(z.email())]).transform((value) =>
@@ -343,17 +375,17 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
       id: earlier.id,
     });
   }
-  const today = { sent: true, receivedAt: { gte: new Date(Date.now() - DAY_MS) } };
-  const [mine, owners] = await Promise.all([
-    deps.prisma.botEmailMessage.count({ where: { ...today, botId: bot.id } }),
-    deps.prisma.botEmailMessage.count({ where: { ...today, bot: { userId: bot.userId } } }),
-  ]);
-  if (mine >= SEND_EMAIL_DAILY_LIMIT) {
+  const reserved = await reserveBotEmailSend(
+    deps.prisma,
+    { userId: bot.userId, botId: bot.id },
+    { bot: SEND_EMAIL_DAILY_LIMIT, owner: SEND_EMAIL_OWNER_DAILY_LIMIT },
+  );
+  if (reserved === "bot") {
     return call.finish({
       error: "You've sent as many emails today as you can. Try again tomorrow.",
     });
   }
-  if (owners >= SEND_EMAIL_OWNER_DAILY_LIMIT) {
+  if (reserved === "owner") {
     return call.finish({
       error: "You've sent as many emails today as your owner's bots can. Try again tomorrow.",
     });
@@ -388,6 +420,7 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     });
   } catch (error) {
     await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
+    await releaseBotEmailSend(deps.prisma, reserved.id).catch(() => undefined);
     // Most failures are refusals, but one can come after the provider took the email.
     return call.finish({
       error: `Sending failed (${error instanceof Error ? error.message : String(error)}). It most likely did not go out.`,
