@@ -219,7 +219,14 @@ async function rewrite(
         const columns = table.columns.filter((column) => row[column] != null);
         if (!columns.length) continue;
         if (mode === "decrypt") {
-          await tx.$executeRaw(table.writePlaintext(row.id, row));
+          // Decrypted text that looks like ciphertext would read as a value under a missing key.
+          const plain = Object.fromEntries(
+            Object.entries(row).map(([column, value]) => [
+              column,
+              typeof value === "string" && ciphertextKeyId(value) ? `\u200b${value}` : value,
+            ]),
+          );
+          await tx.$executeRaw(table.writePlaintext(row.id, { ...plain, id: row.id }));
           continue;
         }
         await Reflect.apply(delegate.update, delegate, [

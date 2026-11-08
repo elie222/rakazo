@@ -395,7 +395,8 @@ describePostgres("content encryption (PostgreSQL)", () => {
           botId,
           key: `enc-mail-${suffix}`,
           fromAddress: "grace@harbor.test",
-          fromName: "Grace",
+          // A sender's name that looks like ciphertext.
+          fromName: "rkz1:missing:Grace",
           verified: true,
           subject: "Ocelot sighting",
           text: "Seen near the ocelot pens",
@@ -439,6 +440,8 @@ describePostgres("content encryption (PostgreSQL)", () => {
       const plain = await stored();
       expect(plain.map((row) => row.subject).sort()).toEqual(["Legacy ocelot", "Ocelot sighting"]);
       expect(plain.every((row) => row.tokens === null)).toBe(true);
+      expect(plain.map((row) => row.fromName)).toContain("\u200brkz1:missing:Grace");
+      await expect(prisma.botEmailMessage.findMany({ where: { botId } })).resolves.toHaveLength(2);
       await migrateContent(prisma, { mode: "encrypt" });
     }));
 
