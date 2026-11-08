@@ -227,6 +227,49 @@ describe("ChatSdkMessagingSurface inbound", () => {
     ]);
   });
 
+  it("forwards a slash command to the agent as an ordinary inbound message", async () => {
+    const { adapter, surface, events, getChat } = createSurface();
+    // The mock adapter captures the Chat instance on first use.
+    await surface.handleWebhook(
+      "mock",
+      webhookRequest({ threadId: "mock:Duser:1", id: "m-init", text: "init" }),
+    );
+    events.length = 0;
+    await getChat().processSlashCommand(
+      {
+        adapter,
+        channelId: "mock:Duser:1",
+        command: "/pmodels",
+        text: "",
+        user: {
+          userId: "U123",
+          userName: "testuser",
+          fullName: "Test User",
+          isBot: false,
+          isMe: false,
+        },
+        raw: { message_id: 42, chat: { type: "private", id: 5464346556 }, text: "/pmodels" },
+      },
+      undefined,
+    );
+
+    expect(events).toEqual([
+      {
+        type: "message",
+        provider: "mock",
+        handle: "42",
+        threadId: "mock:Duser:1",
+        isDirect: true,
+        from: "U123",
+        fromLabel: "Test User",
+        channelName: null,
+        participants: [],
+        content: "/pmodels",
+        mediaUrl: null,
+      },
+    ]);
+  });
+
   it("hands authenticated files over as fetchable attachments", async () => {
     const { surface, events } = createSurface();
     await surface.handleWebhook(

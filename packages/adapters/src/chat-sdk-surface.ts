@@ -16,7 +16,7 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
+import type { Adapter, Message, PostableMarkdown, Root, SlashCommandEvent, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./lark/text-parts.js";
 
@@ -226,6 +226,46 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       chat.onNewMention(deliver);
       chat.onSubscribedMessage(deliver);
       chat.onNewMessage(/(?:)/, deliver);
+      // Slash commands (Telegram /pmodels, /start, …) are intercepted by the
+      // adapter and never reach onDirectMessage/onNewMessage, so without a
+      // handler they are silently dropped. Forward every slash command to the
+      // agent as an ordinary inbound message so bot tools can answer them.
+      chat.onSlashCommand(async (event: SlashCommandEvent) => {
+        const raw = event.raw as {
+          message_id?: number | string;
+          chat?: { type?: string; title?: string };
+          text?: string;
+        } | null;
+        const text = raw?.text ?? `${event.command}${event.text ? ` ${event.text}` : ""}`;
+        const threadId = toProviderThreadId(
+          mounted,
+          platform.normalizeThreadId?.(event.channel.id, event.raw) ?? event.channel.id,
+        );
+        // The SDK builds the slash-command channel without DM info, so
+        // channel.isDM is always false here; derive it the same way a
+        // regular message does (the adapter's isDM for this thread id).
+        const isDirect =
+          event.adapter.isDM?.(event.channel.id) ??
+          (raw?.chat?.type ? raw.chat.type === "private" : false);
+        const fromLabel = event.user.fullName || event.user.userName || null;
+        const inbound: MessagingInboundMessage = {
+          type: "message",
+          provider: platform.provider,
+          handle:
+            raw?.message_id != null ? String(raw.message_id) : `${event.command}:${Date.now()}`,
+          threadId,
+          isDirect,
+          from: event.user.userId,
+          fromLabel: fromLabel === event.user.userId ? null : fromLabel,
+          channelName: isDirect
+            ? null
+            : (platform.channelName?.(event.raw) ?? raw?.chat?.title ?? null),
+          participants: isDirect ? [] : (platform.participants?.(event.raw) ?? []),
+          content: text,
+          mediaUrl: null,
+        };
+        await this.sink?.(inbound);
+      });
     }
   }
 
