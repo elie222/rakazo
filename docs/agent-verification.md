@@ -291,8 +291,8 @@ Grading requires completed helper and parent result runs, file reads and writes
 performed by the helper itself, and the correct saved numbers. The calibrated
 `subagent-result-meaning-v1` judge then checks whether the parent's later reply
 conveys the findings. A promise to report later cannot pass. The runner drains
-the independent workflow before observing it; the checks use no real external
-services or production data.
+the independent workflow before observing it. Connected services and the computer
+are synthetic; models are live and no production data is used.
 
 ### Bot deliberation evals
 
