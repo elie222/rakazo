@@ -193,6 +193,26 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
     await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
   });
+  it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-only-reply', 'synthetic-thread', 10002, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 1, note: "Pruning Larkspur caches." }],
+          },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, {
+      query: "larkspur",
+      kinds: ["bot_replies"],
+    });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-only-reply"]);
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-only-reply'`);
+  });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
       '2026-01-01T00:00:00Z'::timestamptz,
