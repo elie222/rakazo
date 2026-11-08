@@ -14,7 +14,7 @@ async function seedTallThread(page: Page, botId: string, stamp: string) {
 }
 
 test("switching bots lands the transcript at the latest messages", async ({ page }, testInfo) => {
-  const stamp = Date.now();
+  const stamp = String(Date.now());
   await signup(page, `scroll-bot-switch-${stamp}@rakazo.test`, "password12", "Scroll Switch");
   await completeOnboarding(page);
 
