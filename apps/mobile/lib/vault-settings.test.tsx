@@ -123,6 +123,9 @@ vi.mock("../components/load-failure", () => ({
   LoadFailure: ({ message, onRetry }: { message: string; onRetry: () => void }) =>
     createElement("button", { type: "button", onClick: onRetry }, `${message} Retry`),
 }));
+vi.mock("../components/vault-tile", () => ({
+  VaultTile: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios, android, color }: { ios: string; android: string; color: string }) =>
     createElement("i", { "data-ios": ios, "data-android": android, "data-color": color }),
