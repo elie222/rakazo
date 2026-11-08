@@ -21,6 +21,7 @@ import {
 } from "./openai-compatible-url.js";
 import { OPENAI_VOICES } from "./openai-voice.js";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+import { speechToWav } from "./speech-to-wav.js";
 import {
   readVoiceAudio,
   readVoiceJson,
@@ -48,6 +49,22 @@ const MAX_SERVER_DETAIL_LENGTH = 160;
 /** A voice list is shown to the user, so it stays small: ids, short names, a few hundred. */
 const MAX_LISTED_VOICES = 500;
 const MAX_VOICE_LABEL_LENGTH = 120;
+// MiMo speaks and transcribes through chat completions, not /audio/*.
+const MIMO_TTS_MODEL = "mimo-v2.5-tts";
+const MIMO_STT_MODEL = "mimo-v2.5-asr";
+const MIMO_VOICES = [
+  "冰糖",
+  "茉莉",
+  "苏打",
+  "白桦",
+  "Mia",
+  "Chloe",
+  "Milo",
+  "Dean",
+  "mimo_default",
+].map((id) => ({ id, label: id }));
+/** MiMo limits the base64 input, not the original recording, to 10 MiB. */
+const MAX_MIMO_AUDIO_BYTES = 3 * Math.floor((10 * 1024 * 1024) / 4);
 
 /** What the encrypted voice secret holds for a self-hosted speech server. */
 export interface OpenAiCompatibleVoiceSecret {
@@ -107,6 +124,9 @@ export function serializeOpenAiCompatibleVoiceSecret(
       "Transcription",
     ),
   };
+  if (secret.ttsModel === MIMO_STT_MODEL || secret.sttModel === MIMO_TTS_MODEL) {
+    throw new Error("Speech and transcription model ids are reversed.");
+  }
   return JSON.stringify(secret);
 }
 
@@ -346,6 +366,8 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
     const secret = parseOpenAiCompatibleVoiceSecret(apiKey);
+    context.signal.throwIfAborted();
+    if (secret.ttsModel === MIMO_TTS_MODEL) return MIMO_VOICES;
     try {
       const res = await this.fetch(
         `${endpoint(secret, "audio/voices")}?model=${encodeURIComponent(secret.ttsModel)}`,
@@ -371,6 +393,32 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const signal = voiceDeadline(request.signal ?? context.signal, SPEAK_DEADLINE_MS);
+    if (secret.ttsModel === MIMO_TTS_MODEL) {
+      const res = await this.fetch(endpoint(secret, "chat/completions"), {
+        method: "POST",
+        headers: headers(secret, { "content-type": "application/json" }),
+        body: JSON.stringify({
+          model: secret.ttsModel,
+          messages: [{ role: "assistant", content: request.text }],
+          audio: { voice: request.voiceId, format: "mp3" },
+          stream: false,
+        }),
+        signal,
+      });
+      if (!res.ok)
+        throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
+      // Audio-in-JSON needs the audio cap, rather than the 1 MiB metadata cap.
+      const body = parseJson(new TextDecoder().decode(await readVoiceAudio(res, signal)));
+      const encoded = chatMessage(body)?.audio?.data;
+      if (typeof encoded !== "string" || !encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+        throw new Error(`${PROVIDER_NAME} did not return audio.`);
+      }
+      const bytes = Buffer.from(encoded, "base64");
+      if (!bytes.length || bytes.toString("base64") !== encoded) {
+        throw new Error(`${PROVIDER_NAME} returned invalid audio.`);
+      }
+      return { bytes, mimeType: "audio/mpeg" };
+    }
     const langCode = kokoroLangCode(request.voiceId);
     const res = await this.fetch(endpoint(secret, "audio/speech"), {
       method: "POST",
@@ -400,6 +448,51 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     context: AdapterContext,
   ): Promise<{ text: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
+    if (secret.sttModel === MIMO_STT_MODEL) {
+      const signal = voiceDeadline(request.signal ?? context.signal, TRANSCRIBE_DEADLINE_MS);
+      signal.throwIfAborted();
+      const language = request.language?.split("-")[0]?.toLowerCase();
+      if (language && language !== "zh" && language !== "en" && language !== "auto") {
+        throw new Error("This transcription model supports Chinese and English only.");
+      }
+      const mime = (request.mimeType ?? "").split(";")[0]?.trim().toLowerCase();
+      const mp3 = mime === "audio/mpeg" || mime === "audio/mp3";
+      const wav = mime === "audio/wav" || mime === "audio/x-wav";
+      const audio =
+        mp3 || wav ? request.audio : await speechToWav(request.audio, signal, MAX_MIMO_AUDIO_BYTES);
+      if (!audio.byteLength || audio.byteLength > MAX_MIMO_AUDIO_BYTES) {
+        throw new Error("Recording exceeds the speech server's 10 MiB base64 limit or is empty.");
+      }
+      const res = await this.fetch(endpoint(secret, "chat/completions"), {
+        method: "POST",
+        headers: headers(secret, { "content-type": "application/json" }),
+        body: JSON.stringify({
+          model: secret.sttModel,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_audio",
+                  input_audio: {
+                    data: `data:${mp3 ? "audio/mpeg" : "audio/wav"};base64,${Buffer.from(audio).toString("base64")}`,
+                  },
+                },
+              ],
+            },
+          ],
+          asr_options: { language: language || "auto" },
+          stream: false,
+        }),
+        signal,
+      });
+      const body = await readVoiceJson(res, { requireValid: res.ok });
+      if (!res.ok) throw serverError(res.status, "transcribing", body, secret.apiKey);
+      const text = chatMessage(body)?.content;
+      if (typeof text !== "string")
+        throw new Error(`${PROVIDER_NAME} did not return a transcript.`);
+      return { text: text.trim() };
+    }
     const form = new FormData();
     form.set("model", secret.sttModel);
     // mlx-audio streams NDJSON unless asked for the OpenAI shape.
@@ -435,6 +528,12 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     }
     return { text: raw.trim() };
   }
+}
+
+function chatMessage(body: unknown): { content?: unknown; audio?: { data?: unknown } } | undefined {
+  return (
+    body as { choices?: { message?: { content?: unknown; audio?: { data?: unknown } } }[] } | null
+  )?.choices?.[0]?.message;
 }
 
 function parseJson(raw: string | null): unknown {
