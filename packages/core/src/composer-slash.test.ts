@@ -76,6 +76,8 @@ describe("composerSlashQuery", () => {
     expect(composerSlashQuery("see /re word")).toBeNull();
     expect(composerSlashQuery("/ notes")).toBeNull();
     expect(composerSlashQuery("is it 1 /")).toBeNull();
+    // Mid-message a second slash makes it a path, even when a skill name contains one.
+    expect(composerSlashQuery("run /tools/build")).toBeNull();
     expect(composerSlashQuery("yes / no", 5)).toBeNull();
     expect(composerSlashQuery("/")).toEqual({ start: 0, end: 1, query: "" });
   });

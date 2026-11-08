@@ -30,8 +30,9 @@ export function truncateSlashDescription(value: string, max = 72): string {
 /**
  * The `/query` before a collapsed caret: a `/` at the start or after whitespace on the caret's
  * line, so paths and URLs never open the menu, and never one inside a picked mention.
- * Mid-message a non-space must follow the `/`, so "yes / no" and "is it 1 /" stay prose. With only
- * whitespace before the `/`, the query starts at 0, since that is the start of the sent message.
+ * Mid-message the query is one word with no further `/`, so "yes / no", "is it 1 /" and
+ * "run /tools/build" stay prose. With only whitespace before the `/`, the query starts at 0,
+ * since that is the start of the sent message.
  */
 export function composerSlashQuery(
   text: string,
@@ -46,7 +47,7 @@ export function composerSlashQuery(
     if (bindings.some((binding) => slash >= binding.start && slash < binding.end)) return null;
     const query = text.slice(slash + 1, selectionStart);
     const start = text.slice(0, slash).trim() ? slash : 0;
-    if (start ? !/^\S+$/.test(query) : /^\s/.test(query)) return null;
+    if (start ? !/^[^\s/]+$/.test(query) : /^\s/.test(query)) return null;
     return { start, end: selectionStart, query };
   }
   return null;
