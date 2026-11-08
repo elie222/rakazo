@@ -3,8 +3,8 @@ import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 /**
- * Each member of a Space has their own read state for each chat there (`thread_reads`). A chat
- * with no row for someone reads as caught up for them.
+ * Each member of a Space has their own state for each chat there (`thread_reads`): how far they
+ * have read, and any snooze. A chat with no row for someone is caught up and not snoozed.
  */
 
 type Reader = { threadId: string; spaceId: string; userId: string };

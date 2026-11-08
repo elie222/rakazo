@@ -1089,7 +1089,8 @@ model Thread {
   @@map("threads")
 }
 
-/// One member's read state for a chat: a personal resource. No row means caught up.
+/// One member's personal state for a chat: how far they've read, and whether they've snoozed
+/// it. Named for its first use (reads). No row means caught up and not snoozed.
 /// Leaving the Space deletes it with the membership.
 model ThreadRead {
   threadId    String
