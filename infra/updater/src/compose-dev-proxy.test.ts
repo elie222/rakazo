@@ -77,3 +77,15 @@ describe("source-checkout compose postgres hardening", () => {
     ]);
   });
 });
+
+describe("web allowed hosts passthrough", () => {
+  it("passes RAKAZO_ALLOWED_HOSTS to the web service in the prod and images compose files", () => {
+    for (const rel of [
+      "infra/compose/docker-compose.prod.yml",
+      "infra/compose/docker-compose.images.yml",
+    ]) {
+      const env = loadCompose(rel).services.web?.environment;
+      expect(env?.RAKAZO_ALLOWED_HOSTS, rel).toBe("${RAKAZO_ALLOWED_HOSTS:-}");
+    }
+  });
+});
