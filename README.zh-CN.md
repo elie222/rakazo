@@ -18,7 +18,7 @@ Rakazo 是 Grok Bot 的开源、自托管替代方案。
 
 它也是 Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的替代方案。
 
-Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
+详情见 [rakazo.com](https://rakazo.com)。
 
 本文是 [英文 README](./README.md) 的简体中文译文。[自托管指南](./docs/zh-CN/self-host.md)已提供中文。
 
