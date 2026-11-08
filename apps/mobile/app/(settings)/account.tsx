@@ -862,6 +862,7 @@ export default function Account() {
               onPress={openStoreListing}
               prominence="secondary"
               size="compact"
+              style={styles.updateButton}
             />
           ) : null}
         </View>
@@ -931,6 +932,9 @@ function createAccountStyles() {
     },
     versionFooter: {
       alignItems: "center",
+    },
+    updateButton: {
+      alignSelf: "center",
     },
     versionLine: {
       color: native.secondaryLabel,
