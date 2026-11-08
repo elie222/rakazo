@@ -5,7 +5,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
-import { estimateTextTokens } from "./context-selection.js";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import {
   createOpenAiCompatibleFetch,
   registerOpenAiCompatibleRuntime,
@@ -420,6 +420,44 @@ describe("Pi usage accounting", () => {
         },
       }),
     );
+  });
+  it("counts the streamed answer when the terminal error carries no content", async () => {
+    const afterCall = vi.fn();
+    const usage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const message = (text: string) => ({
+      role: "assistant",
+      content: text ? [{ type: "text", text }] : [],
+      usage,
+      stopReason: "error",
+    });
+    const events = [
+      { type: "text_delta", delta: "x".repeat(50), partial: message("x".repeat(50)) },
+      { type: "error", reason: "error", error: message("") },
+    ];
+    const models = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield* events;
+        },
+        result: async () => message(""),
+      }),
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(models, model, { messages: [] }, undefined, vi.fn(), {
+      beforeCall: () => "reservation",
+      afterCall,
+    });
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).toMatchObject({
+      countedTokens: { outputTokens: lowTextTokens("x".repeat(50)) },
+    });
   });
   it("does not count a call whose provider refused to start it", async () => {
     const afterCall = vi.fn();

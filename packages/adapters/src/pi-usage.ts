@@ -18,7 +18,7 @@ import type {
 import { Agent } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
-import { estimateTextTokens } from "./context-selection.js";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import { withGoogleToolHistory } from "./google-tool-history.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { openRouterInferenceFetch } from "./openrouter-usage.js";
@@ -398,8 +398,7 @@ export function observedPiStream(
           ...usage,
           countedTokens: {
             inputTokens: inputTokensEstimate,
-            // Deliberately low, about five characters a token, so output is never overcounted.
-            outputTokens: Math.floor(text.length / 5),
+            outputTokens: lowTextTokens(text),
             // A deploy, a stalled stream, or the user can abort; the reconciler tells them apart.
             ...(options?.signal?.aborted
               ? {
@@ -505,6 +504,8 @@ export function observedPiStream(
             })()
           : upstream;
         for await (const event of events) {
+          // A terminal error can arrive with empty content after a partial answer streamed.
+          const received = partialMessage;
           partialMessage =
             event.type === "done"
               ? event.message
@@ -534,7 +535,10 @@ export function observedPiStream(
             if (observer && reservation !== undefined) {
               await observer.afterCall(
                 reservation,
-                receipt({ ...normalized, operationKind }, message),
+                receipt(
+                  { ...normalized, operationKind },
+                  message.content.length ? message : (received ?? message),
+                ),
               );
               settled = true;
             }

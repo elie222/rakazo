@@ -9,7 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import { z } from "zod";
-import { estimateTextTokens } from "./context-selection.js";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import { decisionModel } from "./decision-models.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -63,7 +63,7 @@ export class HttpDecisionProvider implements DecisionProvider {
     const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
     // Deliberately low, for a sent request whose usage never arrives.
     const countedTokens = {
-      inputTokens: Math.floor(Buffer.byteLength(body, "utf8") / 5),
+      inputTokens: lowTextTokens(body),
       outputTokens: 0,
     };
     let sent = false;
