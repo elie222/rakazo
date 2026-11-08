@@ -130,6 +130,9 @@ export function dockerComputerToolInstruction(
   ];
   if (builtinOffered(disabled, "shell")) {
     parts.push(
+      "This computer is a Debian bookworm container running as the unprivileged user `rakazo`, with home `/home/rakazo`, which persists across runs. There is no sudo, systemd, cron, or Docker daemon; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, ImageMagick, and a graphical browser (Chromium by default). There is no compiler, Node, Rust, or Java, and no `ffmpeg` or `ripgrep`.",
+    );
+    parts.push(
       "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
     );
   }

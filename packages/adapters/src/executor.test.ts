@@ -1864,6 +1864,38 @@ describe("dockerComputerToolInstruction", () => {
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
 
+  it("maps the Docker computer environment so models skip discovery turns", () => {
+    const instruction = dockerComputerToolInstruction("docker") ?? "";
+    expect(instruction).toContain("Debian bookworm");
+    expect(instruction).toContain("user `rakazo`");
+    expect(instruction).toContain("`/home/rakazo`");
+    expect(instruction).toContain("persists across runs");
+    expect(instruction).toContain("no sudo, systemd, cron, or Docker daemon");
+    expect(instruction).toContain("cannot be installed with `apt` at runtime");
+    expect(instruction).toContain("`pip` is not installed");
+    expect(instruction).toContain("`uv run --with <package>`");
+    expect(instruction).toContain("`git`, `ssh`, `curl`, `jq`, `unzip`, ImageMagick");
+    expect(instruction).toContain("Chromium by default");
+    expect(instruction).toContain("no compiler, Node, Rust, or Java");
+    expect(instruction).toContain("no `ffmpeg` or `ripgrep`");
+  });
+
+  it("keeps the environment map out of runs without shell", () => {
+    const noShell = dockerComputerToolInstruction("docker", new Set(["shell"]));
+    expect(noShell).not.toContain("Debian bookworm");
+    expect(noShell).not.toContain("ImageMagick");
+    expect(noShell).not.toContain("`pip` is not installed");
+    // With every other gated tool off too, the no-shell text is the pre-map text verbatim.
+    expect(
+      dockerComputerToolInstruction(
+        "docker",
+        new Set(["shell", "browser_navigate", "browser_act", "request_takeover"]),
+      ),
+    ).toBe(
+      "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets. Never use `--with-token` or inject a token through the environment.",
+    );
+  });
+
   it("documents gh CLI device-flow login without token injection", () => {
     const instruction = dockerComputerToolInstruction("docker");
     expect(instruction).toContain("gh auth login");
