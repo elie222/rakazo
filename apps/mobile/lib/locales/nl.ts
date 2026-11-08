@@ -1,4 +1,12 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Snooze: "Snoozen",
+  Snoozed: "Gesnoozed",
+  Unsnooze: "Niet meer snoozen",
+  Woke: "Terug",
+  "1 hour": "1 uur",
+  "3 hours": "3 uur",
+  Tomorrow: "Morgen",
+  "Next week": "Volgende week",
   "No matches": "Geen resultaten",
   "Always ask": "Altijd vragen",
   "Search tools": "Tools zoeken",

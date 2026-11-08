@@ -5,9 +5,12 @@ import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
 
 vi.mock("./notification-identity.js", () => ({ notificationIdentity: async () => undefined }));
 // Each person's own unread count: Ada has 2 unread chats, Bea 5.
+const snoozing = vi.hoisted(() => new Set<string>());
 vi.mock("@rakazo/db", () => ({
   countUnreadInboxChats: async (_: unknown, { userId }: { userId: string }) =>
     userId === "user-1" ? 2 : 5,
+  membersSnoozing: async (_: unknown, _threadId: string, userIds: string[]) =>
+    new Set(userIds.filter((userId) => snoozing.has(userId))),
 }));
 
 const run = {
@@ -151,6 +154,22 @@ describe("notifications in a shared Space", () => {
     const { value, send } = deps({ members: shared });
     await notifyRun(value, { ...run, trigger: "bot_message" }, message);
     expect(recipients(send)).toEqual(["user-1"]);
+  });
+
+  it("holds a reply for whoever snoozed the chat, but still asks its owner to answer", async () => {
+    snoozing.add("user-1");
+    try {
+      const { value, publish, send } = deps({ members: shared });
+      await notifyRun(value, run, message);
+      expect(recipients(send)).toEqual(["user-2"]);
+      expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-2"]);
+
+      const help = deps({ members: shared });
+      await notifyRun(help.value, run, { ...message, kind: "help" });
+      expect(recipients(help.send)).toEqual(["user-1"]);
+    } finally {
+      snoozing.clear();
+    }
   });
 
   it("asks only the person whose run it is to answer, take over, or fix a failure", async () => {

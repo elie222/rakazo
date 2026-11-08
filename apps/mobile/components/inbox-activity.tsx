@@ -71,6 +71,7 @@ export function ActivitySection({
         sections={swipe.sections}
         onOrganize={swipe.onOrganize}
         onEditSection={swipe.onEditSection}
+        onSnooze={swipe.onSnooze && ((until) => swipe.onSnooze?.(target.kind, target.chat, until))}
       >
         {row({ actions: inboxRowActionList(target.chat), onAction })}
       </ChatSwipe>

@@ -1,4 +1,12 @@
 export const ES_MESSAGES: Record<string, string> = {
+  Snooze: "Posponer",
+  Snoozed: "Pospuestos",
+  Unsnooze: "Dejar de posponer",
+  Woke: "Ha vuelto",
+  "1 hour": "1 hora",
+  "3 hours": "3 horas",
+  Tomorrow: "Mañana",
+  "Next week": "La próxima semana",
   "No matches": "Sin resultados",
   "Always ask": "Preguntar siempre",
   "Search tools": "Buscar herramientas",

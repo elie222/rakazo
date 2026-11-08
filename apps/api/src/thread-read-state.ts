@@ -1,7 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { markThreadReadFor, markThreadUnreadFromFor, setThreadUnreadFor } from "@rakazo/db";
+import {
+  markThreadReadFor,
+  markThreadUnreadFromFor,
+  setThreadSnoozeFor,
+  setThreadUnreadFor,
+} from "@rakazo/db";
 import type { ThreadTarget } from "./thread-target.js";
 
 /** The actor's own read state for a chat. */
@@ -43,4 +48,22 @@ export async function setThreadUnreadState(
   unread: boolean,
 ) {
   await setThreadUnreadFor(prisma, readerOf(actor, target), unread);
+}
+
+/** The longest a chat can be snoozed. */
+const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
+
+/** Snoozes the chat for the actor until `until`, or wakes it with null. */
+export async function setThreadSnooze(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  until: string | null,
+  now = Date.now(),
+) {
+  const wake = until === null ? null : new Date(until);
+  if (wake && (wake.getTime() <= now || wake.getTime() - now > MAX_SNOOZE_MS)) {
+    throw new ORPCError("BAD_REQUEST", { message: "Pick a time within the next year" });
+  }
+  await setThreadSnoozeFor(prisma, readerOf(actor, target), wake);
 }

@@ -1,4 +1,5 @@
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import { createSnoozeQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
@@ -60,6 +61,7 @@ export function useInboxChatActions({
   const [archiving, setArchiving] = useState<ReadonlySet<string>>(() => new Set());
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
+  const [snoozeQueue] = useState(createSnoozeQueue);
   const updateChat = useCallback(
     async (
       kind: InboxChatKind,
@@ -237,6 +239,40 @@ export function useInboxChatActions({
       ),
     [t, updateChat],
   );
+  /** Snoozes a chat until `until`, or wakes it with null; its row moves at once. */
+  const snoozeChat = useCallback(
+    (
+      kind: InboxChatKind,
+      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+      until: string | null,
+    ) => {
+      const apply = (value: string | null) => {
+        const set = <T extends { id: string; snoozedUntil?: string | null }>(chats: T[]) =>
+          chats.map((item) => (item.id === chat.id ? { ...item, snoozedUntil: value } : item));
+        if (kind === "bot") setBots(set);
+        else setGroups(set);
+        setSpaces((current) =>
+          current.map((space) =>
+            kind === "bot"
+              ? { ...space, bots: set(space.bots) }
+              : { ...space, groups: set(space.groups) },
+          ),
+        );
+      };
+      snoozeQueue(unreadOverrideKey(kind, chat.id), until, chat.snoozedUntil ?? null, {
+        send: (value) =>
+          chatRpc(chat.spaceId, "threads/snooze", { ...chatTarget(kind, chat.id), until: value }),
+        apply,
+        settled: (failed) => {
+          if (failed) {
+            Alert.alert(t("Could not update chat"), errorText(failed.error, t("Try again.")));
+          }
+          void loadBots().catch(() => undefined);
+        },
+      });
+    },
+    [loadBots, snoozeQueue, setBots, setGroups, setSpaces, t],
+  );
   const editSectionFromMenu = useCallback(
     (
       kind: InboxChatKind,
@@ -293,5 +329,6 @@ export function useInboxChatActions({
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
+    snoozeChat,
   };
 }

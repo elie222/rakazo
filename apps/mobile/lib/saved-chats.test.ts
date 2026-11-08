@@ -122,6 +122,8 @@ const bot = {
   updatedAt: "2026-10-10T12:30:00.000Z",
   sectionId: "section-a",
   parentBotId: "parent-a",
+  // Kept, so an offline inbox still leaves a snoozed chat out of the list.
+  snoozedUntil: "2026-10-11T09:00:00.000Z",
 };
 const group = {
   id: "group-a",
@@ -129,6 +131,7 @@ const group = {
   members: [],
   preview: "",
   updatedAt: "2026-10-10T12:30:00.000Z",
+  snoozedUntil: "2026-10-11T09:00:00.000Z",
 };
 const navigation = {
   current: {

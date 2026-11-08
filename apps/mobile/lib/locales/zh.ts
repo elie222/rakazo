@@ -1,4 +1,12 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Snooze: "稍后提醒",
+  Snoozed: "已暂缓",
+  Unsnooze: "取消暂缓",
+  Woke: "已回来",
+  "1 hour": "1 小时",
+  "3 hours": "3 小时",
+  Tomorrow: "明天",
+  "Next week": "下周",
   "No matches": "没有匹配项",
   "Always ask": "始终询问",
   "Search tools": "搜索工具",

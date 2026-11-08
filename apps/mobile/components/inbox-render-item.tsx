@@ -50,6 +50,7 @@ export function useInboxRenderItem({
   confirmDeleteSpace,
   createBotInSpace,
   day,
+  now,
   deleteSection,
   editSectionFromMenu,
   groupAction,
@@ -60,19 +61,27 @@ export function useInboxRenderItem({
   organizeFromMenu,
   organizeGroup,
   sharing,
+  snoozeChat,
   spaces,
   spaceBusy,
   spaceRecoveryId,
   toggleCollapsed,
 }: Pick<
   ChatActions,
-  "botAction" | "groupAction" | "organizeFromMenu" | "editSectionFromMenu" | "deleteSection"
+  | "botAction"
+  | "groupAction"
+  | "organizeFromMenu"
+  | "editSectionFromMenu"
+  | "deleteSection"
+  | "snoozeChat"
 > & {
   appearance: ResolvedAppearance;
   chooseInboxSpace: (spaceId: string) => void;
   confirmDeleteSpace: (space: InboxSpace) => void;
   createBotInSpace: (spaceId: string) => void;
   day: number;
+  /** The snooze clock, so rows redraw when a chat wakes. */
+  now: number;
   /** The selected space: only its section headings can be deleted. */
   spaceId: string | undefined;
   openBot: (bot: MobileBot | SpaceBot) => void;
@@ -223,23 +232,27 @@ export function useInboxRenderItem({
         <GroupRow
           group={item.group}
           day={day}
+          now={now}
           onPress={openGroup}
           onLongPress={!SWIPE_ROWS ? organizeGroup : undefined}
           onAction={SWIPE_ROWS ? groupAction : undefined}
           sections={sectionsOf(item.group.spaceId)}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
+          onSnooze={snoozeChat}
         />
       ) : (
         <BotRow
           bot={item.bot}
           day={day}
+          now={now}
           onPress={openBot}
           onLongPress={!sharing && !SWIPE_ROWS ? organizeBot : undefined}
           onAction={!sharing && SWIPE_ROWS ? botAction : undefined}
           sections={sectionsOf(item.bot.spaceId)}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
+          onSnooze={snoozeChat}
         />
       );
     },
@@ -251,6 +264,7 @@ export function useInboxRenderItem({
       createBotInSpace,
       deleteSection,
       day,
+      now,
       editSectionFromMenu,
       groupAction,
       spaceId,
@@ -261,6 +275,7 @@ export function useInboxRenderItem({
       organizeGroup,
       router,
       sharing,
+      snoozeChat,
       spaces,
       spaceBusy,
       spaceRecoveryId,

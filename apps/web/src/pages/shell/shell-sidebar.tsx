@@ -274,7 +274,16 @@ export function ShellSidebar({
               {roster}
             </>
           )}
-          <div className={mini ? "hidden" : "contents"}>{archived}</div>
+        </div>
+        {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
+        <div
+          className={
+            mini
+              ? "hidden"
+              : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
+          }
+        >
+          {archived}
         </div>
         <div className={mini ? "hidden" : "contents"}>
           <PasskeyOffer />

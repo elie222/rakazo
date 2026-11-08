@@ -801,6 +801,10 @@ export const appContract = {
     markUnread: oc
       .input(threadTarget.and(z.object({ messageId: Id.optional() })))
       .output(z.object({ ok: z.literal(true) })),
+    /** Hides the chat from the caller's list until `until`; null wakes it now. */
+    snooze: oc
+      .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
