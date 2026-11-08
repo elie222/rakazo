@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import {
+  compatibleModelSeesImages,
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
   knownModelImageInput,
@@ -152,6 +153,40 @@ describe("model vision gating for computer tools", () => {
     expect(enabled).toEqual(["vision-model"]);
     expect(modelIdSupportsImages(enabled, "vision-model")).toBe(true);
     expect(modelIdSupportsImages(enabled, "text-model")).toBe(false);
+  });
+
+  it("counts Anthropic-protocol models as seeing images without a vision list", () => {
+    expect(
+      compatibleModelSeesImages(
+        { supportsImages: false, defaultModel: null },
+        { visionModelIds: [], apiProtocol: "anthropic-messages" },
+        "krisphyn-Gemini-3.8-Flash",
+      ),
+    ).toBe(true);
+    expect(
+      compatibleModelSeesImages(
+        { supportsImages: false, defaultModel: null },
+        { visionModelIds: [], apiProtocol: "chat-completions" },
+        "krisphyn-Gemini-3.8-Flash",
+      ),
+    ).toBe(false);
+  });
+
+  it("still honors the vision list for other protocols", () => {
+    expect(
+      compatibleModelSeesImages(
+        { supportsImages: false, defaultModel: null },
+        { visionModelIds: ["vision-model"], apiProtocol: "chat-completions" },
+        "vision-model",
+      ),
+    ).toBe(true);
+    expect(
+      compatibleModelSeesImages(
+        { supportsImages: false, defaultModel: null },
+        { visionModelIds: ["vision-model"], apiProtocol: "chat-completions" },
+        "text-model",
+      ),
+    ).toBe(false);
   });
 
   it("omits image-returning computer tools for text-only models", () => {

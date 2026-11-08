@@ -1,5 +1,6 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { ModelApiProtocol } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
@@ -35,9 +36,15 @@ export function modelIdSupportsImages(
 /** Whether a compatible connection lists the model as seeing images. */
 export function compatibleModelSeesImages(
   credential: { supportsImages?: boolean | null; defaultModel?: string | null },
-  secret: { visionModelIds?: readonly string[] },
+  secret: { visionModelIds?: readonly string[]; apiProtocol?: ModelApiProtocol },
   modelId: string,
 ): boolean {
+  // A connection on the Anthropic protocol serves Claude models, which see
+  // images, so those count even when the per-model vision switch was never
+  // flipped. This mirrors the computer-role picker, which offers the same
+  // models as options; without it the server rejects the very choice the
+  // picker offers with "Choose a model that can see images".
+  if (secret.apiProtocol === "anthropic-messages") return true;
   return (
     modelIdSupportsImages(secret.visionModelIds, modelId) ||
     // Legacy secrets have no per-model list, so keep their existing
