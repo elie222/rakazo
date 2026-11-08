@@ -1,4 +1,5 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
+import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -6,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  ...(await importOriginal<typeof Db>()),
   recordUsage: vi.fn(),
 }));
 
@@ -149,6 +150,19 @@ describe("model credit reconciler", () => {
   it("ignores an invalid stored cost and prices the tokens instead", async () => {
     await reconcile({ usage: { ...stopped, costUsd: -1 } });
     expect(charged()?.costUsd).toBeCloseTo(0.04);
+  });
+
+  it("holds counted tokens it has no price for", async () => {
+    const updateMany = await reconcile({
+      usage: { ...stopped, pricingSnapshot: null },
+      reconciliationAttempts: 5,
+    });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconciliationState: "needs_review" }),
+      }),
+    );
   });
 
   it("never charges more than the hold", async () => {

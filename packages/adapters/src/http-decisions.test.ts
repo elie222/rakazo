@@ -125,7 +125,11 @@ describe("decision provider failures", () => {
   it.each([
     [422, "invalid", { costUsd: 0, usageSource: "provider-rejected" }],
     [429, "busy", { costUsd: 0, usageSource: "provider-rejected" }],
-    [503, "unavailable", null],
+    [
+      503,
+      "unavailable",
+      { costUsd: null, countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 } },
+    ],
   ] as const)(
     "maps HTTP %i to %s and bills only client rejections",
     async (status, kind, usage) => {
@@ -137,10 +141,7 @@ describe("decision provider failures", () => {
           callObserver: { beforeCall: () => "reservation", afterCall },
         }).decide(request, context),
       ).rejects.toMatchObject({ kind });
-      expect(afterCall).toHaveBeenCalledWith(
-        "reservation",
-        usage ? expect.objectContaining(usage) : null,
-      );
+      expect(afterCall).toHaveBeenCalledWith("reservation", expect.objectContaining(usage));
     },
   );
 });

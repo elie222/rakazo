@@ -376,13 +376,14 @@ export function observedPiStream(
       let providerThrew = false;
       let inputTokensEstimate = 0;
       let collectRawUsage = false;
+      let sendFailed = false;
       // A call sent to the provider that ended without its cost keeps our own count,
       // so the reconciler can price it if the provider never reports one.
       const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
         if (usage.costUsd != null) return usage;
         const characters = message ? receivedCharacters(message) : 0;
         // The provider may bill a prompt it received even if no response ever arrived.
-        const dispatched = !collectRawUsage || dispatchedRequests.has(reported);
+        const dispatched = !sendFailed && (!collectRawUsage || dispatchedRequests.has(reported));
         return dispatched || usage.providerRequestId || characters > 0
           ? {
               ...usage,
@@ -469,6 +470,8 @@ export function observedPiStream(
               : streamOptions,
           );
         } catch (error) {
+          // The request is sent while the stream is consumed, so this one never left.
+          sendFailed = true;
           providerThrew = true;
           providerError = error;
           throw error;

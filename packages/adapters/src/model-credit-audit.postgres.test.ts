@@ -300,6 +300,22 @@ dbTests("durable model credit audit", () => {
       costSource: "provider-reported",
     });
   });
+  it("keeps real usage that lands before the reconciler's fallback", async () => {
+    const f = await fixture();
+    await recordModelCreditReceipt(prisma, f.callId, f.usage);
+    await recordUsage(prisma, f.event, f);
+    await recordUsage(
+      prisma,
+      { ...f.event, costUsd: 0, costSource: "reconciled-estimate", providerRequestId: null },
+      f,
+      true,
+    );
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9_750_000n);
+    expect(await prisma.usageRecord.findUnique({ where: { callId: f.callId } })).toMatchObject({
+      costUsd: 0.25,
+      costSource: "provider-reported",
+    });
+  });
   it("charges a stopped call for its counted tokens when the provider has no record", async () => {
     const f = await fixture();
     await recordModelCreditReceipt(prisma, f.callId, {

@@ -77,11 +77,18 @@ export async function recordUsage(
         usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
         event.costUsd != null &&
         event.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
+      // Real usage that landed while the reconciler was deciding beats its fallback.
+      const fallbackWouldOverwrite =
+        reconcile &&
+        event.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
+        usage.costUsd != null &&
+        usage.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
       if (
-        !entry.pending &&
-        entry.reconciliationState === "complete" &&
-        !reconcile &&
-        !correctsEstimate
+        fallbackWouldOverwrite ||
+        (!entry.pending &&
+          entry.reconciliationState === "complete" &&
+          !reconcile &&
+          !correctsEstimate)
       )
         return;
       if (reconcile || correctsEstimate) {

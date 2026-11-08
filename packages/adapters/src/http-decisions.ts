@@ -59,7 +59,10 @@ export class HttpDecisionProvider implements DecisionProvider {
         : undefined,
     });
     let usage: AgentUsage | null = null;
+    const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
+    let sent = false;
     try {
+      sent = true;
       const response = await (this.options.fetch ?? fetch)(
         this.provider === "openrouter"
           ? "https://openrouter.ai/api/alpha/decisions"
@@ -102,6 +105,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         outputTokens: parsed.usage?.output_tokens ?? null,
         costUsd: parsed.usage?.cost ?? null,
         costSource: parsed.usage?.cost === undefined ? null : "provider-reported",
+        pricingSnapshot,
         providerRequestId: parsed.id ?? null,
         usageSource: "response",
         operationKind: "setup",
@@ -129,7 +133,24 @@ export class HttpDecisionProvider implements DecisionProvider {
             callId,
           });
       } finally {
-        if (reservation) await this.options.callObserver?.afterCall(reservation, usage);
+        // A sent request with no reported usage keeps a deliberately low count of its prompt.
+        if (reservation)
+          await this.options.callObserver?.afterCall(
+            reservation,
+            usage ??
+              (sent
+                ? {
+                    inputTokens: null,
+                    outputTokens: null,
+                    costUsd: null,
+                    pricingSnapshot,
+                    countedTokens: {
+                      inputTokens: Math.floor(Buffer.byteLength(body, "utf8") / 5),
+                      outputTokens: 0,
+                    },
+                  }
+                : null),
+          );
       }
     }
   }

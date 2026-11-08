@@ -411,6 +411,25 @@ describe("Pi usage accounting", () => {
       }),
     );
   });
+  it("does not count a call whose provider refused to start it", async () => {
+    const afterCall = vi.fn();
+    const models = {
+      streamSimple: () => {
+        throw new Error("Synthetic missing credentials");
+      },
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(
+      models,
+      { ...model, provider: "google", api: "google-generative-ai" },
+      { messages: [] },
+      undefined,
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
   it("counts the prompt of a call stopped after sending but before any response", async () => {
     const controller = new AbortController();
     const afterCall = vi.fn();

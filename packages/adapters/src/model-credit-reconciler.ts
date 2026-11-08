@@ -14,8 +14,9 @@ import { getLogger } from "@rakazo/logging";
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
  * counted at the model's cheapest rates; one that never reached it is free. Never more than held.
+ * Null when tokens were counted but the receipt has no price for them.
  */
-function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage {
+function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage | null {
   const rates = usage?.pricingSnapshot;
   const rate = (key: string) => {
     const value = rates?.[key];
@@ -35,6 +36,20 @@ function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage
     usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0
       ? usage.costUsd
       : null;
+  const counts = [
+    usage?.inputTokens,
+    usage?.outputTokens,
+    usage?.cacheReadTokens,
+    usage?.cacheWriteTokens,
+    counted?.inputTokens,
+    counted?.outputTokens,
+  ];
+  if (
+    knownCost === null &&
+    counts.some((count) => (count ?? 0) > 0) &&
+    !["input", "output", "cacheRead", "cacheWrite"].some((key) => rate(key) > 0)
+  )
+    return null;
   const costUsd = Math.min(
     knownCost ?? tokenCost / 1_000_000,
     Math.max(0, Number(heldMicros)) / MICROS_PER_DOLLAR,
@@ -132,15 +147,18 @@ export function createModelCreditReconciler(deps: {
               !running &&
               (lastAttempt || (usage && !canLookUp))
             ) {
-              usage = fallbackUsage(usage, -call.amountMicros);
-              reconciled = true;
-              getLogger().info("Model credit hold settled without a provider cost", {
-                callId: call.callId,
-                reason,
-                costUsd: usage.costUsd,
-                hasProviderRequestId: Boolean(call.providerRequestId),
-                counted: Boolean(usage.countedTokens),
-              });
+              const fallback = fallbackUsage(usage, -call.amountMicros);
+              if (fallback) {
+                usage = fallback;
+                reconciled = true;
+                getLogger().info("Model credit hold settled without a provider cost", {
+                  callId: call.callId,
+                  reason,
+                  costUsd: usage.costUsd,
+                  hasProviderRequestId: Boolean(call.providerRequestId),
+                  counted: Boolean(usage.countedTokens),
+                });
+              } else reason = "no price for the counted tokens";
             }
             if (
               usage &&
