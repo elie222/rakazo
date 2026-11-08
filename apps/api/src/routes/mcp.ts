@@ -14,6 +14,7 @@ import {
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -395,8 +396,10 @@ export function mcpRoutes(ctx: RouterContext) {
           if (!server) throw new IsolationError();
           // Assignments cascade; the encrypted credential must go with the server.
           // Cards are closed first, including ones that were never assigned.
-          const seqs = await deps.prisma.$transaction((tx) =>
-            removeMcpServerInTransaction(tx, context.actor, server),
+          const seqs = await withTransactionRetry(() =>
+            deps.prisma.$transaction((tx) =>
+              removeMcpServerInTransaction(tx, context.actor, server),
+            ),
           );
           for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
           return { ok: true as const };
