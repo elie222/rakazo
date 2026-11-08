@@ -37,6 +37,7 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../../adapters/src/executor-deps.js";
+import { loadRunOrigin } from "../../adapters/src/run-origin.js";
 import { createRunTrustLoaders } from "../../adapters/src/run-trust.js";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
@@ -2652,6 +2653,84 @@ describeJourneys("required product journeys", () => {
         (await prisma.run.findUniqueOrThrow({ where: { id: waiting.id } })).status === "completed",
     );
   });
+
+  it.each(["remove-member", "archive", "clear", "remove"])(
+    "13j: %s revokes a group's delegated work and its computer lease",
+    async (action) => {
+      const { cookie, bot } = await newChief(`Delegation ${action}`);
+      const peers = await Promise.all(
+        ["Peer", "Writer"].map((name) =>
+          rpc<Bot>(app, cookie, "bots/create", {
+            name,
+            title: "",
+            description: "",
+            instructions: "",
+            notifyOnFinish: false,
+          }),
+        ),
+      );
+      const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
+        name: "Delegation room",
+        botIds: [bot.id, ...peers.map((peer) => peer.id)],
+      });
+      await sendGroupAndWait(
+        app,
+        cookie,
+        group.id,
+        "@Chief keep working on the venue list in the background",
+        bot.id,
+      );
+      const thread = await prisma.thread.findUniqueOrThrow({ where: { groupId: group.id } });
+      const helper = await waitForHelper(bot.id, "running", thread.id);
+      // Clearing one conversation must not clear this bot's work in a different conversation.
+      await rpc(app, cookie, "threads/clear", { botId: bot.id });
+      expect((await prisma.run.findUniqueOrThrow({ where: { id: helper.id } })).status).toBe(
+        "running",
+      );
+      expect(await prisma.event.count({ where: { threadId: helper.threadId } })).toBeGreaterThan(0);
+      const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+      const lease = await prisma.computerExecutionLease.upsert({
+        where: { computerId_botId: { computerId: computerId!, botId: bot.id } },
+        create: {
+          computerId: computerId!,
+          botId: bot.id,
+          runId: helper.id,
+          fence: 1,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        update: {
+          runId: helper.id,
+          fence: { increment: 1 },
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      if (action === "remove-member")
+        await rpc(app, cookie, "groups/update", {
+          groupId: group.id,
+          botIds: peers.map((peer) => peer.id),
+        });
+      else if (action === "clear") await rpc(app, cookie, "threads/clear", { groupId: group.id });
+      else await rpc(app, cookie, `groups/${action}`, { groupId: group.id });
+      const stopped = await prisma.run.findUniqueOrThrow({ where: { id: helper.id } });
+      expect(stopped).toMatchObject({
+        status: "cancelled",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      });
+      expect(
+        (
+          await prisma.computerExecutionLease.findUniqueOrThrow({ where: { id: lease.id } })
+        ).expiresAt.getTime(),
+      ).toBeLessThanOrEqual(Date.now());
+      expect(await loadRunOrigin(prisma, stopped)).toBeNull();
+      if (action === "clear")
+        expect(await prisma.event.count({ where: { threadId: helper.threadId } })).toBe(0);
+      await reconcile();
+      expect(await prisma.run.count({ where: { clientNonce: `helper-result:${helper.id}` } })).toBe(
+        0,
+      );
+    },
+  );
 
   it("14: this-mac is refused unless the sandbox is docker", async () => {
     const cookie = await signup(app, `host-j-${stamp}@rakazo.test`, "Host");

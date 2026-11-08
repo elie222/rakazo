@@ -544,6 +544,7 @@ describe("thread lock transaction budget", () => {
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
       thread: {
+        findMany: vi.fn(async () => []),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         update: vi
           .fn()
@@ -5229,7 +5230,8 @@ describe("clearThread", () => {
       },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
@@ -5284,7 +5286,8 @@ describe("clearThread", () => {
       },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })
@@ -5381,6 +5384,8 @@ describe("clearThread", () => {
       $queryRaw: vi.fn(async () => [{ id: "group-1" }]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
@@ -5431,7 +5436,10 @@ describe("clearThread", () => {
     expect(tx.run.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          threadId: "thread-group",
+          OR: [
+            { threadId: "thread-group" },
+            { trigger: "helper", sourceMessage: { threadId: "thread-group" } },
+          ],
           spaceId: "workspace-1",
         }),
       }),

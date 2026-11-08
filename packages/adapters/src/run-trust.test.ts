@@ -80,6 +80,12 @@ describe("delegated authorization provenance", () => {
   });
   it.each([
     null,
+    { ...request, status: "cancelled" },
+    {
+      ...request,
+      thread: { groupId: "group", group: { archivedAt: new Date(), members: [{ botId: "bot" }] } },
+    },
+    { ...request, thread: { groupId: "group", group: { archivedAt: null, members: [] } } },
     { ...request, sourceMessage: null },
     { ...request, sourceMessage: { ...request.sourceMessage, authorUserId: "another-user" } },
     { ...request, sourceMessage: { ...request.sourceMessage, role: "bot" } },

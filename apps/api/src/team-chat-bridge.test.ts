@@ -2943,7 +2943,11 @@ describe("subagent result delivery", () => {
       const findFirst = vi
         .fn()
         .mockResolvedValueOnce(found ? { trigger: "helper", delegatedFromRunId: "parent" } : null)
-        .mockResolvedValueOnce({ id: "parent", trigger: "messaging" });
+        .mockResolvedValueOnce({
+          id: "parent",
+          trigger: "messaging",
+          sourceMessage: { id: "source" },
+        });
       const send = vi.fn(async () => ({ handle: "sent" }));
       const prisma = {
         run: {

@@ -552,6 +552,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           }
         }
         const origin = await loadRunOrigin(deps.prisma, run);
+        if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
+          throw new Error("The originating conversation no longer authorizes this task.");
         const conversationRun = origin ?? run;
         const messagingSource =
           conversationRun.trigger === "messaging" && conversationRun.sourceMessageId

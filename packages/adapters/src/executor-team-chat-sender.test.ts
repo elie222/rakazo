@@ -58,6 +58,7 @@ async function teamChatRun(input: {
   const original = {
     ...run,
     id: "original",
+    sourceMessage: { id: "source-1", role: "user", blocks: [], threadId: "thread-1" },
     thread: { id: "thread-1", groupId: null, externalConversationId: "conversation-1" },
   };
   if (input.delegated)

@@ -71,6 +71,8 @@ export async function startBackgroundHelper(
   const committed = await deps.prisma.$transaction(async (tx) => {
     // Every start goes through this chat, so its lock makes the replay check and the cap exact
     // even when one turn starts several helpers at once.
+    if (thread.groupId)
+      await tx.$queryRaw`SELECT id FROM chat_groups WHERE id = ${thread.groupId} FOR NO KEY UPDATE`;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // The cap belongs to the bot, including starts in different conversations.
     await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
@@ -239,7 +241,21 @@ export async function returnHelperOutcome(
     if (claimed.count !== 1 || !source || !run.sourceMessageId) return null;
     const card = await tx.message.findFirst({
       where: { id: run.sourceMessageId, threadId: source.threadId },
-      select: { id: true, threadId: true, blocks: true },
+      select: {
+        id: true,
+        threadId: true,
+        blocks: true,
+        thread: {
+          select: {
+            group: {
+              select: {
+                archivedAt: true,
+                members: { where: { botId: run.botId }, select: { botId: true } },
+              },
+            },
+          },
+        },
+      },
     });
     const blocks = Array.isArray(card?.blocks) ? (card.blocks as MessageBlock[]) : [];
     const helper = blocks.find((block): block is HelperBlock => block.kind === "subagent");
@@ -295,7 +311,11 @@ export async function returnHelperOutcome(
       type: "thread.message.updated",
       payload: { messageId: card.id, role: "bot", blocks: nextBlocks },
     });
-    if (outcome.status === "stopped") return { threadId: card.threadId, eventSeq: event.seq };
+    if (
+      outcome.status === "stopped" ||
+      (card.thread?.group && (card.thread.group.archivedAt || !card.thread.group.members.length))
+    )
+      return { threadId: card.threadId, eventSeq: event.seq };
     // Like the cloud-agent wake: only for a person still in the space and a bot still active
     // there. In a shared space that bot may be another member's; the turn runs as this person.
     const [member, bot] = await Promise.all([
