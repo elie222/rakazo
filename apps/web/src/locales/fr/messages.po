@@ -7190,10 +7190,6 @@ msgid "Transcript"
 msgstr "Transcription"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Transcription API key"
-msgstr "Clé API de transcription"
-
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "Modèle de transcription"
 
@@ -7204,10 +7200,6 @@ msgstr "La demande de transcription a expiré."
 #: src/lib/dictation.ts
 msgid "Transcription response is too large."
 msgstr "La réponse de transcription est trop volumineuse."
-
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Transcription server URL"
-msgstr "URL du serveur de transcription"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"

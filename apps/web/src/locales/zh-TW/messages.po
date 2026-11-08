@@ -7191,10 +7191,6 @@ msgid "Transcript"
 msgstr "文字紀錄"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Transcription API key"
-msgstr "轉錄 API 金鑰"
-
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "轉錄模型"
 
@@ -7205,10 +7201,6 @@ msgstr "轉錄請求逾時。"
 #: src/lib/dictation.ts
 msgid "Transcription response is too large."
 msgstr "轉錄回應過大。"
-
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Transcription server URL"
-msgstr "轉錄伺服器 URL"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
