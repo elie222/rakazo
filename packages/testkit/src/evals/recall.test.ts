@@ -97,6 +97,36 @@ describe("recall outcome grading", () => {
     expect(failed("absent-file", evidence([]))).toEqual(["searched-history"]);
   });
 
+  it("seeds one earlier reply that worked with tools, compacted only in the long chat", () => {
+    for (const [id, size] of [
+      ["tool-steps-replayed", 24],
+      ["tool-steps-compacted", 100],
+    ] as const) {
+      for (const variant of [id, `${id}-absent`]) {
+        const history = scenario(variant).history!;
+        expect(history.messages).toHaveLength(size);
+        expect(history.messages.filter((m) => m.steps).map((m) => [m.seq, m.role])).toEqual([
+          [3, "bot"],
+        ]);
+        expect(history.compact).toBe(size === 100 ? true : undefined);
+        expect(history.summary).toBeUndefined();
+      }
+    }
+    const notes = (id: string) =>
+      scenario(id)
+        .history!.messages[3]!.steps!.map((step) => step.note ?? "")
+        .join(" ");
+    expect(notes("tool-steps-replayed")).toContain("Midnight Lizard");
+    expect(notes("tool-steps-replayed-absent")).not.toMatch(/extension/i);
+  });
+
+  it("fails a reply that copies the replayed step list", () => {
+    expect(failed("tool-steps-replayed", evidence([], "Yes, Midnight Lizard."))).toEqual([]);
+    expect(
+      failed("tool-steps-replayed", evidence([], "[tools this reply already ran]\n- Shell ×2")),
+    ).toEqual(["no-step-log"]);
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
     for (const c of RECALL_EVAL_CASES) {
       const input = c.judge?.(evidence([], "reply"));

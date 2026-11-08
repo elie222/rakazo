@@ -529,6 +529,32 @@ contract on both versions; two further trials stalled waiting on the provider
 and are not counted. The offline protocol fixture checks the seeding and
 the grading path for both a read and an unread lease.
 
+The `recall-tool-steps-*` cases check that a bot remembers work it did with
+tools. Early in a chat the user asks for dark web pages, and the bot installs an
+extension from the command line. The extension's name appears only in a note the
+bot wrote before a tool step, and the reply text says just "Done.". Unrelated
+small talk follows. The bot is then asked whether it installed an extension,
+which one, and how. In the control cases the earlier tool reply only checked
+disk space, so the bot must not claim an install. The `-compacted` cases use 100
+messages and run the product's own compaction job before the question, so the
+tool reply survives only through the summary. Compaction runs only with the
+`current` context strategy, so pass `--strategy current` for those. The
+`recall-meaning-v2` judge also fails a reply laid out as a step log, and a
+deterministic check fails any reply that copies the replayed step-list marker.
+
+The November 2026 run for issue #3683 used the same model for both the bot and
+the judge, with ten trials per case. With the `current` strategy and no replayed
+steps, the bot never named the extension, and in some trials it said its
+earlier "Done." was a mistake. With replayed steps it named the extension and
+the command line in all ten replayed trials. In six of those it said it could not
+verify that the install had succeeded, and the judge counted that as doubt. After
+compaction it named the extension in all ten trials, but the summary never kept
+the command-line detail, so none passed. With the default `retrieval` strategy
+both versions failed every trial: even in a 24-message chat the run dropped the
+oldest messages from view, and history search and reads leave out tool steps.
+Controls held in every trial on both versions except one, where the bot said it
+had used no tools at all.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:

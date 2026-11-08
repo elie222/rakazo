@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
+import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
   MessagingTeamChatEmulator,
@@ -368,6 +368,8 @@ export async function runTrial(
             seq: m.seq,
             role: m.role,
             blocks: [
+              // A reply that used tools stores its steps ahead of its text, as live replies do.
+              ...(m.steps ? [{ kind: "steps", steps: m.steps }] : []),
               ...(m.text ? [{ kind: "text", text: m.text }] : []),
               ...(files.has(m.seq) ? [files.get(m.seq)!] : []),
               ...(m.subagentResult
@@ -447,6 +449,21 @@ export async function runTrial(
             : {}),
         },
       });
+      if (scenario.history.compact) {
+        // The product's own compaction job summarizes the oldest batch, paid like any turn's.
+        await trial.jobs.enqueue(historyCompactJob(thread.id, actors[actors.length - 1]!.userId));
+        if (!trial.awaitIdle) throw new EvalFailure("harness", "Compaction needs an idle queue");
+        await withinDeadline(trial.awaitIdle(), deadline);
+        const { historyCompactedUpToSeq } = await prisma.thread.findUniqueOrThrow({
+          where: { id: thread.id },
+          select: { historyCompactedUpToSeq: true },
+        });
+        if (historyCompactedUpToSeq === null)
+          throw new EvalFailure(
+            "harness",
+            "Seeded history was not compacted; only the current context strategy compacts",
+          );
+      }
     }
     if (scenario.taughtSkill) {
       // Human-authored fixture setup via the same API as the teaching UI; no model work is prefilled.
