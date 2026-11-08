@@ -816,7 +816,10 @@ describe("graphical computer spec", () => {
           "[begin] (Desktop)\n[exec] (Browser) {/tmp/rakazo/browser-launch-1}\n[end]\n",
         );
         writeFileSync(initPath, init);
-        const lines = generated.replaceAll("/tmp/fluxbox-home-1", fluxHome).split("\n");
+        const lines = generated
+          .replaceAll("/tmp/fluxbox-home-1", fluxHome)
+          .replaceAll("/etc/rakazo/fluxbox/menu", path.join(temp, "no-image-menu"))
+          .split("\n");
         const start = lines.indexOf(`mkdir -p ${fluxHome}/.fluxbox`);
         const end = lines.findIndex((line, index) => index > start && line === "fi");
         expect(start).toBeGreaterThanOrEqual(0);
