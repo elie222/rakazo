@@ -173,16 +173,8 @@ export async function requestMcpServerFromTool(
   if (server.allBots || assignment) {
     return { ok: true, server_id: server.id, status: "available" };
   }
-  // The settings screen's rule for offering Sign in, from the same stored OAuth state and health.
+  // The stored OAuth state for the settings screen's Sign in rule; health is read with the post.
   const oauth = await new McpOAuthBroker(deps.prisma, deps.secretStore).summaryFor(server, run);
-  const needsOAuth =
-    server.transport !== "stdio" &&
-    mcpServerNeedsSignIn({
-      enabled: server.enabled,
-      health: mcpServerHealthDto(server),
-      oauthClientId: oauth.clientId,
-      oauthStatus: oauth.status,
-    });
   // The check and the post share one transaction under a lock on this bot's thread and server,
   // so parallel requests cannot both find no card and post one each. Posting locks the thread
   // row like any other message, so it takes the same timeout and deadlock retry.
@@ -201,10 +193,20 @@ export async function requestMcpServerFromTool(
         await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ${server.id} FOR SHARE`;
         const current = await tx.mcpServer.findFirst({
           where: { id: server.id, ...availableInSpace(run), enabled: true },
-          select: { name: true, transport: true, endpoint: true, secretId: true, allBots: true },
+          select: {
+            name: true,
+            transport: true,
+            endpoint: true,
+            secretId: true,
+            allBots: true,
+            healthStatus: true,
+            healthMessage: true,
+            healthToolCount: true,
+            healthCheckedAt: true,
+          },
         });
         if (!current) return { kind: "unavailable" as const };
-        // needsOAuth was worked out from the first read; an edit to what it depends on voids it.
+        // The OAuth state was read with the first read; an edit to what it depends on voids it.
         if (
           current.transport !== server.transport ||
           current.endpoint !== server.endpoint ||
@@ -222,7 +224,16 @@ export async function requestMcpServerFromTool(
         const cards = await scanCards(tx, run, botId);
         if (cards.declined.has(server.id)) return { kind: "declined" as const };
         if (cards.open.has(server.id)) return { kind: "open" as const };
-        // Built from the locked row, so the card shows the server as it is when posted.
+        // Built from the locked row, so the card shows the server as it is when posted, and
+        // offers Sign in by the settings screen's rule.
+        const needsOAuth =
+          current.transport !== "stdio" &&
+          mcpServerNeedsSignIn({
+            enabled: true,
+            health: mcpServerHealthDto(current),
+            oauthClientId: oauth.clientId,
+            oauthStatus: oauth.status,
+          });
         const blocks: MessageBlock[] = [
           {
             kind: "mcp_approval",
@@ -244,7 +255,7 @@ export async function requestMcpServerFromTool(
           false,
           runLeaseFor(deps, run.id),
         );
-        return { kind: "posted" as const, committed };
+        return { kind: "posted" as const, committed, needsOAuth };
       },
       { ...THREAD_LOCK_TRANSACTION_OPTIONS, isolationLevel: "Serializable" },
     ),
@@ -276,7 +287,7 @@ export async function requestMcpServerFromTool(
         "An approval card for this server is already in the chat. End your turn with one short sentence asking the user to answer it there. You will be told when they connect it.",
     };
   }
-  const { committed } = outcome;
+  const { committed, needsOAuth } = outcome;
   await deps.events
     .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
     .catch((error) => {

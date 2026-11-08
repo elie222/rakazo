@@ -87,6 +87,10 @@ const pickCurrent = (row: Server) => ({
   endpoint: row.endpoint,
   secretId: row.secretId,
   allBots: row.allBots,
+  healthStatus: row.healthStatus,
+  healthMessage: row.healthMessage,
+  healthToolCount: row.healthToolCount,
+  healthCheckedAt: row.healthCheckedAt,
 });
 
 const userMessage = (value: string): Message => ({
@@ -562,6 +566,20 @@ describe("request_mcp_server", () => {
     expect(persistMessageInTransaction.mock.calls[0]?.[3]).toMatchObject([
       { kind: "mcp_approval", name: "Git (renamed)", serverId: "id-git" },
     ]);
+  });
+
+  it("offers sign-in by the server's health when posting, not when first read", async () => {
+    const { deps, prisma } = fakeDeps([server("git", { healthStatus: "ok" })]);
+    prisma.mcpServer.findFirst.mockImplementationOnce(async () => ({
+      ...pickCurrent(server("git")),
+      healthStatus: "error",
+      healthMessage: "401 Unauthorized",
+    }));
+    const out = await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
+    expect(persistMessageInTransaction.mock.calls[0]?.[3]).toMatchObject([
+      { kind: "mcp_approval", needsOAuth: true },
+    ]);
+    expect((out as { next_step: string }).next_step).toContain("authorize it");
   });
 
   it("posts no card when the server's endpoint changed after the first read", async () => {
