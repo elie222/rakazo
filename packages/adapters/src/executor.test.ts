@@ -1864,28 +1864,24 @@ describe("dockerComputerToolInstruction", () => {
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
 
-  it("maps the Docker computer environment so models skip discovery turns", () => {
-    const instruction = dockerComputerToolInstruction("docker") ?? "";
-    expect(instruction).toContain("Debian bookworm");
-    expect(instruction).toContain("user `rakazo`");
-    expect(instruction).toContain("`/home/rakazo`");
-    expect(instruction).toContain("persists across runs");
-    expect(instruction).toContain("no sudo, systemd, cron, or Docker daemon");
-    expect(instruction).toContain("cannot be installed with `apt` at runtime");
-    expect(instruction).toContain("`pip` is not installed");
-    expect(instruction).toContain("`uv run --with <package>`");
-    expect(instruction).toContain("`git`, `ssh`, `curl`, `jq`, `unzip`, ImageMagick");
-    expect(instruction).toContain("Chromium by default");
-    expect(instruction).toContain("no compiler, Node, Rust, or Java");
-    expect(instruction).toContain("no `ffmpeg` or `ripgrep`");
+  it("adds the environment map only when the shell tool is offered", () => {
+    // Tool selection can drop shell (creation intro, background helpers)
+    // while bot settings leave it enabled; those runs get no map.
+    const noShellAtSelection = dockerComputerToolInstruction(
+      "docker",
+      undefined,
+      new Set(["browser_navigate", "browser_snapshot"]),
+    );
+    expect(noShellAtSelection).not.toContain("Debian bookworm");
+    const shellOffered = dockerComputerToolInstruction(
+      "docker",
+      undefined,
+      new Set(["shell", "browser_navigate", "browser_snapshot"]),
+    );
+    expect(shellOffered).toContain("Debian bookworm");
   });
 
-  it("keeps the environment map out of runs without shell", () => {
-    const noShell = dockerComputerToolInstruction("docker", new Set(["shell"]));
-    expect(noShell).not.toContain("Debian bookworm");
-    expect(noShell).not.toContain("ImageMagick");
-    expect(noShell).not.toContain("`pip` is not installed");
-    // With every other gated tool off too, the no-shell text is the pre-map text verbatim.
+  it("keeps runs without shell byte-identical to the pre-map instruction", () => {
     expect(
       dockerComputerToolInstruction(
         "docker",

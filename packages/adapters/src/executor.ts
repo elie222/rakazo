@@ -1351,6 +1351,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const dockerToolInstruction = dockerComputerToolInstruction(
           computerKind,
           disabledBuiltinTools,
+          new Set(tools.map((tool) => tool.name)),
         );
         const hostEnvironment =
           computerKind && usesNativeShell(computerKind)
