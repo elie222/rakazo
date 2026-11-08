@@ -168,13 +168,14 @@ Docker Desktop を使ってホスト側で開発する場合は、`.env` に `SA
 
 マネージドなアプリカタログは任意です。Composio を使う場合は `COMPOSIO_API_KEY` を、Pipedream
 Connect を使う場合は `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET`、`PIPEDREAM_PROJECT_ID` の 3 つを設定します。
-どちらのマネージドカタログも有効にしなくても、ユーザーは **Integrations**（連携）から HTTPS MCP サーバー、
-Treg エンドポイント、OpenAPI JSON ドキュメントを追加できます。コネクターの認証情報はサーバー上で暗号化され、
+どちらのマネージドカタログも有効にしなくても、ユーザーは **Integrations**（連携）から HTTPS MCP サーバーや
+OpenAPI JSON ドキュメントを追加できます。コネクターの認証情報はサーバー上で暗号化され、
 API から返されることはありません。
 
-Treg は従量課金です。セルフホストする場合は自分の Treg トークンを用意します。Treg をホスト型の製品に
-組み込む運営者は [Treg の連携規約](https://treg.to/integrate.md)を確認してください。ホスト型での再販には
-書面による契約が必要です。
+有料データサービス（地図の店舗情報、検索結果、勤務先メールアドレス、プロフィール、SEO データ）も任意です。
+`PAID_SERVICES_PROVIDER=treg` と、組織用の [Treg](https://treg.to) トークンを入れた `PAID_SERVICES_API_KEY` を設定すると、
+ボットがデプロイ側のアカウントでそれらを検索して呼び出せます。モデルクレジットが有効な場合、各呼び出しは
+提供元の費用に 20% を加えた額が組織のクレジットから差し引かれます。
 
 ```bash
 docker compose --env-file .env \
