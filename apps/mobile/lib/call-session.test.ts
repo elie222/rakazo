@@ -37,6 +37,7 @@ import {
   saveSessionToken,
 } from "./session";
 import type { UiLocale } from "./ui-locale";
+import { ensureVoiceConsent } from "./voice";
 
 const device = vi.hoisted(() => ({ languageTag: "en-US", os: "ios" }));
 
@@ -61,6 +62,7 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  ensureVoiceConsent: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
@@ -102,7 +104,12 @@ vi.mock("expo-audio", () => expoAudioMock());
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
-  captureApiRequestContext: vi.fn(),
+  // The live session's context, so the production recorder's voice consent check can run.
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "https://api.test",
+    headers: {},
+    sessionGeneration: (await import("./session")).currentSessionGeneration(),
+  })),
   rpc: vi.fn(),
 }));
 vi.mock("./mobile-types", () => ({
@@ -1841,6 +1848,31 @@ describe("mobile call session on a timer", () => {
     expect(fake.closeCall).toHaveBeenCalledOnce();
   });
 
+  it("waits muted instead of recording when voice consent is refused without a greeting", async () => {
+    const fake = fakes();
+    const record = vi
+      .fn<CallDeps["record"]>()
+      .mockRejectedValueOnce(new AiConsentBlocked("voice consent denied"))
+      .mockImplementation(fake.deps.record);
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...fake.deps, record });
+    await tick();
+
+    expect(record).toHaveBeenCalledOnce();
+    expect(fake.recordings).toEqual([]);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "voice consent denied",
+    });
+    await tick(20_000);
+    expect(record).toHaveBeenCalledOnce();
+
+    toggleMute();
+    await tick();
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false });
+  });
+
   it("does not start speech again after consent refuse until the caller unmutes", async () => {
     const fake = fakes({ onDevice: true });
     fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
@@ -1948,6 +1980,8 @@ describe("mobile call recording without metering", () => {
     await vi.advanceTimersByTimeAsync(1_600);
 
     expect(transcribe).toHaveBeenCalledTimes(1);
+    // The recorder sends audio to the voice provider, so it asks before it opens.
+    expect(ensureVoiceConsent).toHaveBeenCalled();
   });
 });
 
