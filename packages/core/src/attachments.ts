@@ -181,7 +181,9 @@ export function toolStepsHistoryText(
   if (valid.length === 0) return "";
   const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
   const lines = shown.map((step) => {
-    const label = Number(step.count) > 1 ? `${step.label} ×${step.count}` : step.label;
+    const counted = Number(step.count) > 1 ? `${step.label} ×${step.count}` : step.label;
+    const outcome = toolStepOutcomeText(step);
+    const label = outcome ? `${counted} (${outcome})` : counted;
     const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
     const note =
       !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
@@ -193,6 +195,21 @@ export function toolStepsHistoryText(
   if (hidden > 0) lines.push(`- …and ${hidden} more`);
   // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
   return `[tool calls this reply made]\n${lines.join("\n")}`;
+}
+
+const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
+
+/** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
+function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
+  const outcomes = (step.outcomes ?? {}) as Partial<Record<string, unknown>>;
+  if (typeof outcomes !== "object") return "";
+  const counts = TOOL_STEP_OUTCOMES.flatMap((outcome) => {
+    const count = Number(outcomes[outcome]);
+    return Number.isInteger(count) && count > 0 ? [{ outcome, count }] : [];
+  });
+  const [only] = counts;
+  if (counts.length === 1 && only?.count === Number(step.count)) return only.outcome;
+  return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
 }
 
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {

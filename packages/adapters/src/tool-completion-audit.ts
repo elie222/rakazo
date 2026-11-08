@@ -29,6 +29,16 @@ export function toolCompletionFromResult(
   return { ...base, result, paused };
 }
 
+/** How a call ended, or undefined while it waits on an approval or answer. */
+export function toolCompletionOutcome(
+  completion: AgentToolCompletion,
+): "succeeded" | "failed" | undefined {
+  if (completion.paused) return undefined;
+  const error =
+    completion.error === undefined ? toolResultError(completion.result) : completion.error;
+  return error === undefined ? "succeeded" : "failed";
+}
+
 export function toolCompletionAuditPayload(
   completion: AgentToolCompletion,
   secrets: string[] = [],

@@ -504,6 +504,30 @@ describe("tool step history", () => {
     expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
   });
 
+  it("says how each step's calls ended, and leaves steps without outcomes as they were", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Shell", count: 2, outcomes: { succeeded: 2 }, note: "Installing it." },
+            { label: "Computer", count: 3, outcomes: { succeeded: 1, failed: 1, stopped: 1 } },
+            { label: "Read file", count: 2, outcomes: { failed: 1 } },
+            { label: "Web search", count: 1 },
+          ],
+        },
+      ]),
+    ).toBe(
+      [
+        "[tool calls this reply made]",
+        "- Shell ×2 (succeeded): Installing it.",
+        "- Computer ×3 (1 succeeded, 1 failed, 1 stopped)",
+        "- Read file ×2 (1 failed)",
+        "- Web search",
+      ].join("\n"),
+    );
+  });
+
   it("renders nothing for an empty steps block", () => {
     expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
   });
