@@ -220,6 +220,20 @@ describe("readInboundEmail", () => {
     expect(injected.authenticated).toBe(false);
   });
 
+  it("does not authenticate a subject the signature leaves out or one added on top", async () => {
+    const subjectUnsigned = await readInboundEmail(
+      bytes(await signed(message(plain), "example.test", "From:To:Cc:Date:Message-ID")),
+      { resolver },
+    );
+    const injected = await readInboundEmail(
+      bytes(`Subject: Wire the money\r\n${await signed(message(plain))}`),
+      { resolver },
+    );
+
+    expect(subjectUnsigned.authenticated).toBe(false);
+    expect(injected.authenticated).toBe(false);
+  });
+
   it("marks auto-replies and list mail as automated", async () => {
     const cases = [
       "Auto-Submitted: auto-replied",

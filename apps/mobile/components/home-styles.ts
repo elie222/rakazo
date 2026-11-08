@@ -36,15 +36,16 @@ export function createHomeStyles() {
       flexDirection: "row",
       alignItems: "center",
       padding: 2,
-      borderRadius: 22,
-      backgroundColor: native.fillPressed,
     },
-    circleButton: {
+    headerCircle: {
       width: 44,
       height: 44,
-      borderRadius: 22,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // Where Liquid Glass is unavailable.
+    headerFill: {
+      borderRadius: 22,
       backgroundColor: native.fillPressed,
     },
     headerButton: {

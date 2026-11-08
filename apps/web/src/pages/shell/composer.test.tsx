@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, BillingStatus, ThreadMessage } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import { MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
@@ -15,6 +15,11 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
+
+const billing = vi.hoisted(() => ({ status: null as BillingStatus | null }));
+vi.mock("../../components/SubscriptionGate", () => ({
+  useBilling: () => ({ status: billing.status, showPlans: () => {} }),
+}));
 
 import { readComposerRetryNonce, replaceComposerDraft } from "../../lib/composer-draft";
 import { dictation } from "../../lib/dictation";
@@ -36,6 +41,7 @@ afterEach(() => {
   root = null;
   container = null;
   localStorage.clear();
+  billing.status = null;
 });
 
 const bob: ComposerMention = { kind: "bot", id: "bot-2", name: "Bob" };
@@ -76,6 +82,7 @@ function renderComposer(
     sendError: null,
     onOpenModels: () => {},
     onOpenConnections: () => {},
+    onOpenBilling: () => {},
     runError: null,
     runErrorId: null,
     onRunErrorPresented: () => {},
@@ -168,6 +175,40 @@ it.each([
 
   rerenderComposer({ sendError: "Could not send the message." });
   expect(container?.querySelector('[data-testid="composer-error-action"]')).toBeNull();
+});
+
+it.each([
+  ["active", false, "This month's computer hours are used up.", "Upgrade"],
+  ["trialing", false, "Your trial's computer hours are used up.", "Start plan now"],
+  ["trialing", true, "Cancelled trials have no computer hours.", "Renew plan"],
+] as const)(
+  "says why computer hours ran out on a %s plan (cancelling: %s) and opens billing",
+  (state, cancelAtPeriodEnd, summary, label) => {
+    billing.status = { state, cancelAtPeriodEnd, canManage: true } as BillingStatus;
+    const onOpenBilling = vi.fn();
+    renderComposer(async () => true, {
+      runError: "No computer hours left.",
+      runErrorId: "failed-run",
+      onOpenBilling,
+    });
+    const error = container?.querySelector('[data-testid="composer-error"]');
+    expect(error?.textContent).toContain(summary);
+    const action = error?.querySelector<HTMLButtonElement>('[data-testid="composer-error-action"]');
+    expect(action?.textContent).toBe(label);
+    act(() => action?.click());
+    expect(onOpenBilling).toHaveBeenCalledOnce();
+  },
+);
+
+it("offers no billing action to a member who cannot manage the plan", () => {
+  billing.status = { state: "active", cancelAtPeriodEnd: false, canManage: false } as BillingStatus;
+  renderComposer(async () => true, {
+    runError: "No computer hours left.",
+    runErrorId: "failed-run",
+  });
+  const error = container?.querySelector('[data-testid="composer-error"]');
+  expect(error?.textContent).toContain("This month's computer hours are used up.");
+  expect(error?.querySelector('[data-testid="composer-error-action"]')).toBeNull();
 });
 
 it.each([MODEL_REQUIRED_SEND_ERROR, `  ${MODEL_REQUIRED_SEND_ERROR}  `])(

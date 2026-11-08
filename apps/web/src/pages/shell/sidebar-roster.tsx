@@ -471,7 +471,14 @@ export function SidebarRoster({
                             ) : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            {!compact ? (
+                            {item.woke ? (
+                              <span
+                                data-roster-woke
+                                className="text-label font-medium text-foreground/75"
+                              >
+                                <Trans>Woke</Trans>
+                              </span>
+                            ) : !compact ? (
                               <span
                                 data-roster-time
                                 className="text-label text-faint-foreground tabular-nums"

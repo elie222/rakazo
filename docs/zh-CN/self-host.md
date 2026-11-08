@@ -32,6 +32,8 @@ bash install-images.sh --prepare-only
 bash install-images.sh
 ```
 
+当 `RAKAZO_IMAGE_TAG` 为 `v0.8.0` 这样的发布版本时，安装脚本会从该版本而不是 `main` 下载 Compose 文件。
+
 `SANDBOX_PROVIDER` 默认为 `docker`，无需远程计算机服务账号即可使用本地 Docker 计算机。
 镜像版 Compose 会在内部网络运行沙箱监督服务，并拉取计算机镜像。
 远程计算机的选择与密钥配置见[计算机提供商（英文）](../self-host-sandbox-providers.md)。

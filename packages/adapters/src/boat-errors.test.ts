@@ -3,6 +3,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import {
   SandboxProviderAccountError,
   SandboxRateLimitError,
+  SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR } from "@rakazo/contracts";
@@ -155,6 +156,23 @@ describe("Boat API errors", () => {
     });
     const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
     expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a resume refused for lack of capacity as a computer that did not start", async () => {
+    const call = vi.fn(async () => {
+      throw new ResponseError(
+        Response.json(
+          {
+            code: "resume_failed",
+            message: "Server is currently at capacity. Please try again in a few minutes.",
+          },
+          { status: 409 },
+        ),
+      );
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnavailableError);
     expect(call).toHaveBeenCalledTimes(1);
   });
 

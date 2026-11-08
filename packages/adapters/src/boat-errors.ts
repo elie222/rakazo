@@ -3,6 +3,7 @@ import type { FetchError, ResponseError } from "@boatdev/sdk";
 import {
   SandboxProviderAccountError,
   SandboxRateLimitError,
+  SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
@@ -111,6 +112,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       // Boat's proxy reached the sandbox but gave up waiting for its answer.
       if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
+      }
+      // Boat has no room to start the machine now; a later start finds some.
+      if (wrapped.code === "resume_failed" && /\bat capacity\b/i.test(wrapped.message)) {
+        throw new SandboxUnavailableError({ cause: wrapped });
       }
       // Boat is still applying another change, such as a keep-alive; a later stop succeeds.
       if (wrapped.code === "stop_failed" && /\bis updating\b/i.test(wrapped.message)) {

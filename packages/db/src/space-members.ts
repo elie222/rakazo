@@ -612,7 +612,8 @@ async function departSpace(
           await tx.actionAutoReviewPreference.deleteMany({ where: own });
           await tx.notificationPreference.deleteMany({ where: own });
           await tx.secret.deleteMany({ where: own });
-          // Model, voice and role preferences, setting overrides and AI consents cascade from here.
+          // Model, voice and role preferences, setting overrides, AI consents and their read state
+          // in each chat cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });
           // A guest belonged only through its Spaces; a full member keeps their organization.
           await tx.member.deleteMany({

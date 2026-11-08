@@ -1,5 +1,9 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJobKey,
+  isSandboxProviderOutage,
+  SandboxAllowanceUsedError,
+} from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS } from "@rakazo/core";
@@ -596,7 +600,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         data: { status: "queued" },
       });
     } else {
-      if (error instanceof SandboxAllowanceUsedError) {
+      if (error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)) {
         getLogger().warn("computer update failed", {
           updateId,
           computerId: update.computerId,

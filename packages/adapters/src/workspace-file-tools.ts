@@ -1,4 +1,5 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
@@ -326,7 +327,8 @@ export async function renderPlotFromTool(
       error instanceof Error ? error.message : String(error),
       runSecrets,
     );
-    if (!checkingSpec) getLogger().error(`render_plot failed for bot ${botId}: ${message}`);
+    if (isSandboxProviderOutage(error)) getLogger().warn("render_plot failed", { reason: message });
+    else if (!checkingSpec) getLogger().error(`render_plot failed for bot ${botId}: ${message}`);
     return finish({
       error: message,
       hint: 'Call render_plot with {"charts": true} for runnable example specs, or {"help": true} for the full guide.',

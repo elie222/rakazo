@@ -424,10 +424,10 @@ async function memberSpaceNavigation(
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
-    repos.listSpaceBotsForSpaces(inactiveSpaceIds),
-    groupRepos.listSpaceGroupsForSpaces(inactiveSpaceIds),
+    repos.listSpaceBotsForSpaces(inactiveSpaceIds, actor.userId),
+    groupRepos.listSpaceGroupsForSpaces(inactiveSpaceIds, actor.userId),
     repos.listBotSectionsForSpaces(spaceIds),
-    createExternalConversationRepos(deps.prisma).listForSpaces(spaceIds),
+    createExternalConversationRepos(deps.prisma).listForSpaces(spaceIds, actor.userId),
     // Active-only navigation lists miss archived content in other spaces; count any
     // bot/group in the actor's spaces (including another member's) so a shared
     // non-empty space cannot look empty for onboarding redirects.
@@ -498,6 +498,7 @@ async function memberSpaceNavigation(
           pinned: bot.pinned,
           sectionId: bot.sectionId,
           unread: bot.unread,
+          snoozedUntil: bot.snoozedUntil,
           preview: bot.preview,
           status: bot.status,
           threadStatus: bot.threadStatus,
@@ -513,6 +514,7 @@ async function memberSpaceNavigation(
           members: group.members,
           preview: group.preview,
           unread: group.unread,
+          snoozedUntil: group.snoozedUntil,
           updatedAt: group.updatedAt,
         })),
         externalConversations: externalConversations.filter(

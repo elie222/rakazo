@@ -170,6 +170,12 @@ export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
 }
 
+/** Why computers ran out of hours: a trial's smaller allowance, a cancelled trial, or the plan's. */
+export function computerHoursOut(status: BillingStatus): "trial" | "cancelled_trial" | "plan" {
+  if (status.state !== "trialing") return "plan";
+  return status.cancelAtPeriodEnd ? "cancelled_trial" : "trial";
+}
+
 /** The percent a yearly own-key price saves over twelve months at `monthlyCents`. */
 export function byokYearlySavingsPercent(monthlyCents: number, annualCents: number): number {
   return Math.round((1 - annualCents / (monthlyCents * 12)) * 100);

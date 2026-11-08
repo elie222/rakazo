@@ -9,6 +9,8 @@ import {
   SHELL_STILL_RUNNING_NOTICE,
 } from "./shell-command-stream.js";
 
+const SIGN_IN = "Open https://example.com/device and enter the code ABCD-1234\n";
+
 describe("observeShellCommand", () => {
   it("redacts provider errors before they reach the runtime", async () => {
     const secret = "fake-shell-error-secret";
@@ -44,6 +46,124 @@ describe("observeShellCommand", () => {
     expect(seen).toEqual(["hello\n"]);
     expect(observed.completion).toBeUndefined();
     expect(observed.result).toEqual({ stdout: "hello\n", stderr: "", code: 0 });
+  });
+
+  it.each([
+    {
+      name: "a one-time code and its sign-in page",
+      output:
+        "! First copy your one-time code: 1A2B-3C4D\nPress Enter to open https://example.com/login/device in your browser...\n",
+      early: true,
+    },
+    {
+      name: "a sign-in page and an undashed code",
+      output:
+        "To sign in, open the page https://example.com/devicelogin and enter the code F7R6ZPVQ2 to authenticate.\n",
+      early: true,
+    },
+    {
+      name: "a code printed lines after its page",
+      output:
+        "Open the following URL:\n\nhttps://device.example.com/\n\nThen enter the code:\n\nABCD-EFGH\n",
+      early: true,
+    },
+    {
+      name: "a sign-in prompt after a long log",
+      output: `${"compiling module\n".repeat(1_000)}${SIGN_IN}`,
+      early: true,
+    },
+    {
+      name: "a code and its link on different streams",
+      code: "Enter the code ABCD-1234\n",
+      output: "Open https://example.com/device\n",
+      early: true,
+    },
+    { name: "a link alone", output: "Fetching https://api.example.com/items ...\n", early: false },
+    { name: "a code alone", output: "Your code is ABCD-1234\n", early: false },
+    {
+      name: "a link and a code-like token without the word code",
+      output: "Open https://example.com and use ABCD-1234\n",
+      early: false,
+    },
+    {
+      name: "a link and a numeric code in groups",
+      output: "Enter the one-time code 1234-5678 at https://example.com/login/device\n",
+      early: true,
+    },
+    {
+      name: "a link and a word after code",
+      output: "Fetching https://api.example.com/items\nstatus code ERROR\n",
+      early: false,
+    },
+    {
+      name: "a link and a long word after code",
+      output: "error code ECONNRESET from https://registry.example.com/x\n",
+      early: false,
+    },
+    {
+      name: "a link and a numeric exit code",
+      output: "exit code 12345678 from https://example.com\n",
+      early: false,
+    },
+    {
+      name: "a link and a short error code",
+      output: "npm error code E404 from https://registry.example.com/x\n",
+      early: false,
+    },
+  ])(
+    "returns after a short pause only for a sign-in prompt: $name",
+    async ({ code = "", output, early }) => {
+      const observed = await observeShellCommand(
+        (async function* () {
+          if (code) yield { type: "stdout" as const, data: code };
+          yield { type: "stderr" as const, data: output };
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          yield { type: "stdout" as const, data: "done\n" };
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        { secrets: [], idleMs: 20, quietMs: 1_000 },
+      );
+
+      if (early) {
+        expect(observed.result).toEqual({
+          stdout: code,
+          stderr: output,
+          code: null,
+          running: true,
+        });
+        await expect(observed.completion).resolves.toMatchObject({
+          stdout: `${code}done\n`,
+          code: 0,
+        });
+      } else {
+        expect(observed.completion).toBeUndefined();
+        expect(observed.result).toEqual({ stdout: "done\n", stderr: output, code: 0 });
+      }
+    },
+  );
+
+  it("returns other output once it stays quiet for the longer wait", async () => {
+    let releaseExit: () => void = () => undefined;
+    const exitGate = new Promise<void>((resolve) => {
+      releaseExit = resolve;
+    });
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "To authenticate, visit https://example.com/a/1\n" };
+        await exitGate;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [], idleMs: 20, quietMs: 50 },
+    );
+
+    expect(observed.result).toEqual({
+      stdout: "To authenticate, visit https://example.com/a/1\n",
+      stderr: "",
+      code: null,
+      running: true,
+    });
+    releaseExit();
+    await expect(observed.completion).resolves.toMatchObject({ code: 0 });
   });
 
   it("returns output and redacts secrets before the command exits", async () => {
@@ -95,6 +215,7 @@ describe("observeShellCommand", () => {
     const seen: string[] = [];
     const observed = await observeShellCommand(
       (async function* () {
+        yield { type: "stderr" as const, data: SIGN_IN };
         yield { type: "stdout" as const, data: "prefix super-" };
         yield { type: "stdout" as const, data: "secret-token suffix\n" };
         await exitGate;
@@ -126,7 +247,7 @@ describe("observeShellCommand", () => {
     const observed = await observeShellCommand(
       (async function* () {
         yield { type: "stdout" as const, data: "prefix super-" };
-        yield { type: "stderr" as const, data: "unrelated noise" };
+        yield { type: "stderr" as const, data: `${SIGN_IN}unrelated noise` };
         await exitGate;
         yield { type: "exit" as const, code: 0 };
       })(),
@@ -141,10 +262,10 @@ describe("observeShellCommand", () => {
 
     expect(isRunningShellCommand(observed.result)).toBe(true);
     expect(observed.result.stdout).toBe("prefix ");
-    expect(observed.result.stderr).toBe("unrelated noise");
+    expect(observed.result.stderr).toBe(`${SIGN_IN}unrelated noise`);
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((snapshot) => !snapshot.stdout.includes("super-"))).toBe(true);
-    expect(seen.some((snapshot) => snapshot.stderr === "unrelated noise")).toBe(true);
+    expect(seen.some((snapshot) => snapshot.stderr === `${SIGN_IN}unrelated noise`)).toBe(true);
     releaseExit();
     await observed.completion;
   });
@@ -156,6 +277,7 @@ describe("observeShellCommand", () => {
     });
     const observed = await observeShellCommand(
       (async function* () {
+        yield { type: "stderr" as const, data: SIGN_IN };
         yield { type: "stdout" as const, data: "prefix super-" };
         await exitGate;
         yield { type: "stdout" as const, data: "secret-token suffix\n" };
@@ -181,7 +303,7 @@ describe("observeShellCommand", () => {
     const seen: string[] = [];
     const observed = await observeShellCommand(
       (async function* () {
-        yield { type: "stdout" as const, data: "ABCDE" };
+        yield { type: "stdout" as const, data: `${SIGN_IN}ABCDE` };
         yield { type: "stderr" as const, data: "FGH" };
         await exitGate;
         yield { type: "exit" as const, code: 0 };
@@ -196,12 +318,12 @@ describe("observeShellCommand", () => {
     );
 
     expect(isRunningShellCommand(observed.result)).toBe(true);
-    expect(`${observed.result.stdout}${observed.result.stderr}`).toBe("");
+    expect(`${observed.result.stdout}${observed.result.stderr}`).toBe(SIGN_IN);
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((line) => !line.includes("ABCDE") && !line.includes("FGH"))).toBe(true);
     releaseExit();
     const final = await observed.completion;
-    expect(`${final?.stdout}${final?.stderr}`).toBe("ABCDEFGH");
+    expect(`${final?.stdout}${final?.stderr}`).toBe(`${SIGN_IN}ABCDEFGH`);
   });
 
   it("redacts a secret split across stdout and stderr before it is joined", async () => {

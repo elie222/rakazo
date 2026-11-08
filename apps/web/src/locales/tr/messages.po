@@ -547,9 +547,17 @@ msgstr "**Perşembe**\n"
 msgid "/ month"
 msgstr "/ ay"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1 saat"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 alan"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3 saat"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "{0} için işlemler"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name} için işlemler"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "İptal edildi"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "İptal edilen denemelerin bilgisayar saati yoktur."
 
@@ -2240,6 +2250,10 @@ msgstr "Alan oluşturulamadı"
 msgid "Could not create the bot"
 msgstr "Bot oluşturulamadı"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "Webhook anahtarı oluşturulamadı"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Botun oluşturulamadı"
@@ -2544,6 +2558,7 @@ msgstr "Rutin çalıştırılamadı"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "Kaydedilemedi"
@@ -2937,10 +2952,7 @@ msgid "Delete \"{0}\"?"
 msgstr "\"{0}\" silinsin mi?"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "{0} sil"
 
@@ -4762,6 +4774,10 @@ msgstr "Sonraki sayfa"
 msgid "Next settings sections"
 msgstr "Sonraki ayar bölümleri"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "Gelecek hafta"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
@@ -4999,6 +5015,10 @@ msgstr "Yalnızca {codeHost} tarafından gönderilen kodu gir."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Yalnızca ben"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "Botun webhook anahtarını yalnızca onu oluşturan kişi ayarlayabilir."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5748,6 +5768,7 @@ msgid "Rename section"
 msgstr "Bölümü yeniden adlandır"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "Planı yenile"
 
@@ -5863,6 +5884,10 @@ msgstr "Güncellemek için yeniden başlat"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "Geri yükle"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "Geri yükle: {name}"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6504,6 +6529,14 @@ msgstr "Slack etkin değil"
 msgid "Slide up to lock"
 msgstr "Kilitlemek için yukarı kaydır"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "Ertele"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "Ertelenenler"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6605,6 +6638,7 @@ msgid "Start plan"
 msgstr "Planı başlat"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "Planı şimdi başlat"
 
@@ -7034,6 +7068,10 @@ msgstr "Bu modelin bağlam penceresi çok küçük. Başka bir model seçin."
 msgid "This month"
 msgstr "Bu ay"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "Bu ayın bilgisayar saatleri tükendi."
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "Bu sayfa gösterilemedi."
@@ -7151,6 +7189,10 @@ msgstr "Kenar çubuğunu göster/gizle"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Token"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "Yarın"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7298,6 +7340,16 @@ msgstr "Sabitlemeyi kaldır"
 msgid "Unread"
 msgstr "Okunmamış"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "Ertelemeyi kaldır"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "Ertelemeyi kaldır: {0}"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7356,6 +7408,7 @@ msgstr "Takım Bilgisayarı güncelleniyor"
 msgid "Updating…"
 msgstr "Güncelleniyor…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7677,6 +7730,10 @@ msgstr "Bu sayfayı kimler açabilir"
 msgid "Who can start it"
 msgstr "Kimler başlatabilir"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "Uyandı"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "Yapılmayacak"
@@ -7837,6 +7894,10 @@ msgstr "Denemeniz biter ve kartınızdan bugün {price} çekilir."
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "Denemeniz biter ve kartınızdan bugün ödeme alınır."
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "Deneme sürenin bilgisayar saatleri tükendi."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

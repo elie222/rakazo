@@ -547,9 +547,17 @@ msgstr "**星期四**\n"
 msgid "/ month"
 msgstr "/ 月"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1 小时"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3 小时"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "{0} 的操作"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name} 的操作"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "已取消"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "已取消的试用没有电脑时长。"
 
@@ -2240,6 +2250,10 @@ msgstr "无法创建工作区"
 msgid "Could not create the bot"
 msgstr "无法创建 Bot"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "无法创建 Webhook 密钥"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "无法创建你的 Bot"
@@ -2544,6 +2558,7 @@ msgstr "无法运行例行任务"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "无法保存"
@@ -2937,10 +2952,7 @@ msgid "Delete \"{0}\"?"
 msgstr "删除“{0}”？"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "删除 {0}"
 
@@ -4762,6 +4774,10 @@ msgstr "下一页"
 msgid "Next settings sections"
 msgstr "下一组设置项"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "下周"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "没有匹配的应用。"
@@ -4999,6 +5015,10 @@ msgstr "仅输入 {codeHost} 发给你的验证码。"
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "仅我"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "只有 Bot 的创建者才能设置它的 Webhook 密钥。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5748,6 +5768,7 @@ msgid "Rename section"
 msgstr "重命名分组"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "续订方案"
 
@@ -5863,6 +5884,10 @@ msgstr "重启后更新"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "恢复"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "恢复 {name}"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6504,6 +6529,14 @@ msgstr "未启用 Slack"
 msgid "Slide up to lock"
 msgstr "上滑锁定"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "延后"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "已延后"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6605,6 +6638,7 @@ msgid "Start plan"
 msgstr "开始套餐"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "立即开始套餐"
 
@@ -7034,6 +7068,10 @@ msgstr "此模型的上下文窗口太小。请选择其他模型。"
 msgid "This month"
 msgstr "本月"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "本月的电脑时长已用完。"
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "无法显示此页面。"
@@ -7151,6 +7189,10 @@ msgstr "显示或隐藏侧边栏"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Token"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "明天"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7298,6 +7340,16 @@ msgstr "取消置顶"
 msgid "Unread"
 msgstr "未读"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "取消延后"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "取消延后 {0}"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7356,6 +7408,7 @@ msgstr "正在更新团队电脑"
 msgid "Updating…"
 msgstr "正在更新…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7677,6 +7730,10 @@ msgstr "谁可以打开此页面"
 msgid "Who can start it"
 msgstr "谁可以启动"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "已唤醒"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "不做"
@@ -7837,6 +7894,10 @@ msgstr "试用将结束，今天将从你的卡中扣款 {price}。"
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "试用将结束，今天将从你的卡中扣款。"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "试用期的电脑时长已用完。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
