@@ -115,6 +115,16 @@ export type EvalCase = {
   };
   grade: (evidence: Evidence) => Criterion[];
   judge?: (evidence: Evidence) => JudgeInput;
+  /**
+   * Behaviour recorded on every trial without deciding it: a boolean is read directly, and a
+   * judge input is graded by meaning, its pass meaning the behaviour is present.
+   */
+  observe?: (evidence: Evidence) => Record<string, boolean | JudgeInput>;
+  /**
+   * No outcome needs a command to run, so a failure after the bot chose to run one (which the
+   * offline sandbox refuses) is the bot's, not the harness's.
+   */
+  shellUnneeded?: true;
 };
 /** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
 export const wakesRoutines = (scenario: EvalCase) =>

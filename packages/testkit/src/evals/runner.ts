@@ -153,6 +153,7 @@ export async function runTrial(
     if (!db) return;
     const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     for (const row of usage)
       seenUsage.set(row.id, {
@@ -1062,8 +1063,36 @@ export async function runTrial(
     result.category = result.status === "passed" ? null : "agent";
     result.reason = result.status === "passed" ? null : "Outcome criteria failed";
     if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
+      if (scenario.shellUnneeded)
+        result.reason = `Outcome criteria failed after the bot chose a command the case does not need: ${handles.harnessIssues.join(" ")}`;
+      else {
+        result.category = "harness";
+        result.reason = handles.harnessIssues.join(" ");
+      }
+    }
+    if (scenario.observe) {
+      const observations: NonNullable<TrialResult["observations"]> = {};
+      for (const [key, value] of Object.entries(scenario.observe(evidence))) {
+        if (typeof value === "boolean") {
+          observations[key] = { present: value };
+          continue;
+        }
+        try {
+          if (!options.judge) throw new Error("no judge");
+          const judgment = await withinDeadline(
+            options.judge(value, AbortSignal.timeout(Math.max(1, deadline - Date.now()))),
+            deadline,
+          );
+          observations[key] = { present: judgment.pass, reason: redact(judgment.reason, secrets) };
+        } catch (error) {
+          // An ungraded behaviour is unknown, never counted as absent.
+          observations[key] = {
+            present: null,
+            reason: `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
+          };
+        }
+      }
+      result.observations = observations;
     }
   } catch (error) {
     result.status = "failed";
@@ -1121,6 +1150,9 @@ export async function runTrial(
                 },
               }),
               summaryPresent: !!state.historyCompactionSummary?.trim(),
+              ...(scenario.history?.compact
+                ? { summary: redact(state.historyCompactionSummary ?? "", secrets) || null }
+                : {}),
               generation: state.historyCompactionGeneration,
             };
         }
