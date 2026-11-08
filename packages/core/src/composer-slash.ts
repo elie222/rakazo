@@ -1,11 +1,5 @@
-import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
-import { AgentSkillCatalogEntrySchema } from "@rakazo/contracts";
 import type { ComposerMentionBinding } from "./composer-mention-bindings.js";
-import {
-  bindComposerMention,
-  composerPromptSkill,
-  updateComposerMentionBindings,
-} from "./composer-mention-bindings.js";
+import { updateComposerMentionBindings } from "./composer-mention-bindings.js";
 import type { ComposerMentionQuery, ComposerMentionRange } from "./composer-mentions.js";
 
 export const SLASH_ACTIONS = [
@@ -16,13 +10,8 @@ export const SLASH_ACTIONS = [
 
 export type SlashActionId = (typeof SLASH_ACTIONS)[number]["id"];
 
-/** Keep inline mentions and skills in the draft; the message's skill also adds a prefix. */
-export function serializeComposerPrompt(
-  draft: string,
-  chip: { name: string } | null,
-  bindings: readonly ComposerMentionBinding[] = [],
-): string {
-  const skill = composerPromptSkill(chip, bindings);
+/** Keep inline mentions in the draft; only a selected skill adds a prefix. */
+export function serializeComposerPrompt(draft: string, skill: { name: string } | null): string {
   const body = draft.replace(/^\s+/, "");
   if (!skill) return body.trimEnd();
   return body.trim().length > 0 ? `/${skill.name}\n${body}` : `/${skill.name}`;
@@ -40,7 +29,7 @@ export function truncateSlashDescription(value: string, max = 72): string {
 
 /**
  * The `/query` before a collapsed caret: a `/` at the start or after whitespace on the caret's
- * line, so paths and URLs never open the menu, and never one inside bound text (a picked skill).
+ * line, so paths and URLs never open the menu, and never one inside a picked mention.
  * Mid-message a non-space must follow the `/`, so "yes / no" and "is it 1 /" stay prose. With only
  * whitespace before the `/`, the query starts at 0, since that is the start of the sent message.
  */
@@ -70,7 +59,7 @@ export function composerSlashQuery(
 export function composerSlashOptions<S extends { name: string; description: string }>(
   query: ComposerMentionQuery,
   skills: readonly S[],
-  actionLabel: (action: (typeof SLASH_ACTIONS)[number]) => string = (action) => action.label,
+  actionLabel: (action: (typeof SLASH_ACTIONS)[number]) => string,
 ) {
   const needle = query.query.trim().toLowerCase();
   const matches = (value: string) => value.toLowerCase().includes(needle);
@@ -87,34 +76,19 @@ export function composerSlashOptions<S extends { name: string; description: stri
   };
 }
 
-/** A saved draft's skill chip, or null when the stored value is not a skill. */
-export function validateComposerDraftSkill(value: unknown): AgentSkillCatalogEntry | null {
-  const parsed = AgentSkillCatalogEntrySchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
-/** The draft without its `/query`, keeping the text and mentions around it. */
+/** The draft without its `/query` and one space that would double up, keeping the words and mentions around it. */
 export function removeComposerSlashQuery(
   text: string,
   query: ComposerMentionQuery,
   bindings: readonly ComposerMentionBinding[],
 ) {
-  const next = text.slice(0, query.start) + text.slice(query.end);
+  const spaced =
+    text[query.end] === " " && (query.start === 0 || /\s/.test(text[query.start - 1]!));
+  const removed = { start: query.start, end: query.end + (spaced ? 1 : 0) };
+  const next = text.slice(0, removed.start) + text.slice(removed.end);
   return {
     text: next,
-    bindings: updateComposerMentionBindings(text, next, bindings, { before: [query] }),
+    bindings: updateComposerMentionBindings(text, next, bindings, { before: [removed] }),
     caret: query.start,
   };
-}
-
-/** A skill picked at the start of the draft becomes the chip; anywhere else it goes inline. */
-export function pickComposerSlashSkill<S extends { id: string; name: string }>(
-  text: string,
-  query: ComposerMentionQuery,
-  skill: S,
-  bindings: readonly ComposerMentionBinding[],
-): { chip: S | null; text: string; bindings: ComposerMentionBinding[]; caret: number } {
-  if (query.start === 0) return { chip: skill, ...removeComposerSlashQuery(text, query, bindings) };
-  const mention = { kind: "skill" as const, id: skill.id, name: skill.name };
-  return { chip: null, ...bindComposerMention(text, query, mention, bindings) };
 }

@@ -6,7 +6,6 @@ import type {
 import {
   COMPOSER_MENTION_KINDS,
   completeComposerMention,
-  composerMentionToken,
   mentionChipKey,
 } from "./composer-mentions.js";
 
@@ -24,7 +23,7 @@ function validBinding(text: string, binding: ComposerMentionBinding): boolean {
     binding.start >= 0 &&
     binding.end <= text.length &&
     binding.end > binding.start &&
-    text.slice(binding.start, binding.end) === composerMentionToken(binding.mention) &&
+    text.slice(binding.start, binding.end) === `@${binding.mention.name}` &&
     !/[\p{L}\p{N}_-]$/u.test(text.slice(0, binding.start)) &&
     !/^[\p{L}\p{N}_-]/u.test(text.slice(binding.end))
   );
@@ -179,32 +178,22 @@ export function bindComposerMention(
   };
 }
 
-/** An inline skill travels as the message's skill prefix, never as a mention or routing target. */
 export function composerSelectedMentions(
   bindings: readonly ComposerMentionBinding[],
 ): ComposerMention[] {
   const selected = new Map<string, ComposerMention>();
   for (const binding of bindings)
-    if (binding.mention.kind !== "skill" && !selected.has(mentionChipKey(binding.mention)))
+    if (!selected.has(mentionChipKey(binding.mention)))
       selected.set(mentionChipKey(binding.mention), binding.mention);
   return [...selected.values()];
-}
-
-/** The message's one skill: the chip, else a skill picked inline, which sends the same prefix. */
-export function composerPromptSkill<T extends { name: string }>(
-  skill: T | null,
-  bindings: readonly ComposerMentionBinding[],
-): T | ComposerMention | null {
-  return skill ?? bindings.find((binding) => binding.mention.kind === "skill")?.mention ?? null;
 }
 
 /** Only action tokens need prompt offsets; bot routing remains deduplicated metadata. */
 export function composerMentionsForPrompt(
   draft: string,
-  chip: { name: string } | null,
+  skill: { name: string } | null,
   bindings: readonly ComposerMentionBinding[],
 ): ComposerMention[] {
-  const skill = composerPromptSkill(chip, bindings);
   const offset = (skill ? skill.name.length + 2 : 0) - (draft.length - draft.trimStart().length);
   return composerSelectedMentions(bindings).map((mention) => {
     if (mention.kind === "bot" || mention.kind === "everyone") return mention;

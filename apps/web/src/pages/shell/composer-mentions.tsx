@@ -114,20 +114,13 @@ export function ComposerMentionHighlights({
                 : undefined
             }
           >
-            {/* The "/" is too narrow for an icon, so a skill keeps its slash. */}
-            {mention.kind === "skill" ? (
-              segment.text
-            ) : (
-              <>
-                <span className="relative text-transparent">
-                  @
-                  <span className="absolute inset-0 grid place-items-center">
-                    <MentionCardIcon mention={mention} />
-                  </span>
-                </span>
-                {segment.text.slice(1)}
-              </>
-            )}
+            <span className="relative text-transparent">
+              @
+              <span className="absolute inset-0 grid place-items-center">
+                <MentionCardIcon mention={mention} />
+              </span>
+            </span>
+            {segment.text.slice(1)}
           </span>
         );
       })}

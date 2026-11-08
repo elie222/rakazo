@@ -103,37 +103,7 @@ it("keeps drafts in documents, not the cache", () => {
   expect(writeComposerDraft(scope, "Draft text", [])).toBe(true);
   expect(files.has(draftPath("document"))).toBe(true);
   expect(files.has(draftPath("cache"))).toBe(false);
-  expect(readComposerDraft(scope)).toEqual({ text: "Draft text", bindings: [], skill: null });
-});
-
-it("keeps the draft's skill chip and drops a malformed one", () => {
-  const skill = {
-    id: "skill-1",
-    name: "Writing",
-    description: "",
-    source: "user" as const,
-    readOnly: false,
-  };
-  expect(writeComposerDraft(scope, "the notes", [], skill)).toBe(true);
-  expect(readComposerDraft(scope)).toEqual({ text: "the notes", bindings: [], skill });
-  files.set(draftPath("document"), JSON.stringify({ version: 1, text: "the notes", skill: {} }));
-  expect(readComposerDraft(scope)).toEqual({ text: "the notes", bindings: [], skill: null });
-});
-
-it("saves an empty-body skill draft and deletes it when the skill is cleared", () => {
-  const skill = {
-    id: "s1",
-    name: "Writing",
-    description: "",
-    source: "user" as const,
-    readOnly: false,
-  };
-  expect(writeComposerDraft(scope, "", [], skill)).toBe(true);
-  expect(readComposerDraft(scope)).toEqual({ text: "", bindings: [], skill });
-  expect(files.has(draftPath("document"))).toBe(true);
-  expect(writeComposerDraft(scope, "", [])).toBe(true);
-  expect(readComposerDraft(scope)).toEqual({ text: "", bindings: [], skill: null });
-  expect(files.has(draftPath("document"))).toBe(false);
+  expect(readComposerDraft(scope)).toEqual({ text: "Draft text", bindings: [] });
 });
 
 it("moves a draft left in the cache into documents before reading it", () => {

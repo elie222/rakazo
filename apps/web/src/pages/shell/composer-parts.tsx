@@ -113,7 +113,7 @@ export function MentionPicker({
   );
 }
 
-/** The leading-`/` list: skills to attach, then actions to run. */
+/** The `/` list: skills to attach, then actions to run. */
 export function SlashPicker({
   listboxId,
   activeIndex,

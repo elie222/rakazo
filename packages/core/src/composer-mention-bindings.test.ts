@@ -5,7 +5,6 @@ import {
   composerMentionDeletionRange,
   composerMentionSegments,
   composerMentionsForPrompt,
-  composerPromptSkill,
   composerSelectedMentions,
   resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
@@ -222,68 +221,6 @@ describe("completed mention occurrence bindings", () => {
     ).toEqual(bindings);
     expect(validateComposerMentionBindings("changed", bindings)).toEqual([]);
     expect(validateComposerMentionBindings(text, { name: "Bob" })).toEqual([]);
-  });
-});
-
-describe("inline skill bindings", () => {
-  const weekly: ComposerMention = { kind: "skill", id: "skill-1", name: "Weekly Review" };
-
-  it("binds a skill as `/Name` that renders and restores like a mention but never routes", () => {
-    const draft = "@Bob please run /week";
-    const bound = bindComposerMention(draft, { start: 16, end: 21, query: "week" }, weekly, [
-      bindings[0]!,
-    ]);
-    expect(bound.text).toBe("@Bob please run /Weekly Review ");
-    expect(bound.caret).toBe(31);
-    const skillBinding = { start: 16, end: 30, mention: weekly };
-    expect(bound.bindings).toEqual([bindings[0], skillBinding]);
-    expect(composerMentionSegments(bound.text, bound.bindings).map((part) => part.text)).toEqual([
-      "@Bob",
-      " please run ",
-      "/Weekly Review",
-      " ",
-    ]);
-    expect(composerSelectedMentions(bound.bindings)).toEqual([bot]);
-    expect(composerMentionsForPrompt(bound.text, null, bound.bindings)).toEqual([bot]);
-    expect(composerMentionQuery(bound.text, 25, 25, [bot], bound.bindings)).toBeNull();
-    expect(
-      validateComposerMentionBindings(bound.text, JSON.parse(JSON.stringify(bound.bindings))),
-    ).toEqual(bound.bindings);
-    expect(
-      validateComposerMentionBindings("please run @Weekly Review", [
-        { start: 11, end: 25, mention: weekly },
-      ]),
-    ).toEqual([]);
-    expect(
-      resolveComposerMentionEdit(bound.text, "@Bob please run /Weekly Revie ", bound.bindings, {
-        before: [{ start: 30, end: 30 }],
-        after: { start: 29, end: 29 },
-      }),
-    ).toEqual({ text: "@Bob please run  ", bindings: [bindings[0]], caret: 16 });
-  });
-
-  it("sends an inline skill as the forced prefix and keeps later action ranges on their text", () => {
-    const daily: ComposerMention = { kind: "routine", id: "routine-1", name: "Daily" };
-    const draft = " run /Weekly Review then @Daily";
-    const bound: ComposerMentionBinding[] = [
-      { start: 5, end: 19, mention: weekly },
-      { start: 25, end: 31, mention: daily },
-    ];
-    expect(composerPromptSkill(null, bound)).toEqual(weekly);
-    const chip = { name: "Summarize" };
-    expect(composerPromptSkill(chip, bound)).toBe(chip);
-    expect(composerPromptSkill(null, [bindings[0]!])).toBeNull();
-    const prompt = serializeComposerPrompt(draft, null, bound);
-    expect(prompt).toBe("/Weekly Review\nrun /Weekly Review then @Daily");
-    const mentions = composerMentionsForPrompt(draft, null, bound);
-    expect(mentions).toEqual([{ ...daily, ranges: [{ start: 39, end: 45 }] }]);
-    expect(prompt.slice(39, 45)).toBe("@Daily");
-    expect(
-      resolveComposerSendPlan({ text: prompt, mentions, hasAttachments: false }),
-    ).toMatchObject({
-      trimmed: "/Weekly Review\nrun /Weekly Review then",
-      routineIds: ["routine-1"],
-    });
   });
 });
 

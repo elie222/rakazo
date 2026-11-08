@@ -14,13 +14,11 @@ import {
   composerMentionQuery,
   composerMentionSegments,
   composerMentionsForPrompt,
-  composerPromptSkill,
   composerSelectedMentions,
   composerSlashOptions,
   composerSlashQuery,
   filterComposerMentionTargets,
   mentionChipKey,
-  pickComposerSlashSkill,
   removeComposerSlashQuery,
   resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
@@ -95,7 +93,7 @@ type ThreadComposerProps = {
   stop: () => Promise<void>;
   startVoiceCall: () => Promise<void>;
   onSlashAction: (action: SlashActionId) => void;
-  /** The composer holds no text or skill: the last of it was deleted or sent. */
+  /** The composer holds no text: the last of it was deleted or sent. */
   onEmptied?: () => void;
 };
 
@@ -156,7 +154,7 @@ export function ThreadComposer({
     bindingsRef.current = next;
     setMentionBindings(next);
   }
-  const [selectedSkill, setSelectedSkill] = useState(saved.skill);
+  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
@@ -168,16 +166,15 @@ export function ThreadComposer({
   }
   useEffect(() => {
     if (!draftScope) return;
-    pendingSave.current = () =>
-      writeComposerDraft(draftScope, draft, mentionBindings, selectedSkill);
+    pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
     clearTimeout(saveTimer.current);
-    // Save an empty body right away too, retaining its chip or clearing a sent draft.
+    // An emptied composer, such as after a send, forgets the draft right away.
     if (!draft) flushDraftSave();
     else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
-  }, [draftScope, draft, mentionBindings, selectedSkill]);
+  }, [draftScope, draft, mentionBindings]);
   useEffect(() => {
-    if (!draft && !selectedSkill) onEmptied?.();
-  }, [draft, selectedSkill, onEmptied]);
+    if (!draft) onEmptied?.();
+  }, [draft, onEmptied]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") flushDraftSave();
@@ -189,7 +186,7 @@ export function ThreadComposer({
   }, []);
   useImperativeHandle(ref, () => ({
     snapshot: () => ({
-      promptText: serializeComposerPrompt(draft, selectedSkill, mentionBindings),
+      promptText: serializeComposerPrompt(draft, selectedSkill),
       mentions: composerMentionsForPrompt(draft, selectedSkill, mentionBindings),
       skill: selectedSkill,
       replyTargetId,
@@ -243,12 +240,9 @@ export function ThreadComposer({
       ? composerSlashOptions(slashQuery, agentSkills, (action) => t(action.label))
       : { skills: [], actions: [] };
   function updatePickerQueries(value: string, start: number, end = start) {
-    // One skill per message: a chosen skill, chip or inline, keeps the slash menu closed.
-    const bindings = bindingsRef.current;
+    // One skill per message: a chosen skill keeps the slash menu closed.
     setSlashQuery(
-      composerPromptSkill(selectedSkill, bindings)
-        ? null
-        : composerSlashQuery(value, start, end, bindings),
+      selectedSkill ? null : composerSlashQuery(value, start, end, bindingsRef.current),
     );
     // A mention selected by a backspace is waiting to be deleted, not re-picked.
     if (selectedMentionRef.current !== null) {
@@ -338,39 +332,32 @@ export function ThreadComposer({
     completedSelection.current = next.caret;
     setSelection(nativeSelection.current);
     setMentionQuery(null);
-    setSlashQuery(null);
     inputRef.current?.focus();
   }
 
-  function insertSkill(skill: AgentSkillCatalogEntry) {
-    if (!slashQuery) return;
-    const pick = pickComposerSlashSkill(draftRef.current, slashQuery, skill, bindingsRef.current);
-    if (pick.chip) setSelectedSkill(pick.chip);
-    applySlashPick(pick, pick.chip === null);
-  }
-
-  function runSlashAction(action: SlashActionId) {
-    if (!slashQuery) return;
-    applySlashPick(removeComposerSlashQuery(draftRef.current, slashQuery, bindingsRef.current));
-    onSlashAction(action);
-  }
-
-  /** An inline pick completes like a mention; a removed query leaves the caret where it was. */
-  function applySlashPick(
-    next: { text: string; bindings: ComposerMentionBinding[]; caret: number },
-    inline = false,
-  ) {
+  /** Takes the `/query` out of the draft, keeping the words and mentions around it. */
+  function removeSlashQuery(): boolean {
+    if (!slashQuery) return false;
+    const next = removeComposerSlashQuery(draftRef.current, slashQuery, bindingsRef.current);
     draftRef.current = next.text;
     setDraft(next.text);
     nativeSelection.current = { start: next.caret, end: next.caret };
-    completedSelection.current = inline ? next.caret : null;
+    completedSelection.current = null;
     setSelection(nativeSelection.current);
     updateBindings(next.bindings);
     selectMention(null);
-    selectionHistory.current = inline ? [nativeSelection.current] : [];
+    selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
-    if (inline) inputRef.current?.focus();
+    return true;
+  }
+
+  function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (removeSlashQuery()) setSelectedSkill(skill);
+  }
+
+  function runSlashAction(action: SlashActionId) {
+    if (removeSlashQuery()) onSlashAction(action);
   }
 
   const composerPillStyle = {

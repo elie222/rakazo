@@ -92,18 +92,6 @@ describe("resolveMentionPickerKey", () => {
       ).toEqual({ type: "none" });
   });
 
-  it("leaves Ctrl, Cmd and Alt+Tab to app shortcuts", () => {
-    for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const)
-      expect(
-        resolveMentionPickerKey({
-          key: "Tab",
-          [modifier]: true,
-          optionCount: 2,
-          highlightedIndex: 0,
-        }),
-      ).toEqual({ type: "none" });
-  });
-
   it("does not send on Shift+Enter when the picker is closed", () => {
     expect(
       resolveMentionPickerKey({

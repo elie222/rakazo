@@ -10,26 +10,27 @@ import {
   bindComposerMention,
   clampMentionHighlightIndex,
   composerMentionQuery,
-  composerPromptSkill,
   composerSlashOptions,
   composerSlashQuery,
   mentionChipKey,
-  pickComposerSlashSkill,
   removeComposerSlashQuery,
 } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useId, useMemo, useState } from "react";
+import { slashActionLabel } from "./composer-mentions";
 
-/** Mention and slash editing decisions; the composer owns persisted draft state. */
+type Composition = { text: string; bindings: ComposerMentionBinding[] };
+
+/**
+ * What typing `@` or `/` opens in the composer: the mention list, the slash list of skills and
+ * actions, and the skill a slash pick attaches to the message.
+ */
 export function useComposerTriggers({
   draft,
   mentionBindings,
   selectedMentions,
   mentionTargets,
   agentSkills,
-  selectedSkill,
-  selectedSkillRef,
-  setSelectedSkill,
   getField,
   pendingCaret,
   markEdited,
@@ -42,19 +43,14 @@ export function useComposerTriggers({
   selectedMentions: ComposerMention[];
   mentionTargets?: ComposerMention[];
   agentSkills?: AgentSkillCatalogEntry[];
-  selectedSkill: AgentSkillCatalogEntry | null;
-  selectedSkillRef: RefObject<AgentSkillCatalogEntry | null>;
-  setSelectedSkill: (skill: AgentSkillCatalogEntry | null, persist?: boolean) => void;
+  /** Read when a mention is picked, for the caret it completes at. */
   getField: () => HTMLTextAreaElement | null;
   pendingCaret: RefObject<ComposerMentionRange | null>;
   markEdited: () => void;
-  commitComposition: (next: { text: string; bindings: ComposerMentionBinding[] }) => void;
+  commitComposition: (next: Composition) => void;
   onSlashOpen?: () => void;
   onSlashAction?: (action: SlashActionId) => void;
 }) {
-  const knownMentions = [...(mentionTargets ?? []), ...selectedMentions];
-  const mentionListboxId = useId();
-  const slashListboxId = useId();
   const [mentionQuery, setMentionQuery] = useState<string | null>(
     () =>
       composerMentionQuery(draft, draft.length, draft.length, mentionTargets, mentionBindings)
@@ -63,10 +59,14 @@ export function useComposerTriggers({
   const [mentionHighlightKey, setMentionHighlightKey] = useState<string | null>(null);
   // The range is kept, so a pick edits the query that opened the menu wherever the caret is now.
   const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(() =>
-    composerPromptSkill(selectedSkill, mentionBindings)
-      ? null
-      : composerSlashQuery(draft, draft.length, draft.length, mentionBindings),
+    composerSlashQuery(draft, draft.length, draft.length, mentionBindings),
   );
+  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
+  const mentionListboxId = useId();
+  const slashListboxId = useId();
+
+  const knownMentions = [...(mentionTargets ?? []), ...selectedMentions];
+
   function updatePickers(
     value: string,
     caret: number,
@@ -85,11 +85,10 @@ export function useComposerTriggers({
     end: number,
     bindings: typeof mentionBindings,
   ) {
-    // One skill per message: a chosen skill, chip or inline, keeps the menu closed.
-    const next = composerPromptSkill(selectedSkillRef.current, bindings)
-      ? null
-      : composerSlashQuery(value, start, end, bindings);
-    if (next !== null && slashQuery === null) onSlashOpen?.();
+    // One skill per message: a chosen skill keeps the menu closed.
+    const next = selectedSkill ? null : composerSlashQuery(value, start, end, bindings);
+    // Only a menu opened at the start refreshes skills, so a path typed mid-sentence never refetches.
+    if (next?.start === 0 && slashQuery === null) onSlashOpen?.();
     setSlashQuery(next);
   }
 
@@ -113,29 +112,28 @@ export function useComposerTriggers({
     pendingCaret.current = { start: completion.caret, end: completion.caret };
   }
 
-  function insertSkill(skill: AgentSkillCatalogEntry) {
-    if (!slashQuery) return;
-    markEdited();
-    setSlashQuery(null);
-    const pick = pickComposerSlashSkill(draft, slashQuery, skill, mentionBindings);
-    if (pick.chip) setSelectedSkill(pick.chip);
-    commitComposition({ text: pick.text, bindings: pick.bindings });
-    pendingCaret.current = { start: pick.caret, end: pick.caret };
-  }
-
-  function runSlashAction(action: SlashActionId) {
-    if (!slashQuery) return;
+  /** Takes the `/query` out of the draft, keeping the words and mentions around it. */
+  function removeSlashQuery(): boolean {
+    if (!slashQuery) return false;
     markEdited();
     const removed = removeComposerSlashQuery(draft, slashQuery, mentionBindings);
     commitComposition({ text: removed.text, bindings: removed.bindings });
     setSlashQuery(null);
     pendingCaret.current = { start: removed.caret, end: removed.caret };
-    onSlashAction?.(action);
+    return true;
+  }
+
+  function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (removeSlashQuery()) setSelectedSkill(skill);
+  }
+
+  function runSlashAction(action: SlashActionId) {
+    if (removeSlashQuery()) onSlashAction?.(action);
   }
 
   function removeSkill() {
     markEdited();
-    setSelectedSkill(null, true);
+    setSelectedSkill(null);
   }
 
   const mentionOptions = useMemo(() => {
@@ -163,7 +161,9 @@ export function useComposerTriggers({
     () =>
       slashQuery === null
         ? { skills: [], actions: [] }
-        : composerSlashOptions(slashQuery, agentSkills ?? []),
+        : composerSlashOptions(slashQuery, agentSkills ?? [], (action) =>
+            slashActionLabel(action.id),
+          ),
     [agentSkills, slashQuery],
   );
 
@@ -201,6 +201,8 @@ export function useComposerTriggers({
     setMentionQuery,
     setMentionHighlightKey,
     setSlashQuery,
+    selectedSkill,
+    setSelectedSkill,
     updatePickers,
     updateSlashQuery,
     insertMention,

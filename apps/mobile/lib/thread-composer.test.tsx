@@ -1175,7 +1175,7 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
-  it("offers skills only mid-message and puts a picked one inline without wiping the draft", () => {
+  it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {
     const picker = () => container.querySelector('[data-testid="slash-picker"]');
     type("Hello @He");
     press("@{name}");
@@ -1187,24 +1187,21 @@ describe("thread composer isolation", () => {
     select(5);
     expect(picker()).toBeNull();
     type("Hello @Helper ");
-    type("Hello @Helper run /Wri");
+    type("Hello @Helper run /Wri now");
+    select(22);
     press("Skill {name}");
-    expect(field().value).toBe("Hello @Helper run /Writing ");
-    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper", "/Writing"]);
-    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 27, end: 27 });
-    expect(container.querySelector('[data-testid="skill-chip"]')).toBeNull();
+    expect(field().value).toBe("Hello @Helper run now");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 18, end: 18 });
     // One skill per message: another / offers nothing once the draft has one.
-    type("Hello @Helper run /Writing now /");
+    type("Hello @Helper run now /W");
     expect(picker()).toBeNull();
-    type("Hello @Helper run /Writing now");
+    type("Hello @Helper run now");
     expect(composer.current!.snapshot()).toMatchObject({
-      promptText: "/Writing\nHello @Helper run /Writing now",
+      promptText: "/Writing\nHello @Helper run now",
       mentions: [bot],
-      skill: null,
+      skill,
     });
-    render({ threadKey: "bot-2" });
-    render();
-    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper", "/Writing"]);
   });
 
   it("turns a skill picked at the start of a longer draft into the chip, keeping the rest", () => {
@@ -1218,62 +1215,8 @@ describe("thread composer isolation", () => {
       promptText: "/Writing\nHello @Helper ",
       mentions: [bot],
     });
-    expect(field().value).toBe(" Hello @Helper ");
+    expect(field().value).toBe("Hello @Helper ");
     expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
-  });
-
-  it.each([false, true])(
-    "restores a skill-only draft after reopening (delete body: %s)",
-    (deleteBody) => {
-      render({ agentSkills: [{ ...skill, name: "summarize" }] });
-      type("/sum");
-      press("Skill {name}");
-      if (deleteBody) {
-        type("notes");
-        type("");
-      }
-      render({ threadKey: "bot-2" });
-      render();
-      expect(field().value).toBe("");
-      expect(composer.current!.snapshot()).toMatchObject({
-        skill: { ...skill, name: "summarize" },
-        promptText: "/summarize",
-      });
-      act(() => composer.current!.reset());
-      render({ threadKey: "bot-2" });
-      render();
-      expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "" });
-    },
-  );
-
-  it("keeps a skill chip picked before more text when the conversation is reopened", () => {
-    type("/Wri the notes");
-    select(4);
-    press("Skill {name}");
-    render({ threadKey: "bot-2" });
-    render();
-    expect(field().value).toBe(" the notes");
-    expect(composer.current!.snapshot()).toMatchObject({
-      skill,
-      promptText: "/Writing\nthe notes",
-    });
-    press("Remove skill {name}");
-    render({ threadKey: "bot-2" });
-    render();
-    expect(composer.current!.snapshot()).toMatchObject({ skill: null, promptText: "the notes" });
-  });
-
-  it("does not report a skill-only composer as emptied when its body is deleted", () => {
-    const onEmptied = vi.fn();
-    render({ onEmptied });
-    type("/Wri");
-    press("Skill {name}");
-    type("notes");
-    onEmptied.mockClear();
-    type("");
-    expect(onEmptied).not.toHaveBeenCalled();
-    press("Remove skill {name}");
-    expect(onEmptied).toHaveBeenCalledOnce();
   });
 
   it("takes the chip after a blank line and keeps the text after the caret", () => {

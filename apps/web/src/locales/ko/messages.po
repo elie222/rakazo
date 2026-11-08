@@ -1799,7 +1799,6 @@ msgid "Command"
 msgstr "실행 명령"
 
 #: src/pages/shell/command-palette.tsx
-#: src/pages/shell/composer-parts.tsx
 #: src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "명령 메뉴"
