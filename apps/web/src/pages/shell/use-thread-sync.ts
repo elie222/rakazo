@@ -155,6 +155,24 @@ export function useThreadSync({
     scheduleTranscriptSnapToEnd(() => messageScroll.current, stickToEnd);
   }
 
+  /** Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages. */
+  function snapAfterRefresh(
+    snap: ThreadSnapshot,
+    stickToEnd: boolean,
+    scrollElement: HTMLElement | null,
+  ) {
+    if (expandedHistoryThread.current !== snap.threadId) {
+      const element = messageScroll.current;
+      const stillStick =
+        stickToEnd &&
+        (!scrollElement ||
+          !element ||
+          transcriptIsNearEnd(scrollElement) ||
+          transcriptIsNearEnd(element));
+      snapTranscriptToEndAfterFrame(stillStick);
+    }
+  }
+
   async function refreshGroupThread(id: string, signal?: AbortSignal) {
     const scrollElement = messageScroll.current;
     const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
@@ -174,17 +192,7 @@ export function useThreadSync({
     if (!computerOpenRef.current) commitComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
-    // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
-    if (expandedHistoryThread.current !== snap.threadId) {
-      const element = messageScroll.current;
-      const stillStick =
-        stickToEnd &&
-        (!scrollElement ||
-          !element ||
-          transcriptIsNearEnd(scrollElement) ||
-          transcriptIsNearEnd(element));
-      snapTranscriptToEndAfterFrame(stillStick);
-    }
+    snapAfterRefresh(snap, stickToEnd, scrollElement);
     return snap;
   }
 
@@ -215,16 +223,7 @@ export function useThreadSync({
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
-    if (expandedHistoryThread.current !== snap.threadId) {
-      const element = messageScroll.current;
-      const stillStick =
-        stickToEnd &&
-        (!scrollElement ||
-          !element ||
-          transcriptIsNearEnd(scrollElement) ||
-          transcriptIsNearEnd(element));
-      snapTranscriptToEndAfterFrame(stillStick);
-    }
+    snapAfterRefresh(snap, stickToEnd, scrollElement);
     void Promise.all([
       // Runs after routine changes too, so an older read in flight is not reused.
       fetchFresh(queryClient, queries.routines.list.queryOptions({ input: { botId: id } })).catch(
