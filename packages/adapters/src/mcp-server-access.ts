@@ -2,7 +2,11 @@ import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import { mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { isOpenMcpApproval, MCP_APPROVAL_CARD_WINDOW } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { availableInSpace } from "@rakazo/db";
+import {
+  availableInSpace,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -184,29 +188,32 @@ export async function requestMcpServerFromTool(
     },
   ];
   // The check and the post share one transaction under a lock on this bot's thread and server,
-  // so parallel requests cannot both find no card and post one each.
-  const outcome = await deps.prisma.$transaction(async (tx) => {
-    await advisoryLock(
-      tx,
-      "mcp-approval-request",
-      `${run.threadId}:${botId}:${server.id}`,
-      "joined",
-    );
-    const cards = await scanCards(tx, run, botId);
-    if (cards.declined.has(server.id)) return { kind: "declined" as const };
-    if (cards.open.has(server.id)) return { kind: "open" as const };
-    const committed = await persistMessageInTransaction(
-      tx,
-      run,
-      "bot",
-      blocks,
-      undefined,
-      undefined,
-      false,
-      runLeaseFor(deps, run.id),
-    );
-    return { kind: "posted" as const, committed };
-  });
+  // so parallel requests cannot both find no card and post one each. Posting locks the thread
+  // row like any other message, so it takes the same timeout and deadlock retry.
+  const outcome = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      await advisoryLock(
+        tx,
+        "mcp-approval-request",
+        `${run.threadId}:${botId}:${server.id}`,
+        "joined",
+      );
+      const cards = await scanCards(tx, run, botId);
+      if (cards.declined.has(server.id)) return { kind: "declined" as const };
+      if (cards.open.has(server.id)) return { kind: "open" as const };
+      const committed = await persistMessageInTransaction(
+        tx,
+        run,
+        "bot",
+        blocks,
+        undefined,
+        undefined,
+        false,
+        runLeaseFor(deps, run.id),
+      );
+      return { kind: "posted" as const, committed };
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
   if (outcome.kind === "declined") {
     return {
       ok: true,
