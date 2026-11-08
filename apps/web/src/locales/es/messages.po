@@ -241,6 +241,10 @@ msgstr "{name} pregunta"
 msgid "{name} asked: {text}"
 msgstr "{name} pregunta: {text}"
 
+#: src/pages/NeedsYou.tsx
+msgid "{name} failed"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -250,6 +254,26 @@ msgstr "{name} falló"
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
 msgstr "{name} terminó"
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} is behind schedule"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs a sign-in"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs an answer"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs approval"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs the screen"
+msgstr ""
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "{name} options"
@@ -1197,6 +1221,7 @@ msgstr "Estudio de avatares"
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -2119,6 +2144,10 @@ msgstr "No se pudo agregar el servidor MCP"
 msgid "Could not add skills"
 msgstr "No se pudieron agregar las habilidades"
 
+#: src/pages/NeedsYou.tsx
+msgid "Could not answer this card."
+msgstr ""
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Could not approve plugin"
 msgstr "No se pudo aprobar el plugin"
@@ -2415,6 +2444,10 @@ msgstr "No se pudo cargar este archivo."
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "No se pudo cargar la configuración de voz"
+
+#: src/pages/NeedsYou.tsx
+msgid "Could not load what needs you."
+msgstr ""
 
 #: src/lib/sign-out.ts
 msgid "Could not log out. Try again."
@@ -3441,6 +3474,7 @@ msgstr "fallido"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 msgid "Failed"
 msgstr "Falló"
 
@@ -3984,6 +4018,10 @@ msgstr "Sus bots y grupos se conservan y salen de la sección."
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Su conversación, archivos y rutinas se eliminarán de forma permanente. Los bots que creó permanecerán en tu lista."
 
+#: src/pages/NeedsYou.tsx
+msgid "Its next scheduled run is overdue."
+msgstr ""
+
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "Su enlace compartido dejará de funcionar y sus tarjetas en el chat aparecerán como eliminadas. No se puede deshacer."
@@ -4162,6 +4200,7 @@ msgstr "Cargando proveedores de voz…"
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Invite.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4638,8 +4677,10 @@ msgid "Needs takeover"
 msgstr "Necesita toma de control"
 
 #: src/lib/roster-status.ts
+#: src/pages/NeedsYou.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Needs you"
 msgstr "Te necesita"
 
@@ -4921,6 +4962,10 @@ msgstr "Rakazo no lo usa"
 msgid "Not working"
 msgstr "No funciona"
 
+#: src/pages/NeedsYou.tsx
+msgid "Nothing needs you"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "Aún no hay recuerdos"
@@ -5023,6 +5068,10 @@ msgstr "Abre <0>{0}</0> e introduce este código:"
 msgid "Open call"
 msgstr "Abrir llamada"
 
+#: src/pages/NeedsYou.tsx
+msgid "Open chat"
+msgstr ""
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Open chat with {0}"
@@ -5039,6 +5088,10 @@ msgstr "¿Abrir enlace externo?"
 #: src/pages/shell/computer-panel.tsx
 msgid "Open in full window"
 msgstr "Abrir en ventana completa"
+
+#: src/pages/NeedsYou.tsx
+msgid "Open its computer to continue."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Open link"
@@ -5587,6 +5640,10 @@ msgstr "Actualizar créditos"
 msgid "Refresh view"
 msgstr "Actualizar vista"
 
+#: src/pages/NeedsYou.tsx
+msgid "Refreshing"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "Actualizando…"
@@ -5935,6 +5992,10 @@ msgstr "Rutina"
 msgid "Routines"
 msgstr "Rutinas"
 
+#: src/pages/NeedsYou.tsx
+msgid "Routines behind"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr "Rutinas que se ejecutan mientras no estás"
@@ -6061,6 +6122,7 @@ msgstr "Guardando..."
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
@@ -6857,6 +6919,10 @@ msgstr "Puede que el propietario haya desactivado el enlace o la haya eliminado.
 msgid "The provider is rate-limiting requests."
 msgstr "El proveedor está limitando la frecuencia de las solicitudes."
 
+#: src/pages/NeedsYou.tsx
+msgid "The run stopped before it finished."
+msgstr ""
+
 #: src/lib/computer-screen.ts
 msgid "The screen connection closed."
 msgstr "La conexión con la pantalla se cerró."
@@ -7202,6 +7268,7 @@ msgstr "Sitios de confianza"
 #: src/components/pages/PageNotice.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
@@ -7506,6 +7573,10 @@ msgstr "Espera un momento y vuelve a probar."
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "Esperando en la cola…"
+
+#: src/pages/NeedsYou.tsx
+msgid "Waiting on you"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

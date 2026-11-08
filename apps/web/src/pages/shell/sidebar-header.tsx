@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
+import { Bell, Inbox, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import { IconTooltip } from "../../components/IconTooltip";
 import { desktopBridge } from "../../lib/desktop";
 import type { Panel } from "../../lib/right-panel-state";
@@ -14,6 +14,8 @@ export function SidebarHeader({
   setCreateMenuOpen,
   activityMode,
   toggleActivityMode,
+  attentionCount,
+  onOpenNeedsYou,
   searchOpen = false,
   onSearch,
   setBotsSidebarCollapsedPref,
@@ -29,6 +31,8 @@ export function SidebarHeader({
   setCreateMenuOpen: (open: boolean) => void;
   activityMode: boolean;
   toggleActivityMode: () => void;
+  attentionCount: number;
+  onOpenNeedsYou: () => void;
   searchOpen?: boolean;
   onSearch?: () => void;
   setBotsSidebarCollapsedPref: (collapsed: boolean) => void;
@@ -80,6 +84,26 @@ export function SidebarHeader({
               fill={activityMode ? "currentColor" : "none"}
               aria-hidden="true"
             />
+          </Button>
+        </IconTooltip>
+        <IconTooltip label={t`Needs you`}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Needs you`}
+            data-testid="needs-you-trigger"
+            onClick={onOpenNeedsYou}
+            className="app-no-drag relative text-muted-foreground"
+          >
+            <Inbox size={15} strokeWidth={1.8} aria-hidden="true" />
+            {attentionCount > 0 ? (
+              <span
+                aria-hidden="true"
+                className="absolute -end-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-0.5 text-[9px] font-medium leading-4 text-primary-foreground"
+              >
+                {attentionCount > 99 ? "99+" : attentionCount}
+              </span>
+            ) : null}
           </Button>
         </IconTooltip>
         <IconTooltip label={toggleLabel}>

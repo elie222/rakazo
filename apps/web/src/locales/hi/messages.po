@@ -241,6 +241,10 @@ msgstr "{name} का अनुरोध"
 msgid "{name} asked: {text}"
 msgstr "{name} का अनुरोध: {text}"
 
+#: src/pages/NeedsYou.tsx
+msgid "{name} failed"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -250,6 +254,26 @@ msgstr "{name} विफल रहा"
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
 msgstr "{name} पूरा हुआ"
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} is behind schedule"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs a sign-in"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs an answer"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs approval"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs the screen"
+msgstr ""
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "{name} options"
@@ -1197,6 +1221,7 @@ msgstr "अवतार स्टूडियो"
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -2119,6 +2144,10 @@ msgstr "MCP सर्वर जोड़ा नहीं जा सका"
 msgid "Could not add skills"
 msgstr ""
 
+#: src/pages/NeedsYou.tsx
+msgid "Could not answer this card."
+msgstr ""
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Could not approve plugin"
 msgstr ""
@@ -2415,6 +2444,10 @@ msgstr "यह फ़ाइल लोड नहीं हो सकी।"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "आवाज़ सेटिंग्स लोड नहीं हो सकीं"
+
+#: src/pages/NeedsYou.tsx
+msgid "Could not load what needs you."
+msgstr ""
 
 #: src/lib/sign-out.ts
 msgid "Could not log out. Try again."
@@ -3441,6 +3474,7 @@ msgstr "असफल"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 msgid "Failed"
 msgstr "विफल"
 
@@ -3984,6 +4018,10 @@ msgstr "इसके बॉट और समूह बने रहेंगे 
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "इसकी बातचीत, फ़ाइलें और रूटीन स्थायी रूप से डिलीट कर दिए जाएंगे। इसके बनाए बॉट आपकी सूची में बने रहेंगे।"
 
+#: src/pages/NeedsYou.tsx
+msgid "Its next scheduled run is overdue."
+msgstr ""
+
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "इसका शेयर किया गया लिंक काम करना बंद कर देगा और चैट में इसके कार्ड हटाए गए दिखेंगे। इसे पूर्ववत नहीं किया जा सकता।"
@@ -4162,6 +4200,7 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Invite.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4638,8 +4677,10 @@ msgid "Needs takeover"
 msgstr "नियंत्रण लेना ज़रूरी"
 
 #: src/lib/roster-status.ts
+#: src/pages/NeedsYou.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Needs you"
 msgstr ""
 
@@ -4921,6 +4962,10 @@ msgstr "Rakazo इसका उपयोग नहीं करता"
 msgid "Not working"
 msgstr "काम नहीं कर रहा"
 
+#: src/pages/NeedsYou.tsx
+msgid "Nothing needs you"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "अभी तक कुछ याद नहीं किया गया"
@@ -5023,6 +5068,10 @@ msgstr ""
 msgid "Open call"
 msgstr "कॉल खोलें"
 
+#: src/pages/NeedsYou.tsx
+msgid "Open chat"
+msgstr ""
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Open chat with {0}"
@@ -5039,6 +5088,10 @@ msgstr "बाहरी लिंक खोलें?"
 #: src/pages/shell/computer-panel.tsx
 msgid "Open in full window"
 msgstr "पूरी विंडो में खोलें"
+
+#: src/pages/NeedsYou.tsx
+msgid "Open its computer to continue."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Open link"
@@ -5587,6 +5640,10 @@ msgstr ""
 msgid "Refresh view"
 msgstr ""
 
+#: src/pages/NeedsYou.tsx
+msgid "Refreshing"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr ""
@@ -5935,6 +5992,10 @@ msgstr "रूटीन"
 msgid "Routines"
 msgstr "रूटीन्स"
 
+#: src/pages/NeedsYou.tsx
+msgid "Routines behind"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr ""
@@ -6061,6 +6122,7 @@ msgstr ""
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
@@ -6857,6 +6919,10 @@ msgstr "हो सकता है मालिक ने इसका लिं
 msgid "The provider is rate-limiting requests."
 msgstr "प्रोवाइडर अनुरोधों की दर सीमित कर रहा है।"
 
+#: src/pages/NeedsYou.tsx
+msgid "The run stopped before it finished."
+msgstr ""
+
 #: src/lib/computer-screen.ts
 msgid "The screen connection closed."
 msgstr "स्क्रीन का कनेक्शन बंद हो गया।"
@@ -7202,6 +7268,7 @@ msgstr "विश्वसनीय साइटें"
 #: src/components/pages/PageNotice.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
@@ -7506,6 +7573,10 @@ msgstr "थोड़ी देर रुकें और फिर से पर
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "कतार में प्रतीक्षा…"
+
+#: src/pages/NeedsYou.tsx
+msgid "Waiting on you"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"

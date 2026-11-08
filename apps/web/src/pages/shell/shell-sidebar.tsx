@@ -9,6 +9,7 @@ import {
   InputGroupInput,
   Sidebar,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -19,7 +20,7 @@ import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import { switchOrganization, useOrganizations } from "../../lib/organizations";
-import { useQueryUserId } from "../../lib/query";
+import { useQueryUserId, useSpaceQueries } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
@@ -100,6 +101,13 @@ export function ShellSidebar({
   openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const attention = useQuery({
+    ...queries.attention.list.queryOptions(),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+  const attentionCount = attention.data?.items.length ?? 0;
   const {
     query,
     setQuery,
@@ -156,6 +164,11 @@ export function ShellSidebar({
           toggleActivityMode={() => {
             if (mini) setCollapsedPref(false);
             toggleActivityMode();
+          }}
+          attentionCount={attentionCount}
+          onOpenNeedsYou={() => {
+            setMobileOpen(false);
+            navigate("/app/needs");
           }}
           searchOpen={searchOpen && !mini}
           onSearch={() => {

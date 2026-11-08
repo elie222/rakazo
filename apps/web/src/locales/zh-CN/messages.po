@@ -241,6 +241,10 @@ msgstr "{name} 问"
 msgid "{name} asked: {text}"
 msgstr "{name} 问：{text}"
 
+#: src/pages/NeedsYou.tsx
+msgid "{name} failed"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -250,6 +254,26 @@ msgstr "{name} 失败"
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
 msgstr "{name} 已完成"
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} is behind schedule"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs a sign-in"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs an answer"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs approval"
+msgstr ""
+
+#: src/pages/NeedsYou.tsx
+msgid "{name} needs the screen"
+msgstr ""
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "{name} options"
@@ -1197,6 +1221,7 @@ msgstr "头像工作室"
 #: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -2119,6 +2144,10 @@ msgstr "无法添加 MCP 服务器"
 msgid "Could not add skills"
 msgstr "无法添加技能"
 
+#: src/pages/NeedsYou.tsx
+msgid "Could not answer this card."
+msgstr ""
+
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Could not approve plugin"
 msgstr "无法批准插件"
@@ -2415,6 +2444,10 @@ msgstr "无法加载此文件。"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "无法加载语音设置"
+
+#: src/pages/NeedsYou.tsx
+msgid "Could not load what needs you."
+msgstr ""
 
 #: src/lib/sign-out.ts
 msgid "Could not log out. Try again."
@@ -3441,6 +3474,7 @@ msgstr "失败"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 msgid "Failed"
 msgstr "失败"
 
@@ -3984,6 +4018,10 @@ msgstr "其中的 Bot 和群组会保留，并移出该分组。"
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "它的对话、文件和例行任务将被永久删除。它创建的 Bot 仍留在列表中。"
 
+#: src/pages/NeedsYou.tsx
+msgid "Its next scheduled run is overdue."
+msgstr ""
+
 #: src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
 msgstr "其共享链接将失效，聊天中的卡片会显示为已删除。此操作无法撤销。"
@@ -4162,6 +4200,7 @@ msgstr "正在加载语音提供方…"
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Invite.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4638,8 +4677,10 @@ msgid "Needs takeover"
 msgstr "需要接管"
 
 #: src/lib/roster-status.ts
+#: src/pages/NeedsYou.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Needs you"
 msgstr "需要接管"
 
@@ -4921,6 +4962,10 @@ msgstr "Rakazo 不使用"
 msgid "Not working"
 msgstr "无法正常工作"
 
+#: src/pages/NeedsYou.tsx
+msgid "Nothing needs you"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "暂无记忆"
@@ -5023,6 +5068,10 @@ msgstr "打开 <0>{0}</0>，输入这个验证码："
 msgid "Open call"
 msgstr "打开通话"
 
+#: src/pages/NeedsYou.tsx
+msgid "Open chat"
+msgstr ""
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Open chat with {0}"
@@ -5039,6 +5088,10 @@ msgstr "打开外部链接？"
 #: src/pages/shell/computer-panel.tsx
 msgid "Open in full window"
 msgstr "在完整窗口中打开"
+
+#: src/pages/NeedsYou.tsx
+msgid "Open its computer to continue."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Open link"
@@ -5587,6 +5640,10 @@ msgstr "刷新额度"
 msgid "Refresh view"
 msgstr "刷新画面"
 
+#: src/pages/NeedsYou.tsx
+msgid "Refreshing"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "正在刷新…"
@@ -5935,6 +5992,10 @@ msgstr "例行任务"
 msgid "Routines"
 msgstr "例行任务"
 
+#: src/pages/NeedsYou.tsx
+msgid "Routines behind"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr "你不在时也会运行的例行任务"
@@ -6061,6 +6122,7 @@ msgstr "正在保存…"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
@@ -6857,6 +6919,10 @@ msgstr "所有者可能已关闭其链接或删除了它。"
 msgid "The provider is rate-limiting requests."
 msgstr "提供方正在限制请求频率。"
 
+#: src/pages/NeedsYou.tsx
+msgid "The run stopped before it finished."
+msgstr ""
+
 #: src/lib/computer-screen.ts
 msgid "The screen connection closed."
 msgstr "屏幕连接已关闭。"
@@ -7202,6 +7268,7 @@ msgstr "受信任的网站"
 #: src/components/pages/PageNotice.tsx
 #: src/components/pages/PagesList.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/NeedsYou.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/SharedPage.tsx
 #: src/pages/SpaceSearch.tsx
@@ -7506,6 +7573,10 @@ msgstr "请稍候并重新测试。"
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "排队等候…"
+
+#: src/pages/NeedsYou.tsx
+msgid "Waiting on you"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
