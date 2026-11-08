@@ -4,6 +4,7 @@ import type {
   ComputerStatus,
   Group,
   Me,
+  MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
   Space,
@@ -141,10 +142,15 @@ export function prependMobileMessagePage(
 ): MobileSnapshot | null {
   return prependThreadHistoryPage(prev, page);
 }
+/** The owner's email that started the bot: its subject over its words. */
+export function emailText(block: Extract<MessageBlock, { kind: "email" }>): string {
+  return [block.subject ? `✉︎ ${block.subject}` : "", block.text.trim()].filter(Boolean).join("\n");
+}
 export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return channelMessageLine(block);
+      if (block.kind === "email") return emailText(block);
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {

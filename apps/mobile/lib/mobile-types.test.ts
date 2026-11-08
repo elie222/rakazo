@@ -228,6 +228,23 @@ describe("mobile thread event reduction", () => {
     );
   });
 
+  it("shows the owner's email by its subject and words", () => {
+    expect(
+      blockText(
+        mobileMessage("email-1", [
+          {
+            kind: "email",
+            emailId: "email-1",
+            from: "Owner <owner@example.test>",
+            to: ["bot@bots.example.test"],
+            subject: "Weekly plan",
+            text: "Send me the plan.\n",
+          },
+        ]),
+      ),
+    ).toBe("✉︎ Weekly plan\nSend me the plan.");
+  });
+
   it("formats channel messages with their platform attribution", () => {
     expect(
       blockText(

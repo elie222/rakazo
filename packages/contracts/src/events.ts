@@ -377,6 +377,24 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     hop: z.number().int().positive().optional(),
   }),
   z.object({
+    /**
+     * The owner's own email that started the bot, shown as the email it is. The model reads it
+     * in the owner-email frame (`ownerEmailPrompt`), never as a plain chat line.
+     */
+    kind: z.literal("email"),
+    emailId: Id,
+    from: z.string(),
+    to: z.array(z.string()),
+    cc: z.array(z.string()).optional(),
+    subject: z.string(),
+    date: z.string().optional(),
+    text: z.string(),
+    files: z
+      .array(z.object({ name: z.string(), mimeType: z.string(), size: z.number() }))
+      .optional(),
+    unavailable: z.array(z.string()).optional(),
+  }),
+  z.object({
     /** A group-chat message delivered into a member bot's own thread. */
     kind: z.literal("channel_message"),
     provider: z.string(),

@@ -8,6 +8,7 @@ import {
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { ownerEmailPrompt } from "./prompt-data.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -240,6 +241,8 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
       if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
       if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
+      // Read back in the frame it arrived in: forwarded or quoted text stays data.
+      if (block.kind === "email") return ownerEmailPrompt(block);
       if (block.kind === "handoff") {
         return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
       }

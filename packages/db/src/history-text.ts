@@ -20,6 +20,7 @@ function conversationText(block: MessageBlock): string[] {
   return [
     "text",
     "channel_message",
+    "email",
     "bot_message_received",
     "bot_message_sent",
     "handoff",

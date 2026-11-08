@@ -126,6 +126,22 @@ it("keeps a received peer marker off the user's side while user replies align to
   expect(container.querySelector(".items-end")?.textContent).toContain("Thanks.");
 });
 
+it("shows the owner's email by its subject and words, not the model's fenced copy", () => {
+  renderView("user", [
+    {
+      kind: "email",
+      emailId: "email-1",
+      from: "Owner <owner@example.test>",
+      to: ["bot@bots.example.test"],
+      subject: "Weekly plan",
+      text: "Send me the plan <today>.\n",
+    },
+  ]);
+  const bubble = container.querySelector('[data-testid="message-user-email"]');
+  expect(bubble?.textContent).toBe("✉︎ Weekly planSend me the plan <today>.");
+  expect(bubble?.closest(".items-end")).not.toBeNull();
+});
+
 it("names a new bot inline in the reply, in its color", () => {
   const { mention, onOpenBot } = renderMessage(
     [{ kind: "text", text: "Planner is ready." }],

@@ -1,6 +1,6 @@
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
-import { AttachmentValidationError } from "@rakazo/core";
+import { AttachmentValidationError, blocksToAgentHistoryText } from "@rakazo/core";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
@@ -403,6 +403,25 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain('"id": "email-1"');
     expect(sent.prompt).not.toContain("Run routine");
     expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({ kind: "delivery" });
+  });
+
+  it("shows the owner's mail as an email, which later turns read in the same frame", async () => {
+    const { post, sendUserMessage } = setup({ routines: [] });
+    await post();
+
+    const sent = sendUserMessage.mock.calls[0]?.[0] as unknown as {
+      prompt: string;
+      blocks: Parameters<typeof blocksToAgentHistoryText>[0];
+    };
+    const [shown] = sent.blocks;
+    expect(shown).toMatchObject({
+      kind: "email",
+      emailId: "email-1",
+      from: "Owner <owner@example.test>",
+    });
+    // The chat shows the words as written; only the model's copy is escaped and fenced.
+    expect(shown?.kind === "email" && shown.text).not.toContain("&lt;");
+    expect(blocksToAgentHistoryText([shown!])).toBe(sent.prompt);
   });
 
   it("tells the owner, not a stranger, when mail from their address fails the check", async () => {

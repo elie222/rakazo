@@ -157,6 +157,8 @@ function replyBlockText(block: MessageBlock): string {
     case "bot_message_sent":
     case "bot_message_received":
       return block.text;
+    case "email":
+      return [block.subject, block.text].join("\n");
     case "choice":
       return block.question;
     case "card":
