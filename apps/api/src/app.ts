@@ -523,7 +523,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
               headers,
             )
         : undefined,
-    extraOrigins: MOBILE_AUTH_ORIGINS,
+    extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
       // Billing cancels inside, after the account's spaces are claimed and before anything is
@@ -1135,16 +1135,24 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
 export function isTrustedOrigin(
   origin: string,
-  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">,
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
 ) {
   if (!origin) return true;
   if (origin.startsWith("rakazo://")) return true;
   return new Set(trustedRequestOrigins(env)).has(origin);
 }
 
-export function trustedRequestOrigins(env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">) {
+export function trustedRequestOrigins(
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
+) {
   return buildTrustedOrigins({
-    origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    origins: [
+      env.webOrigin,
+      env.apiUrl,
+      env.authUrl,
+      ...MOBILE_AUTH_ORIGINS,
+      ...(env.extraAuthOrigins ?? []),
+    ],
     requestOrigins: true,
   });
 }
