@@ -1,4 +1,5 @@
 import {
+  computerScreenSize,
   computerSupportsTerminal,
   computerSupportsUpdate,
   DISK_WARNING_PERCENT,
@@ -6,7 +7,7 @@ import {
   holdsUserControl,
 } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 /** Mirrors computer.takeover: an execution lease blocks user control unless a takeover is pending. */
