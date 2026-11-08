@@ -167,4 +167,11 @@ describe("extra auth origins", () => {
       isTrustedOrigin("https://other.tailnet.ts.net", { ...env, extraAuthOrigins: [extra] }),
     ).toBe(false);
   });
+
+  it("trusts a loopback extra exactly, not its twins", () => {
+    const withExtra = { ...env, extraAuthOrigins: ["http://localhost:6000"] };
+    expect(isTrustedOrigin("http://localhost:6000", withExtra)).toBe(true);
+    expect(isTrustedOrigin("http://127.0.0.1:6000", withExtra)).toBe(false);
+    expect(isTrustedOrigin("http://[::1]:6000", withExtra)).toBe(false);
+  });
 });

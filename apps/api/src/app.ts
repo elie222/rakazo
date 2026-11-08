@@ -1146,13 +1146,9 @@ export function trustedRequestOrigins(
   env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl"> & { extraAuthOrigins?: string[] },
 ) {
   return buildTrustedOrigins({
-    origins: [
-      env.webOrigin,
-      env.apiUrl,
-      env.authUrl,
-      ...MOBILE_AUTH_ORIGINS,
-      ...(env.extraAuthOrigins ?? []),
-    ],
+    origins: [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS],
+    // Exactly as configured, like Better Auth's extraOrigins: no loopback twins.
+    extraOrigins: env.extraAuthOrigins,
     requestOrigins: true,
   });
 }
