@@ -1,12 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { BOT_EMAIL_NAME_TAKEN, BotEmailNameSchema } from "@rakazo/contracts";
 import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
-import {
-  claimBotEmailName,
-  contentEncryptionOf,
-  releaseBotEmailSend,
-  reserveBotEmailSend,
-} from "@rakazo/db";
+import { claimBotEmailName, contentEncryptionOf, reserveBotEmailSend } from "@rakazo/db";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
@@ -224,7 +219,7 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   }
   const { deps, bot, run } = ctx;
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
-  // Only mail it received: what the bot sent counts toward the daily sending limit.
+  // Only mail it received: the bot's own sent mail stays as its record of what went out.
   const { count } = await deps.prisma.botEmailMessage.deleteMany({
     where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
   });
@@ -420,8 +415,8 @@ async function sendEmail(ctx: RunContext, call: ToolCall) {
     });
   } catch (error) {
     await deps.prisma.botEmailMessage.delete({ where: { id: row.id } }).catch(() => undefined);
-    await releaseBotEmailSend(deps.prisma, reserved.id).catch(() => undefined);
-    // Most failures are refusals, but one can come after the provider took the email.
+    // Most failures are refusals, but one can come after the provider took the email, so the
+    // reserved send keeps counting toward the daily limits either way.
     return call.finish({
       error: `Sending failed (${error instanceof Error ? error.message : String(error)}). It most likely did not go out.`,
     });

@@ -587,13 +587,7 @@ describe("send_email", () => {
       ...Array.from({ length: options.ownerSentToday ?? 0 }, () => ({ id: "old", botId: "bot-2" })),
     ];
     const botEmailSend = {
-      deleteMany: async ({ where }: { where: { id?: string } }) => {
-        if (where.id)
-          sends.splice(
-            sends.findIndex((row) => row.id === where.id),
-            1,
-          );
-      },
+      deleteMany: async () => ({ count: 0 }),
       findMany: async () => [...sends],
       create: async ({ data }: { data: { botId: string } }) => {
         const row = { id: `send-${sends.length + 1}`, botId: data.botId };
@@ -718,7 +712,7 @@ describe("send_email", () => {
     );
   });
 
-  it("never sends an interrupted call again, and frees the slot of one that failed", async () => {
+  it("never sends an interrupted call again, and still counts one that failed", async () => {
     const retried = sendRun();
     await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" });
     // Only an attempt that never finished reaches the tool again; the gate replays the rest.
@@ -732,7 +726,7 @@ describe("send_email", () => {
       error: "Sending failed (domain not verified). It most likely did not go out.",
     });
     expect(failing.saved).toEqual([]);
-    expect(failing.sends).toEqual([]);
+    expect(failing.sends).toEqual([{ id: "send-1", botId: "bot-1" }]);
   });
 
   it("keeps a follow-up to the bot's own email in that thread", async () => {

@@ -31,8 +31,3 @@ export function reserveBotEmailSend(
     }),
   );
 }
-
-/** Give back a reserved send that did not go out. */
-export async function releaseBotEmailSend(prisma: PrismaClient, id: string): Promise<void> {
-  await runAsSystem(REASON, () => prisma.botEmailSend.deleteMany({ where: { id } }));
-}

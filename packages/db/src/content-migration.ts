@@ -334,7 +334,9 @@ export async function contentEncryptionStatus(
     SELECT 'threads', count(*) FILTER (WHERE "historyCompactionSummary" IS NOT NULL),
       count(*) FILTER (WHERE "historyCompactionSummary" NOT LIKE 'rkz1:%') FROM threads
     UNION ALL
-    SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE text NOT LIKE 'rkz1:%') FROM bot_email_messages
+    SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
+      AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))
+      FROM bot_email_messages
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { releaseBotEmailSend, reserveBotEmailSend } from "./bot-email-sends.js";
+import { reserveBotEmailSend } from "./bot-email-sends.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { asSystem, runAsTenant } from "./row-security.js";
@@ -44,9 +44,5 @@ describePostgres("bot email send limits (PostgreSQL)", () => {
     const second = await Promise.all(Array.from({ length: 8 }, () => reserve("bot-b", "space-b")));
     expect(second.filter((result) => typeof result === "object")).toHaveLength(2);
     expect(await reserve("bot-c", "space-c")).toBe("owner");
-
-    const sent = second.find((result) => typeof result === "object");
-    await releaseBotEmailSend(prisma, (sent as { id: string }).id);
-    expect(await reserve("bot-c", "space-c")).toEqual({ id: expect.any(String) });
   });
 });

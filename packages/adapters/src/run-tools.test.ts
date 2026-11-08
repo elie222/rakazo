@@ -94,32 +94,35 @@ describe("dispatchTool audit outcomes", () => {
     );
   });
 
-  it("refuses a catalog call that resolves to a local tool's name", async () => {
-    const execute = vi.fn();
-    const resolveCall = vi.fn(async () => ({
-      tool: { name: "message_agent", route: { connectorId: "remote" } },
-      call: { tool: "message_agent", args: { message: "hi" }, executionId: "call-1" },
-    }));
-    const base = dispatchContext(false);
-    const ctx = {
-      ...base,
-      deps: { ...base.deps, connector: { execute, resolveCall } },
-      run: { userId: "user-1", trigger: BACKGROUND_HELPER_TRIGGER },
-      bot: { id: "bot-1" },
-      thread: { id: "thread-1" },
-    };
-    ctx.tools.connector.set("installed_execute_tool", {
-      name: "installed_execute_tool",
-      route: { connectorId: "remote", toolName: CATALOG_EXECUTE },
-    });
+  it.each(["message_agent", "cloud_agent_launch"])(
+    "refuses a catalog call that resolves to the local tool name %s",
+    async (local) => {
+      const execute = vi.fn();
+      const resolveCall = vi.fn(async () => ({
+        tool: { name: local, route: { connectorId: "remote" } },
+        call: { tool: local, args: { message: "hi" }, executionId: "call-1" },
+      }));
+      const base = dispatchContext(false);
+      const ctx = {
+        ...base,
+        deps: { ...base.deps, connector: { execute, resolveCall } },
+        run: { userId: "user-1", trigger: BACKGROUND_HELPER_TRIGGER },
+        bot: { id: "bot-1" },
+        thread: { id: "thread-1" },
+      };
+      ctx.tools.connector.set("installed_execute_tool", {
+        name: "installed_execute_tool",
+        route: { connectorId: "remote", toolName: CATALOG_EXECUTE },
+      });
 
-    await expect(
-      applyTool(ctx as never, "installed_execute_tool", { id: "x:message_agent" }, "call-1"),
-    ).resolves.toEqual({ error: "Connector tool name conflicts with a built-in tool" });
-    expect(resolveCall).toHaveBeenCalledOnce();
-    expect(execute).not.toHaveBeenCalled();
-    expect(audited).toEqual([]);
-  });
+      await expect(
+        applyTool(ctx as never, "installed_execute_tool", { id: `x:${local}` }, "call-1"),
+      ).resolves.toEqual({ error: "Connector tool name conflicts with a built-in tool" });
+      expect(resolveCall).toHaveBeenCalledOnce();
+      expect(execute).not.toHaveBeenCalled();
+      expect(audited).toEqual([]);
+    },
+  );
 
   it("does not read the owner's private routines for a shared-channel request", async () => {
     const findMany = vi.fn(async () => []);

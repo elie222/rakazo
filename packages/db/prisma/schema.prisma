@@ -1918,6 +1918,8 @@ model Artifact {
   rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
   versions       Artifact[] @relation("ArtifactVersions")
   version        Int        @default(1)
+  // A file a stranger emailed: its own family, never one a later upload of that name joins.
+  standalone     Boolean    @default(false)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 

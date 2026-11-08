@@ -154,7 +154,7 @@ async function storeOwnedArtifact(
           hash,
           storageKey: stored.id,
           ...(input.standalone
-            ? { rootArtifactId: null, version: 1 }
+            ? { rootArtifactId: null, version: 1, standalone: true }
             : { rootArtifactId, version }),
           clientNonce: input.clientNonce,
         },
