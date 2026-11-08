@@ -37,6 +37,7 @@ import {
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
+  withoutPrivateToolDetails,
   withoutToolCallContent,
 } from "../thread-message-pages.js";
 import { reactToThreadMessage } from "../thread-reactions.js";
@@ -225,7 +226,7 @@ export function threadsRoutes(ctx: RouterContext) {
             yield withoutToolCallContent(event);
             continue;
           }
-          yield event;
+          yield withoutPrivateToolDetails(event);
         }
       }),
       send: authed.threads.send.handler(({ context, input }) => send(context.actor, input)),

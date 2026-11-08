@@ -49,13 +49,26 @@ describePostgres("tool call records with CONTENT_ENCRYPTION on (PostgreSQL)", ()
             executionId: "x1",
             outcome: "succeeded",
             durationMs: 40,
-            exitCode: 0,
-            preview: "a.txt",
+            exitCode: null,
+            preview: "early output",
           },
         },
         {
           type: "agent.tool.called",
           payload: { name: "web_search", executionId: "x2", detail: "weather", input: '{"q":1}' },
+        },
+        {
+          type: "computer.command",
+          payload: {
+            state: "tool-shell-finished",
+            executionId: "x1",
+            kind: "shell",
+            command: "ls -la",
+            cwd: ".",
+            status: "done",
+            exitCode: 4,
+            output: "final output",
+          },
         },
       ];
       for (const [index, event] of events.entries()) {
@@ -78,18 +91,18 @@ describePostgres("tool call records with CONTENT_ENCRYPTION on (PostgreSQL)", ()
       // Stored sealed: a raw read sees no call id, which is why the reads go through the client.
       const raw = await db.prisma.$queryRaw<Array<{ id: string | null }>>`
         SELECT payload->>'executionId' AS id FROM events WHERE "threadId" = ${threadId}`;
-      expect(raw.map((row) => row.id)).toEqual([null, null, null]);
+      expect(raw.map((row) => row.id)).toEqual([null, null, null, null]);
 
       await expect(loadToolCallRecords(db.prisma, threadId, runId)).resolves.toEqual([
         {
           executionId: "x1",
           name: "shell",
           status: "done",
-          outcome: "succeeded",
+          outcome: "error",
           durationMs: 40,
           command: "ls -la",
-          exitCode: 0,
-          output: "a.txt",
+          exitCode: 4,
+          output: "final output",
         },
         { executionId: "x2", name: "web_search", status: "running", input: '{"q":1}' },
       ]);
@@ -97,8 +110,8 @@ describePostgres("tool call records with CONTENT_ENCRYPTION on (PostgreSQL)", ()
       const live = await loadLiveRunEvents(db.prisma, threadId, [{ id: runId }]);
       expect(live.map((event) => event.payload)).toEqual([
         { name: "shell", executionId: "x1", detail: "ls", command: "ls -la" },
-        { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 40, exitCode: 0 },
-        { name: "web_search", executionId: "x2", detail: "weather" },
+        { name: "shell", executionId: "x1", outcome: "succeeded", durationMs: 40, exitCode: null },
+        { name: "web_search", executionId: "x2" },
       ]);
     }));
 });

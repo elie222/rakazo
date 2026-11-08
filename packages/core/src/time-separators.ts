@@ -59,7 +59,7 @@ export function timeSeparatorIds<T extends { id: string; createdAt?: string }>(
   const ids = new Set<string>();
   let previous: string | undefined;
   for (const message of messages) {
-    if (!message.createdAt) continue;
+    if (!message.createdAt || message.id.startsWith("progress:")) continue;
     if (needsTimeSeparator(message.createdAt, previous)) ids.add(message.id);
     previous = message.createdAt;
   }

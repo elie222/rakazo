@@ -98,9 +98,8 @@ describe("tool activity redaction", () => {
     );
   });
 
-  it("gives a call its line and JSON arguments, and a shell its whole command instead", () => {
+  it("keeps non-shell arguments out of shared summaries and visual action input out of history", () => {
     expect(toolActivityCallFields("web_search", { query: "weather", api_key: "k-1" }, [])).toEqual({
-      detail: "weather",
       input: '{\n  "query": "weather",\n  "api_key": "[redacted]"\n}',
     });
     const long = `echo ${"a".repeat(300)} TOKEN=s-1`;
@@ -109,5 +108,11 @@ describe("tool activity redaction", () => {
     expect(shell.command).toBe(`echo ${"a".repeat(300)} TOKEN=[redacted]`);
     expect(shell.detail?.length).toBeLessThanOrEqual(200);
     expect(toolActivityCallFields("remember", {}, [])).toEqual({});
+    expect(
+      toolActivityCallFields("browser_act", { action: "type", text: "unregistered secret" }, []),
+    ).toEqual({});
+    expect(
+      toolActivityCallFields("user_computer_act", { text: "unregistered secret" }, []),
+    ).toEqual({});
   });
 });

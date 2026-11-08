@@ -71,7 +71,10 @@ function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
         botId: bot.id,
         runId,
         type: "computer.command",
-        payload,
+        payload:
+          payload.kind === "shell" && payload.status === "done"
+            ? { ...payload, state: "tool-shell-finished" }
+            : payload,
       })
       // The Activity feed is a view; losing an entry must not fail the tool.
       // Output that arrives after the run was cancelled has no history to join.

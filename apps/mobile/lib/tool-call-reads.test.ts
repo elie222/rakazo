@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFinishedRunToolCalls } from "./tool-call-reads";
 
 const sessionCaches = vi.hoisted(() => [] as Array<() => void>);
 vi.mock("./session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
-
-const { readFinishedRunToolCalls } = await import("./tool-call-reads");
 
 const done = (executionId: string) => ({ executionId, name: "shell", status: "done" as const });
 

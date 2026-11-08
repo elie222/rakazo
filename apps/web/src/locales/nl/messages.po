@@ -2725,10 +2725,6 @@ msgstr "Inzendingen laden mislukt"
 msgid "Couldn't load this page. Try again."
 msgstr "Deze pagina kon niet worden geladen. Probeer het opnieuw."
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "Je wallet laden mislukt"
@@ -3399,11 +3395,6 @@ msgstr "Iedereen hier ziet de chats, bots en het geheugen"
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Iedereen in de space van deze bot kan de chats lezen die hij via {linkApp} ontvangt."
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Uitklappen"
@@ -3466,7 +3457,6 @@ msgid "failed"
 msgstr "mislukt"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Mislukt"
@@ -4188,7 +4178,6 @@ msgstr "Spraakanbieders laden…"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4852,10 +4841,6 @@ msgstr "Geen modellen vermeld."
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Geen OpenClaw-, Hermes- of agentdocument gevonden."
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6017,7 +6002,6 @@ msgid "running"
 msgstr "draait"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

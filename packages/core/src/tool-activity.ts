@@ -4,6 +4,11 @@ import { formatCompactDuration } from "./routine-runs.js";
 /** While a run is live, only the most recent steps are listed so a long run does not push the chat down. */
 export const LIVE_TOOL_STEP_WINDOW = 6;
 
+/** Visual action arguments or results may contain typed credentials that the run never saw. */
+export function isVisualActionTool(name: string): boolean {
+  return name === "browser_act" || name === "computer_act" || name === "user_computer_act";
+}
+
 export type ToolStepStatus = "running" | "ok" | "error";
 
 /**
@@ -49,8 +54,11 @@ export function pickToolCallRecord(
   runLive: boolean,
 ): { record: ToolCallRecord | undefined; needsRead: boolean } {
   const stale = live !== undefined && !runLive && live.status !== "done";
+  const record = stale ? (read ?? live) : (live ?? read);
+  const retainedInput =
+    live && !stale && !live.withheld && live.input === undefined ? read?.input : undefined;
   return {
-    record: stale ? (read ?? live) : (live ?? read),
+    record: record && retainedInput !== undefined ? { ...record, input: retainedInput } : record,
     needsRead: live === undefined || stale,
   };
 }

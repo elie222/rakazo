@@ -1,6 +1,6 @@
 import type { AgentToolCompletion } from "@rakazo/adapter-kit";
 import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { isVisualActionTool, redactSecrets } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -61,11 +61,17 @@ export function toolCompletionAuditPayload(
         ? "error"
         : "succeeded",
   };
-  if (error !== undefined) {
+  if (error !== undefined && !isVisualActionTool(completion.name)) {
     payload.error = sanitizeConnectorError(error, secrets);
   }
-  const preview = toolResultPreview(completion.result, secrets);
-  if (preview) payload.preview = preview;
+  if (!isVisualActionTool(completion.name)) {
+    try {
+      const preview = toolResultPreview(completion.result, secrets);
+      if (preview) payload.preview = preview;
+    } catch {
+      // A non-serializable result can omit its optional preview without losing the audit.
+    }
+  }
   // A shell's exit code, or null while it still runs, so a stored run shows how it ended.
   const shell = shellCommandResult(completion.result);
   if (shell && !completion.paused) payload.exitCode = shell.code;

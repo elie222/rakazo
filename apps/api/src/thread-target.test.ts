@@ -5225,7 +5225,7 @@ describe("loadLiveRunEvents", () => {
       {
         id: "e1",
         type: "agent.tool.called",
-        payload: { name: "shell", input: "{}", detail: "ls" },
+        payload: { name: "shell", input: "{}", detail: "ls", command: "ls" },
       },
       { id: "e2", type: "agent.tool.completed", payload: { executionId: "x1", preview: "secret" } },
       { id: "e3", type: "thread.progress", payload: { text: "Hi", input: "kept" } },
@@ -5234,7 +5234,7 @@ describe("loadLiveRunEvents", () => {
       { id: "run-1" },
     ]);
     expect(events.map((event) => event.payload)).toEqual([
-      { name: "shell", detail: "ls" },
+      { name: "shell", detail: "ls", command: "ls" },
       { executionId: "x1" },
       { text: "Hi", input: "kept" },
     ]);

@@ -1,5 +1,10 @@
 import { TOOL_RESULT_PREVIEW_MAX_CHARS } from "@rakazo/contracts";
-import { boundToolStepDetail, redactSecrets, toolCallDetailLine } from "@rakazo/core";
+import {
+  boundToolStepDetail,
+  isVisualActionTool,
+  redactSecrets,
+  toolCallDetailLine,
+} from "@rakazo/core";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 
 /** Key endings that name a credential, compared without case, `_` or `-`. */
@@ -122,6 +127,7 @@ export function toolActivityCallFields(
   args: unknown,
   secrets: readonly string[],
 ): { detail?: string; input?: string; command?: string } {
+  if (isVisualActionTool(name)) return {};
   const safeArgs = redactToolActivityValue(args, secrets);
   const line = toolCallDetailLine(safeArgs);
   const detail =
@@ -142,7 +148,6 @@ export function toolActivityCallFields(
   }
   const hasArgs = !!safeArgs && typeof safeArgs === "object" && Object.keys(safeArgs).length > 0;
   return {
-    ...(detail === undefined ? {} : { detail }),
     ...(hasArgs
       ? {
           input: boundToolActivityText(

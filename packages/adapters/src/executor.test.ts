@@ -276,6 +276,17 @@ describe("tool completion audit", () => {
     expect(completion).not.toHaveProperty("result");
   });
 
+  it("keeps the audit when an optional tool preview cannot be serialized", () => {
+    const completion = { name: "read_file", executionId: "call", durationMs: 1 };
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    for (const result of [circular, { amount: 1n }]) {
+      const audit = toolCompletionAuditPayload({ ...completion, result });
+      expect(audit).toMatchObject({ outcome: "succeeded", executionId: "call" });
+      expect(audit.preview).toBeUndefined();
+    }
+  });
+
   it("keeps a bounded, redacted preview of the text a tool returned", () => {
     const secret = "FAKE_TOKEN_4431";
     const payload = toolCompletionAuditPayload(

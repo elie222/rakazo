@@ -231,7 +231,7 @@ function useToolCallRecord(
 }
 
 /**
- * The call opened: a line naming it, the chat's own code block with what it ran and what came
+ * The opened row shows the chat's own code block with what it ran and what came
  * back (following live while a shell command runs), and the exit code or error under it.
  */
 function StepPanel({
@@ -264,23 +264,6 @@ function StepPanel({
   const muted = { color: tokens.mutedForeground };
   return (
     <View testID="tool-step-panel" style={styles.panel}>
-      <View style={styles.panelHeader}>
-        <View
-          style={[
-            styles.dot,
-            {
-              backgroundColor:
-                status === "error" ? tokens.destructive : running ? tokens.warning : tokens.success,
-            },
-          ]}
-        />
-        <Text style={[styles.meta, muted]}>{step.label}</Text>
-        {record?.command === undefined && step.detail ? (
-          <Text numberOfLines={1} style={[styles.mono, styles.grow, muted]}>
-            {step.detail}
-          </Text>
-        ) : null}
-      </View>
       {markdown ? (
         <ScrollView nestedScrollEnabled style={styles.code} testID="tool-step-code">
           <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
@@ -336,10 +319,6 @@ const styles = StyleSheet.create({
   spacer: { flex: 1 },
   duration: { ...typeScale.footnote, fontFamily: MONO },
   panel: { marginVertical: 4, gap: 6 },
-  panelHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  grow: { flex: 1, minWidth: 0 },
-  mono: { ...typeScale.footnote, fontFamily: MONO },
   code: { maxHeight: 320 },
   empty: { ...typeScale.footnote },
   footer: { flexDirection: "row", flexWrap: "wrap", columnGap: 12 },

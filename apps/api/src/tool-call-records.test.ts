@@ -62,6 +62,49 @@ describe("loadToolCallRecords", () => {
     }
   });
 
+  it("reads a background shell's final frame without asking for running output", async () => {
+    const findMany = eventTable([
+      {
+        type: "agent.tool.called",
+        seq: 1,
+        payload: { executionId: "x1", name: "shell", command: "long" },
+      },
+      {
+        type: "agent.tool.completed",
+        seq: 2,
+        payload: { executionId: "x1", name: "shell", exitCode: null, preview: "early" },
+      },
+      {
+        type: "computer.command",
+        seq: 3,
+        payload: {
+          executionId: "x1",
+          kind: "shell",
+          command: "long",
+          cwd: ".",
+          status: "done",
+          exitCode: 4,
+          output: "final",
+        },
+      },
+    ]);
+    await expect(
+      loadToolCallRecords({ event: { findMany } } as never, "thread-1", "run-1"),
+    ).resolves.toMatchObject([
+      { executionId: "x1", exitCode: 4, output: "final", status: "done", outcome: "error" },
+    ]);
+    expect(findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          type: "computer.command",
+          OR: expect.arrayContaining([
+            { payload: { path: ["state"], equals: "tool-shell-finished" } },
+          ]),
+        }),
+      }),
+    );
+  });
+
   it("reads nothing more for a run without calls", async () => {
     const prisma = { event: { findMany: eventTable([]) } } as never;
     await expect(loadToolCallRecords(prisma, "thread-1", "run-1")).resolves.toEqual([]);

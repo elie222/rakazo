@@ -8,9 +8,11 @@ import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
+  humanizeToolName,
   isBackgroundInputBlock,
   isBackgroundRunTrigger,
   isPeerReceiptBlocks,
+  isVisualActionTool,
 } from "@rakazo/core";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -213,9 +215,59 @@ export function withoutToolCallContent<E extends { type: string; payload: unknow
     input: _input,
     preview: _preview,
     error: _error,
+    detail,
     ...payload
   } = event.payload as Record<string, unknown>;
-  return { ...event, payload: { ...payload, withheld: true } };
+  return {
+    ...event,
+    payload: {
+      ...payload,
+      ...(typeof payload.command === "string" ? { detail } : {}),
+      withheld: true,
+    },
+  };
+}
+
+const SHELL_STEP_LABELS = new Set(["shell", "user_computer_shell"].map(humanizeToolName));
+
+/** Older replies may have saved private arguments as shared step details. */
+export function withoutPrivateStepDetails(blocks: MessageBlock[]): MessageBlock[] {
+  return blocks.map((block) => {
+    if (block.kind !== "steps") return block;
+    return {
+      ...block,
+      steps: block.steps?.map((step) => {
+        if (step.detail === undefined || SHELL_STEP_LABELS.has(step.label)) return step;
+        const { detail: _detail, ...safe } = step;
+        return safe;
+      }),
+    };
+  });
+}
+
+export function withoutPrivateToolDetails<E extends { type: string; payload: unknown }>(
+  event: E,
+): E {
+  if (!event.payload || typeof event.payload !== "object") return event;
+  const payload = event.payload as Record<string, unknown>;
+  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
+    if (!Array.isArray(payload.blocks)) return event;
+    return { ...event, payload: { ...payload, blocks: withoutPrivateStepDetails(payload.blocks) } };
+  }
+  if (event.type !== "agent.tool.called" && event.type !== "agent.tool.completed") return event;
+  if (typeof payload.name === "string" && isVisualActionTool(payload.name)) {
+    const { detail: _detail, input: _input, preview: _preview, error: _error, ...safe } = payload;
+    return { ...event, payload: safe };
+  }
+  if (
+    event.type === "agent.tool.called" &&
+    typeof payload.command !== "string" &&
+    payload.detail !== undefined
+  ) {
+    const { detail: _detail, ...safe } = payload;
+    return { ...event, payload: safe };
+  }
+  return event;
 }
 
 export async function isBackgroundRun(
@@ -348,7 +400,7 @@ function toThreadMessage(row: MessageRow, authors: Map<string, MessageAuthor>): 
     threadId: row.threadId,
     seq: row.seq,
     role: row.role as ThreadMessage["role"],
-    blocks: row.blocks as ThreadMessage["blocks"],
+    blocks: withoutPrivateStepDetails(row.blocks as ThreadMessage["blocks"]),
     botId: row.botId ?? undefined,
     ...(author ? { author } : {}),
     replyToMessageId: row.replyToMessageId ?? undefined,

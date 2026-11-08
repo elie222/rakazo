@@ -7,9 +7,9 @@ const TOOL_CALLS_MAX = 2_000;
 
 /**
  * What each tool call of a run did, for its first calls up to the limit. Each call's own event
- * and its completion say what ran, what came back and how it ended, so a shell's streamed
- * output frames are never read. Both are read through the client, which opens encrypted
- * payloads; a raw query would get them sealed.
+ * and its completion say what ran. A shell that returned while still running can also have a
+ * terminal command event. Running output frames are never loaded. Use the client to open
+ * encrypted event payloads.
  */
 export async function loadToolCallRecords(
   prisma: Pick<PrismaClient, "event">,
@@ -33,10 +33,34 @@ export async function loadToolCallRecords(
     }),
   ]);
   const called = new Set(calls.map((row) => executionIdOf(row.payload)));
+  const runningShells = new Set(
+    completions
+      .filter(({ payload }) => (payload as { exitCode?: unknown } | null)?.exitCode === null)
+      .map(({ payload }) => executionIdOf(payload))
+      .filter((id) => called.has(id)),
+  );
+  const terminalCommands = runningShells.size
+    ? await prisma.event.findMany({
+        where: {
+          threadId,
+          runId,
+          type: "computer.command",
+          OR: [
+            { payload: { path: ["state"], equals: "tool-shell-finished" } },
+            // Older unencrypted command events still carry their own status.
+            { payload: { path: ["status"], equals: "done" } },
+          ],
+        },
+        orderBy: { seq: "asc" },
+        take: TOOL_CALLS_MAX,
+        select,
+      })
+    : [];
   // Only calls within the limit, each with its completion, so none shows half done.
   const events = [
     ...calls,
     ...completions.filter((row) => called.has(executionIdOf(row.payload))),
+    ...terminalCommands.filter((row) => runningShells.has(executionIdOf(row.payload))),
   ].sort((a, b) => a.seq - b.seq);
   return foldToolCallRecords(events);
 }

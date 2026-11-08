@@ -33,6 +33,7 @@ import {
 } from "./logo-avatar-activity.js";
 import { reportClientError } from "./monitoring";
 import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
+import { clearToolCallRecords } from "./tool-call-records";
 import { speaker } from "./tts.js";
 import { errorText } from "./user-error";
 
@@ -307,6 +308,7 @@ export function sessionChangedUnderPage(): boolean {
 
 /** The session is already gone: end the call without a hang-up the old user can no longer send. */
 function endCallSignedOut(): void {
+  clearToolCallRecords();
   sessionEpoch += 1;
   dropCall();
 }
@@ -361,6 +363,7 @@ export function syncCallIdentity(userId: string | null): void {
 
 /** This page signed out and leaves on its own: other tabs reload, this one does not. */
 export function forgetSignedInUser(): void {
+  clearToolCallRecords();
   identity = null;
   publishSignedInUser(null);
 }

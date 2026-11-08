@@ -74,7 +74,7 @@ describe("foldToolCallRecords", () => {
         executionId: "x1",
         name: "shell",
         status: "done",
-        outcome: "succeeded",
+        outcome: "error",
         durationMs: 30_000,
         command: "pnpm test",
         output: "RUN v4\n1 failed",

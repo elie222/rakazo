@@ -2726,10 +2726,6 @@ msgstr "無法載入提交記錄"
 msgid "Couldn't load this page. Try again."
 msgstr "無法載入此頁面。請再試一次。"
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "無法載入你的錢包"
@@ -3400,11 +3396,6 @@ msgstr "這裡的每個人都能看到這個空間的聊天、機器人和記憶
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "此機器人所在空間的每個人都能閱讀它從 {linkApp} 收到的聊天。"
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "展開"
@@ -3467,7 +3458,6 @@ msgid "failed"
 msgstr "失敗"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "失敗"
@@ -4189,7 +4179,6 @@ msgstr "正在載入語音供應商…"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4853,10 +4842,6 @@ msgstr "未列出模型。"
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6018,7 +6003,6 @@ msgid "running"
 msgstr "執行中"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

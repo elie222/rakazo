@@ -1047,7 +1047,6 @@ describe("tool call content for other viewers", () => {
     expect(withoutToolCallContent(called).payload).toEqual({
       name: "read_history",
       executionId: "x1",
-      detail: "q",
       withheld: true,
     });
     const completed = {

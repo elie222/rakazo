@@ -504,7 +504,12 @@ export function appendToolStep(steps: readonly ToolStep[], call: ToolCallRef | s
     ...(ref.durationMs === undefined ? {} : { durationMs: ref.durationMs }),
   };
   const last = steps.at(-1);
-  if (last && last.label === label && last.detail === ref.detail) {
+  if (
+    last &&
+    last.label === label &&
+    last.detail === ref.detail &&
+    (ref.detail !== undefined || ref.executionId === undefined)
+  ) {
     const { executionId: _id, outcome: _outcome, durationMs: _duration, ...kept } = last;
     return [...steps.slice(0, -1), { ...kept, ...facts, count: last.count + 1 }];
   }

@@ -56,6 +56,12 @@ describe("toolStepStatus", () => {
 });
 
 describe("pickToolCallRecord", () => {
+  it("retains fetched arguments when only the live completion arrived", () => {
+    const read = { executionId: "x", name: "read_file", status: "running" as const, input: "{}" };
+    const live = { executionId: "x", name: "read_file", status: "done" as const, output: "result" };
+    expect(pickToolCallRecord(live, read, true).record).toEqual({ ...read, ...live });
+  });
+
   const live = { executionId: "x1", name: "shell", status: "running" } as const;
   const read = { executionId: "x1", name: "shell", status: "done", outcome: "succeeded" } as const;
 

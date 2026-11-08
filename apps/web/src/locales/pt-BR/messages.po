@@ -2725,10 +2725,6 @@ msgstr "Não foi possível carregar os envios"
 msgid "Couldn't load this page. Try again."
 msgstr "Não foi possível carregar esta página. Tente novamente."
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "Não foi possível carregar sua carteira"
@@ -3399,11 +3395,6 @@ msgstr "Todos aqui veem as conversas, os bots e a memória deste espaço"
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "Todos no espaço deste bot podem ler as conversas que ele recebe do {linkApp}."
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Expandir"
@@ -3466,7 +3457,6 @@ msgid "failed"
 msgstr "falhou"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Falha"
@@ -4188,7 +4178,6 @@ msgstr "Carregando provedores de voz..."
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4852,10 +4841,6 @@ msgstr "Nenhum modelo listado."
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "Nenhum arquivo do OpenClaw, Hermes ou documento de agente encontrado."
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6017,7 +6002,6 @@ msgid "running"
 msgstr "em execução"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

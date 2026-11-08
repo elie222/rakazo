@@ -2725,10 +2725,6 @@ msgstr "申請を読み込めませんでした"
 msgid "Couldn't load this page. Try again."
 msgstr "このページを読み込めませんでした。もう一度お試しください。"
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "ウォレットを読み込めませんでした"
@@ -3399,11 +3395,6 @@ msgstr "ここにいる全員がチャット、ボット、メモリを閲覧で
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "このボットのスペースにいる全員が、{linkApp}から届いたチャットを読むことができます。"
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "展開"
@@ -3466,7 +3457,6 @@ msgid "failed"
 msgstr "失敗"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "失敗"
@@ -4188,7 +4178,6 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4852,10 +4841,6 @@ msgstr "モデルが一覧にありません。"
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "OpenClaw、Hermes、またはエージェントのドキュメントが見つかりません。"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6017,7 +6002,6 @@ msgid "running"
 msgstr "実行中"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

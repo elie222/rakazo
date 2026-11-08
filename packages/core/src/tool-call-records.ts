@@ -1,6 +1,7 @@
 import type { ToolCallRecord } from "@rakazo/contracts";
 import { ComputerCommandSchema } from "@rakazo/contracts";
 import { isRunTerminalEvent } from "./events.js";
+import { isVisualActionTool } from "./tool-activity.js";
 
 /** Runs whose live records a client keeps at once. */
 const LIVE_RUNS_KEPT = 8;
@@ -53,12 +54,13 @@ export function reduceToolCallRecord(
     const payload = asRecord(event.payload);
     if (typeof payload.executionId !== "string") return undefined;
     const prior = records.get(payload.executionId);
+    const visual = typeof payload.name === "string" && isVisualActionTool(payload.name);
     return {
       ...prior,
       executionId: payload.executionId,
       name: typeof payload.name === "string" ? payload.name : (prior?.name ?? ""),
       status: prior?.status ?? "running",
-      ...(typeof payload.input === "string" ? { input: payload.input } : {}),
+      ...(!visual && typeof payload.input === "string" ? { input: payload.input } : {}),
       // A shell call's whole command line, so a stored run shows what ran.
       ...(typeof payload.command === "string" ? { command: payload.command } : {}),
       ...(payload.withheld === true ? { withheld: true as const } : {}),
@@ -68,6 +70,7 @@ export function reduceToolCallRecord(
     const payload = asRecord(event.payload);
     if (typeof payload.executionId !== "string") return undefined;
     const prior = records.get(payload.executionId);
+    const visual = typeof payload.name === "string" && isVisualActionTool(payload.name);
     const durationMs =
       typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs)
         ? Math.max(0, Math.round(payload.durationMs))
@@ -92,13 +95,21 @@ export function reduceToolCallRecord(
       // A finished command's own exit stands; the call only knew it when it returned.
       ...(exitCode !== undefined && typeof prior?.exitCode !== "number" ? { exitCode } : {}),
       outcome:
-        payload.outcome === "error" || payload.outcome === "paused" ? payload.outcome : "succeeded",
+        prior?.command !== undefined && typeof prior.exitCode === "number"
+          ? prior.exitCode === 0
+            ? "succeeded"
+            : "error"
+          : payload.outcome === "error" || payload.outcome === "paused"
+            ? payload.outcome
+            : "succeeded",
       ...(durationMs === undefined ? {} : { durationMs }),
-      ...(typeof payload.error === "string" ? { error: payload.error } : {}),
+      ...(!visual && typeof payload.error === "string" ? { error: payload.error } : {}),
       ...(payload.withheld === true ? { withheld: true as const } : {}),
       // A shell command's own output already says what it printed; a file or app action
       // records none, so what the tool returned stands for it.
-      ...(!prior?.output && typeof payload.preview === "string" ? { output: payload.preview } : {}),
+      ...(!visual && !prior?.output && typeof payload.preview === "string"
+        ? { output: payload.preview }
+        : {}),
     };
   }
   if (event.type === "computer.command") {
@@ -117,6 +128,9 @@ export function reduceToolCallRecord(
       // A file or app action prints nothing unless it failed.
       ...(command.kind === "shell" || command.output ? { output: command.output } : {}),
       exitCode: command.exitCode,
+      ...(command.kind === "shell" && command.status === "done" && command.exitCode !== null
+        ? { outcome: command.exitCode === 0 ? ("succeeded" as const) : ("error" as const) }
+        : {}),
     };
   }
   return undefined;

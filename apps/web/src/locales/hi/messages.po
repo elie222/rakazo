@@ -2725,10 +2725,6 @@ msgstr "सबमिशन लोड नहीं हो सके"
 msgid "Couldn't load this page. Try again."
 msgstr "यह पेज लोड नहीं हो सका। फिर से कोशिश करें।"
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "आपका वॉलेट लोड नहीं हो सका"
@@ -3399,11 +3395,6 @@ msgstr "यहाँ हर कोई इस स्पेस की चैट, �
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "इस बॉट के स्पेस में हर कोई {linkApp} से आने वाली इसकी चैट पढ़ सकता है।"
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "विस्तृत करें"
@@ -3466,7 +3457,6 @@ msgid "failed"
 msgstr "असफल"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "विफल"
@@ -4188,7 +4178,6 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4852,10 +4841,6 @@ msgstr "कोई मॉडल सूचीबद्ध नहीं।"
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "कोई OpenClaw, Hermes या एजेंट दस्तावेज़ नहीं मिला।"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6017,7 +6002,6 @@ msgid "running"
 msgstr "चल रहा है"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

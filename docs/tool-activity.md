@@ -11,10 +11,9 @@ bot called during the run.
   not sync between devices.
 - While a run is live, the card starts open, counts up the time since the run's first
   activity, and lists the last six steps, with a count of the earlier steps. A step can
-  represent repeated calls to the same tool with the same arguments.
-- Each step shows the tool, the call's main argument (the shell command, path, query or
-  similar, bounded and with secrets taken out), how long it took, and whether it succeeded,
-  failed, or is still running.
+  group repeated shell calls with the same command.
+- Each step shows the tool, its duration, and whether it succeeded, failed, or is still
+  running. Shell steps also show a shortened, redacted command line.
 - A step opens to the chat's own code block: a shell command and its output as one console
   block (following live while it runs), otherwise the call's arguments as JSON and what it
   returned (JSON indented, secrets taken out), with the block's copy control, and the exit
@@ -39,9 +38,10 @@ API responses are the same with it on or off.
 
 - A `steps` block row carries the call's `executionId`, `detail`, `outcome` and
   `durationMs`, all optional, so replies saved before this stay readable.
-- The `agent.tool.called` event carries the call's `detail` and its arguments as bounded,
-  redacted JSON (`input`); the `agent.tool.completed` audit carries a bounded, redacted
-  `preview` of the text the tool returned. Every string is redacted before it is serialized,
+- The `agent.tool.called` event carries redacted shell command details or a structured
+  tool's bounded, redacted arguments (`input`). The `agent.tool.completed` audit can carry
+  a bounded, redacted result preview. Browser and computer actions omit arguments and
+  previews because typed values may contain credentials. Strings are redacted before serialization,
   so a secret that JSON would escape cannot slip through, and a string under a
   credential-named key (password, token, API key, authorization, cookie and similar) is
   dropped whole. Shell commands keep streaming their output through `computer.command`
@@ -56,9 +56,10 @@ API responses are the same with it on or off.
   database client so encrypted payloads are opened, and folds them into one record per call.
   A shell call's event carries its whole redacted command, and its completion the exit code
   (null while it still runs past its call) and the end of what it printed, so a stored run
-  never needs its streamed output frames. Live runs apply the same events as they arrive and
-  drop a run's live records once it ends. A thread load leaves `input` and `preview` out of
-  the live events it reads, since the rows fetch them on demand.
+  can read its own completion. When a command finishes after the tool call returns, the
+  API reads the terminal command event for the final output and exit code. It skips running
+  output frames. Clients clear live records when the run ends or the account changes.
+  Thread snapshots omit `input` and `preview`; opened rows fetch them on demand.
 
 ## Platform scope
 

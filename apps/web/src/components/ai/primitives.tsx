@@ -33,7 +33,7 @@ export function formatElapsed(startedAtMs: number, nowMs: number): string {
   return `${minutes}m ${seconds.toFixed(1)}s`;
 }
 
-function useElapsed(startedAtMs?: number): string {
+export function useElapsed(startedAtMs?: number): string {
   const [mountedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

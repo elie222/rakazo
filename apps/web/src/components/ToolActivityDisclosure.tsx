@@ -5,7 +5,6 @@ import type { ThreadMessage, ToolStep } from "@rakazo/contracts";
 import type { ToolStepStatus } from "@rakazo/core";
 import {
   formatCompactDuration,
-  formatElapsedSince,
   LIVE_TOOL_STEP_WINDOW,
   pickToolCallRecord,
   toolCallMarkdown,
@@ -20,10 +19,11 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
+import { Fragment, useState, useSyncExternalStore } from "react";
 import { useSpaceQueries } from "../lib/query";
 import { toolStepCount } from "../lib/tool-activity-view";
 import { liveToolCallRecords, subscribeToolCallRecords } from "../lib/tool-call-records";
+import { useElapsed } from "./ai/primitives";
 
 /** Where a step's result lives: the run's records, read when the row opens. */
 export type ToolStepSource = { threadId: string; runId: string };
@@ -187,7 +187,7 @@ function useToolCallRecord(source: ToolStepSource, executionId: string, runLive:
 }
 
 /**
- * The call opened: a line naming it, the chat's own code block with what it ran and what came
+ * The opened row shows the chat's own code block with what it ran and what came
  * back (following live while a shell command runs), and the exit code or error under it.
  */
 function ToolStepDetail({
@@ -210,20 +210,8 @@ function ToolStepDetail({
   const exit =
     record?.exitCode === undefined || record.exitCode === null ? null : t`exit ${record.exitCode}`;
   const duration = formatCompactDuration(record?.durationMs ?? step.durationMs);
-  const dot = status === "error" ? "bg-destructive" : running ? "bg-warning" : "bg-success";
   return (
     <div data-testid="tool-step-panel" dir="ltr" className="my-1.5 min-w-0 space-y-1.5">
-      <div className="flex items-center gap-2 text-label text-muted-foreground">
-        <span
-          aria-hidden
-          className={`size-1.5 shrink-0 rounded-full ${dot}`}
-          style={{ animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
-        />
-        <span className="shrink-0">{step.label}</span>
-        {record?.command === undefined && step.detail ? (
-          <span className="min-w-0 flex-1 truncate font-mono">{step.detail}</span>
-        ) : null}
-      </div>
       {markdown ? (
         <div className="max-h-80 overflow-y-auto" data-testid="tool-step-code">
           <ChatMarkdown streaming={running}>{markdown}</ChatMarkdown>
@@ -256,13 +244,9 @@ function ToolStepDetail({
 
 /** Time since the run's first visible activity, ticking while it is live. */
 function LiveElapsed({ startedAt }: { startedAt: string }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const elapsed = formatElapsedSince(startedAt, now);
-  if (elapsed === null) return null;
+  const timestamp = Date.parse(startedAt);
+  const elapsed = useElapsed(Number.isFinite(timestamp) ? timestamp : undefined);
+  if (!Number.isFinite(timestamp)) return null;
   return (
     <span className="tabular-nums" data-testid="tool-activity-elapsed">
       {elapsed}

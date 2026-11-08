@@ -2725,10 +2725,6 @@ msgstr "제출 목록을 불러오지 못했습니다"
 msgid "Couldn't load this page. Try again."
 msgstr "이 페이지를 불러올 수 없습니다. 다시 시도하세요."
 
-#: src/components/ToolActivityDisclosure.tsx
-msgid "Couldn’t load this step."
-msgstr ""
-
 #: src/pages/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "지갑을 불러오지 못했습니다"
@@ -3399,11 +3395,6 @@ msgstr "여기 있는 모든 사람이 채팅, 봇, 기억을 볼 수 있습니�
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
 msgstr "이 봇의 스페이스에 있는 모든 사람이 {linkApp}에서 받은 채팅을 읽을 수 있습니다."
 
-#. placeholder {0}: record.exitCode
-#: src/components/ToolActivityDisclosure.tsx
-msgid "exit {0}"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "펼치기"
@@ -3466,7 +3457,6 @@ msgid "failed"
 msgstr "실패"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "실패"
@@ -4188,7 +4178,6 @@ msgstr "음성 서비스를 불러오는 중…"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/components/SpaceMembersSettings.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -4852,10 +4841,6 @@ msgstr "나열된 모델이 없습니다."
 #: src/pages/shell/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "OpenClaw, Hermes 또는 에이전트 문서를 찾지 못했습니다."
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "No output recorded."
-msgstr ""
 
 #: src/components/pages/PagesList.tsx
 msgid "No pages match “{query}”."
@@ -6017,7 +6002,6 @@ msgid "running"
 msgstr "실행 중"
 
 #: src/components/SubagentCard.tsx
-#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineList.tsx
 msgid "Running"

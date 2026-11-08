@@ -9,7 +9,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { spaceIsShared } from "@rakazo/db";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
 import { THREAD_MESSAGE_PAGE_SIZE } from "./routes/shared.js";
-import { loadMessagePage } from "./thread-message-pages.js";
+import { loadMessagePage, withoutPrivateToolDetails } from "./thread-message-pages.js";
 import type { ThreadTarget } from "./thread-target.js";
 
 export async function threadSnapshot(
@@ -243,7 +243,8 @@ export async function loadLiveRunEvents(
     },
     orderBy: { seq: "asc" },
   });
-  return events.map((event) => {
+  return events.map((rawEvent) => {
+    const event = withoutPrivateToolDetails(rawEvent);
     if (event.type !== "agent.tool.called" && event.type !== "agent.tool.completed") return event;
     const {
       input: _input,
