@@ -321,6 +321,7 @@ function chatTime(
 export function ChatSwipe({
   target,
   rowKey = `${target.kind}:${target.chat.id}`,
+  onPress,
   onAction,
   sections,
   onOrganize,
@@ -329,6 +330,7 @@ export function ChatSwipe({
   onSnooze,
   children,
 }: {
+  onPress?: () => void;
   /** Snoozed until a time still ahead. */
   snoozed?: boolean;
   onSnooze?: (until: string | null) => void;
@@ -364,6 +366,7 @@ export function ChatSwipe({
             <GroupAvatar members={target.chat.members} size={32} />
           ),
       }}
+      onPress={onPress}
       onAction={onAction}
       onOrganize={(update) => onOrganize(kind, chat, update)}
       onEditSection={(mode) => onEditSection(kind, chat, mode, sections)}
@@ -444,6 +447,7 @@ export const BotRow = memo(function BotRow({
   return onAction ? (
     <ChatSwipe
       target={{ kind: "bot", chat: bot }}
+      onPress={() => onPress(bot)}
       onAction={runAction}
       sections={sections}
       onOrganize={onOrganize}
@@ -506,6 +510,7 @@ export const GroupRow = memo(function GroupRow({
   return onAction ? (
     <ChatSwipe
       target={{ kind: "group", chat: group }}
+      onPress={() => onPress(group)}
       onAction={runAction}
       sections={sections}
       onOrganize={onOrganize}

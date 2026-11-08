@@ -13,6 +13,8 @@ export type InboxSwipeRowProps = {
   sectionId?: string | null;
   sections: readonly MobileBotSection[];
   preview: InboxChatPreviewProps;
+  /** Opens the chat; in the native inbox list the list's own tap does it, so scrolling cancels it. */
+  onPress?: () => void;
   onAction: (action: InboxRowAction) => void;
   onOrganize: (update: BotOrganizationUpdate) => void;
   onEditSection: (mode: "create" | "rename") => void;

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
+import { NativeListRowContext } from "../components/native-list-row";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -24,7 +25,9 @@ const swift = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   PlatformColor: (name: string) => ({ semantic: [name] }),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, pointerEvents }: { children: ReactNode; pointerEvents?: string }) => (
+    <div data-pointer-events={pointerEvents}>{children}</div>
+  ),
 }));
 vi.mock("./native", () => ({
   native: { page: "page", fill: "fill" },
@@ -37,7 +40,20 @@ vi.mock("@expo/ui/swift-ui", async () => {
   const box =
     (name: string) =>
     ({ children }: { children?: ReactNode }) => <div data-ui={name}>{children}</div>;
-  const SwipeActions = box("SwipeActions") as ReturnType<typeof box> & {
+  const SwipeActions = (({
+    children,
+    modifiers,
+  }: {
+    children?: ReactNode;
+    modifiers?: Array<{ name: string }>;
+  }) => (
+    <div
+      data-ui="SwipeActions"
+      data-row-modifiers={(modifiers ?? []).map((modifier) => modifier.name).join(" ")}
+    >
+      {children}
+    </div>
+  )) as ReturnType<typeof box> & {
     Actions: (props: {
       edge?: string;
       allowsFullSwipe?: boolean;
@@ -149,6 +165,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
         "listRowInsets",
         "listRowSeparator",
         "listStyle",
+        "onTapGesture",
         "padding",
         "scrollContentBackground",
         "scrollDisabled",
@@ -324,6 +341,42 @@ describe("iOS swipe row", () => {
       for (const button of buttons) button.click();
     });
     expect(onAction.mock.calls).toEqual([["read"], ["archive"], ["unpin"]]);
+    act(() => root.unmount());
+  });
+
+  it("joins the native inbox list as one of its rows, opened by the list's own tap", () => {
+    const onPress = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <NativeListRowContext.Provider
+          value={{ modifiers: [{ name: "listRowInsets" } as never], width: 300 }}
+        >
+          <InboxSwipeRow
+            rowKey="bot:1"
+            sections={sections}
+            preview={{ title: "Ada", message: "Hi", avatar: <i /> }}
+            onPress={onPress}
+            onAction={vi.fn()}
+            onOrganize={vi.fn()}
+            onEditSection={vi.fn()}
+          >
+            <span>Ada</span>
+          </InboxSwipeRow>
+        </NativeListRowContext.Provider>,
+      ),
+    );
+    // No list of its own: the row takes the list's row modifiers, plus a tap that scrolling cancels.
+    expect(container.querySelector('[data-ui="Host"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLElement>('[data-ui="SwipeActions"]')?.dataset.rowModifiers,
+    ).toBe("listRowInsets onTapGesture");
+    // The hosted row takes no touches, so a drag that scrolls the list never ends as a tap.
+    const trigger = container.querySelector('[data-ui="ContextMenu.Trigger"]');
+    expect(
+      trigger?.querySelector("[data-pointer-events]")?.getAttribute("data-pointer-events"),
+    ).toBe("none");
     act(() => root.unmount());
   });
 

@@ -15,7 +15,7 @@ import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 
 /**
- * A SwiftUI inset grouped list filling a screen under the floating header.
+ * A SwiftUI list (inset grouped by default) filling a screen under the floating header.
  *
  * The header's height comes from navigation, not from the hosting view's safe area, which can be
  * stale after a text size change and put the first row under the close button and title. So the
@@ -25,11 +25,13 @@ import { iosAtLeast } from "../lib/native-controls";
  * display's status bar.
  */
 export function NativeInsetList({
+  variant = "insetGrouped",
   modifiers = [],
   background,
   seedColor,
   children,
 }: {
+  variant?: "insetGrouped" | "plain";
   modifiers?: ViewModifier[];
   background?: ColorValue;
   seedColor?: ColorValue;
@@ -47,7 +49,7 @@ export function NativeInsetList({
     >
       <List
         modifiers={[
-          listStyle("insetGrouped"),
+          listStyle(variant),
           ...(headerInset > 0 ? [ignoreSafeArea({ regions: "container", edges: "vertical" })] : []),
           ...modifiers,
         ]}
