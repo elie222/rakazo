@@ -116,6 +116,20 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
 });
 
 describe("decision provider failures", () => {
+  it("does not count a request that never connected", async () => {
+    const afterCall = vi.fn();
+    await expect(
+      new HttpDecisionProvider("typesafe", {
+        apiKey: "fake-key",
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+        callObserver: { beforeCall: () => "reservation", afterCall },
+      }).decide(request, context),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+    expect(afterCall).toHaveBeenCalledWith("reservation", null);
+  });
+
   it("refuses a blank API key before any request", () => {
     expect(() => new HttpDecisionProvider("typesafe", { apiKey: " " })).toThrow(
       expect.objectContaining({ kind: "authentication" }),

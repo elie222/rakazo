@@ -230,7 +230,15 @@ export function usageReportingFetch(
     rejectedRequests.delete(reported);
     sseObserved.delete(reported);
     dispatchedRequests.add(reported);
-    const response = await transport(input, init);
+    let response: Response;
+    try {
+      response = await transport(input, init);
+    } catch (error) {
+      // A connection failure the caller did not cause never reached the provider; a stop
+      // before any response may have, so it keeps counting as sent.
+      if (!init?.signal?.aborted) dispatchedRequests.delete(reported);
+      throw error;
+    }
     // OpenRouter's Anthropic-format stream carries the upstream message id; its usage
     // lookup accepts only the generation id from this header.
     await observeRequestId(response.headers.get("x-generation-id"), reported, onRequestId);

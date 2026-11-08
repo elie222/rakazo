@@ -430,6 +430,26 @@ describe("Pi usage accounting", () => {
     }
     expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
   });
+  it("does not count a request that failed to connect", async () => {
+    const afterCall = vi.fn();
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      },
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
   it("counts the prompt of a call stopped after sending but before any response", async () => {
     const controller = new AbortController();
     const afterCall = vi.fn();

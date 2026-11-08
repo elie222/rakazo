@@ -78,7 +78,11 @@ export class HttpDecisionProvider implements DecisionProvider {
           },
           body,
         },
-      );
+      ).catch((error: unknown) => {
+        // A connection failure the caller did not cause never reached the provider.
+        if (!context.signal.aborted) sent = false;
+        throw error;
+      });
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
