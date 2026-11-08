@@ -7,7 +7,13 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, attachmentComputerPath, isTerminal } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  attachmentComputerPath,
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
+  isTerminal,
+} from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
@@ -926,6 +932,49 @@ export async function runTrial(
       if (/unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText))
         throw new EvalFailure("provider", lastText);
     }
+    let delegation: Evidence["delegation"];
+    if (scenario.delegation) {
+      if (!handles.awaitIdle)
+        throw new EvalFailure("harness", "Delegation evals require executor draining");
+      await withinDeadline(handles.awaitIdle(), deadline);
+      const helpers = await prisma.run.findMany({
+        where: { botId, trigger: BACKGROUND_HELPER_TRIGGER, delegatedFromRunId: { in: runIds } },
+        select: { id: true, status: true },
+      });
+      const results = await prisma.run.findMany({
+        where: {
+          botId,
+          trigger: HELPER_RESULT_TRIGGER,
+          delegatedFromRunId: { in: helpers.map((r) => r.id) },
+        },
+        select: { id: true, status: true },
+      });
+      const snapshot = await rpc<{
+        messages: Array<{ runId?: string | null; blocks: MessageBlock[] }>;
+      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      delegation = {
+        helpers: await Promise.all(
+          helpers.map(async (helper) => ({
+            status: helper.status,
+            tools: (
+              await prisma.event.findMany({
+                where: { runId: helper.id, type: "agent.tool.called" },
+                select: { payload: true },
+              })
+            ).map((event) => String((event.payload as { name?: string }).name ?? "unknown")),
+          })),
+        ),
+        results: results.map((run) => ({
+          status: run.status,
+          text: snapshot.messages
+            .filter((message) => message.runId === run.id)
+            .flatMap((message) =>
+              message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])),
+            )
+            .join("\n"),
+        })),
+      };
+    }
     const files: Evidence["files"] = {};
     for (const path of scenario.files ?? []) {
       try {
@@ -973,6 +1022,7 @@ export async function runTrial(
     const finalStep = scenario.steps.length;
     const evidence: Evidence = {
       text: lastText,
+      ...(delegation ? { delegation } : {}),
       replies,
       memberReplies,
       routineRuns,
@@ -1011,6 +1061,7 @@ export async function runTrial(
       Object.entries({
         ...files,
         "final-response": lastText,
+        ...(delegation ? { delegation: JSON.stringify(delegation) } : {}),
         ...(scenario.history && replies.length > 1
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),

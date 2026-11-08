@@ -55,6 +55,12 @@ import {
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
+import {
+  SUBAGENT_EVAL_CASES,
+  SUBAGENT_FIXTURE_VERSION,
+  SUBAGENT_JUDGE_CALIBRATION,
+  SUBAGENT_JUDGE_VERSION,
+} from "../evals/subagents.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
@@ -116,6 +122,11 @@ async function main() {
     }
   > = {
     product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
+    subagents: {
+      cases: SUBAGENT_EVAL_CASES,
+      fixtureVersion: SUBAGENT_FIXTURE_VERSION,
+      judge: { version: SUBAGENT_JUDGE_VERSION, calibration: SUBAGENT_JUDGE_CALIBRATION },
+    },
     history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
     silence: {
       cases: SILENCE_EVAL_CASES,
@@ -156,7 +167,7 @@ async function main() {
   };
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error(
-      "Unknown suite; use product, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
+      "Unknown suite; use product, subagents, history, group, group-routing, silence, initiative, deliberation, memory, recall, tool-choice, bot-files, or approval",
     );
   const suite = suites[values.suite!]!;
   const suiteJudge = suite.judge;

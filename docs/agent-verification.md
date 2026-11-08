@@ -280,6 +280,20 @@ judge for natural-language meaning, with a versioned rubric and calibration
 against reviewed examples. Do not match prose against keywords or regexes, and
 do not let a judge override forbidden effects or missing artifacts.
 
+### Independent subagent evals
+
+`pnpm test:evals --suite subagents --list` lists three live cases for app, group
+and connected messaging conversations. Run with `--live`, a subject connection
+and pricing, and a judge connection and pricing as in the group suite below.
+
+Each helper reads synthetic shipment data and saves a calculated JSON artifact.
+Grading requires completed helper and parent result runs, file reads and writes
+performed by the helper itself, and the correct saved numbers. The calibrated
+`subagent-result-meaning-v1` judge then checks whether the parent's later reply
+conveys the findings. A promise to report later cannot pass. The runner drains
+the independent workflow before observing it; the checks use no real external
+services or production data.
+
 ### Bot deliberation evals
 
 ```sh
