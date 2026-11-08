@@ -13,6 +13,7 @@ import { buildModelConnectPlaintext } from "./model-connect.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   assertAllowedOpenAiCompatibleUrl,
+  COMPATIBLE_ENDPOINT_PRESETS,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -1057,6 +1058,14 @@ describe("built-in public compatible host", () => {
     expect(
       assertAllowedOpenAiCompatibleUrl("https://other.test", { allowPublic: true }).hostname,
     ).toBe("other.test");
+  });
+
+  it("lets every hosted preset connect without the public gate", () => {
+    for (const preset of COMPATIBLE_ENDPOINT_PRESETS) {
+      expect(assertAllowedOpenAiCompatibleUrl(preset.baseUrl, { allowPublic: false }).href).toBe(
+        preset.baseUrl,
+      );
+    }
   });
   it("still rejects a private DNS answer for the built-in host", async () => {
     const safeFetch = createOpenAiCompatibleFetch(

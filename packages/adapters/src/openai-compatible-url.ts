@@ -13,11 +13,12 @@ import {
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com", "www.openllm.sh"]);
 
 /** Hosted compatible services the catalog offers by name. Each one needs a key. */
 export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
   { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  { name: "OpenLLM", baseUrl: "https://www.openllm.sh/v1" },
 ];
 
 export function compatibleEndpointPreset(baseUrl: string | undefined) {
