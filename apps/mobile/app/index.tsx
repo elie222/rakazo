@@ -30,7 +30,7 @@ import { createHomeStyles } from "../components/home-styles";
 import { ActivitySection } from "../components/inbox-activity";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
-import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
+import { CompactRowsContext, NeedsYouRow, SelectedChatContext } from "../components/inbox-rows";
 import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
@@ -54,6 +54,7 @@ import {
   unreadChatCount,
 } from "../lib/app-badge";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { fetchAttentionItems } from "../lib/attention";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
@@ -91,7 +92,11 @@ import {
 import type { OrganizeTarget } from "../lib/organize-target";
 import { findOrganizeTarget } from "../lib/organize-target";
 import { offerPasskeyOnce } from "../lib/passkey";
-import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
+import {
+  ACTIVITY_POLL_INTERVAL_MS,
+  ATTENTION_POLL_INTERVAL_MS,
+  INBOX_POLL_INTERVAL_MS,
+} from "../lib/poll-cadence";
 import { registerPushToken } from "../lib/push";
 import { forgetReferrals, rememberReferral } from "../lib/referral";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
@@ -193,7 +198,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     active: [],
     recent: [],
   });
+  const [attentionCount, setAttentionCount] = useState(0);
   const activityRequestId = useRef(0);
+  const attentionRequestId = useRef(0);
   const inboxRequestId = useRef(0);
   const inboxLoaded = useRef(false);
   const creatingBotRef = useRef(false);
@@ -419,9 +426,35 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     hasSession && activityMode && (embedded || isFocused),
   );
 
+  const loadAttention = useCallback(async () => {
+    if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
+    if (!hasSession) {
+      attentionRequestId.current += 1;
+      setAttentionCount(0);
+      return;
+    }
+    const requestId = ++attentionRequestId.current;
+    try {
+      const next = await fetchAttentionItems();
+      if (requestId !== attentionRequestId.current) return;
+      setAttentionCount(next.length);
+    } catch (error) {
+      if (requestId !== attentionRequestId.current) return;
+      // A refused request would stay refused; keep the last count and stop polling.
+      return isRetryableError(error);
+    }
+  }, [hasSession]);
+
+  useForegroundPoll(
+    loadAttention,
+    ATTENTION_POLL_INTERVAL_MS,
+    hasSession && (embedded || isFocused),
+  );
+
   useEffect(
     () => () => {
       activityRequestId.current += 1;
+      attentionRequestId.current += 1;
     },
     [activityMode, hasSession],
   );
@@ -609,7 +642,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setSpaceBusy(true);
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
+      attentionRequestId.current += 1;
       setActivity({ active: [], recent: [] });
+      setAttentionCount(0);
       // Close a pane in another space before selection can change its request context.
       onSelectSpace?.(spaceId);
       try {
@@ -627,6 +662,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           spaceActionRef.current.busy = false;
           await refreshBots();
           await loadActivity();
+          await loadAttention();
         };
         const selected =
           spaceActionRef.current.recoveryId === spaceId
@@ -642,7 +678,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         setSpaceBusy(false);
       }
     },
-    [refreshBots, loadActivity, onSelectSpace, t],
+    [refreshBots, loadActivity, loadAttention, onSelectSpace, t],
   );
 
   const deleteInboxSpace = useCallback(
@@ -657,12 +693,15 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       setSpaceBusy(true);
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
+      attentionRequestId.current += 1;
+      setAttentionCount(0);
       try {
         const recoveryId = await removeInboxSpace(space.id, async () => {
           spaceActionRef.current.busy = false;
           setActivity({ active: [], recent: [] });
           await refreshBots();
           await loadActivity();
+          await loadAttention();
         });
         if (recoveryId) {
           spaceActionRef.current.recoveryId = recoveryId;
@@ -676,7 +715,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         setSpaceBusy(false);
       }
     },
-    [refreshBots, loadActivity, t],
+    [refreshBots, loadActivity, loadAttention, t],
   );
 
   const confirmDeleteSpace = useCallback(
@@ -887,6 +926,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     onRefresh={() => {
                       void refreshBots();
                       void loadActivity();
+                      void loadAttention();
                     }}
                     tintColor={native.secondaryLabel}
                     colors={[tokens.mutedForeground]}
@@ -905,6 +945,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                       >
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
+                    ) : null}
+                    {!onShareSelect && attentionCount > 0 ? (
+                      <NeedsYouRow count={attentionCount} onPress={() => router.push("/needs")} />
                     ) : null}
                     {/* Folds are saved per account, so wait for it before offering them. */}
                     {!onShareSelect && activityMode && userId ? (

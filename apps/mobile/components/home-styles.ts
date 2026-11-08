@@ -224,6 +224,21 @@ export function createHomeStyles() {
       paddingBottom: 4,
     },
     archivedRow: { flex: 0, width: "100%" },
+    needsYouRow: {
+      flex: 0,
+      width: "100%",
+      gap: 8,
+      paddingTop: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: native.fillPressed,
+      marginBottom: 4,
+    },
+    needsYouTitle: {
+      flex: 1,
+      color: native.label,
+      ...typeScale.secondary,
+      fontWeight: "600",
+    },
     sectionTitle: {
       flexShrink: 1,
       color: native.secondaryLabel,
