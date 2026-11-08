@@ -200,7 +200,9 @@ jobs:
         run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Install agent-browser
         if: steps.areas.outputs.e2e != 'false' && matrix.agent_browser
-        timeout-minutes: 2
+        timeout-minutes: 5
+        # Release downloads sometimes 5xx or stall. The script retries those, and a slow
+        # download plus the backoff can outlast a 2-minute step before any test starts.
         run: |
           infra/sandboxes/computer/install-agent-browser.sh "$RUNNER_TEMP/agent-browser"
           echo "RAKAZO_AGENT_BROWSER=$RUNNER_TEMP/agent-browser/agent-browser" >> "$GITHUB_ENV"
