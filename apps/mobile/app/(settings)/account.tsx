@@ -94,6 +94,7 @@ import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet"
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
+import { openStoreListing, useStoreUpdateAvailable } from "../../lib/store-update";
 import {
   loadTrustedLinkSites,
   removeTrustedLinkSite,
@@ -218,6 +219,7 @@ export default function Account() {
   const versionInfo = getAppVersionInfo();
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const storeUpdateAvailable = useStoreUpdateAvailable();
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
   const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
@@ -853,6 +855,14 @@ export default function Account() {
               ) : null}
               {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
             </View>
+          ) : null}
+          {storeUpdateAvailable ? (
+            <NativeActionButton
+              label={t("Update")}
+              onPress={openStoreListing}
+              prominence="secondary"
+              size="compact"
+            />
           ) : null}
         </View>
 
