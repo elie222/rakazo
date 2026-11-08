@@ -18,7 +18,7 @@ Rakazo は、Grok Bot のオープンソースかつセルフホスト可能な�
 
 Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet の代替ツールでもあります。
 
-Rakazo は現在ベータ版です。詳しくは [rakazo.com](https://rakazo.com) をご覧ください。
+詳しくは [rakazo.com](https://rakazo.com) をご覧ください。
 
 このドキュメントは[英語版 README](./README.md) の日本語訳です。リンク先のドキュメントは現在英語のみです。
 

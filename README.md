@@ -20,7 +20,7 @@ Use it on the [web](https://app.rakazo.com), [desktop](https://rakazo.com/downlo
 It is also an alternative to Meta Muse, OpenAI Dots, Instinct, OpenClaw, Hermes Agent, and Claude
 Duet.
 
-Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
+Learn more at [rakazo.com](https://rakazo.com).
 
 ## Features
 
