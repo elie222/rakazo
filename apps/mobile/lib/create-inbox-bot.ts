@@ -1,3 +1,4 @@
+import type { CreateBotInput } from "@rakazo/contracts";
 import type { Href } from "expo-router";
 import { captureApiRequestContext, rpc, selectedSpaceId, spaceSelectionSeq } from "./api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "./focus-prompt";
@@ -6,17 +7,17 @@ import { askToAddModel } from "./model-settings";
 import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "./search-inbox";
 
 /**
- * Creates a bot from the inbox's Create menu, adds it to the search roster, and opens its chat.
+ * Creates the bot named on the New bot screen, adds it to the search roster, and opens its chat.
  * With a spaceId its requests are pinned to that space, whichever is selected.
  * The first bot waits for a model, as in web onboarding, so it can greet the user.
  * Throws when the bot could not be created.
  */
 export async function createInboxBot({
-  refreshBots,
+  input,
   openChat,
   spaceId,
 }: {
-  refreshBots: () => Promise<unknown>;
+  input: Pick<CreateBotInput, "name" | "color" | "id" | "avatarFamily">;
   openChat: (href: Href) => void;
   spaceId?: string;
 }) {
@@ -46,12 +47,11 @@ export async function createInboxBot({
   }
   const bot = await rpc(
     "bots/create",
-    { name: "New Bot", notifyOnFinish: true, computerMode: "team" },
+    { ...input, notifyOnFinish: true, computerMode: "team" },
     options,
   );
   if (!isSearchInboxSession(askedIn)) return;
   hapticSuccess();
-  void refreshBots().catch(() => undefined);
   allowFocusPrompt(bot.id);
   addToSearchInbox({ kind: "bot", bot }, askedIn);
   openChat({

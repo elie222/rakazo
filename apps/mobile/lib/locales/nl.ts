@@ -503,6 +503,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Minimal: "Minimaal",
   Model: "Model",
   Name: "Naam",
+  "Name your Bot": "Geef je bot een naam",
   "Read replies aloud": "Antwoorden hardop voorlezen",
   Save: "Opslaan",
   "Saving…": "Bezig met opslaan…",

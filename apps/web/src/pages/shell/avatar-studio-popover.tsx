@@ -4,7 +4,7 @@ import type { BotAvatarSet } from "@rakazo/contracts";
 import { resolveBotAvatarSet } from "@rakazo/contracts";
 import { SHIPPED_BOT_AVATAR_SHAPE_KEYS } from "@rakazo/core";
 import {
-  BOT_AVATAR_COLORS,
+  BOT_COLORS,
   BotAvatar,
   BotShapePreview,
   DEFAULT_BOT_AVATAR_COLOR,
@@ -139,7 +139,7 @@ export function BotLookPicker({
           </div>
         )}
         <div className="grid grid-cols-6 place-items-center gap-2">
-          {BOT_AVATAR_COLORS.map((color) => {
+          {BOT_COLORS.map((color) => {
             const selected = currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
             return (
               <button

@@ -2,14 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
-  newClientId,
-  ORGANIC_AVATAR_HEART_FAMILY,
-  ORGANIC_AVATAR_LOOKS,
-  organicAvatarFamily,
-  organicAvatarSampleIdentity,
+  newBotLook,
+  newBotLookInput,
+  newBotPreviewIdentity,
+  ORGANIC_PREVIEW_IDENTITIES,
 } from "@rakazo/core";
 import {
-  BOT_AVATAR_COLORS,
   BotAvatar,
   Button,
   Dialog,
@@ -18,18 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  parseBotAvatar,
 } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
 import { errorText } from "../../lib/user-error";
 import { BotLookPicker } from "./avatar-studio-popover";
-
-/** One preview identity per organic look, so the dialog can show a body before the bot has an id. */
-const ORGANIC_IDENTITIES = ORGANIC_AVATAR_LOOKS.map(organicAvatarSampleIdentity);
-
-function pick<T>(options: readonly T[]): T {
-  return options[Math.floor(Math.random() * options.length)]!;
-}
 
 export interface CreateBotDialogInput {
   name: string;
@@ -54,17 +44,8 @@ export function CreateBotDialog({
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
-  const [previewId] = useState(() => {
-    let id: string;
-    do {
-      id = `c${newClientId().replaceAll("-", "").slice(0, 24)}`;
-    } while (organicAvatarFamily(id) === ORGANIC_AVATAR_HEART_FAMILY);
-    return id;
-  });
-  const [look, setLook] = useState(() => ({
-    value: pick(BOT_AVATAR_COLORS),
-    identity: pick(ORGANIC_IDENTITIES),
-  }));
+  const [look, setLook] = useState(newBotLook);
+  const identity = newBotPreviewIdentity(avatarSet, look);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = name.trim();
@@ -73,14 +54,8 @@ export function CreateBotDialog({
     if (!trimmed || submitting) return;
     setError(null);
     setSubmitting(true);
-    const organic = avatarSet === "organic" && parseBotAvatar(look.value).shapeIndex === undefined;
     try {
-      await onCreate({
-        name: trimmed,
-        color: look.value,
-        ...(avatarSet === "rakazo" ? { id: previewId } : {}),
-        ...(organic ? { avatarFamily: organicAvatarFamily(look.identity) } : {}),
-      });
+      await onCreate({ name: trimmed, ...newBotLookInput(avatarSet, look) });
     } catch (err) {
       setError(errorText(err, t`Could not create bot`));
       setSubmitting(false);
@@ -114,12 +89,7 @@ export function CreateBotDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="flex justify-center py-2">
-            <BotAvatar
-              color={look.value}
-              identity={avatarSet === "rakazo" ? previewId : look.identity}
-              size={96}
-              avatarSet={avatarSet}
-            />
+            <BotAvatar color={look.color} identity={identity} size={96} avatarSet={avatarSet} />
           </div>
           <Input
             ref={nameRef}
@@ -140,12 +110,12 @@ export function CreateBotDialog({
             </p>
           ) : null}
           <BotLookPicker
-            value={look.value}
-            identity={avatarSet === "rakazo" ? previewId : look.identity}
-            organicIdentities={ORGANIC_IDENTITIES}
+            value={look.color}
+            identity={identity}
+            organicIdentities={ORGANIC_PREVIEW_IDENTITIES}
             avatarSet={avatarSet}
-            onChange={(value, identity) => {
-              setLook((current) => ({ value, identity: identity ?? current.identity }));
+            onChange={(color, picked) => {
+              setLook((current) => ({ ...current, color, identity: picked ?? current.identity }));
             }}
           />
           <DialogFooter>

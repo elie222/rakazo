@@ -1,11 +1,6 @@
+import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  BOT_COLOR_LIST,
-  botEyeInk,
-  botEyeTone,
-  chatUserBubbleColors,
-  contrastRatio,
-} from "./bot-avatar-colors.js";
+import { botEyeInk, botEyeTone, chatUserBubbleColors, contrastRatio } from "./bot-avatar-colors.js";
 
 describe("botEyeTone", () => {
   it("cuts eyes in the page color unless the body is nearly white or black", () => {

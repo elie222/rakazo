@@ -729,7 +729,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   ui.searchInboxSession.mockReset().mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.addToSearchInbox.mockReset();
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: vi.fn(),
     spaceId: "space-work",
   });
@@ -747,7 +747,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   );
   // The Create menu's bot sends no pin, so it follows the selected space as before.
   ui.rpc.mockClear();
-  await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(4));
   expect(spaces()).toEqual([
     ["bots/list", undefined],
@@ -768,7 +768,7 @@ it.each(["session", "space"])(
       );
     const openChat = vi.fn();
     const creating = createInboxBot({
-      refreshBots: async () => undefined,
+      input: { name: "Scout" },
       openChat,
       spaceId: "space-work",
     });
@@ -794,7 +794,7 @@ it("does not open a created bot after its account or server changes", async () =
     );
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -815,7 +815,7 @@ it("opens a heading-created bot in its space after the selection changes during 
   });
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -841,7 +841,7 @@ it.each([true, false])(
       return [];
     });
     const openChat = vi.fn();
-    await createInboxBot({ refreshBots: async () => undefined, openChat, spaceId: "space-work" });
+    await createInboxBot({ input: { name: "Scout" }, openChat, spaceId: "space-work" });
     expect(ui.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, {
       requestContext: { headers: { "x-rakazo-space-id": "space-work" } },
     });
@@ -867,7 +867,7 @@ it("asks for a model instead of making the first bot when the account has none",
     return method === "bots/list" ? bots : { id: "bot-new", name: "New Bot" };
   });
   const openChat = vi.fn();
-  const create = () => createInboxBot({ refreshBots: async () => undefined, openChat });
+  const create = () => createInboxBot({ input: { name: "Scout" }, openChat });
   const buttons = () =>
     ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[] | undefined;
   const select = (spaceId: string) => {
@@ -984,13 +984,18 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
       calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(session)}`),
     );
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
   // The server gives the bot the account's set, so the inbox sends none.
   expect(ui.rpc).toHaveBeenCalledWith(
     "bots/create",
     expect.not.objectContaining({ avatarSet: expect.anything() }),
+    undefined,
+  );
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ name: "Scout" }),
     undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
@@ -1013,9 +1018,9 @@ it("does not confirm a failed inbox bot creation with success feedback", async (
     if (method === "bots/create") throw new Error("Creation failed");
     return [];
   });
-  await expect(
-    createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() }),
-  ).rejects.toThrow("Creation failed");
+  await expect(createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).rejects.toThrow(
+    "Creation failed",
+  );
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });
 
@@ -1033,7 +1038,7 @@ it.each([
         })
       : [],
   );
-  const creating = createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  const creating = createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() =>
     expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
   );

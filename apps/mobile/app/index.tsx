@@ -44,7 +44,6 @@ import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import type { CreateAction } from "../lib/create-chooser";
-import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
@@ -188,7 +187,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
-  const creatingBotRef = useRef(false);
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
@@ -584,34 +582,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(
-    async (spaceId?: string) => {
-      if (
-        creatingBotRef.current ||
-        spaceActionRef.current.busy ||
-        spaceActionRef.current.recoveryId
-      )
-        return;
-      creatingBotRef.current = true;
-      try {
-        await createInboxBot({ refreshBots, openChat, spaceId });
-      } catch (err) {
-        setError(errorText(err, t("Could not create bot")));
-      } finally {
-        creatingBotRef.current = false;
-      }
+  const newBot = useCallback(
+    (spaceId?: string) => {
+      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
+      router.push({
+        pathname: "/new-bot",
+        params: { avatarSet: me?.botAvatarSet, ...(spaceId ? { spaceId } : {}) },
+      });
     },
-    [openChat, refreshBots, t],
+    [me?.botAvatarSet, router],
   );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      if (action === "bot") void createQuickBot();
+      if (action === "bot") newBot();
       else if (action === "group") router.push("/new-group");
       else router.push("/new-space");
     },
-    [createQuickBot, router],
+    [newBot, router],
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
@@ -701,7 +690,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botAction,
     chooseInboxSpace,
     confirmDeleteSpace,
-    createBotInSpace: createQuickBot,
+    createBotInSpace: newBot,
     day,
     now: snoozeNow,
     deleteSection,
