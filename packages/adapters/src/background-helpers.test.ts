@@ -27,6 +27,9 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
   const createRun = vi.fn(async (_args: unknown) => ({ id: "helper-run" }));
   const tx = {
     $queryRaw: vi.fn(async () => []),
+    message: {
+      findFirst: vi.fn(async (_args: unknown): Promise<{ blocks: unknown[] } | null> => null),
+    },
     thread: { create: vi.fn(async () => ({ id: "helper-thread" })) },
     task: { create: vi.fn(async () => ({ id: "helper-task" })) },
     run: {
@@ -49,7 +52,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
       botId: overrides.threadBotId === undefined ? "bot" : overrides.threadBotId,
     },
   } as unknown as RunContext;
-  return { ctx, prisma, createRun, enqueue };
+  return { ctx, prisma, createRun, enqueue, tx };
 }
 
 describe("starting a background helper", () => {
@@ -73,6 +76,36 @@ describe("starting a background helper", () => {
     });
   });
 
+  it("preserves the source user's attachments on the independent run", async () => {
+    const h = harness();
+    h.ctx.run.sourceMessageId = "user-message";
+    const file = {
+      kind: "file",
+      artifactId: "artifact-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      size: 12,
+    };
+    h.tx.message.findFirst.mockResolvedValue({
+      blocks: [{ kind: "text", text: "Summarize this" }, file],
+    });
+    await startBackgroundHelper(h.ctx, START);
+    expect(h.tx.message.findFirst).toHaveBeenCalledWith({
+      where: { id: "user-message", threadId: "chat", role: "user" },
+      select: { blocks: true },
+    });
+    expect(createThreadMessageInTransaction).toHaveBeenCalledWith(
+      h.tx,
+      expect.objectContaining({
+        threadId: "helper-thread",
+        runId: "helper-run",
+        role: "user",
+        blocks: [file],
+        markUnread: false,
+      }),
+    );
+  });
+
   it("keeps its card running when the turn that started it ends", async () => {
     const h = harness();
     await startBackgroundHelper(h.ctx, START);
@@ -93,7 +126,7 @@ describe("starting a background helper", () => {
   ])("refuses to start one from %s", async (_label, overrides) => {
     const h = harness(overrides);
     await expect(startBackgroundHelper(h.ctx, START)).resolves.toEqual({
-      error: expect.stringContaining("only from the user's own app chat"),
+      error: expect.stringContaining("only in the bot's app chat"),
     });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });

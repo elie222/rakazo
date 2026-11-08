@@ -236,26 +236,20 @@ export const messagingTools: ToolHandlers = {
   },
   async run_subagent(ctx, call) {
     const { args } = call;
-    if (args.background === true) {
-      return call.finish(
-        await startBackgroundHelper(ctx, {
-          name:
-            String(args.name ?? "helper")
-              .trim()
-              .slice(0, 80) || "helper",
-          task: redactSecrets(String(args.task ?? "").trim(), ctx.secrets),
-          instructions: redactSecrets(String(args.instructions ?? "").trim(), ctx.secrets),
-          modelProvider: String(args.model_provider ?? "").trim(),
-          modelId: String(args.model_id ?? "").trim(),
-          executionId: call.executionId,
-          effectKey: call.effectKey,
-        }),
-      );
-    }
-    return {
-      ok: true,
-      result: String(args.task ?? "done."),
-    };
+    return call.finish(
+      await startBackgroundHelper(ctx, {
+        name:
+          String(args.name ?? "helper")
+            .trim()
+            .slice(0, 80) || "helper",
+        task: redactSecrets(String(args.task ?? "").trim(), ctx.secrets),
+        instructions: redactSecrets(String(args.instructions ?? "").trim(), ctx.secrets),
+        modelProvider: String(args.model_provider ?? "").trim(),
+        modelId: String(args.model_id ?? "").trim(),
+        executionId: call.executionId,
+        effectKey: call.effectKey,
+      }),
+    );
   },
   async message_user(ctx, call) {
     const { args } = call;

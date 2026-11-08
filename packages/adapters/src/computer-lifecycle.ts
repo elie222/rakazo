@@ -18,7 +18,7 @@ import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
-  COMPUTER_USING_RUNS,
+  computerUsingRuns,
   isRetryableError,
   parseScreenLeaseId,
   screenLeaseId,
@@ -154,7 +154,7 @@ async function hasLiveForeignRunLease(
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       leaseExpiresAt: { gt: new Date() },
       ...(exceptRunId ? { id: { not: exceptRunId } } : {}),
     },
@@ -794,6 +794,7 @@ export async function acquireDedicatedScreenLeaseFence(
     }
 
     await lockOwnedRun(tx, input);
+    await tx.run.update({ where: { id: input.runId }, data: { computerUseStartedAt: new Date() } });
 
     // An unexpired holder owns the screen until release, pause, or expiry. Keep the
     // expired row so explicit release never resets the next worker's screen fence.
@@ -880,7 +881,18 @@ export async function acquireComputerExecutionLease(
     // Only the locked current worker claim may reclaim a live same-run lease.
     // API operations have no worker claim and may acquire only new or expired leases.
     const ownsRun = input.workerId !== undefined;
-    if (ownsRun) await lockOwnedRun(tx, input);
+    if (ownsRun) {
+      const assigned = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM bots WHERE id = ${input.botId}
+          AND "computerId" = ${input.computerId} AND "computerSwitching" = false
+        FOR UPDATE SKIP LOCKED`;
+      if (assigned.length !== 1) throw new ComputerBusyError();
+      await lockOwnedRun(tx, input);
+      await tx.run.update({
+        where: { id: input.runId },
+        data: { computerUseStartedAt: new Date() },
+      });
+    }
     const now = new Date();
     const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
     const [reclaimed] = await tx.computerExecutionLease.updateManyAndReturn({
@@ -942,6 +954,32 @@ async function validateAcquiredComputerLease(
   )
     return lease;
   throw new ComputerBusyError();
+}
+
+/** Wait only for this bot's computer; model and connector work never acquires this lease. */
+export async function waitForRunComputerLease(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
+  signal: AbortSignal,
+): Promise<ComputerExecutionLease | null> {
+  while (true) {
+    signal.throwIfAborted();
+    const bot = await prisma.bot.findUnique({
+      where: { id: input.botId },
+      select: { computerId: true, computerSwitching: true, archivedAt: true },
+    });
+    if (!bot || bot.archivedAt || bot.computerId !== input.computerId)
+      throw new Error("The bot's computer changed; start the task again.");
+    if (!bot.computerSwitching) {
+      try {
+        const lease = await acquireComputerExecutionLease(prisma, input);
+        return lease ?? (await acquireDedicatedScreenLeaseFence(prisma, input));
+      } catch (error) {
+        if (!(error instanceof ComputerBusyError)) throw error;
+      }
+    }
+    await abortableDelay(250, signal);
+  }
 }
 
 export async function renewComputerExecutionLease(
@@ -1101,7 +1139,7 @@ export async function replaceComputer(
       where: {
         status: { in: [...ACTIVE_RUN_STATUSES] },
         bot: { computerId },
-        ...COMPUTER_USING_RUNS,
+        ...computerUsingRuns(),
       },
       select: { id: true },
     });
@@ -1186,7 +1224,7 @@ export async function replaceComputer(
           where: {
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId },
-            ...COMPUTER_USING_RUNS,
+            ...computerUsingRuns(),
           },
           select: { id: true },
         });

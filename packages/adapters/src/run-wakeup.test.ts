@@ -287,7 +287,7 @@ describe("durable direct run wakeups", () => {
     }
   });
 
-  it("leaves busy runs untouched, dispatches unrelated chats, and recovers when the lease releases", async () => {
+  it("dispatches both chats even while one bot has a busy computer", async () => {
     const f = fixture();
     f.rows.set("busy", { status: "queued", wakeAt: null });
     f.rows.set("free", { status: "queued", wakeAt: null });
@@ -305,11 +305,6 @@ describe("durable direct run wakeups", () => {
     try {
       await f.host.start({ "run.continue": handler } as unknown as BackgroundJobHandlers);
       await vi.waitFor(() => expect(f.rows.get("free")!.status).toBe("completed"));
-      await vi.waitFor(() => expect(f.leases.mock.calls.length).toBeGreaterThan(2));
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(f.rows.get("busy")).toEqual({ status: "queued", wakeAt: null });
-      expect(f.updateMany).not.toHaveBeenCalled();
-      f.leases.mockResolvedValue([]);
       await vi.waitFor(() => expect(f.rows.get("busy")!.status).toBe("completed"));
       expect(handler).toHaveBeenCalledTimes(2);
     } finally {

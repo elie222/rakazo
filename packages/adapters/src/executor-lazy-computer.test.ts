@@ -14,6 +14,7 @@ const provisionComputer = vi.hoisted(() => vi.fn());
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));

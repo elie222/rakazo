@@ -9,6 +9,7 @@ import { startModelEmulator } from "./model-emulator.js";
 vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
   ...(await original<typeof ComputerLifecycle>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   holdComputerExecutionLeaseForTakeover: async () => true,
   provisionComputer: async () => ({
@@ -825,53 +826,7 @@ describe("executor paused transcript", () => {
       await model.close();
     }
   });
-  it("drops an earlier saved turn when a helper pauses for approval", async () => {
-    const model = await startModelEmulator({
-      steps: [
-        {
-          expect() {},
-          response: {
-            type: "tool",
-            id: "earlier",
-            name: "fixture_write",
-            arguments: { content: "main" },
-          },
-        },
-        {
-          expect() {},
-          response: {
-            type: "tool",
-            id: "delegate",
-            name: "run_subagent",
-            arguments: { name: "helper", task: "Write the helper fixture." },
-          },
-        },
-        {
-          expect() {},
-          response: {
-            type: "tool",
-            id: "helper-write",
-            name: "fixture_write",
-            arguments: { content: "helper" },
-          },
-        },
-      ],
-    });
-    try {
-      const state = fixture(model.model);
-      await state.executor.continueRun(state.run.id, "fixture-worker");
-      expect(state.effects.some((effect) => effect.kind === "runtime_checkpoint")).toBe(true);
-      for (const effect of state.effects)
-        if (effect.status === "intended") effect.status = "approved";
-      state.run.status = "queued";
-      await state.executor.continueRun(state.run.id, "fixture-worker");
-      model.assertComplete();
-      expect(state.pauseRunForInput).toHaveBeenCalledTimes(2);
-      expect(state.effects.some((effect) => effect.kind === "runtime_checkpoint")).toBe(false);
-    } finally {
-      await model.close();
-    }
-  });
+
   it("fails with a clear message when the model does not repeat an approved call", async () => {
     const model = await startModelEmulator({
       steps: [

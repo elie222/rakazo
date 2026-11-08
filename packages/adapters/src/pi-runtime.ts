@@ -77,11 +77,9 @@ import {
   thinkingLevelFor,
 } from "./pi-runtime-models.js";
 import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.js";
-import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
 import type { ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
 import {
   agentToolDefinitions,
-  createGate,
   createQueue,
   describeToolActivity,
   redactAskUserDetailInMessage,
@@ -262,7 +260,6 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         const { models, model, apiKey } = selectedModel;
         const toolDefs = request.tools;
-        const nestedAgents = new Set<Agent>();
         const completionModel = modelForCompletion(model, request.model.maxTokens);
         trackedBudget = toolCallBudgetFor(request.runId);
         const initialModelTarget: RuntimeModelTarget = {
@@ -300,13 +297,10 @@ export class PiAgentRuntime implements AgentRuntime {
           models,
           model: completionModel,
           apiKey,
-          nestedAgents,
-          subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           toolCallBudget: trackedBudget,
           toolCallSeq: { value: 0 },
           abortTurn: () => undefined,
           signal,
-          depth: 0,
           pausePending: false,
           pendingShells: [],
           modelResponses: 0,
@@ -767,7 +761,6 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const onAbort = () => {
           agent.abort();
-          for (const nested of nestedAgents) nested.abort();
         };
         host.abortTurn = onAbort;
         if (signal.aborted) {

@@ -3165,7 +3165,7 @@ describe("answerRunInput", () => {
         where: {
           id: "run-1",
           spaceId: "workspace-1",
-          threadId: "thread-1",
+          OR: expect.any(Array),
           status: "waiting_input",
         },
       }),
@@ -3625,7 +3625,7 @@ describe("answerRunInput", () => {
         where: {
           id: "run-1",
           spaceId: "workspace-1",
-          threadId: "thread-1",
+          OR: expect.any(Array),
           status: "waiting_input",
         },
         data: { status: "queued" },

@@ -29,7 +29,7 @@ import type {
   VaultPutInput,
 } from "@rakazo/contracts";
 import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, computerUsingRuns, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
@@ -542,7 +542,7 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               botId: bot.id,
               status: { in: [...ACTIVE_RUN_STATUSES] },
-              ...COMPUTER_USING_RUNS,
+              ...computerUsingRuns(),
             },
             select: { id: true },
           });

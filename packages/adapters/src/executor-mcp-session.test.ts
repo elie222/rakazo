@@ -10,6 +10,7 @@ import { InstalledConnectorProvider } from "./installed-connectors.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 

@@ -37,7 +37,7 @@ import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
-  COMPUTER_USING_RUNS,
+  computerUsingRuns,
   formatSkillRunPrompt,
   teachRecordingTtlMs,
 } from "@rakazo/core";
@@ -105,7 +105,7 @@ async function cancelActiveRuns(
       botId,
       userId: actor.userId,
       status: { in: [...ACTIVE_RUN_STATUSES] },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
     },
     data: { status: "cancelled", completedAt: new Date() },
     select: { id: true },
@@ -202,7 +202,7 @@ async function assertComputerFreeFor(
   const othersWork = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       userId: { not: actor.userId },
       ...(bot.computerId ? { bot: { computerId: bot.computerId } } : { botId: bot.id }),
     },

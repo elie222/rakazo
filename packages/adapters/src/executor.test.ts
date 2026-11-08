@@ -1449,7 +1449,7 @@ describe("userTurnInstructions", () => {
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
     "update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; when you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
-    "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here. For longer work the user need not wait on, or when they ask for it, set background true and end your turn: you stay free for their next message, and the result comes back to you later to pass on. A background helper cannot use the computer, ask the user, or change memory, skills or routines; do those yourself when its result comes back.",
+    "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.",
   ];
   const archiveBot =
     "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
@@ -1553,7 +1553,7 @@ describe("userTurnInstructions", () => {
     });
     expect(instructions.some((line) => line?.includes("background true"))).toBe(false);
     expect(instructions).toContain(
-      "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+      "Subagent delegation is unavailable in this conversation. Complete the work yourself; do not claim to have delegated it.",
     );
   });
 

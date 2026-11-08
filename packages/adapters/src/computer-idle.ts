@@ -14,7 +14,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
-import { COMPUTER_USING_RUNS, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
+import { computerUsingRuns, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -1021,7 +1021,7 @@ function findActiveRun(
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       status: { in: statuses as (typeof QUEUE_HOLDING_RUN_STATUSES)[number][] },
       ...(liveLeaseOnly ? { leaseExpiresAt: { gt: new Date(Date.now()) } } : {}),
     },

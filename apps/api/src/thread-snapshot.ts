@@ -1,6 +1,7 @@
 import type { ThreadSnapshot } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   projectMessages,
   runFailureError,
@@ -41,11 +42,22 @@ export async function threadSnapshot(
             tx.run.findMany({
               where: {
                 botId: target.botId,
-                threadId: target.threadId,
                 status: { in: [...ACTIVE_RUN_STATUSES] },
                 OR: [
                   { trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] } },
                   { status: { in: ["waiting_input", "waiting_takeover"] } },
+                ],
+                AND: [
+                  {
+                    OR: [
+                      { threadId: target.threadId },
+                      {
+                        trigger: BACKGROUND_HELPER_TRIGGER,
+                        status: "waiting_input",
+                        sourceMessage: { threadId: target.threadId },
+                      },
+                    ],
+                  },
                 ],
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],

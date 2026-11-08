@@ -69,6 +69,7 @@ import {
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   screenLeaseIdForRun,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import {
   computerCheckpointResolver,
@@ -330,10 +331,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      // A background helper never uses the computer, so it neither waits for a switch nor holds
-      // the bot's next turn.
-      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
-      if (leaseTarget.computerSwitching && !backgroundHelper) {
+      // Only takeover resumes need their screen at startup. Ordinary conversation and
+      // delegated work claim the computer on first use, so neither blocks the other's chat.
+      const needsComputerNow = heldForTakeover || Boolean(takeoverResume);
+      if (leaseTarget.computerSwitching && needsComputerNow) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
@@ -359,7 +360,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
-        computerLease = backgroundHelper
+        computerLease = !needsComputerNow
           ? null
           : await acquireComputerExecutionLease(deps.prisma, {
               computerId: leaseTarget.computerId,
@@ -368,7 +369,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               workerId,
               runFence: fence,
             });
-        if (!computerLease && !backgroundHelper && leaseTarget.computer?.scope === "dedicated") {
+        if (!computerLease && needsComputerNow && leaseTarget.computer?.scope === "dedicated") {
           computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
             computerId: leaseTarget.computerId,
             runId,
@@ -417,8 +418,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
       }
       try {
-        // Acquiring the computer can requeue a busy run. Count that wait as queue
-        // time, and only stamp execution once this attempt can use its computer.
+        // A takeover resume may requeue while reclaiming its screen. Ordinary runs
+        // start model work now and claim the computer only when a tool needs it.
         const executionStarted = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { startedAt: executionStartedAt, lateSince: firstLateSince },
@@ -439,7 +440,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
 
       // A newer claim of this run now rejects this attempt's history writes.
-      deps = withRunLease(deps, runId, { owner: workerId, fence });
+      const helperConversation =
+        run.trigger === BACKGROUND_HELPER_TRIGGER && run.sourceMessageId
+          ? await deps.prisma.message.findFirst({
+              where: {
+                id: run.sourceMessageId,
+                botId: run.botId,
+                thread: { spaceId: run.spaceId, botId: run.botId },
+              },
+              select: { threadId: true },
+            })
+          : null;
+      deps = withRunLease(deps, runId, { owner: workerId, fence }, helperConversation?.threadId);
       const lease: RunLeaseState = {
         valid: true,
         completed: false,
@@ -794,6 +806,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             threadId: thread.id,
             OR: [
               ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              ...(run.trigger === BACKGROUND_HELPER_TRIGGER ? [{ runId }] : []),
               { steeringMessages: { some: { runId, botId: run.botId } } },
             ],
             role: "user",
@@ -1008,6 +1021,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const earlierFiles = createEarlierFileQueue();
         const runComputer = lazyRunComputer(
           async () => {
+            if (!computerLease) {
+              computerLease = await waitForRunComputerLease(
+                deps.prisma,
+                {
+                  computerId: storedComputer.id,
+                  botId: bot.id,
+                  runId,
+                  workerId,
+                  runFence: fence,
+                },
+                context.signal,
+              );
+              context.screenLeaseId = screenLeaseIdForRun(computerLease, runId, fence);
+            }
             getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
             earlierFiles.computerStarted();
@@ -1285,7 +1312,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             emailClaimable:
               Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
             emailSend: Boolean(deps.email),
-          }),
+          }).filter(
+            (tool) =>
+              tool.name !== "run_subagent" ||
+              backgroundHelpersAllowed({
+                threadBotId: thread.botId,
+                botId: bot.id,
+                trigger: run.trigger,
+              }),
+          ),
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
           // open, approve or use one.
@@ -1474,7 +1509,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             stored: storedComputer,
             kind: computerKind,
             mode: computerMode,
-            lease: computerLease,
+            get lease() {
+              return computerLease;
+            },
             lazy: runComputer,
             get: getRunComputer,
             copyEarlierFiles: earlierFiles.add,

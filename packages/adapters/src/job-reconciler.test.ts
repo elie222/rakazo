@@ -246,7 +246,7 @@ describe("createJobReconciler", () => {
     );
   });
 
-  it("leaves queued resource waits untouched and recovers them after release", async () => {
+  it("recovers a queued chat while another run holds its computer", async () => {
     const run = {
       id: "run-waiting",
       status: "queued",
@@ -269,7 +269,7 @@ describe("createJobReconciler", () => {
 
     await reconciler.reconcileOnce();
 
-    expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
     expect(prisma.computerExecutionLease.findMany).toHaveBeenCalledWith({
       where: { botId: { in: ["bot-1"] }, expiresAt: { gt: expect.any(Date) } },
       select: { computerId: true, botId: true, runId: true, expiresAt: true },

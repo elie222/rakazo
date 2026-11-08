@@ -11,13 +11,22 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 
 /** Deps for one attempt: its run's history writes carry the lease, so a superseded attempt cannot write. */
-export function withRunLease(deps: ExecutorDeps, runId: string, lease: RunLease): ExecutorDeps {
+export function withRunLease(
+  deps: ExecutorDeps,
+  runId: string,
+  lease: RunLease,
+  requestThreadId?: string,
+): ExecutorDeps {
   return {
     ...deps,
     runLease: { runId, ...lease },
     events: {
       ...deps.events,
       append: (input) => deps.events.append(input.runId === runId ? { lease, ...input } : input),
+      pauseRunForInput: (input) =>
+        deps.events.pauseRunForInput(
+          input.runId === runId && requestThreadId ? { ...input, requestThreadId } : input,
+        ),
     },
   };
 }

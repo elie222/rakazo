@@ -18,9 +18,10 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, ThreadSnapshot } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  answerableAskMessageIds,
   ONCE_ROUTINE_CRON,
   resolveScreenProxySecret,
   settleRunSubagents,
@@ -2088,7 +2089,7 @@ describeJourneys("required product journeys", () => {
 
   it("13b: a background helper leaves the chat free and its result comes back as a new turn", async () => {
     const { cookie, bot, chat } = await newChief("Background");
-    await startHelper(cookie, bot.id, "summarize the venue notes");
+    await sendAndWait(app, cookie, bot.id, "run a subagent to summarize the venue notes");
     const helper = await waitForHelper(bot.id, "completed");
     // The helper works in a thread of its own, never the chat's.
     expect(helper.threadId).not.toBe(chat.id);
@@ -2101,7 +2102,10 @@ describeJourneys("required product journeys", () => {
       return wake?.status === "completed";
     });
     const [card] = await helperCards(cookie, bot.id);
-    expect(card).toMatchObject({ status: "completed", task: "summarize the venue notes" });
+    expect(card).toMatchObject({
+      status: "completed",
+      task: "run a subagent to summarize the venue notes",
+    });
     expect(card?.result).toContain("helper result");
     const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
     const relayed = snap.messages.filter((message) => message.runId === wake?.id);
@@ -2191,6 +2195,39 @@ describeJourneys("required product journeys", () => {
         where: { botId: bot.id, trigger: "helper", status: "running", id: { not: helper.id } },
       }),
     );
+    const computer = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: { computerId: true },
+    });
+    await prisma.run.update({
+      where: { id: second.id },
+      data: { computerUseStartedAt: new Date() },
+    });
+    await prisma.computerExecutionLease.upsert({
+      where: { computerId_botId: { computerId: computer.computerId!, botId: bot.id } },
+      create: {
+        computerId: computer.computerId!,
+        botId: bot.id,
+        runId: second.id,
+        fence: 1,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      update: {
+        runId: second.id,
+        fence: { increment: 1 },
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    expect((await sendAndWait(app, cookie, bot.id, "this is a safe test")).run.status).toBe(
+      "completed",
+    );
+    expect(
+      (
+        await prisma.computerExecutionLease.findUniqueOrThrow({
+          where: { computerId_botId: { computerId: computer.computerId!, botId: bot.id } },
+        })
+      ).runId,
+    ).toBe(second.id);
     await rpc(app, cookie, "threads/send", { botId: bot.id, text: "work until i stop you" });
     await waitForDatabase(async () =>
       Boolean(
@@ -2302,71 +2339,89 @@ describeJourneys("required product journeys", () => {
     );
   });
 
-  it("13e: helpers only read: approval-gated and connector writes are refused in any mode", async () => {
-    const { cookie, bot } = await newChief("Background Ask");
+  it("13e: a subagent asks in the parent chat and executes only after its owner approves", async () => {
+    const { cookie, bot, chat } = await newChief("Helper Approval");
     await startHelper(cookie, bot.id, "fetch https://helper-approval.rakazo.test/venues");
-    const asked = await waitForHelper(bot.id, "completed");
+    const helper = await waitForHelper(bot.id, "waiting_input");
+    const snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const approval = snapshot.messages.find(
+      (message) =>
+        message.runId === helper.id &&
+        message.blocks.some((block) => block.kind === "ask" && block.status !== "answered"),
+    );
+    expect(approval).toBeDefined();
+    expect(answerableAskMessageIds(snapshot).has(approval!.id)).toBe(true);
+    expect(await prisma.message.count({ where: { threadId: helper.threadId, role: "bot" } })).toBe(
+      0,
+    );
     expect(
-      (
-        await prisma.event.findFirst({
-          where: { runId: asked.id, type: "agent.tool.completed" },
-          select: { payload: true },
-        })
-      )?.payload,
-    ).toMatchObject({
-      name: "web_fetch",
-      outcome: "error",
-      error: expect.stringContaining("a background helper cannot ask"),
+      await prisma.externalEffect.count({ where: { runId: helper.id, status: "intended" } }),
+    ).toBeGreaterThan(0);
+    // The pending card does not take new messages away from the parent.
+    expect(
+      (await sendAndWait(app, cookie, bot.id, "what is on my calendar today?")).run.status,
+    ).toBe("completed");
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: helper.id } })).status).toBe(
+      "waiting_input",
+    );
+    // A card from another chat cannot authorize this helper's effect.
+    const peer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Peer",
+      instructions: "",
+      notifyOnFinish: false,
     });
-    // The refused fetch leaves no approval waiting behind.
-    expect(
-      await prisma.externalEffect.count({ where: { runId: asked.id, status: "intended" } }),
-    ).toBe(0);
-
-    // Let the turn passing on that result finish, so the next message starts its own turn.
-    await waitForDatabase(async () =>
-      Boolean(
-        await prisma.run.findFirst({
-          where: { botId: bot.id, trigger: "helper_result", status: "completed" },
-          select: { id: true },
-        }),
-      ),
+    const wrongChat = await raw(
+      app,
+      cookie,
+      "threads/answer",
+      {
+        botId: peer.id,
+        runId: helper.id,
+        messageId: approval!.id,
+        answer: "allow",
+      } /* validated against the conversation */,
+    );
+    expect(wrongChat.ok).toBe(false);
+    await rpc(app, cookie, "threads/answer", {
+      botId: bot.id,
+      runId: helper.id,
+      messageId: approval!.id,
+      answer: "allow",
+    });
+    await waitForHelper(bot.id, "completed");
+    const answered = await prisma.message.findUniqueOrThrow({ where: { id: approval!.id } });
+    expect(answered.threadId).toBe(chat.id);
+    expect(answered.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "ask", status: "answered", answer: "allow" }),
+      ]),
     );
 
-    // Never ask lets the owner's own turn write; a helper still may not.
     await runWithoutAsking(cookie);
     const before = connector.records.length;
     await startHelper(cookie, bot.id, "write this to the destination crm");
-    let writer = null as { id: string } | null;
-    await waitForDatabase(async () => {
-      writer = await prisma.run.findFirst({
-        where: { botId: bot.id, trigger: "helper", status: "completed", id: { not: asked.id } },
-        select: { id: true },
-      });
-      return Boolean(writer);
-    });
-    expect(
-      (
-        await prisma.event.findFirst({
-          where: { runId: writer!.id, type: "agent.tool.completed" },
-          select: { payload: true },
-        })
-      )?.payload,
-    ).toMatchObject({
-      name: "destination.write",
-      outcome: "error",
-      error: expect.stringContaining("a background helper may only read"),
-    });
-    expect(connector.records.length).toBe(before);
-    // Its result turn too, so the next message starts a turn of its own.
-    await waitForDatabase(
-      async () =>
-        (await prisma.run.count({
-          where: { botId: bot.id, trigger: "helper_result", status: "completed" },
-        })) === 2,
+    await waitForDatabase(async () => connector.records.length > before);
+    expect(connector.records.at(-1)).toMatchObject({ title: "Helper note" });
+  });
+
+  it("13e2: Stop dismisses a subagent's pending approval without executing it", async () => {
+    const { cookie, bot } = await newChief("Helper Stop Approval");
+    await startHelper(cookie, bot.id, "fetch https://helper-stop.rakazo.test/venues");
+    const helper = await waitForHelper(bot.id, "waiting_input");
+    const snapshot = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    const approval = snapshot.messages.find((message) => message.runId === helper.id);
+    const card = (await helperCards(cookie, bot.id))[0]!;
+    await rpc(app, cookie, "threads/stopHelper", { botId: bot.id, messageId: card.messageId });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: helper.id } })).status).toBe(
+      "cancelled",
     );
-    await sendAndWait(app, cookie, bot.id, "write this to the destination crm as a note");
-    expect(connector.records.length).toBeGreaterThan(before);
+    expect(
+      (await prisma.message.findUniqueOrThrow({ where: { id: approval!.id } })).blocks,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "ask", status: "answered", answer: "deny" }),
+      ]),
+    );
   });
 
   it("13f: a helper that fails comes back as a failure, and so does one that expired", async () => {

@@ -427,7 +427,7 @@ export async function claimRun(
       leaseOwner: workerId,
       leaseFence: fence,
     },
-    data: { status: "running" },
+    data: { status: "running", computerUseStartedAt: null },
   });
   if (started.count !== 1) return undefined;
   return { fence, current };

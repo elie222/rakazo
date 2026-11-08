@@ -385,7 +385,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
       if (delegation && fakeAgentState.mode === "background-subagent") {
-        const args = { name: "scout", task: "compare the venues", background: true };
+        const args = { name: "scout", task: "compare the venues" };
         this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
         // Pi prepares the model's arguments before it runs the tool.
         await delegation.execute("delegate-bg", delegation.prepareArguments?.(args) ?? args);
@@ -2177,76 +2177,7 @@ describe("Pi connector tool dispatch", () => {
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 
-  it("shares an optional tool-call fuse with subagents and still emits a final message", async () => {
-    process.env.MAX_TOOL_CALLS_PER_TURN = "80";
-    fakeAgentState.mode = "subagent-limit";
-    const executeTool = vi.fn(async () => ({ ok: true }));
-    const runtime = new PiAgentRuntime();
-    const events: unknown[] = [];
-
-    for await (const event of runtime.run(
-      {
-        botId: "b",
-        threadId: "t",
-        runId: "limited",
-        prompt: "delegate the loop",
-        instructions: "Use run_subagent.",
-        history: [],
-        tools: [
-          {
-            name: "run_subagent",
-            description: "Delegate work",
-            inputSchema: { type: "object", properties: {} },
-          },
-          shellTool,
-        ],
-        model: { provider: "test", id: "dispatch-test-model" },
-        executeTool,
-      },
-      {
-        operationId: "2",
-        traceId: "2",
-        spaceId: "w",
-        userId: "u",
-        signal: new AbortController().signal,
-      },
-    )) {
-      events.push(event);
-    }
-
-    expect(executeTool).toHaveBeenCalledTimes(79);
-    expect(fakeAgentState.abortCount).toBeGreaterThanOrEqual(1);
-    expect(events).toContainEqual({
-      type: "progress",
-      text: "Stopped: more than 80 tool calls in one turn.",
-    });
-    expect(events).toContainEqual({
-      type: "text",
-      text: "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
-    });
-    expect(events).toContainEqual({
-      type: "done",
-      text: "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
-    });
-    const subagentEvents = events.filter(
-      (event): event is { type: "subagent"; status: string; result?: string } =>
-        typeof event === "object" &&
-        event !== null &&
-        "type" in event &&
-        (event as { type?: string }).type === "subagent",
-    );
-    expect(subagentEvents.some((event) => event.status === "failed")).toBe(false);
-    expect(subagentEvents).toContainEqual(
-      expect.objectContaining({
-        type: "subagent",
-        status: "completed",
-        result:
-          "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
-      }),
-    );
-  });
-
-  it("hands a background helper to the executor instead of running it inside the turn", async () => {
+  it("delegates through the executor without a background flag or a nested agent", async () => {
     fakeAgentState.mode = "background-subagent";
     const executeTool = vi.fn(async () => ({ ok: true, name: "scout" }));
     const runtime = new PiAgentRuntime();
@@ -2282,58 +2213,15 @@ describe("Pi connector tool dispatch", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.slice(0, 2)).toEqual([
       "run_subagent",
-      expect.objectContaining({ name: "scout", task: "compare the venues", background: true }),
+      expect.objectContaining({
+        name: "scout",
+        task: "compare the venues",
+        model_provider: "test",
+        model_id: "dispatch-test-model",
+      }),
     ]);
     // No helper ran inside this turn.
     expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
-  });
-
-  it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {
-    process.env.MAX_TOOL_CALLS_PER_TURN = "50";
-    fakeAgentState.mode = "two-subagents";
-    const executeTool = vi.fn(async () => ({ ok: true }));
-    const runtime = new PiAgentRuntime();
-    const request = {
-      botId: "b",
-      threadId: "t",
-      runId: "tree-limited",
-      prompt: "delegate twice",
-      instructions: "Use run_subagent.",
-      history: [],
-      tools: [
-        {
-          name: "run_subagent",
-          description: "Delegate work",
-          inputSchema: { type: "object", properties: {} },
-        },
-        shellTool,
-      ],
-      model: { provider: "test", id: "dispatch-test-model" },
-      executeTool,
-    };
-    const context = {
-      operationId: "2j",
-      traceId: "2j",
-      spaceId: "w",
-      userId: "u",
-      signal: new AbortController().signal,
-    };
-    const stopText =
-      "I stopped after reaching the limit of 50 tool calls in this turn. Send another message to continue.";
-
-    const first: unknown[] = [];
-    for await (const event of runtime.run(request, context)) first.push(event);
-    // 2 run_subagent calls + shell calls from both children never exceed the cap in total.
-    expect(executeTool).toHaveBeenCalledTimes(48);
-    expect(first.at(-1)).toEqual({ type: "done", text: stopText });
-    expect(first.filter((e) => (e as { status?: string }).status === "failed")).toHaveLength(0);
-
-    // The budget was released: the same run id starts at zero again.
-    executeTool.mockClear();
-    const second: unknown[] = [];
-    for await (const event of runtime.run(request, context)) second.push(event);
-    expect(executeTool).toHaveBeenCalledTimes(48);
-    expect(second.at(-1)).toEqual({ type: "done", text: stopText });
   });
 
   it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {
@@ -2516,79 +2404,6 @@ describe("Pi connector tool dispatch", () => {
     }
 
     expect(executeTool).toHaveBeenCalledTimes(3);
-    expect(resumed).toContainEqual({
-      type: "progress",
-      text: "Stopped: more than 4 tool calls in one turn.",
-    });
-  });
-
-  it("keeps an optional tool-call fuse across nested ask_user pause and continueRun", async () => {
-    process.env.MAX_TOOL_CALLS_PER_TURN = "4";
-    fakeAgentState.mode = "nested-ask-pause";
-    const executeTool = vi.fn(async () => ({ ok: true }));
-    const runtime = new PiAgentRuntime();
-    const events: unknown[] = [];
-    const request = {
-      botId: "b",
-      threadId: "t",
-      runId: "fuse-nested-ask-pause",
-      prompt: "delegate then ask",
-      instructions: "Use a subagent.",
-      history: [],
-      tools: [
-        {
-          name: "run_subagent",
-          description: "Delegate work",
-          inputSchema: { type: "object", properties: {} },
-        },
-        shellTool,
-        {
-          name: "ask_user",
-          description: "Ask a short multiple-choice question",
-          inputSchema: { type: "object", properties: {} },
-        },
-      ],
-      model: { provider: "test", id: "dispatch-test-model" },
-      executeTool,
-    };
-
-    for await (const event of runtime.run(request, {
-      operationId: "2h",
-      traceId: "2h",
-      spaceId: "w",
-      userId: "u",
-      signal: new AbortController().signal,
-    })) {
-      events.push(event);
-    }
-
-    expect(executeTool).toHaveBeenCalledTimes(2);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "ask",
-        text: "Which option?",
-      }),
-    );
-
-    fakeAgentState.mode = "parent-limit";
-    const resumed: unknown[] = [];
-    for await (const event of runtime.run(
-      {
-        ...request,
-        tools: [shellTool],
-      },
-      {
-        operationId: "2i",
-        traceId: "2i",
-        spaceId: "w",
-        userId: "u",
-        signal: new AbortController().signal,
-      },
-    )) {
-      resumed.push(event);
-    }
-
-    expect(executeTool).toHaveBeenCalledTimes(2);
     expect(resumed).toContainEqual({
       type: "progress",
       text: "Stopped: more than 4 tool calls in one turn.",

@@ -1,4 +1,4 @@
-import type { Agent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
@@ -36,7 +36,6 @@ import {
   TOOL_RESULT_TEXT_LIMIT,
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
-import { executeSubagent } from "./pi-runtime-subagent.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 import { VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
@@ -451,13 +450,17 @@ function toAgentTool(
         };
       }
       if (tool.name === "run_subagent") {
+        const customModel = Boolean(raw.model_provider || raw.model_id);
         return {
           name: String(raw.name ?? "helper"),
           task: String(raw.task ?? ""),
           instructions: raw.instructions ? String(raw.instructions) : "",
-          model_provider: raw.model_provider ? String(raw.model_provider) : "",
-          model_id: raw.model_id ? String(raw.model_id) : "",
-          ...(raw.background === true ? { background: true } : {}),
+          model_provider: customModel
+            ? String(raw.model_provider ?? "")
+            : host.activeModel.config.provider,
+          model_id: customModel
+            ? String(raw.model_id ?? "")
+            : (host.activeModel.config.id ?? host.activeModel.model.id),
         };
       }
       if (tool.name === "spawn_bot") {
@@ -494,7 +497,7 @@ function toAgentTool(
           if (
             host.computerModeAllowed &&
             COMPUTER_MODE_TOOLS.has(tool.name) &&
-            (host.depth !== 0 || !host.computerModeAllowed())
+            !host.computerModeAllowed()
           )
             throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
@@ -510,7 +513,7 @@ function toAgentTool(
           // This makes the saved sequential tail safe to resolve on resume.
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
-          if (host.depth === 0) await host.captureCheckpoint?.(rawCallId, executionId);
+          await host.captureCheckpoint?.(rawCallId, executionId);
           if (host.pausePending)
             return { content: [], details: { skipped: true }, terminate: true };
           if (!beginToolCall(host)) {
@@ -608,21 +611,13 @@ function toAgentTool(
               if (tool.name === FIND_TOOL) {
                 // Outside computer mode, screen tools are reached by entering it, not by search.
                 const findable =
-                  host.computerModeAllowed && (host.depth !== 0 || !host.computerModeAllowed())
+                  host.computerModeAllowed && !host.computerModeAllowed()
                     ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
                     : deferred;
                 const found = findTools(findable, args);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,
-                };
-              }
-              // A background helper is its own run, which the executor starts like any tool effect.
-              if (tool.name === "run_subagent" && args.background !== true) {
-                const result = await executeSubagent(host, executionId, args);
-                return {
-                  content: [{ type: "text", text: result }],
-                  details: { result },
                 };
               }
               if (host.request.executeTool) {
@@ -802,14 +797,11 @@ export interface ToolHost {
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;
-  nestedAgents: Set<Agent>;
-  subagentGate: { acquire(): Promise<void>; release(): void };
   toolCallBudget: ToolCallBudget;
-  /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
+  /** Fallback uniqueness when the model omits toolCallId. */
   toolCallSeq: { value: number };
   abortTurn(): void;
   signal: AbortSignal;
-  depth: number;
   agentNamespace?: string;
   pausePending: boolean;
   captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
@@ -948,25 +940,6 @@ function beginToolCall(host: ToolHost): boolean {
 function endToolCall(host: ToolHost) {
   host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
   maybeAbortToolCallBudget(host);
-}
-
-export function createGate(max: number) {
-  let active = 0;
-  const waiters: Array<() => void> = [];
-  return {
-    async acquire() {
-      if (active >= max) {
-        await new Promise<void>((resolve) => {
-          waiters.push(resolve);
-        });
-      }
-      active += 1;
-    },
-    release() {
-      active = Math.max(0, active - 1);
-      waiters.shift()?.();
-    },
-  };
 }
 
 export function createQueue(): EventQueue {

@@ -350,6 +350,8 @@ export function userTurnMessageForRun<
         ),
     );
   }
+  if (trigger === "helper")
+    return messages.find((message) => message.role === "user" && message.runId === runId);
   if (trigger !== "user" && trigger !== "messaging" && trigger !== "reaction") return undefined;
   return messages.find(
     (message) =>
