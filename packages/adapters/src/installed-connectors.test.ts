@@ -1983,7 +1983,11 @@ describe("private installed connectors", () => {
 
     await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
     await expect(execute("member-1")).resolves.toEqual([
-      { type: "error", message: "Connector URL must use HTTPS" },
+      {
+        type: "error",
+        message:
+          "Connector URL must use HTTPS. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
+      },
     ]);
     await expect(execute("member-1", true)).resolves.toMatchObject([{ type: "result" }]);
     // Installed while this user owned the deployment: no longer reachable after the change.

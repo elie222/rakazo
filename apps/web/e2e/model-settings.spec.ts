@@ -412,3 +412,31 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
 });
+
+test("a refused private model server names the setting that allows it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `private-model-${stamp}@rakazo.test`, "password12", "Private Model Preview");
+  await completeOnboarding(page);
+  // The e2e server allows private endpoints, so replay the refusal a default install sends.
+  const message =
+    "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
+  await page.route("**/rpc/models/probeOpenAiCompatible", (route) =>
+    route.fulfill({
+      status: 400,
+      json: { json: { defined: false, code: "BAD_REQUEST", status: 400, message } },
+    }),
+  );
+
+  await openUserSettings(page, "models");
+  const dialog = await openModelConnection(page, "OpenAI-compatible");
+  await dialog.getByLabel("OpenAI-compatible server URL").fill("http://192.168.1.20:1234/v1");
+  await dialog.getByRole("button", { name: "Find models", exact: true }).click();
+  const alert = dialog.getByRole("alert");
+  await expect(alert.getByText(message, { exact: true })).toBeVisible();
+  await expect(
+    alert.getByText("Review provider settings and test again.", { exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "openai-compatible-private-endpoint-refused");
+});
