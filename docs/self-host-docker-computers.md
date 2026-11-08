@@ -218,7 +218,7 @@ services:
       - /dev/dri:/dev/dri:ro
 ```
 
-The bind only lets the supervisor read the nodes' type, number and group; it cannot open them.
+The bind only lets the supervisor read the nodes' type, number and group. It cannot open them because it gets no `--device`: Docker's device policy refuses the open (`Operation not permitted`), not the read-only bind.
 Only DRM render nodes are accepted, never `card*`: the node must be character device 226 with a
 minor of 128 or more, and not a symlink (Docker follows a symlink to whatever device it names).
 Each computer joins the node's own group. The supervisor refuses to start when the node is
