@@ -152,6 +152,14 @@ file, `RAKAZO_API_MEMORY_LIMIT` and `RAKAZO_WORKER_MEMORY_LIMIT` cap them (Compo
 `2g` or `3072m`, default `2g` each). Raise them on a larger host. Deploys briefly run the old and
 new container of each side by side, so leave room for both.
 
+## Postgres memory
+
+The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
+container (default `2560m`), `POSTGRES_SHARED_BUFFERS` sets its cache (default `1GB`, which counts
+against that cap) and `POSTGRES_EFFECTIVE_CACHE_SIZE` tells the planner how much data stays cached
+(default `2GB`). On a smaller host, lower them along with the API and worker caps above. Changing
+them restarts Postgres.
+
 ## Listening addresses
 
 The API listens on `API_HOST` (default `127.0.0.1`) and `API_PORT` (default `3100`). Keep loopback
