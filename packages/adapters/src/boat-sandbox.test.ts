@@ -331,6 +331,24 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
+  // Node's fetch drops a response with no headers after 300 seconds, however long Boat would wait.
+  it("follows the workspace archive in the background instead of waiting on one request", async () => {
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.writeFile(
+      computer,
+      { path: "notes.txt", content: Uint8Array.from([1]) },
+      context,
+    );
+
+    await readExport(provider.exportWorkspace(computer, context));
+    const archive = command.mock.calls
+      .map(([request]) => request.commandRequest)
+      .find((request) => request.command.includes("rakazo-workspace-archive-"));
+    expect(archive).toMatchObject({ detached: true });
+    expect(archive).not.toHaveProperty("timeoutSeconds");
+  });
+
   it("keeps command secrets out of command text and removes the env file as the command starts", async () => {
     const command = vi.spyOn(FakeBoatApi.prototype, "command");
     const writeFile = vi.spyOn(FakeBoatApi.prototype, "writeFile");
@@ -1339,18 +1357,24 @@ describe("BoatSandboxProvider", () => {
   it.each([
     ["an unexpected failure", new Error("attach broke"), "Error"],
     ["a Boat server error", boatError(500, "internal", "upstream"), "SandboxUnresponsiveError"],
-  ])("fails a long command when %s ends the attach to its output", async (_name, failure, name) => {
-    const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
-    const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
-    const { provider, computer } = await boat();
-    await provider.prepare(computer, context);
-    attach.mockRejectedValue(failure);
+  ])(
+    "fails and stops a long command when %s ends the attach to its output",
+    async (_name, failure, name) => {
+      const command = vi.spyOn(FakeBoatApi.prototype, "command");
+      const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
+      const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
+      const { provider, computer } = await boat();
+      await provider.prepare(computer, context);
+      attach.mockRejectedValue(failure);
 
-    await expect(
-      drain(provider.execute(computer, { argv: ["echo", "x"], timeoutMs: 20 * 60_000 }, context)),
-    ).rejects.toMatchObject({ name });
-    expect(status).not.toHaveBeenCalled();
-  });
+      await expect(
+        drain(provider.execute(computer, { argv: ["echo", "x"], timeoutMs: 20 * 60_000 }, context)),
+      ).rejects.toMatchObject({ name });
+      expect(status).not.toHaveBeenCalled();
+      const sent = command.mock.calls.map(([request]) => request.commandRequest.command);
+      expect(sent.some((script) => script.includes("pkill"))).toBe(true);
+    },
+  );
 
   it("follows a long command on Boat's output stream, reattaching where each connection ended", async () => {
     const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
