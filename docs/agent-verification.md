@@ -549,11 +549,22 @@ earlier "Done." was a mistake. With replayed steps it named the extension and
 the command line in all ten replayed trials. In six of those it said it could not
 verify that the install had succeeded, and the judge counted that as doubt. After
 compaction it named the extension in all ten trials, but the summary never kept
-the command-line detail, so none passed. With the default `retrieval` strategy
-both versions failed every trial: even in a 24-message chat the run dropped the
-oldest messages from view, and history search and reads leave out tool steps.
-Controls held in every trial on both versions except one, where the bot said it
-had used no tools at all.
+the command-line detail, so none passed. Controls held in every trial on both
+versions except one, where the bot said it had used no tools at all.
+
+The default `retrieval` strategy keeps only the latest exchanges, so in the
+24-message chat the install reply is out of view and the bot must search for
+it. A later run, with a different small model as both bot and judge and ten
+trials per case, compared four versions. Before the change, and with history
+search and reads covering tool steps alone, the bot never searched and never
+named the extension. With only the retrieval instruction's new sentence (older
+messages, including tool work, may be out of view, so search before saying
+something did not happen), it searched in nine of ten trials but found only
+"Done.". With both, it searched in every trial and named the extension and the
+command line in all ten. Four passed; the judge failed the rest for saying the
+record could not show the install succeeded. Controls passed eight of ten,
+against ten of ten before. Both misses said the bot never used the computer,
+a claim the baseline made as well but the judge then let pass.
 
 ### Long conversation and cost evals
 
