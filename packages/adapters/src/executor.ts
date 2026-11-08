@@ -593,7 +593,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               space: { select: { _count: { select: { memberships: true } } } },
             },
           }),
-          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
+          loadRunHistoryMessages(
+            deps.prisma,
+            run,
+            LEGACY_HISTORY_WINDOW_SIZE,
+            run.trigger === BACKGROUND_HELPER_TRIGGER ? undefined : channelId,
+          ),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),

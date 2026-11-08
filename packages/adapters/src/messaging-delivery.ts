@@ -143,13 +143,12 @@ async function mirrorRun(
     if (channelBlock) {
       if (
         origin &&
-        (await deps.prisma.message.findFirst({
-          where: {
-            runId: { in: [origin.id, run.delegatedFromRunId!] },
-            blocks: { array_contains: [{ kind: "ask", status: "answered" }] },
-          },
-          select: { id: true },
-        }))
+        hasAnsweredAsk(
+          await deps.prisma.message.findMany({
+            where: { runId: { in: [origin.id, run.delegatedFromRunId!] } },
+            select: { blocks: true },
+          }),
+        )
       )
         return;
       if (!progress) await mirrorChannelRun(deps, run, channelBlock);
@@ -246,6 +245,17 @@ export async function insertOutboundRows(
   });
 }
 
+/** Blocks are encrypted at rest; inspect them only after the database client decodes them. */
+function hasAnsweredAsk(messages: ReadonlyArray<{ blocks: unknown }>): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.blocks) &&
+      (message.blocks as MessageBlock[]).some(
+        (block) => block.kind === "ask" && block.status === "answered",
+      ),
+  );
+}
+
 /**
  * Channel runs post to the group with an attribution prefix, then fan the
  * post out internally to peer approved bots: context only by default, a
@@ -279,14 +289,7 @@ async function mirrorChannelRun(
   });
   // Ask answers are entered privately in the app. Check the same snapshot as
   // the replies so a resumed run cannot publish an answer-influenced response.
-  if (
-    replies.some((message) =>
-      (message.blocks as MessageBlock[]).some(
-        (block) => block.kind === "ask" && block.status === "answered",
-      ),
-    )
-  )
-    return;
+  if (hasAnsweredAsk(replies)) return;
   const linkedPages = linkedPageIds(replies);
   const messages = replies
     .map((message) => ({ message, text: extractText(message.blocks, linkedPages) }))

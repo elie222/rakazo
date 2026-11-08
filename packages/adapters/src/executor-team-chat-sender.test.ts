@@ -26,6 +26,7 @@ async function teamChatRun(input: {
   linkedAddresses?: string[];
   sharedChannel?: boolean;
   delegated?: "helper" | "helper_result";
+  attachment?: boolean;
 }) {
   const [waking, ...batched] = input.senders.map((sender, index) => ({
     id: `external-${index}`,
@@ -110,7 +111,32 @@ async function teamChatRun(input: {
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }: { where?: { threadId?: string; OR?: unknown } } = {}) =>
+        input.attachment && where?.threadId === "hidden-thread" && !where.OR
+          ? [
+              {
+                id: "helper-input",
+                threadId: run.threadId,
+                role: "user",
+                runId: run.id,
+                authorUserId: run.userId,
+                botId: run.botId,
+                seq: 1,
+                createdAt: new Date(),
+                steeringMessages: [],
+                blocks: [
+                  {
+                    kind: "file",
+                    artifactId: "fixture-file",
+                    name: "notes.txt",
+                    mimeType: "text/plain",
+                    size: 5,
+                  },
+                ],
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
         blocks: input.sharedChannel
@@ -277,6 +303,7 @@ async function teamChatRun(input: {
   const context = [request.instructions, request.prompt].join("\n");
   return {
     tools,
+    history: request.history,
     context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
     toldNonOwner: context.includes("someone other than your owner"),
@@ -344,6 +371,18 @@ describe("private skills in shared-channel prompts", () => {
 });
 
 describe("delegation inherits connected chat privacy", () => {
+  it("keeps the helper's own input while preserving the connected channel's privacy", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "coworker" }],
+      sharedChannel: true,
+      delegated: "helper",
+      attachment: true,
+    });
+    expect(result.history.some((message) => message.content.includes("notes.txt"))).toBe(true);
+    expect(result.sawOwnerState).toBe(false);
+    for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+  });
+
   it.each(["helper", "helper_result"] as const)(
     "keeps private state out of a %s in a shared channel",
     async (delegated) => {

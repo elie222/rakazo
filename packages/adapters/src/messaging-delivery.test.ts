@@ -530,14 +530,13 @@ describe("deliverMessagingOutbound", () => {
           sourceMessage: { blocks: [{ kind: "channel_message", channelId: "channel" }] },
         }),
     });
-    const privateAnswer = vi.fn(async () => ({ id: "answered-question" }));
-    Object.assign(deps.prisma.message, { findFirst: privateAnswer });
+    const privateAnswer = vi.fn(async () => [{ blocks: [{ kind: "ask", status: "answered" }] }]);
+    Object.assign(deps.prisma.message, { findMany: privateAnswer });
     await deliverMessagingOutbound(deps, { runId: "result" }, context);
     expect(privateAnswer).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           runId: { in: ["parent", "helper"] },
-          blocks: { array_contains: [{ kind: "ask", status: "answered" }] },
         },
       }),
     );

@@ -5,10 +5,16 @@ import path from "node:path";
 import {
   ChatSdkMessagingSurface,
   createEmulatedSendbluePlatform,
+  mirrorMessagingOutbound,
   ScriptedAgentRuntime,
   SendBlueEmulator,
 } from "@rakazo/adapters";
-import { formatMessagingLinkCode, issueMessagingLinkCode } from "@rakazo/db";
+import {
+  createThreadEvents,
+  createThreadMessage,
+  formatMessagingLinkCode,
+  issueMessagingLinkCode,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { asSystem } from "./system-db.js";
 
@@ -30,6 +36,8 @@ describeMessaging("messaging surface journeys", () => {
   let prisma: any;
   const emulator = new SendBlueEmulator();
   const platform = createEmulatedSendbluePlatform(emulator);
+  const messaging = new ChatSdkMessagingSurface([platform]);
+  let mirrorDeps: Parameters<typeof mirrorMessagingOutbound>[0];
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-messaging-"));
   // Unique per run: identities, threads, and outbox rows persist in the dev
   // database. Random E.164 fixtures — a timestamp suffix repeats within
@@ -99,11 +107,18 @@ describeMessaging("messaging surface journeys", () => {
       // These journeys exercise the Poke-style open line; the linking journey
       // below covers the default (linking-only) posture explicitly.
       messagingOpenSignup: true,
-      messaging: new ChatSdkMessagingSurface([platform]),
+      messaging,
     });
     app = handles.app;
     stop = handles.stop;
     prisma = asSystem(handles.prisma);
+    mirrorDeps = {
+      prisma,
+      messaging,
+      events: createThreadEvents(prisma),
+      jobs: handles.jobs,
+      artifacts: { get: vi.fn(async () => new Uint8Array()) },
+    };
   });
 
   afterAll(async () => {
@@ -417,6 +432,34 @@ describeMessaging("messaging surface journeys", () => {
     );
     expect(
       await prisma.messagingOutbound.count({ where: { sourceMessageId: reply.id, kind: "dm" } }),
+    ).toBe(0);
+    // A private answer in the helper must also protect later parent replies. The source
+    // blocks are sealed in Postgres, so this exercises decoding rather than a JSON filter.
+    const helper = await prisma.run.findUniqueOrThrow({ where: { id: result.delegatedFromRunId } });
+    await createThreadMessage(prisma, {
+      threadId: helper.threadId,
+      botId: helper.botId,
+      runId: helper.id,
+      role: "bot",
+      blocks: [
+        {
+          kind: "ask",
+          text: "Private question",
+          status: "answered",
+          answer: "Private fixture answer",
+        },
+      ],
+    });
+    const privateReply = await createThreadMessage(prisma, {
+      threadId: result.threadId,
+      botId: result.botId,
+      runId: result.id,
+      role: "bot",
+      blocks: [{ kind: "text", text: "A response influenced by a private answer" }],
+    });
+    await mirrorMessagingOutbound(mirrorDeps, result.id);
+    expect(
+      await prisma.messagingOutbound.count({ where: { sourceMessageId: privateReply.id } }),
     ).toBe(0);
   });
 
