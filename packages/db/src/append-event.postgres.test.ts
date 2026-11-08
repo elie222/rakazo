@@ -161,10 +161,11 @@ describePostgres("appending a thread event (PostgreSQL)", () => {
       await tx.run.update({ where: { id: runId }, data: { status: "cancelled" } });
     });
     const waiting = append();
+    const rejected = expect(waiting).rejects.toThrow(RunHistoryWriteError);
     await waitForBlockedAppend();
     release();
     await holder;
-    await expect(waiting).rejects.toThrow(RunHistoryWriteError);
+    await rejected;
     expect(await system.event.count({ where: { runId } })).toBe(0);
   });
 
@@ -180,10 +181,12 @@ describePostgres("appending a thread event (PostgreSQL)", () => {
       payload: { activity: { thinking: true } },
       lease: { owner: "worker-1", fence: 1 },
     });
+    // Attach the expectation first: the append can reject while the holder is still finishing.
+    const rejected = expect(waiting).rejects.toThrow(RunHistoryWriteError);
     await waitForBlockedAppend();
     release();
     await holder;
-    await expect(waiting).rejects.toThrow(RunHistoryWriteError);
+    await rejected;
   });
 
   it("applies the run's history rules", async () => {
