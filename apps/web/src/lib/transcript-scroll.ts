@@ -12,18 +12,34 @@ export function transcriptCanSnapAfterFrame(
   return element === queuedElement && queuedElement.scrollTop === queuedScrollTop;
 }
 
+export function stillStickAfterRefresh(
+  stickToEnd: boolean,
+  previous: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight"> | null | undefined,
+  current: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight"> | null | undefined,
+): boolean {
+  if (!stickToEnd) return false;
+  if (current) return transcriptIsNearEnd(current);
+  if (!previous) return true;
+  return transcriptIsNearEnd(previous);
+}
+
 /** Tail snap after layout; reads the live scroller so a remounted transcript still sticks. */
 export function scheduleTranscriptSnapToEnd(
   readScroller: () => Pick<HTMLElement, "scrollTop" | "scrollHeight" | "clientHeight"> | null,
   stickToEnd: boolean,
 ): void {
   if (!stickToEnd) return;
-  const queuedTop = readScroller()?.scrollTop ?? null;
+  const queuedElement = readScroller();
+  const queuedScrollTop = queuedElement?.scrollTop ?? 0;
   const snap = () => {
     const element = readScroller();
     if (!element) return;
-    const readerHeldPosition = queuedTop === null || element.scrollTop === queuedTop;
-    if (readerHeldPosition || transcriptIsNearEnd(element)) {
+    const sameUnmoved =
+      queuedElement != null && transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop);
+    const replacedAndNearEnd =
+      queuedElement != null && element !== queuedElement && transcriptIsNearEnd(element);
+    const firstMount = queuedElement == null && transcriptIsNearEnd(element);
+    if (sameUnmoved || replacedAndNearEnd || firstMount) {
       element.scrollTop = element.scrollHeight;
     }
   };
