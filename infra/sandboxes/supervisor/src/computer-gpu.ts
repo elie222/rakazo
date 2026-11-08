@@ -88,7 +88,8 @@ export function computerGpuMatches(
     devices.length === 1 &&
     devices[0]?.PathOnHost === desired.node &&
     devices[0]?.PathInContainer === desired.node &&
-    devices[0]?.CgroupPermissions === "rw" &&
+    // Podman reports no permissions at all; only an explicit other value means read-only.
+    (devices[0]?.CgroupPermissions || "rw") === "rw" &&
     groups.length === 1 &&
     groups[0] === String(desired.gid)
   );

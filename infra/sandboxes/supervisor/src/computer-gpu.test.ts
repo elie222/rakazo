@@ -127,6 +127,9 @@ describe("computer render node", () => {
     };
     readOnly.HostConfig.Devices[0]!.CgroupPermissions = "r";
     expect(computerGpuMatches(readOnly as never, gpu)).toBe(false);
+    // Podman's inspect leaves the permissions empty; that is unreported, not read-only.
+    readOnly.HostConfig.Devices[0]!.CgroupPermissions = "";
+    expect(computerGpuMatches(readOnly as never, gpu)).toBe(true);
   });
 });
 
