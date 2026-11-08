@@ -7,7 +7,7 @@ WORKDIR /app
 # install. pnpm gets a partial workspace: every package listed in pnpm-workspace.yaml
 # needs its manifest below, or --frozen-lockfile fails. The store is a cache mount, so
 # a lockfile change reuses whatever was already downloaded.
-COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN corepack install && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/
@@ -44,6 +44,13 @@ COPY --chmod=755 . .
 RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+# The runtime keeps production dependencies only; build and test tooling stays in this stage.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+  find . -name node_modules -type d -prune -exec rm -rf {} + \
+  && pnpm install --frozen-lockfile --prod --prefer-offline \
+  --store-dir=/pnpm/store --cpu=current --os=current \
+  --filter="@rakazo/api..." --filter="@rakazo/worker..." \
+  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..."
 RUN rm -rf apps/desktop apps/mobile apps/www docs examples
 
 FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
