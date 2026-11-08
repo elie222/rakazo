@@ -333,7 +333,7 @@ describe("Pi usage accounting", () => {
     const settlement = new Promise<void>((resolve) => {
       finishSettlement = resolve;
     });
-    const afterCall = vi.fn(async () => settlement);
+    const afterCall = vi.fn(async (_reservation: string, _usage: AgentUsage | null) => settlement);
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -362,6 +362,52 @@ describe("Pi usage accounting", () => {
         outputTokens: null,
         totalTokens: null,
         costUsd: null,
+      }),
+    );
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it("keeps our own token count when a stream stops before the provider reports usage", async () => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const frame = {
+      id: "gen_partial",
+      choices: [
+        { index: 0, delta: { role: "assistant", content: "x".repeat(52) }, finish_reason: null },
+      ],
+    };
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: async (_input, init) =>
+          new Response(
+            new ReadableStream({
+              start(body) {
+                body.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+                init?.signal?.addEventListener("abort", () => body.error(new Error("aborted")));
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const event of stream) if (event.type === "text_delta") controller.abort();
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: "gen_partial",
+        costUsd: null,
+        countedTokens: {
+          inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+          outputTokens: 10,
+        },
       }),
     );
   });

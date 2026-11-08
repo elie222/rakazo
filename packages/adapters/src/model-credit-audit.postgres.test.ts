@@ -270,7 +270,7 @@ dbTests("durable model credit audit", () => {
     ]);
     expect(events.reduce((sum, e) => sum + e.amountMicros, 0n)).toBe(3_000_000n);
   });
-  it("flags unavailable provider evidence for review without releasing the hold", async () => {
+  it("releases the hold of a call that never reported back once retries run out", async () => {
     const f = await fixture();
     let now = Date.now() + 10 * 60_000;
     const reconcile = createModelCreditReconciler({ prisma, now: () => new Date(now) });
@@ -279,9 +279,38 @@ dbTests("durable model credit audit", () => {
       now += 60 * 60_000;
     }
     expect(await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } })).toMatchObject(
-      { pending: true, reconciliationState: "needs_review" },
+      { pending: false, reconciliationState: "complete" },
     );
-    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(8_000_000n);
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(10_000_000n);
+  });
+  it("charges a stopped call for its counted tokens when the provider has no record", async () => {
+    const f = await fixture();
+    await recordModelCreditReceipt(prisma, f.callId, {
+      providerRequestId: f.usage.providerRequestId,
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      pricingSnapshot: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+      countedTokens: { inputTokens: 100_000, outputTokens: 2_000 },
+    });
+    let now = Date.now() + 10 * 60_000;
+    const reconcile = createModelCreditReconciler({
+      prisma,
+      lookup: { provider: "openrouter", lookupUsage: async () => null },
+      now: () => new Date(now),
+    });
+    for (let i = 0; i < 6; i++) {
+      await reconcile();
+      now += 60 * 60_000;
+    }
+    expect(await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } })).toMatchObject(
+      { pending: false, reconciliationState: "complete" },
+    );
+    expect(await prisma.usageRecord.findUnique({ where: { callId: f.callId } })).toMatchObject({
+      costUsd: 0.04,
+      costSource: "reconciled-estimate",
+    });
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9_960_000n);
   });
   it("retains usage and immutable journal history after organization deletion", async () => {
     const f = await fixture();

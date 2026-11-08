@@ -3,13 +3,50 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   expireModelCredits,
   hasFinalModelCost,
+  MICROS_PER_DOLLAR,
   Prisma,
+  RECONCILED_ESTIMATE_COST_SOURCE,
   recordUsage,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
-/** Bounded, leased recovery. Missing evidence is flagged rather than converted into free usage. */
+/**
+ * When the provider never reports a cost, a call that reached it is charged for the tokens we
+ * counted at the model's cheapest rates; one that never reached it is free. Never more than held.
+ */
+function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage {
+  const rates = usage?.pricingSnapshot;
+  const rate = (key: string) => {
+    const value = rates?.[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  const counted = usage?.countedTokens;
+  const tokenCost =
+    usage?.inputTokens != null || usage?.outputTokens != null
+      ? (usage.inputTokens ?? 0) * rate("input") +
+        (usage.cacheReadTokens ?? 0) * rate("cacheRead") +
+        (usage.cacheWriteTokens ?? 0) * rate("cacheWrite") +
+        (usage.outputTokens ?? 0) * rate("output")
+      : counted
+        ? // A partial prompt may have been served from cache; assume it was.
+          counted.inputTokens * (rate("cacheRead") || rate("input")) +
+          counted.outputTokens * rate("output")
+        : 0;
+  const costUsd = Math.min(
+    usage?.costUsd ?? tokenCost / 1_000_000,
+    Math.max(0, Number(heldMicros)) / MICROS_PER_DOLLAR,
+  );
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    ...usage,
+    costUsd,
+    costSource: RECONCILED_ESTIMATE_COST_SOURCE,
+  };
+}
+
+/** Bounded, leased recovery: provider cost first, then counted tokens, never more than held. */
 export function createModelCreditReconciler(deps: {
   prisma: PrismaClient;
   lookup?: ModelUsageLookup;
@@ -54,17 +91,37 @@ export function createModelCreditReconciler(deps: {
           let complete = false;
           // Why this attempt could not settle the hold, for whoever reviews it.
           let reason = "usage unavailable";
+          const lastAttempt = call.reconciliationAttempts >= 5;
           try {
             if (!call.callId || !call.userId || !call.spaceId || !call.provider || !call.model)
               throw new Error("Legacy reservation requires manual attribution");
             let usage = call.usage as unknown as AgentUsage | null;
             let reconciled = false;
-            if (lookup?.provider === call.provider && call.providerRequestId) {
-              const recovered = await lookup.lookupUsage(call.providerRequestId);
-              if (recovered) {
-                usage = { ...usage, ...recovered };
-                reconciled = true;
-              } else reason = "provider has no usage for the request";
+            const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
+            if (canLookUp) {
+              try {
+                const recovered = await lookup.lookupUsage(call.providerRequestId!);
+                if (recovered) {
+                  usage = { ...usage, ...recovered };
+                  reconciled = true;
+                } else reason = "provider has no usage for the request";
+              } catch (error) {
+                // The last attempt falls back to counted tokens rather than holding the estimate.
+                if (!lastAttempt) throw error;
+                reason = error instanceof Error ? error.message : String(error);
+              }
+            }
+            // Without a receipt the call may still be running, so only the last attempt settles it.
+            if (!(usage && hasFinalModelCost(usage)) && (lastAttempt || (usage && !canLookUp))) {
+              usage = fallbackUsage(usage, -call.amountMicros);
+              reconciled = true;
+              getLogger().info("Model credit hold settled without a provider cost", {
+                callId: call.callId,
+                reason,
+                costUsd: usage.costUsd,
+                hasProviderRequestId: Boolean(call.providerRequestId),
+                counted: Boolean(usage.countedTokens),
+              });
             }
             if (
               usage &&

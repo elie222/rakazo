@@ -372,6 +372,16 @@ export function observedPiStream(
       let partialMessage: AssistantMessage | undefined;
       let providerError: unknown;
       let providerThrew = false;
+      let inputTokensEstimate = 0;
+      // A call that reached the provider but ended without its cost keeps our own count,
+      // so the reconciler can price it if the provider never reports one.
+      const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
+        if (usage.costUsd != null) return usage;
+        const outputTokens = message ? receivedOutputTokens(message) : 0;
+        return usage.providerRequestId || outputTokens > 0
+          ? { ...usage, countedTokens: { inputTokens: inputTokensEstimate, outputTokens } }
+          : usage;
+      };
       try {
         // A tool-budget or cancellation stop can reach Pi's next-turn hook after
         // aborting. It is not a model invocation and must not create unknown usage.
@@ -380,7 +390,7 @@ export function observedPiStream(
         const cacheRetention = resolvePiCacheRetention(model, options?.cacheRetention);
         const preparedContext = hooks?.prepareContext?.(context, model) ?? context;
         recordPiTelemetryContent(span, "pi.ai.prompt", preparedContext);
-        const inputTokensEstimate = observer
+        inputTokensEstimate = observer
           ? estimateModelContextTokens(preparedContext, hooks?.imageTokens)
           : 0;
         const cacheWriteRetention = requestedPiCacheWriteRetention(model, cacheRetention);
@@ -463,14 +473,12 @@ export function observedPiStream(
             })()
           : upstream;
         for await (const event of events) {
-          if (hooks?.onProviderError) {
-            partialMessage =
-              event.type === "done"
-                ? event.message
-                : event.type === "error"
-                  ? event.error
-                  : event.partial;
-          }
+          partialMessage =
+            event.type === "done"
+              ? event.message
+              : event.type === "error"
+                ? event.error
+                : event.partial;
           if (event.type === "done" || event.type === "error") {
             const message = event.type === "done" ? event.message : event.error;
             normalized = normalizePiUsage(message.usage, model, reported);
@@ -492,10 +500,10 @@ export function observedPiStream(
               message,
             );
             if (observer && reservation !== undefined) {
-              await observer.afterCall(reservation, {
-                ...normalized,
-                operationKind,
-              });
+              await observer.afterCall(
+                reservation,
+                receipt({ ...normalized, operationKind }, message),
+              );
               settled = true;
             }
             await emitUsage(normalized, operationKind);
@@ -526,7 +534,10 @@ export function observedPiStream(
             await observer.afterCall(
               reservation,
               started
-                ? (normalized ?? normalizePiUsage(undefined, model, reported))
+                ? receipt(
+                    normalized ?? normalizePiUsage(undefined, model, reported),
+                    partialMessage,
+                  )
                 : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
             );
           } catch {
@@ -560,6 +571,21 @@ export function observedPiStream(
     },
   );
   return stream;
+}
+
+/** Deliberately low: about five characters a token, so a partial answer is never overcounted. */
+function receivedOutputTokens(message: AssistantMessage): number {
+  let characters = 0;
+  for (const part of message.content)
+    characters +=
+      part.type === "text"
+        ? part.text.length
+        : part.type === "thinking"
+          ? part.thinking.length
+          : part.type === "toolCall"
+            ? part.name.length + JSON.stringify(part.arguments ?? {}).length
+            : 0;
+  return Math.floor(characters / 5);
 }
 
 /** Includes higher context tiers and long-lived cache writes before any request can spend. */

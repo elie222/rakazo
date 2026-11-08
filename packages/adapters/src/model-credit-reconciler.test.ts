@@ -1,7 +1,14 @@
+import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { recordUsage } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
+
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  recordUsage: vi.fn(),
+}));
 
 function harness(call: Record<string, unknown>) {
   const updateMany = vi.fn().mockResolvedValue({ count: 1 });
@@ -25,20 +32,137 @@ const baseCall = {
   usage: null,
   providerRequestId: null,
   auditRevision: 0,
+  // A $1 hold.
+  amountMicros: -1_000_000n,
+  reconciliationAttempts: 0,
 };
 
+// Dollars per million tokens.
+const pricingSnapshot = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
+const stopped: AgentUsage = {
+  providerRequestId: "gen-fixture",
+  inputTokens: null,
+  outputTokens: null,
+  costUsd: null,
+  costSource: null,
+  usageSource: "pi-normalized",
+  pricingSnapshot,
+  countedTokens: { inputTokens: 100_000, outputTokens: 2_000 },
+};
+const lookup = (lookupUsage: ModelUsageLookup["lookupUsage"]): ModelUsageLookup => ({
+  provider: "fake",
+  lookupUsage,
+});
+const reconcile = (call: Record<string, unknown>, usageLookup?: ModelUsageLookup) => {
+  const { prisma, updateMany } = harness({ ...baseCall, ...call });
+  return createModelCreditReconciler({
+    prisma,
+    lookup: usageLookup,
+    now: () => new Date(0),
+  })().then(() => updateMany);
+};
+const charged = () => vi.mocked(recordUsage).mock.calls[0]?.[1];
+
 describe("model credit reconciler", () => {
+  beforeEach(() => vi.mocked(recordUsage).mockReset());
   afterEach(() => {
     installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
   });
 
-  it("flags an unsettled hold for review with the reason it could not settle", async () => {
+  it("charges the provider's cost for a stopped call when its lookup finds one", async () => {
+    await reconcile(
+      { usage: stopped, providerRequestId: "gen-fixture" },
+      lookup(async () => ({
+        inputTokens: 90_000,
+        outputTokens: 2_500,
+        costUsd: 0.21,
+        costSource: "provider-reported",
+      })),
+    );
+    expect(charged()).toMatchObject({ costUsd: 0.21, costSource: "provider-reported" });
+  });
+
+  it("waits for the provider while lookups remain", async () => {
+    const updateMany = await reconcile(
+      { usage: stopped, providerRequestId: "gen-fixture", reconciliationAttempts: 4 },
+      lookup(async () => null),
+    );
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconciliationState: "pending" }),
+      }),
+    );
+  });
+
+  it.each([
+    ["finds no record", async () => null],
+    [
+      "fails",
+      async () => {
+        throw new Error("lookup failed (400)");
+      },
+    ],
+  ])("prices counted tokens on the last attempt when the lookup %s", async (_case, find) => {
+    const updateMany = await reconcile(
+      { usage: stopped, providerRequestId: "gen-fixture", reconciliationAttempts: 5 },
+      lookup(find),
+    );
+    // 100k prompt tokens at the cache-read rate plus 2k output tokens.
+    expect(charged()).toMatchObject({ costUsd: 0.04, costSource: "reconciled-estimate" });
+    expect(vi.mocked(recordUsage).mock.calls[0]?.[3]).toBe(true);
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: { id: "entry-1", reconciliationState: "pending" },
+      data: { reconciliationState: "complete", nextReconcileAt: null },
+    });
+  });
+
+  it("prices counted tokens at once when the provider offers no lookup", async () => {
+    await reconcile({ usage: stopped, providerRequestId: "gen-fixture" });
+    expect(charged()).toMatchObject({ costUsd: 0.04, costSource: "reconciled-estimate" });
+  });
+
+  it("prices partial provider-reported tokens at their own rates", async () => {
+    await reconcile({
+      usage: {
+        ...stopped,
+        countedTokens: undefined,
+        inputTokens: 10_000,
+        cacheReadTokens: 50_000,
+        outputTokens: null,
+      },
+    });
+    expect(charged()?.costUsd).toBeCloseTo(0.03);
+  });
+
+  it("never charges more than the hold", async () => {
+    await reconcile({
+      usage: { ...stopped, countedTokens: { inputTokens: 0, outputTokens: 1_000_000 } },
+    });
+    expect(charged()?.costUsd).toBe(1);
+  });
+
+  it("releases the hold of a call that never reached the provider", async () => {
+    await reconcile({
+      usage: { ...stopped, providerRequestId: null, countedTokens: undefined },
+    });
+    expect(charged()).toMatchObject({ costUsd: 0, costSource: "reconciled-estimate" });
+  });
+
+  it("lets a call without a receipt finish before releasing its hold", async () => {
+    await reconcile({ reconciliationAttempts: 4 });
+    expect(recordUsage).not.toHaveBeenCalled();
+    await reconcile({ reconciliationAttempts: 5 });
+    expect(charged()).toMatchObject({ costUsd: 0, inputTokens: null, outputTokens: null });
+  });
+
+  it("flags a hold it cannot attribute for review with the reason", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
-    const { prisma, updateMany } = harness({ ...baseCall, reconciliationAttempts: 5 });
 
-    await createModelCreditReconciler({ prisma, now: () => new Date(0) })();
+    const updateMany = await reconcile({ model: null, reconciliationAttempts: 5 });
 
+    expect(recordUsage).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenLastCalledWith({
       where: { id: "entry-1", reconciliationState: "pending" },
       data: { reconciliationState: "needs_review", nextReconcileAt: null },
@@ -48,9 +172,7 @@ describe("model credit reconciler", () => {
         level: "error",
         message: "Model credit hold requires review",
         callId: "call-1",
-        reason: "usage unavailable",
-        provider: "fake",
-        model: "fake-model",
+        reason: "Legacy reservation requires manual attribution",
         attempts: 6,
         hasProviderRequestId: false,
         canLookUpUsage: false,
@@ -61,9 +183,7 @@ describe("model credit reconciler", () => {
   it("keeps the failure reason on each attempt that could not verify a call", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
-    const { prisma } = harness({ ...baseCall, model: null, reconciliationAttempts: 0 });
-
-    await createModelCreditReconciler({ prisma, now: () => new Date(0) })();
+    await reconcile({ model: null });
 
     expect(sink.events).toEqual([
       expect.objectContaining({
