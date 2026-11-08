@@ -11,7 +11,6 @@ import { toolCallRecords } from "./tool-call-records";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("./api", () => ({ rpc }));
-vi.mock("./session", () => ({ registerSessionDiskCache: () => undefined }));
 vi.mock("./tool-call-reads", () => ({
   readFinishedRunToolCalls: (_runId: string, _executionId: string, read: () => Promise<unknown>) =>
     read(),

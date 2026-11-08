@@ -93,6 +93,7 @@ import {
 } from "../lib/startup";
 import { capTextScaling } from "../lib/text-scale";
 import { loadToolActivityPreference } from "../lib/tool-activity-preference";
+import { toolCallRecords } from "../lib/tool-call-records";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
@@ -107,6 +108,7 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+registerSessionDiskCache(toolCallRecords.clear);
 registerSessionDiskCache((sameAccount) => {
   if (!sameAccount) return clearLastBot();
 });

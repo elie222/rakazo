@@ -80,7 +80,7 @@ const stepsBlock: MessageBlock = {
       label: step.label,
       count: 1,
       executionId: `call-${index + 1}`,
-      detail: step.detail,
+      ...(step.command ? { detail: step.detail } : {}),
       ...(running ? {} : { outcome: step.outcome ?? "ok", durationMs: step.durationMs }),
       // A finished reply keeps what the bot wrote before a step on that step.
       ...(!live && index === STEPS.length - 1 ? { note: NOTE_TEXT } : {}),
