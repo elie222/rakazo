@@ -7,8 +7,8 @@ import {
   shouldShowBotSenderName,
 } from "@rakazo/core";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import type { MobileMessage } from "./api";
 import { applyLocalChoiceDismissals, hasVisibleMessagePresentation } from "./message-presentation";
+import type { MobileMessage } from "./mobile-types";
 import { getCachedToolActivityEnabled, subscribeToolActivity } from "./tool-activity-preference";
 
 /**

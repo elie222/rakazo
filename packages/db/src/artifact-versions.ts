@@ -23,6 +23,7 @@ export async function resolveNextArtifactVersion(
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
+      standalone: false,
       // An MCP app's hidden HTML never starts or joins a file's version history.
       ...LISTED_ARTIFACT,
     },
@@ -54,6 +55,7 @@ export async function withResolvedArtifactVersion<T>(
     name: string;
   },
   attempt: (db: Prisma.TransactionClient, version: ArtifactVersionWrite) => Promise<T>,
+  options?: { timeout?: number },
 ): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < MAX_VERSION_ALLOCATION_ATTEMPTS; i++) {
@@ -64,7 +66,7 @@ export async function withResolvedArtifactVersion<T>(
         `);
         const version = await resolveNextArtifactVersion(tx, params);
         return await attempt(tx, version);
-      });
+      }, options);
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       lastError = error;

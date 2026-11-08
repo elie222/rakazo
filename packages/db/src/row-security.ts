@@ -50,6 +50,8 @@ export function asSystem<T extends object>(client: T, reason = "test fixture"): 
   return new Proxy(client, {
     get(target, key) {
       const value = Reflect.get(target, key);
+      // A synchronous accessor that reads no rows; wrapping it would hand back a promise.
+      if (key === "$contentEncryption") return value;
       if (typeof value === "function") {
         return (...args: unknown[]) =>
           runAsSystem(reason, () => Reflect.apply(value, target, args));
@@ -103,8 +105,10 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "BillingAuditEvent",
   "PushToken",
   "CallPushDevice",
+  "WorkActivityToken",
   "EmailSend",
   "Thread",
+  "ThreadRead",
   "Message",
   "Event",
   "MemoryDocument",
@@ -153,6 +157,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UsageRecord",
   "ScratchpadItem",
   "BotEmailMessage",
+  "BotEmailSend",
   "ActionApprovalRule",
   "SpaceModelRoleChoice",
   "SpaceSettingOverride",

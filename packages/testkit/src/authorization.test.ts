@@ -330,6 +330,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         { botId: "missing-bot", clientNonce: "nope", routineIds: ["missing-routine"] },
       ],
       ["threads/stop", { botId: "missing-bot" }],
+      ["threads/stopHelper", { botId: "missing-bot", messageId: "missing-message" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
       [
@@ -343,6 +344,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["threads/markRead", { botId: "missing-bot" }],
       ["threads/markUnread", { botId: "missing-bot" }],
+      ["threads/snooze", { botId: "missing-bot", until: null }],
       ["threads/head"],
       ["threads/react"],
       ["threads/endCall"],
@@ -463,6 +465,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["notifications/unregisterPush"],
+      ["notifications/followWorkActivity", { token: "ab".repeat(32) }],
       ["search/query", { q: "anything" }],
       ["voice/catalog"],
       ["voice/status"],
@@ -704,6 +707,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
+      ["threads/stopHelper", { botId: ownerBot.id, messageId: "missing-message" }],
       ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
       [
@@ -717,6 +721,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["threads/markRead", { botId: ownerBot.id }],
       ["threads/markUnread", { botId: ownerBot.id }],
+      ["threads/snooze", { botId: ownerBot.id, until: null }],
       ["computer/status", { botId: ownerBot.id }],
       ["computer/boot", { botId: ownerBot.id }],
       ["computer/stop", { botId: ownerBot.id }],
@@ -768,6 +773,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/followUp", { groupId: ownerGroup.id, text: "intruder follow-up" }],
       ["threads/markRead", { groupId: ownerGroup.id }],
       ["threads/markUnread", { groupId: ownerGroup.id }],
+      ["threads/snooze", { groupId: ownerGroup.id, until: null }],
     ];
     await Promise.all(
       groupCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),

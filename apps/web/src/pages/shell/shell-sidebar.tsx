@@ -10,7 +10,7 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
@@ -35,6 +35,19 @@ export function focusSidebarSearch() {
     input?.focus();
     input?.select();
   });
+}
+
+/**
+ * Chromium keeps the top fade drawn when collapsing sections shrinks a scrolled list until it no
+ * longer scrolls; replaying the fade's scroll-driven animations lets it settle at the top.
+ */
+function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
+  const list = event.currentTarget;
+  if (list.scrollHeight > list.clientHeight) return;
+  for (const animation of list.getAnimations()) {
+    animation.cancel();
+    animation.play();
+  }
 }
 
 type User = { name?: string | null; email?: string; image?: string | null };
@@ -235,7 +248,10 @@ export function ShellSidebar({
             ) : null}
           </InputGroup>
         )}
-        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div
+          onScroll={resetFadeWhenUnscrollable}
+          className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
+        >
           {showSpaceSearch && !mini ? (
             <SpaceSearchResults
               hits={searchHits}
@@ -274,7 +290,16 @@ export function ShellSidebar({
               {roster}
             </>
           )}
-          <div className={mini ? "hidden" : "contents"}>{archived}</div>
+        </div>
+        {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
+        <div
+          className={
+            mini
+              ? "hidden"
+              : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
+          }
+        >
+          {archived}
         </div>
         <div className={mini ? "hidden" : "contents"}>
           <PasskeyOffer />

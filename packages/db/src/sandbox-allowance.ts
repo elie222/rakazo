@@ -11,15 +11,19 @@ import { runAsSystem } from "./row-security.js";
 const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active", "past_due"]);
 
 /**
- * The own-key tier an organization's computers get: its live subscription's tier, else Standard.
- * Credit organizations get none.
+ * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever
+ * pays for its models (a top-up switches those to credits), else Standard while it uses its own
+ * key. Credit organizations without an own-key subscription get none.
  */
 function byokTierOf(
   mode: string | null | undefined,
-  billing: { status: string | null; byokTier: string | null } | null | undefined,
+  billing:
+    | { status: string | null; byokTier: string | null; byokPriceCents: number | null }
+    | null
+    | undefined,
 ): ByokTier | null {
-  if (mode !== "byok") return null;
   const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
+  if (mode !== "byok" && !(live && billing?.byokPriceCents)) return null;
   return (live && ByokTierSchema.safeParse(billing?.byokTier).data) || "standard";
 }
 
@@ -51,6 +55,7 @@ export async function sandboxAllowancePlan(
             currentPeriodStartsAt: true,
             byokInterval: true,
             byokTier: true,
+            byokPriceCents: true,
           },
         },
       },
@@ -94,7 +99,7 @@ export async function planComputerSize(
       organization: {
         select: {
           modelCredits: { select: { mode: true } },
-          billing: { select: { status: true, byokTier: true } },
+          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
         },
       },
     },

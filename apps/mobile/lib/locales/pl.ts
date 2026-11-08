@@ -1,4 +1,12 @@
 export const PL_MESSAGES: Record<string, string> = {
+  Snooze: "Odłóż",
+  Snoozed: "Odłożone",
+  Unsnooze: "Przywróć",
+  Woke: "Wróciło",
+  "1 hour": "1 godzina",
+  "3 hours": "3 godziny",
+  Tomorrow: "Jutro",
+  "Next week": "W przyszłym tygodniu",
   "No matches": "Brak wyników",
   "Always ask": "Zawsze pytaj",
   "Search tools": "Szukaj narzędzi",
@@ -451,6 +459,7 @@ export const PL_MESSAGES: Record<string, string> = {
     "Wszystkie wersje tego artefaktu ({count}) zostaną usunięte. Tej operacji nie można cofnąć.",
   Versions: "Wersje",
   Stop: "Zatrzymaj",
+  Stopped: "Zatrzymano",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Wszystkie wiadomości zostaną usunięte, a bieżąca praca zatrzymana. Bot, komputer, pamięć i rutyny zostaną zachowane.",
   "Type your answer": "Wpisz odpowiedź",
@@ -991,6 +1000,8 @@ export const PL_MESSAGES: Record<string, string> = {
   Call: "Zadzwoń",
   "Calls need transcription": "Rozmowy wymagają transkrypcji",
   "Could not hear that.": "Nie udało się tego usłyszeć.",
+  "Approve or deny it on screen.": "Zatwierdź lub odrzuć na ekranie.",
+  "Hang up, then enter the code on screen.": "Zakończ rozmowę, a potem wpisz kod na ekranie.",
   "Could not speak that.": "Nie udało się tego odczytać na głos.",
   "Could not transcribe that.": "Nie udało się zamienić tej wypowiedzi na tekst.",
   "Hang up": "Rozłącz się",
@@ -1135,6 +1146,10 @@ export const PL_MESSAGES: Record<string, string> = {
   "Available credits": "Dostępne środki",
   "Computer hours left": "Pozostałe godziny pracy komputera",
   Upgrade: "Ulepsz",
+  "Your trial's computer hours are used up.":
+    "Godziny pracy komputera w okresie próbnym zostały wykorzystane.",
+  "This month's computer hours are used up.":
+    "Godziny pracy komputera w tym miesiącu zostały wykorzystane.",
   "Cancelled trials have no computer hours.":
     "Anulowane okresy próbne nie mają godzin pracy komputera.",
   "Renew plan": "Odnów plan",

@@ -196,16 +196,17 @@ it("lets the desktop app change its server from sign in", async () => {
   window.rakazoDesktop = { server: { change } } as unknown as NonNullable<Window["rakazoDesktop"]>;
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
   await render();
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Change server"]')!.click(),
-  );
+  const button = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Change server",
+  )!;
+  await act(async () => button.click());
   expect(change).toHaveBeenCalledOnce();
 });
 
 it("offers no server change in a browser", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
   await render();
-  expect(host.querySelector('[aria-label="Change server"]')).toBeNull();
+  expect(host.textContent).not.toContain("Change server");
 });
 
 it("keeps SSO available for retry while an authorization request is pending", async () => {

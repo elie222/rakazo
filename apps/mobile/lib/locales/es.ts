@@ -1,4 +1,12 @@
 export const ES_MESSAGES: Record<string, string> = {
+  Snooze: "Posponer",
+  Snoozed: "Pospuestos",
+  Unsnooze: "Dejar de posponer",
+  Woke: "Ha vuelto",
+  "1 hour": "1 hora",
+  "3 hours": "3 horas",
+  Tomorrow: "Mañana",
+  "Next week": "La próxima semana",
   "No matches": "Sin resultados",
   "Always ask": "Preguntar siempre",
   "Search tools": "Buscar herramientas",
@@ -442,6 +450,7 @@ export const ES_MESSAGES: Record<string, string> = {
     "Esto elimina las {count} versiones de este artefacto. No se puede deshacer.",
   Versions: "Versiones",
   Stop: "Detener",
+  Stopped: "Detenido",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Esto elimina todos los mensajes y detiene el trabajo en curso. Se conservan el bot, la computadora, la memoria y las rutinas.",
   "Type your answer": "Escribe tu respuesta",
@@ -941,6 +950,8 @@ export const ES_MESSAGES: Record<string, string> = {
   Call: "Llamar",
   "Calls need transcription": "Las llamadas necesitan transcripción",
   "Could not hear that.": "No se pudo escuchar eso.",
+  "Approve or deny it on screen.": "Apruébalo o deniégalo en pantalla.",
+  "Hang up, then enter the code on screen.": "Cuelga y luego ingresa el código en pantalla.",
   "Could not speak that.": "No se pudo decir eso en voz alta.",
   "Could not transcribe that.": "No se pudo transcribir eso.",
   "Hang up": "Colgar",
@@ -1084,6 +1095,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Available credits": "Créditos disponibles",
   "Computer hours left": "Horas de computadora restantes",
   Upgrade: "Mejorar plan",
+  "Your trial's computer hours are used up.": "Las horas de computadora de tu prueba se agotaron.",
+  "This month's computer hours are used up.": "Las horas de computadora de este mes se agotaron.",
   "Cancelled trials have no computer hours.":
     "Las pruebas canceladas no tienen horas de computadora.",
   "Renew plan": "Renovar plan",

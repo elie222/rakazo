@@ -308,7 +308,7 @@ export function VaultSettings({
                     setOpened(item.name);
                   }}
                 >
-                  <VaultTile kind={kind} title={item.title} />
+                  <VaultTile kind={kind} title={item.title} origin={item.origin} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-body font-medium text-foreground">
                       {item.title}

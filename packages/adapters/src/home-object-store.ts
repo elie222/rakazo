@@ -189,6 +189,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       // reply. Hydration settles it before a retry inspects the folders. A home never
       // stored keeps its only copy.
       if (stored && (await this.localRevision(botId)) === before) await this.remove(botId);
+      // The computer was deleted meanwhile, and its stored home with it.
+      if (!(await this.records.kinds([botId])).has(botId)) return;
       throw error;
     });
     return true;

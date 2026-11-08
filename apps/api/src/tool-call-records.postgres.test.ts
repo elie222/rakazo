@@ -1,6 +1,6 @@
 import { createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadLiveRunEvents } from "./thread-target.js";
+import { loadLiveRunEvents } from "./thread-snapshot.js";
 import { loadToolCallRecords } from "./tool-call-records.js";
 
 const databaseUrl = process.env.DATABASE_URL;

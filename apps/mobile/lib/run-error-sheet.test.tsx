@@ -50,6 +50,9 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => null }));

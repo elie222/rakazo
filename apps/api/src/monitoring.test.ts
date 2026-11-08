@@ -1,5 +1,7 @@
-import { monitoringUserId } from "@rakazo/logging";
-import { describe, expect, it } from "vitest";
+import { createLogger, createTestSink, installLogger, monitoringUserId } from "@rakazo/logging";
+import { requestLogging } from "@rakazo/logging/hono";
+import { Hono } from "hono";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadEnv } from "./env.js";
 import { MAX_MONITORING_ENVELOPE_BYTES, monitoringRoutes, parseDsn } from "./monitoring.js";
 
@@ -20,6 +22,10 @@ function recordingFetch(status = 200, headers: Record<string, string> = {}) {
 }
 
 describe("monitoring routes", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
   it("parses DSNs into the envelope endpoint", () => {
     expect(parseDsn(DSN)).toEqual({
       publicKey: "publickey",
@@ -140,5 +146,21 @@ describe("monitoring routes", () => {
       body: envelope(DSN),
     });
     expect(response.status).toBe(502);
+  });
+
+  it("does not report a collector outage back to that collector", async () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    installLogger(logger);
+    const failing = (async () => {
+      throw new Error("connect refused");
+    }) as typeof fetch;
+    for (const impl of [failing, recordingFetch(503).impl]) {
+      const app = new Hono();
+      app.use("*", requestLogging(logger));
+      app.route("/", monitoringRoutes(CONFIG, impl));
+      await app.request("/api/monitoring/tunnel", { method: "POST", body: envelope(DSN) });
+    }
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
 });

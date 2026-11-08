@@ -10,12 +10,12 @@ import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/
 import { fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
+import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   assertAllowedOpenAiCompatibleUrl,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
 import { listPiCatalog } from "./pi-models.js";
-import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./pi-oauth.js";
 import {
   createOpenAiCompatibleFetch,
   createOpenAiCompatibleLookup,

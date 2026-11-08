@@ -8,6 +8,9 @@ engineStrict: true
 strictPeerDependencies: false
 autoInstallPeers: true
 saveExact: true
+# pnpm 11+ reinstalls stale dependencies before `pnpm exec` and `pnpm run`. Tests that start
+# nested pnpm commands could then relink node_modules under the running suite.
+verifyDepsBeforeRun: false
 
 supportedArchitectures:
   os:

@@ -19,6 +19,9 @@ vi.mock("./routine-store", () => ({
   setRoutineActive: vi.fn(),
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./i18n", () => {
   const t = (message: string) => message;

@@ -4,7 +4,7 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { computerScopeKey, userControlHeldBy } from "./computers.js";
-import { appendEventInTransaction, createPendingSteeringRun } from "./events.js";
+import { appendEventInTransaction } from "./events.js";
 import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
 import { runAsSystem } from "./row-security.js";
@@ -15,6 +15,7 @@ import {
   SpaceNotFoundError,
 } from "./spaces.js";
 import { activeRunStatuses } from "./thread-listing.js";
+import { createPendingSteeringRun } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export const SPACE_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -611,7 +612,8 @@ async function departSpace(
           await tx.actionAutoReviewPreference.deleteMany({ where: own });
           await tx.notificationPreference.deleteMany({ where: own });
           await tx.secret.deleteMany({ where: own });
-          // Model, voice and role preferences, setting overrides and AI consents cascade from here.
+          // Model, voice and role preferences, setting overrides, AI consents and their read state
+          // in each chat cascade from here.
           await tx.spaceMember.delete({ where: { id: departing.id } });
           // A guest belonged only through its Spaces; a full member keeps their organization.
           await tx.member.deleteMany({

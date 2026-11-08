@@ -26,6 +26,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -38,20 +39,22 @@ import {
   shouldForwardPeerThreadEvent,
   withoutToolCallContent,
 } from "../thread-message-pages.js";
-import type { ThreadTarget } from "../thread-target.js";
+import { reactToThreadMessage } from "../thread-reactions.js";
 import {
-  isStopMessage,
   markThreadRead,
   markThreadUnreadFrom,
-  reactToThreadMessage,
+  setThreadSnooze,
+  setThreadUnreadState,
+} from "../thread-read-state.js";
+import { threadSnapshot } from "../thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
+import type { ThreadTarget } from "../thread-target.js";
+import {
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
-  setThreadUnreadState,
-  stopThreadRuns,
   threadHead,
-  threadSnapshot,
 } from "../thread-target.js";
 import {
   loadToolCallRecords,
@@ -59,7 +62,6 @@ import {
   withheldToolCallRecord,
 } from "../tool-call-records.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -352,6 +354,11 @@ export function threadsRoutes(ctx: RouterContext) {
           // A call's arguments, result and error go only to the person who started the run.
           return run.userId === context.actor.userId ? settled : withheldToolCallRecord(settled);
         });
+      }),
+      stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await stopThreadRuns(deps, context.actor, target, input.messageId);
+        return { ok: true as const };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
@@ -705,6 +712,11 @@ export function threadsRoutes(ctx: RouterContext) {
         } else {
           await setThreadUnreadState(deps.prisma, context.actor, target, true);
         }
+        return { ok: true as const };
+      }),
+      snooze: authed.threads.snooze.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadSnooze(deps.prisma, context.actor, target, input.until);
         return { ok: true as const };
       }),
     },

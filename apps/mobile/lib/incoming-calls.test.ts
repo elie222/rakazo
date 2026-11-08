@@ -37,8 +37,9 @@ vi.mock("react-native", () => ({
     },
   },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
-  loadSessionToken: async () => "fake-session",
   captureApiRequestContext: async (spaceId: string) => ({
     apiBase: "https://example.invalid",
     headers: {
@@ -48,6 +49,8 @@ vi.mock("./api", () => ({
     sessionGeneration: fake.generation,
   }),
   rpc: fake.rpc,
+}));
+vi.mock("./api-live", () => ({
   subscribeIncomingCallEvents: async (onEvent: (event: unknown) => void, signal: AbortSignal) => {
     fake.onEvent = onEvent;
     await new Promise<void>((resolve) =>
@@ -66,6 +69,8 @@ vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./push", () => ({ registerCallPushToken: vi.fn() }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./session", () => ({
+  loadSessionToken: async () => "fake-session",
+
   currentSessionGeneration: () => fake.generation,
   registerSessionDiskCache: vi.fn(),
 }));

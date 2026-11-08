@@ -462,7 +462,13 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "subagent") {
-            return <SubagentCard key={i} block={block} />;
+            const { botId } = message;
+            // A saved running card is a background helper's; a live one belongs to this turn.
+            const onStop =
+              botId && !message.id.startsWith("subagent:")
+                ? () => rpc.threads.stopHelper({ botId, messageId: message.id })
+                : undefined;
+            return <SubagentCard key={i} block={block} onStop={onStop} />;
           }
           if (block.kind === "child_bot") {
             return (
