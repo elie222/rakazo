@@ -573,12 +573,9 @@ function toolStepsFixture(size: 24 | 100, earlier: Earlier, ask = ASK_INSTALL): 
     ...(size === 100 ? { compact: true as const } : {}),
   };
 }
-/** The model-only marker the step list replays under, which a reply must never copy. */
-const noStepLog = (e: Evidence) =>
-  check(
-    "no-step-log",
-    (e.replies ?? [e.text]).every((reply) => !/tool calls this reply made/i.test(reply)),
-  );
+/** Observed, not graded: the judge rubrics decide whether a reply reads as a step log. */
+const copiedMarker = (e: Evidence) =>
+  (e.replies ?? [e.text]).some((reply) => reply.includes("[tool calls this reply made]"));
 const noLookup = (e: Evidence) => check("no-history-lookup", !lookedBack(e).pass);
 const HISTORY_TOOLS = new Set(["search_history", "read_history"]);
 /** The bot used a tool other than history lookups to answer, such as re-checking its computer. */
@@ -588,6 +585,7 @@ const observeToolWork =
   (earlier: EarlierWork, ask: string, doubt: boolean) =>
   (e: Evidence): Record<string, boolean | JudgeInput> => ({
     reverified: reverified(e),
+    "copied-marker": copiedMarker(e),
     "looked-back": lookedBack(e).pass,
     ...(doubt
       ? { "unprompted-doubt": behaviourInput("unprompted-doubt", earlier, ask, e.text) }
@@ -668,7 +666,7 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
       history: toolStepsFixture(size, earlier),
       connections: [],
       steps: [{ ask: ASK_INSTALL }],
-      grade: (e) => [noStepLog(e)],
+      grade: () => [],
       judge: (e) => judgeInput(rubric, e.text),
       // The question is about the earlier work, so doubt about it is graded, not observed.
       observe: observeToolWork(work, ASK_INSTALL, work === "disk"),
@@ -719,7 +717,7 @@ export const RECALL_EVAL_CASES: EvalCase[] = [
       history: toolStepsFixture(24, INSTALL, ask),
       connections: [],
       steps: [{ ask }],
-      grade: (e) => [noStepLog(e), ...(searchNeeded ? [] : [noLookup(e)])],
+      grade: (e) => (searchNeeded ? [] : [noLookup(e)]),
       judge: (e) => judgeInput(rubric, e.text),
       observe: observeToolWork("install", ask, true),
       shellUnneeded: true,

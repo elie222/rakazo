@@ -514,7 +514,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v1` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v3` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong

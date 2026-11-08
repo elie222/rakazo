@@ -497,6 +497,12 @@ describe("tool step history", () => {
     expect(text).not.toContain("more");
   });
 
+  it("shortens an oversized imported label in the replayed list only", () => {
+    const steps = [{ label: "x".repeat(5_000), count: 1 }];
+    expect(toolStepsHistoryText(steps)).toBe(`[tool calls this reply made]\n- ${"x".repeat(80)}…`);
+    expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
+  });
+
   it("shortens a long note", () => {
     const text = blocksToAgentHistoryText([
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },

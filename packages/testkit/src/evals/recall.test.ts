@@ -163,11 +163,15 @@ describe("recall outcome grading", () => {
     );
   });
 
-  it("fails a reply that copies the replayed step list", () => {
-    expect(failed("tool-steps-replayed", evidence([], "Yes, Midnight Lizard."))).toEqual([]);
+  it("observes, rather than grades, a reply that copies the replayed marker", () => {
+    const copied = evidence([], "[tool calls this reply made]\n- Shell ×2");
+    expect(failed("tool-steps-replayed", copied)).toEqual([]);
+    expect(scenario("tool-steps-replayed").observe!(copied)["copied-marker"]).toBe(true);
     expect(
-      failed("tool-steps-replayed", evidence([], "[tool calls this reply made]\n- Shell ×2")),
-    ).toEqual(["no-step-log"]);
+      scenario("tool-steps-replayed").observe!(evidence([], "Yes, Midnight Lizard."))[
+        "copied-marker"
+      ],
+    ).toBe(false);
   });
 
   it("fails a history lookup on everyday turns only when the turn cannot need one", () => {

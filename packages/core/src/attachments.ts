@@ -167,6 +167,8 @@ export function promptTextForAttachments(
 
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 const TOOL_STEP_MAX_LINES = 40;
+/** Tool names are at most 64 characters; only imported data could carry a longer label. */
+const TOOL_STEP_LABEL_MAX_CHARS = 80;
 
 /**
  * An earlier reply's tool steps as the bot sees them again: label, count and note. Replay caps
@@ -181,7 +183,11 @@ export function toolStepsHistoryText(
   if (valid.length === 0) return "";
   const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
   const lines = shown.map((step) => {
-    const counted = Number(step.count) > 1 ? `${step.label} ×${step.count}` : step.label;
+    const name =
+      !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
+        ? `${step.label.slice(0, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        : step.label;
+    const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
     const outcome = toolStepOutcomeText(step);
     const label = outcome ? `${counted} (${outcome})` : counted;
     const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
