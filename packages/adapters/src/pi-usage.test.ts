@@ -411,6 +411,40 @@ describe("Pi usage accounting", () => {
       }),
     );
   });
+  it("counts the prompt of a call stopped after sending but before any response", async () => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+            controller.abort();
+          }),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: null,
+        costUsd: null,
+        countedTokens: {
+          inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+          outputTokens: 0,
+        },
+      }),
+    );
+  });
   it("does not derive an unsafe integer total from valid component counts", () => {
     expect(
       normalizePiUsage(

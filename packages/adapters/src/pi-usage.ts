@@ -30,6 +30,7 @@ export type ReportedUsageFields = Set<keyof AgentUsage>;
 const reportedRequestIds = new WeakMap<ReportedUsageFields, string>();
 const rejectedRequests = new WeakSet<ReportedUsageFields>();
 const sseObserved = new WeakSet<ReportedUsageFields>();
+const dispatchedRequests = new WeakSet<ReportedUsageFields>();
 const reportedCosts = new WeakMap<ReportedUsageFields, number>();
 const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, number>>();
 export function normalizePiUsage(
@@ -228,6 +229,7 @@ export function usageReportingFetch(
         : fetcher;
     rejectedRequests.delete(reported);
     sseObserved.delete(reported);
+    dispatchedRequests.add(reported);
     const response = await transport(input, init);
     // OpenRouter's Anthropic-format stream carries the upstream message id; its usage
     // lookup accepts only the generation id from this header.
@@ -373,12 +375,15 @@ export function observedPiStream(
       let providerError: unknown;
       let providerThrew = false;
       let inputTokensEstimate = 0;
-      // A call that reached the provider but ended without its cost keeps our own count,
+      let collectRawUsage = false;
+      // A call sent to the provider that ended without its cost keeps our own count,
       // so the reconciler can price it if the provider never reports one.
       const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
         if (usage.costUsd != null) return usage;
         const characters = message ? receivedCharacters(message) : 0;
-        return usage.providerRequestId || characters > 0
+        // The provider may bill a prompt it received even if no response ever arrived.
+        const dispatched = !collectRawUsage || dispatchedRequests.has(reported);
+        return dispatched || usage.providerRequestId || characters > 0
           ? {
               ...usage,
               countedTokens: {
@@ -422,7 +427,7 @@ export function observedPiStream(
         options?.signal?.throwIfAborted();
         started = true;
         // Some Pi adapters reject custom fetch outright. Only audited SSE families opt in.
-        const collectRawUsage =
+        collectRawUsage =
           /^(openai-|anthropic-)/.test(model.api) && !model.provider.startsWith("google");
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
         const streamOptions = withGoogleToolHistory(
