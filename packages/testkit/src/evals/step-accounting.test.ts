@@ -86,3 +86,18 @@ it("reconciles measured token buckets and keeps unavailable buckets unknown", ()
   expect(result.steps[0]!.cacheReadTokens).toBeNull();
   expect(result.background.compaction.cacheReadTokens).toBe(4);
 });
+
+it("lists a step's calls in the order they were made, so tool round trips can be told apart", () => {
+  const at = (ms: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, 0, ms));
+  const result = measureWorkflowSteps(
+    [
+      call("later", { runId: "run", operation: "retrieval", outputTokens: 7, createdAt: at(2) }),
+      call("first", { runId: "run", operation: "retrieval", outputTokens: 3, createdAt: at(1) }),
+    ],
+    new Map([["run", 1]]),
+  );
+  expect(result.steps[0]!.calls.map((c) => [c.operation, c.outputTokens, c.costUsd])).toEqual([
+    ["retrieval", 3, 0.01],
+    ["retrieval", 7, 0.01],
+  ]);
+});

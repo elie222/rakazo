@@ -566,6 +566,25 @@ record could not show the install succeeded. Controls passed eight of ten,
 against ten of ten before. Both misses said the bot never used the computer,
 a claim the baseline made as well but the judge then let pass.
 
+The `recall-ordinary-*` cases reuse the 24-message chat for everyday turns that
+need no history: a sign-off, a question answered two messages earlier, a general
+knowledge question, and a request for eye-strain tips close to the install's
+topic. A deterministic check fails a history lookup on the first three; the
+fourth only records it. Each answer's step accounting lists its model calls in
+order, so the first call can be compared with the round trips that searches
+add. A November 2026 run with ten trials per case compared the change with
+main under both strategies, with a small model as bot and judge, and repeated
+the retrieval cases with a larger bot. No everyday turn searched in any trial,
+before or after, and their prompt size grew by under one percent. Under
+retrieval, the small model now takes about three model calls to recall the
+install instead of one, roughly doubling that answer's cost. The larger bot
+already searched before the change but, finding only "Done.", said it had
+installed nothing. With the change it named the extension in every trial. Under
+`current`, the small model's goodbye on main nearly always added a false
+correction that it had never changed anything. With replayed steps it instead
+said every time that it could not confirm the install had worked, because the
+steps carry no results.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:
