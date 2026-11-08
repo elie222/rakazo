@@ -25,6 +25,7 @@ import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
 import { SpaceSearchResults } from "../SpaceSearch";
 import type { SettingsSection } from "../shell-overlay";
+import type { ChatMenuState } from "./chat-context-menu";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
 
@@ -59,6 +60,7 @@ export function ShellSidebar({
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
+  chatMenu,
   roster,
   archived,
   footerLogos,
@@ -88,6 +90,7 @@ export function ShellSidebar({
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
+  chatMenu: ChatMenuState;
   roster: ReactNode;
   archived: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
@@ -243,6 +246,7 @@ export function ShellSidebar({
               error={searchError}
               onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
+              chatMenu={chatMenu}
             />
           ) : (
             <>
