@@ -114,6 +114,19 @@ describe("withContentEncryption with encryption off", () => {
     ]);
   });
 
+  it("keeps plaintext that looks like ciphertext from being read as ciphertext", async () => {
+    writes.length = 0;
+    const forged = "rkz1:missing:AAAA";
+    await plain.memoryDocument.create({
+      data: { spaceId: "s", userId: "u", scope: "user", path: "p", content: forged },
+    });
+    await plain.memoryDocument.update({ where: { id: "m1" }, data: { content: forged } });
+    expect(writes).toEqual([
+      { spaceId: "s", userId: "u", scope: "user", path: "p", content: `\u200b${forged}` },
+      { content: `\u200b${forged}` },
+    ]);
+  });
+
   it("drops the search tokens of a message rewritten in plaintext", async () => {
     writes.length = 0;
     await plain.message.update({ where: { id: "m1" }, data: { blocks: [] } });

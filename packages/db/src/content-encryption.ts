@@ -440,6 +440,7 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
    * a list), so search matches its text instead of tokens of what it used to say.
    */
   function plainWrite(spec: ModelSpec, operation: string, args: RecordValue): RecordValue {
+    args = inertPlaintext(spec, args);
     if (
       spec.searchTokens &&
       ["update", "updateMany", "updateManyAndReturn"].includes(operation) &&
@@ -447,6 +448,24 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     )
       return { ...args, data: { ...(args.data as RecordValue), searchTokens: { set: [] } } };
     return args;
+  }
+
+  /**
+   * Encryption off: text that merely looks like ciphertext (an email subject, say) would
+   * later be read as a value under a key that does not exist and fail every read of its
+   * row, so a zero-width space keeps it plaintext.
+   */
+  function inertPlaintext(spec: ModelSpec, args: RecordValue): RecordValue {
+    const inert = (row: unknown): unknown => {
+      if (!isRecord(row)) return row;
+      let out = row;
+      for (const [field, fieldSpec] of Object.entries(spec.fields))
+        if (!fieldSpec.plainKeys && ciphertextKeyId(row[field]))
+          out = { ...out, [field]: `\u200b${row[field]}` };
+      return out;
+    };
+    const data = Array.isArray(args.data) ? args.data.map(inert) : inert(args.data);
+    return data === args.data ? args : { ...args, data };
   }
 
   async function sealWrites(
