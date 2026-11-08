@@ -89,12 +89,20 @@ export function wrapBoatCall<Args extends unknown[], Result>(
   apiKey: string,
   idempotent = false,
   gate?: BoatRequestGate,
+  timeoutMs?: number,
 ): (...args: Args) => Promise<Result> {
   const attempt = async (...args: Args): Promise<Result> => {
-    await gate?.wait(callerSignal(args[1]));
+    const signal = callerSignal(args[1]);
+    await gate?.wait(signal);
+    const limit = timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs);
     try {
-      return await call(...args);
+      return await call(
+        ...(limit ? withSignal(args, signal ? AbortSignal.any([signal, limit]) : limit) : args),
+      );
     } catch (error) {
+      if (limit?.aborted && !signal?.aborted) {
+        throw new SandboxUnresponsiveError("Boat did not answer in time", { cause: error });
+      }
       const { FetchError, ResponseError } = await boatSdk();
       // The connection to Boat failed without an answer. The request may have arrived, so it
       // is not resent unless it never left; background work tries again on its next pass.
@@ -153,6 +161,11 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       throw error;
     }
   };
+}
+
+function withSignal<Args extends unknown[]>(args: Args, signal: AbortSignal): Args {
+  const [request, init, ...rest] = args;
+  return [request, { ...(init as RequestInit | undefined), signal }, ...rest] as unknown as Args;
 }
 
 /** The `RequestInit` signal the SDK takes as each operation's second argument. */
