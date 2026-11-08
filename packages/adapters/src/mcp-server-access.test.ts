@@ -123,7 +123,7 @@ function matches(row: Server, where: Where): boolean {
   });
 }
 
-type Assignment = { serverId: string; allowAllTools?: boolean; allowedTools?: string[] };
+type Assignment = { serverId: string; allowAllTools?: boolean; allowedTools?: unknown };
 
 /**
  * `messages` is oldest first, as a thread reads. `materials` is each secret's stored OAuth
@@ -137,7 +137,7 @@ function fakeDeps(
   materials: Record<string, unknown> = {},
 ) {
   const notify = vi.fn(async () => undefined);
-  const tx = { marker: "tx" };
+  const tx: Record<string, unknown> = { marker: "tx", $queryRaw: vi.fn(async () => []) };
   const assignments = assigned.map((row) => (typeof row === "string" ? { serverId: row } : row));
   const scope = { botId: run.botId, spaceId: run.spaceId, userId: run.userId };
   const prisma = {
@@ -189,6 +189,7 @@ function fakeDeps(
     },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
   };
+  tx.message = prisma.message;
   const secretStore = {
     load: vi.fn(async (ciphertext: string) => JSON.stringify(materials[ciphertext])),
   };
@@ -291,6 +292,26 @@ describe("list_mcp_servers", () => {
       shared: 7,
     });
   });
+  it("caps a narrowed count at the probed tools and ignores malformed allowlists", async () => {
+    const { deps } = fakeDeps(
+      [
+        server("stale", { healthToolCount: 2 }),
+        server("broken"),
+        server("unprobed", { healthToolCount: null }),
+      ],
+      [
+        { serverId: "id-stale", allowAllTools: false, allowedTools: ["a", "b", "gone", "a"] },
+        { serverId: "id-broken", allowAllTools: false, allowedTools: null },
+        { serverId: "id-unprobed", allowAllTools: false, allowedTools: ["a", 3, "b"] },
+      ],
+    );
+    const out = await listMcpServersForBot(deps, run, run.botId);
+    expect(Object.fromEntries(out.servers.map((row) => [row.slug, row.tool_count]))).toEqual({
+      stale: 2,
+      broken: 0,
+      unprobed: 2,
+    });
+  });
 });
 
 describe("request_mcp_server", () => {
@@ -338,6 +359,29 @@ describe("request_mcp_server", () => {
       lease,
     );
     expect(notify).toHaveBeenCalledWith("thread-1", 42, "run-1");
+  });
+
+  it("checks for an open card and posts under one lock on the thread, bot and server", async () => {
+    const { deps, prisma, tx } = fakeDeps([server("git")]);
+    const order: string[] = [];
+    (tx.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      order.push("lock");
+      return [];
+    });
+    prisma.message.findMany.mockImplementationOnce(async () => {
+      order.push("scan");
+      return [];
+    });
+    persistMessageInTransaction.mockImplementationOnce(async () => {
+      order.push("post");
+      return { message: {}, eventSeq: 42, firstResponseRunId: "run-1" };
+    });
+    await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["lock", "scan", "post"]);
+    expect((tx.$queryRaw as ReturnType<typeof vi.fn>).mock.calls[0]?.slice(1)).toEqual([
+      `mcp-approval-request:${run.threadId}:${run.botId}:id-git`,
+    ]);
   });
 
   it("asks for approval, not authorization, when the server has a stored credential or is local", async () => {

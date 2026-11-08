@@ -1,8 +1,10 @@
 import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import { mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { isOpenMcpApproval, MCP_APPROVAL_CARD_WINDOW } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "./advisory-lock.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { mcpServerHealthDto } from "./mcp-server-health.js";
@@ -15,8 +17,12 @@ type AccessRun = { id: string; spaceId: string; userId: string; threadId: string
  * This bot's approval cards in the thread's newest messages, in the window an approval repaints.
  * `declined` holds servers whose newest card was dismissed with no user message since.
  */
-async function scanCards(deps: AccessDeps, run: AccessRun, botId: string) {
-  const messages = await deps.prisma.message.findMany({
+async function scanCards(
+  client: Pick<Prisma.TransactionClient, "message">,
+  run: AccessRun,
+  botId: string,
+) {
+  const messages = await client.message.findMany({
     where: { threadId: run.threadId },
     select: { botId: true, role: true, blocks: true },
     orderBy: { createdAt: "desc" },
@@ -43,6 +49,13 @@ async function scanCards(deps: AccessDeps, run: AccessRun, botId: string) {
   return { open, declined };
 }
 
+function allowedToolCount(allowedTools: unknown, probed: number | null): number {
+  const names = new Set(
+    Array.isArray(allowedTools) ? allowedTools.filter((name) => typeof name === "string") : [],
+  );
+  return probed === null ? names.size : Math.min(names.size, probed);
+}
+
 /** list_mcp_servers: the run member's enabled servers here, without endpoints or credentials. */
 export async function listMcpServersForBot(deps: AccessDeps, run: AccessRun, botId: string) {
   const [servers, assignments, cards] = await Promise.all([
@@ -65,7 +78,7 @@ export async function listMcpServersForBot(deps: AccessDeps, run: AccessRun, bot
       where: { botId, spaceId: run.spaceId, userId: run.userId },
       select: { serverId: true, allowAllTools: true, allowedTools: true },
     }),
-    scanCards(deps, run, botId),
+    scanCards(deps.prisma, run, botId),
   ]);
   const assigned = new Map(assignments.map((row) => [row.serverId, row]));
   return {
@@ -73,10 +86,12 @@ export async function listMcpServersForBot(deps: AccessDeps, run: AccessRun, bot
       // The message can carry the server's own error text, so it is never listed.
       const health = mcpServerHealthDto({ ...server, healthMessage: null });
       // An assignment wins over sharing with every bot; a narrowed one offers only its tools.
+      // Discovery drops allowlist names the server no longer offers, and only it has the live
+      // list, so the stored names are capped by the last probe's count.
       const assignment = assigned.get(server.id);
       const toolCount =
         assignment && !assignment.allowAllTools
-          ? (assignment.allowedTools as unknown[]).length
+          ? allowedToolCount(assignment.allowedTools, health.toolCount)
           : health.toolCount;
       return {
         server_id: server.id,
@@ -147,25 +162,6 @@ export async function requestMcpServerFromTool(
   if (server.allBots || assignment) {
     return { ok: true, server_id: server.id, status: "available" };
   }
-  const cards = await scanCards(deps, run, botId);
-  if (cards.declined.has(server.id)) {
-    return {
-      ok: true,
-      server_id: server.id,
-      status: "declined",
-      next_step:
-        "The user declined this server's approval card. Do not ask for it again unless the user brings it up.",
-    };
-  }
-  if (cards.open.has(server.id)) {
-    return {
-      ok: true,
-      server_id: server.id,
-      status: "pending",
-      next_step:
-        "An approval card for this server is already in the chat. End your turn with one short sentence asking the user to answer it there. You will be told when they connect it.",
-    };
-  }
   // The settings screen's rule for offering Sign in, from the same stored OAuth state and health.
   const oauth = await new McpOAuthBroker(deps.prisma, deps.secretStore).summaryFor(server, run);
   const needsOAuth =
@@ -187,8 +183,19 @@ export async function requestMcpServerFromTool(
       status: "pending",
     },
   ];
-  const committed = await deps.prisma.$transaction((tx) =>
-    persistMessageInTransaction(
+  // The check and the post share one transaction under a lock on this bot's thread and server,
+  // so parallel requests cannot both find no card and post one each.
+  const outcome = await deps.prisma.$transaction(async (tx) => {
+    await advisoryLock(
+      tx,
+      "mcp-approval-request",
+      `${run.threadId}:${botId}:${server.id}`,
+      "joined",
+    );
+    const cards = await scanCards(tx, run, botId);
+    if (cards.declined.has(server.id)) return { kind: "declined" as const };
+    if (cards.open.has(server.id)) return { kind: "open" as const };
+    const committed = await persistMessageInTransaction(
       tx,
       run,
       "bot",
@@ -197,8 +204,28 @@ export async function requestMcpServerFromTool(
       undefined,
       false,
       runLeaseFor(deps, run.id),
-    ),
-  );
+    );
+    return { kind: "posted" as const, committed };
+  });
+  if (outcome.kind === "declined") {
+    return {
+      ok: true,
+      server_id: server.id,
+      status: "declined",
+      next_step:
+        "The user declined this server's approval card. Do not ask for it again unless the user brings it up.",
+    };
+  }
+  if (outcome.kind === "open") {
+    return {
+      ok: true,
+      server_id: server.id,
+      status: "pending",
+      next_step:
+        "An approval card for this server is already in the chat. End your turn with one short sentence asking the user to answer it there. You will be told when they connect it.",
+    };
+  }
+  const { committed } = outcome;
   await deps.events
     .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
     .catch((error) => {
