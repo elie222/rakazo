@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
-function readableLocalStorage(): Storage | null {
+/** Local storage, or null where it is missing or the browser blocks it (reading it throws). */
+export function readableLocalStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {

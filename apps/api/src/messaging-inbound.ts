@@ -26,6 +26,7 @@ import {
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
+  SpaceDeletionInProgressError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -37,7 +38,7 @@ import {
   MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
 } from "./team-chat-startup.js";
-import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-target.js";
+import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
@@ -107,8 +108,14 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
       await handleChannelEvent(deps, event);
       return;
     }
-    await handleDirectEvent(deps, event);
+    await handleDirectEvent(deps, event).catch(droppedWhileDeleting);
   };
+}
+
+/** A Space being deleted takes no messages; failing would only make the provider redeliver. */
+function droppedWhileDeleting(error: unknown): void {
+  if (!(error instanceof SpaceDeletionInProgressError)) throw error;
+  getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
 }
 
 async function handleDirectEvent(
@@ -937,24 +944,29 @@ async function handleChannelEvent(
       botId: identity.botId,
       threadId: thread.id,
     };
-    if (await wakeMessageRoutines(deps, target, event)) continue;
-    // Group runs carry only text; a bare photo would start an empty prompt.
-    if (!event.content.trim()) continue;
+    // One member's Space being deleted must not keep the message from the others.
+    try {
+      if (await wakeMessageRoutines(deps, target, event)) continue;
+      // Group runs carry only text; a bare photo would start an empty prompt.
+      if (!event.content.trim()) continue;
 
-    const sent = await deps.events.sendUserMessage({
-      spaceId: identity.spaceId,
-      threadId: thread.id,
-      botId: identity.botId,
-      userId: identity.userId,
-      blocks: [block],
-      prompt,
-      trigger: "messaging",
-      clientNonce: `messaging:${event.provider}:${event.handle}`,
-    });
-    if (sent.runId) {
-      await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        getLogger().error("messaging channel fan-out enqueue error", error);
+      const sent = await deps.events.sendUserMessage({
+        spaceId: identity.spaceId,
+        threadId: thread.id,
+        botId: identity.botId,
+        userId: identity.userId,
+        blocks: [block],
+        prompt,
+        trigger: "messaging",
+        clientNonce: `messaging:${event.provider}:${event.handle}`,
       });
+      if (sent.runId) {
+        await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
+          getLogger().error("messaging channel fan-out enqueue error", error);
+        });
+      }
+    } catch (error) {
+      droppedWhileDeleting(error);
     }
   }
 }

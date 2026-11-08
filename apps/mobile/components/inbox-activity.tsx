@@ -1,17 +1,28 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { activitySections } from "@rakazo/core";
 import type { Href } from "expo-router";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { activityPreview, activityStatusLabel, formatActivityRelativeTime } from "../lib/activity";
-import type { MobileBot, MobileGroup } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import type { InboxRowAction } from "../lib/inbox-swipe";
+import { inboxRowActionList } from "../lib/inbox-swipe";
+import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles } from "./home-styles";
-import { ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inbox-rows";
+import type { RowMenuProps } from "./inbox-rows";
+import { ChatSwipe, ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inbox-rows";
+
+type SwipeTarget = { kind: "bot"; chat: MobileBot } | { kind: "group"; chat: MobileGroup };
+type RowActions = { actions: InboxRowAction[]; onAction: (action: InboxRowAction) => void };
+
+export type ActivitySwipe = RowMenuProps & {
+  botAction: (action: InboxRowAction, bot: MobileBot) => void;
+  groupAction: (action: InboxRowAction, group: MobileGroup) => void;
+};
 
 export function ActivitySection({
   activity,
@@ -20,6 +31,7 @@ export function ActivitySection({
   toggledSections,
   onToggleSection,
   openChat,
+  swipe,
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
   bots: MobileBot[];
@@ -28,11 +40,49 @@ export function ActivitySection({
   toggledSections: ReadonlySet<string>;
   onToggleSection: (key: string) => void;
   openChat: (href: Href) => void;
+  swipe?: ActivitySwipe;
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
-  const sections = activitySections({ ...activity, bots, groups });
+  const groupsById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
+  // Only chats in the inbox, so a chat archived from here leaves at once, like its inbox row.
+  const inInbox = (run: RunActivityRow) =>
+    run.groupId ? groupsById.has(run.groupId) : botsById.has(run.botId);
+  const sections = activitySections({
+    active: activity.active.filter(inInbox),
+    recent: activity.recent.filter(inInbox),
+    bots,
+    groups,
+  });
+  // The inbox's swipe actions and menu.
+  const swipeable = (target: SwipeTarget, row: (actions?: RowActions) => ReactElement) => {
+    if (!swipe) return row();
+    const onAction = (action: InboxRowAction) =>
+      target.kind === "bot"
+        ? swipe.botAction(action, target.chat)
+        : swipe.groupAction(action, target.chat);
+    return (
+      <ChatSwipe
+        key={`${target.kind}:${target.chat.id}`}
+        target={target}
+        rowKey={`activity:${target.kind}:${target.chat.id}`}
+        onAction={onAction}
+        sections={swipe.sections}
+        onOrganize={swipe.onOrganize}
+        onEditSection={swipe.onEditSection}
+        onSnooze={swipe.onSnooze && ((until) => swipe.onSnooze?.(target.kind, target.chat, until))}
+      >
+        {row({ actions: inboxRowActionList(target.chat), onAction })}
+      </ChatSwipe>
+    );
+  };
+  const runTarget = (run: RunActivityRow): SwipeTarget => {
+    const group = run.groupId ? groupsById.get(run.groupId) : undefined;
+    return group
+      ? { kind: "group", chat: group }
+      : { kind: "bot", chat: botsById.get(run.botId) as MobileBot };
+  };
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
       openChat({
@@ -44,15 +94,18 @@ export function ActivitySection({
     openChat({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
   };
   const runRows = (runs: RunActivityRow[], detailed = false) =>
-    runs.map((run) => (
-      <ActivityRow
-        key={run.runId}
-        run={run}
-        bot={botsById.get(run.botId)}
-        detailed={detailed}
-        onPress={() => openRun(run)}
-      />
-    ));
+    runs.map((run) =>
+      swipeable(runTarget(run), (actions) => (
+        <ActivityRow
+          key={run.runId}
+          run={run}
+          bot={botsById.get(run.botId)}
+          detailed={detailed}
+          onPress={() => openRun(run)}
+          {...actions}
+        />
+      )),
+    );
   const fold = (key: string, title: string, count: number, defaultOpen: boolean) => ({
     title,
     count,
@@ -80,42 +133,48 @@ export function ActivitySection({
       ) : null}
       {unreadCount > 0 ? (
         <Fold {...fold("unread", t("Unread"), unreadCount, false)}>
-          {sections.unreadGroups.map((group) => (
-            <ConversationRow
-              key={group.id}
-              title={group.name}
-              preview={group.preview}
-              time={formatActivityRelativeTime(group.updatedAt)}
-              accessibilityLabel={group.name}
-              onPress={() =>
-                openChat({
-                  pathname: "/group-thread",
-                  params: { groupId: group.id, name: group.name },
-                })
-              }
-              avatar={<GroupAvatar members={group.members} />}
-            />
-          ))}
-          {sections.unreadBots.map((bot) => (
-            <ConversationRow
-              key={bot.id}
-              title={bot.name}
-              preview={bot.preview}
-              time={formatActivityRelativeTime(bot.updatedAt)}
-              accessibilityLabel={bot.name}
-              onPress={() =>
-                openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
-              }
-              avatar={
-                <BotAvatar
-                  identity={bot.id}
-                  color={bot.color}
-                  avatarSet={bot.avatarSet}
-                  motion="lazy"
-                />
-              }
-            />
-          ))}
+          {sections.unreadGroups.map((group) =>
+            swipeable({ kind: "group", chat: group }, (actions) => (
+              <ConversationRow
+                key={group.id}
+                title={group.name}
+                preview={group.preview}
+                time={formatActivityRelativeTime(group.updatedAt)}
+                accessibilityLabel={group.name}
+                onPress={() =>
+                  openChat({
+                    pathname: "/group-thread",
+                    params: { groupId: group.id, name: group.name },
+                  })
+                }
+                avatar={<GroupAvatar members={group.members} />}
+                {...actions}
+              />
+            )),
+          )}
+          {sections.unreadBots.map((bot) =>
+            swipeable({ kind: "bot", chat: bot }, (actions) => (
+              <ConversationRow
+                key={bot.id}
+                title={bot.name}
+                preview={bot.preview}
+                time={formatActivityRelativeTime(bot.updatedAt)}
+                accessibilityLabel={bot.name}
+                onPress={() =>
+                  openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+                }
+                avatar={
+                  <BotAvatar
+                    identity={bot.id}
+                    color={bot.color}
+                    avatarSet={bot.avatarSet}
+                    motion="lazy"
+                  />
+                }
+                {...actions}
+              />
+            )),
+          )}
         </Fold>
       ) : null}
       {sections.recent.length > 0 ? (
@@ -156,7 +215,9 @@ function ActivityRow({
   bot,
   detailed,
   onPress,
-}: {
+  actions,
+  onAction,
+}: Partial<RowActions> & {
   run: RunActivityRow;
   bot?: MobileBot;
   /** Recent mixes outcomes, so its rows say how each run ended and when. */
@@ -175,6 +236,8 @@ function ActivityRow({
       time={detailed ? formatActivityRelativeTime(run.updatedAt) : ""}
       accessibilityLabel={`${title}, ${status}`}
       onPress={onPress}
+      actions={actions}
+      onAction={onAction}
       avatar={
         <BotAvatar
           identity={run.botId}

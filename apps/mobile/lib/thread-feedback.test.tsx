@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import * as core from "@rakazo/core";
-import { AiConsentBlocked, MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
+import {
+  AiConsentBlocked,
+  MODEL_REQUIRED_SEND_ERROR,
+  reduceThreadSnapshot,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { act, createElement, useMemo } from "react";
@@ -10,8 +15,8 @@ import { createRoot } from "react-dom/client";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { MobileSnapshot, rpc } from "./api";
-import { applyMobileThreadEvent } from "./api";
+import type { rpc } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
@@ -811,8 +816,10 @@ describe("scoped mobile outbox", () => {
     request
       .mockResolvedValueOnce({ id: "artifact-a" })
       .mockResolvedValueOnce({ routineRunIds: ["run-earlier"] })
-      .mockResolvedValueOnce({ seq: 7 });
+      .mockResolvedValueOnce({ seq: 7, runId: "run-1", taskId: "task-1" });
     expect(await deliverSend(sendPayload, attempt, request as unknown as typeof rpc)).toBe(7);
+    // The thread shows the accepted run as queued before its refresh returns.
+    expect(attempt.acceptedRun).toEqual({ runId: "run-1", taskId: "task-1" });
     const [, combined, sent] = request.mock.calls;
     expect(combined?.[0]).toBe("threads/sendWithRoutines");
     expect(sent?.[0]).toBe("threads/send");
@@ -1397,7 +1404,7 @@ describe("a send and its echo", () => {
   /** The live (or replayed) event for the stored message; its own event seq differs. */
   function echo(eventSeq = 9) {
     show(
-      applyMobileThreadEvent(chat, {
+      reduceThreadSnapshot(chat, {
         type: "thread.message.created",
         seq: eventSeq,
         payload: {
@@ -1534,7 +1541,7 @@ describe("a send and its echo", () => {
     });
     expect(attempt.state).toBe("failed");
     show(
-      applyMobileThreadEvent(chat, {
+      reduceThreadSnapshot(chat, {
         type: "thread.message.created",
         seq: 9,
         payload: { messageId: "message-41", seq: 41, role: "bot", blocks: [] },

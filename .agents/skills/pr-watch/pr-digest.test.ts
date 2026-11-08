@@ -13,7 +13,8 @@ const fixture = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const print = (value) => console.log(typeof value === "string" ? value : JSON.stringify(value));
 if (args[0] === "repo" && args[1] === "view") print("example/project");
 else if (args[0] === "pr" && args[1] === "view") {
-  if (args.includes("--jq")) print("abc");
+  if (args.includes("isCrossRepository")) print(fixture.fork ?? false);
+  else if (args.includes("--jq")) print("abc");
   else print({ headRefOid: "abc", state: "OPEN", mergeable: "MERGEABLE", headRefName: "topic", reviewDecision: "" });
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
@@ -75,6 +76,7 @@ function runDigest(
     check?: object;
     checks?: object[];
     statuses?: object[][];
+    fork?: boolean;
     steps?: Record<string, object[]>;
     deadline?: number;
   },
@@ -231,10 +233,22 @@ describe("pr-digest", () => {
           body: "\n<h3>Qodo is busy working</h3>\n\nCheck back in a few minutes.",
         }),
         comment({ id: 48, user: "github-actions[bot]", kind: "Bot", body: "/agentic_review" }),
+        comment({
+          id: 51,
+          user: "qodo-free-for-open-source-projects[bot]",
+          kind: "Bot",
+          body: "[Code review](https://github.com/o/r/pull/1#issuecomment-1) by qodo was updated up to the latest commit https://github.com/o/r/commit/abc",
+        }),
+        comment({
+          id: 50,
+          user: "github-actions[bot]",
+          kind: "Bot",
+          body: "<!-- rakazo-preview -->\n**Preview:** https://example.fly.dev",
+        }),
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(9 noise)");
+    expect(result.stdout).toContain("(11 noise)");
   });
 
   it("only blocks effective change requests", () => {
@@ -312,6 +326,32 @@ describe("pr-digest", () => {
     it("wakes when a commit status fails while checks are still running", () => {
       const result = runDigest(
         { check: running, statuses: [[], [{ context: "deploy", state: "failure" }]] },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(10);
+    });
+
+    const deployAuth = {
+      context: "Vercel",
+      state: "failure",
+      description: "Authorization required to deploy.",
+    };
+
+    it("ignores the deploy authorization failure fork PRs always get", () => {
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { checks: [running, running, passed], statuses: [[], [deployAuth]], fork: true },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("STATUS Vercel");
+    });
+
+    it("still wakes for that failure on a same-repo PR", () => {
+      const result = runDigest(
+        { check: running, statuses: [[], [deployAuth]], fork: false },
         "--watch",
         "1",
       );

@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
-import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { isTransientModelError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
+  compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
   modelCredentialDto,
@@ -20,7 +21,6 @@ import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   usableModelId,
 } from "@rakazo/contracts";
@@ -43,6 +43,8 @@ import {
   withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
@@ -270,7 +272,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              isOllamaCloudBaseUrl(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -323,6 +325,14 @@ export function modelsRoutes(ctx: RouterContext) {
           })
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
+            // The provider's sign-in service is down or overloaded; the user tries again later.
+            if (isTransientModelError(error)) {
+              getLogger().warn("rpc models/beginOAuth provider unavailable", {
+                reason: error instanceof Error ? error.message : String(error),
+              });
+              markExpectedFailure();
+              throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+            }
             throw error;
           });
       }),

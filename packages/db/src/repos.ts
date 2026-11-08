@@ -38,6 +38,7 @@ import {
   threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
@@ -93,7 +94,7 @@ function mapBot(
     memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
-    thread: { id: string; unread: boolean } | null;
+    thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
@@ -133,7 +134,8 @@ function mapBot(
     pinned: bot.pinned,
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
-    unread: bot.thread.unread,
+    unread: unreadFor(bot.thread),
+    snoozedUntil: snoozedUntilFor(bot.thread),
     parentBotId: bot.parentBotId,
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
@@ -184,7 +186,7 @@ export function createRepos(
     }));
   }
 
-  async function listSpaceBotsForSpaces(spaceIds: string[]): Promise<SpaceBot[]> {
+  async function listSpaceBotsForSpaces(spaceIds: string[], userId: string): Promise<SpaceBot[]> {
     if (spaceIds.length === 0) return [];
     const rows = await prisma.bot.findMany({
       where: {
@@ -202,12 +204,7 @@ export function createRepos(
         sectionId: true,
         updatedAt: true,
         parentBotId: true,
-        thread: {
-          select: {
-            id: true,
-            unread: true,
-          },
-        },
+        thread: { select: { id: true, reads: readStateFor(userId) } },
         runs: activeRunSelection,
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -226,7 +223,8 @@ export function createRepos(
         notifyOnFinish: bot.notifyOnFinish,
         pinned: bot.pinned,
         sectionId: bot.sectionId,
-        unread: bot.thread.unread,
+        unread: unreadFor(bot.thread),
+        snoozedUntil: snoozedUntilFor(bot.thread),
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",
@@ -370,7 +368,7 @@ export function createRepos(
               archivedAt: options.archived ? { not: null } : null,
             },
             include: {
-              thread: true,
+              thread: { include: { reads: readStateFor(actor.userId) } },
               runs: activeRunSelection,
               computer: { select: { scope: true } },
             },
@@ -671,7 +669,7 @@ export function createRepos(
           await input.seed?.(tx, created.id);
           return tx.bot.findFirstOrThrow({
             where: { id: created.id },
-            include: { thread: true, computer: true },
+            include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
           });
         });
 
@@ -684,7 +682,7 @@ export function createRepos(
               spawnKey,
             },
           },
-          include: { thread: true, computer: true },
+          include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
         });
       };
 
@@ -767,7 +765,7 @@ export function createRepos(
           return tx.bot.update({
             where: { id: botId },
             data: { computerId: computer.id },
-            include: { thread: true, computer: true },
+            include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
           });
         }),
       );

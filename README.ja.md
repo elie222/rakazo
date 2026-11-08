@@ -105,7 +105,7 @@ bash install-images.sh
 ## ローカル開発（ソースから実行）
 
 Node.js 22.x 系の 22.22.2 以降、Node.js 24.x、または Node.js 26 以降と、
-pnpm 9、Docker が必要です。Node.js 23.x と 25.x はサポートしていません。
+pnpm 12、Docker が必要です。Node.js 23.x と 25.x はサポートしていません。
 
 ```bash
 git clone https://github.com/elie222/rakazo.git

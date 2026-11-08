@@ -1,4 +1,12 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Snooze: "Snoozen",
+  Snoozed: "Gesnoozed",
+  Unsnooze: "Niet meer snoozen",
+  Woke: "Terug",
+  "1 hour": "1 uur",
+  "3 hours": "3 uur",
+  Tomorrow: "Morgen",
+  "Next week": "Volgende week",
   "No matches": "Geen resultaten",
   "Always ask": "Altijd vragen",
   "Search tools": "Tools zoeken",
@@ -118,8 +126,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-sleutel",
   "Show password": "Wachtwoord tonen",
   "Hide password": "Wachtwoord verbergen",
   Export: "Exporteren",
@@ -457,6 +463,7 @@ export const NL_MESSAGES: Record<string, string> = {
     "Hiermee worden alle {count} versies van dit artefact verwijderd. Dit kan niet ongedaan worden gemaakt.",
   Versions: "Versies",
   Stop: "Stoppen",
+  Stopped: "Gestopt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Hiermee worden alle berichten verwijderd en lopend werk gestopt. De bot, computer, het geheugen en de routines blijven behouden.",
   "Type your answer": "Typ je antwoord",
@@ -990,6 +997,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Call: "Bellen",
   "Calls need transcription": "Gesprekken hebben transcriptie nodig",
   "Could not hear that.": "Dat kon niet gehoord worden.",
+  "Approve or deny it on screen.": "Keur het goed of weiger het op het scherm.",
+  "Hang up, then enter the code on screen.": "Hang op en voer daarna de code op het scherm in.",
   "Could not speak that.": "Dat kon niet uitgesproken worden.",
   "Could not transcribe that.": "Dat kon niet worden getranscribeerd.",
   "Hang up": "Ophangen",
@@ -1133,6 +1142,11 @@ export const NL_MESSAGES: Record<string, string> = {
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
   "Computer hours left": "Resterende computeruren",
+  Upgrade: "Upgraden",
+  "Your trial's computer hours are used up.": "De computeruren van je proefperiode zijn op.",
+  "This month's computer hours are used up.": "De computeruren van deze maand zijn op.",
+  "Cancelled trials have no computer hours.": "Opgezegde proefperiodes hebben geen computeruren.",
+  "Renew plan": "Abonnement verlengen",
   "Trials get fewer hours to prevent abuse.":
     "Proefperiodes krijgen minder uren om misbruik te voorkomen.",
   "Start plan now": "Abonnement nu starten",

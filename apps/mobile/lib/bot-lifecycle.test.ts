@@ -5,6 +5,9 @@ const { rpc, alert, removeFromSearchInbox } = vi.hoisted(() => ({
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox }));
 vi.mock("react-native", () => ({ Alert: { alert } }));

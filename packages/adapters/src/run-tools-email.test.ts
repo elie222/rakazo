@@ -26,6 +26,8 @@ type Row = {
   text: string;
   attachments: unknown[];
   receivedAt: Date;
+  /** Blind-index tokens: the row is encrypted, so its stored fields match no substring. */
+  searchTokens?: number[];
 };
 
 function row(overrides: Partial<Row>): Row {
@@ -48,7 +50,13 @@ function row(overrides: Partial<Row>): Row {
 
 function fakeRun(
   rows: Row[],
-  options: { runUserId?: string; arriving?: Row; secrets?: string[] } = {},
+  options: {
+    runUserId?: string;
+    arriving?: Row;
+    secrets?: string[];
+    /** The Space's query tokens per key version, as content encryption returns them. */
+    queryTokens?: number[][];
+  } = {},
 ) {
   const inbox = [...rows];
   let listed = 0;
@@ -56,21 +64,33 @@ function fakeRun(
   const matches = (email: Row, where: Record<string, unknown>) => {
     const since = (where.receivedAt as { gt?: Date } | undefined)?.gt;
     const before = (where.receivedAt as { lt?: Date } | undefined)?.lt;
-    const query = (where.OR as Array<Record<string, { contains: string }>> | undefined)?.[0];
-    const words = query ? Object.values(query)[0]?.contains.toLowerCase() : undefined;
+    const or = where.OR as
+      | Array<Record<string, { contains?: string; hasEvery?: number[] }>>
+      | undefined;
+    const matchesClause = ([field, test]: [string, { contains?: string; hasEvery?: number[] }]) =>
+      test.hasEvery
+        ? test.hasEvery.every((token) => email.searchTokens?.includes(token))
+        : !email.searchTokens &&
+          String(email[field as keyof Row])
+            .toLowerCase()
+            .includes(test.contains!.toLowerCase());
     return (
       email.botId === where.botId &&
       (!since || email.receivedAt > since) &&
       (!before || email.receivedAt < before) &&
-      (!words ||
-        [email.fromAddress, email.fromName, email.subject, email.text].some((field) =>
-          field.toLowerCase().includes(words),
-        ))
+      (!or || or.some((clause) => Object.entries(clause).some(matchesClause)))
     );
   };
   const ctx = {
     deps: {
       prisma: {
+        ...(options.queryTokens
+          ? {
+              $contentEncryption: () => ({
+                messageSearchTokens: async () => options.queryTokens,
+              }),
+            }
+          : {}),
         botEmailMessage: {
           findFirst: async ({ where }: { where: { id: string; botId: string } }) =>
             inbox.find((email) => email.id === where.id && email.botId === where.botId) ?? null,
@@ -166,6 +186,39 @@ describe("read_email", () => {
         (email) => email.id,
       ),
     ).toEqual(["code"]);
+  });
+
+  it("finds encrypted mail by its blind index and checks it once decrypted", async () => {
+    const ids = async (query: string, queryTokens: number[][]) => {
+      const { call } = fakeRun(
+        [
+          row({ id: "sealed-hit", subject: "Pelican report", searchTokens: [7, 9] }),
+          // Shares the query's tokens without containing it: a hash collision.
+          row({ id: "sealed-miss", subject: "Other news", searchTokens: [7, 9] }),
+          row({ id: "plain-hit", text: "About the pelican" }),
+          row({ id: "plain-miss", text: "Nothing here" }),
+        ],
+        { queryTokens },
+      );
+      return ((await call({ query })).emails as Array<{ id: string }>).map((email) => email.id);
+    };
+
+    expect((await ids("pelican", [[7]])).sort()).toEqual(["plain-hit", "sealed-hit"]);
+    // Too short to be indexed: the newest mail is checked directly.
+    expect((await ids("a", [[]])).sort()).toEqual(["plain-hit", "sealed-hit"]);
+  });
+
+  it("moves past new mail a search checked and dropped", async () => {
+    const checked = new Date("2026-11-02T00:00:00.000Z");
+    const { call } = fakeRun(
+      [row({ id: "sealed-miss", subject: "Other news", searchTokens: [7], receivedAt: checked })],
+      { queryTokens: [[7]] },
+    );
+
+    const first = await call({ since: "2026-11-01T00:00:00.000Z", query: "pelican" });
+
+    expect(first.emails).toEqual([]);
+    expect(first.nextSince).toBe(checked.toISOString());
   });
 
   it("starts the next look after the newest email it returned, or where it was asked to", async () => {
@@ -541,21 +594,34 @@ describe("send_email", () => {
     const send = vi.fn(async (_message: Record<string, unknown>) => {
       if (options.fail) throw new Error("domain not verified");
     });
+    // Sends earlier today: this bot's, then another of its owner's bots.
+    const sends = [
+      ...Array.from({ length: options.sentToday ?? 0 }, () => ({ id: "old", botId: "bot-1" })),
+      ...Array.from({ length: options.ownerSentToday ?? 0 }, () => ({ id: "old", botId: "bot-2" })),
+    ];
+    const botEmailSend = {
+      deleteMany: async () => ({ count: 0 }),
+      findMany: async () => [...sends],
+      create: async ({ data }: { data: { botId: string } }) => {
+        const row = { id: `send-${sends.length + 1}`, botId: data.botId };
+        sends.push(row);
+        return { id: row.id };
+      },
+    };
     const ctx = {
       deps: {
         inboundEmailDomain: "bots.test",
         email: { send },
         prisma: {
+          $transaction: async (fn: (tx: unknown) => unknown) =>
+            fn({ $queryRaw: async () => [], botEmailSend }),
+          botEmailSend,
           botEmailAddress: { findUnique: async () => ({ name: "scout" }) },
           botEmailMessage: {
             findFirst: async ({ where }: { where: { id: string } }) =>
               where.id === "in-1" ? (options.original ?? null) : null,
             findUnique: async ({ where }: { where: { botId_key: { key: string } } }) =>
               saved.find((row) => row.key === where.botId_key.key) ?? null,
-            count: async ({ where }: { where: { botId?: string } }) =>
-              where.botId
-                ? (options.sentToday ?? saved.length)
-                : (options.ownerSentToday ?? saved.length),
             create: async ({ data }: { data: Record<string, unknown> }) => {
               const row = {
                 ...data,
@@ -589,7 +655,7 @@ describe("send_email", () => {
           finish: async (r: unknown) => r,
         } as never,
       ) as Promise<Record<string, unknown>>;
-    return { call, send, saved };
+    return { call, send, saved, sends };
   }
 
   it("sends from the bot's own address and keeps a copy in its inbox", async () => {
@@ -659,7 +725,7 @@ describe("send_email", () => {
     );
   });
 
-  it("never sends an interrupted call again, and frees the slot of one that failed", async () => {
+  it("never sends an interrupted call again, and still counts one that failed", async () => {
     const retried = sendRun();
     await retried.call({ to: ["a@shop.test"], subject: "Hi", text: "Hello" });
     // Only an attempt that never finished reaches the tool again; the gate replays the rest.
@@ -673,6 +739,7 @@ describe("send_email", () => {
       error: "Sending failed (domain not verified). It most likely did not go out.",
     });
     expect(failing.saved).toEqual([]);
+    expect(failing.sends).toEqual([{ id: "send-1", botId: "bot-1" }]);
   });
 
   it("keeps a follow-up to the bot's own email in that thread", async () => {

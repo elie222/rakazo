@@ -30,7 +30,7 @@ while IFS= read -r file; do
     packages/testkit/src/pin-test-env.ts | packages/testkit/src/lingui-core-macro.ts | \
       packages/chat-ui/src/native-test-stubs.tsx) all_packages=true ;;
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) ;;
-    .agents/skills/pr-watch/*) all_packages=true ;;
+    .agents/skills/pr-watch/* | .agents/skills/translate/*) all_packages=true ;;
     .agents/* | .claude/* | docs/*) ;;
     */*) all_packages=true ;;
     *.md) ;;

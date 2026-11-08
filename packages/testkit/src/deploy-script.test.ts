@@ -133,7 +133,11 @@ if [[ "$*" == *" ps --quiet api" && -z "\${FRESH:-}" ]]; then echo api-old; fi
 if [[ "$*" == *" run --rm --no-deps -T --entrypoint sh postgres "* && -n "\${POSTGRES_16:-}" ]]; then
   echo upgrade
 fi
-if [[ "$*" == *" config --services" ]]; then
+if [[ "$*" == *" config --services" && -n "\${MIGRATE_LISTED_FIRST:-}" ]]; then
+  echo migrate
+  sleep 0.2
+  echo api
+elif [[ "$*" == *" config --services" ]]; then
   echo api
   [[ "$revision" == "\${NO_MIGRATE_REVISION:-}" ]] || echo migrate
 fi
@@ -288,6 +292,15 @@ describe("production deploy script", () => {
       "docker builder prune --force --keep-storage 3GB",
       ...finishDraining,
     ]);
+  });
+
+  it("runs migrations when Compose is still listing services after migrate", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ MIGRATE_LISTED_FIRST: "1" }).status).toBe(0);
+    expect(rollout(deploy.commands())).toContain(
+      `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
+    );
   });
 
   it("refuses malformed size settings before deploying", () => {

@@ -1,6 +1,7 @@
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import {
+  applyThreadSendReceipt,
   attachmentsForThread,
   newClientId,
   pageReply,
@@ -11,8 +12,7 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { ThreadComposerHandle } from "../components/thread-composer";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
 import { subscribeComposerOffer } from "./composer-offer";
@@ -20,8 +20,9 @@ import { cancelFocusPrompt } from "./focus-prompt";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 import { takePageReply } from "./pages";
-import { currentSessionGeneration } from "./session";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 import { answerThreadMessage } from "./thread-answer";
 import type { useThreadAttachments } from "./thread-attachments";
 import type { SendAttempt, useThreadFeedback } from "./thread-feedback";
@@ -31,6 +32,7 @@ import type { ThreadListScroll } from "./thread-list-scroll";
 import { previewMessageText } from "./thread-message-text";
 import { prepareUnsentSends } from "./unsent-sends";
 import { errorText } from "./user-error";
+import { startWorkActivity } from "./work-activity";
 
 /**
  * What the chat sends: composer messages with their reply and attachments, retries, stopping
@@ -234,6 +236,14 @@ export function useThreadSend({
   function afterDelivered(attempt: SendAttempt) {
     const { initialBotTarget, botTarget, groupTarget, reroutedToGroup, plan } = attempt.payload;
     if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    const target = groupTarget ? { groupId: groupTarget } : botTarget ? { botId: botTarget } : null;
+    if (attempt.acceptedRun && target && attempt.spaceId) {
+      startWorkActivity({
+        title: mentionBotsRef.current?.find((bot) => bot.id === botTarget)?.name ?? "",
+        spaceId: attempt.spaceId,
+        target,
+      });
+    }
     const generation = currentSessionGeneration();
     const apiBase = currentApiBase();
     const spaceId = selectedSpaceId();
@@ -261,6 +271,14 @@ export function useThreadSend({
       return;
     }
     if (isCurrentTarget(botTarget, groupTarget)) {
+      // Show the accepted run right away, but only where a refresh follows: if the run already
+      // finished and its terminal event was missed, that refresh drops the queued run shown here.
+      if (botTarget && attempt.acceptedRun) {
+        const shown = history.snapRef.current;
+        const receipt = { botId: botTarget, ...attempt.acceptedRun };
+        const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+        if (next !== shown) history.commitSnap(next);
+      }
       if (history.pinnedAroundRef.current) showLatest();
       void refresh().catch(() => undefined);
     }

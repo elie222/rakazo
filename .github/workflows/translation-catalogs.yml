@@ -1,0 +1,163 @@
+name: Translation catalogs
+
+# Feature pull requests add strings in code only; every production build extracts them first, so
+# a new string shows in English until it is translated. This workflow keeps the committed catalogs
+# in step with main through one pull request, so catalog churn never conflicts with feature work.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/src/**
+      - apps/web/lingui.config.ts
+  workflow_dispatch:
+
+# Extraction installs and runs dependency code, so it gets no repository-write credentials. Only
+# the publish job, which never installs or runs dependency code, may push the branch and open the PR.
+permissions: {}
+
+# Each run rebuilds the branch from the main it ran on, so only the newest run matters.
+concurrency:
+  group: translation-catalogs
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    name: Extract catalogs
+    # A manual run from another branch would base the sync PR on unmerged work.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+      - run: pnpm --filter @rakazo/web intl:extract
+      - name: Record catalog patch
+        id: diff
+        run: |
+          git diff --binary -- apps/web/src/locales > "$RUNNER_TEMP/catalogs.patch"
+          if [ -s "$RUNNER_TEMP/catalogs.patch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          name: translation-catalogs
+          path: ${{ runner.temp }}/catalogs.patch
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Update catalog PR
+    needs: extract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: i18n/catalog-sync
+      CHANGED: ${{ needs.extract.outputs.changed }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.extract.outputs.changed == 'true'
+        with:
+          name: translation-catalogs
+          path: ${{ runner.temp }}/translation-catalogs
+      - name: Push branch and open, or close, the PR
+        env:
+          # The runner context exists only at step level.
+          PATCH_DIR: ${{ runner.temp }}/translation-catalogs
+        run: |
+          set -euo pipefail
+          pr="$(gh pr list --state open --head "$BRANCH" --json number,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false) | .number')"
+          remote="$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)"
+          if [ -n "$pr" ]; then
+            git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            # Someone pushed translations to the open PR: keep them until it merges. Every commit
+            # on the PR counts, not only the latest, and the PR's commit list is complete even
+            # though this checkout is shallow.
+            others="$(gh pr view "$pr" --json commits \
+              --jq '[.commits[].authors[].name | select(. != "github-actions[bot]")] | unique | join(", ")')"
+            if [ -n "$others" ]; then
+              echo "::notice::#$pr has commits from $others; leaving it as it is until it merges."
+              exit 0
+            fi
+          fi
+          if [ "$CHANGED" != "true" ]; then
+            if [ -n "$pr" ]; then
+              # Delete only the bot commit checked above: a translator's push since then fails the
+              # lease and keeps the PR open. Deleting its head branch also closes the PR.
+              gh auth setup-git
+              checked="$(git rev-parse "origin/$BRANCH")"
+              if git push --force-with-lease="refs/heads/$BRANCH:$checked" origin ":refs/heads/$BRANCH"; then
+                gh pr comment "$pr" --body "The catalogs on main are current."
+                gh pr close "$pr" 2>/dev/null || true
+              else
+                echo "::notice::$BRANCH changed since it was checked; leaving #$pr open."
+              fi
+            fi
+            exit 0
+          fi
+          shopt -s dotglob nullglob
+          files=("$PATCH_DIR"/*)
+          [ "${#files[@]}" -eq 1 ]
+          [ "${files[0]}" = "$PATCH_DIR/catalogs.patch" ]
+          [ -f "$PATCH_DIR/catalogs.patch" ] && [ ! -L "$PATCH_DIR/catalogs.patch" ]
+          git apply --index --include='apps/web/src/locales/*' "$PATCH_DIR/catalogs.patch"
+          # Only edits to catalogs that already exist may be published: no renames, additions,
+          # deletions, mode changes or other paths. Rename detection is off so every path a
+          # change touches is listed, and paths are NUL-delimited so none can be forged.
+          changed=0
+          while IFS= read -r -d '' meta && IFS= read -r -d '' file; do
+            read -r old_mode new_mode _ _ status <<<"${meta#:}"
+            if [ "$status" != M ] || [ "$old_mode" != 100644 ] || [ "$new_mode" != 100644 ] ||
+              ! [[ "$file" =~ ^apps/web/src/locales/[A-Za-z-]+/messages\.po$ ]]; then
+              echo "::error::Refusing catalog change: $status $old_mode $new_mode $file"
+              exit 1
+            fi
+            changed=$((changed + 1))
+          done < <(git diff --cached --no-renames --raw -z)
+          [ "$changed" -gt 0 ]
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update translation catalogs"
+          gh auth setup-git
+          git push --force-with-lease="refs/heads/$BRANCH:$remote" origin "HEAD:refs/heads/$BRANCH"
+          if [ -z "$pr" ]; then
+            gh pr create --base main --head "$BRANCH" --title "Update translation catalogs" \
+              --body "$(cat <<'EOF'
+          ## What
+
+          Brings the web translation catalogs up to date with the strings on main: new strings
+          are added untranslated, removed ones are dropped. Nothing changes for users, because
+          builds already show untranslated strings in English.
+
+          ## Why
+
+          Feature pull requests add strings in code only, so catalog changes collect here
+          instead of conflicting across every open pull request.
+
+          ## Translating
+
+          This pull request is rebuilt from main whenever main's web sources change. Fill
+          translations here (the workflow then leaves the branch alone until it merges) or in a
+          separate pull request after this one merges.
+
+          Opened with the workflow token, so checks do not start on their own: close and
+          reopen it to run CI.
+          EOF
+          )"
+          fi

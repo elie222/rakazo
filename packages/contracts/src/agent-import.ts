@@ -2,7 +2,8 @@ import * as z from "zod";
 import { AgentImportStatusSchema } from "./agent-import-setup.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { BOT_TEMPLATE_IMPORT_KEY_PREFIX } from "./bot-template.js";
-import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
+import { ComputerModeSchema } from "./computer.js";
+import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
 export const AGENT_IMPORT_MAX_FILE_LENGTH = 100_000;

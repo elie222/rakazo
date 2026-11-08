@@ -69,6 +69,18 @@ it("judges a chat by its latest run only", () => {
   expect(sections.unreadBots.map((bot) => bot.id)).toEqual(["writer", "chief"]);
 });
 
+it("lists each finished chat once in Recent, by its latest run", () => {
+  const latestWriter = run("writer", "failed");
+  const editor = run("editor", "completed");
+  const sections = activitySections({
+    active: [run("chief", "running")],
+    recent: [latestWriter, editor, run("writer", "completed"), run("chief", "completed")],
+    bots: [],
+    groups: [],
+  });
+  expect(sections.recent).toEqual([latestWriter, editor]);
+});
+
 it("lets live work speak for a chat over its older outcome", () => {
   const working = run("writer", "running");
   const asking = run("launcher", "waiting_input", "launch");
@@ -82,4 +94,24 @@ it("lets live work speak for a chat over its older outcome", () => {
   expect(sections.working).toEqual([working]);
   expect(sections.unreadBots).toEqual([]);
   expect(sections.unreadGroups).toEqual([]);
+});
+
+it("leaves a snoozed chat out until it wakes, even one waiting on the user", () => {
+  const wake = new Date(Date.parse(now) + 60 * 60 * 1000).toISOString();
+  const input = {
+    active: [run("asleep", "waiting_input"), run("awake", "waiting_input")],
+    recent: [],
+    bots: [
+      { id: "asleep", unread: true, snoozedUntil: wake },
+      { id: "awake", unread: false },
+    ],
+    groups: [{ id: "quiet", unread: true, snoozedUntil: wake }],
+  };
+  const sections = activitySections({ ...input, now: Date.parse(now) });
+  expect(sections.attention.map((item) => item.botId)).toEqual(["awake"]);
+  expect(sections.unreadBots).toEqual([]);
+  expect(sections.unreadGroups).toEqual([]);
+  // Once it wakes, it is back.
+  const woken = activitySections({ ...input, now: Date.parse(wake) + 1 });
+  expect(woken.attention.map((item) => item.botId)).toEqual(["asleep", "awake"]);
 });
