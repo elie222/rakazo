@@ -88,6 +88,7 @@ export function computerGpuMatches(
     devices.length === 1 &&
     devices[0]?.PathOnHost === desired.node &&
     devices[0]?.PathInContainer === desired.node &&
+    devices[0]?.CgroupPermissions === "rw" &&
     groups.length === 1 &&
     groups[0] === String(desired.gid)
   );

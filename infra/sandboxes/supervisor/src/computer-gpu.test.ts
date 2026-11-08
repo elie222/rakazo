@@ -121,6 +121,12 @@ describe("computer render node", () => {
     expect(computerGpuMatches(created(gpu), undefined)).toBe(false);
     expect(computerGpuMatches(created({ ...gpu, node: "/dev/dri/renderD129" }), gpu)).toBe(false);
     expect(computerGpuMatches(created({ ...gpu, gid: 44 }), gpu)).toBe(false);
+    // A node passed in read-only leaves the browser without the GPU, so that computer is replaced too.
+    const readOnly = created(gpu) as unknown as {
+      HostConfig: { Devices: { CgroupPermissions: string }[] };
+    };
+    readOnly.HostConfig.Devices[0]!.CgroupPermissions = "r";
+    expect(computerGpuMatches(readOnly as never, gpu)).toBe(false);
   });
 });
 
