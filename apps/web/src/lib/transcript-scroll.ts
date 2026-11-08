@@ -14,7 +14,7 @@ export function transcriptCanSnapAfterFrame(
 
 /** Tail snap after layout; reads the live scroller so a remounted transcript still sticks. */
 export function scheduleTranscriptSnapToEnd(
-  readScroller: () => Pick<HTMLElement, "scrollTop" | "scrollHeight"> | null,
+  readScroller: () => Pick<HTMLElement, "scrollTop" | "scrollHeight" | "clientHeight"> | null,
   stickToEnd: boolean,
 ): void {
   if (!stickToEnd) return;
