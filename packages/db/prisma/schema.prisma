@@ -2529,6 +2529,8 @@ model BillingAuditEvent {
   createdAt         DateTime @default(now())
 
   @@index([organizationId, createdAt])
+  /// Balance verification sums an organization's journal from the index alone.
+  @@index([organizationId, amountMicros])
   @@index([callId, createdAt])
   @@map("billing_audit_events")
 }

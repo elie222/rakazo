@@ -1,6 +1,12 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { expireModelCredits, hasFinalModelCost, recordUsage, runAsSystem } from "@rakazo/db";
+import {
+  expireModelCredits,
+  hasFinalModelCost,
+  Prisma,
+  recordUsage,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /** Bounded, leased recovery. Missing evidence is flagged rather than converted into free usage. */
@@ -132,9 +138,19 @@ export function createModelCreditReconciler(deps: {
       });
       balanceCursor = accounts.length === 25 ? accounts.at(-1)!.organizationId : undefined;
       if (!balanceCursor) nextBalanceAuditAt = now.getTime() + 3_600_000;
-      for (let offset = 0; offset < accounts.length; offset += 5)
+      // One read checks the page; only accounts that disagree are locked and rebuilt.
+      const drifted = accounts.length
+        ? await prisma.$queryRaw<Array<{ organizationId: string }>>`
+            SELECT a."organizationId" FROM model_credit_accounts a
+            WHERE a."organizationId" IN (${Prisma.join(accounts.map((account) => account.organizationId))})
+              AND a."balanceMicros" <> COALESCE((
+                SELECT SUM(e."amountMicros") FROM billing_audit_events e
+                WHERE e."organizationId" = a."organizationId"
+              ), 0)`
+        : [];
+      for (let offset = 0; offset < drifted.length; offset += 5)
         await Promise.all(
-          accounts.slice(offset, offset + 5).map(({ organizationId }) =>
+          drifted.slice(offset, offset + 5).map(({ organizationId }) =>
             prisma.$transaction(async (tx) => {
               await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
               const account = await tx.modelCreditAccount.findUnique({ where: { organizationId } });
