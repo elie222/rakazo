@@ -4,6 +4,11 @@ import { BOT_COLOR_LIST, parseBotAvatarValue } from "@rakazo/contracts";
 /** Shared identity color for Avatar Studio reset/fallback (Executive Violet). */
 export const DEFAULT_BOT_AVATAR_COLOR = BOT_COLOR_LIST.find((color) => color.id === "violet")!.hex;
 
+/** The bots the invite artwork draws, in order; white would vanish on a light page. */
+export const INVITE_AVATAR_COLORS: readonly string[] = (
+  ["violet", "green", "orange", "cyan", "blue"] as const
+).map((id) => BOT_COLOR_LIST.find((color) => color.id === id)!.hex);
+
 export function shippedHash(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
