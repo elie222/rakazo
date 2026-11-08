@@ -16,6 +16,7 @@ import { NativeActionButton } from "../native-action-button";
 import { NativeSymbol } from "../native-symbol";
 import { SecretAskSheet } from "../secret-ask-sheet";
 import { VaultItemEditor } from "../vault-item-editor";
+import { VaultTile } from "../vault-tile";
 import type { MessageActionProps } from "./message-bubble";
 
 export function AskBlock({
@@ -130,9 +131,12 @@ export function AskBlock({
     return (
       <View style={[askRowStyles.card, { backgroundColor: tokens.card }]}>
         <View style={askRowStyles.row}>
-          <View style={[askRowStyles.tile, { backgroundColor: tokens.muted }]}>
+          <VaultTile
+            origin={itemType === "login" ? ask.credential.origin : undefined}
+            style={[askRowStyles.tile, { backgroundColor: tokens.muted }]}
+          >
             <NativeSymbol ios={symbol.ios} android={symbol.android as never} size={17} />
-          </View>
+          </VaultTile>
           <View style={askRowStyles.text}>
             <Text
               {...actionProps}
