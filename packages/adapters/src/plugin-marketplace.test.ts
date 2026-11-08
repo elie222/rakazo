@@ -272,29 +272,37 @@ describe("marketplace service", () => {
     ]);
     expect(skippedEntries).toBe(6);
   });
-  it("leaves out plugins whose connector is served from a vendor-only host", async () => {
+  it("leaves out plugins whose connector works only in the catalog's own app", async () => {
+    const server = (url: string, extra = {}) =>
+      JSON.stringify({ mcpServers: { tools: { type: "http", url, ...extra } } });
     const read = registryReader({
-      cursor: [
-        { name: "drive", source: "drive" },
-        { name: "lookalike", source: "lookalike" },
+      cursor: ["drive", "relay", "header", "client", "lookalike"].map((name) => ({
+        name,
+        source: name,
+      })),
+      tree: [
+        "drive/mcp.json",
+        "drive/skills/find/SKILL.md",
+        "relay/mcp.json",
+        "header/mcp.json",
+        "client/mcp.json",
+        "lookalike/mcp.json",
       ],
-      tree: ["drive/mcp.json", "drive/skills/find/SKILL.md", "lookalike/mcp.json"],
       text: {
-        "/drive/mcp.json": JSON.stringify({
-          mcpServers: {
-            drive: { type: "http", url: "https://API.cursor.com/rest-mcp/google-drive/mcp" },
-          },
+        "/drive/mcp.json": server("https://API.cursor.com/rest-mcp/google-drive/mcp"),
+        "/relay/mcp.json": server("https://gateway.grok.com/mcp"),
+        "/header/mcp.json": server("https://mcp.example.test/mcp", {
+          headers: { "X-Cursor-Plugin": "header" },
         }),
-        "/lookalike/mcp.json": JSON.stringify({
-          mcpServers: {
-            tools: { type: "http", url: "https://api.cursor.com.example.test/mcp" },
-          },
+        "/client/mcp.json": server("https://mcp.example.test/mcp", {
+          auth: { CLIENT_ID: "vendor-app" },
         }),
+        "/lookalike/mcp.json": server("https://api.cursor.com.example.test/mcp"),
       },
     });
     const { entries, skippedEntries } = await createPluginMarketplace(read).catalog("");
     expect(entries.map((entry) => entry.name)).toEqual(["lookalike"]);
-    expect(skippedEntries).toBe(1);
+    expect(skippedEntries).toBe(4);
   });
   it("returns explicit unavailability without leaking provider errors", async () => {
     const service = createPluginMarketplace(async () => {
