@@ -180,11 +180,6 @@ export function useMessageJump({
   }, [active?.id]);
 
   useEffect(() => {
-    if (searchParamsRef.current.get("m")) return;
-    initiallyScrolledThread.current = null;
-  }, [active?.id, groupId, inGroup]);
-
-  useEffect(() => {
     const messageId = searchParams.get("m");
     const routineId = searchParams.get("routine");
     if (inGroup && groupId && messageId) {
@@ -216,6 +211,13 @@ export function useMessageJump({
   useLayoutEffect(() => {
     transcriptRef.current = transcript;
   }, [transcript]);
+
+  // Clear before the initial-scroll layout effect so a same-id bot object
+  // replacement cannot re-snap a reader who already scrolled away from the tail.
+  useLayoutEffect(() => {
+    if (searchParamsRef.current.get("m")) return;
+    initiallyScrolledThread.current = null;
+  }, [active?.id, groupId, inGroup]);
 
   useLayoutEffect(() => {
     const pin = pinnedAroundRef.current;
