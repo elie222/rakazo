@@ -272,6 +272,30 @@ describe("marketplace service", () => {
     ]);
     expect(skippedEntries).toBe(6);
   });
+  it("leaves out plugins whose connector is served from a vendor-only host", async () => {
+    const read = registryReader({
+      cursor: [
+        { name: "drive", source: "drive" },
+        { name: "lookalike", source: "lookalike" },
+      ],
+      tree: ["drive/mcp.json", "drive/skills/find/SKILL.md", "lookalike/mcp.json"],
+      text: {
+        "/drive/mcp.json": JSON.stringify({
+          mcpServers: {
+            drive: { type: "http", url: "https://API.cursor.com/rest-mcp/google-drive/mcp" },
+          },
+        }),
+        "/lookalike/mcp.json": JSON.stringify({
+          mcpServers: {
+            tools: { type: "http", url: "https://api.cursor.com.example.test/mcp" },
+          },
+        }),
+      },
+    });
+    const { entries, skippedEntries } = await createPluginMarketplace(read).catalog("");
+    expect(entries.map((entry) => entry.name)).toEqual(["lookalike"]);
+    expect(skippedEntries).toBe(1);
+  });
   it("returns explicit unavailability without leaking provider errors", async () => {
     const service = createPluginMarketplace(async () => {
       throw new Error("private diagnostic");

@@ -27,6 +27,8 @@ type Registry = (typeof REGISTRIES)[number];
 const MANIFEST_TTL_MS = 60 * 60_000;
 const CATALOG_TTL_MS = 10 * 60_000;
 const MANIFEST_CONCURRENCY = 16;
+/** Hosts whose MCP servers accept only their own vendor's OAuth client and credentials. */
+const VENDOR_ONLY_MCP_HOSTS = new Set(["api.cursor.com"]);
 const entrySchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().max(4000).optional(),
@@ -158,6 +160,24 @@ function classifyIndexed(
   return connectors || skillCount ? { hasConnector: connectors > 0, skillCount } : null;
 }
 
+/** A connector served from a vendor-only host can never authorize here, so its plugin is left out. */
+function usesVendorOnlyServer(mcpConfig: string): boolean {
+  try {
+    const servers: unknown = JSON.parse(mcpConfig)?.mcpServers;
+    if (!servers || typeof servers !== "object") return false;
+    return Object.values(servers).some((server: unknown) => {
+      const url = (server as { url?: unknown } | null)?.url;
+      return (
+        typeof url === "string" &&
+        URL.canParse(url) &&
+        VENDOR_ONLY_MCP_HOSTS.has(new URL(url).hostname)
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 function parseManifest(text: string): z.infer<typeof manifestSchema> | undefined {
   try {
     return manifestSchema.safeParse(JSON.parse(text)).data;
@@ -278,7 +298,10 @@ export function createPluginMarketplace(read: PluginTextReader = publicRead) {
             own.map((path) => [path, sizes.get(`${dir}/${path}`) ?? 0] as const),
           );
           const classified = classifyPluginFiles(own, mcpText ?? undefined, ownSizes);
-          parts = classified === "incomplete" ? null : classified;
+          parts =
+            classified === "incomplete" || (mcpText && usesVendorOnlyServer(mcpText))
+              ? null
+              : classified;
         }
         details.set(entry.id, { manifest, parts });
       }
