@@ -260,35 +260,32 @@ export function ShellSidebar({
               onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
             />
+          ) : activityMode && !mini ? (
+            <ActivityList
+              bots={bots}
+              groups={groups}
+              toggledSections={collapsedSidebarSections}
+              onToggleSection={toggleSidebarSection}
+              onOpenBot={(bot) => {
+                setMobileOpen(false);
+                navigate(`/app/${bot.id}`);
+              }}
+              onOpenGroup={(group) => {
+                setMobileOpen(false);
+                navigate(`/app/g/${group.id}`);
+              }}
+              filters={activityFilters}
+              onFiltersChange={setActivityFilters}
+              filtersExpanded={activityFiltersExpanded}
+              filtersId={activityFiltersId}
+              onOpenRun={(run) => {
+                setMobileOpen(false);
+                if (run.groupId) navigate(`/app/g/${run.groupId}`);
+                else navigate(`/app/${run.botId}`);
+              }}
+            />
           ) : (
-            <>
-              {activityMode && !mini ? (
-                <ActivityList
-                  bots={bots}
-                  groups={groups}
-                  toggledSections={collapsedSidebarSections}
-                  onToggleSection={toggleSidebarSection}
-                  onOpenBot={(bot) => {
-                    setMobileOpen(false);
-                    navigate(`/app/${bot.id}`);
-                  }}
-                  onOpenGroup={(group) => {
-                    setMobileOpen(false);
-                    navigate(`/app/g/${group.id}`);
-                  }}
-                  filters={activityFilters}
-                  onFiltersChange={setActivityFilters}
-                  filtersExpanded={activityFiltersExpanded}
-                  filtersId={activityFiltersId}
-                  onOpenRun={(run) => {
-                    setMobileOpen(false);
-                    if (run.groupId) navigate(`/app/g/${run.groupId}`);
-                    else navigate(`/app/${run.botId}`);
-                  }}
-                />
-              ) : null}
-              {roster}
-            </>
+            roster
           )}
         </div>
         {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
