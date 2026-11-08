@@ -114,6 +114,22 @@ describe("TregPaidServiceProvider", () => {
     expect(JSON.stringify(found)).not.toMatch(/treg/i);
   });
 
+  it("keeps long parameter text out of the bot's context", async () => {
+    const long = "x".repeat(5_000);
+    const { services } = provider(() =>
+      json({
+        results: [
+          {
+            ...direct,
+            input: { queryParams: { handle: { type: long, note: long, example: long } } },
+          },
+        ],
+      }),
+    );
+    const [found] = await services.search("x", context);
+    expect(found?.params?.query?.handle).toEqual({ type: "x".repeat(40), note: "x".repeat(300) });
+  });
+
   it("leaves out services whose id it could not look up again", async () => {
     const { services } = provider(() =>
       json({ results: [{ ...direct, id: "service/name" }, direct] }),
@@ -190,6 +206,21 @@ describe("TregPaidServiceProvider", () => {
       costUsd: 0.00015,
       providerCallId: "call-9",
     });
+  });
+
+  it("answers a deeply nested routing record without overflowing", async () => {
+    let routing: Record<string, unknown> = { served_by: "a" };
+    for (let depth = 0; depth < 5_000; depth += 1) routing = { next: routing };
+    const { services } = provider(() =>
+      json({ output: { ok: true }, _treg: routing }, 200, { "X-Treg-Cost-Micro": "150" }),
+    );
+    const result = await services.call(
+      mapsService,
+      { body: { q: "coffee" } },
+      callOptions,
+      context,
+    );
+    expect(result).toMatchObject({ outcome: "answered", ok: true, costUsd: 0.00015 });
   });
 
   it("bills a replay at the first call's charge", async () => {

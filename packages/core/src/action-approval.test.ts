@@ -226,7 +226,7 @@ describe("isOwnerStartedRun", () => {
 describe("paidServicesAllowed", () => {
   it.each([
     ["user", true, false, true],
-    ["routine", false, false, true],
+    ["routine", false, false, false],
     ["messaging", false, false, true],
     ["messaging", false, true, false],
     ["user", true, true, false],

@@ -219,7 +219,8 @@ export function paidServicesAllowed(
   nonOwnerChatRun: boolean,
 ): boolean {
   if (nonOwnerChatRun) return false;
-  return ownerStartedRun || trigger === "routine" || trigger === "messaging";
+  // Not routines: a run denied paid services can still write one that later runs unattended.
+  return ownerStartedRun || trigger === "messaging";
 }
 
 /** External webhook runs may inspect state unattended, but side effects always need the owner. */

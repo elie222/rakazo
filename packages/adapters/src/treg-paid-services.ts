@@ -15,6 +15,9 @@ const SEARCH_LIMIT = 25;
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,299}$/;
 const CATALOG_MAX_BYTES = 1_000_000;
 const ANSWER_MAX_BYTES = 2_000_000;
+const ROUTING_MAX_DEPTH = 20;
+/** Catalog text reaches the bot's context, so one parameter cannot take much of it. */
+const PARAM_TEXT_MAX_CHARS = 300;
 /** Treg names its routed jobs `treg.<job>`; the agent sees `auto.<job>`. */
 const ROUTED_PREFIX = "treg.";
 const PUBLIC_ROUTED_PREFIX = "auto.";
@@ -105,10 +108,13 @@ function params(
   const entries = Object.entries(map).map(([name, spec]): [string, PaidServiceParam] => [
     name,
     {
-      ...(spec.type ? { type: spec.type } : {}),
+      ...(spec.type ? { type: spec.type.slice(0, 40) } : {}),
       ...(spec.required ? { required: true } : {}),
-      ...(spec.note ? { note: neutral(spec.note) } : {}),
-      ...(spec.example !== undefined ? { example: spec.example } : {}),
+      ...(spec.note ? { note: neutral(spec.note).slice(0, PARAM_TEXT_MAX_CHARS) } : {}),
+      ...(spec.example !== undefined &&
+      (JSON.stringify(spec.example)?.length ?? 0) <= PARAM_TEXT_MAX_CHARS
+        ? { example: spec.example }
+        : {}),
     },
   ]);
   return entries.length ? Object.fromEntries(entries) : undefined;
@@ -165,14 +171,15 @@ function answerData(data: unknown): unknown {
   return { ...rest, routing: neutralJson(withoutCharges(routing ?? {})) };
 }
 
-function withoutCharges(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutCharges);
+function withoutCharges(value: unknown, depth = 0): unknown {
+  if (depth > ROUTING_MAX_DEPTH) return null;
+  if (Array.isArray(value)) return value.map((item) => withoutCharges(item, depth + 1));
   const record = asRecord(value);
   if (!record) return value;
   return Object.fromEntries(
     Object.entries(record)
       .filter(([key]) => !/micro|cost|price|usd|charge/i.test(key))
-      .map(([key, item]) => [key, withoutCharges(item)]),
+      .map(([key, item]) => [key, withoutCharges(item, depth + 1)]),
   );
 }
 
