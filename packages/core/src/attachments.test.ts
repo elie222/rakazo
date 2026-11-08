@@ -463,7 +463,16 @@ describe("tool step history", () => {
         },
         { kind: "text", text: "Installed." },
       ]),
-    ).toBe("[tool steps]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.");
+    ).toBe(
+      "[tools this reply already ran]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
+    );
+  });
+
+  it("shortens a long note", () => {
+    const text = blocksToAgentHistoryText([
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
+    ]);
+    expect(text).toBe(`[tools this reply already ran]\n- Shell: ${"a".repeat(300)}…`);
   });
 
   it("renders nothing for an empty steps block", () => {

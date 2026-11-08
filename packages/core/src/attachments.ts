@@ -165,14 +165,20 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
+const TOOL_STEP_NOTE_MAX_CHARS = 300;
+
 function toolStepsHistoryText(steps: Extract<MessageBlock, { kind: "steps" }>["steps"]): string {
   if (steps.length === 0) return "";
   const lines = steps.map((step) => {
     const label = step.count > 1 ? `${step.label} ×${step.count}` : step.label;
-    const note = step.note?.replace(/\s+/g, " ").trim();
+    const full = step.note?.replace(/\s+/g, " ").trim();
+    const note =
+      full && full.length > TOOL_STEP_NOTE_MAX_CHARS
+        ? `${full.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
+        : full;
     return note ? `- ${label}: ${note}` : `- ${label}`;
   });
-  return `[tool steps]\n${lines.join("\n")}`;
+  return `[tools this reply already ran]\n${lines.join("\n")}`;
 }
 
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
