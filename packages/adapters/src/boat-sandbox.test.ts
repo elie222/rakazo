@@ -331,6 +331,24 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
+  // Node's fetch drops a response with no headers after 300 seconds, however long Boat would wait.
+  it("follows the workspace archive in the background instead of waiting on one request", async () => {
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.writeFile(
+      computer,
+      { path: "notes.txt", content: Uint8Array.from([1]) },
+      context,
+    );
+
+    await readExport(provider.exportWorkspace(computer, context));
+    const archive = command.mock.calls
+      .map(([request]) => request.commandRequest)
+      .find((request) => request.command.includes("rakazo-workspace-archive-"));
+    expect(archive).toMatchObject({ detached: true });
+    expect(archive).not.toHaveProperty("timeoutSeconds");
+  });
+
   it("keeps command secrets out of command text and removes the env file as the command starts", async () => {
     const command = vi.spyOn(FakeBoatApi.prototype, "command");
     const writeFile = vi.spyOn(FakeBoatApi.prototype, "writeFile");
