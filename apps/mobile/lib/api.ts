@@ -278,6 +278,10 @@ const deliveringSignOuts = new Map<string, Promise<void>>();
 let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
 /** Endpoint changes in flight; reconcile leaves a switch's records alone while any runs. */
 let endpointChanges = 0;
+/** True from before a server switch clears the session until the new server is in place. */
+export function endpointChangeInProgress(): boolean {
+  return endpointChanges > 0;
+}
 function queuePendingSignOutWrite<T>(step: () => Promise<T>): Promise<T> {
   const result = pendingSignOutWrites.then(step, step);
   pendingSignOutWrites = result.then(

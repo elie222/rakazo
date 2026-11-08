@@ -547,9 +547,17 @@ msgstr "**Jeudi**\n"
 msgid "/ month"
 msgstr "/ mois"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1 heure"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 espace"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3 heures"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "Actions pour {0}"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "Actions pour {name}"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "Annulé"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "Les essais annulés n’ont pas d’heures d’ordinateur."
 
@@ -2239,6 +2249,10 @@ msgstr "Impossible de créer l'espace"
 msgid "Could not create the bot"
 msgstr "Impossible de créer le bot"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "Impossible de créer la clé de webhook"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Impossible de créer votre bot"
@@ -2543,6 +2557,7 @@ msgstr "Impossible d'exécuter la routine"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "Impossible d'enregistrer"
@@ -2936,10 +2951,7 @@ msgid "Delete \"{0}\"?"
 msgstr "Supprimer « {0} » ?"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "Supprimer {0}"
 
@@ -4761,6 +4773,10 @@ msgstr "Page suivante"
 msgid "Next settings sections"
 msgstr "Sections de paramètres suivantes"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "La semaine prochaine"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "Aucune application ne correspond à votre recherche."
@@ -4998,6 +5014,10 @@ msgstr "Ne saisissez qu'un code envoyé par {codeHost}."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "Moi uniquement"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "Seul le créateur du bot peut définir sa clé de webhook."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5747,6 +5767,7 @@ msgid "Rename section"
 msgstr "Renommer la section"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "Renouveler l’abonnement"
 
@@ -5862,6 +5883,10 @@ msgstr "Redémarrez pour mettre à jour"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "Restaurer"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "Restaurer {name}"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6503,6 +6528,14 @@ msgstr "Slack non activé"
 msgid "Slide up to lock"
 msgstr "Glisser vers le haut pour verrouiller"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "Mettre en attente"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "En attente"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6604,6 +6637,7 @@ msgid "Start plan"
 msgstr "Démarrer"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "Démarrer l'abonnement maintenant"
 
@@ -7033,6 +7067,10 @@ msgstr "La fenêtre de contexte de ce modèle est trop petite. Choisissez un aut
 msgid "This month"
 msgstr "Ce mois-ci"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "Les heures d’ordinateur de ce mois sont épuisées."
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "Impossible d'afficher cette page."
@@ -7150,6 +7188,10 @@ msgstr "Afficher ou masquer la barre latérale"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "Jetons"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "Demain"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7297,6 +7339,16 @@ msgstr "Désépingler"
 msgid "Unread"
 msgstr "Non lus"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "Annuler la mise en attente"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "Annuler la mise en attente de {0}"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7355,6 +7407,7 @@ msgstr "Mise à jour de l'ordinateur d'équipe"
 msgid "Updating…"
 msgstr "Mise à jour en cours…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7676,6 +7729,10 @@ msgstr "Qui peut ouvrir cette page"
 msgid "Who can start it"
 msgstr "Qui peut la lancer"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "De retour"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "Ne sera pas fait"
@@ -7836,6 +7893,10 @@ msgstr "Votre essai se termine et {price} sera débité de votre carte aujourd'h
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "Votre essai se termine et votre carte sera débitée aujourd'hui."
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "Les heures d’ordinateur de votre essai sont épuisées."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

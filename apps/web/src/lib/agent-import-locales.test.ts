@@ -40,7 +40,10 @@ const catalog = (locale: string) =>
 
 describe("agent import translations", () => {
   it("covers every catalog the app ships", () => {
-    const shipped = readdirSync(fileURLToPath(localesDir)).sort();
+    const shipped = readdirSync(fileURLToPath(localesDir), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
     expect(shipped).toEqual([...UI_LOCALES].sort());
   });
 

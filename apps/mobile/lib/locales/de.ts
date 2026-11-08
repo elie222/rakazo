@@ -1,4 +1,12 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Snooze: "Schlummern",
+  Snoozed: "Geschlummert",
+  Unsnooze: "Nicht mehr schlummern",
+  Woke: "Wieder da",
+  "1 hour": "1 Stunde",
+  "3 hours": "3 Stunden",
+  Tomorrow: "Morgen",
+  "Next week": "Nächste Woche",
   "No matches": "Keine Treffer",
   "Always ask": "Immer fragen",
   "Search tools": "Tools durchsuchen",
@@ -1143,6 +1151,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Available credits": "Verfügbares Guthaben",
   "Computer hours left": "Verbleibende Computerstunden",
   Upgrade: "Upgraden",
+  "Your trial's computer hours are used up.":
+    "Die Computerstunden deines Testzeitraums sind aufgebraucht.",
+  "This month's computer hours are used up.":
+    "Die Computerstunden dieses Monats sind aufgebraucht.",
   "Cancelled trials have no computer hours.":
     "Gekündigte Testzeiträume haben keine Computerstunden.",
   "Renew plan": "Plan verlängern",

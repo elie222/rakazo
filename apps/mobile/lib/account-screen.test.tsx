@@ -254,6 +254,11 @@ vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",
   getAppVersionInfo: () => ({ version: "1.0.0", build: "1" }),
 }));
+const storeUpdate = vi.hoisted(() => ({ available: false, open: vi.fn() }));
+vi.mock("./store-update", () => ({
+  openStoreListing: storeUpdate.open,
+  useStoreUpdateAvailable: () => storeUpdate.available,
+}));
 vi.mock("./appearance", () => ({
   getCachedAppearancePreference: () => "system",
   mobileTokens: () => ({}),
@@ -369,6 +374,7 @@ beforeEach(() => {
   account.rules = [];
   account.messaging = { enabled: true };
   haptics.enabled = true;
+  storeUpdate.available = false;
   haptics.listeners.clear();
   haptics.save.mockReset().mockResolvedValue(undefined);
   haptics.load.mockReset().mockResolvedValue(undefined);
@@ -464,6 +470,17 @@ it("navigates to sign-in while a silent server still owes the sign-out delivery"
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("offers a store update beside the version only when one is available", async () => {
+  const view = await renderAccount();
+  expect(view.button("Update")).toBeUndefined();
+  act(() => root?.unmount());
+
+  storeUpdate.available = true;
+  const updatable = await renderAccount();
+  await updatable.press("Update");
+  expect(storeUpdate.open).toHaveBeenCalled();
 });
 
 it("shows a device haptics switch that follows and saves the local preference", async () => {

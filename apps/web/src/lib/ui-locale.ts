@@ -1,5 +1,6 @@
 import { AppLocaleSchema } from "@rakazo/contracts";
 import { matchUiLocale } from "@rakazo/core";
+import { readableLocalStorage } from "./stored-preference";
 
 export const UI_LOCALES = AppLocaleSchema.options;
 
@@ -52,9 +53,7 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
   const stored =
     options.stored !== undefined
       ? options.stored
-      : readStoredLocale(
-          options.storage ?? (typeof localStorage !== "undefined" ? localStorage : null),
-        );
+      : readStoredLocale(options.storage ?? readableLocalStorage());
   if (stored) return normalizeUiLocale(stored);
 
   const envDefault =
@@ -83,9 +82,7 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
 
 export function persistUiLocale(
   locale: UiLocale,
-  storage: Pick<Storage, "setItem"> | null = typeof localStorage !== "undefined"
-    ? localStorage
-    : null,
+  storage: Pick<Storage, "setItem"> | null = readableLocalStorage(),
 ): void {
   if (!storage) return;
   try {

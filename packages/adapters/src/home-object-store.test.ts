@@ -784,6 +784,18 @@ describe("ObjectAgentHomeStore", () => {
     },
   );
 
+  it("finishes removing folders when the computer is deleted during the save", async () => {
+    const { store, rows, records } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const create = records.create.bind(records);
+    records.create = async (homeKey) => {
+      rows.splice(0, 1);
+      return create(homeKey);
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+  });
+
   it("keeps the rest of a home never stored when its first save fails", async () => {
     const { store, storage } = await setup(["team-1"]);
     await mkdir(path.join(store.pathFor("team-1"), "bots/gone"), { recursive: true });

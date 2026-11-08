@@ -79,6 +79,7 @@ const ComposerBody = memo(function Composer({
   onDraftEdited,
   onOpenModels,
   onOpenConnections,
+  onOpenBilling,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -114,6 +115,7 @@ const ComposerBody = memo(function Composer({
   onDraftEdited?: () => void;
   onOpenModels: () => void;
   onOpenConnections: () => void;
+  onOpenBilling: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -608,6 +610,7 @@ const ComposerBody = memo(function Composer({
         onRunErrorPresented={onRunErrorPresented}
         onOpenModels={onOpenModels}
         onOpenConnections={onOpenConnections}
+        onOpenBilling={onOpenBilling}
         onDismissError={onDismissError}
         textareaRef={textareaRef}
       />

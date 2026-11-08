@@ -1,4 +1,12 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Snooze: "Отложить",
+  Snoozed: "Отложенные",
+  Unsnooze: "Вернуть",
+  Woke: "Вернулся",
+  "1 hour": "1 час",
+  "3 hours": "3 часа",
+  Tomorrow: "Завтра",
+  "Next week": "На следующей неделе",
   "No matches": "Нет совпадений",
   "Always ask": "Всегда спрашивать",
   "Search tools": "Поиск инструментов",
@@ -1172,6 +1180,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Available credits": "Доступные кредиты",
   "Computer hours left": "Осталось часов компьютера",
   Upgrade: "Улучшить план",
+  "Your trial's computer hours are used up.": "Часы компьютера в пробном периоде закончились.",
+  "This month's computer hours are used up.": "Часы компьютера в этом месяце закончились.",
   "Cancelled trials have no computer hours.":
     "У отменённого пробного периода нет часов компьютера.",
   "Renew plan": "Возобновить план",

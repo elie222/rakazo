@@ -7,7 +7,12 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
+import {
+  isSandboxProviderOutage,
+  routineJobKey,
+  runContinueJob,
+  runJobKey,
+} from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -679,7 +684,8 @@ async function releaseTeamComputerScreen(
   } catch (error) {
     // No browser runs on a sandbox that is gone, so only its stored profile is left to remove.
     if (isSandboxGoneError(error)) return { ...computer, providerRef: null };
-    getLogger().error("team screen release", error);
+    if (isSandboxProviderOutage(error)) getLogger().warn("team screen release", { error });
+    else getLogger().error("team screen release", error);
     if (error instanceof BrowserStoppedReleaseError) return computer;
     return null;
   }

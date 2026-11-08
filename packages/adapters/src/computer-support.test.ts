@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  computerScreenSize,
   displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
@@ -162,5 +163,15 @@ describe("resolveBotUploadPath", () => {
     expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt")).toThrow(
       /escapes the bot workspace/,
     );
+  });
+});
+
+describe("computerScreenSize", () => {
+  it("uses boat geometry and the 1280x800 default for other sandboxes", () => {
+    expect(computerScreenSize("boat")).toEqual({ width: 1920, height: 1080 });
+    expect(computerScreenSize("e2b")).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize("daytona")).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize(null)).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize(undefined)).toEqual({ width: 1280, height: 800 });
   });
 });
