@@ -1,6 +1,7 @@
 FROM node:24.22.1-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 # pnpm lives in the image so containers start without downloading it.
 ENV COREPACK_HOME=/usr/local/share/corepack
 RUN corepack enable
