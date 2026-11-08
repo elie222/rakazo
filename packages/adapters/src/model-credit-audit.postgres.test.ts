@@ -316,6 +316,26 @@ dbTests("durable model credit audit", () => {
       costSource: "provider-reported",
     });
   });
+  it("finalizes a recorded estimate instead of replacing it with the fallback", async () => {
+    const f = await fixture();
+    const estimate = { ...f.usage, costUsd: 0.5, costSource: "pi-catalog-estimate" };
+    await recordModelCreditReceipt(prisma, f.callId, estimate);
+    await recordUsage(prisma, { ...f.event, ...estimate }, f);
+    await recordUsage(
+      prisma,
+      { ...f.event, costUsd: 0, costSource: "reconciled-estimate", providerRequestId: null },
+      f,
+      true,
+    );
+    expect((await creditAccount(prisma, f.organizationId)).balanceMicros).toBe(9_500_000n);
+    expect(await prisma.usageRecord.findUnique({ where: { callId: f.callId } })).toMatchObject({
+      costUsd: 0.5,
+      costSource: "reconciled-estimate",
+    });
+    expect(await prisma.modelCreditEntry.findUnique({ where: { callId: f.callId } })).toMatchObject(
+      { pending: false, reconciliationState: "complete" },
+    );
+  });
   it("charges a stopped call for its counted tokens when the provider has no record", async () => {
     const f = await fixture();
     await recordModelCreditReceipt(prisma, f.callId, {

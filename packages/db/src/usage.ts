@@ -77,21 +77,27 @@ export async function recordUsage(
         usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
         event.costUsd != null &&
         event.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
-      // Real usage that landed while the reconciler was deciding beats its fallback.
-      const fallbackWouldOverwrite =
+      // Real usage recorded before the reconciler's fallback beats it: a final cost stands, and a
+      // measured estimate is finalized as recorded rather than replaced.
+      const keepsRecordedCost =
         reconcile &&
         event.costSource === RECONCILED_ESTIMATE_COST_SOURCE &&
         usage.costUsd != null &&
         usage.costSource !== RECONCILED_ESTIMATE_COST_SOURCE;
       if (
-        fallbackWouldOverwrite ||
+        (keepsRecordedCost && hasFinalModelCost(usage)) ||
         (!entry.pending &&
           entry.reconciliationState === "complete" &&
           !reconcile &&
           !correctsEstimate)
       )
         return;
-      if (reconcile || correctsEstimate) {
+      if (keepsRecordedCost) {
+        usage = await tx.usageRecord.update({
+          where: { id: usage.id },
+          data: { costSource: RECONCILED_ESTIMATE_COST_SOURCE },
+        });
+      } else if (reconcile || correctsEstimate) {
         usage = await tx.usageRecord.update({
           where: { id: usage.id },
           data: observation,
