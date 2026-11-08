@@ -495,10 +495,11 @@ export class PiAgentRuntime implements AgentRuntime {
             contextPolicy = contextPolicyFor(target);
           },
           // A throwaway policy, so judging a backup leaves the active policy's sent transcript
-          // alone. Cache use is recorded only on usage, which a throwaway never sees.
+          // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
+          // turn is added as on each call, so the backup is judged on what it would be sent.
           prepareForTarget: (target, ctx) => ({
             ...ctx,
-            ...contextPolicyFor(target).prepareContext(ctx, target.model),
+            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
           }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
