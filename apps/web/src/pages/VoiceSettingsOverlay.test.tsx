@@ -47,8 +47,47 @@ vi.mock("@rakazo/ui-web", () => {
       <label htmlFor={htmlFor}>{children}</label>
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    OptionSelect: ({
+      id,
+      value,
+      options = [],
+      onValueChange,
+      disabled,
+      className,
+      "aria-label": ariaLabel,
+      "aria-labelledby": ariaLabelledBy,
+      "aria-describedby": ariaDescribedBy,
+      "data-testid": testId,
+    }: {
+      id?: string;
+      value?: string | null;
+      options?: readonly { value: string; label: string; disabled?: boolean }[];
+      onValueChange?: (value: string) => void;
+      disabled?: boolean;
+      className?: string;
+      "aria-label"?: string;
+      "aria-labelledby"?: string;
+      "aria-describedby"?: string;
+      "data-testid"?: string;
+    }) => (
+      <select
+        id={id}
+        value={value ?? ""}
+        disabled={disabled}
+        className={className}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
+        data-testid={testId}
+        onChange={(event) => onValueChange?.(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
   };
 });
 

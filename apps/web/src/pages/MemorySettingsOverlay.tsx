@@ -8,14 +8,13 @@ import {
   DialogTitle,
   Field,
   FieldLabel,
-  NativeSelect,
-  NativeSelectOption,
   SectionHeading,
   Spinner,
   Toggle,
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { AppSelect } from "../components/AppSelect";
 import { SETTINGS_CONTENT_WIDTH } from "../components/SettingsRows";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
@@ -240,19 +239,17 @@ export function MemorySettingsOverlay({
               </p>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
                 <div className="mt-3">
-                  <NativeSelect
+                  <AppSelect
                     aria-labelledby={providerSelectId}
                     className="w-full"
                     value={selectedProvider}
                     disabled={busy}
-                    onChange={(event) => setSelectedProvider(event.target.value)}
-                  >
-                    {MEMORY_PROVIDER_SETTINGS.map((entry) => (
-                      <NativeSelectOption key={entry.id} value={entry.id}>
-                        {entry.name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    options={MEMORY_PROVIDER_SETTINGS.map((entry) => ({
+                      value: entry.id,
+                      label: entry.name,
+                    }))}
+                    onValueChange={setSelectedProvider}
+                  />
                 </div>
               ) : (
                 <p className="mt-3 text-body text-foreground">{registration.name}</p>

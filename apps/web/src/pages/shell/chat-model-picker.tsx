@@ -8,8 +8,7 @@ import {
   CommandItem,
   CommandList,
   ListSearchInput,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -19,7 +18,7 @@ import { useId, useMemo, useState } from "react";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
 import { useListSearch } from "../../lib/use-list-search";
 
-/** A chat's model: a native select, or a searchable list once there are too many to scan. */
+/** A chat's model: the app menu, or a searchable list once there are too many to scan. */
 export function ChatModelPicker({
   id,
   choices,
@@ -46,19 +45,14 @@ export function ChatModelPicker({
     return (
       <div className="mt-2 flex items-center gap-2">
         {imagesHint}
-        <NativeSelect
+        <OptionSelect
           id={id}
           className="w-full"
           aria-describedby={textOnly ? imagesHintId : undefined}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {choices.map((choice) => (
-            <NativeSelectOption key={choice.key} value={choice.key}>
-              {choice.label}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+          options={choices.map((choice) => ({ value: choice.key, label: choice.label }))}
+          onValueChange={onChange}
+        />
         {textOnly ? (
           <span className="text-muted-foreground">
             <TextOnlyMark />
@@ -96,16 +90,18 @@ export function ChatModelPicker({
         >
           <Command
             shouldFilter={false}
-            className="h-auto min-h-0 max-h-(--available-height) rounded-none bg-popover *:data-[slot=command-input-wrapper]:shrink-0"
+            className="h-auto min-h-0 max-h-(--available-height) rounded-none bg-popover p-0 *:data-[slot=command-input-wrapper]:shrink-0"
           >
-            <ListSearchInput
-              command
-              query={query}
-              setQuery={setQuery}
-              label={t`Search models`}
-              placeholder={t`Search`}
-            />
-            <CommandList className="min-h-0 max-h-80 flex-1 overflow-y-auto">
+            <div className="p-1.5 pb-0">
+              <ListSearchInput
+                command
+                query={query}
+                setQuery={setQuery}
+                label={t`Search models`}
+                placeholder={t`Search`}
+              />
+            </div>
+            <CommandList className="min-h-0 max-h-80 flex-1 overflow-y-auto p-1">
               <CommandEmpty>
                 <Trans>No matching models</Trans>
               </CommandEmpty>

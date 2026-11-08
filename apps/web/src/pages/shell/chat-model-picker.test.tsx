@@ -82,9 +82,13 @@ describe("ChatModelPicker", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-  it("keeps the native select for a short list", () => {
+  it("uses the app menu without search for a short list", () => {
     render(choices(9), "");
-    expect(container.querySelector("select")?.options).toHaveLength(10);
+    expect(container.querySelector("select")).toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
+    act(() => trigger.click());
+    expect(document.querySelector('input[aria-label="Search"]')).toBeNull();
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(10);
   });
 
   it("marks a short list's selected model when it cannot read images", () => {
@@ -92,14 +96,14 @@ describe("ChatModelPicker", () => {
       index === 1 ? { ...choice, images: false } : { ...choice, images: true },
     );
     render(list, "openrouter::vendor/model-1");
-    const select = container.querySelector("select")!;
-    const hint = () => document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    const trigger = () => container.querySelector("button#model")!;
+    const hint = () => document.getElementById(trigger().getAttribute("aria-describedby") ?? "");
     expect(container.querySelector('[title="Can\'t read images"]')).not.toBeNull();
     expect(hint()?.textContent).toBe("Can't read images");
 
     render(list, "openrouter::vendor/model-2");
     expect(container.querySelector('[title="Can\'t read images"]')).toBeNull();
-    expect(select.hasAttribute("aria-describedby")).toBe(false);
+    expect(trigger().hasAttribute("aria-describedby")).toBe(false);
   });
 
   it("marks text-only rows and the selected model in a long list", () => {

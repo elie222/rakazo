@@ -59,8 +59,6 @@ vi.mock("@rakazo/ui-web", async () => {
       "Field",
       "FieldDescription",
       "FieldLabel",
-      "NativeSelect",
-      "NativeSelectOption",
       "SectionHeading",
       "Spinner",
     ].map((name) => [name, container]),
@@ -83,6 +81,40 @@ vi.mock("@rakazo/ui-web", async () => {
           "button",
           { type: type ?? "button", onClick, disabled, "aria-label": label },
           children,
+        ),
+    ],
+    [
+      "OptionSelect",
+      ({
+        id,
+        value,
+        options = [],
+        onValueChange,
+        disabled,
+        className,
+        "aria-label": ariaLabel,
+      }: {
+        id?: string;
+        value?: string;
+        options?: { value: string; label: string }[];
+        onValueChange?: (value: string) => void;
+        disabled?: boolean;
+        className?: string;
+        "aria-label"?: string;
+      }) =>
+        createElement(
+          "select",
+          {
+            id,
+            value,
+            disabled,
+            className,
+            "aria-label": ariaLabel,
+            onChange: (event: Event) => onValueChange?.((event.target as HTMLSelectElement).value),
+          },
+          options.map((option) =>
+            createElement("option", { key: option.value, value: option.value }, option.label),
+          ),
         ),
     ],
     [

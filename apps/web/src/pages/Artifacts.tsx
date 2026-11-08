@@ -15,8 +15,6 @@ import {
   EmptyMedia,
   EmptyTitle,
   ListSearchInput,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   Select,
   SelectContent,
@@ -47,6 +45,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { AppSelect } from "../components/AppSelect";
 import { VideoPreview } from "../components/ArtifactFileCard";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
@@ -931,18 +930,16 @@ function PreviewPane({
           ) : null}
         </div>
         {versions && versions.length > 1 && selectedVersionId ? (
-          <NativeSelect
+          <AppSelect
             aria-label={t`Version`}
             className="w-auto shrink-0 text-body-sm"
             value={selectedVersionId}
-            onChange={(event) => setSelectedVersionId(event.target.value)}
-          >
-            {versions.map((entry) => (
-              <NativeSelectOption key={entry.id} value={entry.id}>
-                {`v${entry.version} (${formatRelativeTime(entry.createdAt)})`}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={versions.map((entry) => ({
+              value: entry.id,
+              label: `v${entry.version} (${formatRelativeTime(entry.createdAt)})`,
+            }))}
+            onValueChange={setSelectedVersionId}
+          />
         ) : null}
         {state.status === "ready" ? (
           <>

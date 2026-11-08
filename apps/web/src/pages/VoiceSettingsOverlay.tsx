@@ -21,13 +21,12 @@ import {
   Field,
   FieldLabel,
   Input,
-  NativeSelect,
-  NativeSelectOption,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AppSelect } from "../components/AppSelect";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -395,23 +394,20 @@ export function VoiceSettingsOverlay({
           <FieldLabel htmlFor={providerSelectId}>
             <Trans>Provider</Trans>
           </FieldLabel>
-          <NativeSelect
+          <AppSelect
             id={providerSelectId}
             className="w-full"
             value={provider}
             disabled={busy}
-            onChange={(event) => void chooseProvider(event.target.value)}
-          >
-            {catalog.map((entry) => {
+            options={catalog.map((entry) => {
               const connected = credentials.some((cred) => cred.provider === entry.id);
-              return (
-                <NativeSelectOption key={entry.id} value={entry.id}>
-                  {entry.name}
-                  {connected ? ` (${t`Connected`})` : ""}
-                </NativeSelectOption>
-              );
+              return {
+                value: entry.id,
+                label: connected ? `${entry.name} (${t`Connected`})` : entry.name,
+              };
             })}
-          </NativeSelect>
+            onValueChange={(id) => void chooseProvider(id)}
+          />
         </Field>
       ) : null}
       {hiddenSelfHosted && scope === "account" ? (
@@ -585,20 +581,19 @@ export function VoiceSettingsOverlay({
                     </datalist>
                   </>
                 ) : (
-                  <NativeSelect
+                  <AppSelect
                     id={voiceSelectId}
                     className="w-full"
                     value={voiceId}
                     disabled={busy}
-                    onChange={(event) => void chooseVoice(event.target.value)}
-                  >
-                    {voiceOptions.map((voice) => (
-                      <NativeSelectOption key={voice.id} value={voice.id}>
-                        {voice.label}
-                        {voice.description ? ` (${voice.description})` : ""}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    options={voiceOptions.map((voice) => ({
+                      value: voice.id,
+                      label: voice.description
+                        ? `${voice.label} (${voice.description})`
+                        : voice.label,
+                    }))}
+                    onValueChange={(id) => void chooseVoice(id)}
+                  />
                 )}
               </Field>
               {selected.speechModel ? (
