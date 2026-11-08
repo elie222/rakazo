@@ -167,7 +167,10 @@ export function promptTextForAttachments(
 
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 
-function toolStepsHistoryText(steps: Extract<MessageBlock, { kind: "steps" }>["steps"]): string {
+/** An earlier reply's tool steps as the bot sees them again: label, count and capped note. */
+export function toolStepsHistoryText(
+  steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
+): string {
   if (steps.length === 0) return "";
   const lines = steps.map((step) => {
     const label = step.count > 1 ? `${step.label} ×${step.count}` : step.label;
