@@ -148,38 +148,39 @@ export function createModelCreditReconciler(deps: {
                 WHERE e."organizationId" = a."organizationId"
               ), 0)`
         : [];
-      await Promise.all(
-        drifted.map(({ organizationId }) =>
-          prisma.$transaction(async (tx) => {
-            await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
-            const account = await tx.modelCreditAccount.findUnique({ where: { organizationId } });
-            if (!account) return;
-            const total = await tx.billingAuditEvent.aggregate({
-              where: { organizationId },
-              _sum: { amountMicros: true },
-            });
-            const expected = total._sum.amountMicros ?? 0n;
-            if (expected === account.balanceMicros) return;
-            await tx.billingAuditEvent.create({
-              data: {
-                source: `balance:${organizationId}:${crypto.randomUUID()}`,
-                kind: "balance_rebuilt",
-                organizationId,
-                details: {
-                  balanceMicros: account.balanceMicros.toString(),
-                  expectedMicros: expected.toString(),
+      for (let offset = 0; offset < drifted.length; offset += 5)
+        await Promise.all(
+          drifted.slice(offset, offset + 5).map(({ organizationId }) =>
+            prisma.$transaction(async (tx) => {
+              await tx.$queryRaw`SELECT "organizationId" FROM model_credit_accounts WHERE "organizationId"=${organizationId} FOR UPDATE`;
+              const account = await tx.modelCreditAccount.findUnique({ where: { organizationId } });
+              if (!account) return;
+              const total = await tx.billingAuditEvent.aggregate({
+                where: { organizationId },
+                _sum: { amountMicros: true },
+              });
+              const expected = total._sum.amountMicros ?? 0n;
+              if (expected === account.balanceMicros) return;
+              await tx.billingAuditEvent.create({
+                data: {
+                  source: `balance:${organizationId}:${crypto.randomUUID()}`,
+                  kind: "balance_rebuilt",
+                  organizationId,
+                  details: {
+                    balanceMicros: account.balanceMicros.toString(),
+                    expectedMicros: expected.toString(),
+                  },
                 },
-              },
-            });
-            await tx.modelCreditAccount.update({
-              where: { organizationId },
-              data: { balanceMicros: expected },
-            });
-            getLogger().error("Model credit balance does not match the audit journal", {
-              organizationId,
-            });
-          }),
-        ),
-      );
+              });
+              await tx.modelCreditAccount.update({
+                where: { organizationId },
+                data: { balanceMicros: expected },
+              });
+              getLogger().error("Model credit balance does not match the audit journal", {
+                organizationId,
+              });
+            }),
+          ),
+        );
     });
 }
