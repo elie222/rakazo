@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   scheduleTranscriptSnapToEnd,
+  stillStickAfterRefresh,
   transcriptCanSnapAfterFrame,
   transcriptIsNearEnd,
   transcriptMovedDown,
@@ -34,11 +35,32 @@ describe("transcriptCanSnapAfterFrame", () => {
   });
 });
 
+describe("stillStickAfterRefresh", () => {
+  const nearEnd = { scrollHeight: 1_000, scrollTop: 950, clientHeight: 500 };
+  const scrolledUp = { scrollHeight: 1_000, scrollTop: 120, clientHeight: 500 };
+
+  it("prefers the current scroller when present", () => {
+    expect(stillStickAfterRefresh(true, nearEnd, scrolledUp)).toBe(false);
+    expect(stillStickAfterRefresh(true, scrolledUp, nearEnd)).toBe(true);
+  });
+
+  it("falls back to the previous scroller only while the current one is missing", () => {
+    expect(stillStickAfterRefresh(true, nearEnd, null)).toBe(true);
+    expect(stillStickAfterRefresh(true, scrolledUp, null)).toBe(false);
+    expect(stillStickAfterRefresh(true, null, null)).toBe(true);
+  });
+
+  it("never sticks when follow mode was already off", () => {
+    expect(stillStickAfterRefresh(false, nearEnd, nearEnd)).toBe(false);
+  });
+});
+
 describe("scheduleTranscriptSnapToEnd", () => {
   it("snaps the live scroller after layout even when the DOM node was replaced", async () => {
     const queued = { scrollTop: 950, scrollHeight: 1_000, clientHeight: 500 };
-    const replacement = { scrollTop: 950, scrollHeight: 1_600, clientHeight: 500 };
-    let current: typeof queued = queued;
+    // Replacement must still be near the end; a remount mid-history must not yank.
+    const replacement = { scrollTop: 1_520, scrollHeight: 1_600, clientHeight: 500 };
+    let current: typeof queued | typeof replacement = queued;
     scheduleTranscriptSnapToEnd(() => current, true);
     current = replacement;
     await new Promise((resolve) =>
@@ -56,6 +78,17 @@ describe("scheduleTranscriptSnapToEnd", () => {
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve(null))),
     );
     expect(scroller.scrollTop).toBe(120);
+  });
+
+  it("does not snap a same scroller that moved up a little while still near the end", async () => {
+    const scroller = { scrollTop: 950, scrollHeight: 1_000, clientHeight: 500 };
+    scheduleTranscriptSnapToEnd(() => scroller, true);
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+    scroller.scrollTop = 940;
+    await new Promise((resolve) =>
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve(null))),
+    );
+    expect(scroller.scrollTop).toBe(940);
   });
 });
 
