@@ -15,6 +15,7 @@ import {
   listArtifactVersions,
   listSpaceArtifacts,
 } from "../artifacts.js";
+import { listAttentionItems } from "../attention.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { listSpaceRuns } from "../runs.js";
 import { querySpaceSearch } from "../search.js";
@@ -265,6 +266,11 @@ export function contentRoutes(ctx: RouterContext) {
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
         runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
+      })),
+    },
+    attention: {
+      list: authed.attention.list.handler(async ({ context }) => ({
+        items: await listAttentionItems(deps.prisma, context.actor),
       })),
     },
   };
