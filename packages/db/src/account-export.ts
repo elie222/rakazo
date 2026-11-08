@@ -1,4 +1,5 @@
-import type { AccountExportManifest, AccountExportRecord } from "@rakazo/contracts";
+import type { AccountExportManifest, AccountExportRecord, MessageBlock } from "@rakazo/contracts";
+import { withoutPrivateStepDetails } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { runAsTenant } from "./row-security.js";
 
@@ -275,7 +276,7 @@ async function* spaceRecords(
           yield {
             type: "message",
             ...message,
-            blocks: json(message.blocks),
+            blocks: json(withoutPrivateStepDetails(message.blocks as MessageBlock[])),
             threadId: thread.id,
             botId: ownBot(message.botId),
             createdAt: iso(message.createdAt),

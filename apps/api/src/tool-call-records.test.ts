@@ -98,7 +98,7 @@ describe("loadToolCallRecords", () => {
         where: expect.objectContaining({
           type: "computer.command",
           OR: expect.arrayContaining([
-            { payload: { path: ["state"], equals: "tool-shell-finished" } },
+            { payload: { path: ["state"], equals: "tool-shell-finished:x1" } },
           ]),
         }),
       }),

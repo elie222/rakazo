@@ -6,6 +6,11 @@ import { isVisualActionTool } from "./tool-activity.js";
 /** Runs whose live records a client keeps at once. */
 const LIVE_RUNS_KEPT = 8;
 
+/** Queryable state for terminal shell events, even when their content is encrypted. */
+export function toolShellFinishedState(executionId: string): string {
+  return `tool-shell-finished:${executionId}`;
+}
+
 /** Events that say what a tool call did: its call, its completion audit and any shell output it streamed. */
 export function isToolCallRecordEvent(event: { type: string }): boolean {
   return (

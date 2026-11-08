@@ -165,6 +165,24 @@ describe("mobile tool activity card", () => {
     expect(container.textContent).toContain("exit 1");
   });
 
+  it("reads missing arguments when the row only received a live completion", async () => {
+    toolCallRecords.record({
+      type: "agent.tool.completed",
+      runId: "run-1",
+      payload: { name: "read_file", executionId: "x2", preview: "live result" },
+    });
+    rpc.mockResolvedValue([
+      { executionId: "x2", name: "read_file", status: "done", input: '{"path":"example.txt"}' },
+    ]);
+    act(() =>
+      root.render(<ToolActivityCard block={steps} live runId="run-1" threadId="thread-1" />),
+    );
+    await act(async () => rows()[1]!.click());
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("example.txt");
+    expect(container.textContent).toContain("live result");
+  });
+
   it("reads a finished run's results once when the thread's events did not carry them", async () => {
     rpc.mockResolvedValue([
       { executionId: "x2", name: "read_file", status: "done", outcome: "error", error: "ENOENT" },

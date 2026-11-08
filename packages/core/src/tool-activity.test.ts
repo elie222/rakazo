@@ -59,6 +59,7 @@ describe("pickToolCallRecord", () => {
   it("retains fetched arguments when only the live completion arrived", () => {
     const read = { executionId: "x", name: "read_file", status: "running" as const, input: "{}" };
     const live = { executionId: "x", name: "read_file", status: "done" as const, output: "result" };
+    expect(pickToolCallRecord(live, undefined, true)).toEqual({ record: live, needsRead: true });
     expect(pickToolCallRecord(live, read, true).record).toEqual({ ...read, ...live });
   });
 
@@ -77,7 +78,7 @@ describe("pickToolCallRecord", () => {
   it("reads past a live record the run ended without finishing, and shows the read once it has one", () => {
     expect(pickToolCallRecord(live, undefined, false)).toEqual({ record: live, needsRead: true });
     expect(pickToolCallRecord(live, read, false)).toEqual({ record: read, needsRead: true });
-    const done = { ...live, status: "done" } as const;
+    const done = { ...live, status: "done", command: "ls" } as const;
     expect(pickToolCallRecord(done, read, false)).toEqual({ record: done, needsRead: false });
   });
 });

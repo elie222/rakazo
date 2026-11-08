@@ -1,5 +1,5 @@
 import type { ToolCallRecord } from "@rakazo/contracts";
-import { foldToolCallRecords } from "@rakazo/core";
+import { foldToolCallRecords, toolShellFinishedState } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 /** Calls read for one run: enough for a long run, bounded so a runaway one stays cheap. */
@@ -37,7 +37,7 @@ export async function loadToolCallRecords(
     completions
       .filter(({ payload }) => (payload as { exitCode?: unknown } | null)?.exitCode === null)
       .map(({ payload }) => executionIdOf(payload))
-      .filter((id) => called.has(id)),
+      .filter((id): id is string => id !== undefined && called.has(id)),
   );
   const terminalCommands = runningShells.size
     ? await prisma.event.findMany({
@@ -45,14 +45,19 @@ export async function loadToolCallRecords(
           threadId,
           runId,
           type: "computer.command",
-          OR: [
-            { payload: { path: ["state"], equals: "tool-shell-finished" } },
-            // Older unencrypted command events still carry their own status.
-            { payload: { path: ["status"], equals: "done" } },
-          ],
+          OR: [...runningShells].flatMap((executionId) => [
+            { payload: { path: ["state"], equals: toolShellFinishedState(executionId) } },
+            // Legacy plaintext events have the id and status, but no queryable state.
+            {
+              AND: [
+                { payload: { path: ["executionId"], equals: executionId } },
+                { payload: { path: ["status"], equals: "done" } },
+              ],
+            },
+          ]),
         },
         orderBy: { seq: "asc" },
-        take: TOOL_CALLS_MAX,
+        take: runningShells.size,
         select,
       })
     : [];
@@ -60,7 +65,7 @@ export async function loadToolCallRecords(
   const events = [
     ...calls,
     ...completions.filter((row) => called.has(executionIdOf(row.payload))),
-    ...terminalCommands.filter((row) => runningShells.has(executionIdOf(row.payload))),
+    ...terminalCommands,
   ].sort((a, b) => a.seq - b.seq);
   return foldToolCallRecords(events);
 }

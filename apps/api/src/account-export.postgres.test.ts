@@ -128,7 +128,16 @@ describePostgres("account export (PostgreSQL)", () => {
         threadId: thread.id,
         role: "bot",
         botId: `mine-${suffix}`,
-        blocks: [{ kind: "text", text: "Noted" }],
+        blocks: [
+          { kind: "text", text: "Noted" },
+          {
+            kind: "steps",
+            steps: [
+              { label: "Read file", count: 1, detail: "PRIVATE_TOOL_ARGUMENT" },
+              { label: "Shell", count: 1, detail: "echo shared" },
+            ],
+          },
+        ],
       });
       const source = (heading: string) => `export default () => <Page title="${heading}" />;`;
       const page = await prisma.page.create({
@@ -373,6 +382,17 @@ describePostgres("account export (PostgreSQL)", () => {
       threadId: `zz-helper-${suffix}`,
       blocks: [{ kind: "text", text: "Helper found SAFFRON" }],
     });
+    expect(owns("message")[1]!.blocks).toEqual([
+      { kind: "text", text: "Noted" },
+      {
+        kind: "steps",
+        steps: [
+          { label: "Read file", count: 1 },
+          { label: "Shell", count: 1, detail: "echo shared" },
+        ],
+      },
+    ]);
+    expect(decode(accountExportPaths.records(ownedSpace))).not.toContain("PRIVATE_TOOL_ARGUMENT");
     expect(owns("message")[0]!.blocks).toEqual([
       { kind: "text", text: "The codeword is MARIGOLD" },
     ]);

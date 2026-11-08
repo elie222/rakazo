@@ -8,11 +8,11 @@ import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
-  humanizeToolName,
   isBackgroundInputBlock,
   isBackgroundRunTrigger,
   isPeerReceiptBlocks,
   isVisualActionTool,
+  withoutPrivateStepDetails,
 } from "@rakazo/core";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -226,23 +226,6 @@ export function withoutToolCallContent<E extends { type: string; payload: unknow
       withheld: true,
     },
   };
-}
-
-const SHELL_STEP_LABELS = new Set(["shell", "user_computer_shell"].map(humanizeToolName));
-
-/** Older replies may have saved private arguments as shared step details. */
-export function withoutPrivateStepDetails(blocks: MessageBlock[]): MessageBlock[] {
-  return blocks.map((block) => {
-    if (block.kind !== "steps") return block;
-    return {
-      ...block,
-      steps: block.steps?.map((step) => {
-        if (step.detail === undefined || SHELL_STEP_LABELS.has(step.label)) return step;
-        const { detail: _detail, ...safe } = step;
-        return safe;
-      }),
-    };
-  });
 }
 
 export function withoutPrivateToolDetails<E extends { type: string; payload: unknown }>(

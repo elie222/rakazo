@@ -1,4 +1,5 @@
 import type { MessageBlock, ToolCallRecord, ToolStep } from "@rakazo/contracts";
+import { humanizeToolName } from "./events.js";
 import { formatCompactDuration } from "./routine-runs.js";
 
 /** While a run is live, only the most recent steps are listed so a long run does not push the chat down. */
@@ -7,6 +8,23 @@ export const LIVE_TOOL_STEP_WINDOW = 6;
 /** Visual action arguments or results may contain typed credentials that the run never saw. */
 export function isVisualActionTool(name: string): boolean {
   return name === "browser_act" || name === "computer_act" || name === "user_computer_act";
+}
+
+const SHELL_STEP_LABELS = new Set(["shell", "user_computer_shell"].map(humanizeToolName));
+
+/** Older replies may have saved private arguments as shared step details. */
+export function withoutPrivateStepDetails(blocks: MessageBlock[]): MessageBlock[] {
+  return blocks.map((block) => {
+    if (block.kind !== "steps") return block;
+    return {
+      ...block,
+      steps: block.steps?.map((step) => {
+        if (step.detail === undefined || SHELL_STEP_LABELS.has(step.label)) return step;
+        const { detail: _detail, ...safe } = step;
+        return safe;
+      }),
+    };
+  });
 }
 
 export type ToolStepStatus = "running" | "ok" | "error";
@@ -55,11 +73,17 @@ export function pickToolCallRecord(
 ): { record: ToolCallRecord | undefined; needsRead: boolean } {
   const stale = live !== undefined && !runLive && live.status !== "done";
   const record = stale ? (read ?? live) : (live ?? read);
+  const missingCall =
+    live?.status === "done" &&
+    !live.withheld &&
+    live.input === undefined &&
+    live.command === undefined &&
+    !isVisualActionTool(live.name);
   const retainedInput =
     live && !stale && !live.withheld && live.input === undefined ? read?.input : undefined;
   return {
     record: record && retainedInput !== undefined ? { ...record, input: retainedInput } : record,
-    needsRead: live === undefined || stale,
+    needsRead: live === undefined || stale || missingCall,
   };
 }
 

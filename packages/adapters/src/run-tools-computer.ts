@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
-import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
+import { redactSecrets, sandboxCommandTimeoutMs, toolShellFinishedState } from "@rakazo/core";
 import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
@@ -73,7 +73,7 @@ function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
         type: "computer.command",
         payload:
           payload.kind === "shell" && payload.status === "done"
-            ? { ...payload, state: "tool-shell-finished" }
+            ? { ...payload, state: toolShellFinishedState(payload.executionId) }
             : payload,
       })
       // The Activity feed is a view; losing an entry must not fail the tool.

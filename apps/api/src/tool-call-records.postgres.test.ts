@@ -60,7 +60,20 @@ describePostgres("tool call records with CONTENT_ENCRYPTION on (PostgreSQL)", ()
         {
           type: "computer.command",
           payload: {
-            state: "tool-shell-finished",
+            state: "tool-shell-finished:other",
+            executionId: "other",
+            kind: "shell",
+            command: "echo another call",
+            cwd: ".",
+            status: "done",
+            exitCode: 0,
+            output: "unrelated output",
+          },
+        },
+        {
+          type: "computer.command",
+          payload: {
+            state: "tool-shell-finished:x1",
             executionId: "x1",
             kind: "shell",
             command: "ls -la",
@@ -91,7 +104,7 @@ describePostgres("tool call records with CONTENT_ENCRYPTION on (PostgreSQL)", ()
       // Stored sealed: a raw read sees no call id, which is why the reads go through the client.
       const raw = await db.prisma.$queryRaw<Array<{ id: string | null }>>`
         SELECT payload->>'executionId' AS id FROM events WHERE "threadId" = ${threadId}`;
-      expect(raw.map((row) => row.id)).toEqual([null, null, null, null]);
+      expect(raw.map((row) => row.id)).toEqual([null, null, null, null, null]);
 
       await expect(loadToolCallRecords(db.prisma, threadId, runId)).resolves.toEqual([
         {
