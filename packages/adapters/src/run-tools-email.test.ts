@@ -208,6 +208,19 @@ describe("read_email", () => {
     expect((await ids("a", [[]])).sort()).toEqual(["plain-hit", "sealed-hit"]);
   });
 
+  it("moves past new mail a search checked and dropped", async () => {
+    const checked = new Date("2026-11-02T00:00:00.000Z");
+    const { call } = fakeRun(
+      [row({ id: "sealed-miss", subject: "Other news", searchTokens: [7], receivedAt: checked })],
+      { queryTokens: [[7]] },
+    );
+
+    const first = await call({ since: "2026-11-01T00:00:00.000Z", query: "pelican" });
+
+    expect(first.emails).toEqual([]);
+    expect(first.nextSince).toBe(checked.toISOString());
+  });
+
   it("starts the next look after the newest email it returned, or where it was asked to", async () => {
     const { call } = fakeRun([], { arriving: row({ id: "late", receivedAt: new Date() }) });
 

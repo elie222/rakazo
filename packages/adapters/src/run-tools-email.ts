@@ -149,11 +149,18 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       : {}),
   };
   const limit = input.limit ?? 10;
+  // After since: the newest email already looked at, so candidates a search checked and dropped
+  // are not checked again by this wait or by a caller following nextSince.
+  let checkedTo: Date | undefined;
   // Asked again on every look: a Space's first key can appear while the bot waits.
   const list = async () => {
     const search = input.query ? await emailQuery(ctx, input.query) : undefined;
     const found = await deps.prisma.botEmailMessage.findMany({
-      where: { ...where, ...search?.where },
+      where: {
+        ...where,
+        ...(checkedTo ? { receivedAt: { ...where.receivedAt, gt: checkedTo } } : {}),
+        ...search?.where,
+      },
       // After since, oldest first, so following nextSince reads every new email in order.
       orderBy: { receivedAt: input.since ? ("asc" as const) : ("desc" as const) },
       take: search?.check ? SEARCH_CANDIDATES : limit,
@@ -170,11 +177,13 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       },
     });
     if (!search?.check) return found;
-    return found
-      .filter((email) =>
-        matchesSearchQuery(input.query!, ...SEARCHED_FIELDS.map((field) => email[field])),
-      )
-      .slice(0, limit);
+    const matches = found.filter((email) =>
+      matchesSearchQuery(input.query!, ...SEARCHED_FIELDS.map((field) => email[field])),
+    );
+    if (input.since)
+      checkedTo =
+        (matches.length >= limit ? matches[limit - 1] : found.at(-1))?.receivedAt ?? checkedTo;
+    return matches.slice(0, limit);
   };
   let emails = await list();
   const deadline = startedAt + (input.waitSeconds ?? 0) * 1000;
@@ -190,7 +199,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
   // Where the next look starts, on the inbox's own clock: the newest email shown here, or the
   // caller's since when nothing new arrived.
   const newest = input.since ? emails.at(-1) : emails[0];
-  const nextSince = newest?.receivedAt.toISOString() ?? input.since;
+  const nextSince = (checkedTo ?? newest?.receivedAt)?.toISOString() ?? input.since;
   const listed = emails.map((email) => ({
     id: email.id,
     from: sender(email),
