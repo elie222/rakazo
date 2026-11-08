@@ -309,6 +309,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
     status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
+    /** When the user connected or dismissed the card, as an ISO timestamp. */
+    decidedAt: z.string().optional(),
   }),
   z.object({
     kind: z.literal("import_setup"),

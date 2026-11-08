@@ -19,7 +19,8 @@ type AccessRun = { id: string; spaceId: string; userId: string; threadId: string
 
 /**
  * This bot's approval cards in the thread's newest messages, in the window an approval repaints.
- * `declined` holds servers whose newest card was dismissed with no user message since.
+ * `declined` holds servers whose newest card was dismissed with no user message since the
+ * dismissal. A card without `decidedAt` falls back to messages newer than the card.
  */
 async function scanCards(
   client: Pick<Prisma.TransactionClient, "message">,
@@ -28,7 +29,7 @@ async function scanCards(
 ) {
   const messages = await client.message.findMany({
     where: { threadId: run.threadId },
-    select: { botId: true, role: true, blocks: true },
+    select: { botId: true, role: true, blocks: true, createdAt: true },
     orderBy: { createdAt: "desc" },
     take: MCP_APPROVAL_CARD_WINDOW,
   });
@@ -36,9 +37,11 @@ async function scanCards(
   const declined = new Set<string>();
   const seen = new Set<string>();
   let userSince = false;
+  let newestUser: Date | undefined;
   for (const message of messages) {
     if (message.role === "user") {
       userSince = true;
+      newestUser ??= message.createdAt;
       continue;
     }
     if (message.botId && message.botId !== botId) continue;
@@ -47,7 +50,11 @@ async function scanCards(
       if (isOpenMcpApproval(block)) open.add(block.serverId);
       if (seen.has(block.serverId)) continue;
       seen.add(block.serverId);
-      if (block.status === "dismissed" && !userSince) declined.add(block.serverId);
+      if (block.status !== "dismissed") continue;
+      const wroteSince = block.decidedAt
+        ? newestUser !== undefined && newestUser > new Date(block.decidedAt)
+        : userSince;
+      if (!wroteSince) declined.add(block.serverId);
     }
   }
   return { open, declined };
@@ -176,17 +183,6 @@ export async function requestMcpServerFromTool(
       oauthClientId: oauth.clientId,
       oauthStatus: oauth.status,
     });
-  const blocks: MessageBlock[] = [
-    {
-      kind: "mcp_approval",
-      name: server.name,
-      serverId: server.id,
-      transport: server.transport as McpTransport,
-      endpoint: server.endpoint,
-      needsOAuth,
-      status: "pending",
-    },
-  ];
   // The check and the post share one transaction under a lock on this bot's thread and server,
   // so parallel requests cannot both find no card and post one each. Posting locks the thread
   // row like any other message, so it takes the same timeout and deadlock retry.
@@ -205,9 +201,17 @@ export async function requestMcpServerFromTool(
         await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ${server.id} FOR SHARE`;
         const current = await tx.mcpServer.findFirst({
           where: { id: server.id, ...availableInSpace(run), enabled: true },
-          select: { allBots: true },
+          select: { name: true, transport: true, endpoint: true, secretId: true, allBots: true },
         });
         if (!current) return { kind: "unavailable" as const };
+        // needsOAuth was worked out from the first read; an edit to what it depends on voids it.
+        if (
+          current.transport !== server.transport ||
+          current.endpoint !== server.endpoint ||
+          current.secretId !== server.secretId
+        ) {
+          return { kind: "changed" as const };
+        }
         const assigned =
           current.allBots ||
           (await tx.botMcpServer.findFirst({
@@ -218,6 +222,18 @@ export async function requestMcpServerFromTool(
         const cards = await scanCards(tx, run, botId);
         if (cards.declined.has(server.id)) return { kind: "declined" as const };
         if (cards.open.has(server.id)) return { kind: "open" as const };
+        // Built from the locked row, so the card shows the server as it is when posted.
+        const blocks: MessageBlock[] = [
+          {
+            kind: "mcp_approval",
+            name: current.name,
+            serverId: server.id,
+            transport: current.transport as McpTransport,
+            endpoint: current.endpoint,
+            needsOAuth,
+            status: "pending",
+          },
+        ];
         const committed = await persistMessageInTransaction(
           tx,
           run,
@@ -235,6 +251,9 @@ export async function requestMcpServerFromTool(
   );
   if (outcome.kind === "unavailable") {
     return { error: "That MCP server was removed or turned off. Call list_mcp_servers again." };
+  }
+  if (outcome.kind === "changed") {
+    return { error: "That MCP server's settings just changed. Call request_mcp_server again." };
   }
   if (outcome.kind === "available") {
     return { ok: true, server_id: server.id, status: "available" };

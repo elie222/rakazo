@@ -79,7 +79,15 @@ const server = (slug: string, extra: Partial<Server> = {}): Server => ({
   ...extra,
 });
 
-type Message = { botId: string | null; role?: string; blocks: MessageBlock[] };
+type Message = { botId: string | null; role?: string; blocks: MessageBlock[]; createdAt?: Date };
+
+const pickCurrent = (row: Server) => ({
+  name: row.name,
+  transport: row.transport,
+  endpoint: row.endpoint,
+  secretId: row.secretId,
+  allBots: row.allBots,
+});
 
 const userMessage = (value: string): Message => ({
   botId: null,
@@ -175,7 +183,7 @@ function fakeDeps(
       findMany: vi.fn(async (args: Record<string, unknown>) => {
         expect(args).toEqual({
           where: { threadId: run.threadId },
-          select: { botId: true, role: true, blocks: true },
+          select: { botId: true, role: true, blocks: true, createdAt: true },
           orderBy: { createdAt: "desc" },
           take: MCP_APPROVAL_CARD_WINDOW,
         });
@@ -519,6 +527,53 @@ describe("request_mcp_server", () => {
       await requestMcpServerFromTool(deps, run, run.botId, { server_id: "id-git" }),
     ).toMatchObject({ status: "pending" });
     expect(persistMessageInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects a card the user dismissed after writing, until they write again", async () => {
+    const dismissed = { ...card("id-git", "dismissed"), decidedAt: "2026-01-01T00:00:10.000Z" };
+    const posted = {
+      botId: run.botId,
+      blocks: [dismissed],
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    const before = { ...userMessage("no thanks"), createdAt: new Date("2026-01-01T00:00:05Z") };
+    const after = { ...userMessage("go ahead"), createdAt: new Date("2026-01-01T00:00:20Z") };
+
+    const declined = fakeDeps([server("git")], [], [posted, before]);
+    expect(
+      await requestMcpServerFromTool(declined.deps, run, run.botId, { server_id: "id-git" }),
+    ).toMatchObject({ status: "declined" });
+    expect(persistMessageInTransaction).not.toHaveBeenCalled();
+
+    const asked = fakeDeps([server("git")], [], [posted, before, after]);
+    expect(
+      await requestMcpServerFromTool(asked.deps, run, run.botId, { server_id: "id-git" }),
+    ).toMatchObject({ status: "pending" });
+    expect(persistMessageInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts the card with the server's details as they are when posting", async () => {
+    const { deps, prisma } = fakeDeps([server("git")]);
+    prisma.mcpServer.findFirst.mockImplementationOnce(async () => ({
+      ...pickCurrent(server("git")),
+      name: "Git (renamed)",
+    }));
+    await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
+    expect(persistMessageInTransaction.mock.calls[0]?.[3]).toMatchObject([
+      { kind: "mcp_approval", name: "Git (renamed)", serverId: "id-git" },
+    ]);
+  });
+
+  it("posts no card when the server's endpoint changed after the first read", async () => {
+    const { deps, prisma } = fakeDeps([server("git")]);
+    prisma.mcpServer.findFirst.mockImplementationOnce(async () => ({
+      ...pickCurrent(server("git")),
+      endpoint: "https://elsewhere.test/mcp",
+    }));
+    expect(await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" })).toEqual({
+      error: "That MCP server's settings just changed. Call request_mcp_server again.",
+    });
+    expect(persistMessageInTransaction).not.toHaveBeenCalled();
   });
 
   it("uses the one enabled server among several with a slug", async () => {

@@ -130,11 +130,15 @@ async function rewriteCards(
         else if (block.status === "connected") connected = true;
       }
       if (!matching.some(selectable)) continue;
-      const next = blocks.map((block) =>
-        isApproval(block, input.serverId) && selectable(block)
-          ? { ...block, status: input.status }
-          : block,
-      );
+      // A decision is stamped so a later request can tell whether the user wrote after it.
+      const decidedAt = input.status === "pending" ? undefined : new Date().toISOString();
+      const next = blocks.map((block) => {
+        if (!isApproval(block, input.serverId) || !selectable(block)) return block;
+        const { decidedAt: _previous, ...rest } = block;
+        return decidedAt
+          ? { ...rest, status: input.status, decidedAt }
+          : { ...rest, status: input.status };
+      });
       await tx.message.update({ where: { id: message.id }, data: { blocks: next } });
       flipped += 1;
       const eventBotId = message.botId ?? thread.botId ?? input.botId;

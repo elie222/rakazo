@@ -80,8 +80,8 @@ describe("resolveMcpApprovalCards", () => {
       data: {
         blocks: [
           blocks[0],
-          { ...blocks[1], status: "connected" },
-          { ...blocks[2], status: "connected" },
+          { ...blocks[1], status: "connected", decidedAt: expect.any(String) },
+          { ...blocks[2], status: "connected", decidedAt: expect.any(String) },
           blocks[3],
           blocks[4],
         ],
@@ -111,7 +111,7 @@ describe("resolveMcpApprovalCards", () => {
     );
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
-      data: { blocks: [{ ...blocks[0], status: "dismissed" }] },
+      data: { blocks: [{ ...blocks[0], status: "dismissed", decidedAt: expect.any(String) }] },
     });
   });
 
@@ -140,7 +140,7 @@ describe("resolveMcpApprovalCards", () => {
     expect(deps.prisma.bot.findFirst).toHaveBeenCalled();
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
-      data: { blocks: [{ ...blocks[0], status: "connected" }] },
+      data: { blocks: [{ ...blocks[0], status: "connected", decidedAt: expect.any(String) }] },
     });
   });
 
@@ -170,7 +170,7 @@ describe("resolveMcpApprovalCards", () => {
     expect(effect).toHaveBeenCalledWith(tx, { assign: true, resolved: true });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
-      data: { blocks: [{ ...blocks[0], status: "connected" }] },
+      data: { blocks: [{ ...blocks[0], status: "connected", decidedAt: expect.any(String) }] },
     });
   });
 
@@ -203,7 +203,7 @@ describe("resolveMcpApprovalCards", () => {
     expect(effect).toHaveBeenCalledWith(tx, { assign: true, resolved: true });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
-      data: { blocks: [{ ...blocks[0], status: "connected" }] },
+      data: { blocks: [{ ...blocks[0], status: "connected", decidedAt: expect.any(String) }] },
     });
   });
 
