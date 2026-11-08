@@ -22,19 +22,21 @@ function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage
     return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
   };
   const counted = usage?.countedTokens;
+  // Provider-reported buckets first; our own count fills any the provider never sent.
   const tokenCost =
-    usage?.inputTokens != null || usage?.outputTokens != null
-      ? (usage.inputTokens ?? 0) * rate("input") +
+    (usage?.inputTokens != null
+      ? usage.inputTokens * rate("input") +
         (usage.cacheReadTokens ?? 0) * rate("cacheRead") +
-        (usage.cacheWriteTokens ?? 0) * rate("cacheWrite") +
-        (usage.outputTokens ?? 0) * rate("output")
-      : counted
-        ? // A partial prompt may have been served from cache; assume it was.
-          counted.inputTokens * (rate("cacheRead") || rate("input")) +
-          counted.outputTokens * rate("output")
-        : 0;
+        (usage.cacheWriteTokens ?? 0) * rate("cacheWrite")
+      : // A partial prompt may have been served from cache; assume it was.
+        (counted?.inputTokens ?? 0) * (rate("cacheRead") || rate("input"))) +
+    (usage?.outputTokens ?? counted?.outputTokens ?? 0) * rate("output");
+  const knownCost =
+    usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0
+      ? usage.costUsd
+      : null;
   const costUsd = Math.min(
-    usage?.costUsd ?? tokenCost / 1_000_000,
+    knownCost ?? tokenCost / 1_000_000,
     Math.max(0, Number(heldMicros)) / MICROS_PER_DOLLAR,
   );
   return {

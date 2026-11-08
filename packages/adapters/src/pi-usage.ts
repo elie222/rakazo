@@ -377,9 +377,16 @@ export function observedPiStream(
       // so the reconciler can price it if the provider never reports one.
       const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
         if (usage.costUsd != null) return usage;
-        const outputTokens = message ? receivedOutputTokens(message) : 0;
-        return usage.providerRequestId || outputTokens > 0
-          ? { ...usage, countedTokens: { inputTokens: inputTokensEstimate, outputTokens } }
+        const characters = message ? receivedCharacters(message) : 0;
+        return usage.providerRequestId || characters > 0
+          ? {
+              ...usage,
+              countedTokens: {
+                inputTokens: inputTokensEstimate,
+                // Deliberately low, about five characters a token, so output is never overcounted.
+                outputTokens: Math.floor(characters / 5),
+              },
+            }
           : usage;
       };
       try {
@@ -573,8 +580,7 @@ export function observedPiStream(
   return stream;
 }
 
-/** Deliberately low: about five characters a token, so a partial answer is never overcounted. */
-function receivedOutputTokens(message: AssistantMessage): number {
+function receivedCharacters(message: AssistantMessage): number {
   let characters = 0;
   for (const part of message.content)
     characters +=
@@ -585,7 +591,7 @@ function receivedOutputTokens(message: AssistantMessage): number {
           : part.type === "toolCall"
             ? part.name.length + JSON.stringify(part.arguments ?? {}).length
             : 0;
-  return Math.floor(characters / 5);
+  return characters;
 }
 
 /** Includes higher context tiers and long-lived cache writes before any request can spend. */

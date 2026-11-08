@@ -140,6 +140,17 @@ describe("model credit reconciler", () => {
     expect(charged()?.costUsd).toBeCloseTo(0.03);
   });
 
+  it("fills output the provider never reported from our own count", async () => {
+    await reconcile({ usage: { ...stopped, inputTokens: 10_000 } });
+    // 10k reported input at the full rate plus 2k counted output.
+    expect(charged()?.costUsd).toBeCloseTo(0.04);
+  });
+
+  it("ignores an invalid stored cost and prices the tokens instead", async () => {
+    await reconcile({ usage: { ...stopped, costUsd: -1 } });
+    expect(charged()?.costUsd).toBeCloseTo(0.04);
+  });
+
   it("never charges more than the hold", async () => {
     await reconcile({
       usage: { ...stopped, countedTokens: { inputTokens: 0, outputTokens: 1_000_000 } },
