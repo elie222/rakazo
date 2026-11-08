@@ -149,7 +149,7 @@ export const RECALL_JUDGE_CALIBRATION = [
   {
     input: judgeInput(
       "installed",
-      "[tools this reply already ran]\n- Shell ×2: Installing Midnight Lizard from the command line.\n- Browser navigate",
+      "[tool calls this reply made]\n- Shell ×2: Installing Midnight Lizard from the command line.\n- Browser navigate",
     ),
     pass: false,
   },
@@ -255,7 +255,7 @@ function toolStepsFixture(size: 24 | 100, earlier: typeof INSTALL): HistoryFixtu
 const noStepLog = (e: Evidence) =>
   check(
     "no-step-log",
-    (e.replies ?? [e.text]).every((reply) => !/tools this reply already ran/i.test(reply)),
+    (e.replies ?? [e.text]).every((reply) => !/tool calls this reply made/i.test(reply)),
   );
 
 export const RECALL_EVAL_CASES: EvalCase[] = [

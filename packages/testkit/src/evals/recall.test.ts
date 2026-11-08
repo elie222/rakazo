@@ -123,7 +123,7 @@ describe("recall outcome grading", () => {
   it("fails a reply that copies the replayed step list", () => {
     expect(failed("tool-steps-replayed", evidence([], "Yes, Midnight Lizard."))).toEqual([]);
     expect(
-      failed("tool-steps-replayed", evidence([], "[tools this reply already ran]\n- Shell ×2")),
+      failed("tool-steps-replayed", evidence([], "[tool calls this reply made]\n- Shell ×2")),
     ).toEqual(["no-step-log"]);
   });
 

@@ -464,15 +464,22 @@ describe("tool step history", () => {
         { kind: "text", text: "Installed." },
       ]),
     ).toBe(
-      "[tools this reply already ran]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
+      "[tool calls this reply made]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
     );
+  });
+
+  it("lists at most 40 steps", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({ label: `Tool ${index}`, count: 1 }));
+    const text = blocksToAgentHistoryText([{ kind: "steps", steps }]);
+    expect(text).toContain("- Tool 39\n- …and 5 more");
+    expect(text).not.toContain("Tool 40");
   });
 
   it("shortens a long note", () => {
     const text = blocksToAgentHistoryText([
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
     ]);
-    expect(text).toBe(`[tools this reply already ran]\n- Shell: ${"a".repeat(300)}…`);
+    expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
   });
 
   it("renders nothing for an empty steps block", () => {

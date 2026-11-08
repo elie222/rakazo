@@ -166,13 +166,14 @@ export function promptTextForAttachments(
 }
 
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
+const TOOL_STEP_MAX_LINES = 40;
 
-/** An earlier reply's tool steps as the bot sees them again: label, count and capped note. */
+/** An earlier reply's tool steps as the bot sees them again: label, count and capped note, up to 40 steps. */
 export function toolStepsHistoryText(
   steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
 ): string {
   if (steps.length === 0) return "";
-  const lines = steps.map((step) => {
+  const lines = steps.slice(0, TOOL_STEP_MAX_LINES).map((step) => {
     const label = step.count > 1 ? `${step.label} ×${step.count}` : step.label;
     const full = step.note?.replace(/\s+/g, " ").trim();
     const note =
@@ -181,7 +182,10 @@ export function toolStepsHistoryText(
         : full;
     return note ? `- ${label}: ${note}` : `- ${label}`;
   });
-  return `[tools this reply already ran]\n${lines.join("\n")}`;
+  const hidden = steps.length - lines.length;
+  if (hidden > 0) lines.push(`- …and ${hidden} more`);
+  // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
+  return `[tool calls this reply made]\n${lines.join("\n")}`;
 }
 
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {

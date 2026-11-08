@@ -368,12 +368,12 @@ describe("local history retrieval", () => {
       { kind: "text", text: "Done." },
     ];
     expect(historyReadText(blocks)).toBe(
-      "[tools this reply already ran]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
+      "[tool calls this reply made]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
     );
     expect(historyMessageText(blocks)).toBe("Done.");
     expect(historySearchText(blocks)).toContain("Quillfeather");
     expect(historySearchText(blocks)).toContain("Computer screenshot");
-    expect(historySearchText(blocks)).not.toContain("tools this reply");
+    expect(historySearchText(blocks)).not.toContain("tool calls this reply");
   });
   it("matches a search on a tool step note and returns the step list", async () => {
     const { mock, prisma } = db();
@@ -392,7 +392,7 @@ describe("local history retrieval", () => {
     ]);
     const result = await searchHistory(prisma, scope, { query: "quillfeather" });
     expect(result.messages).toHaveLength(1);
-    expect(result.messages[0]!.text).toContain("already ran]\n- Shell: Installing Quillfeather.");
+    expect(result.messages[0]!.text).toContain("reply made]\n- Shell: Installing Quillfeather.");
   });
   it("validates dates, query size and pagination before accessing the database", async () => {
     const { mock, prisma } = db();
