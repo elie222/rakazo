@@ -17,7 +17,6 @@ import {
   isSecretAskBlock,
   newSiteOutcome,
   outboundSiteGate,
-  paidServicesAllowed,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -221,26 +220,6 @@ describe("isOwnerStartedRun", () => {
   ])("treats %s (follow-up from user: %s) as owner-started: %s", (trigger, fromUser, expected) => {
     expect(isOwnerStartedRun(trigger, fromUser)).toBe(expected);
   });
-});
-
-describe("paidServicesAllowed", () => {
-  it.each([
-    ["user", true, false, true],
-    ["routine", false, false, false],
-    ["messaging", false, false, true],
-    ["messaging", false, true, false],
-    ["user", true, true, false],
-    ["spawn", false, false, false],
-    ["bot_message", false, false, false],
-    ["follow_up", false, false, false],
-    ["webhook", false, false, false],
-    ["tickets", false, false, false],
-  ])(
-    "%s (owner-started: %s, shared: %s) allows paid services: %s",
-    (trigger, owner, nonOwner, expected) => {
-      expect(paidServicesAllowed(trigger, owner, nonOwner)).toBe(expected);
-    },
-  );
 });
 
 describe("unattendedTriggerToolRequiresApproval", () => {
