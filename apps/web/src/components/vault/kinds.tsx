@@ -40,11 +40,18 @@ export function siteHost(origin: string): string {
   return URL.canParse(origin) ? new URL(origin).host.replace(/^www\./, "") : origin;
 }
 
-/** The first letter of a site's own name, so `app.example.com` shows "E", not "A". */
+/** The first letter or digit, so an IPv6 site shows "1", not "[". */
+function initial(text: string): string | undefined {
+  return Array.from(text)
+    .find((char) => /[\p{L}\p{N}]/u.test(char))
+    ?.toUpperCase();
+}
+
+/** The initial of a site's own name, so `app.example.com` shows "E", not "A". */
 function siteLetter(origin: string | undefined): string | undefined {
   if (!origin || !URL.canParse(origin)) return undefined;
   const { hostname } = new URL(origin);
-  return Array.from(registrableDomain(hostname) ?? hostname)[0]?.toUpperCase();
+  return initial(registrableDomain(hostname) ?? hostname);
 }
 
 /**
@@ -86,9 +93,7 @@ export function VaultTile({
     );
   }
   const Icon = kind ? KIND_ICONS[kind] : KeyRound;
-  const letter = login
-    ? (siteLetter(origin) ?? Array.from(title.trim())[0]?.toUpperCase())
-    : undefined;
+  const letter = login ? (siteLetter(origin) ?? initial(title)) : undefined;
   return (
     <span
       aria-hidden

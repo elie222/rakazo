@@ -226,6 +226,12 @@ it("marks a login with its site's icon, or else the first letter of the site's o
   }
 });
 
+it("letters an IPv6 login by its first digit, not a bracket", async () => {
+  await render({ ...loginCard, credential: { ...loginCard.credential!, origin: "https://[::1]" } });
+  const tile = container.querySelector('[data-testid="secret-ask-card"] span[aria-hidden]');
+  expect(tile?.textContent).toBe("1");
+});
+
 it("asks for no site icon on a card that is not a login", async () => {
   favicon.asked = [];
   await render(secretCard);
