@@ -2,7 +2,7 @@ import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactElement, ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import { createContext, memo, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -15,8 +15,10 @@ import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
 import { formatSnoozeWake, formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
+import { botNeedsAttention } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
@@ -29,6 +31,13 @@ import { InboxSwipeRow } from "./inbox-swipe-row";
 import { NativeSymbol } from "./native-symbol";
 
 export const FALLBACK_COLOR = botColors[3];
+
+/** A bot waiting on you, which marks its row like an unread chat. */
+function useWaitingOnYou(bot: MobileBot | SpaceBot | undefined): boolean {
+  return useSyncExternalStore(mobileLogoAvatarActivity.subscribe, () =>
+    bot ? botNeedsAttention(bot) : false,
+  );
+}
 export const CompactRowsContext = createContext(false);
 // The chat open beside the list, so its row can show as selected.
 export const SelectedChatContext = createContext<string | null>(null);
@@ -229,7 +238,6 @@ export const PinnedTiles = memo(function PinnedTiles({
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
-        const unread = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
         const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
@@ -270,15 +278,24 @@ export const PinnedTiles = memo(function PinnedTiles({
             ) : (
               <GroupAvatar members={chat.group.members} size={avatarSize} />
             )}
-            <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
-              {name}
-            </Text>
+            <PinnedName chat={chat} name={name} />
           </Pressable>
         );
       })}
     </View>
   );
 });
+function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
+  const styles = useThemedStyles(createHomeStyles);
+  const waiting = useWaitingOnYou(chat.kind === "bot" ? chat.bot : undefined);
+  const marked = (chat.kind === "bot" ? chat.bot.unread : chat.group.unread) || waiting;
+  return (
+    <Text style={[styles.pinnedName, marked && styles.pinnedUnread]} numberOfLines={1}>
+      {name}
+    </Text>
+  );
+}
+
 // The iOS row menu opens on a long press; a press handler without onLongPress would still open the
 // chat when the finger lifts.
 const holdForMenu = () => undefined;
@@ -399,10 +416,12 @@ export const BotRow = memo(function BotRow({
   const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
   const time = chatTime(bot, day, now, t);
   const working = isRunWorking(bot.status);
+  const waiting = useWaitingOnYou(bot);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
     working ? t("Working…") : null,
+    waiting ? t("Needs attention") : null,
     bot.notifyOnFinish === false ? t("notifications silenced") : null,
     bot.unread ? t("unread") : null,
     time,
@@ -417,7 +436,7 @@ export const BotRow = memo(function BotRow({
       title={bot.name}
       preview={preview}
       time={time}
-      unread={bot.unread}
+      unread={bot.unread || waiting}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
