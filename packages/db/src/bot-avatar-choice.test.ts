@@ -1,4 +1,4 @@
-import { BOT_COLORS } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, BOT_COLORS } from "@rakazo/contracts";
 import {
   ORGANIC_AVATAR_FAMILY_COUNT,
   ORGANIC_AVATAR_HEART_FAMILY,
@@ -94,6 +94,21 @@ describe("chooseBotAvatar", () => {
       expect(organicAvatarFamily(chosen.id)).toBe(9);
       expect(BOT_COLORS.slice(6)).toContain(chosen.color);
       expect(chosen.id).toMatch(/^c[a-z0-9]{24}$/);
+    }
+  });
+
+  it("counts a colour saved as its earlier value as the palette colour it shows", () => {
+    const blue = BOT_COLOR_LIST.find((color) => color.id === "blue")!;
+    const families = idsForFamilies([0, 1, 3, 4, 5, 7, 9, 0, 1, 3, 4, 5]);
+    // Every colour but blue is used once; blue is used once through its earlier value.
+    const existing = BOT_COLOR_LIST.map((color, index) => ({
+      id: families[index]!,
+      color: color.id === "blue" ? blue.previousHex! : color.hex,
+    }));
+    existing.push({ id: families[11]!, color: blue.hex });
+    for (let seed = 1; seed <= 20; seed++) {
+      const chosen = chooseBotAvatar(existing, undefined, { random: seeded(seed), now: 0 });
+      expect(chosen.color).not.toBe(blue.hex);
     }
   });
 
