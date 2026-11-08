@@ -755,6 +755,25 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "list_mcp_servers",
+    description:
+      "List the user's MCP servers you could use here, without endpoints or credentials. status is available (you have its tools), pending (an approval card is open) or requestable (you do not have it yet). Health and tool count come from the server's last check.",
+    inputSchema: { type: "object", properties: {} },
+    readOnly: true,
+  },
+  {
+    name: "request_mcp_server",
+    description:
+      "Ask the user for an MCP server from list_mcp_servers that you do not have yet. An approval card appears in the chat; its tools reach you once the user approves it there.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        server_id: { type: "string", description: "server_id from list_mcp_servers." },
+        slug: { type: "string", description: "The server's slug, when you have no server_id." },
+      },
+    },
+  },
+  {
     name: "remember",
     description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
     inputSchema: {

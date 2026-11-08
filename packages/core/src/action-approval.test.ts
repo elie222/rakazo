@@ -13,6 +13,7 @@ import {
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   isApprovalAskBlock,
+  isOpenMcpApproval,
   isOwnerStartedRun,
   isSecretAskBlock,
   newSiteOutcome,
@@ -267,6 +268,12 @@ describe("unattendedTriggerToolRequiresApproval", () => {
       false,
     );
   });
+});
+
+it("treats MCP approval cards as open until connected or dismissed", () => {
+  expect([{}, { status: "pending" as const }].every(isOpenMcpApproval)).toBe(true);
+  expect(isOpenMcpApproval({ status: "connected" })).toBe(false);
+  expect(isOpenMcpApproval({ status: "dismissed" })).toBe(false);
 });
 
 describe("isApprovalAskBlock", () => {
@@ -997,6 +1004,18 @@ describe("toolResultTaintsRun", () => {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });
+});
+
+it("treats the MCP server listing as an unattended read of outside content, and a request like add_mcp_server", () => {
+  expect(toolRequiresApproval("list_mcp_servers", false)).toBe(false);
+  // Bots and plugins can write server names and descriptions.
+  expect(toolResultTaintsRun("list_mcp_servers")).toBe(true);
+  expect(unattendedTriggerToolRequiresApproval("webhook", "list_mcp_servers", false)).toBe(false);
+  for (const name of ["request_mcp_server", "add_mcp_server"]) {
+    expect(toolRequiresApproval(name, false)).toBe(false);
+    expect(toolResultTaintsRun(name)).toBe(true);
+    expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
+  }
 });
 
 it("classifies schedule_update like schedule_create", () => {

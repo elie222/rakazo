@@ -1459,6 +1459,7 @@ describe("userTurnInstructions", () => {
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
     'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
     "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
+    "When a task needs one of the user's MCP servers that you do not have, find it with list_mcp_servers and ask for it with request_mcp_server.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
     replyGuidance,
@@ -1737,6 +1738,7 @@ describe("userTurnInstructions", () => {
         "archive_bot",
         "render_plot",
         "add_mcp_server",
+        "request_mcp_server",
         "message_user",
         "schedule_create",
         "schedule_list",
@@ -1760,11 +1762,35 @@ describe("userTurnInstructions", () => {
     expect(text).not.toContain("archive_bot");
     expect(text).not.toContain("render_plot");
     expect(text).not.toContain("add_mcp_server");
+    expect(text).not.toContain("request_mcp_server");
     expect(text).not.toContain("message_user");
     expect(text).toContain("list_secrets");
     expect(text).toContain("web_search");
     expect(text).toContain("destination_write");
     expect(text).toContain("Always put the complete final answer in your normal reply.");
+  });
+
+  it("names the MCP server tools only when both are offered", () => {
+    for (const name of ["list_mcp_servers", "request_mcp_server"]) {
+      const text = userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        disabledBuiltinTools: new Set([name]),
+      })
+        .filter(Boolean)
+        .join("\n");
+      expect(text).not.toContain("list_mcp_servers");
+      expect(text).not.toContain("request_mcp_server");
+    }
   });
 
   it("keeps the reaction silence rule when message_user is off", () => {

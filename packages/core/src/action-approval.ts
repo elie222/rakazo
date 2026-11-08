@@ -68,6 +68,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "computer_observe",
   "list_files",
   "list_fleet",
+  "list_mcp_servers",
   "list_secrets",
   "purchase_status",
   "read_email",
@@ -651,6 +652,14 @@ export function isApprovalAskBlock(block: {
     actionIds.has("deny") &&
     [...actionIds].every((id) => id === "allow" || id === "always" || id === "deny")
   );
+}
+
+/** How many of a thread's newest messages an MCP approval decision repaints. */
+export const MCP_APPROVAL_CARD_WINDOW = 100;
+
+/** An MCP approval card nobody has answered; cards saved before `status` existed count as open. */
+export function isOpenMcpApproval(block: { status?: "pending" | "connected" | "dismissed" }) {
+  return block.status !== "connected" && block.status !== "dismissed";
 }
 
 /**

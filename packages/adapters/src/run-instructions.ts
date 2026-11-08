@@ -402,6 +402,11 @@ export function userTurnInstructions(parts: {
       "add_mcp_server",
       "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     ),
+    ["list_mcp_servers", "request_mcp_server"].every((name) =>
+      builtinOffered(parts.disabledBuiltinTools, name),
+    )
+      ? "When a task needs one of the user's MCP servers that you do not have, find it with list_mcp_servers and ask for it with request_mcp_server."
+      : undefined,
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
     replyGuidanceForOfferedTools(parts.replyGuidance, parts.disabledBuiltinTools),

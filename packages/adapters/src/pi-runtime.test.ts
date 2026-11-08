@@ -75,6 +75,10 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",
     );
+    expect(describeToolActivity("list_mcp_servers", {})).toBe("Checking MCP servers");
+    expect(describeToolActivity("request_mcp_server", { server_id: "s1" })).toBe(
+      "Asking for an MCP server",
+    );
     expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
       "Delegating to helper: scout",
     );
