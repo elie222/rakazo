@@ -9,13 +9,14 @@
 
 ![Rakazo：本当に自分のものにできる AI チームメイト](./docs/readme-hero.png)
 
-Rakazo は、常駐型の AI チームメイトを持てるオープンソースの AI エージェントです。自分のマシンで動かせる
-セルフホスト型の AI アシスタントでもあります。Web 版、Electron デスクトップアプリ、
-[iPhone](https://apps.apple.com/app/rakazo/id6801531099) 版と [Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 版で利用できます。
-モデルやコンピューターのプロバイダーは自分で選べるほか、スタック全体をローカルで動かすこともできます。
+Rakazo は、Grok Bot のオープンソースかつセルフホスト可能な代替ツールです。
 
-Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet の
-オープンソースかつセルフホスト可能な代替ツールです。
+メモリ、ルーティン、アプリ、コンピューターを持つ常駐型の AI チームメイト。自分のマシンで、自分のモデルを使って動かせます。
+
+[Web](https://app.rakazo.com)、[デスクトップ](https://rakazo.com/download/)、[iPhone](https://apps.apple.com/app/rakazo/id6801531099)、
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) で利用できます。
+
+Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet の代替ツールでもあります。
 
 Rakazo は現在ベータ版です。詳しくは [rakazo.com](https://rakazo.com) をご覧ください。
 
@@ -23,40 +24,80 @@ Rakazo は現在ベータ版です。詳しくは [rakazo.com](https://rakazo.co
 
 ## 機能
 
-- それぞれに会話、メモリ、ルーティン、履歴を持つ常駐型ボット
-- 音声モード：返信の読み上げ、音声入力、ボットとの通話。ElevenLabs、OpenAI、Cartesia、Fish Audio の自分のキーを使えます
-- 共有の Team Computers と、分離された Private computers
-- ブラウザー、ターミナル、ファイル、グラフィカルなデスクトップへのアクセス
-- 他のボットや一時的なサブエージェントに仕事を任せられるボット
-- Pi を通じて自分のモデル認証情報を利用
-- Composio または Pipedream Connect によるアプリ連携に加え、ユーザーが追加できる Treg、リモート MCP、OpenAPI のツールソース
-- Docker、E2B、Daytona、CreateOS、Boat、信頼済みローカルコンピューターに対応
+- ルーティン
+- メモリ
+- コンピューターとブラウザーの操作
+- プライベートまたは共有のチームコンピューター
+- Docker、クラウド、自分のマシン上のサンドボックス
+- グループチャット
+- 委任とサブエージェント
+- リンクで共有できるダッシュボードやドキュメントの作成
+- 音声チャットと通話
+- 任意のモデルを自分のキーで利用
+- 数千のアプリ連携と MCP
 
-## デモ
+<table>
+<tr>
+<td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
+### ボットごとにコンピューター
 
-## 謝辞
+ブラウザー、ターミナル、ファイル、フルデスクトップ。作業を見守り、サインインが必要なときは操作を代わり、また任せられます。
 
-- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+<img src="./docs/screenshots/readme/computer.png" alt="ブラウザーを開いたボットのチームコンピューター" width="100%">
 
-## 技術スタック
+</td>
+<td width="50%" valign="top">
 
-- TypeScript
-- React 19、Vite、Tailwind CSS
-- Electron、Expo
-- Hono、oRPC
-- PostgreSQL、Prisma
-- Better Auth
-- Graphile Worker
-- Pi
-- Docker、E2B、Daytona、CreateOS、Boat
-- Composio、Pipedream Connect、MCP、OpenAPI 連携
+### 協力して働くボット
+
+ボットをグループに入れて @ メンション。作業を分担し、互いに確認して、結果を報告します。
+
+<img src="./docs/screenshots/readme/groups.png" alt="3 つのボットが一緒に依頼に応えるグループチャット" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### ルーティン
+
+スケジュール、メール、Webhook でボットを実行し、すべての実行履歴を確認できます。
+
+<img src="./docs/screenshots/readme/routines.png" alt="平日のルーティンと実行履歴、横にボットとのチャット" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### ページ
+
+ボットがライブのダッシュボードやドキュメントを作成。全画面で開き、共有し、内容について質問できます。
+
+<img src="./docs/screenshots/readme/pages.png" alt="ボットが作成した全画面のグロースダッシュボード" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### アプリ連携
+
+Gmail、Slack、GitHub、Notion、Linear など数千のアプリに加え、自分の MCP サーバーや OpenAPI ツールも使えます。
+
+<img src="./docs/screenshots/readme/integrations.png" alt="アプリ連携のカタログ" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### すべてのデバイスで
+
+Web、デスクトップ、iPhone、Android が同じサーバーにつながります。
+
+<img src="./docs/screenshots/readme/mobile.png" alt="iPhone のボット一覧とチャット" width="100%">
+
+</td>
+</tr>
+</table>
 
 ## クイックスタート（公開イメージ）
 
@@ -278,6 +319,28 @@ pnpm test:e2e
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
 - [Hermes Agent](https://rakazo.com/hermes-alternative/)
 - [すべての比較](https://rakazo.com/alternatives/)
+
+## 謝辞
+
+- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+
+## 技術スタック
+
+- TypeScript
+- React 19、Vite、Tailwind CSS
+- Electron、Expo
+- Hono、oRPC
+- PostgreSQL、Prisma
+- Better Auth
+- Graphile Worker
+- Pi
+- Docker、E2B、Daytona、CreateOS、Boat
+- Composio、Pipedream Connect、MCP、OpenAPI 連携
 
 ## コントリビュート
 
