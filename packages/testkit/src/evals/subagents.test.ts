@@ -60,6 +60,29 @@ describe("subagent eval outcomes", () => {
     expect(connected.grade(e).every((criterion) => criterion.pass)).toBe(false);
     e.messaging.outbound[0]!.threadId = "origin";
     expect(connected.grade(e).every((criterion) => criterion.pass)).toBe(true);
-    expect(connected.judge!(e).evidence).toEqual({ reply: "Delivered reply" });
+    expect(connected.judge!(e).evidence).toEqual({ task: "shipment", reply: "Delivered reply" });
+  });
+
+  it("rejects a helper's duplicate write and collateral changes to another record", () => {
+    const connector = SUBAGENT_EVAL_CASES.find((item) => item.id === "subagent-connector-action")!;
+    const e = evidence();
+    e.delegation!.helpers[0]!.tools = ["CRM_UPDATE_RECORD"];
+    e.records = [
+      { id: "customer-1", name: "Example Bakery", status: "active", priority: "normal" },
+      { id: "customer-2", name: "Example Books", status: "lead", priority: "normal" },
+    ];
+    e.calls = [
+      {
+        tool: "CRM_UPDATE_RECORD",
+        args: { recordId: "customer-1", status: "active" },
+        outcome: "write",
+      },
+    ];
+    expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(true);
+    e.calls.push({ ...e.calls[0]! });
+    expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(false);
+    e.calls.pop();
+    e.records[1]!.status = "active";
+    expect(connector.grade(e).every((criterion) => criterion.pass)).toBe(false);
   });
 });
