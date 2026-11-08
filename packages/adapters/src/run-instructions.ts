@@ -412,6 +412,11 @@ export function userTurnInstructions(parts: {
       "test_model_connection",
       "When the user asks to check or test a model connection (or types /ptest), use test_model_connection with the connection's label, provider, or id. Report only whether it works and how many models it lists; never show API keys.",
     ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
+      "show_management_menu",
+      "When the user asks for the menu (or types /menu), use show_management_menu to send the button menu, then reply only briefly.",
+    ),
     "When the user asks to switch models (or types /model), use update_bot with the model field and the model name or id.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",

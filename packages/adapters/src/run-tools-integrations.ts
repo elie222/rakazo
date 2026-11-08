@@ -10,6 +10,7 @@ import { mcpAppViewArguments, mcpAppViewResult } from "./mcp-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import {
   listModelConnectionsFromTool,
+  showManagementMenuFromTool,
   testModelConnectionFromTool,
 } from "./model-management-tools.js";
 import type { RunContext } from "./run-context.js";
@@ -162,6 +163,10 @@ export const integrationTools: ToolHandlers = {
     const { deps, run } = ctx;
     const { args } = call;
     return call.finish(await testModelConnectionFromTool(deps, run, args));
+  },
+  async show_management_menu(ctx, call) {
+    const { deps, run } = ctx;
+    return call.finish(await showManagementMenuFromTool(deps, run));
   },
   async connect_app(ctx, call) {
     const { deps, run, runId, context } = ctx;

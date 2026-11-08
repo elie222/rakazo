@@ -270,6 +270,50 @@ describe("ChatSdkMessagingSurface inbound", () => {
     ]);
   });
 
+  it("forwards an inline-button tap to the agent as an ordinary inbound message", async () => {
+    const { adapter, surface, events, getChat } = createSurface();
+    // The mock adapter captures the Chat instance on first use.
+    await surface.handleWebhook(
+      "mock",
+      webhookRequest({ threadId: "mock:Duser:1", id: "m-init", text: "init" }),
+    );
+    events.length = 0;
+    await getChat().processAction(
+      {
+        adapter,
+        actionId: "/pmodels",
+        value: "/pmodels",
+        messageId: "mock:Duser:1:9",
+        threadId: "mock:Duser:1",
+        user: {
+          userId: "U123",
+          userName: "testuser",
+          fullName: "Test User",
+          isBot: false,
+          isMe: false,
+        },
+        raw: { id: "cb-1", message: { chat: { type: "private", id: 5464346556 } } },
+      },
+      undefined,
+    );
+
+    expect(events).toEqual([
+      {
+        type: "message",
+        provider: "mock",
+        handle: "cb-1",
+        threadId: "mock:Duser:1",
+        isDirect: true,
+        from: "U123",
+        fromLabel: "Test User",
+        channelName: null,
+        participants: [],
+        content: "/pmodels",
+        mediaUrl: null,
+      },
+    ]);
+  });
+
   it("hands authenticated files over as fetchable attachments", async () => {
     const { surface, events } = createSurface();
     await surface.handleWebhook(

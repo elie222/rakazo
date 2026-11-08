@@ -779,6 +779,15 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "show_management_menu",
+    description:
+      "Send the Telegram button menu for model management, when the user asks for the menu (/menu). It posts one message with buttons for listing models, testing a connection and switching models. Only works in the linked Telegram chat.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "remember",
     description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
     inputSchema: {

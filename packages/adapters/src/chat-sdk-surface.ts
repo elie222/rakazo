@@ -16,7 +16,15 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Root, SlashCommandEvent, Thread } from "chat";
+import type {
+  ActionEvent,
+  Adapter,
+  Message,
+  PostableMarkdown,
+  Root,
+  SlashCommandEvent,
+  Thread,
+} from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./lark/text-parts.js";
 
@@ -262,6 +270,43 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
             : (platform.channelName?.(event.raw) ?? raw?.chat?.title ?? null),
           participants: isDirect ? [] : (platform.participants?.(event.raw) ?? []),
           content: text,
+          mediaUrl: null,
+        };
+        await this.sink?.(inbound);
+      });
+      // Inline-button taps (Telegram callback queries) are routed to
+      // processAction and, like slash commands, never reach the message
+      // handlers. Forward menu buttons — whose callback data is a slash
+      // command — to the agent as an ordinary inbound message so tapping
+      // a button works like typing the command.
+      chat.onAction(async (event: ActionEvent) => {
+        if (!event.actionId.startsWith("/")) return;
+        const raw = event.raw as {
+          id?: string;
+          message?: { chat?: { type?: string; title?: string } };
+        } | null;
+        const threadId = toProviderThreadId(
+          mounted,
+          platform.normalizeThreadId?.(event.threadId, event.raw) ?? event.threadId,
+        );
+        const isDirect =
+          event.thread?.isDM ??
+          event.adapter.isDM?.(event.threadId) ??
+          (raw?.message?.chat?.type ? raw.message.chat.type === "private" : false);
+        const fromLabel = event.user.fullName || event.user.userName || null;
+        const inbound: MessagingInboundMessage = {
+          type: "message",
+          provider: platform.provider,
+          handle: raw?.id != null ? String(raw.id) : `${event.actionId}:${Date.now()}`,
+          threadId,
+          isDirect,
+          from: event.user.userId,
+          fromLabel: fromLabel === event.user.userId ? null : fromLabel,
+          channelName: isDirect
+            ? null
+            : (platform.channelName?.(event.raw) ?? raw?.message?.chat?.title ?? null),
+          participants: isDirect ? [] : (platform.participants?.(event.raw) ?? []),
+          content: event.actionId,
           mediaUrl: null,
         };
         await this.sink?.(inbound);

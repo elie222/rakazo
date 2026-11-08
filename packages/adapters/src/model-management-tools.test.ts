@@ -1,12 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import {
   listModelConnectionsFromTool,
+  showManagementMenuFromTool,
   testModelConnectionFromTool,
 } from "./model-management-tools.js";
 import { serializeModelSecret } from "./model-secret.js";
 
-const run = { id: "run-1", spaceId: "space-1", userId: "user-1" };
+const run = { id: "run-1", spaceId: "space-1", userId: "user-1", botId: "bot-1" };
 
 function fakeDeps(overrides: Record<string, unknown> = {}) {
   const plaintext = serializeModelSecret({
@@ -33,6 +34,14 @@ function fakeDeps(overrides: Record<string, unknown> = {}) {
     },
     secret: {
       findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "ciphertext-1" })),
+    },
+    messagingIdentity: {
+      findUnique: vi.fn(async () => ({
+        id: "ident-1",
+        provider: "telegram",
+        address: "12345",
+        dmThreadId: "telegram:12345",
+      })),
     },
   };
   const secretStore = {
@@ -105,5 +114,53 @@ describe("testModelConnectionFromTool", () => {
       connection: "Test Relay",
     });
     expect(result.error).toMatch(/could not read the saved key/i);
+  });
+});
+
+describe("showManagementMenuFromTool", () => {
+  const token = "test-bot-token";
+  const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    process.env.TELEGRAM_BOT_TOKEN = token;
+  });
+  afterEach(() => {
+    if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    globalThis.fetch = originalFetch;
+  });
+
+  it("posts the button menu to the linked Telegram chat", async () => {
+    const { deps } = fakeDeps();
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = vi.fn(async (url: string, init: { body: string }) => {
+      calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
+      return { ok: true, status: 200, text: async () => "" } as Response;
+    }) as unknown as typeof fetch;
+    const result = await showManagementMenuFromTool(deps, run);
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(`https://api.telegram.org/bot${token}/sendMessage`);
+    const body = calls[0]?.body as {
+      chat_id: string;
+      reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
+    };
+    expect(body.chat_id).toBe("12345");
+    expect(body.reply_markup.inline_keyboard).toEqual([
+      [{ text: "📋 查看模型", callback_data: "/pmodels" }],
+      [{ text: "🧪 测试连接", callback_data: "/ptest" }],
+      [{ text: "🔄 换模型", callback_data: "/model" }],
+    ]);
+  });
+
+  it("reports when no Telegram chat is linked", async () => {
+    const { deps } = fakeDeps({
+      prisma: {
+        messagingIdentity: { findUnique: vi.fn(async () => null) },
+      },
+    });
+    const result = await showManagementMenuFromTool(deps, run);
+    expect(result.error).toMatch(/no linked telegram chat/i);
   });
 });
