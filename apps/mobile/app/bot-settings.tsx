@@ -6,6 +6,7 @@ import {
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
+  botLookState,
   credentialForModel,
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
@@ -37,7 +38,6 @@ import {
   SettingsSwitch,
 } from "../components/settings-group";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
-import { avatarColor, isAvatarPhoto } from "../lib/bot-avatar-edit";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
@@ -838,10 +838,10 @@ export default function BotSettingsScreen() {
             style={{ backgroundColor: tokens.background }}
           >
             <NativeActionButton label={t("Done")} onPress={() => setAvatarOpen(false)} />
-            {bot && isAvatarPhoto(color) ? (
+            {bot && botLookState(color).photo ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setColor(avatarColor(bot.color))}
+                onPress={() => setColor(botLookState(bot.color).color)}
                 style={{ marginTop: 12 }}
               >
                 <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
@@ -858,7 +858,7 @@ export default function BotSettingsScreen() {
               value={avatarSet}
               onChange={(next) => {
                 setAvatarSet(resolveBotAvatarSet(next));
-                setColor((current) => avatarColor(current));
+                setColor((current) => botLookState(current).color);
               }}
               plain
             />

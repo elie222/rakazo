@@ -6,6 +6,7 @@ import {
   organicAvatarFamily,
   organicAvatarSampleIdentity,
 } from "./avatar-shape.js";
+import { DEFAULT_BOT_AVATAR_COLOR, resolvePersonaColorDef } from "./bot-avatar-colors.js";
 import { newClientId } from "./client-id.js";
 
 /** One preview identity per organic look, so a new bot can show a body before it has an id. */
@@ -44,6 +45,40 @@ export function newBotLookInput(
 ): { color: string; id?: string; avatarFamily?: number } {
   if (avatarSet === "rakazo") return { color: look.color, id: look.id };
   // A studio shape replaces the organic body, so the family would mean nothing.
-  if (parseBotAvatarValue(look.color).kind === "shape") return { color: look.color };
+  if (botLookState(look.color).shapeIndex !== null) return { color: look.color };
   return { color: look.color, avatarFamily: organicAvatarFamily(look.identity) };
+}
+
+/** What a look picker shows as chosen for a stored avatar value. */
+export interface BotLookState {
+  photo: boolean;
+  shapeIndex: number | null;
+  /** The palette color; a bot saved with a color's earlier, deeper value still selects it. */
+  color: string;
+  /** Neither a photo nor a studio shape: the bot's own body. */
+  defaultLook: boolean;
+}
+
+export function botLookState(value: string): BotLookState {
+  const parsed = parseBotAvatarValue(value);
+  const photo = parsed.kind === "image";
+  const shapeIndex = parsed.kind === "shape" ? parsed.shapeIndex : null;
+  const stored =
+    parsed.kind === "color" || parsed.kind === "shape" ? parsed.color : DEFAULT_BOT_AVATAR_COLOR;
+  return {
+    photo,
+    shapeIndex,
+    color: resolvePersonaColorDef("preview", stored).hex,
+    defaultLook: !photo && shapeIndex === null,
+  };
+}
+
+export function botLookWithShape(color: string, shapeIndex: number): string {
+  return `${color}::shape_${shapeIndex}`;
+}
+
+/** Keeps a chosen shape when the color changes; a photo is replaced by the color. */
+export function botLookWithColor(value: string, color: string): string {
+  const { shapeIndex } = botLookState(value);
+  return shapeIndex === null ? color : botLookWithShape(color, shapeIndex);
 }

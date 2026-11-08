@@ -2,12 +2,16 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { resolveBotAvatarSet } from "@rakazo/contracts";
-import { SHIPPED_BOT_AVATAR_SHAPE_KEYS } from "@rakazo/core";
+import {
+  botLookState,
+  botLookWithColor,
+  botLookWithShape,
+  SHIPPED_BOT_AVATAR_SHAPE_KEYS,
+} from "@rakazo/core";
 import {
   BOT_COLORS,
   BotAvatar,
   BotShapePreview,
-  DEFAULT_BOT_AVATAR_COLOR,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -15,8 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
   defaultBotAvatarValue,
-  parseBotAvatar,
-  resolvePersonaColorDef,
   Tabs,
   TabsContent,
   TabsList,
@@ -47,17 +49,12 @@ export function BotLookPicker({
   onAvatarSetChange?: (set: BotAvatarSet, value: string) => void;
   onChange: (value: string, identity?: string) => void;
 }) {
-  const parsed = parseBotAvatar(value);
-  // A bot saved with a color's earlier, deeper value still selects and keeps that color.
-  const currentColor = resolvePersonaColorDef(
-    "preview",
-    parsed.color || DEFAULT_BOT_AVATAR_COLOR,
-  ).hex;
-  const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
-
-  function selectColor(color: string) {
-    onChange(parsed.shapeIndex === undefined ? color : `${color}::shape_${parsed.shapeIndex}`);
-  }
+  const {
+    photo,
+    shapeIndex,
+    color: currentColor,
+    defaultLook: isDefaultLook,
+  } = botLookState(value);
 
   return (
     <div className="space-y-4">
@@ -119,13 +116,13 @@ export function BotLookPicker({
                 onClick={() => onChange(currentColor, organicIdentity)}
               />
             ))}
-            {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, shapeIndex) => (
+            {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, index) => (
               <BotShapePreview
                 key={key}
-                shapeIndex={shapeIndex}
+                shapeIndex={index}
                 color={currentColor}
-                selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
-                onClick={() => onChange(`${currentColor}::shape_${shapeIndex}`)}
+                selected={shapeIndex === index}
+                onClick={() => onChange(botLookWithShape(currentColor, index))}
               />
             ))}
           </div>
@@ -140,12 +137,12 @@ export function BotLookPicker({
         )}
         <div className="grid grid-cols-6 place-items-center gap-2">
           {BOT_COLORS.map((color) => {
-            const selected = currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
+            const selected = currentColor.toLowerCase() === color.toLowerCase() && !photo;
             return (
               <button
                 key={color}
                 type="button"
-                onClick={() => selectColor(color)}
+                onClick={() => onChange(botLookWithColor(value, color))}
                 aria-label={t`Color ${color}`}
                 aria-pressed={selected}
                 className={`size-6 rounded-full border transition-transform hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring ${

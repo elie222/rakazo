@@ -7,12 +7,13 @@ import {
   ORGANIC_PREVIEW_IDENTITIES,
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
+import { rpc } from "../lib/api";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
@@ -26,15 +27,30 @@ export default function NewBot() {
   const tokens = useMobileTokens();
   const router = useRouter();
   const params = useLocalSearchParams<{ spaceId?: string; avatarSet?: BotAvatarSet }>();
-  // The account's set: the server gives it to the new bot, so the preview draws it too.
-  const avatarSet = resolveBotAvatarSet(params.avatarSet);
+  // The account's set: the server gives it to the new bot, so the preview draws it too. Home's
+  // copy can predate a change in Account settings, so the current one replaces it.
+  const [avatarSet, setAvatarSet] = useState(() => resolveBotAvatarSet(params.avatarSet));
   const [name, setName] = useState("");
   const [look, setLook] = useState(newBotLook);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const creating = useRef(false);
+  // Once the screen is gone, a creation still in flight must not open the chat.
+  const gone = useRef(false);
   const trimmed = name.trim();
   const identity = newBotPreviewIdentity(avatarSet, look);
+
+  useEffect(() => {
+    gone.current = false;
+    void rpc("me")
+      .then((me) => {
+        if (!gone.current) setAvatarSet(resolveBotAvatarSet(me.botAvatarSet));
+      })
+      .catch(() => undefined);
+    return () => {
+      gone.current = true;
+    };
+  }, []);
 
   async function create() {
     if (!trimmed || creating.current) return;
@@ -44,7 +60,9 @@ export default function NewBot() {
     try {
       await createInboxBot({
         input: { name: trimmed, ...newBotLookInput(avatarSet, look) },
-        openChat: (href) => router.replace(href),
+        openChat: (href) => {
+          if (!gone.current) router.replace(href);
+        },
         spaceId: params.spaceId,
       });
     } catch (err) {
@@ -57,7 +75,14 @@ export default function NewBot() {
 
   return (
     <>
-      <Stack.Screen options={cancelHeaderOptions(t("Cancel"), () => router.back())} />
+      <Stack.Screen
+        options={{
+          ...cancelHeaderOptions(t("Cancel"), () => {
+            if (!creating.current) router.back();
+          }),
+          gestureEnabled: !pending,
+        }}
+      />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}

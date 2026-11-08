@@ -1,15 +1,13 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_COLORS } from "@rakazo/contracts";
-import { resolvePersonaColorDef, SHIPPED_BOT_AVATAR_SHAPE_KEYS } from "@rakazo/core";
+import {
+  botLookState,
+  botLookWithColor,
+  botLookWithShape,
+  SHIPPED_BOT_AVATAR_SHAPE_KEYS,
+} from "@rakazo/core";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import {
-  avatarColor,
-  avatarShape,
-  isAvatarPhoto,
-  withAvatarColor,
-  withAvatarShape,
-} from "../lib/bot-avatar-edit";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
@@ -34,11 +32,7 @@ export function BotLookPicker({
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
-  const photo = isAvatarPhoto(value);
-  const shape = photo ? null : avatarShape(value);
-  // A bot saved with a color's earlier, deeper value still selects and keeps that color.
-  const color = resolvePersonaColorDef("preview", avatarColor(value)).hex;
-  const defaultLook = !photo && shape === null;
+  const { photo, shapeIndex: shape, color, defaultLook } = botLookState(value);
   const labeled = !organicIdentities;
 
   return (
@@ -70,9 +64,9 @@ export function BotLookPicker({
                   number: index + 1 + (organicIdentities?.length ?? 0),
                 })}
                 selected={shape === index}
-                onPress={() => onChange(withAvatarShape(color, index))}
+                onPress={() => onChange(botLookWithShape(color, index))}
               >
-                <BotAvatar color={withAvatarShape(color, index)} identity={identity} size={40} />
+                <BotAvatar color={botLookWithShape(color, index)} identity={identity} size={40} />
               </Choice>
             ))}
           </View>
@@ -89,7 +83,7 @@ export function BotLookPicker({
                 accessibilityRole="radio"
                 accessibilityLabel={t("Color {number}", { number: index + 1 })}
                 accessibilityState={{ checked: selected }}
-                onPress={() => onChange(withAvatarColor(value, option))}
+                onPress={() => onChange(botLookWithColor(value, option))}
                 style={{
                   width: 40,
                   height: 40,
