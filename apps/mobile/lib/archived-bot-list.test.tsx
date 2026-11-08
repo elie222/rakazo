@@ -111,6 +111,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
       "disabled",
       "foregroundStyle",
       "frame",
+      "ignoreSafeArea",
       "listRowInsets",
       "listSectionMargins",
       "listStyle",
@@ -248,7 +249,12 @@ it("starts the list below the floating header from its measured height, not the 
   swift.sectionHeaders.length = 0;
   swift.spacers.length = 0;
   render();
-  expect(swift.hosts.at(-1)).toEqual({ ignoreSafeArea: "container" });
+  // Only the top and bottom are ignored: the sides keep clear of the iPhone Duo's side status bar.
+  expect(swift.hosts.at(-1)).toEqual({ ignoreSafeArea: undefined });
+  expect(swift.lists.at(-1)).toContainEqual({
+    name: "ignoreSafeArea",
+    value: { regions: "container", edges: "vertical" },
+  });
   // The inset sits inside the scroll content, so rows still scroll under the floating header.
   expect(swift.lists.at(-1)?.some((modifier) => modifier.name === "padding")).toBe(false);
   expect(swift.sectionHeaders.at(-1)).toBeDefined();
@@ -260,7 +266,7 @@ it("starts the list below the floating header from its measured height, not the 
   swift.headerInset = 0;
   swift.spacers.length = 0;
   render();
-  expect(swift.hosts.at(-1)).toEqual({ ignoreSafeArea: undefined });
+  expect(swift.lists.at(-1)?.some((modifier) => modifier.name === "ignoreSafeArea")).toBe(false);
   expect(swift.sectionHeaders.at(-1)).toBeUndefined();
   expect(headerSpacer()).toBeUndefined();
 });
