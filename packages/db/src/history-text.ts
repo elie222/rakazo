@@ -37,13 +37,13 @@ export function historyMessageText(blocks: Prisma.JsonValue): string {
 
 /**
  * What history reads return to the bot: the message text plus an earlier reply's tool steps,
- * rendered as the bot sees them replayed, so it can find what it already did.
+ * rendered in full (reads page through long text), so every search hit can be read.
  */
 export function historyReadText(blocks: Prisma.JsonValue): string {
   return objectBlocks(blocks)
     .flatMap((block) => {
       const steps = toolSteps(block);
-      return steps.length ? [toolStepsHistoryText(steps)] : conversationText(block);
+      return steps.length ? [toolStepsHistoryText(steps, { full: true })] : conversationText(block);
     })
     .join("\n");
 }

@@ -1,3 +1,4 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
@@ -9,6 +10,7 @@ import {
   inferAttachmentMimeType,
   normalizeVoiceTranscript,
   promptTextForAttachments,
+  toolStepsHistoryText,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
@@ -473,6 +475,26 @@ describe("tool step history", () => {
     const text = blocksToAgentHistoryText([{ kind: "steps", steps }]);
     expect(text).toContain("- Tool 39\n- …and 5 more");
     expect(text).not.toContain("Tool 40");
+  });
+
+  it("skips malformed imported steps instead of throwing", () => {
+    const blocks = [
+      { kind: "steps", steps: "nope" },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, note: 42 }, { count: 1 }] },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistoryText(blocks)).toBe("[tool calls this reply made]\n- Shell");
+  });
+
+  it("keeps full notes and every step when asked", () => {
+    const steps = Array.from({ length: 45 }, (_, index) => ({
+      label: `Tool ${index}`,
+      count: 1,
+      note: index === 44 ? `${"a".repeat(400)} needle` : undefined,
+    }));
+    const text = toolStepsHistoryText(steps, { full: true });
+    expect(text).toContain("Tool 44");
+    expect(text).toContain("needle");
+    expect(text).not.toContain("more");
   });
 
   it("shortens a long note", () => {

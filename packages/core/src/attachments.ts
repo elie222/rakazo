@@ -168,21 +168,28 @@ export function promptTextForAttachments(
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 const TOOL_STEP_MAX_LINES = 40;
 
-/** An earlier reply's tool steps as the bot sees them again: label, count and capped note, up to 40 steps. */
+/**
+ * An earlier reply's tool steps as the bot sees them again: label, count and note. Replay caps
+ * notes and steps; history reads pass `full`, since they page through long text themselves.
+ */
 export function toolStepsHistoryText(
   steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
+  { full = false }: { full?: boolean } = {},
 ): string {
-  if (steps.length === 0) return "";
-  const lines = steps.slice(0, TOOL_STEP_MAX_LINES).map((step) => {
-    const label = step.count > 1 ? `${step.label} ×${step.count}` : step.label;
-    const full = step.note?.replace(/\s+/g, " ").trim();
+  // Stored blocks can come from an account import, so skip malformed entries instead of throwing.
+  const valid = Array.isArray(steps) ? steps.filter((step) => typeof step?.label === "string") : [];
+  if (valid.length === 0) return "";
+  const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
+  const lines = shown.map((step) => {
+    const label = Number(step.count) > 1 ? `${step.label} ×${step.count}` : step.label;
+    const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
     const note =
-      full && full.length > TOOL_STEP_NOTE_MAX_CHARS
-        ? `${full.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
-        : full;
+      !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
+        ? `${whole.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
+        : whole;
     return note ? `- ${label}: ${note}` : `- ${label}`;
   });
-  const hidden = steps.length - lines.length;
+  const hidden = valid.length - shown.length;
   if (hidden > 0) lines.push(`- …and ${hidden} more`);
   // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
   return `[tool calls this reply made]\n${lines.join("\n")}`;
