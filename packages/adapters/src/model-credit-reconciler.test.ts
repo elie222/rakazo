@@ -171,21 +171,38 @@ describe("model credit reconciler", () => {
     );
   });
 
-  it("charges a call the user stopped at the full input rate", async () => {
-    await reconcile({
-      usage: { ...stopped, countedTokens: { ...stopped.countedTokens!, stoppedByUser: true } },
-    });
-    // 100k prompt tokens at the full input rate plus 2k output tokens.
-    expect(charged()?.costUsd).toBeCloseTo(0.22);
+  it.each([
+    ["the user stopped its run", "cancelled", 0.22],
+    ["a deploy or stalled stream aborted it", "queued", 0.04],
+  ])("prices an aborted call at full rates only when %s", async (_case, status, costUsd) => {
+    await reconcile(
+      {
+        usage: {
+          ...stopped,
+          countedTokens: { ...stopped.countedTokens!, ifStopped: stopped.countedTokens! },
+        },
+      },
+      undefined,
+      { status },
+    );
+    // Full: 100k prompt at the input rate. Low: at the cache-read rate. Both add 2k output.
+    expect(charged()?.costUsd).toBeCloseTo(costUsd);
   });
 
   it("caps a stopped call's full-rate charge at the hold", async () => {
-    await reconcile({
-      usage: {
-        ...stopped,
-        countedTokens: { inputTokens: 1_000_000, outputTokens: 0, stoppedByUser: true },
+    await reconcile(
+      {
+        usage: {
+          ...stopped,
+          countedTokens: {
+            ...stopped.countedTokens!,
+            ifStopped: { inputTokens: 1_000_000, outputTokens: 0 },
+          },
+        },
       },
-    });
+      undefined,
+      { status: "cancelled" },
+    );
     expect(charged()?.costUsd).toBe(1);
   });
 

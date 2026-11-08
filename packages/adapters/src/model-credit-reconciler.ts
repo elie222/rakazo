@@ -17,13 +17,20 @@ import { getLogger } from "@rakazo/logging";
  * never reached it is free. Never more than held.
  * Null when tokens were counted but the receipt has no price for them.
  */
-function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage | null {
+function fallbackUsage(
+  usage: AgentUsage | null,
+  heldMicros: bigint,
+  stoppedByUser: boolean,
+): AgentUsage | null {
   const rates = usage?.pricingSnapshot;
   const rate = (key: string) => {
     const value = rates?.[key];
     return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
   };
-  const counted = usage?.countedTokens;
+  const counted =
+    stoppedByUser && usage?.countedTokens?.ifStopped
+      ? { ...usage.countedTokens.ifStopped, fullRate: true }
+      : usage?.countedTokens && { ...usage.countedTokens, fullRate: false };
   // Provider-reported buckets first; our own count fills any the provider never sent.
   const cacheRead = usage?.cacheReadTokens ?? 0;
   const cacheWrite = usage?.cacheWriteTokens ?? 0;
@@ -35,7 +42,7 @@ function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage
       : // Our prompt count includes any reported cache buckets. Unless the user stopped the
         // call, assume the rest was served from cache too. A zero cache price means none.
         Math.max(0, (counted?.inputTokens ?? 0) - cacheRead - cacheWrite) *
-        (counted?.stoppedByUser ? rate("input") : rate("cacheRead") || rate("input"))) +
+        (counted?.fullRate ? rate("input") : rate("cacheRead") || rate("input"))) +
     (usage?.outputTokens ?? counted?.outputTokens ?? 0) * rate("output");
   const knownCost =
     usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0
@@ -135,12 +142,16 @@ export function createModelCreditReconciler(deps: {
                 reason = error instanceof Error ? error.message : String(error);
               }
             }
-            if (!usage && lastAttempt && call.runId) {
+            // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run.
+            let stoppedByUser = false;
+            if (call.runId && ((!usage && lastAttempt) || usage?.countedTokens?.ifStopped)) {
               const run = await prisma.run.findUnique({
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true },
               });
+              stoppedByUser = run?.status === "cancelled";
               running =
+                !usage &&
                 (run?.status === "leased" || run?.status === "running") &&
                 !!run.leaseExpiresAt &&
                 run.leaseExpiresAt > now;
@@ -152,7 +163,7 @@ export function createModelCreditReconciler(deps: {
               !running &&
               (lastAttempt || (usage && !canLookUp))
             ) {
-              const fallback = fallbackUsage(usage, -call.amountMicros);
+              const fallback = fallbackUsage(usage, -call.amountMicros, stoppedByUser);
               if (fallback) {
                 usage = fallback;
                 reconciled = true;
@@ -162,6 +173,7 @@ export function createModelCreditReconciler(deps: {
                   costUsd: usage.costUsd,
                   hasProviderRequestId: Boolean(call.providerRequestId),
                   counted: Boolean(usage.countedTokens),
+                  stoppedByUser,
                 });
               } else reason = "no price for the counted tokens";
             }

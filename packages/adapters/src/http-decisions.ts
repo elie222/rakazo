@@ -156,9 +156,8 @@ export class HttpDecisionProvider implements DecisionProvider {
                     pricingSnapshot,
                     countedTokens: context.signal.aborted
                       ? {
-                          inputTokens: estimateTextTokens(body),
-                          outputTokens: 0,
-                          stoppedByUser: true,
+                          ...countedTokens,
+                          ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
                         }
                       : countedTokens,
                   }

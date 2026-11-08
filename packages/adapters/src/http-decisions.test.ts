@@ -117,7 +117,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
 });
 
 describe("decision provider failures", () => {
-  it("counts the full prompt of a request the user stopped", async () => {
+  it("keeps a full prompt count for an aborted request", async () => {
     const afterCall = vi.fn();
     const controller = new AbortController();
     await expect(
@@ -134,9 +134,9 @@ describe("decision provider failures", () => {
       "reservation",
       expect.objectContaining({
         countedTokens: {
-          inputTokens: estimateTextTokens(JSON.stringify(request)),
+          inputTokens: expect.any(Number),
           outputTokens: 0,
-          stoppedByUser: true,
+          ifStopped: { inputTokens: estimateTextTokens(JSON.stringify(request)), outputTokens: 0 },
         },
       }),
     );

@@ -368,9 +368,9 @@ describe("Pi usage accounting", () => {
     expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
   });
   it.each([
-    ["the user stops it", true],
+    ["the call is aborted", true],
     ["the provider drops it", false],
-  ])("keeps our own token count when %s before usage arrives", async (_case, stoppedByUser) => {
+  ])("keeps our own token count when %s before usage arrives", async (_case, aborted) => {
     const controller = new AbortController();
     const afterCall = vi.fn();
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
@@ -403,7 +403,7 @@ describe("Pi usage accounting", () => {
       { beforeCall, afterCall },
     );
     for await (const event of stream)
-      if (event.type === "text_delta") stoppedByUser ? controller.abort() : drop();
+      if (event.type === "text_delta") aborted ? controller.abort() : drop();
     const inputTokens = beforeCall.mock.calls[0]![0].inputTokensEstimate;
     expect(afterCall).toHaveBeenCalledOnce();
     expect(afterCall).toHaveBeenCalledWith(
@@ -411,9 +411,13 @@ describe("Pi usage accounting", () => {
       expect.objectContaining({
         providerRequestId: "gen_partial",
         costUsd: null,
-        countedTokens: stoppedByUser
-          ? { inputTokens, outputTokens: estimateTextTokens(answer), stoppedByUser: true }
-          : { inputTokens, outputTokens: 10 },
+        countedTokens: {
+          inputTokens,
+          outputTokens: 10,
+          ...(aborted
+            ? { ifStopped: { inputTokens, outputTokens: estimateTextTokens(answer) } }
+            : {}),
+        },
       }),
     );
   });
@@ -486,7 +490,10 @@ describe("Pi usage accounting", () => {
         countedTokens: {
           inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
           outputTokens: 0,
-          stoppedByUser: true,
+          ifStopped: {
+            inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+            outputTokens: 0,
+          },
         },
       }),
     );

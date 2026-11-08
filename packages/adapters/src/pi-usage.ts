@@ -394,17 +394,22 @@ export function observedPiStream(
         // The provider may bill a prompt it received even if no response ever arrived.
         const dispatched = !sendFailed && (!collectRawUsage || dispatchedRequests.has(reported));
         if (!dispatched && !usage.providerRequestId && !text) return usage;
-        const stoppedByUser = options?.signal?.aborted === true;
         return {
           ...usage,
-          countedTokens: stoppedByUser
-            ? {
-                inputTokens: inputTokensEstimate,
-                outputTokens: estimateTextTokens(text),
-                stoppedByUser,
-              }
-            : // Deliberately low, about five characters a token, so output is never overcounted.
-              { inputTokens: inputTokensEstimate, outputTokens: Math.floor(text.length / 5) },
+          countedTokens: {
+            inputTokens: inputTokensEstimate,
+            // Deliberately low, about five characters a token, so output is never overcounted.
+            outputTokens: Math.floor(text.length / 5),
+            // A deploy, a stalled stream, or the user can abort; the reconciler tells them apart.
+            ...(options?.signal?.aborted
+              ? {
+                  ifStopped: {
+                    inputTokens: inputTokensEstimate,
+                    outputTokens: estimateTextTokens(text),
+                  },
+                }
+              : {}),
+          },
         };
       };
       try {
