@@ -48,7 +48,7 @@ import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { t, useI18n } from "../lib/i18n";
-import { onInboxChanged } from "../lib/inbox-changes";
+import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -470,6 +470,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       }
     },
     [embedded, pathname, router],
+  );
+  // The share sheet's inbox picks a chat to share into; only the real inbox opens chats.
+  useEffect(
+    () => (onShareSelect ? undefined : onOpenChatFromInbox(openChat)),
+    [openChat, onShareSelect],
   );
   // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
   const signingInAgain = useRef(false);

@@ -22,12 +22,15 @@ export function BotLookPicker({
   identity,
   organicIdentities,
   avatarSet,
+  disabled = false,
   onChange,
 }: {
   value: string;
   identity?: string;
   organicIdentities?: readonly string[];
   avatarSet: BotAvatarSet;
+  /** While the look is being saved, so what is shown stays what is saved. */
+  disabled?: boolean;
   onChange: (value: string, identity?: string) => void;
 }) {
   const { t } = useI18n();
@@ -44,6 +47,7 @@ export function BotLookPicker({
             {organicIdentities ? (
               organicIdentities.map((organic, index) => (
                 <Choice
+                  disabled={disabled}
                   key={organic}
                   label={t("Shape {number}", { number: index + 1 })}
                   selected={defaultLook && identity === organic}
@@ -53,12 +57,18 @@ export function BotLookPicker({
                 </Choice>
               ))
             ) : (
-              <Choice label={t("Default")} selected={defaultLook} onPress={() => onChange(color)}>
+              <Choice
+                disabled={disabled}
+                label={t("Default")}
+                selected={defaultLook}
+                onPress={() => onChange(color)}
+              >
                 <BotAvatar color={color} identity={identity} size={40} />
               </Choice>
             )}
             {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, index) => (
               <Choice
+                disabled={disabled}
                 key={key}
                 label={t("Shape {number}", {
                   number: index + 1 + (organicIdentities?.length ?? 0),
@@ -82,7 +92,8 @@ export function BotLookPicker({
                 key={option}
                 accessibilityRole="radio"
                 accessibilityLabel={t("Color {number}", { number: index + 1 })}
-                accessibilityState={{ checked: selected }}
+                accessibilityState={{ checked: selected, disabled }}
+                disabled={disabled}
                 onPress={() => onChange(botLookWithColor(value, option))}
                 style={{
                   width: 40,
@@ -126,11 +137,13 @@ function Label({ children }: { children: string }) {
 }
 
 function Choice({
+  disabled,
   label,
   selected,
   onPress,
   children,
 }: {
+  disabled: boolean;
   label: string;
   selected: boolean;
   onPress: () => void;
@@ -141,7 +154,8 @@ function Choice({
     <Pressable
       accessibilityRole="radio"
       accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={{
         padding: 4,

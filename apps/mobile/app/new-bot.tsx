@@ -17,6 +17,7 @@ import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc } from "../lib/api";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useI18n } from "../lib/i18n";
+import { openChatFromInbox } from "../lib/inbox-changes";
 import { native, useMobileTokens } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -67,7 +68,9 @@ export default function NewBot() {
       await createInboxBot({
         input: { name: trimmed, ...newBotLookInput(avatarSet, look) },
         openChat: (href) => {
-          if (!gone.current) router.replace(href);
+          if (gone.current) return;
+          router.dismiss();
+          if (!openChatFromInbox(href)) router.push(href);
         },
         spaceId: params.spaceId,
       });
@@ -128,6 +131,7 @@ export default function NewBot() {
             identity={identity}
             organicIdentities={ORGANIC_PREVIEW_IDENTITIES}
             avatarSet={avatarSet}
+            disabled={pending}
             onChange={(color, picked) => {
               setLook((current) => ({ ...current, color, identity: picked ?? current.identity }));
             }}
