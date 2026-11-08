@@ -291,7 +291,7 @@ export function ShellSidebar({
         {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
         <div
           className={
-            mini
+            mini || activityMode
               ? "hidden"
               : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
           }
