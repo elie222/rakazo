@@ -18,6 +18,7 @@ import type {
 import { Agent } from "undici";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
+import { estimateTextTokens } from "./context-selection.js";
 import { withGoogleToolHistory } from "./google-tool-history.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { openRouterInferenceFetch } from "./openrouter-usage.js";
@@ -389,19 +390,22 @@ export function observedPiStream(
       // so the reconciler can price it if the provider never reports one.
       const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
         if (usage.costUsd != null) return usage;
-        const characters = message ? receivedCharacters(message) : 0;
+        const text = message ? receivedText(message) : "";
         // The provider may bill a prompt it received even if no response ever arrived.
         const dispatched = !sendFailed && (!collectRawUsage || dispatchedRequests.has(reported));
-        return dispatched || usage.providerRequestId || characters > 0
-          ? {
-              ...usage,
-              countedTokens: {
+        if (!dispatched && !usage.providerRequestId && !text) return usage;
+        const stoppedByUser = options?.signal?.aborted === true;
+        return {
+          ...usage,
+          countedTokens: stoppedByUser
+            ? {
                 inputTokens: inputTokensEstimate,
-                // Deliberately low, about five characters a token, so output is never overcounted.
-                outputTokens: Math.floor(characters / 5),
-              },
-            }
-          : usage;
+                outputTokens: estimateTextTokens(text),
+                stoppedByUser,
+              }
+            : // Deliberately low, about five characters a token, so output is never overcounted.
+              { inputTokens: inputTokensEstimate, outputTokens: Math.floor(text.length / 5) },
+        };
       };
       try {
         // A tool-budget or cancellation stop can reach Pi's next-turn hook after
@@ -596,18 +600,18 @@ export function observedPiStream(
   return stream;
 }
 
-function receivedCharacters(message: AssistantMessage): number {
-  let characters = 0;
-  for (const part of message.content)
-    characters +=
+function receivedText(message: AssistantMessage): string {
+  return message.content
+    .map((part) =>
       part.type === "text"
-        ? part.text.length
+        ? part.text
         : part.type === "thinking"
-          ? part.thinking.length
+          ? part.thinking
           : part.type === "toolCall"
-            ? part.name.length + JSON.stringify(part.arguments ?? {}).length
-            : 0;
-  return characters;
+            ? part.name + JSON.stringify(part.arguments ?? {})
+            : "",
+    )
+    .join("");
 }
 
 /** Includes higher context tiers and long-lived cache writes before any request can spend. */

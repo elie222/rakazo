@@ -1,5 +1,6 @@
 import type { AdapterContext, DecisionRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { estimateTextTokens } from "./context-selection.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 
 const context: AdapterContext = {
@@ -116,6 +117,31 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
 });
 
 describe("decision provider failures", () => {
+  it("counts the full prompt of a request the user stopped", async () => {
+    const afterCall = vi.fn();
+    const controller = new AbortController();
+    await expect(
+      new HttpDecisionProvider("openrouter", {
+        apiKey: "fake-key",
+        fetch: async () => {
+          controller.abort();
+          throw new Error("aborted");
+        },
+        callObserver: { beforeCall: () => "reservation", afterCall },
+      }).decide(request, { ...context, signal: controller.signal }),
+    ).rejects.toBeDefined();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        countedTokens: {
+          inputTokens: estimateTextTokens(JSON.stringify(request)),
+          outputTokens: 0,
+          stoppedByUser: true,
+        },
+      }),
+    );
+  });
+
   it("keeps a prompt count for a response without usage", async () => {
     const afterCall = vi.fn();
     await new HttpDecisionProvider("openrouter", {

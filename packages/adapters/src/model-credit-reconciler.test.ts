@@ -171,6 +171,24 @@ describe("model credit reconciler", () => {
     );
   });
 
+  it("charges a call the user stopped at the full input rate", async () => {
+    await reconcile({
+      usage: { ...stopped, countedTokens: { ...stopped.countedTokens!, stoppedByUser: true } },
+    });
+    // 100k prompt tokens at the full input rate plus 2k output tokens.
+    expect(charged()?.costUsd).toBeCloseTo(0.22);
+  });
+
+  it("caps a stopped call's full-rate charge at the hold", async () => {
+    await reconcile({
+      usage: {
+        ...stopped,
+        countedTokens: { inputTokens: 1_000_000, outputTokens: 0, stoppedByUser: true },
+      },
+    });
+    expect(charged()?.costUsd).toBe(1);
+  });
+
   it("never charges more than the hold", async () => {
     await reconcile({
       usage: { ...stopped, countedTokens: { inputTokens: 0, outputTokens: 1_000_000 } },

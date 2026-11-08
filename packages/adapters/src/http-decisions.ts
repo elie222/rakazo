@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import { z } from "zod";
+import { estimateTextTokens } from "./context-selection.js";
 import { decisionModel } from "./decision-models.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -153,7 +154,13 @@ export class HttpDecisionProvider implements DecisionProvider {
                     outputTokens: null,
                     costUsd: null,
                     pricingSnapshot,
-                    countedTokens,
+                    countedTokens: context.signal.aborted
+                      ? {
+                          inputTokens: estimateTextTokens(body),
+                          outputTokens: 0,
+                          stoppedByUser: true,
+                        }
+                      : countedTokens,
                   }
                 : null),
           );

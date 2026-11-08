@@ -672,8 +672,10 @@ export interface AgentUsage {
   pricingVersion?: string | null;
   pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
-  /** Our own count for a call that reached the provider but ended without a reported cost. */
-  countedTokens?: { inputTokens: number; outputTokens: number } | null;
+  /** Our own count for a call that reached the provider but ended without a reported cost.
+   * A call the user stopped is counted and priced in full, so stopping is never a discount.
+   */
+  countedTokens?: { inputTokens: number; outputTokens: number; stoppedByUser?: boolean } | null;
 }
 
 export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" | "compaction";

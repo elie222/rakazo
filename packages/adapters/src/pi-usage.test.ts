@@ -5,6 +5,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
+import { estimateTextTokens } from "./context-selection.js";
 import {
   createOpenAiCompatibleFetch,
   registerOpenAiCompatibleRuntime,
@@ -366,16 +367,19 @@ describe("Pi usage accounting", () => {
     );
     expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
   });
-  it("keeps our own token count when a stream stops before the provider reports usage", async () => {
+  it.each([
+    ["the user stops it", true],
+    ["the provider drops it", false],
+  ])("keeps our own token count when %s before usage arrives", async (_case, stoppedByUser) => {
     const controller = new AbortController();
     const afterCall = vi.fn();
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const answer = "x".repeat(52);
     const frame = {
       id: "gen_partial",
-      choices: [
-        { index: 0, delta: { role: "assistant", content: "x".repeat(52) }, finish_reason: null },
-      ],
+      choices: [{ index: 0, delta: { role: "assistant", content: answer }, finish_reason: null }],
     };
+    let drop = () => {};
     const stream = await observedPiStream(
       builtinModels(),
       model,
@@ -388,7 +392,8 @@ describe("Pi usage accounting", () => {
             new ReadableStream({
               start(body) {
                 body.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
-                init?.signal?.addEventListener("abort", () => body.error(new Error("aborted")));
+                drop = () => body.error(new Error("connection reset"));
+                init?.signal?.addEventListener("abort", drop);
               },
             }),
             { headers: { "content-type": "text/event-stream" } },
@@ -397,17 +402,18 @@ describe("Pi usage accounting", () => {
       vi.fn(),
       { beforeCall, afterCall },
     );
-    for await (const event of stream) if (event.type === "text_delta") controller.abort();
+    for await (const event of stream)
+      if (event.type === "text_delta") stoppedByUser ? controller.abort() : drop();
+    const inputTokens = beforeCall.mock.calls[0]![0].inputTokensEstimate;
     expect(afterCall).toHaveBeenCalledOnce();
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
       expect.objectContaining({
         providerRequestId: "gen_partial",
         costUsd: null,
-        countedTokens: {
-          inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
-          outputTokens: 10,
-        },
+        countedTokens: stoppedByUser
+          ? { inputTokens, outputTokens: estimateTextTokens(answer), stoppedByUser: true }
+          : { inputTokens, outputTokens: 10 },
       }),
     );
   });
@@ -480,6 +486,7 @@ describe("Pi usage accounting", () => {
         countedTokens: {
           inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
           outputTokens: 0,
+          stoppedByUser: true,
         },
       }),
     );

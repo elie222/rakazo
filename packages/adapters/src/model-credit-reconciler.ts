@@ -13,7 +13,8 @@ import { getLogger } from "@rakazo/logging";
 
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
- * counted at the model's cheapest rates; one that never reached it is free. Never more than held.
+ * counted: at the model's cheapest rates, or its full rates when the user stopped it. One that
+ * never reached it is free. Never more than held.
  * Null when tokens were counted but the receipt has no price for them.
  */
 function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage | null {
@@ -31,10 +32,10 @@ function fallbackUsage(usage: AgentUsage | null, heldMicros: bigint): AgentUsage
     cacheWrite * rate("cacheWrite") +
     (usage?.inputTokens != null
       ? usage.inputTokens * rate("input")
-      : // Our prompt count includes any reported cache buckets. The rest may have been served
-        // from cache too; assume it was. A zero cache price means the model has none.
+      : // Our prompt count includes any reported cache buckets. Unless the user stopped the
+        // call, assume the rest was served from cache too. A zero cache price means none.
         Math.max(0, (counted?.inputTokens ?? 0) - cacheRead - cacheWrite) *
-        (rate("cacheRead") || rate("input"))) +
+        (counted?.stoppedByUser ? rate("input") : rate("cacheRead") || rate("input"))) +
     (usage?.outputTokens ?? counted?.outputTokens ?? 0) * rate("output");
   const knownCost =
     usage?.costUsd != null && Number.isFinite(usage.costUsd) && usage.costUsd >= 0
