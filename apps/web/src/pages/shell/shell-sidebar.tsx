@@ -59,6 +59,7 @@ export function ShellSidebar({
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
+  setImportBotOpen,
   roster,
   archived,
   footerLogos,
@@ -88,6 +89,7 @@ export function ShellSidebar({
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
+  setImportBotOpen: (open: boolean) => void;
   roster: ReactNode;
   archived: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
@@ -176,6 +178,7 @@ export function ShellSidebar({
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
           setCreateBotOpen={setCreateBotOpen}
+          setImportBotOpen={setImportBotOpen}
         />
         {mini ||
         !(

@@ -72,6 +72,7 @@ export function BotSettings({
   onTabChange,
   computer,
   routines,
+  packageTools,
   memoryProviderConfigured,
   onSave,
   onExport,
@@ -84,6 +85,7 @@ export function BotSettings({
   onTabChange?: (tab: BotPanelTab) => void;
   computer?: ReactNode;
   routines?: ReactNode;
+  packageTools?: ReactNode;
   focusModel?: number;
   onOpenConnections?: () => void;
   /** Unused: the skill sections read and save the shared cached skill list. */
@@ -654,6 +656,7 @@ export function BotSettings({
               }}
               onClear={onClear}
             />
+            {packageTools}
           </div>
           {dirty ? (
             <Button

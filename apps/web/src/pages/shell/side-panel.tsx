@@ -9,6 +9,8 @@ import type {
 import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
+import { useRef } from "react";
+import { BotPackageTools } from "../../components/BotPackageTools";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { PagesList } from "../../components/pages/PagesList";
 import type { Panel } from "../../lib/right-panel-state";
@@ -84,6 +86,8 @@ export function ShellSidePanel({
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
+  const activeBotIdRef = useRef(active?.id);
+  activeBotIdRef.current = active?.id;
   const botTab =
     panel === "computer" || panel === "routines" || panel === "pages" || panel === "settings"
       ? panel
@@ -197,6 +201,13 @@ export function ShellSidePanel({
               }}
               computer={computerPanel}
               routines={routinesPanel}
+              packageTools={
+                <BotPackageTools
+                  botId={active.id}
+                  spaceId={active.spaceId}
+                  isCurrent={() => activeBotIdRef.current === active.id}
+                />
+              }
               focusModel={modelFocusRequest}
               onOpenConnections={() => openSettings("models")}
               memoryProviderConfigured={memoryProviderConfigured}

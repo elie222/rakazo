@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotAvatarSet, BotSection, Group, Space } from "@rakazo/contracts";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -10,11 +14,13 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Settings, Trash2 } from "lucide-react";
 import type { ComponentProps, RefObject } from "react";
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { BotPackageImport } from "../../components/BotPackageImport";
 import { PAGE_PARAM } from "../../lib/pages";
 import { useSpaceQueries } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
+import type { SettingsSection } from "../shell-overlay";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
@@ -54,6 +60,7 @@ export function useShellDialogs() {
   const [deleteSectionTarget, setDeleteSectionTarget] = useState<SectionTarget | null>(null);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
+  const [importBotOpen, setImportBotOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   return {
     deleteTarget,
@@ -78,6 +85,8 @@ export function useShellDialogs() {
     setNewSpaceOpen,
     createBotOpen,
     setCreateBotOpen,
+    importBotOpen,
+    setImportBotOpen,
     commandPaletteOpen,
     setCommandPaletteOpen,
   };
@@ -90,6 +99,8 @@ export function ShellDialogs({
   dialogs,
   rpc,
   spaces,
+  spaceId,
+  openSettings,
   bots,
   activeId,
   activeGroupId,
@@ -110,6 +121,8 @@ export function ShellDialogs({
   dialogs: ShellDialogsState;
   rpc: ReturnType<typeof createSpaceRpc>;
   spaces: Space[];
+  spaceId: string | null;
+  openSettings: (section: SettingsSection) => void;
   bots: Bot[];
   activeId: string | undefined;
   activeGroupId: string | undefined;
@@ -152,9 +165,13 @@ export function ShellDialogs({
     setNewSpaceOpen,
     createBotOpen,
     setCreateBotOpen,
+    importBotOpen,
+    setImportBotOpen,
     commandPaletteOpen,
     setCommandPaletteOpen,
   } = dialogs;
+  const spaceIdRef = useRef(spaceId);
+  spaceIdRef.current = spaceId;
   const spaceMenuTarget = spaceMenu
     ? (spaces.find((space) => space.id === spaceMenu.id) ?? null)
     : null;
@@ -341,6 +358,45 @@ export function ShellDialogs({
           onCancel={() => setCreateBotOpen(false)}
           onCreate={createBot}
         />
+      ) : null}
+
+      {importBotOpen ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setImportBotOpen(false);
+          }}
+        >
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          >
+            <DialogHeader>
+              <DialogTitle>
+                <Trans>Import bot</Trans>
+              </DialogTitle>
+            </DialogHeader>
+            {spaceId ? (
+              <BotPackageImport
+                spaceId={spaceId}
+                isCurrent={() => spaceIdRef.current === spaceId}
+                onImported={() => {
+                  void refreshBots();
+                }}
+                onOpen={(botId) => {
+                  setImportBotOpen(false);
+                  closeMobileSidebar();
+                  navigate(`/app/${botId}`);
+                }}
+                onConnections={() => {
+                  setImportBotOpen(false);
+                  openSettings("models");
+                }}
+                onCancel={() => setImportBotOpen(false)}
+              />
+            ) : null}
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       {newSpaceOpen ? (

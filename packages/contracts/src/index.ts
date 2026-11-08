@@ -11,6 +11,7 @@ export * from "./board.js";
 export * from "./bot-avatar.js";
 export * from "./bot-email.js";
 export * from "./bot-memory.js";
+export * from "./bot-package.js";
 export * from "./bot-secrets.js";
 export * from "./bot-settings-layout.js";
 export * from "./bot-template.js";

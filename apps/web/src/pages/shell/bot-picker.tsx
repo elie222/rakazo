@@ -9,19 +9,21 @@ import {
   CommandList,
   CommandSeparator,
 } from "@rakazo/ui-web";
-import { Info, Lock, Plus, Users } from "lucide-react";
+import { Download, Info, Lock, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 
 export function BotCreatePicker({
   bots,
   onCreateBot,
+  onImportBot,
   onOpenBot,
   onCreateGroup,
   onCreateSpace,
 }: {
   bots: Bot[];
   onCreateBot: () => void;
+  onImportBot: () => void;
   onOpenBot: (botId: string) => void;
   onCreateGroup: () => void;
   onCreateSpace: () => void;
@@ -37,6 +39,10 @@ export function BotCreatePicker({
     !needle ||
     "new bot".includes(needle) ||
     needle.split(/\s+/).every((part) => "new bot".includes(part));
+  const showImport =
+    !needle ||
+    "import bot".includes(needle) ||
+    needle.split(/\s+/).every((part) => "import bot".includes(part));
 
   return (
     <div data-testid="bot-create-picker" className="w-[min(320px,calc(100vw-2rem))]">
@@ -72,6 +78,19 @@ export function BotCreatePicker({
                   <Plus size={16} strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 <Trans>New bot</Trans>
+              </CommandItem>
+            ) : null}
+            {showImport ? (
+              <CommandItem
+                value="import-bot"
+                data-testid="import-bot"
+                onSelect={() => onImportBot()}
+                className="gap-2"
+              >
+                <span className="flex size-[22px] shrink-0 items-center justify-center">
+                  <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                </span>
+                <Trans>Import bot</Trans>
               </CommandItem>
             ) : null}
             <CommandItem

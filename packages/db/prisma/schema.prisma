@@ -69,6 +69,8 @@ model User {
   secrets                     Secret[]
   mcpServers                  McpServer[]
   botSections                 BotSection[]
+  botPackagePreviews          BotPackagePreview[]
+  botPackageImports           BotPackageImport[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   modelRoleChoices            UserModelRoleChoice[]
@@ -595,6 +597,8 @@ model Space {
   bots                        Bot[]
   botSections                 BotSection[]
   botDeletions                BotDeletion[]
+  botPackagePreviews          BotPackagePreview[]
+  botPackageImports           BotPackageImport[]
   threads                     Thread[]
   events                      Event[]
   tasks                       Task[]
@@ -967,6 +971,8 @@ model Bot {
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
   agentImports      AgentImport[]
+  packageImport     BotPackageImport?
+  packageComponents BotPackageComponent[]
   groupMembers      ChatGroupMember[]
   botSecrets BotSecret[]
   assignedTickets   Ticket[]          @relation("TicketAssigneeBot")
@@ -985,6 +991,75 @@ model Bot {
   @@map("bots")
   messagingInstallations MessagingInstallation[]
   messagingInstallSessions MessagingInstallSession[]
+}
+
+model BotPackagePreview {
+  id                   String   @id @default(cuid())
+  tokenHash            String   @unique
+  spaceId              String
+  space                Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  digest               String
+  sourceFormat         String
+  document             Json
+  leftOut              Json
+  includeMemory        Boolean  @default(false)
+  availableMemoryCount Int      @default(0)
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+
+  @@index([spaceId, userId, expiresAt])
+  @@index([expiresAt, id])
+  @@map("bot_package_previews")
+}
+
+model BotPackageImport {
+  id               String               @id @default(cuid())
+  spaceId          String
+  space            Space                @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientNonce      String
+  previewTokenHash String?              @unique
+  digest           String               @default("")
+  status           String               @default("importing")
+  revision         Int                  @default(1)
+  botId            String?              @unique
+  bot              Bot?                 @relation(fields: [botId], references: [id], onDelete: SetNull)
+  botName          String               @default("")
+  plan             Json?
+  leftOut          Json                 @default("[]")
+  skillCount       Int                  @default(0)
+  connectionCount  Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  components       BotPackageComponent[]
+
+  @@unique([spaceId, userId, clientNonce])
+  @@index([spaceId, userId, createdAt])
+  @@map("bot_package_imports")
+}
+
+model BotPackageComponent {
+  id                String           @id @default(cuid())
+  importId          String
+  import            BotPackageImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  botId             String
+  bot               Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  key               String
+  kind              String
+  name              String
+  description       String           @default("")
+  content           String?
+  status            String           @default("pending")
+  revision          Int              @default(1)
+  targetSkillId     String?
+  activationBinding String?
+
+  @@unique([importId, key])
+  @@index([botId])
+  @@map("bot_package_components")
 }
 
 model BotSection {

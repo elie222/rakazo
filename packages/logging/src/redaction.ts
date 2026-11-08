@@ -110,6 +110,32 @@ export function redactSensitiveText(text: string): string {
     .replace(POSIX_PROFILE, "/[user]");
 }
 
+// GitHub personal access tokens and their OAuth, user-to-server, server-to-server
+// and refresh siblings, plus fine-grained tokens. The diagnostic redactor does
+// not cover this family.
+const GITHUB_TOKEN =
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b|\bgithub_pat_[A-Za-z0-9_]{22,255}\b/g;
+
+/**
+ * Remove recognized credential material while preserving ordinary portable
+ * content, including contact emails. For text that leaves the deployment in
+ * an exportable package; logs use redactSensitiveText, which also redacts
+ * emails and account paths.
+ */
+export function redactSecretText(text: string): string {
+  return text
+    .replace(PAGE_SHARE_LINK, `$1${REDACTED}`)
+    .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
+    .replace(BEARER, `Bearer ${REDACTED}`)
+    .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)
+    .replace(BARE_SECRET_CANDIDATE, (candidate) =>
+      candidate.startsWith("eyJ") && !candidate.includes(".")
+        ? candidate.replace(BARE_SECRET, REDACTED)
+        : REDACTED,
+    )
+    .replace(GITHUB_TOKEN, REDACTED);
+}
+
 function shouldRedactKey(key: string, value: unknown): boolean {
   const normalized = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
   // Only known numeric counters bypass token redaction; strings and containers may be secrets.

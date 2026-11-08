@@ -17,7 +17,7 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
@@ -60,6 +60,12 @@ import { thinkingLevelLabel } from "../lib/thinking-level";
 import { errorText } from "../lib/user-error";
 import { stopVoicePlayback } from "../lib/voice";
 
+const NativeBotPackageTools = lazy(() =>
+  import("../components/bot-package-tools").then((module) => ({
+    default: module.NativeBotPackageTools,
+  })),
+);
+
 export default function BotSettingsScreen() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
@@ -82,6 +88,7 @@ export default function BotSettingsScreen() {
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
+  const [packageOpen, setPackageOpen] = useState(false);
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
@@ -830,6 +837,19 @@ export default function BotSettingsScreen() {
             onPress={() => void save()}
             style={{ marginTop: 24 }}
           />
+        ) : null}
+        {bot ? (
+          <NativeActionButton
+            label={t("Bot package")}
+            prominence="secondary"
+            onPress={() => setPackageOpen(!packageOpen)}
+            style={{ marginTop: 16 }}
+          />
+        ) : null}
+        {packageOpen && bot ? (
+          <Suspense fallback={<Text>{t("Loading…")}</Text>}>
+            <NativeBotPackageTools botId={bot.id} />
+          </Suspense>
         ) : null}
       </ScrollView>
       {avatarOpen ? (

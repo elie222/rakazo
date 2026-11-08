@@ -75,6 +75,15 @@ function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
   // Another Space can belong to another organization, with its own invite link.
   selectedSpaceChanged();
+  for (const listener of [...spaceSelectionListeners]) listener();
+}
+const spaceSelectionListeners = new Set<() => void>();
+/** Calls `listener` each time the selected Space changes. */
+export function subscribeSelectedSpace(listener: () => void): () => void {
+  spaceSelectionListeners.add(listener);
+  return () => {
+    spaceSelectionListeners.delete(listener);
+  };
 }
 /** Orders complete endpoint transactions, including credential rollback. */
 let endpointChangeQueue: Promise<unknown> = Promise.resolve();
@@ -167,6 +176,8 @@ export type ApiRequestContext = {
   sessionGeneration?: number;
   apiBase: string;
   headers: Record<string, string>;
+  /** Native views can revoke a captured request before it reaches the network. */
+  isCurrent?: () => boolean;
 };
 /** Keeps consent prompts separate across servers and the selected Space. */
 export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string {
@@ -604,6 +615,7 @@ async function request(
   body: unknown = {},
   options: RpcOptions = {},
 ): Promise<unknown> {
+  if (options.requestContext?.isCurrent?.() === false) throw new Error("Request canceled");
   syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
   const avatarSnapshotOrder = proc === "threads/get" ? newMobileAvatarSnapshotRequest() : 0;
   const requestSpaceGeneration = spaceSelectionGeneration;

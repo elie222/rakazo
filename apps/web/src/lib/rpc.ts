@@ -172,17 +172,19 @@ const displayLink = {
 export const rpc: RpcClient = createORPCClient(displayLink);
 
 /** Keep late async follow-up requests in the shell's original auth boundary. */
-export function createSpaceRpc(spaceId: string | null): typeof rpc {
+export function createSpaceRpc(spaceId: string | null, isCurrent?: () => boolean): typeof rpc {
   return createORPCClient({
-    call: (path, input, options) =>
-      displayLink.call(path, input, {
+    call: (path, input, options) => {
+      if (isCurrent?.() === false) throw new DOMException("Settings closed", "AbortError");
+      return displayLink.call(path, input, {
         ...options,
         // A call that names its own space (e.g. renaming another space's section) keeps it.
         context: {
           ...options.context,
           spaceId: options.context.spaceId === undefined ? spaceId : options.context.spaceId,
         },
-      }),
+      });
+    },
   });
 }
 

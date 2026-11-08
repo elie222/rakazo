@@ -127,5 +127,5 @@ it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (plat
 it.each(["android", "ios"])("creates from the %s menu", (platform) => {
   renderHeader(platform);
   for (const item of container.querySelectorAll("li")) act(() => item.click());
-  expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
+  expect(runCreateAction.mock.calls).toEqual([["bot"], ["import-bot"], ["group"], ["space"]]);
 });

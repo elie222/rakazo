@@ -134,7 +134,7 @@ it("wires the compact header items to their actions", () => {
   for (const item of create.menu.items) item.onPress();
   expect(home.push.mock.calls).toEqual([["/account"], ["/search"]]);
   expect(toggleActivityMode).toHaveBeenCalledOnce();
-  expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
+  expect(runCreateAction.mock.calls).toEqual([["bot"], ["import-bot"], ["group"], ["space"]]);
 });
 
 it("shows a translated, safe-area-centred placeholder only in the split pane", () => {

@@ -909,6 +909,7 @@ function SpaceShell() {
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}
         setCreateBotOpen={dialogs.setCreateBotOpen}
+        setImportBotOpen={dialogs.setImportBotOpen}
         roster={
           <SidebarRoster
             mini={miniSidebar}
@@ -1245,6 +1246,8 @@ function SpaceShell() {
           dialogs={dialogs}
           rpc={rpc}
           spaces={spaces}
+          spaceId={currentSpaceId}
+          openSettings={openSettings}
           bots={bots}
           activeId={active?.id}
           activeGroupId={activeGroup?.id}
