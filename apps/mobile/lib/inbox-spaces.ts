@@ -41,6 +41,13 @@ export type PinnedChat =
   | { kind: "group"; group: MobileGroup | SpaceGroup };
 export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
 
+/** A bot waiting on you: a question or an approval only you can answer. */
+export function botNeedsAttention(bot: MobileBot | SpaceBot): boolean {
+  const activity = mobileLogoAvatarActivity.getActivity(bot.id, bot.status);
+  // Every row asks, so read the avatar only for a bot that is waiting.
+  return logoAvatarNeedsAttention(activity) && botAvatarActivity(bot, activity) === activity;
+}
+
 /** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
 function chatSignal(chat: PinnedChat): InboxSignal {
   // A snoozed chat asks for nothing until it wakes, even shown under its open Snoozed heading.
@@ -50,14 +57,7 @@ function chatSignal(chat: PinnedChat): InboxSignal {
   return chat.kind === "bot"
     ? {
         unread: chat.bot.unread ? 1 : 0,
-        attention: logoAvatarNeedsAttention(
-          botAvatarActivity(
-            chat.bot,
-            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
-          ),
-        )
-          ? 1
-          : 0,
+        attention: botNeedsAttention(chat.bot) ? 1 : 0,
       }
     : { unread: chat.group.unread ? 1 : 0, attention: 0 };
 }
