@@ -150,6 +150,10 @@ function fakeDeps(
             .slice(0, args.take)
             .map((row) => pick(row, args.select)),
       ),
+      findFirst: vi.fn(async (args: { where: Where; select: Record<string, boolean> }) => {
+        const row = servers.find((candidate) => matches(candidate, args.where));
+        return row ? pick(row, args.select) : null;
+      }),
     },
     botMcpServer: {
       findMany: vi.fn(async (args: { where: Record<string, unknown> }) => {
@@ -190,6 +194,8 @@ function fakeDeps(
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
   };
   tx.message = prisma.message;
+  tx.mcpServer = prisma.mcpServer;
+  tx.botMcpServer = prisma.botMcpServer;
   const secretStore = {
     load: vi.fn(async (ciphertext: string) => JSON.stringify(materials[ciphertext])),
   };
@@ -364,8 +370,8 @@ describe("request_mcp_server", () => {
   it("checks for an open card and posts under one lock on the thread, bot and server", async () => {
     const { deps, prisma, tx } = fakeDeps([server("git")]);
     const order: string[] = [];
-    (tx.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-      order.push("lock");
+    (tx.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(async (sql: string[]) => {
+      order.push(sql.join("?").includes("FOR SHARE") ? "server" : "lock");
       return [];
     });
     prisma.message.findMany.mockImplementationOnce(async () => {
@@ -378,10 +384,33 @@ describe("request_mcp_server", () => {
     });
     await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(["lock", "scan", "post"]);
+    expect(order).toEqual(["lock", "server", "scan", "post"]);
     expect((tx.$queryRaw as ReturnType<typeof vi.fn>).mock.calls[0]?.slice(1)).toEqual([
       `mcp-approval-request:${run.threadId}:${run.botId}:id-git`,
     ]);
+    expect((prisma.$transaction.mock.calls[0] as unknown[])[1]).toMatchObject({
+      isolationLevel: "Serializable",
+    });
+  });
+
+  it("posts no card when the server was approved after the first check", async () => {
+    const { deps, prisma } = fakeDeps([server("git")]);
+    prisma.botMcpServer.findFirst
+      .mockImplementationOnce(async () => null)
+      .mockImplementationOnce(async () => ({ id: "assignment-1" }));
+    const out = await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
+    expect(out).toEqual({ ok: true, server_id: "id-git", status: "available" });
+    expect(persistMessageInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("posts no card when the server was removed after the first check", async () => {
+    const { deps, prisma } = fakeDeps([server("git")]);
+    prisma.mcpServer.findFirst.mockImplementationOnce(async () => null);
+    const out = await requestMcpServerFromTool(deps, run, run.botId, { slug: "git" });
+    expect(out).toEqual({
+      error: "That MCP server was removed or turned off. Call list_mcp_servers again.",
+    });
+    expect(persistMessageInTransaction).not.toHaveBeenCalled();
   });
 
   it("asks for approval, not authorization, when the server has a stored credential or is local", async () => {

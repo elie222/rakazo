@@ -190,30 +190,55 @@ export async function requestMcpServerFromTool(
   // The check and the post share one transaction under a lock on this bot's thread and server,
   // so parallel requests cannot both find no card and post one each. Posting locks the thread
   // row like any other message, so it takes the same timeout and deadlock retry.
+  // Approval and removal commit on their own, so the server and assignment are read again here:
+  // the share lock makes removal wait for this post (and then close its card), and Serializable
+  // retries the post if an approval commits alongside it.
   const outcome = await withTransactionRetry(() =>
-    deps.prisma.$transaction(async (tx) => {
-      await advisoryLock(
-        tx,
-        "mcp-approval-request",
-        `${run.threadId}:${botId}:${server.id}`,
-        "joined",
-      );
-      const cards = await scanCards(tx, run, botId);
-      if (cards.declined.has(server.id)) return { kind: "declined" as const };
-      if (cards.open.has(server.id)) return { kind: "open" as const };
-      const committed = await persistMessageInTransaction(
-        tx,
-        run,
-        "bot",
-        blocks,
-        undefined,
-        undefined,
-        false,
-        runLeaseFor(deps, run.id),
-      );
-      return { kind: "posted" as const, committed };
-    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+    deps.prisma.$transaction(
+      async (tx) => {
+        await advisoryLock(
+          tx,
+          "mcp-approval-request",
+          `${run.threadId}:${botId}:${server.id}`,
+          "joined",
+        );
+        await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ${server.id} FOR SHARE`;
+        const current = await tx.mcpServer.findFirst({
+          where: { id: server.id, ...availableInSpace(run), enabled: true },
+          select: { allBots: true },
+        });
+        if (!current) return { kind: "unavailable" as const };
+        const assigned =
+          current.allBots ||
+          (await tx.botMcpServer.findFirst({
+            where: { botId, spaceId: run.spaceId, userId: run.userId, serverId: server.id },
+            select: { id: true },
+          }));
+        if (assigned) return { kind: "available" as const };
+        const cards = await scanCards(tx, run, botId);
+        if (cards.declined.has(server.id)) return { kind: "declined" as const };
+        if (cards.open.has(server.id)) return { kind: "open" as const };
+        const committed = await persistMessageInTransaction(
+          tx,
+          run,
+          "bot",
+          blocks,
+          undefined,
+          undefined,
+          false,
+          runLeaseFor(deps, run.id),
+        );
+        return { kind: "posted" as const, committed };
+      },
+      { ...THREAD_LOCK_TRANSACTION_OPTIONS, isolationLevel: "Serializable" },
+    ),
   );
+  if (outcome.kind === "unavailable") {
+    return { error: "That MCP server was removed or turned off. Call list_mcp_servers again." };
+  }
+  if (outcome.kind === "available") {
+    return { ok: true, server_id: server.id, status: "available" };
+  }
   if (outcome.kind === "declined") {
     return {
       ok: true,

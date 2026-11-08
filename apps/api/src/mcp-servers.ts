@@ -284,6 +284,9 @@ export function createMcpServers(
     actor: Actor,
     server: { id: string; secretId: string | null },
   ) => {
+    // Taken before closing cards: a bot request posting a card holds a share lock on this row,
+    // so removal waits for it and then closes that card too.
+    await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ${server.id} FOR UPDATE`;
     const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
     await tx.mcpServer.delete({ where: { id: server.id } });
     if (server.secretId) {
