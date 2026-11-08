@@ -127,6 +127,22 @@ describe("recall outcome grading", () => {
     ).toEqual(["no-step-log"]);
   });
 
+  it("fails a history lookup on everyday turns only when the turn cannot need one", () => {
+    const egg = scenario("ordinary-visible").history!.messages.slice(-2);
+    expect(egg.map((m) => [m.role, m.text])).toEqual([
+      ["user", "How long should I boil an egg for a jammy yolk?"],
+      ["bot", "About six and a half minutes, then into cold water."],
+    ]);
+    for (const id of ["sign-off", "visible", "general", "related"]) {
+      const history = scenario(`ordinary-${id}`).history!;
+      expect(history.messages[3]!.steps?.[0]?.note).toContain("Midnight Lizard");
+      expect(failed(`ordinary-${id}`, evidence([], "reply"))).toEqual([]);
+      expect(failed(`ordinary-${id}`, evidence([search], "reply"))).toEqual(
+        id === "related" ? [] : ["no-history-lookup"],
+      );
+    }
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
     for (const c of RECALL_EVAL_CASES) {
       const input = c.judge?.(evidence([], "reply"));

@@ -5,6 +5,7 @@ import { measureCalls } from "./measurement.js";
 export type LedgerCall = MeasuredCall & {
   runId?: string | null;
   parentRunId?: string | null;
+  createdAt?: Date;
 };
 
 export function measureWorkflowSteps(
@@ -33,7 +34,27 @@ export function measureWorkflowSteps(
   }
   const measure = (bucket: LedgerCall[]) =>
     measureCalls(bucket, pricing, minimumCacheTokens, pricedModel);
-  const foreground = [...steps].map(([step, bucket]) => ({ step, ...measure(bucket) }));
+  // Each call in the order it was made, so the first call of an answer can be told apart
+  // from the round trips its tool calls added.
+  const ordered = (bucket: LedgerCall[]) =>
+    [...bucket]
+      .sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
+      .map((call) => {
+        const m = measure([call]);
+        return {
+          operation: call.operation ?? "answer",
+          inputTokens: m.inputTokens,
+          cacheReadTokens: m.cacheReadTokens,
+          cacheWriteTokens: m.cacheWriteTokens,
+          outputTokens: m.outputTokens,
+          costUsd: m.costUsd,
+        };
+      });
+  const foreground = [...steps].map(([step, bucket]) => ({
+    step,
+    ...measure(bucket),
+    calls: ordered(bucket),
+  }));
   const background = { compaction: measure(compaction), unattributed: measure(unattributed) };
   const workflow = measure(unique);
   const buckets = [...foreground, background.compaction, background.unattributed];
