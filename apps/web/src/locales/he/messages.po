@@ -547,9 +547,17 @@ msgstr "**יום חמישי**\n"
 msgid "/ month"
 msgstr "/ חודש"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr ""
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "מרחב אחד"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "פעולות עבור {0}"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "פעולות עבור {name}"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "בוטל"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "לתקופות ניסיון שבוטלו אין שעות מחשב."
 
@@ -2239,6 +2249,10 @@ msgstr "לא ניתן ליצור את המרחב"
 msgid "Could not create the bot"
 msgstr "לא ניתן ליצור את הבוט"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr ""
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "לא ניתן ליצור את הבוט"
@@ -2543,6 +2557,7 @@ msgstr "לא ניתן להריץ את הרוטינה"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "השמירה נכשלה"
@@ -2936,10 +2951,7 @@ msgid "Delete \"{0}\"?"
 msgstr "למחוק את \"{0}\"?"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "מחיקת {0}"
 
@@ -4761,6 +4773,10 @@ msgstr "העמוד הבא"
 msgid "Next settings sections"
 msgstr "מקטעי ההגדרות הבאים"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr ""
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "אין אפליקציות שתואמות לחיפוש."
@@ -4998,6 +5014,10 @@ msgstr "יש להזין רק קוד ש-{codeHost} שלח לך."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "רק אני"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr ""
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5747,6 +5767,7 @@ msgid "Rename section"
 msgstr "שינוי שם המקטע"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "חידוש התוכנית"
 
@@ -5862,6 +5883,10 @@ msgstr "הפעלה מחדש לעדכון"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "שחזור"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6503,6 +6528,14 @@ msgstr "Slack לא מופעל"
 msgid "Slide up to lock"
 msgstr "החלקה למעלה לנעילה"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr ""
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr ""
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6604,6 +6637,7 @@ msgid "Start plan"
 msgstr "להתחיל תוכנית"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "להתחיל את התוכנית עכשיו"
 
@@ -7033,6 +7067,10 @@ msgstr "חלון ההקשר של המודל הזה קטן מדי. יש לבחו�
 msgid "This month"
 msgstr "החודש"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr ""
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "לא ניתן היה להציג את הדף הזה."
@@ -7150,6 +7188,10 @@ msgstr "הצגה או הסתרה של סרגל הצד"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "טוקנים"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr ""
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7297,6 +7339,16 @@ msgstr "ביטול הצמדה"
 msgid "Unread"
 msgstr "לא נקראו"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr ""
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr ""
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7355,6 +7407,7 @@ msgstr "מעדכן את מחשב הצוות"
 msgid "Updating…"
 msgstr "מעדכן…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7676,6 +7729,10 @@ msgstr "מי יכול לפתוח את הדף הזה"
 msgid "Who can start it"
 msgstr "מי יכול להפעיל"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr ""
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "לא יבוצע"
@@ -7836,6 +7893,10 @@ msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב היום."
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
