@@ -8,12 +8,14 @@ import type {
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
+  BACKGROUND_HELPER_TRIGGER,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   displayName,
+  HELPER_RESULT_TRIGGER,
   humanizeToolName,
   newSiteOutcome,
   outboundSiteGate,
@@ -801,6 +803,11 @@ async function reviewToolCall(
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
+    const delegated =
+      run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER;
+    const userTask = delegated ? await ctx.trust.loadOwnerWords() : ctx.task.prompt;
+    // Older helpers and deleted origins cannot establish authorization from their brief.
+    if (delegated && !userTask.trim()) return { decision: "ask", reason: undefined };
     const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
     // A new site is judged on the full URL and the owner's own words only: the task
     // prompt of a webhook or bot-started run carries text someone else wrote.
@@ -819,7 +826,7 @@ async function reviewToolCall(
             toolName: name,
             connectorKind,
             args: redactToolArgsForReview(args, ctx.secrets),
-            userTask: redactSecrets(ctx.task.prompt, ctx.secrets),
+            userTask: redactSecrets(userTask, ctx.secrets),
             botDescription,
             matchingRules: review.matchingRules,
           };

@@ -147,6 +147,7 @@ export async function startBackgroundHelper(
         status: "queued",
         trigger: BACKGROUND_HELPER_TRIGGER,
         sourceMessageId: message.id,
+        delegatedFromRunId: runId,
         clientNonce,
         ...(input.modelProvider
           ? { modelProvider: input.modelProvider, modelId: input.modelId, modelPinned: true }
@@ -345,6 +346,7 @@ export async function returnHelperOutcome(
         userId: run.userId,
         status: "queued",
         trigger: HELPER_RESULT_TRIGGER,
+        delegatedFromRunId: run.id,
         clientNonce: `helper-result:${run.id}`,
       },
       select: { id: true },

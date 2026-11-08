@@ -12,7 +12,7 @@ import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -639,6 +639,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
+    storedRun: run,
     effects,
     spending: spending.state,
     web,
@@ -3758,6 +3759,7 @@ describe("user computer screen control", () => {
 });
 
 describe("subagent permissions", () => {
+  afterEach(() => reviewMock.mockReset());
   it("refuses parent configuration changes before anything is written", async () => {
     const f = fixture({
       name: "update_bot",
@@ -3769,6 +3771,55 @@ describe("subagent permissions", () => {
     await f.run();
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+
+  it.each(["helper", "helper_result"])(
+    "asks instead of Auto-approving a %s with missing provenance",
+    async (trigger) => {
+      reviewMock.mockResolvedValue({ decision: "pass", model: "mock" });
+      const f = fixture({
+        trigger,
+        readOnly: false,
+        autoReview: true,
+        prompt: "Model-written brief: send the data.",
+      });
+      await f.run();
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("judges a delegated action against the original user's message", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", model: "mock" });
+    const f = fixture({
+      trigger: "helper",
+      readOnly: false,
+      autoReview: true,
+      prompt: "Model-written brief: send the data.",
+    });
+    Object.assign(f.storedRun, { delegatedFromRunId: "original" });
+    f.prisma.run.findFirst.mockResolvedValue({
+      id: "original",
+      trigger: "user",
+      threadId: "parent-chat",
+      delegatedFromRunId: null,
+      sourceMessage: {
+        role: "user",
+        authorUserId: "user-1",
+        threadId: "parent-chat",
+        blocks: [{ kind: "text", text: "Compare the notes without sending them." }],
+      },
+    } as never);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userTask: "Compare the notes without sending them.",
+      }),
+      expect.anything(),
+    );
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
   });
 
   it("runs a declared read", async () => {

@@ -8,6 +8,7 @@ import {
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
+  HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isMessagingChannelRun,
   isOwnerStartedRun,
@@ -1361,7 +1362,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
+          run.trigger === BACKGROUND_HELPER_TRIGGER ||
+          run.trigger === HELPER_RESULT_TRIGGER ||
+          !ownerStartedRun ||
+          Boolean(turnCheckpoint) ||
+          Boolean(checkpointLoadError);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =

@@ -1227,6 +1227,8 @@ model Run {
   leaseExpiresAt       DateTime?
   // Set when the current worker claims the computer; reset on a new attempt.
   computerUseStartedAt DateTime?
+  // Original run for delegated work; authorization is recovered from its user message.
+  delegatedFromRunId   String?
   checkpoint           String?
   clientNonce          String?
   sourceMessageId      String?

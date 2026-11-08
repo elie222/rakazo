@@ -36,6 +36,8 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ExecutorDeps } from "../../adapters/src/executor-deps.js";
+import { createRunTrustLoaders } from "../../adapters/src/run-trust.js";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -2093,6 +2095,20 @@ describeJourneys("required product journeys", () => {
     const helper = await waitForHelper(bot.id, "completed");
     // The helper works in a thread of its own, never the chat's.
     expect(helper.threadId).not.toBe(chat.id);
+    const authorizationWords = async (id: string) => {
+      const run = await prisma.run.findUniqueOrThrow({ where: { id } });
+      return createRunTrustLoaders({ prisma } as ExecutorDeps, {
+        run,
+        runId: id,
+        botId: bot.id,
+        taskPrompt: "Untrusted generated instructions",
+        ownerStartedRun: true,
+        messagingChannelRun: false,
+        sourceMessage: null,
+        connectedPlugins: [],
+      }).loadOwnerWords();
+    };
+    expect(await authorizationWords(helper.id)).toBe("run a subagent to summarize the venue notes");
     let wake = null as { id: string; status: string } | null;
     await waitForDatabase(async () => {
       wake = await prisma.run.findFirst({
@@ -2101,6 +2117,7 @@ describeJourneys("required product journeys", () => {
       });
       return wake?.status === "completed";
     });
+    expect(await authorizationWords(wake!.id)).toBe("run a subagent to summarize the venue notes");
     const [card] = await helperCards(cookie, bot.id);
     expect(card).toMatchObject({
       status: "completed",
