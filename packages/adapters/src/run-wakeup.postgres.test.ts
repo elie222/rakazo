@@ -188,7 +188,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     }
   });
 
-  it("keeps blocked rows unchanged, scans past them, and resumes after release or expiry", async () => {
+  it("starts model work while a normal computer lease is busy", async () => {
     const computer = await system.computer.create({
       data: {
         spaceId: identity.spaceId,
@@ -204,7 +204,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
     });
     const blocked = await createRun();
     const owner = await createRun();
-    const aged = await system.run.update({
+    await system.run.update({
       where: { id: blocked.id },
       data: { createdAt: new Date(0), updatedAt: new Date(0) },
     });
@@ -229,20 +229,11 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
           await system.run.update({ where: { id: runId }, data: { status: "completed" } });
         },
       } as BackgroundJobHandlers);
-      // A blocked oldest row must not starve the holder's explicit resume.
-      await wait(() => expect(entered).toContain(owner.id));
-      expect(entered).not.toContain(blocked.id);
-      expect(await system.run.findUniqueOrThrow({ where: { id: blocked.id } })).toMatchObject({
-        status: "queued",
-        leaseFence: 0,
-        startedAt: null,
-        updatedAt: aged.updatedAt,
-      });
-      await system.computerExecutionLease.update({
-        where: { id: lease.id },
-        data: { expiresAt: new Date(0) },
-      });
-      await wait(() => expect(entered).toContain(blocked.id));
+      await wait(() => expect(entered).toEqual(expect.arrayContaining([owner.id, blocked.id])));
+      // Dispatch does not claim or steal the computer; the executor waits on first use.
+      expect(
+        await system.computerExecutionLease.findUniqueOrThrow({ where: { id: lease.id } }),
+      ).toMatchObject({ runId: owner.id, expiresAt: lease.expiresAt });
     } finally {
       await host.stop();
       await system.computerExecutionLease.delete({ where: { id: lease.id } });
@@ -453,7 +444,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
         },
       } as BackgroundJobHandlers);
       await wait(() => expect(entered).toEqual(expect.arrayContaining([reply.id, endedReply.id])));
-      expect(entered).not.toContain(bootingReply.id);
+      await wait(() => expect(entered).toContain(bootingReply.id));
       // Expired as tombstones, so the next lease on each still raises the fence.
       expect(
         await system.computerExecutionLease.findUniqueOrThrow({ where: { id: orphan.id } }),

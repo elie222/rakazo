@@ -1779,6 +1779,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               verbatimMcpServers,
               threadId: thread.id,
               runId,
+              usageOperationKind: run.trigger === BACKGROUND_HELPER_TRIGGER ? "subagent" : "answer",
               routineId: run.routineId,
               sourceMessageId: run.sourceMessageId,
               onUsage: async (event) => {
