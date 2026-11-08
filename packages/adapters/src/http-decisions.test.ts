@@ -133,6 +133,7 @@ describe("decision provider failures", () => {
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
       expect.objectContaining({
+        operationKind: "setup",
         countedTokens: {
           inputTokens: expect.any(Number),
           outputTokens: 0,

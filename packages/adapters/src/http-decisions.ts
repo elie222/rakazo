@@ -153,6 +153,7 @@ export class HttpDecisionProvider implements DecisionProvider {
                     inputTokens: null,
                     outputTokens: null,
                     costUsd: null,
+                    operationKind: "setup",
                     pricingSnapshot,
                     countedTokens: context.signal.aborted
                       ? {
