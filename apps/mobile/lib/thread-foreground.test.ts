@@ -5,15 +5,20 @@ import { reduceThreadSnapshot } from "@rakazo/core";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
-import { rpc, subscribeThread } from "./api";
+import { rpc } from "./api";
+import { subscribeThread } from "./api-live";
 import { hapticSuccess } from "./haptics";
+import type { MobileSnapshot } from "./mobile-types";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import { useThreadLiveSubscription } from "./thread-live";
 import type { PinnedThreadWindow } from "./thread-window";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("@rakazo/core", async (importOriginal) => ({
@@ -67,6 +72,7 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread,
         pinnedAroundRef: ref(null),
@@ -139,6 +145,7 @@ describe("thread foreground subscription", () => {
         focused: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref<string | null>("thread-1"),
         pinnedAroundRef: ref(null),
@@ -214,6 +221,7 @@ describe("thread foreground subscription", () => {
         foreground,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref("thread-1"),
         pinnedAroundRef: ref(null),
@@ -339,6 +347,7 @@ describe("thread foreground subscription", () => {
           foreground,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           historyEpoch: ref(0),
           expandedHistoryThread: ref("thread-1"),
           pinnedAroundRef: ref(null),
@@ -406,7 +415,7 @@ describe("thread foreground subscription", () => {
       await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
     });
     vi.mocked(rpc).mockResolvedValue({ cursor: 10, threadId: "thread-1" } as never);
-    const snapshot = { cursor: 15 } as MobileSnapshot;
+    const snapshot = { cursor: 17 } as MobileSnapshot;
     const snapRef = ref<MobileSnapshot | null>(snapshot);
     const readVisibleTarget = ref<string | null>("bot-1");
     const markReadIfVisible = vi.fn();
@@ -421,6 +430,7 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref(null),
         pinnedAroundRef: ref(null),
@@ -455,7 +465,20 @@ describe("thread foreground subscription", () => {
       });
       expect(markReadIfVisible).toHaveBeenCalledOnce();
       expect(readVisibleTarget.current).toBeNull();
-      deliver({ type: "bot.updated", seq: 14, botId: "bot-1", createdAt: "1970-01-01T00:00:00Z" });
+      // In a shared space another member's message is new here too; the viewer's own is not.
+      const sentBy = (id: string, seq: number) =>
+        deliver({
+          type: "thread.message.created",
+          seq,
+          botId: "bot-1",
+          createdAt: "1970-01-01T00:00:00Z",
+          payload: { role: "user", author: { id, name: id } },
+        });
+      sentBy("user-1", 14);
+      expect(markReadIfVisible).toHaveBeenCalledOnce();
+      sentBy("user-2", 15);
+      expect(markReadIfVisible).toHaveBeenCalledTimes(2);
+      deliver({ type: "bot.updated", seq: 16, botId: "bot-1", createdAt: "1970-01-01T00:00:00Z" });
       expect(refreshMentionBots).toHaveBeenCalledOnce();
       expect(reduceThreadSnapshot).not.toHaveBeenCalled();
       expect(commitSnap).not.toHaveBeenCalled();
@@ -508,6 +531,7 @@ describe("thread foreground subscription", () => {
           foreground: true,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           historyEpoch: ref(0),
           expandedHistoryThread: ref("thread-1"),
           pinnedAroundRef: ref(null),
@@ -628,6 +652,7 @@ describe("thread foreground subscription", () => {
         foreground: true,
         readOnly: false,
         sessionEpoch: 1,
+        userId: "user-1",
         historyEpoch: ref(0),
         expandedHistoryThread: ref("thread-1"),
         pinnedAroundRef: ref(null),
@@ -714,6 +739,7 @@ describe("thread foreground subscription", () => {
           foreground,
           readOnly: false,
           sessionEpoch: 1,
+          userId: "user-1",
           messageId: mode === "search" ? "message-1" : undefined,
           ...refs,
           showSavedThread: vi.fn(),

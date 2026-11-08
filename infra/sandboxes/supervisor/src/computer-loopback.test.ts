@@ -2345,7 +2345,7 @@ describe("computer network reclaim", () => {
 
   describe("on startup", () => {
     async function reclaim() {
-      const { reclaimIdleComputerNetworks } = await import("./index.js");
+      const { reclaimIdleComputerNetworks } = await import("./networks.js");
       return reclaimIdleComputerNetworks();
     }
 
@@ -2585,7 +2585,7 @@ describe("computer network reclaim", () => {
       mocks.docker.getContainer.mockReturnValue(existing);
       mocks.docker.getNetwork.mockReturnValue(network);
       mocks.docker.listContainers.mockReset().mockResolvedValue([{ Id: existing.id }]);
-      const { reclaimIdleComputerNetworks } = await import("./index.js");
+      const { reclaimIdleComputerNetworks } = await import("./networks.js");
       mocks.docker.listNetworks.mockResolvedValue([
         {
           Name: botNet,

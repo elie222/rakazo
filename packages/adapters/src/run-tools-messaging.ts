@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   isBackgroundRunTrigger,
   redactSecrets,
   resolveBotAddress,
@@ -11,6 +12,7 @@ import {
   messageConnectedAgent,
   respondAgentConnection,
 } from "./agent-connections.js";
+import { startBackgroundHelper } from "./background-helpers.js";
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { normalizeWorkspacePath, resolveBotWorkspacePath } from "./computer-support.js";
@@ -164,6 +166,16 @@ async function sharedFiles(
 }
 
 /**
+ * Checked before any file is read or copied: shared paths are added to the message, so a blank
+ * one must be caught first, and an oversized one would leave copies behind for nothing.
+ */
+function messageError(ctx: RunContext, message: unknown): string | undefined {
+  const text = redactSecrets(String(message ?? ""), ctx.secrets).trim();
+  if (!text) return "message is required";
+  if (text.length > BOT_MESSAGE_MAX_LENGTH) return BOT_MESSAGE_TOO_LONG;
+}
+
+/**
  * The message as delivered: shared paths are listed where the recipient reads its task. The list
  * counts toward the message limit, so a message it would push over is refused with the room left.
  */
@@ -222,8 +234,24 @@ export const messagingTools: ToolHandlers = {
   async request_takeover() {
     return { ok: true };
   },
-  async run_subagent(_ctx, call) {
+  async run_subagent(ctx, call) {
     const { args } = call;
+    if (args.background === true) {
+      return call.finish(
+        await startBackgroundHelper(ctx, {
+          name:
+            String(args.name ?? "helper")
+              .trim()
+              .slice(0, 80) || "helper",
+          task: redactSecrets(String(args.task ?? "").trim(), ctx.secrets),
+          instructions: redactSecrets(String(args.instructions ?? "").trim(), ctx.secrets),
+          modelProvider: String(args.model_provider ?? "").trim(),
+          modelId: String(args.model_id ?? "").trim(),
+          executionId: call.executionId,
+          effectKey: call.effectKey,
+        }),
+      );
+    }
     return {
       ok: true,
       result: String(args.task ?? "done."),
@@ -276,8 +304,8 @@ export const messagingTools: ToolHandlers = {
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args, effectKey } = call;
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,
@@ -359,8 +387,8 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,

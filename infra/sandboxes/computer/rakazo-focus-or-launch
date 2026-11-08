@@ -13,10 +13,21 @@ import shutil
 import subprocess
 import sys
 
-# Launchers whose process WM_CLASS differs from the launcher name. The browser
-# is Chromium unless the image was built with BROWSER=brave.
-BROWSER_WM_CLASS = "brave-browser" if shutil.which("brave-browser") and not shutil.which("chromium") else "chromium"
-WM_CLASS = {"rakazo-browser": BROWSER_WM_CLASS}
+
+def browser_wm_class(which=shutil.which):
+    """WM_CLASS of the browser rakazo-browser starts, checked in its search order."""
+    if which("chromium") or which("chromium-browser"):
+        return "chromium"
+    if which("google-chrome") or which("google-chrome-stable"):
+        return "google-chrome"
+    if which("brave-browser"):
+        return "brave-browser"
+    return "chromium"
+
+
+# Launchers whose process WM_CLASS differs from the launcher name. The image
+# holds one browser, chosen by its BROWSER build argument.
+WM_CLASS = {"rakazo-browser": browser_wm_class()}
 WMCTRL_TIMEOUT_SEC = 5
 # control.py uses the same bounds: a browser may still be forwarding a URL
 # after its profile scan, and other apps only need an immediate-failure window.

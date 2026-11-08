@@ -1,6 +1,11 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { FetchError, ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -108,6 +113,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
       }
+      // Boat has no room to start the machine now; a later start finds some.
+      if (wrapped.code === "resume_failed" && /\bat capacity\b/i.test(wrapped.message)) {
+        throw new SandboxUnavailableError({ cause: wrapped });
+      }
       // Boat is still applying another change, such as a keep-alive; a later stop succeeds.
       if (wrapped.code === "stop_failed" && /\bis updating\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
@@ -139,9 +148,8 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await attemptWithRetry(...args);
     } catch (error) {
-      if (failedAtBoat(error) || billingRequired(error)) {
-        throw new SandboxUnresponsiveError(error.message, { cause: error });
-      }
+      if (billingRequired(error)) throw new SandboxProviderAccountError({ cause: error });
+      if (failedAtBoat(error)) throw new SandboxUnresponsiveError(error.message, { cause: error });
       throw error;
     }
   };

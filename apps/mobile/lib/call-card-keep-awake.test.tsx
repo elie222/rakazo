@@ -94,12 +94,19 @@ vi.mock("../components/glass-icon-button", () => ({
   }) =>
     createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
 }));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
   configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 vi.mock("./session", () => ({
@@ -138,6 +145,8 @@ const deps: CallDeps = {
   record: vi.fn(),
   transcribe: vi.fn(),
   send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
   endCall: async () => undefined,
   speak: async () => undefined,
   watch: () => vi.fn(),

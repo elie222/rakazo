@@ -64,19 +64,23 @@ screen lasts before control expires.
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
 
-Three model timeouts take milliseconds from `1000` to `300000`; other values keep the default.
-Raise them when several bots share one model server that queues requests. Five minutes is the
-ceiling because Node's HTTP client stops waiting at that point on its own.
+Model timeouts are configurable in milliseconds. Invalid or out-of-range values retain their
+defaults. Longer timeouts can help when several bots share a local inference server that queues
+requests. Provider SDKs and HTTP transports may impose independent timeout limits, so these
+settings do not guarantee that every provider supports arbitrarily long waits.
 
-- `MODEL_STREAM_TIMEOUT_MS` (default `120000`) is the time budget for retrying the same model. It
-  is also how long a request waits for the response to start when it uses the OpenAI Chat
-  Completions, Responses or Codex API, Anthropic Messages, Mistral or Azure OpenAI. Other APIs,
-  such as Google, Vertex AI, Bedrock and some routed models, use their client's own wait.
-- `MODEL_STREAM_IDLE_TIMEOUT_MS` (default `180000`) is how long a started response may go silent,
-  for every provider.
-- `MODEL_CONNECT_TIMEOUT_MS` (default `30000`) bounds connecting to an OpenAI-compatible model or
-  speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers and built-in providers keep
-  Node's own connect wait; the other two settings apply to them as described above.
+- `MODEL_STREAM_TIMEOUT_MS` (default `120000`, range `1000`–`2147483647`) is the time budget
+  for retrying the same model. It also controls the wait for response headers when using the
+  OpenAI Chat Completions, Responses or Codex API, Anthropic Messages, Mistral or Azure OpenAI.
+  Other APIs, such as Google, Vertex AI, Bedrock and some routed models, use their own client
+  timeouts.
+- `MODEL_STREAM_IDLE_TIMEOUT_MS` (default `180000`, range `0`–`2147483647`) bounds how long
+  a started response may remain silent. Set it to `0` to disable Rakazo's inactivity watchdog.
+  Explicit request cancellation remains available. Disabling this protection can leave stalled
+  requests waiting indefinitely if neither the provider nor the caller terminates them.
+- `MODEL_CONNECT_TIMEOUT_MS` (default `30000`, range `1000`–`300000`) bounds connecting to an
+  OpenAI-compatible model or speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers
+  and built-in providers retain Node's own connection timeout.
 
 ## Feature switches
 
@@ -147,6 +151,14 @@ background runs execute in the worker, so both hold live agent turns. In the pro
 file, `RAKAZO_API_MEMORY_LIMIT` and `RAKAZO_WORKER_MEMORY_LIMIT` cap them (Compose sizes such as
 `2g` or `3072m`, default `2g` each). Raise them on a larger host. Deploys briefly run the old and
 new container of each side by side, so leave room for both.
+
+## Postgres memory
+
+The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
+container (default `2560m`), `POSTGRES_SHARED_BUFFERS` sets its cache (default `1GB`, which counts
+against that cap) and `POSTGRES_EFFECTIVE_CACHE_SIZE` tells the planner how much data stays cached
+(default `2GB`). On a smaller host, lower them along with the API and worker caps above. Changing
+them restarts Postgres.
 
 ## Listening addresses
 

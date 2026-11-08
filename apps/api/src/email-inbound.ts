@@ -15,6 +15,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
@@ -34,6 +35,8 @@ export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
     botId: string;
     attachment: MessagingInboundAttachment;
     clientNonce: string;
+    /** Never joins a same-name file's versions, so a stranger's file cannot become the current one. */
+    standalone: boolean;
   }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
   /** Parses and authenticates the raw message; tests pass a fixed one. */
   readEmail?: (raw: Uint8Array) => Promise<InboundEmail>;
@@ -86,6 +89,14 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const bot = claimed?.bot;
   if (!bot || bot.archivedAt || !bot.thread) return ignored("no such bot");
   dropped.botId = bot.id;
+  // A routine takes the owner's address as given: it starts only that owner's own bot, and servers
+  // without email verify no one. Mail that starts the bot with no routine needs it confirmed.
+  const owner = await deps.prisma.user.findUnique({
+    where: { id: bot.userId },
+    select: { email: true, emailVerified: true, deactivatedAt: true },
+  });
+  // A deactivated owner's bot takes no mail, as it takes no webhook deliveries.
+  if (owner?.deactivatedAt) return ignored("owner deactivated");
 
   let email: InboundEmail;
   try {
@@ -105,12 +116,6 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   }
 
   const sender = email.from.address;
-  // A routine takes the owner's address as given: it starts only that owner's own bot, and servers
-  // without email verify no one. Mail that starts the bot with no routine needs it confirmed.
-  const owner = await deps.prisma.user.findUnique({
-    where: { id: bot.userId },
-    select: { email: true, emailVerified: true },
-  });
   const ownerEmail = owner?.email.trim().toLowerCase() || null;
   const named = (addresses: string[]) =>
     addresses.some((address) => recipientName(address, deps.domain) === target);
@@ -170,6 +175,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const saved = await saveToInbox(deps, bot, email, email.from, {
     capped: !starts,
     verified: email.authenticated && addressed,
+    // Only mail that may start the bot is trusted to add versions of the owner's files.
+    standalone: !starts,
   });
   if (!saved) return ignored("inbox full");
   if (!starts) {
@@ -218,7 +225,10 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
+    throw error;
+  });
 }
 
 /**
@@ -246,7 +256,7 @@ async function saveToInbox(
   bot: { id: string; spaceId: string; userId: string },
   email: InboundEmail,
   from: NonNullable<InboundEmail["from"]>,
-  options: { capped: boolean; verified: boolean },
+  options: { capped: boolean; verified: boolean; standalone: boolean },
 ): Promise<{ id: string; files: InboxFile[] } | null> {
   const where = { botId_key: { botId: bot.id, key: email.key } };
   const select = { id: true, attachments: true } as const;
@@ -261,7 +271,7 @@ async function saveToInbox(
 
   // Files cost the owner storage, so only a sender who proved their address gets them kept.
   const files = options.verified
-    ? await storeAttachments(deps, bot, email)
+    ? await storeAttachments(deps, bot, email, options.standalone)
     : email.attachments.map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
   try {
     const row = await deps.prisma.botEmailMessage.create({
@@ -295,6 +305,7 @@ async function storeAttachments(
   deps: EmailInboundDeps,
   bot: { id: string; spaceId: string; userId: string },
   email: InboundEmail,
+  standalone: boolean,
 ): Promise<InboxFile[]> {
   const keyHash = createHash("sha256").update(email.key).digest("base64url");
   const files: InboxFile[] = [];
@@ -318,6 +329,7 @@ async function storeAttachments(
           fetch: async () => file.bytes,
         },
         clientNonce: `email-attachment:${bot.id}:${keyHash}:${index}`,
+        standalone,
       });
       kept += 1;
       files.push({

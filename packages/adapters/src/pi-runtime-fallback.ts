@@ -25,6 +25,7 @@ import {
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
+import { ContextBudgetError } from "./context-selection.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
@@ -83,6 +84,12 @@ export interface FallbackStreamState {
   continuingCutReply?: boolean;
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
+  /**
+   * The context a backup's own context policy would send on its first call. The policy shortens
+   * older tool results and drops older turns to fit the backup's window, so a backup is judged on
+   * that, not on a transcript sized for the primary. Throws ContextBudgetError when nothing fits.
+   */
+  prepareForTarget?(target: RuntimeModelTarget, context: TranscriptContext): TranscriptContext;
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
@@ -233,6 +240,7 @@ function fallbackIncompatibility(
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
   tools: readonly ConnectorTool[],
+  prepareForTarget?: FallbackStreamState["prepareForTarget"],
 ): string | undefined {
   // The backup's own context policy prunes on its first call; judge what it would send. Too
   // many user images for its limit throws, and the caller skips the backup.
@@ -241,9 +249,12 @@ function fallbackIncompatibility(
       ...context,
       messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
     };
+    if (prepareForTarget) context = prepareForTarget(candidate, context);
   } catch (error) {
     if (error instanceof ModelImageLimitError)
       return "The request exceeds the backup model's image limit.";
+    if (error instanceof ContextBudgetError)
+      return "Conversation exceeds the backup model's context limit.";
     throw error;
   }
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
@@ -259,8 +270,14 @@ function fallbackIncompatibility(
   // small input-relative margin, not a fixed 4096 tokens that would exclude
   // otherwise usable small-context models on short turns.
   const contextSafetyMargin = Math.max(256, Math.ceil(inputTokens * 0.1));
-  if (candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin)
-    return "Conversation exceeds the backup model's context limit.";
+  // A context the backup's own policy prepared was sized against the output reserve the send
+  // uses, so it is judged by that accounting with no extra margin. A policy that keeps the
+  // transcript as is still has to fit.
+  const exceedsWindow = prepareForTarget
+    ? candidate.model.contextWindow <
+      inputTokens + effectiveOutputReserve(candidate.model.contextWindow, outputTokens)
+    : candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin;
+  if (exceedsWindow) return "Conversation exceeds the backup model's context limit.";
   const imageCount = contextImageCount(context);
   if (
     (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
@@ -401,6 +418,7 @@ export function fallbackAwareModelStream(
           requestContext(true),
           options,
           state.request.tools,
+          state.prepareForTarget,
         );
         if (incompatibility) {
           skip(incompatibility);

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import AddApprovalRule from "../app/(settings)/approval-rule-add";
 import Approvals from "../app/(settings)/approvals";
+import { queryClient } from "./query";
 
 type Rule = {
   id: string;
@@ -43,10 +44,16 @@ vi.mock("./i18n", () => {
   return { useI18n: () => i18n };
 });
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-selected",
   captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
   useLocalSearchParams: () => ({ spaceId: state.spaceId }),
@@ -167,10 +174,12 @@ const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
 
 async function render() {
   await act(async () => root.render(createElement(Approvals)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   state.spaceId = undefined;
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
@@ -274,7 +283,10 @@ it("dims every rule but blocks in Never ask, where only blocks apply", async () 
 it("edits a Space's own copy when opened with one", async () => {
   state.spaceId = "space-1";
   await render();
-  const spaceContext = { requestContext: { headers: { space: "space-1" } } };
+  const spaceContext = {
+    signal: expect.any(AbortSignal),
+    requestContext: { headers: { space: "space-1" } },
+  };
   expect(state.rpc.mock.calls).toEqual([
     ["approvalRules/list", { scope: "space" }, spaceContext],
     ["autoReview/get", { scope: "space" }, spaceContext],
@@ -300,6 +312,7 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(rows()).toEqual([]);
 
   await act(async () => retry()!.click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   expect(rows()).toEqual(["Always allow: Send email"]);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
@@ -374,4 +387,24 @@ it("drops Never ask dimming when a later mode read fails", async () => {
   await act(async () => root.render(createElement("div")));
   await render();
   expect(container.querySelector("span[data-dimmed]")).toBeNull();
+});
+
+it("keeps a saved move when a read that started before it lands later", async () => {
+  state.rules = [rule({ id: "site", matchKind: "site", matchValue: "example.com" })];
+  await render();
+  let finishRead!: (rules: Rule[]) => void;
+  const fallback = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, ...rest: unknown[]) =>
+    proc === "approvalRules/list"
+      ? new Promise((resolve) => (finishRead = resolve))
+      : fallback(proc, ...(rest as [Record<string, unknown>])),
+  );
+  await act(async () => root.render(createElement("div")));
+  await render();
+  await act(async () => menuButton("example.com", "Blocked")!.click());
+  expect(rows()).toEqual(["Blocked: example.com"]);
+  await act(async () =>
+    finishRead([rule({ id: "site", matchKind: "site", matchValue: "example.com" })]),
+  );
+  expect(rows()).toEqual(["Blocked: example.com"]);
 });

@@ -6,16 +6,17 @@ import { useCallback, useRef, useState } from "react";
 import { localTimezone } from "../../lib/local-timezone";
 import { parseModelOptionKey } from "../../lib/model-catalog";
 import type { Panel } from "../../lib/right-panel-state";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { sharedInflight } from "../../lib/shared-inflight";
-import { errorText } from "../../lib/user-error";
-import type { RoutineDraftState, RoutineEditor } from "../RoutineEditor";
+import type { RoutineDraftState } from "../../lib/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
-} from "../RoutineEditor";
+} from "../../lib/routine-draft";
+import type { createSpaceRpc } from "../../lib/rpc";
+import { sharedInflight } from "../../lib/shared-inflight";
+import { errorCode, errorText } from "../../lib/user-error";
+import type { RoutineEditor } from "../RoutineEditor";
 
 export function useRoutineEditor({
   rpc,
@@ -56,6 +57,10 @@ export function useRoutineEditor({
       );
       return result.secret;
     });
+  const webhookErrorText = (error: unknown, fallback: string) =>
+    errorCode(error) === "FORBIDDEN"
+      ? t`Only the bot's creator can set its webhook key.`
+      : errorText(error, fallback);
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
@@ -116,7 +121,16 @@ export function useRoutineEditor({
         onBack: () => setPanel("routines"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
-          await ensureWebhookSecret(active.id);
+          const targetBotId = active.id;
+          const request = routineSaveRequest.current;
+          try {
+            await ensureWebhookSecret(targetBotId);
+          } catch (error) {
+            if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) {
+              return;
+            }
+            setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
+          }
         },
         onSave: async () => {
           if (routineSavePending.current) return;
@@ -150,7 +164,9 @@ export function useRoutineEditor({
               !active.webhookConfigured &&
               !routineWebhookSecret
             ) {
-              await ensureWebhookSecret(targetBotId);
+              await ensureWebhookSecret(targetBotId).catch((error: unknown) => {
+                throw new Error(webhookErrorText(error, t`Could not create the webhook key`));
+              });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;

@@ -1,3 +1,5 @@
+import type { SnoozePreset } from "@rakazo/core";
+
 export type InboxChatKind = "bot" | "group";
 export type InboxRowAction = "read" | "unread" | "archive" | "pin" | "unpin" | "delete";
 
@@ -10,7 +12,15 @@ export const INBOX_ROW_ACTIONS = {
   delete: { label: "Delete…", systemImage: "trash" },
 } as const satisfies Record<InboxRowAction, { label: string; systemImage: string }>;
 
-/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin. */
+/** The snooze choices in a chat's menu; translated where shown. */
+export const SNOOZE_LABELS = {
+  hour: "1 hour",
+  threeHours: "3 hours",
+  tomorrow: "Tomorrow",
+  nextWeek: "Next week",
+} as const satisfies Record<SnoozePreset, string>;
+
+/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin, and a full swipe archives. */
 export function inboxRowActions(chat: { unread?: boolean; pinned?: boolean }): {
   leading: InboxRowAction;
   trailing: InboxRowAction[];

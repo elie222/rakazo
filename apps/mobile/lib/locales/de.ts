@@ -1,4 +1,12 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Snooze: "Schlummern",
+  Snoozed: "Geschlummert",
+  Unsnooze: "Nicht mehr schlummern",
+  Woke: "Wieder da",
+  "1 hour": "1 Stunde",
+  "3 hours": "3 Stunden",
+  Tomorrow: "Morgen",
+  "Next week": "Nächste Woche",
   "No matches": "Keine Treffer",
   "Always ask": "Immer fragen",
   "Search tools": "Tools durchsuchen",
@@ -121,8 +129,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Ersatzmodelle sind fehlgeschlagen oder waren für diese Anfrage nicht verfügbar.",
 
-  "Ollama Cloud": "Ollama Cloud",
-  "Ollama API key": "Ollama API-Schlüssel",
   "Show password": "Passwort anzeigen",
   "Hide password": "Passwort verbergen",
   Export: "Exportieren",
@@ -462,6 +468,7 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",
   Versions: "Versionen",
   Stop: "Stoppen",
+  Stopped: "Gestoppt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",
   "Type your answer": "Gib deine Antwort ein",
@@ -996,6 +1003,9 @@ export const DE_MESSAGES: Record<string, string> = {
   Call: "Anrufen",
   "Calls need transcription": "Anrufe brauchen eine Transkription",
   "Could not hear that.": "Das war nicht zu verstehen.",
+  "Approve or deny it on screen.": "Genehmige oder lehne es auf dem Bildschirm ab.",
+  "Hang up, then enter the code on screen.":
+    "Lege auf und gib dann den Code auf dem Bildschirm ein.",
   "Could not speak that.": "Das konnte nicht vorgelesen werden.",
   "Could not transcribe that.": "Das konnte nicht transkribiert werden.",
   "Hang up": "Auflegen",
@@ -1140,6 +1150,14 @@ export const DE_MESSAGES: Record<string, string> = {
   Credits: "Guthaben",
   "Available credits": "Verfügbares Guthaben",
   "Computer hours left": "Verbleibende Computerstunden",
+  Upgrade: "Upgraden",
+  "Your trial's computer hours are used up.":
+    "Die Computerstunden deines Testzeitraums sind aufgebraucht.",
+  "This month's computer hours are used up.":
+    "Die Computerstunden dieses Monats sind aufgebraucht.",
+  "Cancelled trials have no computer hours.":
+    "Gekündigte Testzeiträume haben keine Computerstunden.",
+  "Renew plan": "Plan verlängern",
   "Trials get fewer hours to prevent abuse.":
     "Testzeiträume erhalten weniger Stunden, um Missbrauch zu verhindern.",
   "Start plan now": "Plan jetzt starten",

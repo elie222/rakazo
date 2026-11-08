@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { notificationAvatarSource } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 
+/** Installed apps drop an avatar over 1400 base64 characters, and Android one over 96px. */
 const MAX_AVATAR_BYTES = 1050;
+/** Largest that fits first; iOS draws the sender at about 40pt, so 40px alone looked blurry. */
+const AVATAR_SIZES = [96, 64, 40];
 const MAX_CACHED_AVATARS = 1000;
 /**
  * Thumbnails by bot id, keyed on the avatar inputs so an edited avatar renders again. The render
@@ -17,13 +20,17 @@ async function renderAvatar(bot: { id: string; color: string; avatarSet?: string
     ? Buffer.from(decodeURIComponent(source.slice(comma + 1)))
     : Buffer.from(source.slice(comma + 1), "base64");
   const { default: sharp } = await import("sharp");
-  const avatar = await sharp(bytes, { limitInputPixels: 16_777_216 })
-    .rotate()
-    .resize(40, 40, { fit: "cover" })
-    .flatten({ background: "white" })
-    .jpeg({ quality: 30 })
-    .toBuffer();
-  return avatar.length <= MAX_AVATAR_BYTES ? avatar.toString("base64") : undefined;
+  const image = sharp(bytes, { limitInputPixels: 16_777_216 }).rotate();
+  for (const size of AVATAR_SIZES) {
+    const avatar = await image
+      .clone()
+      .resize(size, size, { fit: "cover" })
+      .flatten({ background: "white" })
+      .jpeg({ quality: 30, mozjpeg: true })
+      .toBuffer();
+    if (avatar.length <= MAX_AVATAR_BYTES) return avatar.toString("base64");
+  }
+  return undefined;
 }
 
 /** Small enough to travel inside a push without exposing an authenticated avatar URL. */
