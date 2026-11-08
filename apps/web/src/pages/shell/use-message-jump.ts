@@ -180,6 +180,11 @@ export function useMessageJump({
   }, [active?.id]);
 
   useEffect(() => {
+    if (searchParamsRef.current.get("m")) return;
+    initiallyScrolledThread.current = null;
+  }, [active?.id, groupId, inGroup]);
+
+  useEffect(() => {
     const messageId = searchParams.get("m");
     const routineId = searchParams.get("routine");
     if (inGroup && groupId && messageId) {

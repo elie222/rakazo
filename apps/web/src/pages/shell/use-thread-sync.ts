@@ -40,7 +40,7 @@ import {
 } from "../../lib/thread-events";
 import {
   firstVisibleTranscriptRow,
-  transcriptCanSnapAfterFrame,
+  scheduleTranscriptSnapToEnd,
   transcriptIsNearEnd,
 } from "../../lib/transcript-scroll";
 import type { useBrowserNotifications } from "./use-browser-notifications";
@@ -151,16 +151,8 @@ export function useThreadSync({
     return queries.threads.get.queryKey({ input: target });
   }
 
-  function snapTranscriptToEndAfterFrame() {
-    const queuedElement = messageScroll.current;
-    if (!queuedElement) return;
-    const queuedScrollTop = queuedElement.scrollTop;
-    window.requestAnimationFrame(() => {
-      const element = messageScroll.current;
-      if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
-        queuedElement.scrollTop = queuedElement.scrollHeight;
-      }
-    });
+  function snapTranscriptToEndAfterFrame(stickToEnd: boolean) {
+    scheduleTranscriptSnapToEnd(() => messageScroll.current, stickToEnd);
   }
 
   async function refreshGroupThread(id: string, signal?: AbortSignal) {
@@ -183,12 +175,15 @@ export function useThreadSync({
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
-    if (
-      stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
-      expandedHistoryThread.current !== snap.threadId
-    ) {
-      snapTranscriptToEndAfterFrame();
+    if (expandedHistoryThread.current !== snap.threadId) {
+      const element = messageScroll.current;
+      const stillStick =
+        stickToEnd &&
+        (!scrollElement ||
+          !element ||
+          transcriptIsNearEnd(scrollElement) ||
+          transcriptIsNearEnd(element));
+      snapTranscriptToEndAfterFrame(stillStick);
     }
     return snap;
   }
@@ -220,12 +215,15 @@ export function useThreadSync({
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
-    if (
-      stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
-      expandedHistoryThread.current !== snap.threadId
-    ) {
-      snapTranscriptToEndAfterFrame();
+    if (expandedHistoryThread.current !== snap.threadId) {
+      const element = messageScroll.current;
+      const stillStick =
+        stickToEnd &&
+        (!scrollElement ||
+          !element ||
+          transcriptIsNearEnd(scrollElement) ||
+          transcriptIsNearEnd(element));
+      snapTranscriptToEndAfterFrame(stillStick);
     }
     void Promise.all([
       // Runs after routine changes too, so an older read in flight is not reused.

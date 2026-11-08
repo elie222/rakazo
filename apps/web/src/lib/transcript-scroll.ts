@@ -12,6 +12,24 @@ export function transcriptCanSnapAfterFrame(
   return element === queuedElement && queuedElement.scrollTop === queuedScrollTop;
 }
 
+/** Tail snap after layout; reads the live scroller so a remounted transcript still sticks. */
+export function scheduleTranscriptSnapToEnd(
+  readScroller: () => Pick<HTMLElement, "scrollTop" | "scrollHeight"> | null,
+  stickToEnd: boolean,
+): void {
+  if (!stickToEnd) return;
+  const queuedTop = readScroller()?.scrollTop ?? null;
+  const snap = () => {
+    const element = readScroller();
+    if (!element) return;
+    const readerHeldPosition = queuedTop === null || element.scrollTop === queuedTop;
+    if (readerHeldPosition || transcriptIsNearEnd(element)) {
+      element.scrollTop = element.scrollHeight;
+    }
+  };
+  window.requestAnimationFrame(() => window.requestAnimationFrame(snap));
+}
+
 export function transcriptMovedDown(previousScrollTop: number | null, scrollTop: number): boolean {
   return previousScrollTop !== null && scrollTop >= previousScrollTop;
 }
