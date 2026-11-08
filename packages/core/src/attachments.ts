@@ -165,10 +165,23 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
+function toolStepsHistoryText(steps: Extract<MessageBlock, { kind: "steps" }>["steps"]): string {
+  if (steps.length === 0) return "";
+  const lines = steps.map((step) => {
+    const label = step.count > 1 ? `${step.label} ×${step.count}` : step.label;
+    const note = step.note?.replace(/\s+/g, " ").trim();
+    return note ? `- ${label}: ${note}` : `- ${label}`;
+  });
+  return `[tool steps]\n${lines.join("\n")}`;
+}
+
 export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
       if (block.kind === "text") return block.text;
+      // The tools a reply used, and what the bot wrote before each, are kept out of its text;
+      // without them a later turn cannot tell what it already did.
+      if (block.kind === "steps") return toolStepsHistoryText(block.steps);
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;

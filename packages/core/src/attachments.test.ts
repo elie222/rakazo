@@ -449,3 +449,24 @@ describe("artifactTypeLabel", () => {
     expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
   });
 });
+
+describe("tool step history", () => {
+  it("lists each step with its count and the note written before it", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "steps",
+          steps: [
+            { label: "Searched the web", count: 2 },
+            { label: "Shell", count: 1, note: "Installing\n\nthe extension." },
+          ],
+        },
+        { kind: "text", text: "Installed." },
+      ]),
+    ).toBe("[tool steps]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.");
+  });
+
+  it("renders nothing for an empty steps block", () => {
+    expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+  });
+});
