@@ -17,7 +17,6 @@ import {
   listRowInsets,
   listRowSeparator,
   listStyle,
-  onTapGesture,
   scrollContentBackground,
   scrollDisabled,
   shapes,
@@ -34,6 +33,7 @@ import { native, useResolvedAppearance } from "../lib/native";
 import { InboxChatPreview } from "./inbox-chat-preview";
 import type { InboxSwipeRowProps } from "./inbox-swipe-row";
 import { NativeListRowContext } from "./native-list-row";
+import { NativeRowContent } from "./native-row";
 
 // Measured row heights, so recycled and reopened rows start at their size instead of 0.
 const rowHeights = new Map<string, number>();
@@ -52,7 +52,6 @@ export function InboxSwipeRow({
   sectionId,
   sections,
   preview,
-  onPress,
   onAction,
   onOrganize,
   onEditSection,
@@ -173,15 +172,8 @@ export function InboxSwipeRow({
   // In the native inbox list the row is one of its rows; elsewhere it hosts a one-row list.
   if (nativeRow) {
     return swipeRow(
-      onPress ? [...nativeRow.modifiers, onTapGesture(onPress)] : nativeRow.modifiers,
-      // The host keeps the size it first measured, so a new width mounts a new one.
-      <RNHostView key={nativeRow.width} matchContents>
-        <NativeListRowContext.Provider value={null}>
-          <View style={{ width: nativeRow.width }} pointerEvents={onPress ? "none" : "auto"}>
-            {children}
-          </View>
-        </NativeListRowContext.Provider>
-      </RNHostView>,
+      nativeRow.modifiers,
+      <NativeRowContent width={nativeRow.width}>{children}</NativeRowContent>,
     );
   }
 

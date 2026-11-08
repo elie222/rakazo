@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
+import type { NativeRowMenu } from "../components/native-row";
 import { createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
@@ -29,6 +30,7 @@ const ui = vi.hoisted(() => ({
   previews: 0,
   push: vi.fn(),
   menus: [] as MenuProps[],
+  rowMenus: [] as NativeRowMenu[],
   swipeRows: [] as string[],
   avatars: [] as string[],
   chevronStarts: [] as number[],
@@ -117,6 +119,13 @@ vi.mock("@expo/ui/community/menu", () => ({
   MenuView: (props: MenuProps) => {
     ui.menus.push(props);
     return props.children;
+  },
+}));
+// On iOS a heading's menu is the native list row's long-press menu.
+vi.mock("../components/native-row", () => ({
+  NativeRow: ({ menu, children }: { menu?: NativeRowMenu; children: ReactNode }) => {
+    if (menu) ui.rowMenus.push(menu);
+    return children;
   },
 }));
 vi.mock("expo-router", () => {
@@ -276,6 +285,7 @@ beforeEach(() => {
     focused: true,
     previews: 0,
     menus: [],
+    rowMenus: [],
     swipeRows: [],
     avatars: [],
     chevronStarts: [],
@@ -668,22 +678,22 @@ it("offers every space heading's Members and Settings, and Delete only where the
       options={{ confirmDeleteSpace }}
     />,
   );
-  expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
+  expect(ui.rowMenus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
     ["new-bot", "members", "settings"],
     ["new-bot", "members", "settings", "delete"],
   ]);
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "members" } }));
+  act(() => ui.rowMenus[1]!.onAction("members"));
   expect(ui.push).toHaveBeenLastCalledWith({
     pathname: "/space-members",
     params: { spaceId: "space-work", name: "Work" },
   });
   // Settings open the Space's own page, which edits that Space even when another is selected.
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
+  act(() => ui.rowMenus[1]!.onAction("settings"));
   expect(ui.push).toHaveBeenCalledWith({
     pathname: "/space",
     params: { spaceId: "space-work", name: "Work" },
   });
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
+  act(() => ui.rowMenus[1]!.onAction("delete"));
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });
 
@@ -698,21 +708,18 @@ it("creates a bot in the heading's own space, and not while a space switch or re
     }) as unknown as InboxItem;
   const items = [heading("space-home", "Home"), heading("space-work", "Work")];
   render(<List items={items} spaceId="space-home" options={{ createBotInSpace }} />);
-  const newBot = (menu: MenuProps) => menu.actions.find((entry) => entry.id === "new-bot");
-  expect(ui.menus.map((menu) => newBot(menu))).toEqual([
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
+  const newBot = (menu: NativeRowMenu) => menu.actions.find((entry) => entry.id === "new-bot");
+  expect(ui.rowMenus.map((menu) => newBot(menu))).toEqual([
+    expect.objectContaining({ title: "New bot", disabled: false }),
+    expect.objectContaining({ title: "New bot", disabled: false }),
   ]);
   // A heading of a space that is not selected still makes the bot in that space.
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "new-bot" } }));
+  act(() => ui.rowMenus[1]!.onAction("new-bot"));
   expect(createBotInSpace).toHaveBeenCalledWith("space-work");
   for (const options of [{ spaceBusy: true }, { spaceRecoveryId: "space-home" }]) {
-    ui.menus = [];
+    ui.rowMenus = [];
     render(<List items={items} spaceId="space-home" options={{ createBotInSpace, ...options }} />);
-    expect(ui.menus.map((menu) => newBot(menu)?.attributes)).toEqual([
-      { disabled: true },
-      { disabled: true },
-    ]);
+    expect(ui.rowMenus.map((menu) => newBot(menu)?.disabled)).toEqual([true, true]);
   }
 });
 

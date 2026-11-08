@@ -9,8 +9,17 @@ import { NativeListRowContext } from "../components/native-list-row";
 
 type Modifier = { name: string; value: unknown };
 
-const swift = vi.hoisted(() => ({ geometry: [] as Array<(frame: { width: number }) => void> }));
+const swift = vi.hoisted(() => ({
+  geometry: [] as Array<(frame: { width: number }) => void>,
+  scrolls: [] as Array<[number | null, number]>,
+  overlay: null as null | {
+    pills: { above?: { index: number }; below?: { index: number } };
+    onJump: (direction: "above" | "below", pill: { index: number }) => void;
+  },
+}));
 
+// Tests load the shared module; the list rows are the iOS one.
+vi.mock("../components/native-row", () => import("../components/native-row.ios"));
 vi.mock("@expo/ui/swift-ui", () => {
   const box =
     (name: string) =>
@@ -56,6 +65,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
   );
 });
 vi.mock("react-native", () => ({
+  findNodeHandle: () => 1,
   View: ({ children, style }: { children?: ReactNode; style?: { width?: number } }) => (
     <div data-ui="View" data-width={style?.width}>
       {children}
@@ -66,6 +76,19 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ b
 vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
 vi.mock("./native", () => ({ native: { page: "page" }, useResolvedAppearance: () => "light" }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
+vi.mock("./native-list-scroll", () => ({
+  canScrollNativeList: true,
+  scrollNativeListToRow: (tag: number | null, row: number) => {
+    swift.scrolls.push([tag, row]);
+    return Promise.resolve(true);
+  },
+}));
+vi.mock("../components/unread-jump-overlay", () => ({
+  UnreadJumpOverlay: (props: NonNullable<typeof swift.overlay>) => {
+    swift.overlay = props;
+    return null;
+  },
+}));
 
 type Item = { key: string; swipe: boolean };
 
@@ -91,7 +114,15 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function render(data: Item[], extra: { empty?: ReactNode; header?: ReactNode } = {}) {
+function render(
+  data: Item[],
+  extra: {
+    empty?: ReactNode;
+    header?: ReactNode;
+    signals?: Array<{ unread: number; attention: number }>;
+    viewport?: { update: () => void; subscribe: () => () => void; has: (key: string) => boolean };
+  } = {},
+) {
   const root = createRoot(container);
   act(() =>
     root.render(
@@ -99,16 +130,26 @@ function render(data: Item[], extra: { empty?: ReactNode; header?: ReactNode } =
         data={data}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => <Row item={item} />}
-        isSwipeRow={(item) => item.swipe}
+        isNativeRow={(item) => item.swipe}
         header={extra.header}
         empty={extra.empty}
         footer={<span data-footer />}
         gutters={{ left: 8, right: 8 }}
-        avatarViewport={{ update: vi.fn() } as never}
+        avatarViewport={
+          (extra.viewport ?? {
+            update: vi.fn(),
+            subscribe: () => () => {},
+            has: () => false,
+          }) as never
+        }
         onRefresh={async () => undefined}
+        signals={extra.signals ?? []}
+        showJumpPills={extra.signals !== undefined}
       />,
     ),
   );
+  // The list draws rows once it has measured the width a row gets.
+  act(() => swift.geometry.at(-1)?.({ width: 362 }));
   return root;
 }
 
@@ -138,7 +179,6 @@ it("gives hosted content the row width the list measures", () => {
     { key: "heading:work", swipe: false },
     { key: "bot:1", swipe: true },
   ]);
-  act(() => swift.geometry.at(-1)?.({ width: 362 }));
   expect(container.querySelector<HTMLElement>('[data-row="bot:1"]')?.dataset.width).toBe("362");
   const heading = container.querySelector('[data-row="heading:work"]')!;
   expect(heading.closest('[data-ui="View"]')?.getAttribute("data-width")).toBe("362");
@@ -152,4 +192,51 @@ it("shows the empty state only while there are no rows", () => {
   const again = render([{ key: "bot:1", swipe: true }], { empty: <span data-empty /> });
   expect(container.querySelector("[data-empty]")).toBeNull();
   act(() => again.unmount());
+});
+
+it("jumps to an unread row out of view by its row in the native list", () => {
+  swift.scrolls = [];
+  const read = { unread: 0, attention: 0 };
+  const root = render(
+    [
+      { key: "bot:1", swipe: true },
+      { key: "bot:2", swipe: true },
+      { key: "bot:3", swipe: true },
+    ],
+    {
+      header: <span data-header />,
+      signals: [read, read, { unread: 1, attention: 0 }],
+      // Only the first chat is on screen.
+      viewport: { update: vi.fn(), subscribe: () => () => {}, has: (key) => key === "bot:1" },
+    },
+  );
+  const below = swift.overlay?.pills.below;
+  expect(below?.index).toBe(2);
+  act(() => swift.overlay?.onJump("below", below!));
+  // The header row comes first in the list, so the third chat is its fourth row.
+  expect(swift.scrolls).toEqual([[1, 3]]);
+  act(() => root.unmount());
+});
+
+it("draws no rows until it knows a row's width, so none keeps a wrong first layout", () => {
+  const root = createRoot(container);
+  act(() =>
+    root.render(
+      <NativeInboxList<Item>
+        data={[{ key: "bot:1", swipe: true }]}
+        keyExtractor={(item) => item.key}
+        renderItem={({ item }) => <Row item={item} />}
+        isNativeRow={(item) => item.swipe}
+        gutters={{ left: 0, right: 0 }}
+        avatarViewport={{ update: vi.fn(), subscribe: () => () => {}, has: () => false } as never}
+        onRefresh={async () => undefined}
+        signals={[]}
+        showJumpPills={false}
+      />,
+    ),
+  );
+  expect(container.querySelector('[data-row="bot:1"]')).toBeNull();
+  act(() => swift.geometry.at(-1)?.({ width: 362 }));
+  expect(container.querySelector('[data-row="bot:1"]')).not.toBeNull();
+  act(() => root.unmount());
 });

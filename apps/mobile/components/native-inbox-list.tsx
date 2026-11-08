@@ -1,12 +1,13 @@
 import type { ReactElement, ReactNode } from "react";
 import type { AvatarViewport } from "../lib/avatar-life";
+import type { InboxSignal } from "../lib/offscreen-unreads";
 
 export type NativeInboxListProps<Item> = {
   data: readonly Item[];
   keyExtractor: (item: Item) => string;
   renderItem: (info: { item: Item }) => ReactElement | null;
-  /** Rows that bring their own swipe actions and menu, and so join the list directly. */
-  isSwipeRow: (item: Item) => boolean;
+  /** Rows that make their own native row (chat rows with swipe actions, headings with a menu). */
+  isNativeRow: (item: Item) => boolean;
   header?: ReactNode;
   /** Shown in place of the rows while there are none. */
   empty?: ReactNode;
@@ -15,6 +16,9 @@ export type NativeInboxListProps<Item> = {
   gutters: { left: number; right: number };
   avatarViewport: AvatarViewport;
   onRefresh: () => Promise<void>;
+  /** Unread and attention counts by row, for the pills that jump to rows out of view. */
+  signals: readonly InboxSignal[];
+  showJumpPills: boolean;
 };
 
 /** iOS only: other platforms keep the FlatList inbox. */

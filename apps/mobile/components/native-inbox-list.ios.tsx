@@ -1,4 +1,4 @@
-import { Group, Rectangle, RNHostView } from "@expo/ui/swift-ui";
+import { Group, Rectangle } from "@expo/ui/swift-ui";
 import type { ViewModifier } from "@expo/ui/swift-ui/modifiers";
 import {
   foregroundStyle,
@@ -13,15 +13,21 @@ import {
   scrollContentBackground,
 } from "@expo/ui/swift-ui/modifiers";
 import type { ReactNode } from "react";
-import { useState } from "react";
-import { View } from "react-native";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { findNodeHandle, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AvatarViewport } from "../lib/avatar-life";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { native } from "../lib/native";
+import { canScrollNativeList, scrollNativeListToRow } from "../lib/native-list-scroll";
+import type { InboxSignal } from "../lib/offscreen-unreads";
+import { offscreenUnreads } from "../lib/offscreen-unreads";
+import { useSideInsets } from "../lib/side-insets";
 import type { NativeInboxListProps } from "./native-inbox-list";
 import { NativeInsetList } from "./native-inset-list";
 import { NativeListRowContext } from "./native-list-row";
+import { NativeRow } from "./native-row";
+import { UnreadJumpOverlay } from "./unread-jump-overlay";
 
 /** Rows scrolled out of view freeze their avatars, as the list's visible rows tell it. */
 function useVisibleRows(viewport: AvatarViewport) {
@@ -39,6 +45,50 @@ function useVisibleRows(viewport: AvatarViewport) {
 }
 
 /**
+ * Pills for unread rows out of view, from the rows the list reports on screen. Its own component,
+ * so rows coming and going redraw the pills and not the list.
+ */
+function NativeJumpPills({
+  keys,
+  signals,
+  viewport,
+  topInset,
+  bottomInset,
+  onJump,
+}: {
+  keys: readonly string[];
+  signals: readonly InboxSignal[];
+  viewport: AvatarViewport;
+  topInset: number;
+  bottomInset: number;
+  onJump: (index: number) => void;
+}) {
+  const visible = useSyncExternalStore(viewport.subscribe, () => {
+    const shown = keys.flatMap((key, index) => (viewport.has(key) ? [index] : []));
+    return shown.length > 0 ? `${shown[0]}:${shown[shown.length - 1]}` : "";
+  });
+  const pills = useMemo(() => {
+    if (!visible) return {};
+    const [first = 0, last = 0] = visible.split(":").map(Number);
+    return offscreenUnreads(signals, { first, last });
+  }, [signals, visible]);
+  // The first pills fade in only once the list has shown rows, as with the FlatList inbox.
+  const shown = useRef(false);
+  useEffect(() => {
+    if (visible) shown.current = true;
+  }, [visible]);
+  return (
+    <UnreadJumpOverlay
+      pills={pills}
+      topInset={topInset}
+      bottomInset={bottomInset}
+      animateEntering={shown.current}
+      onJump={(_direction, pill) => onJump(pill.index)}
+    />
+  );
+}
+
+/**
  * The iOS inbox as one SwiftUI list: system scrolling, pull to refresh, and each chat row's swipe
  * actions and context menu as rows of this list. Row content stays the shared React Native rows.
  */
@@ -46,16 +96,20 @@ export function NativeInboxList<Item>({
   data,
   keyExtractor,
   renderItem,
-  isSwipeRow,
+  isNativeRow,
   header,
   empty,
   footer,
   gutters,
   avatarViewport,
   onRefresh,
+  signals,
+  showJumpPills,
 }: NativeInboxListProps<Item>) {
+  const hostRef = useRef(null);
   const headerInset = useFloatingHeaderInset();
   const { bottom } = useSafeAreaInsets();
+  const sideInsets = useSideInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
   // the last spacer, which fills its row.
@@ -72,14 +126,12 @@ export function NativeInboxList<Item>({
     listRowBackground(native.page),
     ...visibility(key),
   ];
-  // Content that is not a chat row (headings, pinned tiles, the activity strip): hosted as is.
+  const rowContext = (key: string) => ({ modifiers: rowModifiers(key), width: rowWidth });
+  // Content around the rows (the activity strip, errors, the end of the list): hosted as is.
   const hosted = (key: string, content: ReactNode) => (
-    <Group key={key} modifiers={rowModifiers(key)}>
-      {/* The host keeps the size it first measured, so a new width mounts a new one. */}
-      <RNHostView key={rowWidth} matchContents>
-        <View style={{ width: rowWidth }}>{content}</View>
-      </RNHostView>
-    </Group>
+    <NativeListRowContext.Provider key={key} value={rowContext(key)}>
+      <NativeRow>{content}</NativeRow>
+    </NativeListRowContext.Provider>
   );
   // Under the floating header the list ignores the top and bottom safe area, so it adds both.
   const spacer = (key: string, height: number, measure?: ViewModifier) =>
@@ -97,29 +149,35 @@ export function NativeInboxList<Item>({
         />
       </Group>
     ) : null;
-  return (
+  const showEmpty = data.length === 0 && Boolean(empty);
+  // The list's rows in order, as its collection view numbers them: spacer, header, empty, items.
+  const firstItemRow = (headerInset > 0 ? 1 : 0) + (header ? 1 : 0) + (showEmpty ? 1 : 0);
+  const list = (
     <NativeInsetList
+      hostRef={hostRef}
       variant="plain"
       background={native.page}
       modifiers={[scrollContentBackground("hidden"), refreshable(onRefresh)]}
     >
       {spacer("top", headerInset)}
-      {header ? hosted("header", header) : null}
-      {data.length === 0 && empty ? hosted("empty", empty) : null}
-      {data.map((item) => {
-        const key = keyExtractor(item);
-        return isSwipeRow(item) ? (
-          <NativeListRowContext.Provider
-            key={key}
-            value={{ modifiers: rowModifiers(key), width: rowWidth }}
-          >
-            {renderItem({ item })}
-          </NativeListRowContext.Provider>
-        ) : (
-          hosted(key, renderItem({ item }))
-        );
-      })}
-      {footer ? hosted("footer", footer) : null}
+      {/* Rows wait for the measured width: one laid out before it keeps its first size. */}
+      {rowWidth === undefined ? null : (
+        <>
+          {header ? hosted("header", header) : null}
+          {showEmpty ? hosted("empty", empty) : null}
+          {data.map((item) => {
+            const key = keyExtractor(item);
+            return isNativeRow(item) ? (
+              <NativeListRowContext.Provider key={key} value={rowContext(key)}>
+                {renderItem({ item })}
+              </NativeListRowContext.Provider>
+            ) : (
+              hosted(key, renderItem({ item }))
+            );
+          })}
+          {footer ? hosted("footer", footer) : null}
+        </>
+      )}
       {spacer(
         "bottom",
         headerInset > 0 ? bottom + 32 : 32,
@@ -128,5 +186,33 @@ export function NativeInboxList<Item>({
         }),
       )}
     </NativeInsetList>
+  );
+  if (!showJumpPills || !canScrollNativeList) return list;
+  return (
+    <View style={{ flex: 1 }}>
+      {list}
+      {/* Centred over the rows, which keep clear of the side safe area. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: sideInsets.paddingLeft,
+          right: sideInsets.paddingRight,
+        }}
+      >
+        <NativeJumpPills
+          keys={data.map(keyExtractor)}
+          signals={signals}
+          viewport={avatarViewport}
+          topInset={headerInset}
+          bottomInset={bottom}
+          onJump={(index) =>
+            void scrollNativeListToRow(findNodeHandle(hostRef.current), firstItemRow + index)
+          }
+        />
+      </View>
+    </View>
   );
 }

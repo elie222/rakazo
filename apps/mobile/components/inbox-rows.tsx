@@ -23,6 +23,7 @@ import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
 import { BotAvatar } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
+import { DragSafePressable } from "./drag-safe-pressable";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles, INBOX_ROW } from "./home-styles";
 import { InboxSwipeRow } from "./inbox-swipe-row";
@@ -70,7 +71,7 @@ export function ConversationRow({
     label: t(INBOX_ROW_ACTIONS[action].label),
   }));
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
@@ -109,7 +110,7 @@ export function ConversationRow({
           {preview}
         </Text>
       </View>
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -119,7 +120,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
   const { t } = useI18n();
   if (count < 1) return null;
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={`${t("Archived")}, ${count}`}
       onPress={onPress}
@@ -138,7 +139,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
         size={12}
         color={native.tertiaryLabel}
       />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -149,16 +150,18 @@ export function SectionToggle({
   count,
   collapsed,
   onPress,
+  onLongPress,
 }: {
   title: string;
   count?: number;
   collapsed: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={
         collapsed ? t("Expand {name}", { name: title }) : t("Collapse {name}", { name: title })
@@ -166,12 +169,13 @@ export function SectionToggle({
       accessibilityState={{ expanded: !collapsed }}
       accessibilityValue={count === undefined ? undefined : { text: String(count) }}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
     >
       <Text style={styles.sectionTitle}>{title}</Text>
       {count === undefined ? null : <Text style={styles.sectionCount}>{count}</Text>}
       <SectionChevron collapsed={collapsed} />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -321,7 +325,6 @@ function chatTime(
 export function ChatSwipe({
   target,
   rowKey = `${target.kind}:${target.chat.id}`,
-  onPress,
   onAction,
   sections,
   onOrganize,
@@ -330,7 +333,6 @@ export function ChatSwipe({
   onSnooze,
   children,
 }: {
-  onPress?: () => void;
   /** Snoozed until a time still ahead. */
   snoozed?: boolean;
   onSnooze?: (until: string | null) => void;
@@ -366,7 +368,6 @@ export function ChatSwipe({
             <GroupAvatar members={target.chat.members} size={32} />
           ),
       }}
-      onPress={onPress}
       onAction={onAction}
       onOrganize={(update) => onOrganize(kind, chat, update)}
       onEditSection={(mode) => onEditSection(kind, chat, mode, sections)}
@@ -447,7 +448,6 @@ export const BotRow = memo(function BotRow({
   return onAction ? (
     <ChatSwipe
       target={{ kind: "bot", chat: bot }}
-      onPress={() => onPress(bot)}
       onAction={runAction}
       sections={sections}
       onOrganize={onOrganize}
@@ -510,7 +510,6 @@ export const GroupRow = memo(function GroupRow({
   return onAction ? (
     <ChatSwipe
       target={{ kind: "group", chat: group }}
-      onPress={() => onPress(group)}
       onAction={runAction}
       sections={sections}
       onOrganize={onOrganize}

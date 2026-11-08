@@ -7,7 +7,7 @@ import {
   listSectionMargins,
   listStyle,
 } from "@expo/ui/swift-ui/modifiers";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import type { ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFloatingHeaderInset } from "../lib/floating-header";
@@ -25,12 +25,15 @@ import { iosAtLeast } from "../lib/native-controls";
  * display's status bar.
  */
 export function NativeInsetList({
+  hostRef,
   variant = "insetGrouped",
   modifiers = [],
   background,
   seedColor,
   children,
 }: {
+  /** The hosting view, for native calls that act on the list inside it. */
+  hostRef?: Ref<unknown>;
   variant?: "insetGrouped" | "plain";
   modifiers?: ViewModifier[];
   background?: ColorValue;
@@ -41,6 +44,7 @@ export function NativeInsetList({
   const scheme = useResolvedAppearance();
   return (
     <Host
+      ref={hostRef}
       // Rebuilt when the appearance changes, so no row keeps the other theme's colours.
       key={scheme}
       style={{ flex: 1, backgroundColor: background }}

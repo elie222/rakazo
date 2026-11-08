@@ -822,8 +822,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   data={showLoadFailure ? [] : listData}
                   keyExtractor={inboxItemKey}
                   renderItem={renderItem}
-                  isSwipeRow={(item) =>
-                    !onShareSelect && (item.type === "bot" || item.type === "group")
+                  isNativeRow={(item) =>
+                    item.type === "heading" ||
+                    (!onShareSelect && (item.type === "bot" || item.type === "group"))
                   }
                   header={hasListHeader ? listHeader : null}
                   empty={listEmpty}
@@ -834,6 +835,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   }}
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
+                  signals={jumpSignals}
+                  showJumpPills={
+                    !onShareSelect && !refreshing && !showLoadFailure && !inboxHasNoChats(listData)
+                  }
                 />
               ) : (
                 <FlatList<InboxItem>
