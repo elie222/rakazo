@@ -7731,7 +7731,7 @@ msgstr "מי יכול להפעיל"
 
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Woke"
-msgstr "תזכורת"
+msgstr "בחזרה"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
