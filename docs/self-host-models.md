@@ -177,8 +177,10 @@ only). `PAID_SERVICES_BASE_URL` points at a self-hosted Treg instead of `https:/
 org-scoped token, and keep the account topped up or on automatic top-up: an empty balance makes
 every call fail.
 
-Bots get `service_search` and `service_call`, except in messaging channels, where the people asking
-are not the owner whose credits pay. Only read-only lookups are offered: actions on
+Bots get `service_search` and `service_call` only in chats their owner drives: the owner's own
+messages, calls and direct chats. Groups, channels, other members' chats, routines, spawned bots,
+bot messages, webhooks and tickets don't get them, because someone other than the owner, whose
+credits pay, could write or steer those. Only read-only lookups are offered: actions on
 accounts, generation tasks, and services that need the account's own connections are left out.
 Each call has a cost ceiling the bot sets and the approval card shows (at most $2) that the
 provider enforces before it charges. When model credits are on, a call first holds that ceiling

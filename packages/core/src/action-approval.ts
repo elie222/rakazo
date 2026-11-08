@@ -212,13 +212,14 @@ export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): b
 }
 
 /** Paid services spend the owner's credits, so only runs the owner drove get them: never runs
- * another person, bot, webhook or ticket can steer, directly or through a bot they spawn. */
+ * another person, bot, webhook or ticket can steer, directly or through a bot they spawn. A shared
+ * run is a group, a channel, or another member's chat with the bot. */
 export function paidServicesAllowed(
   trigger: string,
   ownerStartedRun: boolean,
-  nonOwnerChatRun: boolean,
+  sharedRun: boolean,
 ): boolean {
-  if (nonOwnerChatRun) return false;
+  if (sharedRun) return false;
   // Not routines: a run denied paid services can still write one that later runs unattended.
   return ownerStartedRun || trigger === "messaging";
 }

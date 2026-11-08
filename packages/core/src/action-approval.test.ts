@@ -236,7 +236,7 @@ describe("paidServicesAllowed", () => {
     ["webhook", false, false, false],
     ["tickets", false, false, false],
   ])(
-    "%s (owner-started: %s, non-owner chat: %s) allows paid services: %s",
+    "%s (owner-started: %s, shared: %s) allows paid services: %s",
     (trigger, owner, nonOwner, expected) => {
       expect(paidServicesAllowed(trigger, owner, nonOwner)).toBe(expected);
     },
