@@ -6,6 +6,7 @@ import type {
   TeamChatSendResult,
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { loadRunOrigin } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
@@ -890,7 +891,7 @@ export class TeamChatBridge {
     const runs = await this.deps.prisma.run.findMany({
       where: {
         botId: target.id,
-        trigger: "bot_message",
+        trigger: { in: ["bot_message", "helper_result"] },
         status: { in: ["completed", "failed"] },
         teamChatMirroredAt: null,
         thread: {
@@ -905,10 +906,25 @@ export class TeamChatBridge {
         id: true,
         status: true,
         sourceMessageId: true,
+        botId: true,
+        spaceId: true,
+        userId: true,
+        trigger: true,
+        delegatedFromRunId: true,
       },
     });
     for (const run of runs) {
-      const origin = await this.findExternalOrigin(run.sourceMessageId);
+      const conversation =
+        run.trigger === "helper_result" ? await loadRunOrigin(this.deps.prisma, run) : null;
+      const origin = conversation
+        ? await this.deps.prisma.externalMessage.findUnique({
+            where: { runId: conversation.id },
+            select: {
+              replyThreadId: true,
+              externalConversation: { select: { conversationId: true } },
+            },
+          })
+        : await this.findExternalOrigin(run.sourceMessageId);
       if (!origin) {
         await this.markTeamChatMirrored(run.id);
         continue;

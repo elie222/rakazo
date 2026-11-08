@@ -152,7 +152,18 @@ export async function threadSnapshot(
         }),
         tx.run.findMany({
           where: {
-            threadId: target.threadId,
+            AND: [
+              {
+                OR: [
+                  { threadId: target.threadId },
+                  {
+                    trigger: BACKGROUND_HELPER_TRIGGER,
+                    status: "waiting_input",
+                    sourceMessage: { threadId: target.threadId },
+                  },
+                ],
+              },
+            ],
             status: { in: [...ACTIVE_RUN_STATUSES] },
             // Waiting peer and ticket asks stay answerable. Busy ticket runs stay off
             // the transcript; only their waiting_input / waiting_takeover states surface.

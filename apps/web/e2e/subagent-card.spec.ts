@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, expectCardWidth, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expectCardWidth, rpc, signup } from "./helpers";
 
 test("a completed subagent card folds, opens from its header, and fills its width", async ({
   page,
@@ -75,6 +75,12 @@ test("a subagent approval survives refresh while the parent keeps answering", as
     "Subagent Approval",
   );
   await completeOnboarding(page);
+  await rpc(page, "autoReview/set", { mode: "ask" });
+  await rpc(page, "approvalRules/set", {
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "web_fetch",
+  });
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("delegate to a helper: fetch https://helper-approval.rakazo.test/notes");
   await page.keyboard.press("Enter");

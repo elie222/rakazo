@@ -19,7 +19,7 @@ A pending question or approval card never blocks a chat: the user can always kee
 
 ## Subagents
 
-Status: independent execution and action tools are implemented in bot app chats.
+Status: independent execution and action tools are implemented across conversation surfaces.
 
 A subagent is delegated work for the parent bot, not a separately configured bot or a second user-facing conversation.
 Subagents run independently while the parent remains available to respond to new messages and handle new requests.
@@ -34,8 +34,8 @@ The parent accounts for changed instructions and cancellation before acting on a
 
 For example, a bot comparing three options can delegate their research, answer a new question while that research continues, and give its recommendation once the needed results arrive.
 
-Delegation is unavailable in group and connected messaging chats until subagents can inherit those conversations' privacy context and deliver results back there safely.
-On those surfaces the parent completes the work itself.
+Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
+Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
 
 ## Computers
 

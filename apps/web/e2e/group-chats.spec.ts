@@ -291,3 +291,46 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.waitForURL(/\/app\/(?!g\/)[^/]+$/);
   await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
 });
+
+test("subagents keep group approvals answerable across reload while conversation continues", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `group-subagent-${Date.now()}@rakazo.test`, "password12", "Group Delegation");
+  await completeOnboarding(page);
+  const researcherId = await createBot(page, "Researcher");
+  const writerId = await createBot(page, "Writer");
+  const group = await rpc<{ id: string }>(page, "groups/create", {
+    name: "Delegation team",
+    botIds: [researcherId, writerId],
+  });
+  await rpc(page, "autoReview/set", { mode: "ask" });
+  await rpc(page, "approvalRules/set", {
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "web_fetch",
+  });
+  await page.goto(`/app/g/${group.id}`);
+  const composer = page.getByRole("combobox", { name: "Message Delegation team" });
+  await composer.fill(
+    "@Researcher delegate to a helper: fetch https://group-approval.rakazo.test/notes",
+  );
+  await page.keyboard.press("Enter");
+  const allow = page.getByRole("button", { name: "Allow once", exact: true });
+  await expect(allow).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(allow).toBeVisible();
+  await expect(allow).toBeEnabled();
+  await composer.fill("@Researcher this is a safe test");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("message-bot-bubble").getByText("Running the taught skill", { exact: false }),
+  ).toBeVisible();
+  await expect(allow).toBeEnabled();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "group-subagent-approval-chat-free");
+  await allow.click();
+  await expect(page.getByTestId("subagent-card")).toContainText("Completed", { timeout: 30_000 });
+  await expect(allow).toBeHidden();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "group-subagent-completed");
+});

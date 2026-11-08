@@ -324,7 +324,7 @@ describe("deliverMessagingOutbound", () => {
       expect.objectContaining({ data: { outboundSinceInbound: { increment: 1 } } }),
     );
     expect(deps.prisma.run.updateMany).toHaveBeenCalledWith({
-      where: { id: "run-1", trigger: "messaging" },
+      where: { id: "run-1", trigger: { in: ["messaging", "helper_result"] } },
       data: { messagingMirroredAt: expect.any(Date) },
     });
   });
@@ -509,6 +509,49 @@ describe("deliverMessagingOutbound", () => {
       await mirrorMessagingProgress(other, "run-1");
       expect(other.rows).toEqual([]);
     }
+  });
+
+  it("keeps a private answer in delegated work from being mirrored to a shared channel", async () => {
+    const deps = createDeps({
+      run: {
+        ...messagingRun,
+        id: "result",
+        trigger: "helper_result",
+        delegatedFromRunId: "helper",
+      },
+    });
+    Object.assign(deps.prisma.run, {
+      findFirst: vi
+        .fn()
+        .mockResolvedValueOnce({ trigger: "helper", delegatedFromRunId: "parent" })
+        .mockResolvedValueOnce({
+          ...messagingRun,
+          id: "parent",
+          sourceMessage: { blocks: [{ kind: "channel_message", channelId: "channel" }] },
+        }),
+    });
+    const privateAnswer = vi.fn(async () => ({ id: "answered-question" }));
+    Object.assign(deps.prisma.message, { findFirst: privateAnswer });
+    await deliverMessagingOutbound(deps, { runId: "result" }, context);
+    expect(privateAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          runId: { in: ["parent", "helper"] },
+          blocks: { array_contains: [{ kind: "ask", status: "answered" }] },
+        },
+      }),
+    );
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows).toEqual([]);
+  });
+
+  it("does not send a connected team chat's reply to a separately linked DM", async () => {
+    const deps = createDeps({
+      run: { ...messagingRun, thread: { externalConversationId: "team-conversation" } },
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows).toEqual([]);
   });
 
   it("ignores in-app runs and runs without a messaging identity", async () => {

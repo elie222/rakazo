@@ -2925,3 +2925,70 @@ describe("team chat bridge receipt", () => {
     await expect(handled()).resolves.toBe(false);
   });
 });
+
+describe("subagent result delivery", () => {
+  it.each([true, false])(
+    "uses the originating conversation and reply thread (origin present: %s)",
+    async (found) => {
+      const result = {
+        id: "result",
+        botId: "bot",
+        spaceId: "space",
+        userId: "user",
+        trigger: "helper_result",
+        delegatedFromRunId: "helper",
+        sourceMessageId: null,
+        status: "completed",
+      };
+      const findFirst = vi
+        .fn()
+        .mockResolvedValueOnce(found ? { trigger: "helper", delegatedFromRunId: "parent" } : null)
+        .mockResolvedValueOnce({ id: "parent", trigger: "messaging" });
+      const send = vi.fn(async () => ({ handle: "sent" }));
+      const prisma = {
+        run: {
+          findMany: vi.fn(async () => [result]),
+          findFirst,
+          updateMany: vi.fn(async () => ({ count: 1 })),
+        },
+        externalMessage: {
+          findUnique: vi.fn(async () => ({
+            externalConversation: { conversationId: "origin-room" },
+            replyThreadId: "origin-reply",
+          })),
+        },
+        message: {
+          findFirst: vi.fn(async () => ({
+            blocks: [{ kind: "text", text: "Delegated task finished." }],
+          })),
+        },
+      };
+      const bridge = new TeamChatBridge({
+        prisma: prisma as unknown as PrismaClient,
+        providerId: "slack",
+        botId: "bot",
+        send,
+        events: {} as never,
+        jobs: {} as never,
+      });
+      await (
+        bridge as unknown as {
+          deliverDelegatedReplies(target: { id: string; name: string }): Promise<void>;
+        }
+      ).deliverDelegatedReplies({ id: "bot", name: "Chief" });
+      if (found) {
+        expect(send).toHaveBeenCalledExactlyOnceWith({
+          conversationId: "origin-room",
+          replyThreadId: "origin-reply",
+          content: "Delegated task finished.",
+          idempotencyKey: "team-chat-run:result",
+        });
+        expect(findFirst).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            where: { id: "parent", botId: "bot", userId: "user", spaceId: "space" },
+          }),
+        );
+      } else expect(send).not.toHaveBeenCalled();
+    },
+  );
+});

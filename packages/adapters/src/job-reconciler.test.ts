@@ -176,7 +176,11 @@ describe("createJobReconciler", () => {
     await createJobReconciler({ prisma, jobs }).reconcileOnce();
 
     expect(prisma.run.findMany).toHaveBeenCalledWith({
-      where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+      where: {
+        trigger: { in: ["messaging", "helper_result"] },
+        status: "completed",
+        messagingMirroredAt: null,
+      },
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       take: 100,
       select: { id: true },

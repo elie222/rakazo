@@ -2077,11 +2077,16 @@ describeJourneys("required product journeys", () => {
     );
   }
 
-  async function waitForHelper(botId: string, status: string) {
+  async function waitForHelper(botId: string, status: string, sourceThreadId?: string) {
     let helper = null as { id: string; threadId: string } | null;
     await waitForDatabase(async () => {
       helper = await prisma.run.findFirst({
-        where: { botId, trigger: "helper", status },
+        where: {
+          botId,
+          trigger: "helper",
+          status,
+          ...(sourceThreadId ? { sourceMessage: { threadId: sourceThreadId } } : {}),
+        },
         select: { id: true, threadId: true },
       });
       return Boolean(helper);
@@ -2566,7 +2571,7 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(relayed)).toContain("helper result");
   });
 
-  it("13i: a group chat cannot start a background helper", async () => {
+  it("13i: a group chat delegates and receives the result in that group", async () => {
     const cookie = await signup(app, `background-group-j-${stamp}@rakazo.test`, "Background Group");
     const [bot, peer] = await Promise.all(
       ["Chief", "Peer"].map((name) =>
@@ -2590,14 +2595,62 @@ describeJourneys("required product journeys", () => {
       "@Chief summarize the venue notes in the background",
       bot!.id,
     );
-    expect(
-      await prisma.run.count({ where: { botId: { in: [bot!.id, peer!.id] }, trigger: "helper" } }),
-    ).toBe(0);
-    const refused = await prisma.event.findFirst({
-      where: { botId: bot!.id, type: "agent.tool.completed" },
-      select: { payload: true },
+    const groupThread = await prisma.thread.findUniqueOrThrow({ where: { groupId: group.id } });
+    const helper = await waitForHelper(bot!.id, "completed", groupThread.id);
+    const helperRun = await prisma.run.findUniqueOrThrow({ where: { id: helper.id } });
+    const card = await prisma.message.findUniqueOrThrow({
+      where: { id: helperRun.sourceMessageId! },
     });
-    expect(refused?.payload).toMatchObject({ name: "run_subagent", outcome: "error" });
+    expect(card.threadId).toBe(groupThread.id);
+    await waitForDatabase(async () =>
+      Boolean(
+        await prisma.run.findFirst({
+          where: {
+            botId: bot!.id,
+            threadId: groupThread.id,
+            trigger: "helper_result",
+            status: "completed",
+          },
+        }),
+      ),
+    );
+    const result = await rpc<Snap>(app, cookie, "threads/get", { groupId: group.id });
+    expect(
+      result.messages.some((message) =>
+        message.blocks.some((block) => block.kind === "subagent" && block.status === "completed"),
+      ),
+    ).toBe(true);
+
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "web_fetch",
+    });
+    await sendGroupAndWait(
+      app,
+      cookie,
+      group.id,
+      "@Chief delegate to a helper: fetch https://group-approval.rakazo.test/notes",
+      bot!.id,
+    );
+    const waiting = await waitForHelper(bot!.id, "waiting_input", groupThread.id);
+    const pending = await rpc<Snap>(app, cookie, "threads/get", { groupId: group.id });
+    expect(pending.activeRuns?.map((run) => run.id)).toContain(waiting.id);
+    const ask = pending.messages.find(
+      (message) =>
+        message.runId === waiting.id && message.blocks.some((block) => block.kind === "ask"),
+    );
+    expect(ask).toBeDefined();
+    await rpc(app, cookie, "threads/answer", {
+      groupId: group.id,
+      runId: waiting.id,
+      messageId: ask!.id,
+      answer: "allow",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.findUniqueOrThrow({ where: { id: waiting.id } })).status === "completed",
+    );
   });
 
   it("14: this-mac is refused unless the sandbox is docker", async () => {

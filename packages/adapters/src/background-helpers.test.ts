@@ -117,16 +117,30 @@ describe("starting a background helper", () => {
     expect(event.runId).toBeUndefined();
   });
 
+  it.each([{ threadBotId: null }, { trigger: "messaging" }])(
+    "delegates from any chat surface",
+    async (overrides) => {
+      const h = harness(overrides);
+      await expect(startBackgroundHelper(h.ctx, START)).resolves.toMatchObject({ ok: true });
+      expect(h.createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegatedFromRunId: "run-1",
+            sourceMessageId: "card",
+          }),
+        }),
+      );
+    },
+  );
+
   it.each([
-    ["a group or connected team chat", { threadBotId: null }],
-    ["a linked Telegram or SMS chat", { trigger: "messaging" }],
     ["a routine", { trigger: "routine" }],
     ["another bot's request", { trigger: "bot_message" }],
     ["a helper's result coming back", { trigger: "helper_result" }],
   ])("refuses to start one from %s", async (_label, overrides) => {
     const h = harness(overrides);
     await expect(startBackgroundHelper(h.ctx, START)).resolves.toEqual({
-      error: expect.stringContaining("only in the bot's app chat"),
+      error: expect.stringContaining("cannot delegate further"),
     });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -166,7 +180,7 @@ describe("returning a helper's outcome", () => {
       { ...run, sourceMessageId: "card" },
       { status: "completed", text: "done" },
     );
-    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
   });
 });

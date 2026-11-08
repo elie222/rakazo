@@ -16,6 +16,7 @@ import type { EffectiveModelRole } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import { CATALOG_APPROVAL_TOOL, PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { loadRunOrigin } from "./run-origin.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
 /**
@@ -114,38 +115,24 @@ export function createRunTrustLoaders(
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
       if (run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER) {
-        // Execution briefs and returned results are model output, never authorization.
-        // A result turn points to its helper, which points to the original conversation run.
-        let originId = run.delegatedFromRunId;
-        for (let depth = 0; originId && depth < 2; depth++) {
-          const origin = await deps.prisma.run.findFirst({
-            where: { id: originId, userId: run.userId, spaceId: run.spaceId, botId },
-            select: {
-              trigger: true,
-              delegatedFromRunId: true,
-              threadId: true,
-              sourceMessage: {
-                select: { role: true, authorUserId: true, threadId: true, blocks: true },
-              },
-            },
-          });
-          if (!origin) return "";
-          if (origin.trigger === BACKGROUND_HELPER_TRIGGER) {
-            originId = origin.delegatedFromRunId;
-            continue;
-          }
-          const message = origin.sourceMessage;
-          if (
-            message?.role !== "user" ||
-            message.authorUserId !== run.userId ||
-            message.threadId !== origin.threadId
-          )
-            return "";
-          return ((message.blocks ?? []) as MessageBlock[])
-            .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-            .join("\n");
-        }
-        return "";
+        // Delegation inherits privacy; outside speakers cannot authorize owner actions.
+        if (messagingChannelRun) return "";
+        const origin = await loadRunOrigin(deps.prisma, {
+          ...run,
+          id: runId,
+          botId,
+          delegatedFromRunId: run.delegatedFromRunId ?? null,
+        });
+        const message = origin?.sourceMessage;
+        if (
+          message?.role !== "user" ||
+          message.authorUserId !== run.userId ||
+          message.threadId !== origin?.threadId
+        )
+          return "";
+        return ((message.blocks ?? []) as MessageBlock[])
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("\n");
       }
       if (ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user") {
         return ((sourceMessage.blocks ?? []) as MessageBlock[])

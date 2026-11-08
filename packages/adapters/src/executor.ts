@@ -163,6 +163,7 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { runModelBackups, startRunModel } from "./run-model-start.js";
+import { isDelegatedRun, loadRunOrigin } from "./run-origin.js";
 import { createReplyState } from "./run-progress.js";
 import {
   DELEGATED_EMPTY_NOTICE,
@@ -447,7 +448,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               where: {
                 id: run.sourceMessageId,
                 botId: run.botId,
-                thread: { spaceId: run.spaceId, botId: run.botId },
+                thread: { spaceId: run.spaceId },
               },
               select: { threadId: true },
             })
@@ -550,16 +551,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
           }
         }
+        const origin = await loadRunOrigin(deps.prisma, run);
+        const conversationRun = origin ?? run;
         const messagingSource =
-          run.trigger === "messaging" && run.sourceMessageId
+          conversationRun.trigger === "messaging" && conversationRun.sourceMessageId
             ? await deps.prisma.message.findUnique({
-                where: { id: run.sourceMessageId },
+                where: { id: conversationRun.sourceMessageId },
                 select: { blocks: true, clientNonce: true },
               })
             : null;
         const sourceBlocks = messagingSource?.blocks as MessageBlock[] | undefined;
         const channelId = messagingChannelId(sourceBlocks);
-        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        const messagingChannelRun = isMessagingChannelRun(conversationRun.trigger, sourceBlocks);
         const [
           bot,
           thread,
@@ -622,10 +625,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        const conversationThread = origin?.thread ?? thread;
         // Team chat reaches people besides the owner, so their runs get a group channel's limits.
         const teamChatConversationId =
-          run.trigger === "messaging" ? thread.externalConversationId : null;
+          conversationRun.trigger === "messaging"
+            ? conversationThread.externalConversationId
+            : null;
         const nonOwnerChatRun =
+          (isDelegatedRun(run.trigger) && !origin) ||
           messagingChannelRun ||
           (teamChatConversationId
             ? !(await teamChatRunFromOwner(deps.prisma, {
@@ -826,7 +833,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
         const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
+          Boolean(conversationThread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1150,10 +1157,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved.acceptsImages,
         );
 
-        const groupContext = thread.groupId
+        const groupContext = conversationThread.groupId
           ? await loadGroupContext(
               deps.prisma,
-              thread.groupId,
+              conversationThread.groupId,
               { id: bot.id, name: bot.name },
               Boolean(people),
             )
@@ -1232,7 +1239,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
         const sourceClientNonce = sourceMessage?.clientNonce ?? null;
         // A follow-up can be queued by a bot (group handoffs); only the user's own counts.
-        const ownerStartedRun = isOwnerStartedRun(run.trigger, sourceMessage?.role === "user");
+        const ownerStartedRun = isOwnerStartedRun(
+          conversationRun.trigger,
+          (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+        );
         // A hang-up run has no source message: its own nonce carries the call it closes.
         const callEndRun = run.trigger === "call_end";
         const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
@@ -1259,11 +1269,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           Boolean(botEmail) &&
           run.userId === bot.userId &&
           run.trigger !== "bot_message" &&
-          !thread.groupId &&
+          !conversationThread.groupId &&
           !nonOwnerChatRun;
         const userComputerOwnerId = userComputerOwner({
-          trigger: run.trigger,
-          sourceRole: sourceMessage?.role,
+          trigger: conversationRun.trigger,
+          sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
           messagingChannelRun: nonOwnerChatRun,
           runUserId: run.userId,
           botUserId: bot.userId,
@@ -1291,7 +1301,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             historyRetrievalEnabled: contextStrategy !== "current",
             graphicalToolsAllowed,
             pageBrowserAllowed,
-            groupId: thread.groupId,
+            groupId: conversationThread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
@@ -1317,8 +1327,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             (tool) =>
               tool.name !== "run_subagent" ||
               backgroundHelpersAllowed({
-                threadBotId: thread.botId,
-                botId: bot.id,
                 trigger: run.trigger,
               }),
           ),
@@ -1468,8 +1476,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           spaceId: run.spaceId,
           userId: run.userId,
           botId: bot.id,
-          groupId: thread.groupId ?? null,
-          threadId: thread.id,
+          groupId: conversationThread.groupId ?? null,
+          threadId: conversationThread.id,
           runId,
         };
 
@@ -1494,13 +1502,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             messagingChannelRun: nonOwnerChatRun,
             channelId,
             historySearchBeforeSeq,
+            conversationThreadId: conversationThread.id,
             myChatsAllowed: historyMyChatsAllowed(
-              run,
-              sourceMessage,
+              conversationRun,
+              origin?.sourceMessage ?? sourceMessage,
               nonOwnerChatRun ||
                 Boolean(
                   channelId ||
-                    thread.externalConversationId ||
+                    conversationThread.externalConversationId ||
                     messagingChannelId(sourceMessage?.blocks as MessageBlock[] | undefined),
                 ),
             ),
@@ -1689,7 +1698,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
         const [teammates, groupDirectory] = await Promise.all([
-          thread.groupId
+          conversationThread.groupId
             ? []
             : deps.prisma.bot.findMany({
                 where: {
@@ -1702,7 +1711,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 orderBy: { createdAt: "asc" },
                 take: BOT_DIRECTORY_LIMIT,
               }),
-          !thread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
+          !conversationThread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
         ]);
         const botDirectory =
           [renderBotDirectory(teammates), groupDirectory].filter(Boolean).join("\n\n") || undefined;
@@ -1863,8 +1872,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
                 backgroundHelpersAllowed: backgroundHelpersAllowed({
-                  threadBotId: thread.botId,
-                  botId: bot.id,
                   trigger: run.trigger,
                 }),
                 userComputer,

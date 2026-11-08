@@ -163,6 +163,32 @@ describeMessaging("messaging surface journeys", () => {
     expect(userMessage.clientNonce).toBe(`messaging:sendblue:${dmHandle}`);
   });
 
+  it("returns an independent subagent's result to the DM that requested it", async () => {
+    const address = uniqueNumber();
+    const handle = `helper-dm-${stamp}`;
+    await dmAndWaitForReply(address, "summarize the venue notes in the background", handle);
+    const identity = await findIdentity(address);
+    const result = await waitForDatabase(async () =>
+      prisma.run.findFirst({
+        where: {
+          botId: identity.botId,
+          trigger: "helper_result",
+          status: "completed",
+          messagingMirroredAt: { not: null },
+        },
+      }),
+    );
+    const reply = await prisma.message.findFirstOrThrow({
+      where: { runId: result.id, role: "bot" },
+    });
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: { sourceMessageId: reply.id, identityId: identity.id, kind: "dm", status: "sent" },
+      }),
+    );
+    expect(emulator.sent.some((send) => send.kind === "dm" && send.to === address)).toBe(true);
+  });
+
   it("replays the same handle without a duplicate message or send", async () => {
     const replay = await app.request(
       emulator.buildInboundRequest({
@@ -362,6 +388,36 @@ describeMessaging("messaging surface journeys", () => {
     expect(await prisma.run.count({ where: { botId: identity.botId } })).toBeGreaterThan(
       runsBefore,
     );
+    await app.request(
+      emulator.buildInboundRequest({
+        fromNumber: sender,
+        content: "summarize the venue notes in the background",
+        groupId,
+        participants: [sender, stranger, emulator.phoneNumber],
+        handle: `grp-helper-${stamp}`,
+      }),
+    );
+    const result = await waitForDatabase(async () =>
+      prisma.run.findFirst({
+        where: {
+          botId: identity.botId,
+          trigger: "helper_result",
+          status: "completed",
+          messagingMirroredAt: { not: null },
+        },
+      }),
+    );
+    const reply = await prisma.message.findFirstOrThrow({
+      where: { runId: result.id, role: "bot" },
+    });
+    await waitForDatabase(async () =>
+      prisma.messagingOutbound.findFirst({
+        where: { sourceMessageId: reply.id, threadId, kind: "group", status: "sent" },
+      }),
+    );
+    expect(
+      await prisma.messagingOutbound.count({ where: { sourceMessageId: reply.id, kind: "dm" } }),
+    ).toBe(0);
   });
 
   it("rejects a bad signing secret", async () => {

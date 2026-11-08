@@ -33,26 +33,9 @@ type HelperDeps = Pick<ExecutorDeps, "prisma"> & {
 };
 type HelperBlock = Extract<MessageBlock, { kind: "subagent" }>;
 
-/**
- * Start run_subagent: a helper run in a thread of its own, so this chat
- * stays free, and a running card here that its result settles later.
- */
-/**
- * A helper reads the bot's memory and its result comes back only to the app chat, so only a turn
- * in the bot's own app chat may start one, by whichever space member sent it; a result coming
- * back never starts the next.
- */
-export function backgroundHelpersAllowed(turn: {
-  threadBotId: string | null;
-  botId: string;
-  trigger: string;
-}): boolean {
-  return (
-    turn.threadBotId === turn.botId &&
-    turn.trigger !== "messaging" &&
-    turn.trigger !== HELPER_RESULT_TRIGGER &&
-    isConversationalRun(turn.trigger)
-  );
+/** Delegation has one behavior in every conversation, without recursive result chains. */
+export function backgroundHelpersAllowed(turn: { trigger: string }): boolean {
+  return turn.trigger !== HELPER_RESULT_TRIGGER && isConversationalRun(turn.trigger);
 }
 
 export async function startBackgroundHelper(
@@ -68,12 +51,9 @@ export async function startBackgroundHelper(
   },
 ) {
   const { deps, run, runId, bot, thread } = ctx;
-  if (
-    !backgroundHelpersAllowed({ threadBotId: thread.botId, botId: bot.id, trigger: run.trigger })
-  ) {
+  if (!backgroundHelpersAllowed(run)) {
     return {
-      error:
-        "Subagents are available only in the bot's app chat; group and connected chats cannot safely receive their private context. Complete the work yourself.",
+      error: "This run cannot delegate further. Complete the work yourself.",
     };
   }
   if (Boolean(input.modelProvider) !== Boolean(input.modelId)) {
@@ -92,6 +72,8 @@ export async function startBackgroundHelper(
     // Every start goes through this chat, so its lock makes the replay check and the cap exact
     // even when one turn starts several helpers at once.
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    // The cap belongs to the bot, including starts in different conversations.
+    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
     if (
       await tx.run.findFirst({ where: { spaceId: run.spaceId, clientNonce }, select: { id: true } })
     )

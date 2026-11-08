@@ -695,7 +695,8 @@ export async function pauseRunForInput(
               trigger: BACKGROUND_HELPER_TRIGGER,
               sourceMessage: {
                 threadId: input.requestThreadId,
-                thread: { spaceId: input.spaceId, botId: input.botId },
+                botId: input.botId,
+                thread: { spaceId: input.spaceId },
               },
             }
           : {}),

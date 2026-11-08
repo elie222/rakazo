@@ -23,6 +23,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
+import { loadRunOrigin } from "./run-origin.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 
 /**
@@ -98,7 +99,7 @@ export async function mirrorMessagingOutbound(
 ): Promise<void> {
   await mirrorRun(deps, runId);
   await deps.prisma.run.updateMany({
-    where: { id: runId, trigger: "messaging" },
+    where: { id: runId, trigger: { in: ["messaging", "helper_result"] } },
     data: { messagingMirroredAt: new Date() },
   });
 }
@@ -125,17 +126,32 @@ async function mirrorRun(
 ): Promise<void> {
   const run = await deps.prisma.run.findUnique({
     where: { id: runId },
-    include: { sourceMessage: true },
+    include: { sourceMessage: true, thread: { select: { externalConversationId: true } } },
   });
   if (!run) return;
 
-  if (run.trigger === "messaging") {
-    const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
+  const origin = run.trigger === "helper_result" ? await loadRunOrigin(deps.prisma, run) : null;
+  const conversationRun = origin ?? run;
+  // Team chat owns its destination and reply thread; a linked DM is a different surface.
+  if (conversationRun.thread?.externalConversationId) return;
+  if (conversationRun.trigger === "messaging") {
+    const sourceBlocks = (conversationRun.sourceMessage?.blocks ?? []) as MessageBlock[];
     const channelBlock = sourceBlocks.find(
       (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
         block.kind === "channel_message",
     );
     if (channelBlock) {
+      if (
+        origin &&
+        (await deps.prisma.message.findFirst({
+          where: {
+            runId: { in: [origin.id, run.delegatedFromRunId!] },
+            blocks: { array_contains: [{ kind: "ask", status: "answered" }] },
+          },
+          select: { id: true },
+        }))
+      )
+        return;
       if (!progress) await mirrorChannelRun(deps, run, channelBlock);
       return;
     }

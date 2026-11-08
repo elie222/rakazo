@@ -3758,6 +3758,22 @@ describe("user computer screen control", () => {
   });
 });
 
+describe("explicit confirmation of a read", () => {
+  it("keeps the effect and approval even when the user supplied the fetch URL", async () => {
+    const f = fixture({
+      name: "web_fetch",
+      builtin: true,
+      prompt: "fetch https://given.example.test/notes",
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "web_fetch" }],
+    });
+    f.setCalls([{ args: { url: "https://given.example.test/notes" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(f.fetchedUrls).toEqual([]);
+  });
+});
+
 describe("subagent permissions", () => {
   afterEach(() => reviewMock.mockReset());
   it("refuses parent configuration changes before anything is written", async () => {

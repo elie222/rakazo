@@ -181,6 +181,7 @@ export * from "./resend-email.js";
 export { finishRoutineHandover } from "./routine-handover.js";
 export * from "./routine-watch.js";
 export { notifyMemberMessage } from "./run-notifications.js";
+export { loadRunOrigin } from "./run-origin.js";
 export * from "./run-runtime.js";
 export * from "./run-secret.js";
 export * from "./run-wakeup.js";
