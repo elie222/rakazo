@@ -135,7 +135,7 @@ describe("recall outcome grading", () => {
     expect(earlier).toContain("Midnight Lizard");
     expect(earlier).not.toMatch(/install|extension|browser/i);
     const long = scenario("tool-steps-compacted").history!.messages.map((m) => m.text);
-    const chat = long.filter((text) => text && text !== "Done.");
+    const chat = long.filter(Boolean);
     expect(new Set(chat).size).toBe(chat.length);
   });
 
@@ -161,6 +161,20 @@ describe("recall outcome grading", () => {
     expect(Object.keys(scenario("tool-steps-replayed").observe!(evidence([], "")))).not.toContain(
       "unprompted-doubt",
     );
+  });
+
+  it("gives re-checks a computer that matches what the earlier reply did", () => {
+    const computer = (id: string) => scenario(id).computer!;
+    for (const id of ["tool-steps-replayed", "tool-steps-compacted", "ordinary-sign-off"]) {
+      expect(computer(id).screen.dark).toBe(true);
+      expect(computer(id).shell[0]!.output).toContain("Midnight Lizard");
+    }
+    expect(computer("tool-steps-replayed-absent").screen.dark).toBe(false);
+    expect(computer("tool-steps-replayed-absent").shell[0]!.output).not.toContain("Midnight");
+    // The chat happened earlier today, so it reads as the one under way.
+    const seeded = scenario("tool-steps-replayed").history!.messages;
+    expect(Date.now() - seeded[0]!.createdAt.getTime()).toBeLessThan(24 * 60 * 60_000);
+    expect(seeded.at(-1)!.createdAt.getTime()).toBeLessThan(Date.now());
   });
 
   it("observes, rather than grades, a reply that copies the replayed marker", () => {
