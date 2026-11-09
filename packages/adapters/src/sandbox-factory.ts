@@ -38,6 +38,8 @@ export interface SandboxProviderOptions {
   boatApiUrl?: string;
   boxdApiKey?: string;
   boxdOrg?: string;
+  molaApiKey?: string;
+  molaApiUrl?: string;
   kubernetesNamespace?: string;
   kubernetesRuntimeClassName?: string;
   kubernetesComputerImage?: string;
@@ -76,6 +78,7 @@ function missingRemoteKey(
     | "createos"
     | "boat"
     | "boxd"
+    | "mola"
     | "railway"
     | "incus"
     | "wuying",
@@ -94,7 +97,7 @@ export async function createSandboxProvider(
   const parsed = SandboxKind.safeParse(kind);
   if (!parsed.success) {
     throw new Error(
-      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | incus | wuying | desktop | fake.`,
+      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | mola | railway | kubernetes | incus | wuying | desktop | fake.`,
     );
   }
   const sandboxKind = parsed.data;
@@ -138,6 +141,11 @@ export async function createSandboxProvider(
       if (!opts.boxdApiKey?.trim()) return missingRemoteKey("boxd", "BOXD_API_KEY");
       const { createBoxdSandboxProvider } = await import("./boxd-sandbox.js");
       return createBoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
+    }
+    case "mola": {
+      if (!opts.molaApiKey?.trim()) return missingRemoteKey("mola", "MOLA_API_KEY");
+      const { createMolaSandboxProvider } = await import("./mola-sandbox.js");
+      return createMolaSandboxProvider({ apiKey: opts.molaApiKey, apiUrl: opts.molaApiUrl });
     }
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
@@ -221,7 +229,7 @@ export async function createSandboxProvider(
     default: {
       const _exhaustive: never = sandboxKind;
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | incus | wuying | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | mola | railway | kubernetes | incus | wuying | desktop | fake.`,
       );
     }
   }

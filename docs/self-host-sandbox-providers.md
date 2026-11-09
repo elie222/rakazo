@@ -6,13 +6,13 @@ for the sharing and persistence contract.
 
 ## Quick pick
 
-| Goal                                                    | Set                                                         | Also need                                                                                                                             |
-| ------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                   | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
-| UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                     | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
-| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
-| One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                               | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
-| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                    | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| Goal | Set | Also need |
+| --- | --- | --- |
+| Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
+| UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
+| Managed remote desktop | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `mola` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat/Mola) |
+| One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
+| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus` | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -39,7 +39,7 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `novita`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
+  Optional: set `e2b`, `novita`, `daytona`, `createos`, `boat`, or `mola` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -57,6 +57,13 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
   workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Boat uses the shared Linux
   desktop runtime and protected port routes for concurrent bot desktops. Each bot has its own
   persistent Chrome profile; logins are not shared between bots.
+- **Mola** provides instant Linux computers (Ubuntu by default) through `MOLA_API_KEY` and optionally
+  `MOLA_API_URL` (defaults to `https://cloud.mola.sh/api/v1` for the hosted service, or override for
+  self-hosted). Open source at https://github.com/obaid/mola-core. Each computer starts from a fresh
+  Ubuntu 24.04 XFCE desktop with Chrome and runs in its own VM. Rakazo keeps the portable workspace
+  under `/home/dev/rakazo-home`. Mola computers are ephemeral: the saved workspace is the persistence
+  boundary. Supports the shared Linux desktop runtime for screens, takeover, and portable workspace
+  transfer.
 - **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
   or Linux through the native bridge. Bots can read/change local files and launch installed apps
   through OS commands, subject to your account and OS permissions. Portable file tools and
@@ -316,16 +323,17 @@ Runs API/web without provisioning bot computers.
 
 Set `SANDBOX_PROVIDER` to exactly one of:
 
-| Value      | Credential                                       | Notes                                                                                                                                                                                                                                                     |
-| ---------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `e2b`      | `E2B_API_KEY`                                    | Hosted sandboxes                                                                                                                                                                                                                                          |
-| `novita`   | `NOVITA_API_KEY`                                 | Build the desktop template first; optional `SANDBOX_TEMPLATE`                                                                                                                                                                                             |
-| `daytona`  | `DAYTONA_API_KEY`                                | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`                                                                                                                                                                                          |
-| `boat`     | `BOAT_API_KEY`                                   | Optional `BOAT_API_URL` (see `.env.example`)                                                                                                                                                                                                              |
-| `boxd`     | `BOXD_API_KEY`                                   | Optional `BOXD_ORG` to create computers in a boxd organization                                                                                                                                                                                            |
-| `createos` | `CREATEOS_SANDBOX_API_KEY`                       | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS`                                                                                                                                                                 |
-| `railway`  | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
-| `wuying`   | `WUYING_*` (below)                               | One existing Wuying cloud computer (Windows)                                                                                                                                                                                                              |
+| Value | Credential | Notes |
+| --- | --- | --- |
+| `e2b` | `E2B_API_KEY` | Hosted sandboxes |
+| `novita` | `NOVITA_API_KEY` | Build the desktop template first; optional `SANDBOX_TEMPLATE` |
+| `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
+| `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
+| `boxd` | `BOXD_API_KEY` | Optional `BOXD_ORG` to create computers in a boxd organization |
+| `mola` | `MOLA_API_KEY` | Optional `MOLA_API_URL` (defaults to `https://cloud.mola.sh/api/v1`); open source at https://github.com/obaid/mola-core |
+| `createos` | `CREATEOS_SANDBOX_API_KEY` | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS` |
+| `railway` | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
+| `wuying` | `WUYING_*` (below) | One existing Wuying cloud computer (Windows) |
 
 Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer

@@ -12,6 +12,7 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
+  if (requested === "mola" && !optional(source.MOLA_API_KEY)) return "none";
   if (
     requested === "wuying" &&
     [
@@ -73,6 +74,8 @@ export function sandboxProviderOptionsFromEnv(
   | "boatApiUrl"
   | "boxdApiKey"
   | "boxdOrg"
+  | "molaApiKey"
+  | "molaApiUrl"
   | "kubernetesNamespace"
   | "kubernetesRuntimeClassName"
   | "kubernetesComputerImage"
@@ -122,6 +125,8 @@ export function sandboxProviderOptionsFromEnv(
     boatApiUrl: boatApiUrlFromEnv(source),
     boxdApiKey: optional(source.BOXD_API_KEY),
     boxdOrg: optional(source.BOXD_ORG),
+    molaApiKey: optional(source.MOLA_API_KEY),
+    molaApiUrl: optional(source.MOLA_API_URL),
     kubernetesNamespace: optional(source.KUBERNETES_SANDBOX_NAMESPACE),
     kubernetesRuntimeClassName: optional(source.KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME),
     kubernetesComputerImage: optional(source.KUBERNETES_SANDBOX_COMPUTER_IMAGE),

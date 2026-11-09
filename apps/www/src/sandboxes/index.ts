@@ -8,6 +8,7 @@ import { daytona } from "./daytona";
 import { docker } from "./docker";
 import { e2b } from "./e2b";
 import { kubernetes } from "./kubernetes";
+import { mola } from "./mola";
 import { novita } from "./novita";
 import { railway } from "./railway";
 import {
@@ -55,6 +56,7 @@ export const SANDBOXES: readonly Sandbox[] = [
   e2b,
   daytona,
   novita,
+  mola,
   railway,
   wuying,
   docker,
