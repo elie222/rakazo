@@ -4,7 +4,7 @@
     "slug": "rakazo-mickvvw",
     "owner": "mickvvws-team",
     "scheme": "rakazo",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -116,8 +116,14 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
-        "NSUserActivityTypes": ["INSendMessageIntent"]
+        "UIBackgroundModes": [
+          "voip",
+          "audio",
+          "remote-notification"
+        ],
+        "NSUserActivityTypes": [
+          "INSendMessageIntent"
+        ]
       },
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true,
@@ -155,7 +161,9 @@
                   "targetName": "expo-sharing-extension",
                   "bundleIdentifier": "com.rakazo.app.mickvvw.expo-sharing-extension",
                   "entitlements": {
-                    "com.apple.security.application-groups": ["group.com.rakazo.app.mickvvw"]
+                    "com.apple.security.application-groups": [
+                      "group.com.rakazo.app.mickvvw"
+                    ]
                   }
                 },
                 {
