@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
-import { createInboxBot } from "./create-inbox-bot";
+import { askForModelBeforeFirstBot, createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
 import { onInboxChanged } from "./inbox-changes";
@@ -1011,6 +1011,25 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
   ]);
   expect(ui.hapticSuccess).toHaveBeenCalledOnce();
+});
+
+it("asks for a model as the New bot screen opens, only for a first bot without one", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  let bots: unknown[] = [];
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "me") return { needsModel: true };
+    if (method === "bots/create") return { id: "bot-new", name: "Scout" };
+    return method === "bots/list" ? bots : [];
+  });
+  expect(await askForModelBeforeFirstBot()).toBe(true);
+  expect(ui.alert).toHaveBeenCalledOnce();
+  bots = [{ id: "bot-existing" }];
+  expect(await askForModelBeforeFirstBot()).toBe(false);
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("created");
+  bots = [];
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("needsModel");
+  expect(ui.rpc.mock.calls.filter(([method]) => method === "bots/create")).toHaveLength(1);
 });
 
 it("tells the inbox to reload once the bot exists", async () => {

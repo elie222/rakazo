@@ -9,13 +9,13 @@ import {
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { BackHandler, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotLookPicker } from "../components/bot-look-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc } from "../lib/api";
-import { createInboxBot } from "../lib/create-inbox-bot";
+import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
 import { useI18n } from "../lib/i18n";
 import { openChatFromInbox } from "../lib/inbox-changes";
 import { native, useMobileTokens } from "../lib/native";
@@ -54,10 +54,21 @@ export default function NewBot() {
           setLook((current) => ({ ...current, color: botLookState(current.color).color }));
       })
       .catch(() => undefined);
+    // A first bot needs a model; ask before the form is filled in rather than after.
+    void askForModelBeforeFirstBot(params.spaceId).then((asked) => {
+      if (asked && !gone.current) router.back();
+    });
     return () => {
       gone.current = true;
     };
-  }, []);
+  }, [params.spaceId, router]);
+
+  // Android's Back would close the screen mid-create, like the Cancel it replaces.
+  useEffect(() => {
+    if (!pending) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [pending]);
 
   async function create() {
     if (!trimmed || creating.current) return;
@@ -65,7 +76,7 @@ export default function NewBot() {
     setPending(true);
     setError(null);
     try {
-      await createInboxBot({
+      const outcome = await createInboxBot({
         input: { name: trimmed, ...newBotLookInput(avatarSet, look) },
         openChat: (href) => {
           if (gone.current) return;
@@ -74,6 +85,8 @@ export default function NewBot() {
         },
         spaceId: params.spaceId,
       });
+      // A model is needed first, or the account or space changed: nothing is left to do here.
+      if (outcome !== "created" && !gone.current) router.back();
     } catch (err) {
       setError(errorText(err, t("Could not create bot")));
     } finally {
