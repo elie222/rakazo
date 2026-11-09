@@ -457,9 +457,11 @@ describe("local history retrieval", () => {
     expect(result.messages).toEqual([]);
     expect(result.coverage.status).toBe("partial");
     expect(result.nextSearch).not.toBeNull();
-    expect(result.note).toBe(
+    expect(result.note).toContain(
       "No match in the part searched so far; nextSearch continues the search.",
     );
+    // An unfinished search still points at listing earlier tool work without the keyword.
+    expect(result.note).toContain('kinds ["tool_work"] and no query');
   });
   it("validates dates, query size and pagination before accessing the database", async () => {
     const { mock, prisma } = db();

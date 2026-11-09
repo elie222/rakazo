@@ -460,16 +460,14 @@ export async function searchHistory(
   const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
   const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
   // An empty page says what it covered: nothing matched, or the scan has more to go.
+  const coverageNote = capped ? CAPPED_NOTE : hasMore ? UNFINISHED_NOTE : NO_MATCH_NOTE;
+  // Any empty keyword search, finished or not, can point at listing earlier tool work instead.
   const note =
     page.length || browsing
       ? undefined
-      : capped
-        ? CAPPED_NOTE
-        : hasMore
-          ? UNFINISHED_NOTE
-          : (await hasToolWork(prisma, scope, myChats))
-            ? `${NO_MATCH_NOTE} ${toolWorkHint(myChats)}`
-            : NO_MATCH_NOTE;
+      : (await hasToolWork(prisma, scope, myChats))
+        ? `${coverageNote} ${toolWorkHint(myChats)}`
+        : coverageNote;
   const nextBeforeSeq =
     byOffset || !hasMore ? null : rows.length > limit ? page.at(-1)!.seq : (cursor as number);
   return bounded({
