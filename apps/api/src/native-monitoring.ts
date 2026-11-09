@@ -93,6 +93,19 @@ export function sanitizeNativeEvent(
       safeTags["process.name"] = name;
     if (typeof exitCode === "string" && /^-?\d{1,10}$/.test(exitCode))
       safeTags["process.exit_code"] = exitCode;
+    const route = tags["renderer.route"];
+    const uptime = tags["renderer.uptime_min"];
+    const memory = tags["renderer.memory_mb"];
+    if (
+      typeof route === "string" &&
+      /^(\/([a-z][a-z-]{0,23}|:id)?)+$|^[a-z-]{1,20}:$/.test(route) &&
+      route.length <= 100
+    )
+      safeTags["renderer.route"] = route;
+    if (typeof uptime === "string" && /^\d{1,7}$/.test(uptime))
+      safeTags["renderer.uptime_min"] = uptime;
+    if (typeof memory === "string" && /^\d{1,6}(,\d{1,6}){0,9}$/.test(memory))
+      safeTags["renderer.memory_mb"] = memory;
   }
   for (const key of [...CORRELATION_TAG_KEYS, "operation"]) {
     const value = tags[key];
