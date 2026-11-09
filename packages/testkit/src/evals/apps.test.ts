@@ -43,14 +43,14 @@ describe("connected-apps eval graders", () => {
   it("passes a reply draft that links the latest proposal and fails a stale or sent one", () => {
     const c = scenario("apps-reply-draft-with-file");
     const facts = studioFacts(now);
-    const run = (body: string, send = false) => {
+    const run = (body: string, send = false, to = DANA) => {
       const apps = world(c);
       apps.mail!.call("search_threads", { query: "from:dana proposal" });
       apps.mail!.call("get_thread", { thread_id: mailThreadId("juniper-update") });
       apps.files!.call("search_files", { query: "Juniper proposal" });
       apps.files!.call("read_file", { file_id: fileId("juniper-proposal-v3") });
       const draft = apps.mail!.call("create_draft", {
-        to: DANA,
+        to,
         body,
         thread_id: mailThreadId("juniper-update"),
       });
@@ -60,6 +60,9 @@ describe("connected-apps eval graders", () => {
     };
     expect(run(`Hi Dana, v3: ${facts.proposalV3Url} — EUR 41,250 incl. delivery.`)).toEqual([]);
     expect(run(`Hi Dana, here it is: ${facts.proposalV2Url}`)).toEqual(["links-latest-proposal"]);
+    const v3 = `Hi Dana, v3: ${facts.proposalV3Url} — EUR 41,250 incl. delivery.`;
+    expect(run(v3, false, "x.dana.whitfield@juniperrow.example")).toEqual(["one-reply-draft"]);
+    expect(run(v3, false, "DANA.Whitfield@JuniperRow.example")).toEqual([]);
     expect(run(`Hi Dana, v3: ${facts.proposalV3Url}`, true)).toEqual([
       "one-reply-draft",
       "links-latest-proposal",

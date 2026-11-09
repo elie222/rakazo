@@ -10,7 +10,7 @@ import {
   studioNotes,
 } from "../apps/fixtures/studio.js";
 import type { MailEmulator } from "../apps/mail.js";
-import { mailThreadId } from "../apps/mail.js";
+import { address, mailThreadId } from "../apps/mail.js";
 import type { NotesEmulator } from "../apps/notes.js";
 import { noteId } from "../apps/notes.js";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
@@ -172,7 +172,7 @@ export const APPS_EVAL_CASES: EvalCase[] = [
           "one-reply-draft",
           drafts.length === 1 &&
             draft?.threadId === thread &&
-            draft.to.some((to) => to.toLowerCase().includes(DANA_ADDRESS)),
+            draft.to.some((to) => address(to) === DANA_ADDRESS),
         ),
         check(
           "links-latest-proposal",

@@ -41,6 +41,13 @@ describe("mail emulator", () => {
     expect(ok(mail.call("search_threads", { query: link })).threads).toHaveLength(1);
     const unknown = mail.call("search_threads", { query: "name:budget" });
     expect(unknown.ok ? null : unknown.error.code).toBe("invalid_argument");
+    // Rejected even when no thread is in scope to evaluate it against.
+    for (const query of ["in:spam name:budget", "has:drive", "in:trash after:2026-13-45x"]) {
+      const rejected = mail.call("search_threads", { query });
+      expect(rejected.ok ? null : rejected.error.code).toBe("invalid_argument");
+    }
+    // A quoted OR is part of the phrase, not an operator.
+    expect(ok(mail.call("search_threads", { query: '"PO-4419 OR PO-4480"' })).threads).toEqual([]);
 
     const first = ok(mail.call("search_threads", { query: "", max_results: 5 }));
     expect(first.threads).toHaveLength(5);

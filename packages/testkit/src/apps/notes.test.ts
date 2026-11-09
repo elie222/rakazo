@@ -117,6 +117,11 @@ describe("notes emulator", () => {
       properties: { ETA: "2026-02-30" },
     });
     expect(impossible.ok ? null : impossible.error.code).toBe("invalid_argument");
+    const badPeople = notes.call("update_page_properties", {
+      page_id: row,
+      properties: { Owner: [42] },
+    });
+    expect(badPeople.ok ? null : badPeople.error.code).toBe("invalid_argument");
     const eta = studioFacts(now).ostravaNewEta;
     ok(
       notes.call("update_page_properties", {
@@ -130,6 +135,22 @@ describe("notes emulator", () => {
       before: { Status: "In transit" },
       after: { Status: "Delayed", ETA: eta, PO: "PO-4471" },
     });
+    // A same-day date-time matches date filters for that day.
+    ok(
+      notes.call("update_page_properties", {
+        page_id: row,
+        properties: { ETA: `${eta}T09:00:00Z` },
+      }),
+    );
+    for (const condition of ["equals", "on_or_before", "on_or_after"]) {
+      const rows = ok(
+        notes.call("list_database_rows", {
+          database_id: deliveries,
+          filter: { property: "ETA", condition, value: eta },
+        }),
+      ).results.map((r: { properties: { PO: string } }) => r.properties.PO);
+      expect(rows).toContain("PO-4471");
+    }
   });
 
   it("reads page blocks, creates rows and pages, and refuses view-only pages", () => {

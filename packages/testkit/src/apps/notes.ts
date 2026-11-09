@@ -249,7 +249,8 @@ export class NotesEmulator extends AppEmulator {
           break;
         case "multi_select":
         case "people":
-          if (!Array.isArray(value)) throw fail("a list of names");
+          if (!Array.isArray(value) || value.some((v) => typeof v !== "string"))
+            throw fail("a list of names");
           if (schema.type === "multi_select")
             for (const option of value)
               if (!schema.options?.includes(option))
@@ -315,10 +316,14 @@ export class NotesEmulator extends AppEmulator {
         "invalid_argument",
         `Unknown condition ${String(filter.condition)}. Use one of: ${FILTER_CONDITIONS.join(", ")}`,
       );
-    const value = page.properties[filter.property] ?? null;
+    const stored = page.properties[filter.property] ?? null;
+    // A date-time compares as its day, so a same-day time still matches a date filter.
+    const day = (v: unknown) =>
+      schema.type === "date" && typeof v === "string" ? v.slice(0, 10) : v;
+    const value = day(stored) as PropertyValue;
     const empty = value === null || value === "" || (Array.isArray(value) && value.length === 0);
     const text = (v: unknown) => (Array.isArray(v) ? v.join(" ") : String(v ?? "")).toLowerCase();
-    const wanted = filter.value;
+    const wanted = day(filter.value);
     switch (filter.condition) {
       case "is_empty":
         return empty;

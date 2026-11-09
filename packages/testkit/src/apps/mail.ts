@@ -57,11 +57,19 @@ type Draft = {
 const SYSTEM_LABELS = ["INBOX", "SENT", "DRAFT", "UNREAD", "STARRED", "IMPORTANT", "SPAM", "TRASH"];
 const CATEGORY_LABELS = ["CATEGORY_PERSONAL", "CATEGORY_UPDATES", "CATEGORY_PROMOTIONS"];
 const DAY = 86_400_000;
+const SEARCH_OPERATORS = new Set(
+  "from to cc subject label in category is has filename after before newer_than older_than".split(
+    " ",
+  ),
+);
+type SearchTerm = ReturnType<typeof queryTerms>[number];
 
 export const mailThreadId = (key: string) => stableId(`mail-thread:${key}`, 16);
 
 /** An email address from "Name <address>" or a bare address, lowercased. */
-const address = (value: string) => (value.match(/<([^>]+)>/)?.[1] ?? value).trim().toLowerCase();
+/** The bare, lowercased address from `Name <address>` or a plain address. */
+export const address = (value: string) =>
+  (value.match(/<([^>]+)>/)?.[1] ?? value).trim().toLowerCase();
 const isAddress = (value: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(address(value));
 
 /** RFC 5322 date in UTC, as mail headers carry it. */
@@ -191,8 +199,7 @@ export class MailEmulator extends AppEmulator {
    * Common mail search operators; every term must match a message in the thread, and terms
    * joined by OR need only one of them to.
    */
-  private matches(thread: Thread, query: string) {
-    const terms = queryTerms(query);
+  private matches(thread: Thread, terms: SearchTerm[]) {
     const scope = terms.find((term) => term.key === "in" && !term.negate)?.text;
     const labels = new Set(this.labelsOf(thread).map((label) => label.toLowerCase()));
     if (scope !== "anywhere" && (labels.has("trash") || labels.has("spam")))
@@ -203,7 +210,6 @@ export class MailEmulator extends AppEmulator {
       if (term.or && last) last.push(term);
       else groups.push([term]);
     }
-    // Every term is evaluated, so an unsupported operator always reports an error.
     return groups
       .map((group) =>
         group.map((term) => this.termMatches(thread, labels, term) !== term.negate).some(Boolean),
@@ -266,8 +272,22 @@ export class MailEmulator extends AppEmulator {
         );
       }
       default:
-        throw new AppError("invalid_argument", `Unsupported search operator: ${key}:`);
+        return false;
     }
+  }
+
+  /** Rejects what the search cannot evaluate before any thread is filtered. */
+  private parseQuery(query: string) {
+    const terms = queryTerms(query);
+    for (const { key, text } of terms) {
+      if (key === undefined) continue;
+      if (!SEARCH_OPERATORS.has(key))
+        throw new AppError("invalid_argument", `Unsupported search operator: ${key}:`);
+      if (key === "has" && text !== "attachment")
+        throw new AppError("invalid_argument", "Only has:attachment is supported.");
+      if (["after", "before", "newer_than", "older_than"].includes(key)) this.dateBound(key, text);
+    }
+    return terms;
   }
 
   private dateBound(key: string, text: string) {
@@ -385,8 +405,9 @@ export class MailEmulator extends AppEmulator {
         readOnly: true,
         run: (args) => {
           const query = String(args.query ?? "").trim() || "in:inbox";
+          const terms = this.parseQuery(query);
           const matched = [...this.threads.values()]
-            .filter((thread) => this.matches(thread, query))
+            .filter((thread) => this.matches(thread, terms))
             .sort((a, b) => b.messages.at(-1)!.date.localeCompare(a.messages.at(-1)!.date));
           const { page, next } = paginate(matched, {
             size: args.max_results,
