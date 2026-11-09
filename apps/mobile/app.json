@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rakazo mickvvw",
     "slug": "rakazo",
-    "owner": "inbox-zero",
+    "owner": "mickvvws-team",
     "scheme": "rakazo",
     "version": "1.0.12",
     "orientation": "default",
@@ -142,6 +142,7 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
+        "projectId": "7070c480-0dbe-4869-a053-065f93ce9039",
         "build": {
           "experimental": {
             "ios": {
