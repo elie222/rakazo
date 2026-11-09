@@ -243,7 +243,10 @@ export function createOpenAiCompatibleFetch(
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
-    const url = loopbackOnHost(assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts));
+    const url = assertAllowedOpenAiCompatibleRequestUrl(
+      loopbackOnHost(assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts)).href,
+      opts,
+    );
     const customHeaders = opts?.headers === undefined ? undefined : parseModelHeaders(opts.headers);
     if (requestCarriesAuthorization(input, init) || Object.keys(customHeaders ?? {}).length > 0) {
       assertHttpsForKeyedOpenAiCompatibleUrl(

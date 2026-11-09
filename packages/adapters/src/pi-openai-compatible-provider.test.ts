@@ -298,6 +298,10 @@ describe("private model endpoints", () => {
       vi.stubEnv("RAKAZO_LOOPBACK_HOST", "host.docker.internal");
       await safeFetch("http://127.0.0.1:11234/v1/models");
       await safeFetch("http://10.0.0.5:8000/v1/models");
+      vi.stubEnv("RAKAZO_LOOPBACK_HOST", "169.254.169.254");
+      await expect(safeFetch("http://localhost:11234/v1/models")).rejects.toThrow(
+        "blocked metadata",
+      );
     } finally {
       vi.unstubAllEnvs();
     }
