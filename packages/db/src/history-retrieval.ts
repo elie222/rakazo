@@ -138,6 +138,8 @@ const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
   '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
+/** Replies that used tools; matches the predicate of messages_tool_work_idx exactly. */
+const TOOL_WORK = Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')`;
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
   // Match loadRunHistoryMessages: only an unassigned row for this bot means waiting.
   // Cross-chat direct threads use their owning bot; groups retain the reading bot.
@@ -319,14 +321,13 @@ function withAttachments<T extends { messageId: string }>(
     : ref;
 }
 
-/** Whether any reply the search could reach used tools. */
-/** Whether this chat has earlier replies that used tools; this chat only, so it stays indexed. */
-async function hasToolWork(prisma: PrismaClient, scope: HistoryScope) {
+/** Whether any reply the search could reach used tools; messages_tool_work_idx keeps this cheap. */
+async function hasToolWork(prisma: PrismaClient, scope: HistoryScope, myChats: boolean) {
   const rows = await prisma.$queryRaw<unknown[]>(Prisma.sql`
     SELECT 1 FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope, false)}
-      AND m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')
+    WHERE ${visible(scope, myChats)} AND ${TOOL_WORK}
       ${scope.searchBeforeSeq !== undefined ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${scope.searchBeforeSeq})` : Prisma.empty}
+      ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}
     LIMIT 1`);
   return rows.length > 0;
 }
@@ -389,7 +390,7 @@ export async function searchHistory(
             : kind === "user_messages"
               ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "file" || @.kind == "image")')`
               : kind === "tool_work"
-                ? Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')`
+                ? TOOL_WORK
                 : // A reply can be only tool steps; search indexes those too.
                   Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "steps")')`,
         ),
@@ -477,7 +478,7 @@ export async function searchHistory(
   const note =
     page.length || browsing
       ? undefined
-      : !narrowed && !continued && (await hasToolWork(prisma, scope))
+      : !narrowed && !continued && (await hasToolWork(prisma, scope, myChats))
         ? `${coverageNote} ${toolWorkHint(myChats)}`
         : coverageNote;
   const nextBeforeSeq =
