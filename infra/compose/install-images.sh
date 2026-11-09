@@ -379,6 +379,21 @@ configure_computer_egress() {
   echo "See Restricted computer egress in docs/self-host-docker-computers.md." >&2
 }
 
+remove_replaced_images() {
+  local ref repo id tag repos=" "
+  while IFS= read -r ref; do
+    repo="${ref%@*}"
+    [[ "${repo##*/}" != *:* ]] || repo="${repo%:*}"
+    repo="${repo#docker.io/}"
+    repos+="${repo#library/} "
+  done < <(docker compose --env-file "$ENV_FILE" "${compose_files[@]}" config --images 2>/dev/null)
+  [[ "$repos" != " " ]] || return 0
+  while read -r id repo tag; do
+    [[ "$tag" == "<none>" && "$repos" == *" ${repo} "* ]] || continue
+    docker image rm "$id" >/dev/null 2>&1 || true
+  done < <(docker image ls --no-trunc --format '{{.ID}} {{.Repository}} {{.Tag}}' 2>/dev/null)
+}
+
 for filename in "${required_files[@]}"; do
   download "$filename"
 done
@@ -434,5 +449,6 @@ if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
 else
   docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
+remove_replaced_images
 
 echo "Rakazo is starting at http://127.0.0.1:5173"
