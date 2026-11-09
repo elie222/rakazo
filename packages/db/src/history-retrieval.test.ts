@@ -368,7 +368,7 @@ describe("local history retrieval", () => {
       { kind: "text", text: "Done." },
     ];
     expect(historyReadText(blocks)).toBe(
-      "[tool calls this reply made]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
+      "[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
     );
     expect(historyMessageText(blocks)).toBe("Done.");
     expect(historySearchText(blocks)).toContain("Quillfeather");
@@ -392,7 +392,7 @@ describe("local history retrieval", () => {
     ]);
     const result = await searchHistory(prisma, scope, { query: "quillfeather" });
     expect(result.messages).toHaveLength(1);
-    expect(result.messages[0]!.text).toContain("reply made]\n- Shell: Installing Quillfeather.");
+    expect(result.messages[0]!.text).toContain("contradict it]\n- Shell: Installing Quillfeather.");
   });
   it("lists earlier replies that used tools by kind, without a keyword", async () => {
     const { mock, prisma } = db();

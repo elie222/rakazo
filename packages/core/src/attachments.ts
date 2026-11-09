@@ -165,6 +165,8 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
+const TOOL_STEPS_HEADER =
+  "[tool calls this reply made; what it reported from them stands unless later messages contradict it]";
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 const TOOL_STEP_MAX_LINES = 40;
 /** Tool names are at most 64 characters; only imported data could carry a longer label. */
@@ -199,8 +201,9 @@ export function toolStepsHistoryText(
   });
   const hidden = valid.length - shown.length;
   if (hidden > 0) lines.push(`- …and ${hidden} more`);
-  // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step.
-  return `[tool calls this reply made]\n${lines.join("\n")}`;
+  // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step. Like a
+  // shortened tool result, what the reply reported from them stands without re-checking.
+  return `${TOOL_STEPS_HEADER}\n${lines.join("\n")}`;
 }
 
 const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;

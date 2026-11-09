@@ -308,6 +308,7 @@ function toolUsageLine(parts: {
       ? "Use request_takeover when the user must provide protected input or human judgment."
       : undefined,
     "Use destination_write only for connected destination records.",
+    "When you finish work with tools, say in your reply what it found or changed, not only that it is done.",
   ].filter((clause): clause is string => Boolean(clause));
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
