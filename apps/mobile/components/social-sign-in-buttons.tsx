@@ -1,92 +1,105 @@
-import {
-  AppleAuthenticationButton,
-  AppleAuthenticationButtonStyle,
-  AppleAuthenticationButtonType,
-} from "expo-apple-authentication";
-import { Platform, Pressable, Text, View } from "react-native";
+import type { ReactNode } from "react";
+import { Pressable, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 
-/** Sign in with Apple requires these two fills. They are not theme colors. */
-const APPLE_BLACK = logoColor("000000");
-const APPLE_WHITE = logoColor("ffffff");
-
+/**
+ * Provider choices for the first sign-in screen. One provider spans the row;
+ * two or more share it equally. The Apple control matches the others and still
+ * starts the system Sign in with Apple sheet.
+ */
 export function SocialSignInButtons({
   providers,
   disabled,
   onPress,
+  onEmail,
 }: {
   providers: { id: string; name: string }[];
   disabled?: boolean;
   onPress: (providerId: string) => void;
+  onEmail?: () => void;
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
-  const appearance = useResolvedAppearance();
-  if (providers.length === 0) return null;
-  const dark = appearance === "dark";
+  if (providers.length === 0 && !onEmail) return null;
   return (
     <View style={{ marginTop: 28, gap: 12 }}>
-      {providers.map((provider) => {
-        const label = t("Continue with {name}", { name: provider.name });
-        if (provider.id === "apple" && Platform.OS === "ios") {
-          return (
-            <AppleAuthenticationButton
+      {providers.length > 0 ? (
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          {providers.map((provider) => (
+            <Choice
               key={provider.id}
-              buttonType={AppleAuthenticationButtonType.CONTINUE}
-              buttonStyle={
-                dark ? AppleAuthenticationButtonStyle.WHITE : AppleAuthenticationButtonStyle.BLACK
+              label={provider.name}
+              disabled={disabled}
+              onPress={() => onPress(provider.id)}
+              tokens={tokens}
+              mark={
+                provider.id === "google" ? (
+                  <GoogleMark />
+                ) : provider.id === "apple" ? (
+                  <AppleMark color={tokens.foreground} />
+                ) : null
               }
-              cornerRadius={12}
-              accessibilityLabel={label}
-              style={{ width: "100%", height: 48, opacity: disabled ? 0.45 : 1 }}
-              onPress={() => {
-                if (!disabled) onPress(provider.id);
-              }}
             />
-          );
-        }
-        const apple = provider.id === "apple";
-        const labelColor = apple ? (dark ? APPLE_BLACK : APPLE_WHITE) : tokens.foreground;
-        return (
-          <Pressable
-            key={provider.id}
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={() => onPress(provider.id)}
-            style={{
-              minHeight: 48,
-              borderRadius: 12,
-              borderWidth: apple ? 0 : 1,
-              borderColor: tokens.border,
-              backgroundColor: apple ? (dark ? APPLE_WHITE : APPLE_BLACK) : "transparent",
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              opacity: disabled ? 0.45 : 1,
-            }}
-          >
-            {provider.id === "google" ? <GoogleMark /> : null}
-            {apple ? <AppleMark color={labelColor} /> : null}
-            <Text style={{ color: labelColor, fontSize: 16, fontWeight: "600" }}>{label}</Text>
-          </Pressable>
-        );
-      })}
+          ))}
+        </View>
+      ) : null}
+      {onEmail ? (
+        <Choice
+          label={t("Continue with email")}
+          disabled={disabled}
+          onPress={onEmail}
+          tokens={tokens}
+          fill
+          mark={<MailMark color={tokens.foreground} />}
+        />
+      ) : null}
     </View>
   );
 }
 
-export function SignInOrDivider() {
-  const { t } = useI18n();
-  const tokens = useMobileTokens();
+function Choice({
+  label,
+  disabled,
+  onPress,
+  tokens,
+  mark,
+  fill,
+}: {
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+  tokens: ReturnType<typeof useMobileTokens>;
+  mark: ReactNode;
+  fill?: boolean;
+}) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 20 }}>
-      <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
-      <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>{t("or")}</Text>
-      <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        flex: fill ? undefined : 1,
+        alignSelf: fill ? "stretch" : undefined,
+        minHeight: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: tokens.border,
+        backgroundColor: "transparent",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        paddingHorizontal: 12,
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      {mark}
+      <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 16, fontWeight: "600" }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -125,6 +138,19 @@ function AppleMark({ color }: { color: string }) {
         fill={color}
         d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"
       />
+    </Svg>
+  );
+}
+
+function MailMark({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 7.2C4 6 5 5 6.2 5h11.6C19 5 20 6 20 7.2v9.6c0 1.2-1 2.2-2.2 2.2H6.2C5 19 4 18 4 16.8V7.2Z"
+        stroke={color}
+        strokeWidth="1.8"
+      />
+      <Path d="M4.6 7.4 12 13l7.4-5.6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
     </Svg>
   );
 }

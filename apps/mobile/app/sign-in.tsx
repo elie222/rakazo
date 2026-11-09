@@ -22,7 +22,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
-import { SignInOrDivider, SocialSignInButtons } from "../components/social-sign-in-buttons";
+import { SocialSignInButtons } from "../components/social-sign-in-buttons";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import { currentApiBase, rpc } from "../lib/api";
 import type { PasswordResetCapabilities } from "../lib/api-auth";
@@ -72,10 +72,12 @@ export default function SignIn() {
   const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [emailStep, setEmailStep] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
 
   useEffect(() => {
     setPasswordVisible(false);
+    setEmailStep(false);
   }, [mode, apiBase]);
 
   useFocusEffect(
@@ -148,6 +150,9 @@ export default function SignIn() {
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const usingCode = codeFlow && (codeSent || !password);
   const codeStep = codeFlow && codeSent;
+  const chooser = Boolean(
+    reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
+  );
 
   async function submit(enteredCode = code) {
     if (pending || !reset?.passwordAuth) return;
@@ -392,20 +397,47 @@ export default function SignIn() {
                         style={{ alignSelf: "center", marginTop: 16 }}
                       />
                     </>
+                  ) : chooser ? (
+                    <>
+                      <SocialSignInButtons
+                        providers={providers}
+                        disabled={pending}
+                        onEmail={() => {
+                          setError(null);
+                          setEmailStep(true);
+                        }}
+                        onPress={(providerId) => {
+                          const provider = providers.find((item) => item.id === providerId);
+                          if (provider) void startProvider(provider);
+                        }}
+                      />
+                      {error ? (
+                        <Text
+                          accessibilityRole="alert"
+                          style={{ color: tokens.destructive, marginTop: 12 }}
+                        >
+                          {error}
+                        </Text>
+                      ) : null}
+                    </>
                   ) : reset?.passwordAuth ? (
                     <>
-                      {mode !== "forgot" && linkProviders.length > 0 ? (
-                        <>
-                          <SocialSignInButtons
-                            providers={linkProviders}
-                            disabled={pending}
-                            onPress={(providerId) => {
-                              const provider = linkProviders.find((item) => item.id === providerId);
-                              if (provider) void startProvider(provider);
-                            }}
-                          />
-                          <SignInOrDivider />
-                        </>
+                      {providers.length > 0 && mode !== "forgot" && !codeStep ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          hitSlop={8}
+                          onPress={() => {
+                            setError(null);
+                            setEmailStep(false);
+                          }}
+                          style={{ alignSelf: "flex-start", marginTop: 8 }}
+                        >
+                          <Text
+                            style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
+                          >
+                            {t("Back")}
+                          </Text>
+                        </Pressable>
                       ) : null}
                       {mode === "up" ? (
                         <TextInput
@@ -415,7 +447,7 @@ export default function SignIn() {
                           value={name}
                           onChangeText={setName}
                           style={{
-                            marginTop: linkProviders.length > 0 ? 12 : 28,
+                            marginTop: providers.length > 0 && mode !== "forgot" ? 12 : 28,
                             backgroundColor: tokens.muted,
                             borderRadius: 13,
                             padding: 16,
@@ -437,9 +469,7 @@ export default function SignIn() {
                         onBlur={() => setEmailBlurred(true)}
                         style={{
                           marginTop:
-                            mode === "up" || (mode !== "forgot" && linkProviders.length > 0)
-                              ? 12
-                              : 28,
+                            mode === "up" || (mode !== "forgot" && providers.length > 0) ? 12 : 28,
                           backgroundColor: tokens.muted,
                           borderRadius: 13,
                           padding: 16,

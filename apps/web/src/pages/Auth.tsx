@@ -11,7 +11,7 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@ra
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
-import { SignInOrDivider, SocialSignInButtons } from "../components/SocialSignInButtons";
+import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -56,6 +56,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
+  const [emailStep, setEmailStep] = useState(false);
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
@@ -63,6 +64,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const providers = reset ? signInProviders(reset) : [];
   const primaryProvider = reset && !reset.passwordAuth ? providers[0] : undefined;
   const linkProviders = primaryProvider ? providers.slice(1) : providers;
+  const chooser = Boolean(
+    reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
+  );
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     sent || codeStep ? (
@@ -74,6 +78,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : (
       <Trans>Reset your password</Trans>
     );
+
+  useEffect(() => {
+    setEmailStep(false);
+  }, [mode]);
 
   useEffect(() => {
     setReset(null);
@@ -232,8 +240,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     }
   }
 
-  const socialAboveForm = Boolean(reset?.passwordAuth && mode !== "forgot" && !codeStep);
-
   if (!sent && !reset && !capabilityError) {
     return <div className="h-full bg-background" />;
   }
@@ -284,19 +290,39 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               {error}
             </p>
           ) : null}
-          {reset?.passwordAuth ? (
+          {chooser ? (
             <>
-              {socialAboveForm && linkProviders.length > 0 ? (
-                <>
-                  <SocialSignInButtons
-                    providers={linkProviders}
-                    disabled={pending}
-                    onPress={(providerId) => void signInWithProvider(providerId)}
-                  />
-                  <div className="my-6 w-full">
-                    <SignInOrDivider />
-                  </div>
-                </>
+              <SocialSignInButtons
+                providers={providers}
+                disabled={pending}
+                onPress={(providerId) => void signInWithProvider(providerId)}
+                onEmail={() => {
+                  setError(null);
+                  setEmailStep(true);
+                }}
+              />
+              {error ? (
+                <p role="alert" className="mt-3 w-full text-body text-destructive">
+                  {error}
+                </p>
+              ) : null}
+            </>
+          ) : null}
+          {reset?.passwordAuth && !chooser ? (
+            <>
+              {providers.length > 0 && mode !== "forgot" && !codeStep ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="mb-4 self-start px-0 text-muted-foreground"
+                  onClick={() => {
+                    setError(null);
+                    setEmailStep(false);
+                  }}
+                >
+                  <Trans>Back</Trans>
+                </Button>
               ) : null}
               {mode === "up" && !codeStep ? (
                 <div className="mb-4 w-full">

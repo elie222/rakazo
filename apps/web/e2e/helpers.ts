@@ -83,6 +83,15 @@ export async function signup(
   await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
 }
 
+/** Opens the email form when the server offers a provider chooser first. */
+export async function openEmailSignIn(page: Page) {
+  const email = page.getByLabel("Email", { exact: true });
+  const choice = page.getByRole("button", { name: "Continue with email" });
+  await expect(email.or(choice)).toBeVisible();
+  if (await choice.isVisible()) await choice.click();
+  await expect(email).toBeVisible();
+}
+
 export async function signupThroughForm(
   page: Page,
   email: string,
@@ -92,6 +101,7 @@ export async function signupThroughForm(
 ) {
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await openEmailSignIn(page);
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
