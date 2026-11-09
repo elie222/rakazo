@@ -132,6 +132,32 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   await captureScreenshot(page, testInfo, "model-settings-cleanup-7-bot-own-model-open");
 });
 
+test('"latest" marks the newest model of a family', async ({ page }, testInfo) => {
+  await signup(page, `model-latest-${Date.now()}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  const dialog = await openModelConnection(page, "Anthropic");
+  await dialog.getByLabel("API key").fill("fake-anthropic-api-key");
+  await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await pickReopenedModel(page, "Claude Haiku 5.5 (latest)");
+
+  const primary = page.getByTestId("model-role-main").getByTestId("model-role-row-1");
+  await primary.getByRole("button", { name: /^Change / }).click();
+  await page.getByRole("combobox", { name: "Search models" }).fill("haiku");
+  const options = page.getByRole("listbox", { name: "Model options" });
+  await expect(
+    options.getByRole("option", { name: "Claude Haiku 5.5 (latest)", exact: true }),
+  ).toBeVisible();
+  await expect(
+    options.getByRole("option", { name: "Claude Haiku 4.5", exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    options.getByRole("option", { name: /4\.5 \(latest\)|alias|auto-updates/ }),
+  ).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "model-settings-latest-labels");
+});
+
 function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];

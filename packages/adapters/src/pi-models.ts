@@ -304,7 +304,6 @@ function buildPiCatalog(): PiCatalogEntry[] {
         providerModels.flatMap((model) => (model.baseUrl ? [trimBaseUrl(model.baseUrl)] : [])),
       ),
     );
-    const modelIds = providerModels.map((model) => model.id);
     const routingFields = cloudflareRoutingFields(provider.id);
     for (const model of providerModels) {
       if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
@@ -314,7 +313,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         providerName,
         id: model.id,
         recommended: isRecommendedCatalogModel(provider.id, model.id),
-        label: catalogModelLabel(model.id, model.name, modelIds),
+        label: catalogModelLabel(model.id, model.name, providerModels),
         billing,
         auth,
         oauthLabel,
@@ -366,22 +365,88 @@ function buildPiCatalog(): PiCatalogEntry[] {
  */
 const LATEST_MARKER = /[\s(/-]*\blatest\b\s*\)?\s*(\([^)]*\)\s*)?$/i;
 
+/** A model's upstream name and id; `name` is what the picker shows. */
+export type CatalogModelName = { id: string; name?: string };
+
 /**
- * Upstream marks auto-updating alias ids with a trailing "latest". That is an alias marker, not a
- * recency claim, so it lands on families like Claude Opus 4.5 while the actually newest models
- * (Claude Opus 5, Claude Fable 5) carry no marker at all. Read straight off a picker it says the
- * opposite of the truth, so state what the id really does instead.
+ * Upstream puts "latest" on auto-updating alias ids, so it lands on Claude Opus 4.5 while Opus 5.5
+ * carries nothing. In a picker "latest" means newest, so the marker goes on the newest model of a
+ * family that has such an alias: the alias keeps it while nothing newer exists, and once a newer
+ * release lands the marker moves there and the alias is labelled like any other model.
  */
 export function catalogModelLabel(
   id: string,
   name?: string,
-  providerModelIds: readonly string[] = [],
+  providerModels: readonly CatalogModelName[] = [],
 ): string {
   const label = name || id;
+  const base = stripLatestMarker(label);
+  const family = familyIndex(providerModels).get(familyKey(base)) ?? [];
+  const self: FamilyMember = {
+    id,
+    base,
+    version: versionOf(base),
+    alias: LATEST_MARKER.test(label) && isAliasModelId(id, providerModels),
+  };
+  const members = family.some((member) => member.id === id) ? family : [...family, self];
+  const aliases = members.filter((member) => member.alias);
+  if (!aliases.length) return base;
+  const newer = (member: FamilyMember) =>
+    members.some((other) => compareVersions(other.version, member.version) > 0);
+  if (self.alias) return newer(self) ? base : `${base} (latest)`;
+  return self.version && aliases.every(newer) && !newer(self) ? `${base} (latest)` : base;
+}
+
+type FamilyMember = { id: string; base: string; version: number[] | null; alias: boolean };
+
+const familyIndexes = new WeakMap<readonly CatalogModelName[], Map<string, FamilyMember[]>>();
+
+function familyIndex(models: readonly CatalogModelName[]): Map<string, FamilyMember[]> {
+  let index = familyIndexes.get(models);
+  if (index) return index;
+  index = new Map();
+  for (const model of models) {
+    const label = model.name || model.id;
+    const base = stripLatestMarker(label);
+    const member: FamilyMember = {
+      id: model.id,
+      base,
+      version: versionOf(base),
+      alias: LATEST_MARKER.test(label) && isAliasModelId(model.id, models),
+    };
+    const key = familyKey(base);
+    index.set(key, [...(index.get(key) ?? []), member]);
+  }
+  familyIndexes.set(models, index);
+  return index;
+}
+
+function stripLatestMarker(label: string): string {
   if (!LATEST_MARKER.test(label)) return label;
-  const base = label.replace(LATEST_MARKER, "").trim();
-  if (!base) return label;
-  return isAliasModelId(id, providerModelIds) ? `${base} (auto-updates)` : base;
+  return label.replace(LATEST_MARKER, "").trim() || label;
+}
+
+/** Bare version numbers: `4.5`, `5`, `3.1`. `3B` or `V4` is part of the name. */
+const VERSION = /\b\d+(?:\.\d+)*\b/;
+
+/** The label with its version removed: "Claude Opus 4.5" and "Claude Opus 5" share a family. */
+function familyKey(base: string): string {
+  return base.replace(VERSION, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function versionOf(base: string): number[] | null {
+  const match = VERSION.exec(base);
+  return match ? match[0].split(".").map(Number) : null;
+}
+
+/** An unversioned label is neither newer nor older than anything. */
+function compareVersions(a: number[] | null, b: number[] | null): number {
+  if (!a || !b) return 0;
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 /**
@@ -389,10 +454,10 @@ export function catalogModelLabel(
  * to be a bare date of 4-8 digits (`-2508`, `-260401`, `-20251001`). A variant like `-preview` or
  * `-fast` is its own pinned model, not a snapshot of this one.
  */
-function isAliasModelId(id: string, providerModelIds: readonly string[]): boolean {
+function isAliasModelId(id: string, providerModels: readonly CatalogModelName[]): boolean {
   if (/[-/]latest$/i.test(id)) return true;
-  return providerModelIds.some(
-    (other) => other.startsWith(`${id}-`) && /^\d{4,8}$/.test(other.slice(id.length + 1)),
+  return providerModels.some(
+    (other) => other.id.startsWith(`${id}-`) && /^\d{4,8}$/.test(other.id.slice(id.length + 1)),
   );
 }
 

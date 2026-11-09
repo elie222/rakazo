@@ -475,7 +475,7 @@ describe("Pi model catalog", () => {
     expect(listConfiguredCatalog()[0]).toMatchObject({
       provider: "openrouter",
       id: "foo-latest",
-      label: "foo (auto-updates)",
+      label: "foo (latest)",
     });
   });
 
@@ -492,47 +492,76 @@ describe("Pi model catalog", () => {
     ).toBe(false);
   });
 
-  it('never labels an older model "latest" and keeps aliases distinct from snapshots', () => {
+  it('puts "latest" on the newest model of a family, not on the alias it outgrew', () => {
     const catalog = listPiCatalog();
     const label = (id: string) =>
       catalog.find((entry) => entry.provider === "anthropic" && entry.id === id)?.label;
-    expect(label("claude-opus-5")).toBeDefined();
-    expect(label("claude-opus-4-5")).toBe("Claude Opus 4.5 (auto-updates)");
-    expect(label("claude-haiku-4-5")).toBe("Claude Haiku 4.5 (auto-updates)");
+    expect(label("claude-opus-4-5")).toBe("Claude Opus 4.5");
+    expect(label("claude-opus-4-5-20251101")).toBe("Claude Opus 4.5");
+    expect(label("claude-opus-5")).toBe("Claude Opus 5");
+    expect(label("claude-opus-5-5")).toBe("Claude Opus 5.5 (latest)");
+    expect(label("claude-haiku-4-5")).toBe("Claude Haiku 4.5");
     expect(label("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+    expect(label("claude-haiku-5-5")).toBe("Claude Haiku 5.5 (latest)");
+    expect(label("claude-sonnet-5-5")).toBe("Claude Sonnet 5.5 (latest)");
+    expect(label("claude-fable-5-1")).toBe("Claude Fable 5.1");
+    expect(catalog.some((entry) => /alias|auto-updates/.test(entry.label))).toBe(false);
   });
 });
 
 describe("catalogModelLabel", () => {
-  const providerModelIds = [
-    "claude-opus-4-5",
-    "claude-opus-4-5-20251101",
-    "mistral-medium",
-    "mistral-medium-2508",
-    "mistral-small",
-    "mistral-small-260401",
-    "foo",
-    "foo-preview",
+  const providerModels = [
+    // The alias is still the newest 4.5, so it keeps the marker and the snapshot does not.
+    { id: "claude-opus-4-5", name: "Claude Opus 4.5 (latest)" },
+    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (latest)" },
+    // A newer release outgrew the alias: the marker moves to it.
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5 (latest)" },
+    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+    { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" },
+    { id: "claude-3-7-sonnet-latest", name: "Claude Sonnet 3.7 (latest)" },
+    { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+    // An unversioned alias is the family's newest by definition.
+    { id: "mistral-medium", name: "Mistral Medium Latest" },
+    { id: "mistral-medium-2508", name: "Mistral Medium 3.1" },
+    { id: "mistral-small", name: "Mistral Small Latest" },
+    { id: "mistral-small-260401", name: "Mistral Small 4" },
+    { id: "gemini-flash-latest", name: "Gemini Flash Latest" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    // Same version as its alias: the alias keeps the marker, the pinned one stays plain.
+    { id: "glm-fast-latest", name: "GLM 5.3 Fast (Latest)" },
+    { id: "glm-5p3-fast", name: "GLM 5.3 Fast" },
+    // `-preview` is its own model, so "Foo Latest" is a pinned id that merely says latest.
+    { id: "foo", name: "Foo Latest" },
+    { id: "foo-preview", name: "Foo Preview" },
+    { id: "claude-fable-5", name: "Claude Fable 5" },
   ];
 
   it.each([
-    // Alias: the id ends in `latest`, or a dated sibling proves the undated id floats.
-    ["claude-opus-4-5", "Claude Opus 4.5 (latest)", "Claude Opus 4.5 (auto-updates)"],
-    ["mistral-medium", "Mistral Medium Latest", "Mistral Medium (auto-updates)"],
-    ["mistral-small", "Mistral Small Latest", "Mistral Small (auto-updates)"],
-    ["gemini-flash-latest", "Gemini Flash Latest", "Gemini Flash (auto-updates)"],
-    ["foo-latest", "foo-latest", "foo (auto-updates)"],
-    ["foo/latest", "foo/latest", "foo (auto-updates)"],
-    ["qwen-max-latest", "Qwen Max Latest (Qwen3.8 Max)", "Qwen Max (auto-updates)"],
-    // Pinned: `-preview` is its own model and a dated id is already a snapshot, so promise nothing.
-    ["foo", "Foo Latest", "Foo"],
+    ["claude-opus-4-5", "Claude Opus 4.5 (latest)", "Claude Opus 4.5 (latest)"],
     ["claude-opus-4-5-20251101", "Claude Opus 4.5 (latest)", "Claude Opus 4.5"],
-    // Untouched: no marker, no name, or nothing left once the marker goes.
-    ["claude-opus-5", "Claude Opus 5", "Claude Opus 5"],
+    ["claude-haiku-4-5", "Claude Haiku 4.5 (latest)", "Claude Haiku 4.5"],
+    ["claude-haiku-4-5-20251001", "Claude Haiku 4.5", "Claude Haiku 4.5"],
+    ["claude-haiku-5-5", "Claude Haiku 5.5", "Claude Haiku 5.5 (latest)"],
+    ["claude-3-7-sonnet-latest", "Claude Sonnet 3.7 (latest)", "Claude Sonnet 3.7"],
+    ["claude-sonnet-4-5", "Claude Sonnet 4.5", "Claude Sonnet 4.5 (latest)"],
+    ["mistral-medium", "Mistral Medium Latest", "Mistral Medium (latest)"],
+    ["mistral-medium-2508", "Mistral Medium 3.1", "Mistral Medium 3.1"],
+    ["mistral-small", "Mistral Small Latest", "Mistral Small (latest)"],
+    ["gemini-flash-latest", "Gemini Flash Latest", "Gemini Flash (latest)"],
+    ["gemini-2.5-flash", "Gemini 2.5 Flash", "Gemini 2.5 Flash"],
+    ["glm-fast-latest", "GLM 5.3 Fast (Latest)", "GLM 5.3 Fast (latest)"],
+    ["glm-5p3-fast", "GLM 5.3 Fast", "GLM 5.3 Fast"],
+    ["foo", "Foo Latest", "Foo"],
+    // An alias with no siblings to compare against is the newest it knows of.
+    ["foo-latest", "foo-latest", "foo (latest)"],
+    ["foo/latest", "foo/latest", "foo (latest)"],
+    ["qwen-max-latest", "Qwen Max Latest (Qwen3.8 Max)", "Qwen Max (latest)"],
+    // Untouched: no alias in the family, no name, or nothing left once the marker goes.
+    ["claude-fable-5", "Claude Fable 5", "Claude Fable 5"],
     ["some-model", undefined, "some-model"],
     ["latest", "latest", "latest"],
   ])("labels %s / %s as %s", (id, name, expected) => {
-    expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
+    expect(catalogModelLabel(id, name, providerModels)).toBe(expected);
   });
 });
 
