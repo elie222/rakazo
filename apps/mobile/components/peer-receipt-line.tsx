@@ -42,6 +42,7 @@ export function PeerReceiptLine({
       disabled={!onPress}
       accessibilityLabel={label}
       onPress={onPress}
+      hitSlop={{ top: 6, bottom: 6 }}
       style={({ pressed }) => [styles.line, { opacity: pressed ? 0.6 : 1 }]}
     >
       {parts.before ? <Text style={styles.label}>{parts.before}</Text> : null}
@@ -61,7 +62,7 @@ function createStyles() {
   return StyleSheet.create({
     line: {
       width: "100%",
-      paddingVertical: 8,
+      paddingVertical: 4,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
