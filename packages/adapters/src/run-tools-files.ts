@@ -84,13 +84,13 @@ export const fileTools: ToolHandlers = {
     const { deps } = ctx;
     const { args } = call;
     const workspace = runWorkspace(ctx, call);
-    return listFilesFromTool(deps.sandbox, workspace, args);
+    return call.finish(await listFilesFromTool(deps.sandbox, workspace, args));
   },
   async read_file(ctx, call) {
     const { deps } = ctx;
     const { args } = call;
     const workspace = runWorkspace(ctx, call);
-    return readFileFromTool(deps.sandbox, workspace, args);
+    return call.finish(await readFileFromTool(deps.sandbox, workspace, args));
   },
   async write_file(ctx, call) {
     const { deps, bot, context } = ctx;

@@ -30,6 +30,7 @@ import {
 } from "./lazy-tool-catalog.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { toAgentTools } from "./pi-runtime-tools.js";
+import * as ScheduleTools from "./schedule-tools.js";
 import {
   fixtureFetch,
   hostFor,
@@ -42,6 +43,7 @@ import {
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
+import * as WorkspaceFileTools from "./workspace-file-tools.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -4706,5 +4708,71 @@ it.each(["image_search", "web_search"])(
     expect(f.fetchedUrls).toEqual([]);
     expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
     expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(
+  ["list_files", "read_file", "schedule_list"].flatMap((name) =>
+    [true, false].map((persist) => ({ name, persist })),
+  ),
+)(
+  "settles an approved $name read and replays without execution, persistence: $persist",
+  async ({ name, persist }) => {
+    const listed = { path: "notes", entries: [] };
+    const contents = {
+      path: "notes/example.txt",
+      content: "Fixture content",
+      totalLines: 1,
+      startLine: 1,
+      endLine: 1,
+    };
+    const schedules = { routines: [] };
+    const read =
+      name === "list_files"
+        ? vi.spyOn(WorkspaceFileTools, "listFilesFromTool").mockResolvedValue(listed)
+        : name === "read_file"
+          ? vi.spyOn(WorkspaceFileTools, "readFileFromTool").mockResolvedValue(contents)
+          : vi.spyOn(ScheduleTools, "listSchedulesFromTool").mockResolvedValue(schedules);
+    try {
+      const expected = name === "list_files" ? listed : name === "read_file" ? contents : schedules;
+      const f = fixture({
+        name,
+        builtin: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: name }],
+      });
+      f.setCalls([
+        {
+          args: name === "schedule_list" ? {} : { path: "notes/example.txt" },
+          executionId: "read-call",
+        },
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(read).not.toHaveBeenCalled();
+      f.effects[0]!.status = "approved";
+      const update = f.prisma.externalEffect.updateMany;
+      const original = update.getMockImplementation()!;
+      if (!persist)
+        update.mockImplementation(async (args) =>
+          args.data.status === "completed" ? { count: 0 } : original(args),
+        );
+      await f.run();
+      expect(read).toHaveBeenCalledOnce();
+      if (persist) {
+        expect(f.effects[0]).toMatchObject({ status: "completed", result: expected });
+        expect(f.results.at(-1)).toEqual(expected);
+      } else {
+        expect(f.effects[0]!.status).toBe("executing");
+        expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      }
+      update.mockImplementation(original);
+      await f.run();
+      expect(read).toHaveBeenCalledOnce();
+      if (persist) expect(f.results.at(-1)).toEqual(expected);
+      else expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+    }
   },
 );
