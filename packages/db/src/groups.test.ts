@@ -286,7 +286,12 @@ describe("archiveGroup", () => {
     expect(queryRaw).toHaveBeenCalled();
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ threadId: "thread-1" }),
+        where: expect.objectContaining({
+          OR: [
+            { threadId: "thread-1" },
+            { trigger: "helper", sourceMessage: { threadId: "thread-1" } },
+          ],
+        }),
       }),
     );
     expect(findFirst).toHaveBeenCalledWith(
@@ -374,7 +379,13 @@ describe("archiveGroup", () => {
 
     expect(queryRaw).toHaveBeenCalled();
     expect(findManyRuns).toHaveBeenCalledWith({
-      where: { threadId: "thread-1", status: "cancelled" },
+      where: {
+        OR: [
+          { threadId: "thread-1" },
+          { trigger: "helper", sourceMessage: { threadId: "thread-1" } },
+        ],
+        status: "cancelled",
+      },
       select: { id: true },
     });
     expect(leaseFindMany).toHaveBeenCalledWith(

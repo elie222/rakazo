@@ -17,7 +17,7 @@ import {
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { cancelRunsInTransaction } from "./cancel-runs.js";
+import { cancelRunsInTransaction, conversationRunsWhere } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -255,15 +255,7 @@ export async function clearThread(
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        ...(input.groupId
-          ? { threadId: input.threadId }
-          : {
-              OR: [
-                { threadId: input.threadId, botId: input.botId },
-                // Background helpers this chat started work in threads of their own.
-                { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId: input.threadId } },
-              ],
-            }),
+        ...conversationRunsWhere(input.threadId),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -272,20 +264,32 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
-    // with it, including imported ones that have no runs.
-    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };
-    const cleared = input.groupId
-      ? { threadId: input.threadId }
-      : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    // Capture hidden histories before deleting their source cards; other chats keep theirs.
+    const helperThreads = await tx.thread.findMany({
+      where: {
+        spaceId: input.spaceId,
+        OR: [
+          {
+            runs: {
+              some: {
+                trigger: BACKGROUND_HELPER_TRIGGER,
+                sourceMessage: { threadId: input.threadId },
+              },
+            },
+          },
+          ...(!input.groupId ? [{ helperBotId: input.botId, runs: { none: {} } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    const helperThreadIds = helperThreads.map((thread) => thread.id);
+    const cleared = { OR: [{ threadId: input.threadId }, { threadId: { in: helperThreadIds } }] };
     await tx.message.deleteMany({ where: cleared });
     await tx.event.deleteMany({ where: cleared });
-    if (!input.groupId) {
-      await tx.thread.updateMany({
-        where: { ...helperThreads, historyCompactionSummary: { not: null } },
-        data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
-      });
-    }
+    await tx.thread.updateMany({
+      where: { id: { in: helperThreadIds }, historyCompactionSummary: { not: null } },
+      data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
+    });
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset

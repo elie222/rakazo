@@ -9,7 +9,7 @@ Update the relevant section when a product decision changes; Git history preserv
 
 The recorded decisions below carry forward the existing product requirements from VISION.md without a new implementation audit.
 They define expected behavior, not proof that every path already conforms.
-The subagent section separately records the intended change agreed during review of [PR #3101](https://github.com/elie222/rakazo/pull/3101); it is not a claim that the change has shipped.
+The subagent section identifies the implemented scope and remaining limitations.
 Keep implementation gaps explicit when adding a capability, and keep technical plans and verification evidence in the relevant PR or technical documentation.
 
 ## Conversation
@@ -19,7 +19,7 @@ A pending question or approval card never blocks a chat: the user can always kee
 
 ## Subagents
 
-Status: intended behavior; implementation remains to be aligned.
+Status: independent execution and action tools are implemented across conversation surfaces.
 
 A subagent is delegated work for the parent bot, not a separately configured bot or a second user-facing conversation.
 Subagents run independently while the parent remains available to respond to new messages and handle new requests.
@@ -34,8 +34,8 @@ The parent accounts for changed instructions and cancellation before acting on a
 
 For example, a bot comparing three options can delegate their research, answer a new question while that research continues, and give its recommendation once the needed results arrive.
 
-Implementation gap: the existing in-turn subagent call waits for its result before the parent continues.
-PR #3101 proposes optional background execution with read-only helpers; that proposal does not yet provide the single behavior and action capabilities defined here.
+Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
+Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
 
 ## Computers
 

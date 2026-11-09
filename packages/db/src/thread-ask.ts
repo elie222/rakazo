@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   instructionUpdateDiff,
   isApprovalAskBlock,
@@ -51,6 +52,8 @@ export class AnswerTooLongError extends Error {
 }
 
 export interface PauseRunForInput {
+  /** A helper asks in its originating chat, validated against its source card. */
+  requestThreadId?: string;
   spaceId: string;
   threadId: string;
   botId: string;
@@ -195,7 +198,13 @@ async function commitAnswerRunInput(
     where: {
       id: input.runId,
       spaceId: input.spaceId,
-      threadId: input.threadId,
+      OR: [
+        { threadId: input.threadId },
+        {
+          trigger: BACKGROUND_HELPER_TRIGGER,
+          sourceMessage: { threadId: input.threadId, thread: { spaceId: input.spaceId } },
+        },
+      ],
       status: "waiting_input",
     },
     select: {
@@ -318,7 +327,13 @@ async function commitAnswerRunInput(
     where: {
       id: input.runId,
       spaceId: input.spaceId,
-      threadId: input.threadId,
+      OR: [
+        { threadId: input.threadId },
+        {
+          trigger: BACKGROUND_HELPER_TRIGGER,
+          sourceMessage: { threadId: input.threadId, thread: { spaceId: input.spaceId } },
+        },
+      ],
       status: "waiting_input",
     },
     data: {
@@ -665,15 +680,26 @@ export async function pauseRunForInput(
   input: PauseRunForInput,
   realtime?: RealtimeFanout,
 ): Promise<FinalizeRunResult | false> {
+  const requestThreadId = input.requestThreadId ?? input.threadId;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
     // concurrent clear cannot deadlock against this transaction.
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${requestThreadId} FOR UPDATE`;
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
         spaceId: input.spaceId,
         threadId: input.threadId,
+        ...(input.requestThreadId
+          ? {
+              trigger: BACKGROUND_HELPER_TRIGGER,
+              sourceMessage: {
+                threadId: input.requestThreadId,
+                botId: input.botId,
+                thread: { spaceId: input.spaceId },
+              },
+            }
+          : {}),
         botId: input.botId,
         status: "running",
         leaseOwner: input.leaseOwner,
@@ -703,7 +729,7 @@ export async function pauseRunForInput(
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
     const message = await createThreadMessageInTransaction(tx, {
-      threadId: input.threadId,
+      threadId: requestThreadId,
       role: "bot",
       blocks: input.blocks,
       botId: input.botId,
@@ -711,7 +737,7 @@ export async function pauseRunForInput(
     });
     const response = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
-      threadId: input.threadId,
+      threadId: requestThreadId,
       botId: input.botId,
       type: "thread.message.created",
       runId: input.runId,
@@ -723,16 +749,21 @@ export async function pauseRunForInput(
     });
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
-      threadId: input.threadId,
+      threadId: requestThreadId,
       botId: input.botId,
       type: "run.waiting_input",
       runId: input.runId,
-      payload: run?.userId ? { userId: run.userId } : {},
+      payload: {
+        ...(run?.userId ? { userId: run.userId } : {}),
+        ...(input.requestThreadId ? { trigger: BACKGROUND_HELPER_TRIGGER } : {}),
+      },
     });
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
-    const continuationRunId = await createPendingSteeringRun(tx, input);
+    const continuationRunId = input.requestThreadId
+      ? null
+      : await createPendingSteeringRun(tx, input);
     return {
       threadId: waitingEvent.threadId,
       seq: waitingEvent.seq,

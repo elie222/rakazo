@@ -25,6 +25,10 @@ export type Step =
   | { fromPeer: string };
 export type Evidence = {
   text: string;
+  delegation?: {
+    helpers: Array<{ status: string; tools: string[] }>;
+    results: Array<{ status: string; text: string }>;
+  };
   replies?: string[];
   routineRuns?: RoutineEvidence[];
   /** Per fromPeer step: what the peer sent and what came back to it, or null if nothing did. */
@@ -80,6 +84,8 @@ export type Criterion = { id: string; pass: boolean };
 export type EvalCase = {
   id: string;
   purpose: string;
+  /** Observe independent helpers and their result turns before grading. */
+  delegation?: true;
   steps: Step[];
   files?: string[];
   approvalTool?: string;

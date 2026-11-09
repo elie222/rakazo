@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
 import type { Prisma } from "./client.js";
 import { clearEndedRunState } from "./run-secrets.js";
 
@@ -44,4 +44,11 @@ export async function cancelRunsInTransaction<
     data: { status: "cancelled" },
   });
   return cancelled;
+}
+
+/** Work in a conversation, including delegates whose execution history lives elsewhere. */
+export function conversationRunsWhere(threadId: string): Prisma.RunWhereInput {
+  return {
+    OR: [{ threadId }, { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId } }],
+  };
 }

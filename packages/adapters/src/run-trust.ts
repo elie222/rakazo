@@ -1,7 +1,9 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   connectorKindFromToolName,
+  HELPER_RESULT_TRIGGER,
   inboundRoutinePrompts,
   SITE_SENDING_TOOLS,
   siteAlwaysAllowed,
@@ -14,6 +16,7 @@ import type { EffectiveModelRole } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import { CATALOG_APPROVAL_TOOL, PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { loadRunOrigin } from "./run-origin.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
 /**
@@ -56,7 +59,7 @@ export function connectorTrustKeys(
 export function createRunTrustLoaders(
   deps: ExecutorDeps,
   input: {
-    run: { userId: string; spaceId: string; trigger: string };
+    run: { userId: string; spaceId: string; trigger: string; delegatedFromRunId?: string | null };
     runId: string;
     botId: string;
     taskPrompt: string;
@@ -111,6 +114,26 @@ export function createRunTrustLoaders(
   let ownerWordsPromise: Promise<string> | undefined;
   const loadOwnerWords = () => {
     ownerWordsPromise ??= (async () => {
+      if (run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER) {
+        // Delegation inherits privacy; outside speakers cannot authorize owner actions.
+        if (messagingChannelRun) return "";
+        const origin = await loadRunOrigin(deps.prisma, {
+          ...run,
+          id: runId,
+          botId,
+          delegatedFromRunId: run.delegatedFromRunId ?? null,
+        });
+        const message = origin?.sourceMessage;
+        if (
+          message?.role !== "user" ||
+          message.authorUserId !== run.userId ||
+          message.threadId !== origin?.threadId
+        )
+          return "";
+        return ((message.blocks ?? []) as MessageBlock[])
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("\n");
+      }
       if (ownerStartedRun && !messagingChannelRun && sourceMessage?.role === "user") {
         return ((sourceMessage.blocks ?? []) as MessageBlock[])
           .flatMap((block) => (block.kind === "text" ? [block.text] : []))

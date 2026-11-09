@@ -4,7 +4,7 @@ import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
 import { recordEffect, runScopedToolExecutionId } from "../../adapters/src/run-effects.js";
 import { startModelEmulator } from "./model-emulator.js";
 
-it("isolates main and sibling effects with identical wire IDs and reconciles a child retry", async () => {
+it("isolates independent subagent effects with identical wire IDs and reconciles a retry", async () => {
   const write = (content: string) => ({
     expect() {},
     response: {
@@ -14,15 +14,6 @@ it("isolates main and sibling effects with identical wire IDs and reconciles a c
       arguments: { path: "fixture.txt", content },
     },
   });
-  const delegate = (id: string) => ({
-    expect() {},
-    response: {
-      type: "tool" as const,
-      id,
-      name: "run_subagent",
-      arguments: { name: id, task: "Write the synthetic fixture." },
-    },
-  });
   const done = {
     expect() {},
     response: { type: "text" as const, text: "Done." },
@@ -30,13 +21,12 @@ it("isolates main and sibling effects with identical wire IDs and reconciles a c
   const model = await startModelEmulator({
     steps: [
       write("main"),
-      delegate("child-a"),
-      write("child-a"),
+      done,
       write("child-a"),
       done,
-      delegate("child-b"),
+      write("child-a"),
+      done,
       write("child-b"),
-      done,
       done,
     ],
   });
@@ -84,39 +74,40 @@ it("isolates main and sibling effects with identical wire IDs and reconciles a c
   const ids: string[] = [];
   const runtime = new PiAgentRuntime();
   try {
-    for await (const _event of runtime.run({
-      botId: run.botId,
-      threadId: run.threadId,
-      runId: run.id,
-      instructions: "Complete synthetic fixture.",
-      prompt: "Write then ask both helpers to write.",
-      history: [],
-      tools: builtinAgentTools.filter(
-        (tool) => tool.name === "write_file" || tool.name === "run_subagent",
-      ),
-      model: { ...model.model, maxTokens: 256 },
-      executeTool: async (name, args, executionId) => {
-        expect(name).toBe("write_file");
-        ids.push(executionId);
-        const applied = await recordEffect(
-          deps,
-          run,
-          name,
-          runScopedToolExecutionId(run.id, executionId),
-          args,
-        );
-        if (applied.duplicate) return applied.effect.result;
-        writes.push(String(args.content));
-        applied.effect.status = "completed";
-        applied.effect.result = { written: String(args.content) };
-        return applied.effect.result;
-      },
-    })) {
+    for (const id of ["main", "child-a", "child-a", "child-b"]) {
+      const current = { ...run, id };
+      for await (const _event of runtime.run({
+        botId: run.botId,
+        threadId: run.threadId,
+        runId: current.id,
+        instructions: "Complete synthetic fixture.",
+        prompt: "Write then ask both helpers to write.",
+        history: [],
+        tools: builtinAgentTools.filter((tool) => tool.name === "write_file"),
+        model: { ...model.model, maxTokens: 256 },
+        executeTool: async (name, args, executionId) => {
+          expect(name).toBe("write_file");
+          ids.push(executionId);
+          const applied = await recordEffect(
+            deps,
+            current,
+            name,
+            runScopedToolExecutionId(current.id, executionId),
+            args,
+          );
+          if (applied.duplicate) return applied.effect.result;
+          writes.push(String(args.content));
+          applied.effect.status = "completed";
+          applied.effect.result = { written: String(args.content) };
+          return applied.effect.result;
+        },
+      })) {
+      }
     }
     model.assertComplete();
     expect(writes).toEqual(["main", "child-a", "child-b"]);
     expect(ids).toHaveLength(4);
-    expect(new Set(ids).size).toBe(3);
+    expect(new Set(ids).size).toBe(1);
     expect(ids[1]).toBe(ids[2]);
     expect(ids.map((id) => JSON.parse(id)[2])).toEqual(["call_1", "call_1", "call_1", "call_1"]);
     expect(

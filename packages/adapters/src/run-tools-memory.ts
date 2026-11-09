@@ -45,13 +45,14 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const crossChat =
     name === "search_history"
       ? args.scope === "my_chats"
-      : typeof args.threadId === "string" && args.threadId !== run.threadId;
+      : typeof args.threadId === "string" &&
+        args.threadId !== (ctx.source.conversationThreadId ?? run.threadId);
   // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
   const allowMyChats =
     crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
-    threadId: run.threadId,
+    threadId: ctx.source.conversationThreadId ?? run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,

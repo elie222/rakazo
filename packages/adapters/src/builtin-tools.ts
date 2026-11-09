@@ -1530,7 +1530,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "run_subagent",
     description:
-      "A helper, not a bot: no list entry, thread or computer. It ends with this turn unless background is set. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",
+      "Delegate a task to an independent subagent. Returns immediately; its result comes back later. You remain available to the user. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1551,7 +1551,6 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Optional connected model ID. Set together with model_provider.",
         },
-        background: { type: "boolean" },
       },
       required: ["name", "task"],
     },

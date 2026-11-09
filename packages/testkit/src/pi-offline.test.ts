@@ -318,7 +318,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
     },
   );
 
-  it("enforces the same context budget inside a delegated tool loop", async () => {
+  it("uses the same context policy for separate parent and subagent runs", async () => {
     const decisions: Array<{ agentId?: string; strategy?: string; truncatedToolResults: number }> =
       [];
     const server = await startModelEmulator({
@@ -331,6 +331,12 @@ describe("real Pi against an offline model HTTP endpoint", () => {
             name: "run_subagent",
             arguments: { name: "helper", task: "Save hello to notes.txt." },
           },
+        },
+        {
+          expect(request) {
+            expect(latestToolResult(request)?.tool_call_id).toBe("delegate");
+          },
+          response: { type: "text", text: "Started." },
         },
         {
           expect(request) {
@@ -351,51 +357,48 @@ describe("real Pi against an offline model HTTP endpoint", () => {
             expect(estimateTextTokens(JSON.stringify(request.messages))).toBeLessThan(7168);
             expect(latestToolResult(request)?.tool_call_id).toBe("child-write");
             expect(String(latestToolResult(request)?.content)).toContain("truncated");
-            expect(JSON.stringify(request.messages)).toContain("Save hello to notes.txt.");
           },
           response: { type: "text", text: "Saved." },
-        },
-        {
-          expect(request) {
-            expect(latestToolResult(request)?.tool_call_id).toBe("delegate");
-          },
-          response: { type: "text", text: "Finished." },
         },
       ],
     });
     cleanups.push(() => server.close());
-    await collect(
-      new PiAgentRuntime({ onContextDecision: (decision) => decisions.push(decision) }).run(
-        runRequest(
-          { ...server.model, contextWindow: 8192, maxTokens: 1024 },
-          {
-            tools: [
-              writeTool,
-              {
-                name: "run_subagent",
-                description: "Delegate a task",
-                inputSchema: {
-                  type: "object",
-                  properties: { name: { type: "string" }, task: { type: "string" } },
-                  required: ["task"],
-                },
-              },
-            ],
-            executeTool: async () => ({ original: "0".repeat(63_000) }),
-          },
-        ),
-      ),
-    ).catch((error) => {
-      server.assertComplete();
-      throw error;
+    const runtime = new PiAgentRuntime({
+      onContextDecision: (decision) => decisions.push(decision),
     });
+    const model = { ...server.model, contextWindow: 8192, maxTokens: 1024 };
+    await collect(
+      runtime.run(
+        runRequest(model, {
+          tools: [
+            {
+              name: "run_subagent",
+              description: "Delegate a task",
+              inputSchema: {
+                type: "object",
+                properties: { name: { type: "string" }, task: { type: "string" } },
+                required: ["task"],
+              },
+            },
+          ],
+          executeTool: async () => ({ ok: true }),
+        }),
+      ),
+    );
+    await collect(
+      runtime.run(
+        runRequest(model, {
+          runId: "independent-helper",
+          prompt: "Save hello to notes.txt.",
+          tools: [writeTool],
+          executeTool: async () => ({ original: "0".repeat(63_000) }),
+        }),
+      ),
+    );
     server.assertComplete();
     expect(decisions).toHaveLength(4);
     expect(decisions.every((decision) => decision.strategy === "retrieval")).toBe(true);
-    expect(decisions.filter((decision) => decision.agentId)).toHaveLength(2);
-    expect(
-      decisions.some((decision) => decision.agentId && decision.truncatedToolResults === 1),
-    ).toBe(true);
+    expect(decisions.some((decision) => decision.truncatedToolResults === 1)).toBe(true);
   });
 
   it("assembles fragmented tool arguments, executes the write, and sends its result back", async () => {

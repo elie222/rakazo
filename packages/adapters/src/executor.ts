@@ -8,6 +8,7 @@ import {
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
+  HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isMessagingChannelRun,
   isOwnerStartedRun,
@@ -69,6 +70,7 @@ import {
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   screenLeaseIdForRun,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import {
   computerCheckpointResolver,
@@ -162,6 +164,7 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { runModelBackups, startRunModel } from "./run-model-start.js";
+import { isDelegatedRun, loadRunOrigin } from "./run-origin.js";
 import { createReplyState } from "./run-progress.js";
 import {
   DELEGATED_EMPTY_NOTICE,
@@ -332,10 +335,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      // A background helper never uses the computer, so it neither waits for a switch nor holds
-      // the bot's next turn.
-      const backgroundHelper = run.trigger === BACKGROUND_HELPER_TRIGGER;
-      if (leaseTarget.computerSwitching && !backgroundHelper) {
+      // Only takeover resumes need their screen at startup. Ordinary conversation and
+      // delegated work claim the computer on first use, so neither blocks the other's chat.
+      const needsComputerNow = heldForTakeover || Boolean(takeoverResume);
+      if (leaseTarget.computerSwitching && needsComputerNow) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
@@ -361,7 +364,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
-        computerLease = backgroundHelper
+        computerLease = !needsComputerNow
           ? null
           : await acquireComputerExecutionLease(deps.prisma, {
               computerId: leaseTarget.computerId,
@@ -370,7 +373,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               workerId,
               runFence: fence,
             });
-        if (!computerLease && !backgroundHelper && leaseTarget.computer?.scope === "dedicated") {
+        if (!computerLease && needsComputerNow && leaseTarget.computer?.scope === "dedicated") {
           computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
             computerId: leaseTarget.computerId,
             runId,
@@ -419,8 +422,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
       }
       try {
-        // Acquiring the computer can requeue a busy run. Count that wait as queue
-        // time, and only stamp execution once this attempt can use its computer.
+        // A takeover resume may requeue while reclaiming its screen. Ordinary runs
+        // start model work now and claim the computer only when a tool needs it.
         const executionStarted = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { startedAt: executionStartedAt, lateSince: firstLateSince },
@@ -441,7 +444,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
 
       // A newer claim of this run now rejects this attempt's history writes.
-      deps = withRunLease(deps, runId, { owner: workerId, fence });
+      const helperConversation =
+        run.trigger === BACKGROUND_HELPER_TRIGGER && run.sourceMessageId
+          ? await deps.prisma.message.findFirst({
+              where: {
+                id: run.sourceMessageId,
+                botId: run.botId,
+                thread: { spaceId: run.spaceId },
+              },
+              select: { threadId: true },
+            })
+          : null;
+      deps = withRunLease(deps, runId, { owner: workerId, fence }, helperConversation?.threadId);
       const lease: RunLeaseState = {
         valid: true,
         completed: false,
@@ -539,16 +553,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
           }
         }
+        const origin = await loadRunOrigin(deps.prisma, run);
+        if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
+          throw new Error("The originating conversation no longer authorizes this task.");
+        const conversationRun = origin ?? run;
         const messagingSource =
-          run.trigger === "messaging" && run.sourceMessageId
+          conversationRun.trigger === "messaging" && conversationRun.sourceMessageId
             ? await deps.prisma.message.findUnique({
-                where: { id: run.sourceMessageId },
+                where: { id: conversationRun.sourceMessageId },
                 select: { blocks: true, clientNonce: true },
               })
             : null;
         const sourceBlocks = messagingSource?.blocks as MessageBlock[] | undefined;
         const channelId = messagingChannelId(sourceBlocks);
-        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        const messagingChannelRun = isMessagingChannelRun(conversationRun.trigger, sourceBlocks);
         const [
           bot,
           thread,
@@ -577,7 +595,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               space: { select: { _count: { select: { memberships: true } } } },
             },
           }),
-          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
+          loadRunHistoryMessages(
+            deps.prisma,
+            run,
+            LEGACY_HISTORY_WINDOW_SIZE,
+            run.trigger === BACKGROUND_HELPER_TRIGGER ? undefined : channelId,
+          ),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
@@ -611,10 +634,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
           loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        const conversationThread = origin?.thread ?? thread;
         // Team chat reaches people besides the owner, so their runs get a group channel's limits.
         const teamChatConversationId =
-          run.trigger === "messaging" ? thread.externalConversationId : null;
+          conversationRun.trigger === "messaging"
+            ? conversationThread.externalConversationId
+            : null;
         const nonOwnerChatRun =
+          (isDelegatedRun(run.trigger) && !origin) ||
           messagingChannelRun ||
           (teamChatConversationId
             ? !(await teamChatRunFromOwner(deps.prisma, {
@@ -796,6 +823,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             threadId: thread.id,
             OR: [
               ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              ...(run.trigger === BACKGROUND_HELPER_TRIGGER ? [{ runId }] : []),
               { steeringMessages: { some: { runId, botId: run.botId } } },
             ],
             role: "user",
@@ -814,7 +842,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
         const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
+          Boolean(conversationThread.groupId) && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1010,6 +1038,20 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const earlierFiles = createEarlierFileQueue();
         const runComputer = lazyRunComputer(
           async () => {
+            if (!computerLease) {
+              computerLease = await waitForRunComputerLease(
+                deps.prisma,
+                {
+                  computerId: storedComputer.id,
+                  botId: bot.id,
+                  runId,
+                  workerId,
+                  runFence: fence,
+                },
+                context.signal,
+              );
+              context.screenLeaseId = screenLeaseIdForRun(computerLease, runId, fence);
+            }
             getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
             earlierFiles.computerStarted();
@@ -1124,10 +1166,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved.acceptsImages,
         );
 
-        const groupContext = thread.groupId
+        const groupContext = conversationThread.groupId
           ? await loadGroupContext(
               deps.prisma,
-              thread.groupId,
+              conversationThread.groupId,
               { id: bot.id, name: bot.name },
               Boolean(people),
             )
@@ -1206,7 +1248,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
         const sourceClientNonce = sourceMessage?.clientNonce ?? null;
         // A follow-up can be queued by a bot (group handoffs); only the user's own counts.
-        const ownerStartedRun = isOwnerStartedRun(run.trigger, sourceMessage?.role === "user");
+        const ownerStartedRun = isOwnerStartedRun(
+          conversationRun.trigger,
+          (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+        );
         // A hang-up run has no source message: its own nonce carries the call it closes.
         const callEndRun = run.trigger === "call_end";
         const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
@@ -1233,11 +1278,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           Boolean(botEmail) &&
           run.userId === bot.userId &&
           run.trigger !== "bot_message" &&
-          !thread.groupId &&
+          !conversationThread.groupId &&
           !nonOwnerChatRun;
         const userComputerOwnerId = userComputerOwner({
-          trigger: run.trigger,
-          sourceRole: sourceMessage?.role,
+          trigger: conversationRun.trigger,
+          sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
           messagingChannelRun: nonOwnerChatRun,
           runUserId: run.userId,
           botUserId: bot.userId,
@@ -1265,7 +1310,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             historyRetrievalEnabled: contextStrategy !== "current",
             graphicalToolsAllowed,
             pageBrowserAllowed,
-            groupId: thread.groupId,
+            groupId: conversationThread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
@@ -1288,7 +1333,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             emailClaimable:
               Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
             emailSend: Boolean(deps.email),
-          }),
+          }).filter(
+            (tool) =>
+              tool.name !== "run_subagent" ||
+              backgroundHelpersAllowed({
+                trigger: run.trigger,
+              }),
+          ),
           // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
           // creator's, and a connected agent's messages run as them, so only their runs may
           // open, approve or use one.
@@ -1329,7 +1380,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
         const initiallyTainted =
-          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
+          run.trigger === BACKGROUND_HELPER_TRIGGER ||
+          run.trigger === HELPER_RESULT_TRIGGER ||
+          !ownerStartedRun ||
+          Boolean(turnCheckpoint) ||
+          Boolean(checkpointLoadError);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either.
         const tools =
@@ -1431,8 +1486,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           spaceId: run.spaceId,
           userId: run.userId,
           botId: bot.id,
-          groupId: thread.groupId ?? null,
-          threadId: thread.id,
+          groupId: conversationThread.groupId ?? null,
+          threadId: conversationThread.id,
           runId,
         };
 
@@ -1457,13 +1512,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             messagingChannelRun: nonOwnerChatRun,
             channelId,
             historySearchBeforeSeq,
+            conversationThreadId: conversationThread.id,
             myChatsAllowed: historyMyChatsAllowed(
-              run,
-              sourceMessage,
+              conversationRun,
+              origin?.sourceMessage ?? sourceMessage,
               nonOwnerChatRun ||
                 Boolean(
                   channelId ||
-                    thread.externalConversationId ||
+                    conversationThread.externalConversationId ||
                     messagingChannelId(sourceMessage?.blocks as MessageBlock[] | undefined),
                 ),
             ),
@@ -1477,7 +1533,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             stored: storedComputer,
             kind: computerKind,
             mode: computerMode,
-            lease: computerLease,
+            get lease() {
+              return computerLease;
+            },
             lazy: runComputer,
             get: getRunComputer,
             copyEarlierFiles: earlierFiles.add,
@@ -1648,7 +1706,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
         const [teammates, groupDirectory] = await Promise.all([
-          thread.groupId
+          conversationThread.groupId
             ? []
             : deps.prisma.bot.findMany({
                 where: {
@@ -1661,7 +1719,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 orderBy: { createdAt: "asc" },
                 take: BOT_DIRECTORY_LIMIT,
               }),
-          !thread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
+          !conversationThread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
         ]);
         const botDirectory =
           [renderBotDirectory(teammates), groupDirectory].filter(Boolean).join("\n\n") || undefined;
@@ -1743,6 +1801,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               verbatimMcpServers,
               threadId: thread.id,
               runId,
+              usageOperationKind: run.trigger === BACKGROUND_HELPER_TRIGGER ? "subagent" : "answer",
               routineId: run.routineId,
               sourceMessageId: run.sourceMessageId,
               onUsage: async (event) => {
@@ -1821,8 +1880,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
                 backgroundHelpersAllowed: backgroundHelpersAllowed({
-                  threadBotId: thread.botId,
-                  botId: bot.id,
                   trigger: run.trigger,
                 }),
                 userComputer,

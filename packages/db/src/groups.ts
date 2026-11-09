@@ -1,7 +1,7 @@
 import type { Actor, Group, GroupMember, SpaceGroup } from "@rakazo/contracts";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, resolveBotAvatarSet } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
-import { cancelRunsInTransaction } from "./cancel-runs.js";
+import { cancelRunsInTransaction, conversationRunsWhere } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
 import { transientRunEventsWhere } from "./events.js";
@@ -274,7 +274,7 @@ export async function snapshotRunTeardownTargets(
 
 async function resumeArchivedGroupTeardown(tx: Prisma.TransactionClient, threadId: string) {
   const cancelled = await tx.run.findMany({
-    where: { threadId, status: "cancelled" },
+    where: { ...conversationRunsWhere(threadId), status: "cancelled" },
     select: { id: true },
   });
   // Cleanup sets expiresAt to epoch and leaves runId. A TTL lapse is still after that.
@@ -476,6 +476,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
         });
         if (!current?.thread) throw new IsolationError();
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${current.thread.id} FOR UPDATE`;
         if (input.expectedBotIds) {
           const expected = new Set(input.expectedBotIds);
           const active = current.members.filter((member) => member.bot.archivedAt === null);
@@ -503,7 +504,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         const activeRuns = removedBotIds.length
           ? await tx.run.findMany({
               where: {
-                threadId: current.thread.id,
+                ...conversationRunsWhere(current.thread.id),
                 botId: { in: removedBotIds },
                 status: {
                   in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
@@ -570,11 +571,12 @@ export function createGroupRepos(prisma: PrismaClient) {
           select: { archivedAt: true, thread: { select: { id: true } } },
         });
         if (!current?.thread) throw new IsolationError();
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${current.thread.id} FOR UPDATE`;
         if (current.archivedAt) return resumeArchivedGroupTeardown(tx, current.thread.id);
 
         const activeRuns = await tx.run.findMany({
           where: {
-            threadId: current.thread.id,
+            ...conversationRunsWhere(current.thread.id),
             status: { in: activeRunStatuses },
           },
           select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -658,11 +660,16 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         const contextBotId = group?.members[0]?.botId;
         if (!contextBotId) throw new IsolationError();
+        if (group.thread)
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${group.thread.id} FOR UPDATE`;
         // The thread's runs cascade away with the group, but their computer leases don't:
         // cancel them first so the route can stop their work and release the leases.
         const activeRuns = group.thread
           ? await tx.run.findMany({
-              where: { threadId: group.thread.id, status: { in: activeRunStatuses } },
+              where: {
+                ...conversationRunsWhere(group.thread.id),
+                status: { in: activeRunStatuses },
+              },
               select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];

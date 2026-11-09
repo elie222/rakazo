@@ -229,6 +229,7 @@ export interface RunSource {
   historySearchBeforeSeq: number;
   /** See historyMyChatsAllowed; claimed outside steering still revokes it per call. */
   myChatsAllowed: boolean;
+  conversationThreadId?: string;
   voiceCall: boolean;
   callEndRun: boolean;
   callClientNonce: string | null;

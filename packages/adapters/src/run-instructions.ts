@@ -368,8 +368,8 @@ export function userTurnInstructions(parts: {
       parts.disabledBuiltinTools,
       "run_subagent",
       parts.backgroundHelpersAllowed
-        ? "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here. For longer work the user need not wait on, or when they ask for it, set background true and end your turn: you stay free for their next message, and the result comes back to you later to pass on. A background helper cannot use the computer, ask the user, or change memory, skills or routines; do those yourself when its result comes back."
-        : "run_subagent is a short helper. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+        ? "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat."
+        : "Subagent delegation is unavailable in this conversation. Complete the work yourself; do not claim to have delegated it.",
     ),
     parts.botDirectory,
     offeredBuiltinClause(

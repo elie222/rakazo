@@ -1163,7 +1163,18 @@ describe("threadSnapshot", () => {
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          threadId: "thread-1",
+          AND: [
+            {
+              OR: [
+                { threadId: "thread-1" },
+                {
+                  trigger: "helper",
+                  status: "waiting_input",
+                  sourceMessage: { threadId: "thread-1" },
+                },
+              ],
+            },
+          ],
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
           OR: [
             { trigger: { notIn: ["bot_message", "tickets"] } },

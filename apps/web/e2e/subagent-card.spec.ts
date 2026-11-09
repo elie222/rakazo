@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, expectCardWidth, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expectCardWidth, rpc, signup } from "./helpers";
 
 test("a completed subagent card folds, opens from its header, and fills its width", async ({
   page,
@@ -24,7 +24,7 @@ test("a completed subagent card folds, opens from its header, and fills its widt
 
   await header.click();
   await expect(header).toHaveAttribute("aria-expanded", "true");
-  await expect(body).toContainText("done. i handled");
+  await expect(body).toContainText("helper result:");
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "subagent-card-open");
   await header.click();
@@ -63,4 +63,42 @@ test("a background helper's card can be stopped while the chat stays free", asyn
   await expect(stop).toBeHidden();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "background-helper-stopped");
+});
+
+test("a subagent approval survives refresh while the parent keeps answering", async ({
+  page,
+}, testInfo) => {
+  await signup(
+    page,
+    `subagent-approval-${Date.now()}@rakazo.test`,
+    "password12",
+    "Subagent Approval",
+  );
+  await completeOnboarding(page);
+  await rpc(page, "autoReview/set", { mode: "ask" });
+  await rpc(page, "approvalRules/set", {
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "web_fetch",
+  });
+  const composer = page.getByPlaceholder(/Message/);
+  await composer.fill("delegate to a helper: fetch https://helper-approval.rakazo.test/notes");
+  await page.keyboard.press("Enter");
+  const allow = page.getByRole("button", { name: "Allow once", exact: true });
+  await expect(allow).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await expect(allow).toBeVisible();
+  await composer.fill("this is a safe test");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("message-bot-bubble").getByText("Running the taught skill", { exact: false }),
+  ).toBeVisible();
+  await expect(allow).toBeVisible();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "subagent-approval-chat-free");
+  await allow.click();
+  await expect(page.getByTestId("subagent-card")).toContainText("Completed", { timeout: 30_000 });
+  await expect(allow).toBeHidden();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "subagent-approved");
 });

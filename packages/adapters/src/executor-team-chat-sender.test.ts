@@ -6,6 +6,7 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -24,6 +25,8 @@ async function teamChatRun(input: {
   ownerAddress?: string | null;
   linkedAddresses?: string[];
   sharedChannel?: boolean;
+  delegated?: "helper" | "helper_result";
+  attachment?: boolean;
 }) {
   const [waking, ...batched] = input.senders.map((sender, index) => ({
     id: `external-${index}`,
@@ -53,6 +56,19 @@ async function teamChatRun(input: {
     sourceMessageId: "source-1",
     leaseFence: 0,
   };
+  const original = {
+    ...run,
+    id: "original",
+    sourceMessage: { id: "source-1", role: "user", blocks: [], threadId: "thread-1" },
+    thread: { id: "thread-1", groupId: null, externalConversationId: "conversation-1" },
+  };
+  if (input.delegated)
+    Object.assign(run, {
+      id: "delegated",
+      threadId: "hidden-thread",
+      trigger: input.delegated,
+      delegatedFromRunId: "original",
+    });
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
@@ -60,6 +76,7 @@ async function teamChatRun(input: {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
+      findFirst: vi.fn(async () => original),
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -89,12 +106,37 @@ async function teamChatRun(input: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
         groupId: null,
-        externalConversationId: "conversation-1",
+        externalConversationId: input.delegated ? null : "conversation-1",
       })),
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }: { where?: { threadId?: string; OR?: unknown } } = {}) =>
+        input.attachment && where?.threadId === "hidden-thread" && !where.OR
+          ? [
+              {
+                id: "helper-input",
+                threadId: run.threadId,
+                role: "user",
+                runId: run.id,
+                authorUserId: run.userId,
+                botId: run.botId,
+                seq: 1,
+                createdAt: new Date(),
+                steeringMessages: [],
+                blocks: [
+                  {
+                    kind: "file",
+                    artifactId: "fixture-file",
+                    name: "notes.txt",
+                    mimeType: "text/plain",
+                    size: 5,
+                  },
+                ],
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => ({
         blocks: input.sharedChannel
@@ -261,6 +303,7 @@ async function teamChatRun(input: {
   const context = [request.instructions, request.prompt].join("\n");
   return {
     tools,
+    history: request.history,
     context,
     sawOwnerState: context.includes(OWNER_MEMORY) || context.includes(OWNER_NOTE),
     toldNonOwner: context.includes("someone other than your owner"),
@@ -325,4 +368,46 @@ describe("private skills in shared-channel prompts", () => {
     expect(result.context).toContain("PRIVATE_SKILL_BODY");
     expect(result.context).toContain("PRIVATE_TAUGHT_HINT");
   });
+});
+
+describe("delegation inherits connected chat privacy", () => {
+  it("keeps the helper's own input while preserving the connected channel's privacy", async () => {
+    const result = await teamChatRun({
+      senders: [{ senderId: "coworker" }],
+      sharedChannel: true,
+      delegated: "helper",
+      attachment: true,
+    });
+    expect(result.history.some((message) => message.content.includes("notes.txt"))).toBe(true);
+    expect(result.sawOwnerState).toBe(false);
+    for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+  });
+
+  it.each(["helper", "helper_result"] as const)(
+    "keeps private state out of a %s in a shared channel",
+    async (delegated) => {
+      const result = await teamChatRun({
+        senders: [{ senderId: "coworker" }],
+        sharedChannel: true,
+        delegated,
+      });
+      expect(result.sawOwnerState).toBe(false);
+      expect(result.context).not.toContain("PRIVATE_SKILL");
+      expect(result.context).not.toContain("PRIVATE_TAUGHT");
+      for (const tool of ownerOnlyTools) expect(result.tools).not.toContain(tool);
+      expect(result.tools).toContain("web_fetch");
+    },
+  );
+  it.each(["helper", "helper_result"] as const)(
+    "retains the owner's context in their %s",
+    async (delegated) => {
+      const result = await teamChatRun({
+        senders: [{ senderId: "T1:U-OWNER" }],
+        ownerAddress: "T1:U-OWNER",
+        delegated,
+      });
+      expect(result.sawOwnerState).toBe(true);
+      for (const tool of ownerOnlyTools) expect(result.tools).toContain(tool);
+    },
+  );
 });

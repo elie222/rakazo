@@ -63,21 +63,17 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
-/**
- * A background helper works while the bot keeps talking, so it only reads and looks things up:
- * no computer (the bot's own turns keep it), no questions to the user, and no changes to
- * memory, skills or routines, which the bot makes itself when the result comes back.
- */
-export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search",
-  "web_fetch",
-  "recall_memory",
-  "skill_read",
-  "task_catalog",
-  "scratchpad_list",
-  "board_tickets",
-  "ticket_get",
-  "cloud_agent_status",
+/** Delegation stays one level deep; account settings and direct replies remain the parent's. */
+export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
+  "run_subagent",
+  "spawn_bot",
+  "message_user",
+  "call_user",
+  "end_call",
+  "request_takeover",
+  "update_bot",
+  "update_preferences",
+  "feedback",
 ]);
 
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
@@ -163,8 +159,7 @@ export function selectBuiltinToolsForRun(options: {
     (tool) =>
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
-      (options.trigger !== BACKGROUND_HELPER_TRIGGER ||
-        BACKGROUND_HELPER_TOOL_NAMES.has(tool.name)) &&
+      (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && ownerStartedRun)) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
