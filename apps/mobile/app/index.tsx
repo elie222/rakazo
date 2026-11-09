@@ -105,8 +105,6 @@ import { errorText } from "../lib/user-error";
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
 // A list narrower than this, beside an open chat, uses tighter rows.
 const COMPACT_LIST_WIDTH = 360;
-// iOS shows the inbox as one native list; other platforms keep the FlatList.
-const NATIVE_INBOX_LIST = SWIPE_ROWS;
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -817,7 +815,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         <CompactRowsContext.Provider value={compactRows}>
           <View style={styles.listArea}>
             <AvatarViewportScope viewport={avatarViewport}>
-              {NATIVE_INBOX_LIST ? (
+              {/* iOS shows the inbox as one native list; other platforms keep the FlatList. */}
+              {SWIPE_ROWS ? (
                 <NativeInboxList<InboxItem>
                   data={showLoadFailure ? [] : listData}
                   keyExtractor={inboxItemKey}
@@ -878,7 +877,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                 />
               )}
             </AvatarViewportScope>
-            {NATIVE_INBOX_LIST ||
+            {SWIPE_ROWS ||
             onShareSelect ||
             refreshing ||
             showLoadFailure ||
