@@ -13,6 +13,7 @@ import {
   isFarewell,
   isRetryableError,
   latestSpokenCallReply,
+  MAX_TRANSCRIPTION_RESPONSE_BYTES,
   newClientId,
   pendingCallSecretAsk,
   readJsonObjectWithin,
@@ -961,9 +962,6 @@ function deleteQuietly(uri: string | null): void {
     // The clip is disposable; a leftover in the cache is fine.
   }
 }
-
-/** Matches the web client's cap on a transcription response. */
-const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 
 export async function transcribeClip(
   clip: CallClip,

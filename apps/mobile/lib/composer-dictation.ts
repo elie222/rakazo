@@ -1,4 +1,4 @@
-import { AiConsentBlocked, recognitionLocaleTag } from "@rakazo/core";
+import { AiConsentBlocked, recognitionLocaleTag, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
@@ -15,9 +15,6 @@ import { resolveVoiceCallPlan } from "./voice-call-entry";
 export type ComposerDictationStatus = "idle" | "listening" | "transcribing";
 
 type Session = { cancel: AbortController; finish: () => void };
-
-/** Matches the web client: a transcription that takes longer than this has stalled. */
-const TRANSCRIPTION_TIMEOUT_MS = 70_000;
 
 /**
  * Tap to dictate into the message box, tap again to stop. It takes the same path a call would:
@@ -124,7 +121,7 @@ export function useComposerDictation({
       const timer = setTimeout(() => {
         timedOut = true;
         request.abort();
-      }, TRANSCRIPTION_TIMEOUT_MS);
+      }, VOICE_RESPONSE_TIMEOUT_MS);
       let text = "";
       try {
         text = clip ? await transcribeClip(clip, request.signal, requestContext) : "";

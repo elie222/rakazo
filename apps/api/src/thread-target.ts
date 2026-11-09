@@ -918,7 +918,12 @@ export async function sendThreadMessage(
             replyPreview,
           },
         });
-        const stop = await cancelThreadRuns(actor, target, { botId: working.botId })(tx);
+        // Steering is cleared for the members locked above, not the earlier snapshot.
+        const stop = await cancelThreadRuns(
+          actor,
+          { ...target, memberBotIds },
+          { botId: working.botId },
+        )(tx);
         return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
       }
       if (input.noModel) {
