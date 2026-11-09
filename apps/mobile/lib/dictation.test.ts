@@ -95,6 +95,20 @@ describe("mobile dictation", () => {
     expect(onGiveUp).toHaveBeenCalledWith("idle");
   });
 
+  it("restarts through a quiet pause until its own endpoint ends it", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk", true);
+    // The recognizer ends on its own again and again while nothing is said.
+    for (let ended = 0; ended < 8; ended += 1) {
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+    }
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(30_000);
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
   it("keeps listening through pauses shorter than its endpoint until finished", async () => {
     const onFinal = vi.fn();
     await listen({ onFinal, endpointMs: 30_000 });

@@ -53,6 +53,8 @@ type Session = {
   onGiveUp?: (reason: DictationGiveUp) => void;
   /** Quiet gap that ends the utterance. */
   endpointMs: number;
+  /** The caller chose the gap, so the silence timer alone ends a quiet session. */
+  ownEndpoint: boolean;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -160,6 +162,7 @@ export async function listen(opts: {
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
     endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+    ownEndpoint: opts.endpointMs !== undefined,
     subs: [],
     carried: "",
     heard: "",
@@ -186,7 +189,7 @@ export async function listen(opts: {
     giveUp(session, "failed", "start-failed");
     return;
   }
-  if (opts.endpointMs !== undefined) armSilence(session);
+  if (session.ownEndpoint) armSilence(session);
 }
 
 /** Ends the utterance once nothing new is heard for the session's quiet gap. */
@@ -231,8 +234,12 @@ function onEnd(session: Session): void {
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
     const failed = session.transientError && !session.carried;
-    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
-    return;
+    // A recognizer that keeps failing gives up; one that just ended quietly during a pause
+    // keeps restarting when the caller's own silence timer decides when the pause is over.
+    if (failed || !session.ownEndpoint) {
+      giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
+      return;
+    }
   }
   clearTimeout(session.restart);
   const delay = session.backoff;
