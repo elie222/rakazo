@@ -86,6 +86,9 @@ export function sanitizeNativeEvent(
     safeTags["mobile.platform"] = tags["mobile.platform"];
   if (surface === "mobile" && tags["startup.previous_launch"] === "true")
     safeTags["startup.previous_launch"] = "true";
+  // The app sets a coarse screen name, never a route param; this rejects anything else.
+  if (surface === "mobile" && typeof tags.screen === "string" && /^[a-z_]{1,40}$/.test(tags.screen))
+    safeTags.screen = tags.screen;
   if (surface === "desktop") {
     const name = tags["process.name"];
     const exitCode = tags["process.exit_code"];

@@ -31,6 +31,20 @@ describe("native error collector privacy boundary", () => {
     });
   });
 
+  it("keeps the coarse mobile screen name and drops anything route-like", () => {
+    expect(sanitizeNativeEvent({ tags: { screen: "chat" } }, "mobile").tags).toEqual({
+      surface: "mobile",
+      screen: "chat",
+    });
+    for (const screen of ["/thread?id=abc", "Chat with Sam", "chat/123", 7])
+      expect(sanitizeNativeEvent({ tags: { screen } }, "mobile").tags).toEqual({
+        surface: "mobile",
+      });
+    expect(sanitizeNativeEvent({ tags: { screen: "chat" } }, "desktop").tags).toEqual({
+      surface: "desktop",
+    });
+  });
+
   it("keeps which desktop child process stopped", () => {
     const tags = { "process.name": "Audio Service", "process.exit_code": "-1" };
     expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
