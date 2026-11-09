@@ -151,6 +151,8 @@ export function messageReplyExcerpt(blocks: MessageBlock[], role: string): strin
 
 function replyBlockText(block: MessageBlock): string {
   switch (block.kind) {
+    case "service_origin":
+      return "";
     case "text":
     case "ask":
     case "channel_message":

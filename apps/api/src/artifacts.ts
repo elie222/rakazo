@@ -17,6 +17,7 @@ import {
   inferAttachmentMimeType,
   messageBlockForArtifact,
   promptTextForAttachments,
+  serviceOriginLine,
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -698,11 +699,13 @@ export async function resolveGroupSendAttachments(
 export function buildUserMessageBlocks(
   text: string | undefined,
   attachmentBlocks: ReturnType<typeof messageBlockForArtifact>[],
+  serviceOrigin?: { credentialId: string; name: string },
 ) {
   const blocks = [];
   const caption = text?.trim();
   if (caption) blocks.push({ kind: "text" as const, text: caption });
   blocks.push(...attachmentBlocks);
+  if (serviceOrigin) blocks.push({ kind: "service_origin" as const, ...serviceOrigin });
   return blocks;
 }
 
@@ -710,6 +713,16 @@ export function buildSendPrompt(
   text: string | undefined,
   artifacts: Array<{ name: string; mimeType: string; size: number }>,
   connectorNames: string[] = [],
+  serviceOrigin?: { name: string },
+) {
+  const prompt = sendPromptBody(text, artifacts, connectorNames);
+  return serviceOrigin ? `${serviceOriginLine(serviceOrigin.name)}\n${prompt}` : prompt;
+}
+
+function sendPromptBody(
+  text: string | undefined,
+  artifacts: Array<{ name: string; mimeType: string; size: number }>,
+  connectorNames: string[],
 ) {
   const prompt = promptTextForAttachments(text, artifacts);
   if (connectorNames.length === 0) return prompt;

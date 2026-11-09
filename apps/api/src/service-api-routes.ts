@@ -1,0 +1,702 @@
+import type { RouterClient } from "@orpc/server";
+import type {
+  Actor,
+  Bot,
+  MessageBlock,
+  ServiceBlock,
+  ServiceRouteId,
+  ServiceScope,
+} from "@rakazo/contracts";
+import {
+  buildServiceOpenApi,
+  MessageBlock as MessageBlockSchema,
+  SERVICE_ROUTES,
+} from "@rakazo/contracts";
+import { isTerminal } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
+import { recordAuditEvent } from "@rakazo/db";
+import type { createRouter } from "./router.js";
+import type { AuthenticatedServiceCredential } from "./service-credentials.js";
+
+type Routes = typeof SERVICE_ROUTES;
+type Client = RouterClient<ReturnType<typeof createRouter>>;
+type Parsed<R, Field extends string> =
+  R extends Record<Field, { _output: infer Output }> ? Output : undefined;
+
+export class ServiceRejection extends Error {
+  constructor(
+    readonly code: ServiceErrorCode,
+    readonly fields?: Array<{ path: string; message: string }>,
+    readonly detail?: string,
+  ) {
+    super(code);
+  }
+}
+
+export const SERVICE_ERRORS = {
+  invalid_request: [400, "Invalid request."],
+  idempotency_key_required: [400, "This call needs a valid Idempotency-Key header."],
+  unauthenticated: [401, "Service credential required."],
+  forbidden: [403, "This key does not have that scope."],
+  bot_limited_key: [403, "A key limited to certain bots cannot make this call."],
+  not_found: [404, "Resource not found."],
+  method_not_allowed: [405, "Method not allowed."],
+  idempotency_conflict: [409, "Idempotency key already used for a different request."],
+  idempotency_in_progress: [409, "The first request with this key has not finished."],
+  conflict: [409, "The resource changed. Read it again and retry."],
+  payload_too_large: [413, "Request exceeds limits."],
+  unsupported_media_type: [415, "Expected application/json."],
+  rate_limited: [429, "Too many requests for this key."],
+  too_many_streams: [429, "This key has too many open event streams."],
+  service_unavailable: [503, "Service unavailable. Retry writes with the same idempotency key."],
+} as const;
+export type ServiceErrorCode = keyof typeof SERVICE_ERRORS;
+
+export type ServiceContext<Id extends ServiceRouteId> = {
+  request: Request;
+  abort: AbortController;
+  client: Client;
+  prisma: PrismaClient;
+  actor: Actor;
+  credential: AuthenticatedServiceCredential;
+  params: Record<string, string>;
+  query: Parsed<Routes[Id], "query">;
+  body: Parsed<Routes[Id], "body">;
+  idempotencyKey: string;
+  /** The bot in the path, already checked against this key. Null when the path has none. */
+  bot: Bot | null;
+  openStream: (credentialId: string) => () => void;
+};
+
+type Handlers = {
+  [Id in ServiceRouteId]: (
+    context: ServiceContext<Id>,
+  ) => Promise<Routes[Id]["response"]["_input"] | Response>;
+};
+
+/** Only what a person sees as the conversation. Tool calls and their results stay private. */
+export function projectBlocks(blocks: MessageBlock[]): ServiceBlock[] {
+  return blocks.flatMap((block): ServiceBlock[] => {
+    switch (block.kind) {
+      case "text":
+        return [{ kind: "text", text: block.text }];
+      case "ask":
+        return [{ kind: "ask", text: block.text, status: block.status ?? "pending" }];
+      case "image":
+      case "file":
+        return [
+          {
+            kind: "file",
+            artifactId: block.artifactId,
+            name: block.name,
+            mimeType: block.mimeType,
+          },
+        ];
+      case "page":
+        return [{ kind: "page", pageId: block.pageId, title: block.title }];
+      case "bot_message_received":
+        return [{ kind: "bot_message", fromBotName: block.fromBotName, text: block.text }];
+      case "channel_message":
+        return [{ kind: "channel_message", fromLabel: block.fromLabel, text: block.text }];
+      case "service_origin":
+        return [{ kind: "sent_with_key", name: block.name }];
+      default:
+        return [];
+    }
+  });
+}
+
+function projectMessage(message: {
+  id: string;
+  seq: number;
+  role: string;
+  runId?: string;
+  blocks: MessageBlock[];
+}) {
+  return {
+    id: message.id,
+    seq: message.seq,
+    role: message.role,
+    runId: message.runId ?? null,
+    blocks: projectBlocks(message.blocks),
+  };
+}
+
+function param(context: { params: Record<string, string> }, name: string): string {
+  const value = context.params[name];
+  if (!value) throw new ServiceRejection("not_found");
+  return value;
+}
+
+function botOf(context: { bot: Bot | null; params: Record<string, string> }): string {
+  return context.bot?.id ?? param(context, "botId");
+}
+
+function mayReach(credential: AuthenticatedServiceCredential, botId: string): boolean {
+  return credential.botIds.length === 0 || credential.botIds.includes(botId);
+}
+
+/** A child id must really belong to the bot in the path, or a limited key could reach past it. */
+async function assertOwned(found: Promise<{ id: string } | null>): Promise<void> {
+  if (!(await found)) throw new ServiceRejection("not_found");
+}
+
+function nonce(credentialId: string, key: string): string {
+  return `service:${credentialId}:${key}`;
+}
+
+async function sendPrompt(
+  context: ServiceContext<"sendPrompt" | "sendGroupPrompt">,
+  target: { botId: string } | { groupId: string },
+  label: { type: string; id: string; name: string },
+) {
+  const { client, prisma, actor, credential, idempotencyKey } = context;
+  const text = (context.body as { text: string }).text;
+  const clientNonce = nonce(credential.id, idempotencyKey);
+  const { threadId } = await client.threads.head(target);
+  const saved = () =>
+    prisma.message.findUnique({
+      where: { threadId_clientNonce: { threadId, clientNonce } },
+      select: { blocks: true },
+    });
+  const replayed = Boolean(await saved());
+  const sent = await client.threads.send({ ...target, text, clientNonce });
+  // After the send, so a concurrent retry that lost the unique nonce is checked as well.
+  const blocks = MessageBlockSchema.array().safeParse((await saved())?.blocks);
+  const savedText = blocks.success && blocks.data[0]?.kind === "text" ? blocks.data[0].text : null;
+  if (savedText !== text) throw new ServiceRejection("idempotency_conflict");
+  if (!replayed) {
+    await recordAuditEvent({
+      action: "service_api.prompt",
+      actor: { type: "service", id: credential.id, label: credential.name },
+      spaceId: actor.spaceId,
+      target: { type: label.type, id: label.id, label: label.name },
+      runId: sent.runId,
+      threadId,
+      metadata: { onBehalfOf: actor.userId, seq: sent.seq },
+    });
+  }
+  return { taskId: sent.taskId, runId: sent.runId, seq: sent.seq, idempotencyKey };
+}
+
+const WAIT_POLL_MS = 400;
+
+/** One of the creator's own runs that this key may reach, with the bot's replies in it. */
+async function runDetail(
+  context: Pick<ServiceContext<ServiceRouteId>, "prisma" | "actor" | "credential" | "abort">,
+  runId: string,
+  waitSeconds: number,
+) {
+  const { prisma, actor, credential, abort } = context;
+  const deadline = Date.now() + waitSeconds * 1000;
+  for (;;) {
+    const run = await prisma.run.findFirst({
+      where: { id: runId, spaceId: actor.spaceId, userId: actor.userId },
+      select: {
+        id: true,
+        botId: true,
+        threadId: true,
+        status: true,
+        trigger: true,
+        updatedAt: true,
+      },
+    });
+    if (!run || !mayReach(credential, run.botId)) throw new ServiceRejection("not_found");
+    const settled = isTerminal(run.status) || run.status === "waiting_input";
+    if (settled || Date.now() >= deadline || abort.signal.aborted) {
+      const messages = await prisma.message.findMany({
+        where: { threadId: run.threadId, runId: run.id, role: { not: "user" } },
+        orderBy: { seq: "asc" },
+        take: 100,
+        select: { id: true, seq: true, role: true, runId: true, blocks: true },
+      });
+      return {
+        runId: run.id,
+        botId: run.botId,
+        threadId: run.threadId,
+        status: run.status,
+        trigger: run.trigger,
+        updatedAt: run.updatedAt.toISOString(),
+        settled,
+        messages: messages.flatMap((message) => {
+          const blocks = MessageBlockSchema.array().safeParse(message.blocks);
+          return blocks.success
+            ? [
+                projectMessage({
+                  ...message,
+                  runId: message.runId ?? undefined,
+                  blocks: blocks.data,
+                }),
+              ]
+            : [];
+        }),
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+  }
+}
+
+const FORWARDED_EVENTS = new Set([
+  "thread.message.created",
+  "thread.message.updated",
+  "thread.cleared",
+  "run.started",
+  "run.waiting_input",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+]);
+
+const STREAM_MS = 15 * 60 * 1000;
+
+function eventFrame(event: {
+  seq: number;
+  type: string;
+  runId?: string | null;
+  createdAt: string;
+  payload: unknown;
+}): string | null {
+  if (!FORWARDED_EVENTS.has(event.type)) return null;
+  const payload = (event.payload ?? {}) as { messageId?: string; role?: string; blocks?: unknown };
+  const blocks = MessageBlockSchema.array().safeParse(payload.blocks);
+  const message =
+    payload.messageId && payload.role && blocks.success
+      ? { id: payload.messageId, role: payload.role, blocks: projectBlocks(blocks.data) }
+      : null;
+  const data = JSON.stringify({
+    seq: event.seq,
+    type: event.type,
+    runId: event.runId ?? null,
+    createdAt: event.createdAt,
+    message,
+  });
+  return `id: ${event.seq}\nevent: ${event.type}\ndata: ${data}\n\n`;
+}
+
+async function streamBotEvents(context: ServiceContext<"botEvents">): Promise<Response> {
+  const { client, abort, credential, request } = context;
+  const botId = botOf(context);
+  const resumed = request.headers.get("last-event-id");
+  const cursor =
+    context.query?.cursor ??
+    (resumed && /^(0|[1-9][0-9]{0,14})$/.test(resumed)
+      ? Number(resumed)
+      : (await client.threads.head({ botId })).cursor);
+  const release = context.openStream(credential.id);
+  const timer = setTimeout(() => abort.abort(), STREAM_MS);
+  const finish = () => {
+    clearTimeout(timer);
+    release();
+  };
+  let events: Awaited<ReturnType<Client["threads"]["subscribe"]>>;
+  try {
+    events = await client.threads.subscribe({ botId, cursor });
+  } catch (error) {
+    finish();
+    throw error;
+  }
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        for (;;) {
+          const next = await events.next();
+          if (next.done) break;
+          if (next.value.type === "heartbeat") {
+            controller.enqueue(encoder.encode(": heartbeat\n\n"));
+            return;
+          }
+          const frame = eventFrame(next.value);
+          if (frame) {
+            controller.enqueue(encoder.encode(frame));
+            return;
+          }
+        }
+      } catch {
+        // A revoked key, a timeout and a closed connection all end the stream the same way.
+      }
+      finish();
+      controller.close();
+    },
+    async cancel() {
+      finish();
+      abort.abort();
+      await events.return?.(undefined).catch(() => undefined);
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-store",
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+function encodeCursor(cursor: unknown): string | null {
+  return cursor ? Buffer.from(JSON.stringify(cursor)).toString("base64url") : null;
+}
+
+function decodeCursor(cursor: string | undefined): { id: string; createdAt: string } | undefined {
+  if (!cursor) return undefined;
+  try {
+    return JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    throw new ServiceRejection("invalid_request");
+  }
+}
+
+const BOT_PAGE_SIZE = 200;
+const RECENT_RUNS = 5;
+
+export const SERVICE_HANDLERS: Handlers = {
+  async me({ credential }) {
+    return {
+      id: credential.id,
+      name: credential.name,
+      spaceId: credential.spaceId,
+      scopes: credential.scopes as ServiceScope[],
+      botIds: credential.botIds,
+      expiresAt: credential.expiresAt,
+    };
+  },
+  async openapi() {
+    return buildServiceOpenApi("1");
+  },
+
+  async listBots({ client, credential, query }) {
+    const all = query?.archived ? await client.bots.listArchived() : await client.bots.list();
+    const visible = all
+      .filter((bot) => mayReach(credential, bot.id))
+      .filter((bot) => !query?.after || bot.id > query.after)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    const page = visible.slice(0, BOT_PAGE_SIZE);
+    return {
+      bots: page,
+      nextCursor: visible.length > BOT_PAGE_SIZE ? (page.at(-1)?.id ?? null) : null,
+    };
+  },
+  async createBot({ client, body }) {
+    return client.bots.create(body as Parameters<Client["bots"]["create"]>[0]);
+  },
+  async getBot(context) {
+    if (!context.bot) throw new ServiceRejection("not_found");
+    return context.bot;
+  },
+  async updateBot(context) {
+    return context.client.bots.update({ botId: botOf(context), ...context.body });
+  },
+  async archiveBot(context) {
+    return context.client.bots.archive({ botId: botOf(context) });
+  },
+  async restoreBot(context) {
+    return context.client.bots.restore({ botId: botOf(context) });
+  },
+  async botStatus(context) {
+    const { client, prisma, actor } = context;
+    if (!context.bot) throw new ServiceRejection("not_found");
+    const botId = context.bot.id;
+    const [head, computer, runs] = await Promise.all([
+      client.threads.head({ botId }),
+      client.computer.status({ botId }),
+      prisma.run.findMany({
+        where: { botId, spaceId: actor.spaceId },
+        select: { id: true, status: true },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        take: RECENT_RUNS,
+      }),
+    ]);
+    return {
+      botId,
+      name: context.bot.name,
+      threadId: head.threadId,
+      cursor: head.cursor,
+      runs,
+      computer: { state: computer.state, screenAvailable: computer.screenAvailable },
+    };
+  },
+
+  async botActivity(context) {
+    const botId = botOf(context);
+    const before = context.query?.before;
+    const page = await context.client.threads.messages({
+      botId,
+      ...(before === undefined ? {} : { before }),
+    });
+    return {
+      botId,
+      threadId: page.threadId,
+      olderCursor: page.olderCursor,
+      messages: page.messages.map(projectMessage),
+    };
+  },
+  botEvents: streamBotEvents,
+  async sendPrompt(context) {
+    if (!context.bot) throw new ServiceRejection("not_found");
+    const sent = await sendPrompt(
+      context as never,
+      { botId: context.bot.id },
+      { type: "bot", id: context.bot.id, name: context.bot.name },
+    );
+    const waitSeconds = context.query?.wait;
+    return {
+      botId: context.bot.id,
+      ...sent,
+      ...(waitSeconds === undefined
+        ? {}
+        : { run: await runDetail(context, sent.runId, waitSeconds) }),
+    };
+  },
+  async stopBot(context) {
+    return context.client.threads.stop({ botId: botOf(context) });
+  },
+  async listRuns({ client, credential, query }) {
+    const { runs } = await client.runs.list({ filter: query?.filter ?? "active" });
+    return { runs: runs.filter((run) => mayReach(credential, run.botId)) };
+  },
+
+  async getRun(context) {
+    return runDetail(context, param(context, "runId"), context.query?.wait ?? 0);
+  },
+
+  async getComputer(context) {
+    return context.client.computer.status({ botId: botOf(context) });
+  },
+  async bootComputer(context) {
+    return context.client.computer.boot({ botId: botOf(context) });
+  },
+  async stopComputer(context) {
+    return context.client.computer.stop({ botId: botOf(context) });
+  },
+
+  async listMemory(context) {
+    const documents = await context.client.memory.list({ botId: botOf(context), scope: "bot" });
+    return { documents };
+  },
+  async updateMemory(context) {
+    const documentId = param(context, "documentId");
+    await assertOwned(
+      context.prisma.memoryDocument.findFirst({
+        where: { id: documentId, botId: botOf(context), spaceId: context.actor.spaceId },
+        select: { id: true },
+      }),
+    );
+    return context.client.memory.update({ documentId, ...context.body });
+  },
+
+  async listRoutines(context) {
+    return { routines: await context.client.routines.list({ botId: botOf(context) }) };
+  },
+  async createRoutine(context) {
+    return context.client.routines.create({
+      botId: botOf(context),
+      ...context.body,
+    } as Parameters<Client["routines"]["create"]>[0]);
+  },
+  async updateRoutine(context) {
+    const routineId = param(context, "routineId");
+    await assertRoutine(context, routineId);
+    return context.client.routines.update({ routineId, ...context.body });
+  },
+  async routineHistory(context) {
+    const routineId = param(context, "routineId");
+    await assertRoutine(context, routineId);
+    const before = decodeCursor(context.query?.after);
+    const page = await context.client.routines.history({
+      routineId,
+      ...(before ? { before } : {}),
+    });
+    return { runs: page.runs, nextCursor: encodeCursor(page.nextCursor) };
+  },
+  async runRoutine(context) {
+    const routineId = param(context, "routineId");
+    await assertRoutine(context, routineId);
+    return context.client.routines.testRun({
+      routineId,
+      clientNonce: nonce(context.credential.id, context.idempotencyKey),
+    });
+  },
+
+  async listArtifacts(context) {
+    return { artifacts: await context.client.artifacts.list({ botId: botOf(context) }) };
+  },
+  async getArtifact(context) {
+    return context.client.artifacts.get({
+      botId: botOf(context),
+      artifactId: param(context, "artifactId"),
+    });
+  },
+
+  async listScratchpad(context) {
+    const items = await context.client.scratchpad.list({
+      botId: botOf(context),
+      includeDone: true,
+      ...(context.query?.status ? { status: context.query.status } : {}),
+    });
+    return { items };
+  },
+  async createScratchpadItem(context) {
+    return context.client.scratchpad.create({
+      botId: botOf(context),
+      ...context.body,
+    } as Parameters<Client["scratchpad"]["create"]>[0]);
+  },
+  async updateScratchpadItem(context) {
+    const itemId = param(context, "itemId");
+    await assertScratchpadItem(context, itemId);
+    return context.client.scratchpad.update({ itemId, ...context.body });
+  },
+  async removeScratchpadItem(context) {
+    const itemId = param(context, "itemId");
+    await assertScratchpadItem(context, itemId);
+    return context.client.scratchpad.remove({ itemId });
+  },
+
+  async listSkills(context) {
+    return { skills: await context.client.skills.list({ botId: botOf(context) }) };
+  },
+  async listPages(context) {
+    const after = context.query?.after;
+    const page = await context.client.pages.list({
+      botId: botOf(context),
+      ...(after ? { cursor: after } : {}),
+    });
+    return { pages: page.items, nextCursor: page.nextCursor };
+  },
+
+  async listGroups({ client }) {
+    return { groups: await client.groups.list() };
+  },
+  async createGroup({ client, body }) {
+    return client.groups.create(body as Parameters<Client["groups"]["create"]>[0]);
+  },
+  async getGroup(context) {
+    return context.client.groups.get({ groupId: param(context, "groupId") });
+  },
+  async updateGroup(context) {
+    return context.client.groups.update({ groupId: param(context, "groupId"), ...context.body });
+  },
+  async archiveGroup(context) {
+    return context.client.groups.archive({ groupId: param(context, "groupId") });
+  },
+  async groupActivity(context) {
+    const groupId = param(context, "groupId");
+    const before = context.query?.before;
+    const page = await context.client.threads.messages({
+      groupId,
+      ...(before === undefined ? {} : { before }),
+    });
+    return {
+      groupId,
+      threadId: page.threadId,
+      olderCursor: page.olderCursor,
+      messages: page.messages.map(projectMessage),
+    };
+  },
+  async sendGroupPrompt(context) {
+    const groupId = param(context, "groupId");
+    const group = await context.client.groups.get({ groupId });
+    const sent = await sendPrompt(
+      context as never,
+      { groupId },
+      { type: "group", id: groupId, name: group.name },
+    );
+    return { groupId, ...sent };
+  },
+  async stopGroup(context) {
+    return context.client.threads.stop({ groupId: param(context, "groupId") });
+  },
+
+  async listBoards({ client }) {
+    return { boards: await client.boards.list() };
+  },
+  async listTickets({ client, credential, query }) {
+    const { tickets } = await client.tickets.list(query ?? {});
+    return {
+      tickets: tickets.filter((ticket) => mayReach(credential, ticket.assigneeBotId ?? "")),
+    };
+  },
+  async createTicket({ client, credential, body }) {
+    const input = body as Parameters<Client["tickets"]["create"]>[0];
+    if (!mayReach(credential, input.assigneeBotId)) throw new ServiceRejection("not_found");
+    return client.tickets.create(input);
+  },
+  async getTicket(context) {
+    return reachableTicket(context, param(context, "ticketId"));
+  },
+  async updateTicket(context) {
+    const id = param(context, "ticketId");
+    await reachableTicket(context, id);
+    const assignee = context.body?.assigneeBotId;
+    if (assignee && !mayReach(context.credential, assignee)) {
+      throw new ServiceRejection("not_found");
+    }
+    return context.client.tickets.update({ id, ...context.body });
+  },
+  async listTicketComments(context) {
+    const ticketId = param(context, "ticketId");
+    await reachableTicket(context, ticketId);
+    return { comments: await context.client.tickets.comments({ ticketId }) };
+  },
+  async addTicketComment(context) {
+    const ticketId = param(context, "ticketId");
+    await reachableTicket(context, ticketId);
+    return context.client.tickets.comment({
+      ticketId,
+      body: (context.body as { body: string }).body,
+    });
+  },
+
+  async usageSummary({ client }) {
+    return client.usage.summary();
+  },
+  async search({ client, query }) {
+    return client.search.query({ q: (query as { q: string }).q });
+  },
+  async auditEvents({ client, query }) {
+    return client.audit.events({ limit: 100, ...query });
+  },
+};
+
+function assertRoutine(
+  context: ServiceContext<"updateRoutine" | "routineHistory" | "runRoutine">,
+  routineId: string,
+): Promise<void> {
+  return assertOwned(
+    context.prisma.routine.findFirst({
+      where: { id: routineId, botId: botOf(context), spaceId: context.actor.spaceId },
+      select: { id: true },
+    }),
+  );
+}
+
+function assertScratchpadItem(
+  context: ServiceContext<"updateScratchpadItem" | "removeScratchpadItem">,
+  itemId: string,
+): Promise<void> {
+  return assertOwned(
+    context.prisma.scratchpadItem.findFirst({
+      where: { id: itemId, botId: botOf(context) },
+      select: { id: true },
+    }),
+  );
+}
+
+async function reachableTicket(
+  context: ServiceContext<"getTicket" | "updateTicket" | "listTicketComments" | "addTicketComment">,
+  id: string,
+) {
+  const ticket = await context.client.tickets.get({ id });
+  if (!mayReach(context.credential, ticket.assigneeBotId ?? "")) {
+    throw new ServiceRejection("not_found");
+  }
+  return ticket;
+}
+
+export const SERVICE_ROUTE_TABLE = Object.entries(SERVICE_ROUTES).map(([id, definition]) => ({
+  id: id as ServiceRouteId,
+  definition,
+  pattern: new RegExp(
+    `^${definition.path.replace(/:([A-Za-z]+)/g, "(?<$1>[A-Za-z0-9_-]{1,128})")}$`,
+  ),
+}));

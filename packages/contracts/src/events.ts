@@ -389,6 +389,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     hop: z.number().int().nonnegative().optional(),
   }),
   z.object({
+    /** Set by the platform on a message sent with an API key; a sender cannot write or remove it. */
+    kind: z.literal("service_origin"),
+    credentialId: Id,
+    name: z.string(),
+  }),
+  z.object({
     /** Shown in the sending bot's own chat, so the user can see what it sent. */
     kind: z.literal("bot_message_sent"),
     toBotId: Id,

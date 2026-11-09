@@ -24,6 +24,7 @@ export interface AuditEventInput {
   actor:
     | { type: "user"; id: string }
     | { type: "bot"; id: string; label: string }
+    | { type: "service"; id: string; label: string }
     | { type: "system"; label?: string };
   /** The space acted in; its organization owns the event. */
   spaceId?: string | null;
@@ -78,7 +79,10 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
 export async function tryRecordAuditEvent(input: AuditEventInput): Promise<boolean> {
   const db = store;
   if (!db) return false;
-  const caller = input.actor.type === "user" ? securityRequestCaller() : undefined;
+  const caller =
+    input.actor.type === "user" || input.actor.type === "service"
+      ? securityRequestCaller()
+      : undefined;
   try {
     return await runAsSystem("append an audit event", async () => {
       const rows = await auditRows(db, input, caller);

@@ -12,6 +12,7 @@ import {
   Monitor,
   Settings,
   ShieldCheck,
+  Terminal,
   Volume2,
   Wallet,
 } from "lucide-react";
@@ -52,6 +53,12 @@ export function useSettingsNavItems(available: {
       label: t`Vault`,
       icon: KeyRound,
       description: t`Logins and keys your bots can use.`,
+    },
+    {
+      id: "serviceKeys",
+      label: t`API keys`,
+      icon: Terminal,
+      description: t`Let your own programs talk to your bots.`,
     },
     ...(available.wallet
       ? [
