@@ -172,7 +172,7 @@ export async function executeImageSearch(
     const message = await stream.result();
     if (host.signal.aborted || message.stopReason === "aborted")
       return { error: "Image search was stopped." };
-    if (message.stopReason !== "stop")
+    if (message.stopReason !== "stop" && message.stopReason !== "length")
       return reportFailure(
         new Error(message.errorMessage || `Search stopped with ${message.stopReason}.`),
       );

@@ -89,6 +89,39 @@ describe("Pi image search through the installed provider", () => {
     },
   );
 
+  it.each([
+    { reason: "max_output_tokens", completed: true },
+    { reason: "max_output_tokens", completed: false },
+    { reason: "content_filter", completed: true },
+    { reason: "content_filter", completed: false },
+  ])(
+    "handles incomplete responses with $reason and completed search $completed",
+    async ({ reason, completed }) => {
+      const fetch = fixtureFetch([
+        ...(completed ? [searchItem([image("completed")])] : []),
+        ...prose,
+        {
+          type: "response.incomplete",
+          response: { ...terminal.response, status: "incomplete", incomplete_details: { reason } },
+        },
+      ]);
+      const { host, onUsage } = hostFor(fetch);
+      const result = await executeImageSearch(host, { query: "harbor" });
+      if (reason === "max_output_tokens" && completed) {
+        expect(result).toMatchObject({
+          results: [
+            {
+              imageUrl: image("completed").image_url,
+              sourceUrl: image("completed").source_website_url,
+            },
+          ],
+        });
+      } else expect(result).toHaveProperty("error");
+      expect(onUsage).toHaveBeenCalledOnce();
+      expect(JSON.stringify(result)).not.toContain("Invented prose");
+    },
+  );
+
   it("uses the active credential store and returns only completed structured images with retrieval accounting", async () => {
     vi.stubEnv("OPENAI_API_KEY", "unrelated-fake-key");
     const fetch = fixtureFetch([
