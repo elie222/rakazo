@@ -56,6 +56,8 @@ const MAX_RESPONSE_BYTES = 10_000;
 const LINK_PAGE_SIZE = 5;
 /** An empty literal search rules out only those words, not what they were meant to find. */
 const NO_MATCH_NOTE = "No message matched these words, which does not show it never happened.";
+/** A continued search that ends empty found nothing more; earlier pages may have matched. */
+const NO_MORE_NOTE = "No further matches for these words.";
 /** Only where earlier replies used tools, since tool work described in other words is hard to find. */
 function toolWorkHint(myChats: boolean): string {
   // A kinds-only search defaults to this chat, so a hint after an all-chats search keeps its scope.
@@ -460,14 +462,22 @@ export async function searchHistory(
   const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
   const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
   // An empty page says what it covered: nothing matched, or the scan has more to go.
-  const coverageNote = capped ? CAPPED_NOTE : hasMore ? UNFINISHED_NOTE : NO_MATCH_NOTE;
+  // A page continuing an earlier search (from nextSearch) can't say nothing ever matched.
+  const continued = input.beforeSeq !== undefined || offset > 0;
+  const coverageNote = capped
+    ? CAPPED_NOTE
+    : hasMore
+      ? UNFINISHED_NOTE
+      : continued
+        ? NO_MORE_NOTE
+        : NO_MATCH_NOTE;
   // Any empty keyword search, finished or not, can point at listing earlier tool work instead.
   // A search narrowed by date or bot gets no hint: the listing it suggests would leave that range.
   const narrowed = Boolean(input.before || input.after || input.botId);
   const note =
     page.length || browsing
       ? undefined
-      : !narrowed && (await hasToolWork(prisma, scope))
+      : !narrowed && !continued && (await hasToolWork(prisma, scope))
         ? `${coverageNote} ${toolWorkHint(myChats)}`
         : coverageNote;
   const nextBeforeSeq =
