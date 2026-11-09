@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   credentials: [] as unknown[],
   catalog: [] as unknown[],
   connection: { credentialId: null as string | null, pinned: false },
+  connectionError: undefined as Error | undefined,
   os: "ios",
   work: [] as unknown[],
   history: [] as unknown[],
@@ -107,7 +108,10 @@ vi.mock("./api", () => ({
         ...mocks.botModel,
       };
     }
-    if (procedure === "bots/modelConnection") return mocks.connection;
+    if (procedure === "bots/modelConnection") {
+      if (mocks.connectionError) throw mocks.connectionError;
+      return mocks.connection;
+    }
     if (procedure === "models/credentials") return mocks.credentials;
     if (procedure === "models/list") return mocks.catalog;
     if (procedure === "scratchpad/list") return mocks.work;
@@ -379,6 +383,7 @@ describe("bot settings device voice menu", () => {
     mocks.credentials = [];
     mocks.catalog = [];
     mocks.connection = { credentialId: null, pinned: false };
+    mocks.connectionError = undefined;
     mocks.instructions = "";
     mocks.description = "";
     mocks.os = "ios";
@@ -661,6 +666,12 @@ describe("bot settings device voice menu", () => {
         "bots/update",
         expect.objectContaining({ modelConnectionId: null }),
       );
+    });
+
+    it("keeps showing a failed connection lookup after the model list loads", async () => {
+      mocks.connectionError = new Error("Connection lookup refused");
+      await render();
+      expect(container.textContent).toContain("Connection lookup refused");
     });
 
     it("sends no connection when none was picked", async () => {

@@ -379,7 +379,11 @@ export function botsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
           });
-        await copyBotModelConnection(deps.prisma, context.actor, source, duplicate.id);
+        // The copy exists by now and runs on the usual connection without this, so it is not a
+        // reason to fail the request and have a retry make a second copy.
+        await copyBotModelConnection(deps.prisma, context.actor, source, duplicate.id).catch(
+          (error: unknown) => getLogger().error("bot duplicate model connection", error),
+        );
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
             botId: source.id,

@@ -14,8 +14,8 @@ import {
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
-  parseConnectionChoiceKey,
   parseModelOptionKey,
+  pickBotModelChoice,
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
@@ -93,6 +93,7 @@ export default function BotSettingsScreen() {
   const [me, setMe] = useState<MobileMe | null>(null);
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [savedConnection, setSavedConnection] = useState<{
     credentialId: string | null;
     pinned: boolean;
@@ -247,6 +248,7 @@ export default function BotSettingsScreen() {
   const savedProvider = bot?.modelProvider;
   const savedModelId = bot?.modelId;
   useEffect(() => {
+    setConnectionError(null);
     if (!savedProvider || !savedModelId) {
       setSavedConnection(null);
       return;
@@ -257,7 +259,7 @@ export default function BotSettingsScreen() {
         if (current) setSavedConnection(next);
       })
       .catch((err) => {
-        if (current) setModelMetaError(errorText(err, t("Could not load model settings")));
+        if (current) setConnectionError(errorText(err, t("Could not load model settings")));
       });
     return () => {
       current = false;
@@ -328,15 +330,14 @@ export default function BotSettingsScreen() {
 
   function selectModel(key: string) {
     if (key === pickerValue) return;
-    const { credentialId, modelKey: nextModelKey } = parseConnectionChoiceKey(key);
-    setPendingConnection(credentialId ?? null);
-    setModelKey(nextModelKey);
-    const levels = credentials.find((credential) => credential.id === credentialId)?.thinkingLevels;
-    if (
-      nextModelKey !== selectedModelKey ||
-      (levels && !levels.some((level) => level === thinkingLevel))
-    )
-      setThinkingLevel("");
+    const pick = pickBotModelChoice(key, {
+      modelKey: selectedModelKey,
+      thinkingLevel,
+      credentials,
+    });
+    setPendingConnection(pick.credentialId);
+    setModelKey(pick.modelKey);
+    if (pick.resetThinking) setThinkingLevel("");
   }
 
   // The searchable model list hands its pick back as a one-shot route param.
@@ -672,7 +673,10 @@ export default function BotSettingsScreen() {
                 scrollRef.current?.scrollTo({ y: modelY.current, animated: true });
             }}
           >
-            <SettingsGroup label={t("Model")} footer={modelMetaError ?? undefined}>
+            <SettingsGroup
+              label={t("Model")}
+              footer={modelMetaError ?? connectionError ?? undefined}
+            >
               <MenuPicker
                 choices={modelChoices}
                 label={t("Model")}

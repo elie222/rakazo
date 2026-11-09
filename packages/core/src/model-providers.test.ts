@@ -15,6 +15,7 @@ import {
   filterModelChoices,
   groupModelChoices,
   parseConnectionChoiceKey,
+  pickBotModelChoice,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
@@ -597,6 +598,26 @@ describe("connectionModelChoices", () => {
       "sub@@anthropic::sonnet",
       "api@@anthropic::sonnet",
     ]);
+  });
+
+  it("drops the thinking level only when the pick cannot keep it", () => {
+    const credentials = [
+      { id: "sub", thinkingLevels: ["high"] },
+      { id: "api", thinkingLevels: ["low"] },
+    ];
+    const current = { modelKey: "anthropic::opus", thinkingLevel: "high", credentials };
+    expect(pickBotModelChoice("sub@@anthropic::opus", current)).toEqual({
+      credentialId: "sub",
+      modelKey: "anthropic::opus",
+      resetThinking: false,
+    });
+    expect(pickBotModelChoice("api@@anthropic::opus", current).resetThinking).toBe(true);
+    expect(pickBotModelChoice("anthropic::opus", current)).toEqual({
+      credentialId: null,
+      modelKey: "anthropic::opus",
+      resetThinking: false,
+    });
+    expect(pickBotModelChoice("sub@@anthropic::sonnet", current).resetThinking).toBe(true);
   });
 
   it("shows a bot's saved connection, or the model alone when it has none", () => {

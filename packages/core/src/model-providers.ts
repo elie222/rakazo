@@ -380,6 +380,30 @@ export function connectionPickerKey(
 }
 
 /**
+ * What picking a row in a bot's model list changes. Thinking levels belong to the model and its
+ * connection, so the level is dropped when the model changes or the connection does not offer it.
+ */
+export function pickBotModelChoice(
+  key: string,
+  current: {
+    modelKey: string;
+    thinkingLevel: string;
+    credentials: readonly { id: string; thinkingLevels?: readonly string[] | null }[];
+  },
+): { credentialId: string | null; modelKey: string; resetThinking: boolean } {
+  const { credentialId, modelKey } = parseConnectionChoiceKey(key);
+  const levels = current.credentials.find(
+    (credential) => credential.id === credentialId,
+  )?.thinkingLevels;
+  return {
+    credentialId: credentialId ?? null,
+    modelKey,
+    resetThinking:
+      modelKey !== current.modelKey || Boolean(levels && !levels.includes(current.thinkingLevel)),
+  };
+}
+
+/**
  * Whether a bot's picker holds an unsaved connection. `pending` is undefined until a row is
  * picked, and null when the picked row has no connection, which removes a saved choice.
  */

@@ -16,8 +16,8 @@ import {
   connectionPickerKey,
   credentialForModel,
   modelOptionKey,
-  parseConnectionChoiceKey,
   parseModelOptionKey,
+  pickBotModelChoice,
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@rakazo/ui-web";
@@ -615,17 +615,14 @@ export function BotSettings({
               choices={modelChoices}
               value={pickerValue}
               onModelChange={(key) => {
-                const { credentialId, modelKey: nextModelKey } = parseConnectionChoiceKey(key);
-                setPendingConnection(credentialId ?? null);
-                setModelKey(nextModelKey);
-                const levels = credentials.find(
-                  (credential) => credential.id === credentialId,
-                )?.thinkingLevels;
-                if (
-                  nextModelKey !== selectedModelKey ||
-                  (levels && !levels.some((level) => level === thinkingLevel))
-                )
-                  setThinkingLevel("");
+                const pick = pickBotModelChoice(key, {
+                  modelKey: selectedModelKey,
+                  thinkingLevel,
+                  credentials,
+                });
+                setPendingConnection(pick.credentialId);
+                setModelKey(pick.modelKey);
+                if (pick.resetThinking) setThinkingLevel("");
               }}
               thinkingOptions={thinkingOptions}
               thinkingLevel={thinkingLevel}
