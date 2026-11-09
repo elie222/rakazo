@@ -1584,6 +1584,34 @@ export const JA_MESSAGES: Record<string, string> = {
   "Third-party access": "サードパーティ接続",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Anthropic 互換サーバーの場合は、/v1 を含まないアドレスを使ってください。",
+  "Usage details": "使用量の詳細",
+  "Today's usage": "今日の使用量",
+  "Total usage": "合計使用量",
+  tokens: "tokens",
+  "{requests} requests": "{requests}件のリクエスト",
+  "Input {input} · Output {output}": "入力 {input} · 出力 {output}",
+  "Last 7 days": "過去 7 日間",
+  "No usage yet": "まだ使用量がありません",
+  "By model": "モデル別",
+  "{calls} calls": "{calls}回",
+  "{percent}% of {range}": "{range}の{percent}%",
+  "Tap a model to see its recent calls": "モデルをタップして最近の呼び出しを表示",
+  "Call details": "呼び出し明細",
+  "Latest 100 records": "最新 100 件",
+  "Failed · not counted": "失敗 · カウント対象外",
+  Success: "成功",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "プロバイダーが実際に返した使用量で集計し、入力と出力は分けて記録します。失敗した呼び出しは 0 として集計し、合計には含めません。",
+  "Could not load usage": "使用量を読み込めませんでした",
+  "Today {runs} · {tokens} tokens": "今日 {runs}件 · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "合計 {runs}回 · {tokens} tokens",
+  "Change profile photo": "プロフィール写真を変更",
+  "The photo is too large. Choose a smaller photo.":
+    "写真が大きすぎます。小さい写真を選んでください。",
+  "Could not open the photo library.": "フォトライブラリを開けませんでした。",
+  "Could not read that photo. Try another one.":
+    "この写真を読み込めませんでした。別の写真を試してください。",
+  "Couldn't update profile photo": "プロフィール写真を更新できませんでした",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

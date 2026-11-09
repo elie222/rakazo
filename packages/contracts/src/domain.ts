@@ -1159,6 +1159,7 @@ export const UsageRecordSchema = z.object({
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
+export type UsageRecord = z.infer<typeof UsageRecordSchema>;
 
 /**
  * Totals sum the counted calls that report that figure, and are null only when no
@@ -1507,6 +1508,11 @@ export const MeSchema = z.object({
   avatarStyle: AvatarStyleSchema,
   /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
   botAvatarSet: BotAvatarSetSchema.optional(),
+  /**
+   * The user's own profile photo, as a bot-avatar data URL (256x256 webp, see
+   * `BotAvatarValueSchema`), or null when unset. Absent from servers that predate it.
+   */
+  image: BotAvatarValueSchema.nullable().optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.

@@ -408,6 +408,26 @@ describe("account preferences", () => {
     );
   });
 
+  it("saves the profile photo as a bot-avatar data URL", async () => {
+    const { update, actor, handler } = preferencesDeps("organic");
+
+    const response = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { image: "data:image/webp;base64,aGVsbG8=" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { image: "data:image/webp;base64,aGVsbG8=" },
+    });
+  });
+
   it("rejects avatar styles outside robot|organic", async () => {
     const { update, actor, handler } = preferencesDeps("robot");
 

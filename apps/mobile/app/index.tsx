@@ -710,6 +710,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
           initials={initials}
+          avatarImage={me?.image ?? null}
           activityMode={activityMode}
           toggleActivityMode={toggleActivityMode}
           runCreateAction={runCreateAction}

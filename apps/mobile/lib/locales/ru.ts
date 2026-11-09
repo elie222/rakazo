@@ -1591,6 +1591,34 @@ export const RU_MESSAGES: Record<string, string> = {
   "Third-party access": "Сторонний доступ",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Для серверов, совместимых с Anthropic, используйте адрес без /v1.",
+  "Usage details": "Детали использования",
+  "Today's usage": "Использование сегодня",
+  "Total usage": "Общее использование",
+  tokens: "tokens",
+  "{requests} requests": "{requests} запросов",
+  "Input {input} · Output {output}": "Ввод {input} · Вывод {output}",
+  "Last 7 days": "Последние 7 дней",
+  "No usage yet": "Пока нет использования",
+  "By model": "По моделям",
+  "{calls} calls": "{calls} вызовов",
+  "{percent}% of {range}": "{percent}% от {range}",
+  "Tap a model to see its recent calls": "Нажмите на модель, чтобы увидеть последние вызовы",
+  "Call details": "Детали вызовов",
+  "Latest 100 records": "Последние 100 записей",
+  "Failed · not counted": "Не удалось · не учитывается",
+  Success: "Успешно",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "Учитывается фактическое использование, возвращённое провайдером, ввод и вывод — отдельно. Неудачные вызовы считаются за 0 и не включаются в итоги.",
+  "Could not load usage": "Не удалось загрузить использование",
+  "Today {runs} · {tokens} tokens": "Сегодня {runs} · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "Всего {runs} запусков · {tokens} tokens",
+  "Change profile photo": "Сменить фото профиля",
+  "The photo is too large. Choose a smaller photo.":
+    "Фото слишком большое. Выберите фото поменьше.",
+  "Could not open the photo library.": "Не удалось открыть фотобиблиотеку.",
+  "Could not read that photo. Try another one.":
+    "Не удалось прочитать это фото. Попробуйте другое.",
+  "Couldn't update profile photo": "Не удалось обновить фото профиля",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

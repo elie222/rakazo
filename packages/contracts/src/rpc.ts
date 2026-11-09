@@ -40,7 +40,7 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
-import { BotAvatarSetSchema } from "./bot-avatar.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
 import {
   BotPackageActivateSkillInput,
@@ -406,13 +406,16 @@ export const appContract = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** The user's own profile photo, as a bot-avatar data URL; null clears it. */
+            image: BotAvatarValueSchema.nullable().optional(),
           })
           .refine(
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
-              input.locale !== undefined,
+              input.locale !== undefined ||
+              input.image !== undefined,
             { message: "Nothing to update" },
           ),
       )

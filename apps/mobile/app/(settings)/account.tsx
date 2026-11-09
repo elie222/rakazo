@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Image,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -100,6 +102,7 @@ import {
   useTrustedLinkSites,
 } from "../../lib/trusted-link-sites";
 import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
+import { isUserAvatarImage, pickUserAvatarImage } from "../../lib/user-avatar";
 import { errorText } from "../../lib/user-error";
 
 let hapticsSaveVersion = 0;
@@ -176,6 +179,8 @@ export default function Account() {
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [usageToday, setUsageToday] = useState<UsageSummary | null>(null);
+  const [avatarPending, setAvatarPending] = useState(false);
   // Messaging appears only on servers that have a chat app connected, as on web.
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const appearance = getCachedAppearancePreference();
@@ -242,6 +247,9 @@ export default function Account() {
     void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
+    void rpc("usage/summary", { days: 1 })
+      .then(setUsageToday)
+      .catch(() => undefined);
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
         .then(setNotifications)
@@ -265,13 +273,25 @@ export default function Account() {
   const usageBlock = (
     <SettingsRow
       accessible
+      accessibilityRole="button"
+      chevron="right"
+      disabled={pending}
+      onPress={() => router.push("/usage")}
       title={t("Usage")}
       detail={
         usage
-          ? t("{runs} runs, {tokens} tokens", {
-              runs: count.format(usage.runs),
-              tokens: tokens(usage.totalTokens),
-            })
+          ? usageToday
+            ? `${t("Today {runs} · {tokens} tokens", {
+                runs: count.format(usageToday.runs),
+                tokens: tokens(usageToday.totalTokens),
+              })} / ${t("Total {runs} runs · {tokens} tokens", {
+                runs: count.format(usage.runs),
+                tokens: tokens(usage.totalTokens),
+              })}`
+            : t("{runs} runs, {tokens} tokens", {
+                runs: count.format(usage.runs),
+                tokens: tokens(usage.totalTokens),
+              })
           : undefined
       }
       value={cost(usage?.costUsd)}
@@ -455,6 +475,51 @@ export default function Account() {
     );
   }
 
+  const avatarImage = me?.image ?? null;
+
+  async function changeProfilePhoto() {
+    if (avatarPending || !me) return;
+    setAvatarPending(true);
+    try {
+      const picked = await pickUserAvatarImage();
+      if (picked.status === "canceled") return;
+      if (picked.status === "error") {
+        Alert.alert(
+          t("Change profile photo"),
+          t(
+            picked.reason === "too-large"
+              ? "The photo is too large. Choose a smaller photo."
+              : picked.reason === "unavailable"
+                ? "Could not open the photo library."
+                : "Could not read that photo. Try another one.",
+          ),
+        );
+        return;
+      }
+      setMe(await rpc("preferences/update", { image: picked.image }));
+    } catch (err) {
+      Alert.alert(t("Couldn't update profile photo"), errorText(err, t("Try again.")));
+    } finally {
+      setAvatarPending(false);
+    }
+  }
+
+  const avatarLeading = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t("Change profile photo")}
+      disabled={avatarPending || !me}
+      onPress={() => void changeProfilePhoto()}
+      style={styles.avatar}
+    >
+      {isUserAvatarImage(avatarImage) ? (
+        <Image source={{ uri: avatarImage }} style={styles.avatarImage} />
+      ) : (
+        <Text style={styles.avatarInitials}>{account.initial ?? "?"}</Text>
+      )}
+    </Pressable>
+  );
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -483,6 +548,7 @@ export default function Account() {
             disabled={!me}
             detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
+            leading={avatarLeading}
             title={account.label}
             dimmed={namePending}
             onPress={editName}
@@ -912,6 +978,24 @@ function createAccountStyles() {
     },
     section: {
       gap: 7,
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.muted,
+      overflow: "hidden",
+    },
+    avatarImage: {
+      width: 44,
+      height: 44,
+    },
+    avatarInitials: {
+      color: tokens.foreground,
+      fontSize: 17,
+      fontWeight: "600",
     },
     about: {
       alignItems: "center",

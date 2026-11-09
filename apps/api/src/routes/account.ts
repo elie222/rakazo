@@ -168,6 +168,7 @@ export function accountRoutes(ctx: RouterContext) {
           await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            ...(input.image === undefined ? {} : { image: input.image }),
           });
         } else {
           await deps.prisma.user.update({
@@ -176,6 +177,7 @@ export function accountRoutes(ctx: RouterContext) {
             data: {
               ...(input.locale === undefined ? {} : { locale: input.locale }),
               ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+              ...(input.image === undefined ? {} : { image: input.image }),
             },
           });
         }

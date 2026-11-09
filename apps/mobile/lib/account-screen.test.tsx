@@ -64,6 +64,20 @@ vi.mock("./thread-feedback", async (importOriginal) => ({
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
+// The profile-photo picker behind the account avatar.
+vi.mock("expo-image-picker", () => ({
+  launchImageLibraryAsync: vi.fn(async () => ({ canceled: true, assets: [] })),
+}));
+vi.mock("expo-file-system", () => ({
+  File: class {
+    base64() {
+      return Promise.resolve("");
+    }
+  },
+}));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () => null,
+}));
 // The real sign-out flow runs in one test; its store and caches need these.
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -75,6 +89,7 @@ vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
   AppState: { addEventListener: () => ({ remove: () => undefined }) },
+  Image: () => null,
   KeyboardAvoidingView: element("div"),
   Modal: ({ children, visible = true }: { children?: ReactNode; visible?: boolean }) =>
     visible ? createElement("section", null, children) : null,

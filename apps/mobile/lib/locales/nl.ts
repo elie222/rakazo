@@ -1551,6 +1551,33 @@ export const NL_MESSAGES: Record<string, string> = {
   "Third-party access": "Toegang van derden",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Gebruik voor Anthropic-compatibele servers het adres zonder /v1.",
+  "Usage details": "Gebruiksdetails",
+  "Today's usage": "Gebruik vandaag",
+  "Total usage": "Totaal gebruik",
+  tokens: "tokens",
+  "{requests} requests": "{requests} aanvragen",
+  "Input {input} · Output {output}": "Invoer {input} · Uitvoer {output}",
+  "Last 7 days": "Laatste 7 dagen",
+  "No usage yet": "Nog geen gebruik",
+  "By model": "Per model",
+  "{calls} calls": "{calls} oproepen",
+  "{percent}% of {range}": "{percent}% van {range}",
+  "Tap a model to see its recent calls": "Tik op een model voor de recente oproepen",
+  "Call details": "Oproepdetails",
+  "Latest 100 records": "Laatste 100 records",
+  "Failed · not counted": "Mislukt · niet meegeteld",
+  Success: "Gelukt",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "Er wordt afgerekend op basis van het gebruik dat de provider daadwerkelijk rapporteerde, invoer en uitvoer apart. Mislukte oproepen tellen als 0 en worden niet meegeteld in de totalen.",
+  "Could not load usage": "Gebruik kon niet worden geladen",
+  "Today {runs} · {tokens} tokens": "Vandaag {runs} · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "Totaal {runs} uitvoeringen · {tokens} tokens",
+  "Change profile photo": "Profielfoto wijzigen",
+  "The photo is too large. Choose a smaller photo.": "De foto is te groot. Kies een kleinere foto.",
+  "Could not open the photo library.": "De fotobibliotheek kon niet worden geopend.",
+  "Could not read that photo. Try another one.":
+    "Die foto kon niet worden gelezen. Probeer een andere.",
+  "Couldn't update profile photo": "Profielfoto kon niet worden bijgewerkt",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

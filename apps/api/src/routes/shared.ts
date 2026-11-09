@@ -34,6 +34,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       select: {
         email: true,
         name: true,
+        image: true,
         timezone: true,
         locale: true,
         botAvatarSet: true,
@@ -81,6 +82,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
+    image: user.image ?? null,
     timezone: user.timezone ?? null,
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),

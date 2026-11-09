@@ -65,6 +65,13 @@ export default function SettingsLayout() {
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />
+      <Stack.Screen
+        name="usage"
+        options={{
+          ...glassHeaderOptions(t("Usage details")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="ai-data-sharing" options={glassHeaderOptions(t("AI data sharing"))} />
       <Stack.Screen name="archived-bots" options={{ title: t("Archived") }} />
       <Stack.Screen name="change-password" options={{ title: t("Change password") }} />

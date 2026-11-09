@@ -1,19 +1,21 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Image, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import type { CreateAction } from "../lib/create-chooser";
 import { createMenuActions, isCreateAction } from "../lib/create-chooser";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
+import { isUserAvatarImage } from "../lib/user-avatar";
 import { CREATE_MENU_GAP, createHomeStyles } from "./home-styles";
 import { NativeSymbol } from "./native-symbol";
 
 /** The inbox's own header where the native Liquid Glass bar is unavailable. */
 export function InboxHeader({
   initials,
+  avatarImage,
   activityMode,
   toggleActivityMode,
   runCreateAction,
@@ -21,6 +23,8 @@ export function InboxHeader({
   title,
 }: {
   initials: string;
+  /** The user's own photo when set; otherwise the initials stay. */
+  avatarImage?: string | null;
   activityMode: boolean;
   toggleActivityMode: () => void;
   runCreateAction: (action: CreateAction) => void;
@@ -46,7 +50,11 @@ export function InboxHeader({
     >
       <View style={styles.circleButton}>
         <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
-          <Text style={styles.profileInitials}>{initials}</Text>
+          {isUserAvatarImage(avatarImage) ? (
+            <Image source={{ uri: avatarImage }} style={styles.profilePhoto} />
+          ) : (
+            <Text style={styles.profileInitials}>{initials}</Text>
+          )}
         </HeaderButton>
       </View>
       {title}

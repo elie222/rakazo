@@ -1550,6 +1550,32 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Third-party access": "第三方接入",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Anthropic 相容服務請使用不帶 /v1 的位址。",
+  "Usage details": "用量明細",
+  "Today's usage": "今日用量",
+  "Total usage": "總用量",
+  tokens: "tokens",
+  "{requests} requests": "{requests} 次請求",
+  "Input {input} · Output {output}": "輸入 {input} · 輸出 {output}",
+  "Last 7 days": "近 7 天",
+  "No usage yet": "暫無用量",
+  "By model": "按模型統計",
+  "{calls} calls": "{calls} 次",
+  "{percent}% of {range}": "佔{range} {percent}%",
+  "Tap a model to see its recent calls": "點模型卡查看最近呼叫",
+  "Call details": "呼叫明細",
+  "Latest 100 records": "最近 100 條",
+  "Failed · not counted": "失敗 · 不計入",
+  Success: "成功",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "按介面實際回傳的用量入帳，輸入、輸出分開記。失敗的呼叫記為 0，不計入總數。",
+  "Could not load usage": "無法載入用量",
+  "Today {runs} · {tokens} tokens": "今日 {runs} 次 · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "累計 {runs} 次執行 · {tokens} tokens",
+  "Change profile photo": "更換頭像",
+  "The photo is too large. Choose a smaller photo.": "照片太大，請選一張小一點的照片。",
+  "Could not open the photo library.": "打不開相簿。",
+  "Could not read that photo. Try another one.": "無法讀取這張照片，請換一張試試。",
+  "Couldn't update profile photo": "頭像更新失敗",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

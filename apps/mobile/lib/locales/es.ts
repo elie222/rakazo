@@ -1505,6 +1505,33 @@ export const ES_MESSAGES: Record<string, string> = {
   "Third-party access": "Acceso de terceros",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Para servidores compatibles con Anthropic, usa la dirección sin /v1.",
+  "Usage details": "Detalles de uso",
+  "Today's usage": "Uso de hoy",
+  "Total usage": "Uso total",
+  tokens: "tokens",
+  "{requests} requests": "{requests} solicitudes",
+  "Input {input} · Output {output}": "Entrada {input} · Salida {output}",
+  "Last 7 days": "Últimos 7 días",
+  "No usage yet": "Aún no hay uso",
+  "By model": "Por modelo",
+  "{calls} calls": "{calls} llamadas",
+  "{percent}% of {range}": "{percent} % de {range}",
+  "Tap a model to see its recent calls": "Toca un modelo para ver sus llamadas recientes",
+  "Call details": "Detalles de llamadas",
+  "Latest 100 records": "Últimos 100 registros",
+  "Failed · not counted": "Fallido · no contado",
+  Success: "Éxito",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "Se contabiliza el uso que el proveedor realmente devolvió, con entrada y salida por separado. Las llamadas fallidas cuentan como 0 y no se incluyen en los totales.",
+  "Could not load usage": "No se pudo cargar el uso",
+  "Today {runs} · {tokens} tokens": "Hoy {runs} · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "Total {runs} ejecuciones · {tokens} tokens",
+  "Change profile photo": "Cambiar foto de perfil",
+  "The photo is too large. Choose a smaller photo.":
+    "La foto es demasiado grande. Elige una foto más pequeña.",
+  "Could not open the photo library.": "No se pudo abrir la fototeca.",
+  "Could not read that photo. Try another one.": "No se pudo leer esa foto. Prueba con otra.",
+  "Couldn't update profile photo": "No se pudo actualizar la foto de perfil",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

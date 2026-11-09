@@ -27,11 +27,26 @@ const { labelled } = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
+  Image: () => null,
   Platform: header.platform,
   Pressable: labelled("button"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: labelled("span"),
   View: labelled("div"),
+}));
+// The header's profile-photo picker.
+vi.mock("expo-image-picker", () => ({
+  launchImageLibraryAsync: vi.fn(async () => ({ canceled: true, assets: [] })),
+}));
+vi.mock("expo-file-system", () => ({
+  File: class {
+    base64() {
+      return Promise.resolve("");
+    }
+  },
+}));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () => null,
 }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({

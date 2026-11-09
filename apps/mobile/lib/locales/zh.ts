@@ -1555,6 +1555,32 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Third-party access": "第三方接入",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Anthropic 兼容服务请使用不带 /v1 的地址。",
+  "Usage details": "用量明细",
+  "Today's usage": "今日用量",
+  "Total usage": "总用量",
+  tokens: "tokens",
+  "{requests} requests": "{requests} 次请求",
+  "Input {input} · Output {output}": "输入 {input} · 输出 {output}",
+  "Last 7 days": "近 7 天",
+  "No usage yet": "暂无用量",
+  "By model": "按模型统计",
+  "{calls} calls": "{calls} 次",
+  "{percent}% of {range}": "占{range} {percent}%",
+  "Tap a model to see its recent calls": "点模型卡查看最近调用",
+  "Call details": "调用明细",
+  "Latest 100 records": "最近 100 条",
+  "Failed · not counted": "失败 · 不计入",
+  Success: "成功",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "按接口实际返回的用量入账，输入、输出分开记。失败的调用记为 0，不计入总数。",
+  "Could not load usage": "无法加载用量",
+  "Today {runs} · {tokens} tokens": "今日 {runs} 次 · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "累计 {runs} 次运行 · {tokens} tokens",
+  "Change profile photo": "更换头像",
+  "The photo is too large. Choose a smaller photo.": "照片太大，请选一张小一点的照片。",
+  "Could not open the photo library.": "打不开相册。",
+  "Could not read that photo. Try another one.": "无法读取这张照片，请换一张试试。",
+  "Couldn't update profile photo": "头像更新失败",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

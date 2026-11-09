@@ -70,6 +70,11 @@ export function createHomeStyles() {
       fontSize: 15,
       fontWeight: "600",
     },
+    profilePhoto: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
     error: {
       color: native.secondaryLabel,
       paddingHorizontal: 20,

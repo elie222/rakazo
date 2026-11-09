@@ -1563,6 +1563,34 @@ export const DE_MESSAGES: Record<string, string> = {
   "Third-party access": "Zugriff von Drittanbietern",
   "For Anthropic-compatible servers, use the address without /v1.":
     "Für Anthropic-kompatible Server die Adresse ohne /v1 verwenden.",
+  "Usage details": "Nutzungsverlauf",
+  "Today's usage": "Heutige Nutzung",
+  "Total usage": "Gesamtnutzung",
+  tokens: "tokens",
+  "{requests} requests": "{requests} Anfragen",
+  "Input {input} · Output {output}": "Eingabe {input} · Ausgabe {output}",
+  "Last 7 days": "Letzte 7 Tage",
+  "No usage yet": "Noch keine Nutzung",
+  "By model": "Nach Modell",
+  "{calls} calls": "{calls} Aufrufe",
+  "{percent}% of {range}": "{percent} % von {range}",
+  "Tap a model to see its recent calls": "Tippe auf ein Modell für die letzten Aufrufe",
+  "Call details": "Aufrufdetails",
+  "Latest 100 records": "Letzte 100 Einträge",
+  "Failed · not counted": "Fehlgeschlagen · nicht gezählt",
+  Success: "Erfolgreich",
+  "Calls are counted from the usage the provider actually returned, input and output separately. Failed calls count as 0 and are not included in the totals.":
+    "Abgerechnet wird die vom Anbieter tatsächlich gemeldete Nutzung, Eingabe und Ausgabe getrennt. Fehlgeschlagene Aufrufe zählen als 0 und fließen nicht in die Summen ein.",
+  "Could not load usage": "Nutzung konnte nicht geladen werden",
+  "Today {runs} · {tokens} tokens": "Heute {runs} · {tokens} tokens",
+  "Total {runs} runs · {tokens} tokens": "Insgesamt {runs} Ausführungen · {tokens} tokens",
+  "Change profile photo": "Profilbild ändern",
+  "The photo is too large. Choose a smaller photo.":
+    "Das Foto ist zu groß. Wähle ein kleineres Foto.",
+  "Could not open the photo library.": "Die Fotomediathek konnte nicht geöffnet werden.",
+  "Could not read that photo. Try another one.":
+    "Dieses Foto konnte nicht gelesen werden. Versuche ein anderes.",
+  "Couldn't update profile photo": "Profilbild konnte nicht aktualisiert werden",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
