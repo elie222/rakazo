@@ -27,7 +27,7 @@ describe("system float window native contract", () => {
     expect(module).toContain('Name("RakazoSystemFloat")');
     expect(module).toContain('AsyncFunction("isSupported")');
     expect(module).toContain('AsyncFunction("hasOverlayPermission")');
-    expect(module).toContain("Settings.canDrawOverlays(appContext)");
+    expect(module).toContain("Settings.canDrawOverlays(appContext.reactContext)");
     expect(module).toContain('AsyncFunction("show")');
     expect(module).toContain("RakazoSystemFloatService.ACTION_SHOW");
     expect(module).toContain('AsyncFunction("updateUrl")');

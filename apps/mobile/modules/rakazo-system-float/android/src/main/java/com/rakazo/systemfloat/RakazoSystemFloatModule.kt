@@ -21,15 +21,16 @@ class RakazoSystemFloatModule : Module() {
     AsyncFunction("isSupported") { true }
 
     AsyncFunction("hasOverlayPermission") {
-      Settings.canDrawOverlays(appContext)
+      Settings.canDrawOverlays(appContext.reactContext)
     }
 
     Function("requestOverlayPermission") {
+      val context = appContext.reactContext
       val intent = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-        Uri.parse("package:${appContext.packageName}"),
+        Uri.parse("package:${context.packageName}"),
       ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      appContext.startActivity(intent)
+      context.startActivity(intent)
     }
 
     /**
@@ -38,17 +39,18 @@ class RakazoSystemFloatModule : Module() {
      * start — the caller falls back to the bubble or the in-app float.
      */
     AsyncFunction("show") { url: String, title: String, locale: String ->
-      if (!Settings.canDrawOverlays(appContext)) return@AsyncFunction false
+      val context = appContext.reactContext
+      if (!Settings.canDrawOverlays(context)) return@AsyncFunction false
       if (url.isBlank()) return@AsyncFunction false
-      val intent = Intent(appContext, RakazoSystemFloatService::class.java).apply {
+      val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_SHOW
         putExtra(RakazoSystemFloatService.EXTRA_URL, url)
         putExtra(RakazoSystemFloatService.EXTRA_TITLE, title)
         putExtra(RakazoSystemFloatService.EXTRA_LOCALE, locale)
       }
       return@AsyncFunction try {
-        if (Build.VERSION.SDK_INT >= 26) appContext.startForegroundService(intent)
-        else appContext.startService(intent)
+        if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
+        else context.startService(intent)
         true
       } catch (_: Exception) {
         // Starting a foreground service from the background is refused on
@@ -60,12 +62,13 @@ class RakazoSystemFloatModule : Module() {
     /** Points a running window at a new screen URL, for capability rotation. */
     AsyncFunction("updateUrl") { url: String ->
       if (url.isBlank()) return@AsyncFunction
-      val intent = Intent(appContext, RakazoSystemFloatService::class.java).apply {
+      val context = appContext.reactContext
+      val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_UPDATE_URL
         putExtra(RakazoSystemFloatService.EXTRA_URL, url)
       }
       try {
-        appContext.startService(intent)
+        context.startService(intent)
       } catch (_: Exception) {
         // The service is gone; the next show starts it again.
       }
@@ -73,11 +76,12 @@ class RakazoSystemFloatModule : Module() {
 
     /** Takes the window down, if it is up. */
     AsyncFunction("hide") {
-      val intent = Intent(appContext, RakazoSystemFloatService::class.java).apply {
+      val context = appContext.reactContext
+      val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_HIDE
       }
       try {
-        appContext.startService(intent)
+        context.startService(intent)
       } catch (_: Exception) {
         // Already gone.
       }
