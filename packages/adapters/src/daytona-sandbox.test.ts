@@ -10,6 +10,7 @@ import {
   DaytonaValidationError,
 } from "@daytona/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ComputerBrowserProvider } from "./computer-browser.js";
 import type { DaytonaSandbox, DaytonaSandboxSdk } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
@@ -27,6 +28,13 @@ describe("DaytonaSandboxProvider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
+  });
+
+  it("offers native page tools on the bot's existing desktop", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const browser = new ComputerBrowserProvider({ sandbox: provider });
+    expect(browser.describe().capabilities.page).toBe(true);
   });
 
   it("forwards an optional snapshot name to create()", async () => {
