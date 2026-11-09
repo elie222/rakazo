@@ -340,6 +340,16 @@ describe("purchase detection in the page helper", () => {
     expect(none.intent("Pay now")?.amount).toBe("");
   });
 
+  it("keeps the separator of an amount with no whole part", () => {
+    expect(page(`<button>Pay $.99</button>`).intent("Pay $.99")?.amount).toBe("$.99");
+    const after = page(`<p>Total: .99 USD</p><button>Pay now</button>`);
+    expect(after.intent("Pay now")?.amount).toBe(".99 USD");
+    const comma = page(`<p>Total: ,50 €</p><button>Pay now</button>`);
+    expect(comma.intent("Pay now")?.amount).toBe(",50 €");
+    const before = page(`<p>Total: €,50</p><button>Pay now</button>`);
+    expect(before.intent("Pay now")?.amount).toBe("€,50");
+  });
+
   it("flags a script-driven control worded as a final step on a page with no card", () => {
     const { intent } = page(`<div onclick="charge()">Pay $5</div>`);
     expect(intent("Pay $5")?.reason).toBe("final_step");
