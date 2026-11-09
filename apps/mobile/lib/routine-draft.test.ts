@@ -102,6 +102,22 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest(removed, mailed, "bot-1", "UTC")).toEqual({ error: "trigger" });
   });
 
+  it("removes a trigger set up on web, and needs another once the last one goes", () => {
+    const hooked = { ...routine, crons: [], webhookEnabled: true, githubEnabled: true };
+    const opened = draftFromRoutine(hooked);
+    expect(
+      routineSaveRequest({ ...opened, webhookEnabled: false }, hooked, "bot-1", "UTC"),
+    ).toEqual({ update: { routineId: "routine-1", webhookEnabled: false } });
+    expect(
+      routineSaveRequest(
+        { ...opened, webhookEnabled: false, githubEnabled: false },
+        hooked,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ error: "trigger" });
+  });
+
   it("never rewrites a one-shot's schedule", () => {
     const once = { ...routine, crons: ["@once"] };
     const draft = { ...draftFromRoutine(once), name: "Call Dana" };

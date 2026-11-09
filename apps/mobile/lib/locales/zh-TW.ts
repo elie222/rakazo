@@ -467,7 +467,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Name this routine.": "為此例行任務命名。",
   "New routine": "新增例行任務",
   "Remove schedule": "移除排程",
-  "Test run": "測試執行",
+  "Run now": "立即執行",
   "Time of day": "時間",
   Unit: "單位",
   "When to run": "何時執行",

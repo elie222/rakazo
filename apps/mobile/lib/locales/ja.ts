@@ -574,7 +574,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Name this routine.": "ルーティンに名前を付けてください。",
   "New routine": "新しいルーティン",
   "Remove schedule": "スケジュールを削除",
-  "Test run": "テスト実行",
+  "Run now": "今すぐ実行",
   "Time of day": "時刻",
   Unit: "単位",
   "When to run": "実行タイミング",

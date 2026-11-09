@@ -586,7 +586,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Name this routine.": "Geef deze routine een naam.",
   "New routine": "Nieuwe routine",
   "Remove schedule": "Schema verwijderen",
-  "Test run": "Testrun",
+  "Run now": "Nu uitvoeren",
   "Time of day": "Tijdstip van de dag",
   Unit: "Eenheid",
   "When to run": "Wanneer uitvoeren",

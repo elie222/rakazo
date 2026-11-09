@@ -591,7 +591,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Name this routine.": "Gib der Routine einen Namen.",
   "New routine": "Neue Routine",
   "Remove schedule": "Zeitplan entfernen",
-  "Test run": "Testlauf",
+  "Run now": "Jetzt ausführen",
   "Time of day": "Uhrzeit",
   Unit: "Einheit",
   "When to run": "Ausführungszeit",
