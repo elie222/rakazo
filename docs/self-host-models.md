@@ -10,11 +10,11 @@ English | [简体中文](./zh-CN/self-host-models.md)
 The deployment model is used by anyone who has not connected a model of their own. `PI_DEFAULT_PROVIDER`
 picks the provider and `PI_DEFAULT_MODEL` the model:
 
-| `PI_DEFAULT_PROVIDER` | Key | Default model |
-| --- | --- | --- |
+| `PI_DEFAULT_PROVIDER`  | Key                  | Default model                |
+| ---------------------- | -------------------- | ---------------------------- |
 | `openrouter` (default) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
+| `anthropic`            | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
+| `deepseek`             | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
 
 Pick a vision-capable model so screenshot computer tools stay available.
 

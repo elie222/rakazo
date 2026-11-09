@@ -8,13 +8,13 @@ Docker images triggers from the same tag.
 
 macOS (required):
 
-| Secret | Value |
-| --- | --- |
-| `DESKTOP_MAC_CSC_LINK` | Base64 of the `Developer ID Application` certificate exported as `.p12` |
-| `DESKTOP_MAC_CSC_KEY_PASSWORD` | Password used when exporting the `.p12` |
-| `APPLE_API_KEY_ID` | App Store Connect API key ID (the `XXXXXXXXXX` in `AuthKey_XXXXXXXXXX.p8`) |
-| `APPLE_API_ISSUER` | Issuer ID shown on App Store Connect > Users and Access > Integrations |
-| `APPLE_API_KEY_P8` | Contents of the `AuthKey_*.p8` file |
+| Secret                         | Value                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `DESKTOP_MAC_CSC_LINK`         | Base64 of the `Developer ID Application` certificate exported as `.p12`    |
+| `DESKTOP_MAC_CSC_KEY_PASSWORD` | Password used when exporting the `.p12`                                    |
+| `APPLE_API_KEY_ID`             | App Store Connect API key ID (the `XXXXXXXXXX` in `AuthKey_XXXXXXXXXX.p8`) |
+| `APPLE_API_ISSUER`             | Issuer ID shown on App Store Connect > Users and Access > Integrations     |
+| `APPLE_API_KEY_P8`             | Contents of the `AuthKey_*.p8` file                                        |
 
 The API key needs the Developer role. The workflow writes it to a mode 600 file
 in the runner's temp directory for the packaging step and deletes it afterwards.
@@ -33,17 +33,17 @@ release's Azure login step. This repository's OIDC subject includes owner and
 repository IDs, so the plain `repo:<owner>/<repo>:environment:desktop-release`
 form does not match.
 
-| Secret | Value |
-| --- | --- |
-| `DESKTOP_WIN_AZURE_TENANT_ID` | Directory (tenant) ID of the app registration |
+| Secret                        | Value                                           |
+| ----------------------------- | ----------------------------------------------- |
+| `DESKTOP_WIN_AZURE_TENANT_ID` | Directory (tenant) ID of the app registration   |
 | `DESKTOP_WIN_AZURE_CLIENT_ID` | Application (client) ID of the app registration |
 
-| Variable | Value |
-| --- | --- |
+| Variable                       | Value                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------- |
 | `DESKTOP_WIN_SIGNING_ENDPOINT` | The signing account's URI, such as `https://eus.codesigning.azure.net/` |
-| `DESKTOP_WIN_SIGNING_ACCOUNT` | The signing account name |
-| `DESKTOP_WIN_SIGNING_PROFILE` | The certificate profile name |
-| `DESKTOP_WIN_PUBLISHER` | The certificate's common name, exactly as validated |
+| `DESKTOP_WIN_SIGNING_ACCOUNT`  | The signing account name                                                |
+| `DESKTOP_WIN_SIGNING_PROFILE`  | The certificate profile name                                            |
+| `DESKTOP_WIN_PUBLISHER`        | The certificate's common name, exactly as validated                     |
 
 When `DESKTOP_WIN_AZURE_CLIENT_ID` is unset the Windows installer ships
 unsigned, and Windows shows a SmartScreen warning on first launch. Unsigned

@@ -12,8 +12,7 @@ x-logging: &logging
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}

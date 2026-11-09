@@ -24,19 +24,19 @@ Run `pnpm install --frozen-lockfile` when you need to run or test the worktree.
 
 ## Checks before you open a PR
 
-| Command | When to run |
-| --- | --- |
-| `pnpm test` | Default. Units, properties, and in-process contracts. Scripted runtime, fake sandbox, in-memory wakeup — no live connector or model-provider calls. |
-| `pnpm test:integration` | Postgres via Testcontainers: product journeys, authorization, executor lifecycle, Graphile / LISTEN/NOTIFY. Needs Docker. |
-| `pnpm test:e2e` | Playwright against the emulated API. Needs Docker. |
-| `pnpm test:topology` | Local product-path smoke: Docker computer + Graphile worker recovery. Needs Docker. Not PR CI. |
-| `pnpm test:canary` | Live provider canaries. Needs keys. Not PR CI. |
-| `pnpm test:pi` | Real Pi against a local HTTP model fixture: streaming, tool round trips, failures and cancellation. No keys. |
-| `pnpm test:computer-replay` | Real Pi and Docker Chromium against a local model fixture. Needs the computer image; no keys or Electron windows. |
-| `pnpm test:evals --list` | List agent-quality cases. Add `--live` and a model connection to measure repeated real-model task success. |
-| `pnpm test:computer` | Real vision model + E2B desktop. Needs keys; see [computer verification](docs/computer-runtime.md#verification). Not PR CI. |
-| `pnpm check` | TypeScript (`tsc`) across the monorepo. |
-| `pnpm lint` | Biome lint and format check. |
+| Command                     | When to run                                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                 | Default. Units, properties, and in-process contracts. Scripted runtime, fake sandbox, in-memory wakeup — no live connector or model-provider calls. |
+| `pnpm test:integration`     | Postgres via Testcontainers: product journeys, authorization, executor lifecycle, Graphile / LISTEN/NOTIFY. Needs Docker.                           |
+| `pnpm test:e2e`             | Playwright against the emulated API. Needs Docker.                                                                                                  |
+| `pnpm test:topology`        | Local product-path smoke: Docker computer + Graphile worker recovery. Needs Docker. Not PR CI.                                                      |
+| `pnpm test:canary`          | Live provider canaries. Needs keys. Not PR CI.                                                                                                      |
+| `pnpm test:pi`              | Real Pi against a local HTTP model fixture: streaming, tool round trips, failures and cancellation. No keys.                                        |
+| `pnpm test:computer-replay` | Real Pi and Docker Chromium against a local model fixture. Needs the computer image; no keys or Electron windows.                                   |
+| `pnpm test:evals --list`    | List agent-quality cases. Add `--live` and a model connection to measure repeated real-model task success.                                          |
+| `pnpm test:computer`        | Real vision model + E2B desktop. Needs keys; see [computer verification](docs/computer-runtime.md#verification). Not PR CI.                         |
+| `pnpm check`                | TypeScript (`tsc`) across the monorepo.                                                                                                             |
+| `pnpm lint`                 | Biome lint and format check.                                                                                                                        |
 
 PR CI always runs `pnpm lint`. Typechecks and unit tests target affected packages and
 their dependents unless a change requires checking all packages. Production builds
@@ -119,8 +119,8 @@ capability config, fixtures, logs, or snapshots; use the encrypted secret store 
 
 ## Contact
 
-| Address | Use for |
-| --- | --- |
+| Address                                           | Use for                                               |
+| ------------------------------------------------- | ----------------------------------------------------- |
 | [security@rakazo.com](mailto:security@rakazo.com) | Vulnerabilities only — see [SECURITY.md](SECURITY.md) |
-| [support@rakazo.com](mailto:support@rakazo.com) | User and support questions |
-| [elie@rakazo.com](mailto:elie@rakazo.com) | Maintainer |
+| [support@rakazo.com](mailto:support@rakazo.com)   | User and support questions                            |
+| [elie@rakazo.com](mailto:elie@rakazo.com)         | Maintainer                                            |

@@ -44,7 +44,7 @@
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.6",
     "@types/node": "24.19.2",
     "cross-env": "10.1.0",
     "esbuild": "0.28.2",
