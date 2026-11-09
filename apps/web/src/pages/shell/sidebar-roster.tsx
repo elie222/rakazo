@@ -60,6 +60,7 @@ export function SidebarRoster({
   displayedRunError,
   draggedBotId,
   setDraggedBotId,
+  reorderable,
   botMenu,
   setBotMenu,
   reorderRosterBot,
@@ -92,6 +93,8 @@ export function SidebarRoster({
   displayedRunError: string | null;
   draggedBotId: string | null;
   setDraggedBotId: (id: string | null) => void;
+  /** False when the list is ordered by activity, so hand-sorting would have no visible effect. */
+  reorderable: boolean;
   botMenu: { kind: "bot" | "group"; id: string } | null;
   setBotMenu: Dispatch<SetStateAction<{ kind: "bot" | "group"; id: string } | null>>;
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
@@ -333,7 +336,7 @@ export function SidebarRoster({
                 const chatTrigger = (
                   <ContextMenuTrigger
                     render={<button type="button" />}
-                    draggable={item.kind === "bot"}
+                    draggable={reorderable && item.kind === "bot"}
                     data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
                     data-roster-unread={item.chat.unread ? "true" : undefined}
                     data-roster-error={rowError && (compact || mini) ? "true" : undefined}
@@ -352,7 +355,7 @@ export function SidebarRoster({
                         : undefined
                     }
                     aria-keyshortcuts={
-                      item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                      reorderable && item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
                     }
                     onDragStart={(event) => {
                       if (item.kind !== "bot") return;
@@ -381,6 +384,7 @@ export function SidebarRoster({
                     data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
                     onKeyDown={(event) => {
                       if (
+                        !reorderable ||
                         item.kind !== "bot" ||
                         !event.altKey ||
                         (event.key !== "ArrowUp" && event.key !== "ArrowDown")

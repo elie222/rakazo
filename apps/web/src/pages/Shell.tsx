@@ -49,6 +49,7 @@ import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
+import { botsSidebarOrderPreference } from "../lib/bots-sidebar-order-pref";
 import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
 import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
@@ -195,6 +196,7 @@ function SpaceShell() {
   const { snapshot } = thread;
   const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
+  const botsSidebarOrder = botsSidebarOrderPreference.use();
   const enterToSend = composerEnterToSendPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
@@ -574,10 +576,14 @@ function SpaceShell() {
       sidebarGroupsForSpaces(
         sidebarSpaces,
         miniSidebar ? "" : search.query,
-        { pinned: t`Pinned`, unassigned: t`Unassigned` },
+        {
+          pinned: t`Pinned`,
+          unassigned: botsSidebarOrder === "activity" ? t`Recent` : t`Unassigned`,
+        },
         snoozeNow,
+        botsSidebarOrder,
       ),
-    [sidebarSpaces, search.query, miniSidebar, t, snoozeNow],
+    [sidebarSpaces, search.query, miniSidebar, t, snoozeNow, botsSidebarOrder],
   );
   // The Dock badge ignores the roster search box: a filter must not hide unread chats.
   const unreadChatCount = useMemo(
@@ -977,6 +983,7 @@ function SpaceShell() {
             active={active}
             activeGroup={activeGroup}
             botsSidebarDensity={botsSidebarDensity}
+            reorderable={botsSidebarOrder === "sections"}
             dismissedRunErrorIds={composer.dismissedRunErrorIds}
             displayedRunError={composer.displayedRunError}
             draggedBotId={rosterDrop.draggedBotId}

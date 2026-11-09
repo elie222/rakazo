@@ -8,8 +8,9 @@ function chat(id: string, name: string) {
     title: "",
     preview: "",
     pinned: false,
-    sectionId: null,
+    sectionId: null as string | null,
     parentBotId: null,
+    updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -139,6 +140,24 @@ describe("sidebarGroupsForSpaces", () => {
     expect(
       sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "missing"),
     ).toEqual([]);
+  });
+
+  it("lists chats newest first without sections when ordered by activity", () => {
+    const at = (hour: number) => `2026-01-01T${String(hour).padStart(2, "0")}:00:00.000Z`;
+    const input = {
+      ...space("space-1", "Personal"),
+      bots: [
+        { ...chat("old", "Old"), sectionId: "s1", updatedAt: at(8) },
+        { ...chat("new", "New"), updatedAt: at(11) },
+        { ...chat("pin", "Pin"), pinned: true, updatedAt: at(7) },
+      ],
+      botSections: [{ id: "s1", name: "Projects" }],
+    };
+    const groups = sidebarGroupsForSpaces([input], "", undefined, Date.now(), "activity");
+    expect(groups.map((group) => [group.key, group.bots.map((item) => item.chat.id)])).toEqual([
+      ["pinned", ["pin"]],
+      ["unassigned", ["new", "old"]],
+    ]);
   });
 });
 

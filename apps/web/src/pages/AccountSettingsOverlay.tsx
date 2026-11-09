@@ -47,6 +47,8 @@ import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
+import type { BotsSidebarOrder } from "../lib/bots-sidebar-order-pref";
+import { botsSidebarOrderPreference } from "../lib/bots-sidebar-order-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
@@ -133,6 +135,8 @@ export function GeneralSettingsPanels({
   );
   const sidebarDensity = botsSidebarDensityPreference.use();
   const sidebarDensityLabelId = useId();
+  const sidebarOrder = botsSidebarOrderPreference.use();
+  const sidebarOrderLabelId = useId();
   const botStyleLabelId = useId();
   const [botStyleError, setBotStyleError] = useState<string | null>(null);
   const streamReplies = responseStreamingPreference.use();
@@ -345,6 +349,40 @@ export function GeneralSettingsPanels({
                 className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
               >
                 <Trans>Compact</Trans>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          }
+        />
+        <SettingsRow
+          label={
+            <span id={sidebarOrderLabelId}>
+              <Trans>Sidebar order</Trans>
+            </span>
+          }
+          control={
+            <ToggleGroup
+              aria-labelledby={sidebarOrderLabelId}
+              data-testid="bots-sidebar-order-select"
+              value={[sidebarOrder]}
+              onValueChange={([next]) => {
+                if (next) botsSidebarOrderPreference.set(next as BotsSidebarOrder);
+              }}
+              spacing={1}
+              className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+            >
+              <ToggleGroupItem
+                value="sections"
+                data-testid="bots-sidebar-order-sections"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>Sections</Trans>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="activity"
+                data-testid="bots-sidebar-order-activity"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>Recent activity</Trans>
               </ToggleGroupItem>
             </ToggleGroup>
           }

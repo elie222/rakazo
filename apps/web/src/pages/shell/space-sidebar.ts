@@ -7,6 +7,7 @@ type SidebarChat = {
   pinned: boolean;
   sectionId: string | null;
   snoozedUntil?: string | null;
+  updatedAt: string;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -44,6 +45,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
   query: string,
   labels?: { pinned: string; unassigned: string },
   now = Date.now(),
+  order: "sections" | "activity" = "sections",
 ) {
   const needle = query.toLowerCase();
   const showSpaceNames = spaces.length > 1;
@@ -52,27 +54,32 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     needle
       ? `${chat.name} ${chat.preview ?? ""}`.toLowerCase().includes(needle)
       : !chatSnoozed(chat, now);
+  const byActivity = order === "activity";
   return spaces.flatMap((space) => {
+    // Activity order hides sections and lists every chat by its last message, newest first.
+    const botSections = byActivity ? [] : space.botSections;
     const visibleBots = space.bots.filter(listed);
     const visibleGroups = space.groups.filter(listed);
+    const items = [
+      ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
+      ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
+    ];
+    if (byActivity) items.sort((a, b) => b.chat.updatedAt.localeCompare(a.chat.updatedAt));
     const grouped = groupBotsForSidebar(
-      [
-        ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
-        ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
-      ].map((item) => ({
+      items.map((item) => ({
         ...item,
         id: item.chat.id,
         pinned: item.chat.pinned,
-        sectionId: item.chat.sectionId,
+        sectionId: byActivity ? null : item.chat.sectionId,
         woke: chatWoke(item.chat, now),
       })),
-      space.botSections,
+      botSections,
       { labels },
     );
     // Keep destinations visible after their last bot is dragged out. Search
     // still hides empty lists, and spaces without sections keep their old layout.
-    if (!needle && space.botSections.length > 0 && grouped.length > 0) {
-      for (const section of space.botSections) {
+    if (!needle && botSections.length > 0 && grouped.length > 0) {
+      for (const section of botSections) {
         const key = `section:${section.id}`;
         if (!grouped.some((group) => group.key === key)) {
           grouped.push({ key, title: section.name, bots: [] });
@@ -83,7 +90,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       }
       const order = [
         "pinned",
-        ...space.botSections.map((section) => `section:${section.id}`),
+        ...botSections.map((section) => `section:${section.id}`),
         "unassigned",
       ];
       grouped.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
@@ -109,7 +116,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     // renamed or deleted after their last chat leaves.
     const emptySections = needle
       ? []
-      : space.botSections.map((section) => ({
+      : botSections.map((section) => ({
           key: showSpaceNames ? `space:${space.id}:section:${section.id}` : `section:${section.id}`,
           title: showSpaceNames ? space.name : section.name,
           subtitle: showSpaceNames ? section.name : undefined,
