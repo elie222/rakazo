@@ -184,8 +184,12 @@ export const ServicePromptBody = z.strictObject({
 });
 
 const promptAccepted = z.object({
-  taskId: z.string(),
-  runId: z.string(),
+  /** Null until the message has a run of its own. */
+  taskId: z.string().nullable(),
+  runId: z.string().nullable(),
+  /** The bot was busy, so the message is waiting for a run of its own. */
+  held: z.boolean(),
+  messageId: z.string(),
   seq: z.number().int(),
   idempotencyKey: z.string(),
 });
