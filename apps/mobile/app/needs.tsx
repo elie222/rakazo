@@ -1,5 +1,5 @@
 import type { AttentionItem } from "@rakazo/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -26,20 +26,19 @@ import {
 } from "../lib/attention";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
-import { rpcQuery } from "../lib/query";
+import { queryClient, rpcQuery } from "../lib/query";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NeedsYouScreen() {
   const { t } = useI18n();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
   const insets = useSafeAreaInsets();
   const tokens = mobileTokens();
   const attentionQuery = rpcQuery("attention/list");
-  const query = useQuery(attentionQuery);
+  const query = useQuery(attentionQuery, queryClient);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const items = query.data?.items ?? [];
