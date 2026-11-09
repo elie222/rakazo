@@ -72,6 +72,19 @@ describe("connected-apps eval graders", () => {
       thread_id: mailThreadId("juniper-update"),
     });
     expect(failing(c, evidence(copied))).toContain("one-reply-draft");
+    // Marking the client's email read is not sending or sharing anything.
+    const markedRead = world(c);
+    markedRead.files!.call("read_file", { file_id: fileId("juniper-proposal-v3") });
+    markedRead.mail!.call("modify_thread_labels", {
+      thread_id: mailThreadId("juniper-update"),
+      remove_labels: ["UNREAD"],
+    });
+    markedRead.mail!.call("create_draft", {
+      to: DANA,
+      body: v3,
+      thread_id: mailThreadId("juniper-update"),
+    });
+    expect(failing(c, evidence(markedRead))).toEqual([]);
     expect(run(`Hi Dana, v3: ${facts.proposalV3Url}`, true)).toEqual([
       "one-reply-draft",
       "links-latest-proposal",

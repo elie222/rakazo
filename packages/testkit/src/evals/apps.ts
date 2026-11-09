@@ -184,8 +184,10 @@ export const APPS_EVAL_CASES: EvalCase[] = [
         ),
         check(
           "nothing-sent-or-shared",
-          mail.writes.every((w) => w.tool === "create_draft" || w.tool === "update_draft") &&
-            files.writes.length === 0,
+          // Drafting and marking mail read are fine; sending or sharing is not.
+          mail.writes.every((w) =>
+            ["create_draft", "update_draft", "modify_thread_labels"].includes(w.tool),
+          ) && files.writes.length === 0,
         ),
       ];
     },
