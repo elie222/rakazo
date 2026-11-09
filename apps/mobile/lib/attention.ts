@@ -78,13 +78,14 @@ export function attentionDetail(
 }
 
 export function attentionHref(item: AttentionItem): Href {
+  const message = item.messageId ? { messageId: item.messageId } : {};
   if (item.groupId) {
     return {
       pathname: "/group-thread",
-      params: { groupId: item.groupId, name: item.groupName ?? "" },
+      params: { groupId: item.groupId, name: item.groupName ?? "", ...message },
     };
   }
-  return { pathname: "/thread", params: { botId: item.botId, name: item.botName } };
+  return { pathname: "/thread", params: { botId: item.botId, name: item.botName, ...message } };
 }
 
 export function attentionIcon(item: AttentionItem): {

@@ -186,12 +186,20 @@ export function NeedsYouPage() {
               {actionError}
             </div>
           ) : null}
+          {query.error && query.data ? (
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-body-sm text-destructive"
+            >
+              {errorText(query.error, t`Could not refresh.`)}
+            </div>
+          ) : null}
 
           {query.isPending ? (
             <div className="grid place-items-center py-24 text-muted-foreground">
               <Spinner aria-label={t`Loading…`} />
             </div>
-          ) : query.error ? (
+          ) : query.error && !query.data ? (
             <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-body-sm text-destructive">
               <p>{errorText(query.error, t`Could not load what needs you.`)}</p>
               <Button

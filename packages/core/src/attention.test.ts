@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AttentionActionSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   attentionActionsForBlock,
@@ -75,6 +76,18 @@ describe("attention cards", () => {
       }),
     ).toEqual([{ id: "choice-1", label: "Berlin", answer: "choice-1", tone: "secondary" }]);
     expect(attentionActionsForBlock(secret)).toEqual([]);
+  });
+
+  it("fits an approval label into the attention action contract", () => {
+    const actions = attentionActionsForBlock({
+      kind: "ask",
+      text: "Read the page",
+      status: "pending",
+      actions: [{ id: "always", label: `Always allow ${"a".repeat(240)}.example.test` }],
+    });
+    expect(actions).toHaveLength(1);
+    expect(() => AttentionActionSchema.parse(actions[0])).not.toThrow();
+    expect(actions[0]!.label.length).toBeLessThanOrEqual(120);
   });
 
   it("groups kinds into the three inbox sections", () => {

@@ -9,6 +9,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 import { activityPreview } from "./runs.js";
 
 const FAILED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -220,21 +221,26 @@ export async function listAttentionItems(
     }),
   ]);
 
-  const messages = waitingRuns.length
-    ? (
-        await Promise.all(
-          waitingRuns.map((run) =>
-            prisma.message.findMany({
-              where: { runId: run.id },
-              select: { id: true, runId: true, blocks: true },
-              orderBy: { seq: "desc" },
-              take: MESSAGES_PER_RUN,
-            }),
-          ),
-        )
-      ).flat()
+  // One window query picks the newest messages per run, then the model read decrypts their
+  // blocks. A query per run would fan out on every poll; a raw read alone skips decryption.
+  const recentMessageIds = waitingRuns.length
+    ? await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY "runId" ORDER BY seq DESC) AS rn
+          FROM messages
+          WHERE "runId" IN (${Prisma.join(waitingRuns.map((run) => run.id))})
+        ) ranked
+        WHERE rn <= ${MESSAGES_PER_RUN}
+      `
     : [];
-
+  const messages = recentMessageIds.length
+    ? await prisma.message.findMany({
+        where: { id: { in: recentMessageIds.map((row) => row.id) } },
+        select: { id: true, runId: true, blocks: true },
+        orderBy: [{ runId: "asc" }, { seq: "desc" }],
+      })
+    : [];
   const pendingCardByRun = new Map<string, { messageId: string; block: MessageBlock }>();
   for (const message of messages) {
     if (!message.runId || pendingCardByRun.has(message.runId)) continue;

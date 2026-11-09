@@ -1,5 +1,6 @@
 import type { AttentionAction, AttentionItem, MessageBlock } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { truncatePlainText } from "./markdown-plain.js";
 
 export type AttentionBlockKind = "question" | "approval" | "secret";
 
@@ -27,7 +28,8 @@ export function attentionActionsForBlock(block: MessageBlock): AttentionAction[]
   const approval = isApprovalAskBlock(block);
   return (block.actions ?? []).map((action) => ({
     id: action.id,
-    label: action.label,
+    // An approval label interpolates the site it allows; existing cards have no length cap.
+    label: truncatePlainText(action.label, 120),
     answer: action.id,
     // Only an approval has a recommended answer; a question's choices are equal.
     tone: approval ? actionTone(action.id) : ("secondary" as const),

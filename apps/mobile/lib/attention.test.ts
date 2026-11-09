@@ -64,12 +64,12 @@ it("falls back to calm detail copy only when the server has none", () => {
 it("opens the group chat or the bot chat", () => {
   expect(attentionHref(item({ kind: "question" }))).toEqual({
     pathname: "/thread",
-    params: { botId: "bot-1", name: "Scout" },
+    params: { botId: "bot-1", name: "Scout", messageId: "message-1" },
   });
   expect(
     attentionHref(item({ kind: "approval", groupId: "group-1", groupName: "Launch team" })),
   ).toEqual({
     pathname: "/group-thread",
-    params: { groupId: "group-1", name: "Launch team" },
+    params: { groupId: "group-1", name: "Launch team", messageId: "message-1" },
   });
 });

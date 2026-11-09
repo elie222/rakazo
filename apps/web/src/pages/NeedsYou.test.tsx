@@ -148,3 +148,39 @@ it("shows the calm empty state when nothing waits", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps loaded cards when a refresh fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.attention.list
+    .mockResolvedValueOnce({ items: [baseItem] })
+    .mockRejectedValueOnce(new Error("refresh broke"));
+  api.bootstrap.mockResolvedValue({ bots: [{ id: "bot-1", name: "Scout" }], groups: [] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <NeedsYouPage />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Scout needs an answer"));
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["attention"] });
+    });
+
+    await settle();
+    expect(container.textContent).toContain("Scout needs an answer");
+    expect(container.textContent).toContain("refresh broke");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
