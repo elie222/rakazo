@@ -6,9 +6,7 @@ import type {
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  ScrollView,
   ScrollViewInstance,
-  View,
   ViewInstance,
 } from "react-native";
 import { Platform } from "react-native";
