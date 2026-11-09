@@ -1159,6 +1159,7 @@ model Message {
   @@index([replyToMessageId])
   @@index([runId, seq])
   @@index([searchTokens], type: Gin)
+  // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
 }
 

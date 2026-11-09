@@ -49,8 +49,7 @@ describe("local history retrieval", () => {
         messageId: "message-4",
         ...(crossChat ? { threadId: "peer-thread" } : {}),
       });
-      // The empty search also checks this chat (call 1) for earlier tool work, so that check
-      // never takes the cross-chat path.
+      // The empty search also checks for earlier tool work (call 1) in the scope it searched.
       expect(mock.$queryRaw).toHaveBeenCalledTimes(5);
       for (let call = 0; call < 5; call++) {
         const query = sql(mock, call);
@@ -59,7 +58,7 @@ describe("local history retrieval", () => {
         expect(query.sql).toContain('pending."messageId" = m.id AND pending."botId" =');
         expect(query.sql).toContain('pending."runId" IS NULL');
         expect(query.values).toContain(scope.botId);
-        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat && call !== 1);
+        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat);
       }
     },
   );
@@ -447,6 +446,13 @@ describe("local history retrieval", () => {
       { query: "extension", scope: "my_chats" },
     );
     expect(allChats.note).toContain('scope "my_chats", kinds ["tool_work"] and no query');
+    // That check covers every chat the search could reach, not only this one.
+    const crossChatCheck = sql(mock, 7);
+    expect(crossChatCheck.sql).toContain('COALESCE(t."botId",');
+    expect(crossChatCheck.sql).toContain(
+      `m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')`,
+    );
+    expect(crossChatCheck.values).not.toContain(scope.threadId);
     // A continued search that ends empty says only that nothing more matched.
     mock.$queryRaw.mockReset().mockResolvedValue([]);
     const continued = await searchHistory(prisma, scope, { query: "extension", beforeSeq: 40 });
