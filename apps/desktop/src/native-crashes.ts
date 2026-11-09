@@ -58,6 +58,7 @@ export function configureNativeCrashReporting(base: string, next: Capture): void
           ...memory.tags(contents.id, contents.getURL(), Date.now()),
           "native.crash": "true",
         });
+      memory.forget(contents.id);
     });
     setInterval(sampleRendererMemory, 60_000).unref();
     app.on("child-process-gone", (_event, details) => {
@@ -109,6 +110,7 @@ export function configureNativeCrashReporting(base: string, next: Capture): void
 export function disableNativeCrashReporting(): void {
   epoch++;
   capture = undefined;
+  memory.clear();
   const file = path.join(app.getPath("userData"), "native-crash-checkpoint.json");
   writes = writes
     .then(() => writePrivateFile(file, JSON.stringify({ checkedAt: Date.now(), enabled: false })))

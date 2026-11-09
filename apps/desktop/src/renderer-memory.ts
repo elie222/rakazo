@@ -40,7 +40,7 @@ export function createRendererMemoryHistory() {
     /** Returns true once per renderer process when it first crosses the high-memory mark. */
     record(contentsId: number, metric: RendererMetric): boolean {
       let history = histories.get(contentsId);
-      if (!history || history.pid !== metric.pid) {
+      if (!history || history.pid !== metric.pid || history.creationTime !== metric.creationTime) {
         history = {
           pid: metric.pid,
           creationTime: metric.creationTime,
@@ -54,6 +54,13 @@ export function createRendererMemoryHistory() {
       if (history.warned || metric.memoryMb < HIGH_MEMORY_MB) return false;
       history.warned = true;
       return true;
+    },
+    /** The renderer process ended; a replacement must not inherit its samples. */
+    forget(contentsId: number): void {
+      histories.delete(contentsId);
+    },
+    clear(): void {
+      histories.clear();
     },
     retain(contentsIds: Set<number>): void {
       for (const id of histories.keys()) if (!contentsIds.has(id)) histories.delete(id);

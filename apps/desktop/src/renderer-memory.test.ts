@@ -17,7 +17,11 @@ describe("renderer route", () => {
 
 describe("renderer memory history", () => {
   const url = "https://app.example.com/app/clx9f2k3m0000abcd";
-  const metric = (memoryMb: number, pid = 10) => ({ pid, creationTime: 0, memoryMb });
+  const metric = (memoryMb: number, pid = 10, creationTime = 0) => ({
+    pid,
+    creationTime,
+    memoryMb,
+  });
 
   it("keeps the last ten samples with uptime and route", () => {
     const history = createRendererMemoryHistory();
@@ -45,5 +49,22 @@ describe("renderer memory history", () => {
     history.retain(new Set([2]));
     expect(history.tags(1, url, 0)).toEqual({ "renderer.route": "/app/:id" });
     expect(history.tags(2, url, 0)["renderer.memory_mb"]).toBe("200");
+  });
+
+  it("starts over for a replacement process, even one that reuses the PID", () => {
+    const history = createRendererMemoryHistory();
+    history.record(1, metric(2100));
+    expect(history.record(1, metric(2200, 10, 5_000))).toBe(true);
+    expect(history.tags(1, url, 5_000)["renderer.memory_mb"]).toBe("2200");
+  });
+
+  it("drops a gone or no longer reported renderer's history", () => {
+    const history = createRendererMemoryHistory();
+    history.record(1, metric(100));
+    history.record(2, metric(200, 20));
+    history.forget(1);
+    expect(history.tags(1, url, 0)).toEqual({ "renderer.route": "/app/:id" });
+    history.clear();
+    expect(history.tags(2, url, 0)).toEqual({ "renderer.route": "/app/:id" });
   });
 });
