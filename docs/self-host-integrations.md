@@ -133,6 +133,13 @@ API and worker.
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
 base URL; Rakazo appends `api/search`.
 
+Integrations lists plugins from the public plugin registries. `PLUGIN_REGISTRIES_ENABLED=false`
+leaves them out. `PLUGIN_ARCHIVES` lists your own plugins: `.tar.gz` URLs separated by commas, each
+ending `#sha256=<hex>` (the hash of the archive file). Each archive holds one plugin with its
+manifest at the root, as `tar czf plugin.tar.gz -C my-plugin .` makes it. The API downloads only
+the archives listed, from any address it can reach, including your own network, and refuses one
+whose hash differs.
+
 ## Messaging apps
 
 Optional messaging platforms (iMessage through Sendblue or Photon, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking works on iMessage and Telegram (see the Telegram privacy note below); WhatsApp and Feishu/Lark are direct-only, and Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each. Photon works the same way: each extra project (`PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>`, and `PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks) gives the person a different number, mounted as provider `photon-<name>`. Photon receives iMessage over an outbound stream from the API, so it works on a server with no public URL; on Photon's shared lines the person texts first, and group chats are not available.

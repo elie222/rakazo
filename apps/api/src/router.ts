@@ -23,6 +23,7 @@ import type {
   MessagingInstallations,
   PiOAuthLogins,
   PluginRepoFetcher,
+  PluginSources,
   PluginTextReader,
   ProviderCatalogCache,
   PushTokenStore,
@@ -147,6 +148,7 @@ export interface RouterDeps {
     sandboxProvider: string;
     gitSha?: string;
     integrationsCatalogUrl?: string;
+    pluginSources?: PluginSources;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
     computerSettingsEnabled?: boolean;

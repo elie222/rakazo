@@ -1,13 +1,14 @@
 /** Portable plugin parsing plus a bounded, public-GitHub acquisition adapter.
  * No repository code is executed and no files are written to the host. */
 import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
 import { buildSkillMd, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
-import { fetchSafeWebText } from "./web-ssrf.js";
+import { fetchSafeWebText, readBodyCapped } from "./web-ssrf.js";
 
 export type PluginSourceRef = { gitUrl: string; ref?: string; subdir?: string };
 export type PluginRepoFile = { path: string; content: string };
@@ -64,7 +65,8 @@ const MAX_TREE_ENTRIES = 5000;
 const FETCH_CONCURRENCY = 8;
 const MAX_BYTES = 4_000_000;
 const MAX_FILE_BYTES = 100_000;
-const FULL_SHA = /^[a-f0-9]{40}$/;
+/** A git commit, or the SHA-256 of a plugin archive. */
+const FULL_SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const SCHEMAS = new Set([
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
@@ -143,6 +145,12 @@ export function parsePluginSource(source: string): PluginSourceRef {
   if (url.username || url.password) throw new Error("Plugin source must not contain credentials");
   if (url.search || url.port)
     throw new Error("Plugin source must not contain a query or custom port");
+  const archive = ARCHIVE_PATH.exec(url.pathname);
+  if (archive) {
+    if (url.hash) throw new Error("Plugin archives have no subdirectories");
+    url.pathname = archive[1]!;
+    return { gitUrl: url.toString(), ref: archive[2] };
+  }
   const subdirFromHash = url.hash.slice(1);
   url.hash = "";
   let path = url.pathname.replace(/\/$/, "");
@@ -275,6 +283,108 @@ export async function fetchGitHubRepo(
   // Parallel downloads finish in any order; parsing must not depend on it.
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { files, resolvedSha: sha };
+}
+
+/** A plugin the deployment lists itself: a gzipped tar of the plugin directory (its manifest at
+ * the archive root), pinned by the SHA-256 of the archive's bytes. */
+export type PluginArchive = { url: string; sha256: string };
+const ARCHIVE_PATH = /^(.+\.(?:tar\.gz|tgz))(?:@([a-f0-9]{64}))?$/;
+const MAX_ARCHIVE_BYTES = 32_000_000;
+
+/** Archives separated by commas or spaces, each `https://host/path/name.tar.gz#sha256=<hex>`. */
+export function parsePluginArchives(value: string | undefined): PluginArchive[] {
+  return (value ?? "")
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((item) => {
+      const pin = /^(.+)#sha256=([a-fA-F0-9]{64})$/.exec(item);
+      const ref = pin ? parsePluginSource(pin[1]!) : undefined;
+      if (!ref || ref.ref || !ARCHIVE_PATH.test(new URL(ref.gitUrl).pathname))
+        throw new Error(
+          `Plugin archive must be an HTTPS .tar.gz URL ending #sha256=<hex>: ${item}`,
+        );
+      return { url: ref.gitUrl, sha256: pin![2]!.toLowerCase() };
+    });
+}
+
+// The deployment chose the address and pinned the bytes, so it may be on its own network.
+const loadArchive = async (url: string, signal: AbortSignal): Promise<Uint8Array> => {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
+  return readBodyCapped(response, MAX_ARCHIVE_BYTES, signal);
+};
+
+export async function fetchPluginArchive(
+  archive: PluginArchive,
+  signal?: AbortSignal,
+  load: (url: string, signal: AbortSignal) => Promise<Uint8Array> = loadArchive,
+): ReturnType<PluginRepoFetcher> {
+  const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]);
+  const bytes = await load(archive.url, deadline);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (sha256 !== archive.sha256) throw new Error("Plugin archive did not match its pinned SHA-256");
+  const files: PluginRepoFile[] = [];
+  for (const entry of untar(gunzipSync(bytes, { maxOutputLength: MAX_ARCHIVE_BYTES }))) {
+    const path = entry.path.replace(/^(?:\.\/)+/, "").replace(/\/$/, "");
+    if (entry.type === "dir" || !path) continue;
+    safePath(path);
+    // The same reading rules as a repository: links unread, only component text kept.
+    const content =
+      entry.type === "other"
+        ? UNREADABLE_FILE
+        : !isFetchedComponent(path)
+          ? ""
+          : SKILL_COMPANION.test(path) && entry.body.length > MAX_FILE_BYTES
+            ? OVERSIZED_FILE
+            : entry.body.toString("utf8");
+    files.push({ path, content });
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { files, resolvedSha: sha256 };
+}
+
+/** Reads ustar, pax and GNU entries. Anything but a file or folder (a link, a device) is "other". */
+function untar(tar: Buffer): Array<{ path: string; type: "file" | "dir" | "other"; body: Buffer }> {
+  const entries: Array<{ path: string; type: "file" | "dir" | "other"; body: Buffer }> = [];
+  let paxPath: string | undefined;
+  for (let at = 0; at + 512 <= tar.length; ) {
+    const header = tar.subarray(at, at + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const field = (start: number, length: number) =>
+      header.toString("utf8", start, start + length).split("\0")[0]!;
+    if (!field(257, 6).startsWith("ustar")) throw new Error("Plugin archive must be a tar file");
+    const size = Number.parseInt(field(124, 12).trim(), 8);
+    if (!Number.isSafeInteger(size) || size < 0 || at + 512 + size > tar.length)
+      throw new Error("Plugin archive is truncated");
+    const body = tar.subarray(at + 512, at + 512 + size);
+    at += 512 + Math.ceil(size / 512) * 512;
+    const type = field(156, 1) || "0";
+    if (type === "g") continue;
+    // Long names: pax records, or GNU tar's own long-name entry.
+    if (type === "x" || type === "L") {
+      const text = body.toString("utf8");
+      paxPath = type === "L" ? text.split("\0")[0] : /(?:^|\n)\d+ path=([^\n]*)\n/.exec(text)?.[1];
+      continue;
+    }
+    const prefix = field(345, 155);
+    const name = field(0, 100);
+    entries.push({
+      path: paxPath ?? (prefix ? `${prefix}/${name}` : name),
+      type: type === "0" || type === "7" ? "file" : type === "5" ? "dir" : "other",
+      body,
+    });
+    paxPath = undefined;
+  }
+  return entries;
+}
+
+/** Listed archives load by their pinned digest; any other source from public GitHub. */
+export function pluginSourceFetcher(archives: readonly PluginArchive[]): PluginRepoFetcher {
+  const byUrl = new Map(archives.map((archive) => [archive.url, archive]));
+  return (ref, signal) => {
+    const archive = byUrl.get(ref.gitUrl);
+    return archive ? fetchPluginArchive(archive, signal) : fetchGitHubRepo(ref, signal);
+  };
 }
 
 function object(value: unknown): value is Record<string, unknown> {

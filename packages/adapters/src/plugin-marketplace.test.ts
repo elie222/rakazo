@@ -315,3 +315,56 @@ describe("marketplace service", () => {
     });
   });
 });
+
+describe("deployment plugin sources", () => {
+  const pin = "c".repeat(64);
+  const url = "https://plugins.example.test/notes.tar.gz";
+  const pluginFiles = [
+    { path: ".cursor-plugin/plugin.json", content: JSON.stringify({ name: "team-notes" }) },
+    {
+      path: "skills/notes/SKILL.md",
+      content: "---\nname: notes\ndescription: Notes\n---\n\nWrite notes.\n",
+    },
+  ];
+  it("lists only the deployment's archives when the registries are off", async () => {
+    const read = vi.fn();
+    const fetcher = vi.fn(async () => ({ files: pluginFiles, resolvedSha: pin }));
+    const market = createPluginMarketplace(read, {
+      registries: false,
+      archives: [{ url, sha256: pin }],
+      fetcher,
+    });
+    const catalog = await market.catalog("");
+    await market.catalog("");
+    expect(read).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(catalog).toMatchObject({ unavailableRegistries: [], skippedEntries: 0 });
+    expect(catalog.entries).toEqual([
+      expect.objectContaining({
+        name: "team-notes",
+        displayName: "Team Notes",
+        registry: "plugins.example.test",
+        source: `${url}@${pin}`,
+        installedSource: url,
+        skillCount: 1,
+        hasConnector: false,
+      }),
+    ]);
+  });
+  it("reports an unreadable archive and tries it again next time", async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Request failed: HTTP 503"))
+      .mockResolvedValue({ files: pluginFiles, resolvedSha: pin });
+    const market = createPluginMarketplace(vi.fn(), {
+      registries: false,
+      archives: [{ url, sha256: pin }],
+      fetcher,
+    });
+    expect(await market.catalog("")).toMatchObject({
+      entries: [],
+      unavailableRegistries: ["plugins.example.test"],
+    });
+    expect((await market.catalog("")).entries).toHaveLength(1);
+  });
+});

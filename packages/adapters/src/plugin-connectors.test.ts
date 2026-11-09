@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
@@ -8,10 +10,13 @@ import type { PluginRepoFile } from "./plugin-connectors.js";
 import {
   classifyPluginFiles,
   fetchGitHubRepo,
+  fetchPluginArchive,
   isTransientFetchError,
+  parsePluginArchives,
   parsePluginDirectory,
   parsePluginSource,
   pluginPreviewDto,
+  pluginSourceFetcher,
   previewPluginInstall,
 } from "./plugin-connectors.js";
 
@@ -566,5 +571,102 @@ describe("example plugins", () => {
     expect(plugin.mcpServers.map((s) => s.name)).toEqual(servers);
     const builtins = BUILTIN_AGENT_SKILLS.map((s) => s.name.toLowerCase());
     expect(plugin.skills.some((s) => builtins.includes(s.name))).toBe(false);
+  });
+});
+
+/** A ustar archive; `type` is the tar entry type ("0" file, "2" symlink, "5" folder, "x" pax). */
+function tarGz(entries: Array<{ path: string; content?: string; type?: string }>): Buffer {
+  const blocks: Buffer[] = [];
+  for (const entry of entries) {
+    const body = Buffer.from(entry.content ?? "");
+    const header = Buffer.alloc(512);
+    header.write(entry.path, 0, 100);
+    header.write(`${body.length.toString(8).padStart(11, "0")}\0`, 124);
+    header.write(entry.type ?? "0", 156);
+    header.write("ustar\u000000", 257);
+    blocks.push(header, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+  }
+  return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
+}
+const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+describe("plugin archives", () => {
+  const archive = tarGz([
+    { path: "./", type: "5" },
+    { path: "./plugin.json", content: JSON.stringify(manifest) },
+    { path: "./skills/example-skill/SKILL.md", content: skill },
+    { path: "./assets/logo.png", content: "\u0089PNG" },
+  ]);
+  const listed = { url: "https://plugins.example.test/example.tar.gz", sha256: sha256(archive) };
+
+  it("reads listed archives by URL and pin", () => {
+    expect(parsePluginArchives(` ${listed.url}#sha256=${listed.sha256.toUpperCase()},`)).toEqual([
+      listed,
+    ]);
+    expect(parsePluginArchives(undefined)).toEqual([]);
+    for (const value of [
+      listed.url,
+      `${listed.url}#sha256=abc`,
+      `http://plugins.example.test/example.tar.gz#sha256=${listed.sha256}`,
+      `https://plugins.example.test/example.zip#sha256=${listed.sha256}`,
+    ])
+      expect(() => parsePluginArchives(value)).toThrow();
+  });
+
+  it("previews an archive pinned by its SHA-256 like any plugin", async () => {
+    const load = vi.fn(async () => archive);
+    const plugin = await previewPluginInstall({
+      source: `${listed.url}@${listed.sha256}`,
+      fetcher: (_ref, signal) => fetchPluginArchive(listed, signal, load),
+    });
+    expect(plugin.source).toEqual({ gitUrl: listed.url, ref: listed.sha256 });
+    expect(plugin.resolvedSha).toBe(listed.sha256);
+    expect(plugin.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(load).toHaveBeenCalledWith(listed.url, expect.any(AbortSignal));
+    expect(pluginPreviewDto(plugin).skipped).toEqual([]);
+    await expect(
+      previewPluginInstall({
+        source: `${listed.url}@${"0".repeat(64)}`,
+        fetcher: (_ref, signal) => fetchPluginArchive(listed, signal, load),
+      }),
+    ).rejects.toThrow("requested pin");
+  });
+
+  it("refuses an archive whose bytes changed", async () => {
+    await expect(
+      fetchPluginArchive({ ...listed, sha256: "0".repeat(64) }, undefined, async () => archive),
+    ).rejects.toThrow("pinned SHA-256");
+  });
+
+  it("keeps pax paths and leaves links unread", async () => {
+    const long = `skills/${"a".repeat(120)}/SKILL.md`;
+    const bytes = tarGz([
+      { path: "plugin.json", content: JSON.stringify(manifest) },
+      { path: "PaxHeader", type: "x", content: `${long.length + 7 + 3} path=${long}\n` },
+      { path: "truncated-name", content: skill },
+      { path: "skills/linked/SKILL.md", type: "2" },
+    ]);
+    const repo = await fetchPluginArchive(
+      { url: listed.url, sha256: sha256(bytes) },
+      undefined,
+      async () => bytes,
+    );
+    expect(repo.files.map((f) => f.path)).toEqual(["plugin.json", long, "skills/linked/SKILL.md"]);
+    expect(repo.files[1]!.content).toBe(skill);
+    expect(repo.files[2]!.content).not.toBe("");
+    expect(parsePluginDirectory(repo).skills.map((s) => s.name)).toEqual(["example-skill"]);
+  });
+
+  it("refuses paths that leave the plugin directory", async () => {
+    const bytes = tarGz([{ path: "../escape.md", content: "x" }]);
+    await expect(
+      fetchPluginArchive({ url: listed.url, sha256: sha256(bytes) }, undefined, async () => bytes),
+    ).rejects.toThrow("inside the plugin directory");
+  });
+
+  it("fetches only archives the deployment listed", async () => {
+    await expect(
+      pluginSourceFetcher([listed])(parsePluginSource("https://elsewhere.example.test/other.tgz")),
+    ).rejects.toThrow("github.com");
   });
 });
