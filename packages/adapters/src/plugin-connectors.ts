@@ -11,7 +11,7 @@ import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
 import { dispatcherFetch } from "./undici-fetch.js";
-import { fetchSafeWebText, readBodyCapped } from "./web-ssrf.js";
+import { fetchSafeWebText, readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export type PluginSourceRef = { gitUrl: string; ref?: string; subdir?: string };
 export type PluginRepoFile = { path: string; content: string };
@@ -149,7 +149,7 @@ export function parsePluginSource(source: string): PluginSourceRef {
   if (url.search || url.port)
     throw new Error("Plugin source must not contain a query or custom port");
   const archive = ARCHIVE_PATH.exec(url.pathname);
-  if (archive) {
+  if (url.hostname !== "github.com" && archive) {
     if (url.hash) throw new Error("Plugin archives have no subdirectories");
     url.pathname = archive[1]!;
     return { gitUrl: url.toString(), ref: archive[2] };
@@ -319,10 +319,22 @@ const loadArchive = async (url: string, signal: AbortSignal): Promise<Uint8Array
       signal,
       dispatcher,
     } as RequestInit & { dispatcher: Dispatcher });
-    if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
+    if (!response.ok) {
+      await withAbort(
+        response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
+        signal,
+      ).catch(() => undefined);
+      throw new Error(`Request failed: HTTP ${response.status}`);
+    }
     return await readBodyCapped(response, MAX_ARCHIVE_BYTES, signal);
   } finally {
-    void dispatcher.close().catch(() => undefined);
+    await withAbort(
+      dispatcher.close().catch(() => undefined),
+      signal,
+    ).catch(() => undefined);
+    if (signal.aborted) {
+      void dispatcher.destroy().catch(() => undefined);
+    }
   }
 };
 

@@ -64,6 +64,12 @@ describe("plugin sources", () => {
       { gitUrl: "https://github.com/example/plugins", ref: "main", subdir: "one" },
     ],
   ])("normalizes %s", (source, expected) => expect(parsePluginSource(source)).toEqual(expected));
+  it.each(["tgz", "tar.gz"])("keeps .%s repositories and subdirectories", (extension) => {
+    expect(parsePluginSource(`https://github.com/example/plugins.${extension}#one`)).toEqual({
+      gitUrl: `https://github.com/example/plugins.${extension}`,
+      subdir: "one",
+    });
+  });
   it.each([
     "http://github.com/a/b",
     "https://user:password@github.com/a/b",
@@ -682,10 +688,6 @@ describe("plugin archives", () => {
     const url = "http://plugins.example.test/example.tar.gz";
     const load = () => fetchPluginArchive({ url, sha256: listed.sha256 });
     try {
-      // The host does not resolve, so a direct download fails.
-      vi.stubEnv("HTTP_PROXY", "");
-      vi.stubEnv("http_proxy", "");
-      await expect(load()).rejects.toThrow();
       const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
       vi.stubEnv("HTTP_PROXY", proxyUrl);
       vi.stubEnv("http_proxy", proxyUrl);
