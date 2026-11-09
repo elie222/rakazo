@@ -6,6 +6,7 @@ import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import * as z from "zod";
 import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { reliableModelStream } from "./pi-runtime-stream.js";
 import type { ToolHost } from "./pi-runtime-tools.js";
@@ -37,8 +38,11 @@ const imageResultSchema = z.object({
 });
 const payloadSchema = z.looseObject({ include: z.array(z.string()).optional() });
 
-export function supportsModelImageSearch(provider: string): boolean {
-  return provider === CHATGPT_OAUTH_PROVIDER;
+export function supportsModelImageSearch(provider: string, apiProtocol?: string): boolean {
+  return (
+    provider === CHATGPT_OAUTH_PROVIDER ||
+    (provider === OPENAI_COMPATIBLE_PROVIDER_ID && apiProtocol === "responses")
+  );
 }
 
 function screenedResultUrl(value: unknown): string | undefined {
@@ -74,7 +78,8 @@ export async function executeImageSearch(
   args: Record<string, unknown>,
 ): Promise<ImageSearchResult> {
   const target = host.activeModel;
-  if (!supportsModelImageSearch(target.model.provider)) return { error: IMAGE_SEARCH_UNAVAILABLE };
+  if (!supportsModelImageSearch(target.model.provider, target.config.apiProtocol))
+    return { error: IMAGE_SEARCH_UNAVAILABLE };
   const query = typeof args.query === "string" ? args.query.trim() : "";
   if (!query || query.length > MAX_QUERY_LENGTH)
     return { error: "query must contain between 1 and 2000 characters" };

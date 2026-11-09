@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { executeImageSearch, supportsModelImageSearch } from "./pi-image-search.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 import { describeToolActivity, toAgentTools } from "./pi-runtime-tools.js";
 import { READ_ONLY_AGENT_TOOLS, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
@@ -24,6 +25,29 @@ describe("Pi image search through the installed provider", () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  it("searches images through a compatible Responses connection using the active key", async () => {
+    const fetch = fixtureFetch([searchItem([image("compatible")]), terminal]);
+    const { host } = hostFor(fetch);
+    const config = {
+      provider: "openai-compatible",
+      id: "fixture-model",
+      apiProtocol: "responses" as const,
+      baseUrl: "https://models.example.com/v1",
+      apiKey: "fake-compatible-key",
+    };
+    const target = resolveRuntimeModel(config);
+    if (!target.model) throw new Error("Compatible model missing");
+    host.activeModel = { ...target, model: target.model, config };
+    const result = await executeImageSearch(host, { query: "harbor" });
+    expect(result).toMatchObject({ results: [{ imageUrl: image("compatible").image_url }] });
+    expect(fetch).toHaveBeenCalledOnce();
+    const body = await requestBody(fetch.mock.calls[0]!);
+    expect(body.include).toContain("web_search_call.results");
+    expect(new Request(...fetch.mock.calls[0]!).headers.get("authorization")).toBe(
+      "Bearer fake-compatible-key",
+    );
   });
 
   it.each([true, false])(
@@ -447,6 +471,8 @@ it("offers image search only for a supported model and lets bots disable it inde
       modelImageSearchEnabled: supportsModelImageSearch(provider),
       disabledBuiltinTools,
     }).map((tool) => tool.name);
+  expect(supportsModelImageSearch("openai-compatible", "responses")).toBe(true);
+  expect(supportsModelImageSearch("openai-compatible", "chat-completions")).toBe(false);
   expect(names("openai-codex")).toContain("image_search");
   for (const provider of ["openai", "openrouter", "other"])
     expect(names(provider)).not.toContain("image_search");

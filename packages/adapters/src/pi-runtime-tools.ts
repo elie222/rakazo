@@ -635,7 +635,10 @@ function toAgentTool(
               }
               if (
                 tool.name === "image_search" &&
-                !supportsModelImageSearch(host.activeModel.model.provider)
+                !supportsModelImageSearch(
+                  host.activeModel.model.provider,
+                  host.activeModel.config.apiProtocol,
+                )
               ) {
                 return {
                   content: [{ type: "text", text: IMAGE_SEARCH_UNAVAILABLE }],
