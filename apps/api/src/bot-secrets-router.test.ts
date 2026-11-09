@@ -623,6 +623,8 @@ describe("vault router", () => {
     prisma.bot.findFirst.mockResolvedValue(bot as never);
     const findSecret = vi.fn(async () => ({ id: "whsec-1", ciphertext: "enc:whsec-1" }));
     Object.assign(prisma.secret, { findFirst: findSecret });
+    const currentKey = vi.fn(async () => ({ webhookSecretId: "whsec-1" }));
+    Object.assign(prisma.bot, { findUnique: currentKey });
     secrets.load.mockResolvedValue(FAKE_VALUE);
 
     const refused = await call("bots/revealWebhookSecret", { botId: "bot-1" });
@@ -646,6 +648,12 @@ describe("vault router", () => {
       }),
     );
     expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
+
+    // A rotation that commits while the key decrypts wins; the revoked key is never returned.
+    currentKey.mockResolvedValueOnce({ webhookSecretId: "whsec-2" });
+    const rotated = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(rotated.status).toBe(409);
+    expect(rotated.text).not.toContain(FAKE_VALUE);
 
     // A space member who did not create the bot never reads its key, and is refused before
     // being asked to confirm it's them.

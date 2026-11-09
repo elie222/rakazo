@@ -710,6 +710,14 @@ export function botsRoutes(ctx: RouterContext) {
           : null;
         if (!stored) throw new ORPCError("NOT_FOUND", { message: "Webhook key not found" });
         const secret = await deps.secrets.load(stored.ciphertext, stored.id);
+        // A rotation can commit while this decrypts; never hand back a key it has revoked.
+        const current = await deps.prisma.bot.findUnique({
+          where: { id: bot.id },
+          select: { webhookSecretId: true },
+        });
+        if (current?.webhookSecretId !== stored.id) {
+          throw new ORPCError("CONFLICT", { message: "The webhook key just changed" });
+        }
         await recordSecurityEvent({
           type: "credential.revealed",
           userId: context.actor.userId,
