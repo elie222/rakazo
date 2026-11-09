@@ -1,5 +1,6 @@
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
+import { AnalyticsScreen } from "@rakazo/contracts";
 import {
   CORRELATION_TAG_KEYS,
   isMonitoringUserId,
@@ -87,8 +88,8 @@ export function sanitizeNativeEvent(
   if (surface === "mobile" && tags["startup.previous_launch"] === "true")
     safeTags["startup.previous_launch"] = "true";
   // The app sets a coarse screen name, never a route param; this rejects anything else.
-  if (surface === "mobile" && typeof tags.screen === "string" && /^[a-z_]{1,40}$/.test(tags.screen))
-    safeTags.screen = tags.screen;
+  const screen = AnalyticsScreen.safeParse(tags.screen);
+  if (surface === "mobile" && screen.success) safeTags.screen = screen.data;
   if (surface === "desktop") {
     const name = tags["process.name"];
     const exitCode = tags["process.exit_code"];

@@ -36,7 +36,7 @@ describe("native error collector privacy boundary", () => {
       surface: "mobile",
       screen: "chat",
     });
-    for (const screen of ["/thread?id=abc", "Chat with Sam", "chat/123", 7])
+    for (const screen of ["/thread?id=abc", "Chat with Sam", "chat/123", "alice_smith", 7])
       expect(sanitizeNativeEvent({ tags: { screen } }, "mobile").tags).toEqual({
         surface: "mobile",
       });
