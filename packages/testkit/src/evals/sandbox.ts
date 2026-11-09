@@ -62,7 +62,10 @@ export function scriptedShell(
     }
     found.sort((a, b) => a.at - b.at);
     if (!found.length) return undefined;
-    const codes = found.map(({ check }) => emit(check, SILENCED.test(command)));
+    // Each check is silenced only by a redirect before the next check, not by one elsewhere.
+    const codes = found.map(({ check, at }, index) =>
+      emit(check, SILENCED.test(command.slice(at, found[index + 1]?.at ?? command.length))),
+    );
     return { stdout: out.join("\n"), stderr: err.join("\n"), code: codes.at(-1)! };
   }
   const parts = command.split(/\s*(&&|\|\||;|\n)\s*/);

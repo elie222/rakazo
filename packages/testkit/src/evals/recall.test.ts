@@ -190,6 +190,13 @@ describe("recall outcome grading", () => {
       expect(shell(id, "chromium --version")!.stdout).toMatch(/^Chromium 131\./);
       expect(shell(id, "uname -a")).toBeUndefined();
     }
+    // A redirect silences only the check it follows, so an earlier failure still shows.
+    const loop = shell(
+      absent,
+      "for f in a; do cat ~/x/manifest.json; ls ~/.config/chromium/Default/Extensions 2>/dev/null; done",
+    )!;
+    expect(loop.stderr).toContain("manifest.json: No such file");
+    expect(loop.stderr).not.toContain("cannot access");
     // The chat happened earlier today, so it reads as the one under way.
     const seeded = scenario("tool-steps-replayed").history!.messages;
     expect(Date.now() - seeded[0]!.createdAt.getTime()).toBeLessThan(24 * 60 * 60_000);

@@ -167,6 +167,9 @@ export function promptTextForAttachments(
 
 const TOOL_STEPS_HEADER =
   "[tool calls this reply made; what it reported from them stands unless later messages contradict it]";
+/** A failed or stopped call can undercut what the reply claimed, so its results don't stand as-is. */
+const TOOL_STEPS_HEADER_WITH_FAILURES =
+  "[tool calls this reply made; some failed or were stopped, so what it reported from those may not hold]";
 const TOOL_STEP_NOTE_MAX_CHARS = 300;
 const TOOL_STEP_MAX_LINES = 40;
 /** Tool names are at most 64 characters; only imported data could carry a longer label. */
@@ -203,10 +206,18 @@ export function toolStepsHistoryText(
   if (hidden > 0) lines.push(`- …and ${hidden} more`);
   // "Made" rather than "ran": a call the loop guard stopped is still recorded as a step. Like a
   // shortened tool result, what the reply reported from them stands without re-checking.
-  return `${TOOL_STEPS_HEADER}\n${lines.join("\n")}`;
+  const header = valid.some(hasFailedCalls) ? TOOL_STEPS_HEADER_WITH_FAILURES : TOOL_STEPS_HEADER;
+  return `${header}\n${lines.join("\n")}`;
 }
 
 const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
+
+function hasFailedCalls(step: { outcomes?: unknown }): boolean {
+  const outcomes = step.outcomes;
+  if (!outcomes || typeof outcomes !== "object") return false;
+  const counts = outcomes as Partial<Record<string, unknown>>;
+  return ["failed", "stopped"].some((outcome) => Number(counts[outcome]) > 0);
+}
 
 /** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
 function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {

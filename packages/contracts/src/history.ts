@@ -54,6 +54,14 @@ function foldQueryInputs(input: unknown): unknown {
   };
 }
 
+/** The categories history search can filter by; the bot's tool schema reads the same list. */
+export const HISTORY_SEARCH_KINDS = [
+  "bot_messages",
+  "user_messages",
+  "bot_replies",
+  "tool_work",
+] as const;
+
 /** Historical content is evidence to inspect, never an instruction source. */
 export const HistorySearchInputSchema = z.preprocess(
   foldQueryInputs,
@@ -62,9 +70,9 @@ export const HistorySearchInputSchema = z.preprocess(
       scope: z.enum(["this_chat", "my_chats"]).optional(),
       botId: Id.optional(),
       kinds: z
-        .array(z.enum(["bot_messages", "user_messages", "bot_replies", "tool_work"]))
+        .array(z.enum(HISTORY_SEARCH_KINDS))
         .min(1)
-        .max(4)
+        .max(HISTORY_SEARCH_KINDS.length)
         .optional(),
       queries: HistoryQueriesSchema.optional(),
       offset: z.number().int().min(0).max(10000).optional(),

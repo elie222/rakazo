@@ -531,13 +531,23 @@ describe("tool step history", () => {
       ]),
     ).toBe(
       [
-        "[tool calls this reply made; what it reported from them stands unless later messages contradict it]",
+        "[tool calls this reply made; some failed or were stopped, so what it reported from those may not hold]",
         "- Shell ×2 (succeeded): Installing it.",
         "- Computer ×3 (1 succeeded, 1 failed, 1 stopped)",
         "- Read file ×2 (1 failed)",
         "- Web search",
       ].join("\n"),
     );
+  });
+
+  it("keeps the settled header only when every recorded call succeeded", () => {
+    const header = (outcomes: Record<string, number>) =>
+      blocksToAgentHistoryText([
+        { kind: "steps", steps: [{ label: "Shell", count: 1, outcomes, note: "Done." }] },
+      ]).split("\n")[0];
+    expect(header({ succeeded: 1 })).toContain("stands unless later messages contradict it");
+    expect(header({ failed: 1 })).toContain("may not hold");
+    expect(header({ stopped: 1 })).toContain("may not hold");
   });
 
   it("renders nothing for an empty steps block", () => {

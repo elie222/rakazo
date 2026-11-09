@@ -11,6 +11,7 @@ import {
   FLEET_TOOL_NAMES,
   GenerateSecretInput,
   HISTORY_QUERIES_MAX_BYTES,
+  HISTORY_SEARCH_KINDS,
   LOGIN_FIELD_LIMIT,
   PAID_REQUEST_METHODS,
   PURCHASE_CARD_FIELDS,
@@ -979,10 +980,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "array",
           items: {
             type: "string",
-            enum: ["bot_messages", "user_messages", "bot_replies", "tool_work"],
+            enum: [...HISTORY_SEARCH_KINDS],
           },
           minItems: 1,
-          maxItems: 4,
+          maxItems: HISTORY_SEARCH_KINDS.length,
         },
         offset: {
           type: "integer",
