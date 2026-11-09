@@ -56,7 +56,7 @@ const MAX_RESPONSE_BYTES = 10_000;
 const LINK_PAGE_SIZE = 5;
 /** An empty literal search rules out only those words, not what they were meant to find. */
 const NO_MATCH_NOTE =
-  "Only these exact words were searched, so this does not show that something was never said or done. Try other words, or list messages by kinds without a query, such as tool_work for earlier replies that used tools.";
+  "No message has every word of this query. That rules out only these words, not that something was said or done: before saying it was not, try other words, or omit the query and list by kinds (tool_work lists every earlier reply that used tools).";
 function bounded<T extends { messages: ReturnType<typeof reference>[] }>(response: T): T {
   const refs = [...response.messages];
   if ("runs" in response) {
