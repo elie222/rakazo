@@ -7,7 +7,7 @@ import {
   listSectionMargins,
   listStyle,
 } from "@expo/ui/swift-ui/modifiers";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import type { ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFloatingHeaderInset } from "../lib/floating-header";
@@ -15,7 +15,7 @@ import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 
 /**
- * A SwiftUI inset grouped list filling a screen under the floating header.
+ * A SwiftUI list (inset grouped by default) filling a screen under the floating header.
  *
  * The header's height comes from navigation, not from the hosting view's safe area, which can be
  * stale after a text size change and put the first row under the close button and title. So the
@@ -25,11 +25,16 @@ import { iosAtLeast } from "../lib/native-controls";
  * display's status bar.
  */
 export function NativeInsetList({
+  hostRef,
+  variant = "insetGrouped",
   modifiers = [],
   background,
   seedColor,
   children,
 }: {
+  /** The hosting view, for native calls that act on the list inside it. */
+  hostRef?: Ref<unknown>;
+  variant?: "insetGrouped" | "plain";
   modifiers?: ViewModifier[];
   background?: ColorValue;
   seedColor?: ColorValue;
@@ -39,6 +44,7 @@ export function NativeInsetList({
   const scheme = useResolvedAppearance();
   return (
     <Host
+      ref={hostRef}
       // Rebuilt when the appearance changes, so no row keeps the other theme's colours.
       key={scheme}
       style={{ flex: 1, backgroundColor: background }}
@@ -47,7 +53,7 @@ export function NativeInsetList({
     >
       <List
         modifiers={[
-          listStyle("insetGrouped"),
+          listStyle(variant),
           ...(headerInset > 0 ? [ignoreSafeArea({ regions: "container", edges: "vertical" })] : []),
           ...modifiers,
         ]}

@@ -3,6 +3,7 @@ import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactElement, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -25,6 +26,7 @@ import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
 import { BotAvatar } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
+import { DragSafePressable } from "./drag-safe-pressable";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles, INBOX_ROW } from "./home-styles";
 import { InboxSwipeRow } from "./inbox-swipe-row";
@@ -79,7 +81,7 @@ export function ConversationRow({
     label: t(INBOX_ROW_ACTIONS[action].label),
   }));
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
@@ -118,7 +120,7 @@ export function ConversationRow({
           {preview}
         </Text>
       </View>
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -128,7 +130,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
   const { t } = useI18n();
   if (count < 1) return null;
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={`${t("Archived")}, ${count}`}
       onPress={onPress}
@@ -147,7 +149,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
         size={12}
         color={native.tertiaryLabel}
       />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -158,16 +160,19 @@ export function SectionToggle({
   count,
   collapsed,
   onPress,
+  onLongPress,
+  accessibilityActions,
+  onAccessibilityAction,
 }: {
   title: string;
   count?: number;
   collapsed: boolean;
   onPress: () => void;
-}) {
+} & Pick<PressableProps, "onLongPress" | "accessibilityActions" | "onAccessibilityAction">) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={
         collapsed ? t("Expand {name}", { name: title }) : t("Collapse {name}", { name: title })
@@ -175,12 +180,15 @@ export function SectionToggle({
       accessibilityState={{ expanded: !collapsed }}
       accessibilityValue={count === undefined ? undefined : { text: String(count) }}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
     >
       <Text style={styles.sectionTitle}>{title}</Text>
       {count === undefined ? null : <Text style={styles.sectionCount}>{count}</Text>}
       <SectionChevron collapsed={collapsed} />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
