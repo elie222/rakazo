@@ -1528,6 +1528,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "ページから読み取り、未確認",
   Total: "合計",
   "{name} options": "{name}のオプション",
+  "Chief assistant": "チーフアシスタント",
+  "Computer model": "コンピュータモデル",
+  "Expression pack": "表情パック",
+  Off: "オフ",
+  "Routine tasks": "ルーチンタスク",
+  "Voice model": "音声モデル",
+  "Voice settings": "音声設定",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

@@ -27,6 +27,16 @@ export function createThreadHeaderStyles() {
       ...typeScale.cardTitle,
       color: tokens.foreground,
     },
+    titleText: {
+      flexShrink: 1,
+      flexDirection: "column",
+      justifyContent: "center",
+    },
+    subtitle: {
+      flexShrink: 1,
+      ...typeScale.caption,
+      color: tokens.mutedForeground,
+    },
     headerActions: {
       flexDirection: "row",
       alignItems: "center",

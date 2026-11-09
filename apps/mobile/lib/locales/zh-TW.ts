@@ -1494,6 +1494,13 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "讀取自頁面，未核實",
   Total: "合計",
   "{name} options": "{name}的選項",
+  "Chief assistant": "首席助理",
+  "Computer model": "電腦模型",
+  "Expression pack": "表情包",
+  Off: "關",
+  "Routine tasks": "例行任務",
+  "Voice model": "語音模型",
+  "Voice settings": "語音設定",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

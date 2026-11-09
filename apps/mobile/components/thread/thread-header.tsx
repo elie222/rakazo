@@ -32,6 +32,7 @@ export function useThreadHeader({
   groupMembers,
   currentBotStatus,
   composingBots,
+  activityLine,
   onCleared,
   autoSpeak,
   onToggleAutoSpeak,
@@ -48,6 +49,8 @@ export function useThreadHeader({
   currentBotStatus?: MobileBot["status"];
   /** Bots writing reply text right now, comma-separated. */
   composingBots: string;
+  /** What the bot is doing right now, shown under its name while it works. */
+  activityLine?: string | null;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
   onCleared: () => void;
   /** Whether the current bot reads its replies aloud; absent outside a one-to-one bot chat. */
@@ -85,6 +88,7 @@ export function useThreadHeader({
         composing: titleComposing,
         name: titleName,
         members: groupMembers,
+        activityLine,
         // The title opens the bot's profile in a one-to-one chat, the group's settings in a group.
         opens: chatTitleRoute({ groupId, botId, name: titleName, readOnly }),
       }),
@@ -98,6 +102,7 @@ export function useThreadHeader({
       titleComposing,
       titleName,
       groupMembers,
+      activityLine,
     ],
   );
 

@@ -251,6 +251,11 @@ vi.mock("react-native", () => {
         },
         children,
       ),
+    Image: ({ accessibilityLabel, style }: { accessibilityLabel?: string; style?: unknown }) =>
+      createElement("img", {
+        "aria-label": accessibilityLabel,
+        "data-style": JSON.stringify(style),
+      }),
   };
 });
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));

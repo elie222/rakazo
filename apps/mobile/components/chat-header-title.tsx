@@ -2,7 +2,7 @@ import type { SpaceBot } from "@rakazo/contracts";
 import { displayName as safeDisplayName } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
-import { Pressable } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import type { ChatTitleRoute } from "../lib/chat-settings-route";
 import { chatTitleRoute } from "../lib/chat-settings-route";
 import { useI18n } from "../lib/i18n";
@@ -26,6 +26,8 @@ export type ChatTitle = {
   opens: ChatTitleRoute | null;
   /** A group's members, in order, for its title. */
   members?: MobileGroup["members"];
+  /** What the bot is doing right now, shown under its name while it works. */
+  activityLine?: string | null;
 };
 
 /** The route params a chat screen opens with. */
@@ -109,7 +111,14 @@ export function ChatHeaderTitle({
           <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
         ) : null}
         {inGroup ? <GroupSeats members={members ?? []} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
-        <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
+        <View style={styles.titleText}>
+          <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
+          {title.activityLine ? (
+            <Text key={title.activityLine} numberOfLines={1} style={styles.subtitle}>
+              {title.activityLine}
+            </Text>
+          ) : null}
+        </View>
       </GlassSurface>
     </Pressable>
   );

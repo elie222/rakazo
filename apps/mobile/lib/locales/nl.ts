@@ -1494,6 +1494,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "Van de pagina gelezen, niet gecontroleerd",
   Total: "Totaal",
   "{name} options": "Opties voor {name}",
+  "Chief assistant": "Hoofdassistent",
+  "Computer model": "Computermodel",
+  "Expression pack": "Expressiepakket",
+  Off: "Uit",
+  "Routine tasks": "Routinetaken",
+  "Voice model": "Spraakmodel",
+  "Voice settings": "Spraakinstellingen",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

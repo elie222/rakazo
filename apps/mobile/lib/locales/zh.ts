@@ -1499,6 +1499,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "读取自页面，未核实",
   Total: "合计",
   "{name} options": "{name}的选项",
+  "Chief assistant": "首席助理",
+  "Computer model": "电脑模型",
+  "Expression pack": "表情包",
+  Off: "关",
+  "Routine tasks": "例行任务",
+  "Voice model": "语音模型",
+  "Voice settings": "语音设置",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

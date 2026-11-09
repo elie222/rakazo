@@ -67,6 +67,7 @@ import { ThreadComposer } from "../thread-composer";
 import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notice";
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
+import { ThreadComposerChips } from "./thread-composer-chips";
 import { ThreadComposerDock } from "./thread-composer-dock";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
@@ -333,6 +334,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     groupMembers,
     currentBotStatus,
     composingBots,
+    activityLine,
     onCleared: history.clear,
     autoSpeak: !inGroup ? currentBot?.autoSpeak : undefined,
     onToggleAutoSpeak: !inGroup && !readOnly && botId && currentBot ? toggleAutoSpeak : undefined,
@@ -640,6 +642,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               )
             }
           >
+            <ThreadComposerChips botId={botId} currentBot={currentBot} userId={userId} />
             <ThreadComposer
               key={threadKey}
               ref={composer.composerRef}

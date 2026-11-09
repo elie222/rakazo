@@ -28,6 +28,8 @@ vi.mock("react-native", () => ({
       { type: "button", disabled, "aria-label": accessibilityLabel, onClick: onPress },
       children,
     ),
+  View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
 }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../components/glass-surface", () => ({
@@ -195,8 +197,9 @@ it("seats a group's members from the inbox on the first frame, then from the ope
   render({ groupId: "group-1", name: "Team" });
   expect(seats()?.getAttribute("data-members")).toBe("b2,b1");
   expect(seats()?.getAttribute("data-size")).toBe("28");
-  // Seats sit before the name, in place of a one-to-one chat's avatar.
-  expect(seats()?.nextElementSibling).toBe(name());
+  // Seats sit before the name, in place of a one-to-one chat's avatar; the name lives
+  // inside the title text column (name above the live activity line).
+  expect(seats()?.nextElementSibling?.contains(name())).toBe(true);
   let clear = () => {};
   act(() => {
     clear = publishChatTitle("thread-1", {

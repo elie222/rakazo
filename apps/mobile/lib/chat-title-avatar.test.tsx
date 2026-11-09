@@ -35,6 +35,12 @@ vi.mock("../components/bot-avatar", () => ({
   BotAvatar: ({ color, size, muted }: { color: string; size: number; muted: boolean }) =>
     createElement("i", { "data-color": color, "data-size": size, "data-muted": String(muted) }),
 }));
+vi.mock("../components/bot-state-avatar", () => ({
+  BotStateAvatar: ({ botId, size }: { botId: string | undefined; size: number }) =>
+    createElement("i", { "data-bot": botId ?? "none", "data-size": size, "data-state": "chief" }),
+}));
+// These tests cover the inbox roster, not the expression pack, so the avatar stays regular.
+vi.mock("../lib/expression-avatar", () => ({ useExpressionPack: () => "off" }));
 vi.mock("./native", () => ({ useThemedStyles: <T,>(factory: () => T) => factory() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ secondary: "secondary-fill" }) }));
 vi.mock("./api-server", () => ({}));

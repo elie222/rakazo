@@ -18,7 +18,17 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { ComputerModePicker } from "../components/computer-mode-picker";
@@ -49,6 +59,11 @@ import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
+import {
+  chiefExpressionGallery,
+  setExpressionPack,
+  useExpressionPack,
+} from "../lib/expression-avatar";
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/mobile-types";
@@ -87,6 +102,7 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
+  const expressionPack = useExpressionPack(botId);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
   const [packageOpen, setPackageOpen] = useState(false);
   const [modelKey, setModelKey] = useState("");
@@ -888,6 +904,35 @@ export default function BotSettingsScreen() {
               }}
               plain
             />
+            <MenuPicker
+              label={t("Expression pack")}
+              choices={[
+                { key: "chief", label: t("Chief assistant") },
+                { key: "off", label: t("Off") },
+              ]}
+              value={expressionPack}
+              onChange={(next) => setExpressionPack(botId, next === "off" ? "off" : "chief")}
+              plain
+            />
+            {expressionPack === "chief" ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginTop: 12,
+                }}
+              >
+                {chiefExpressionGallery().map((face) => (
+                  <Image
+                    key={face.id}
+                    source={face.image}
+                    style={{ width: 52, height: 52, borderRadius: 26 }}
+                    accessibilityLabel={face.id}
+                  />
+                ))}
+              </View>
+            ) : null}
             <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
               {t("Color")}
             </Text>

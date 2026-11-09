@@ -1487,6 +1487,13 @@ export const PL_MESSAGES: Record<string, string> = {
   "Read from the page, not checked": "Odczytane ze strony, niesprawdzone",
   Total: "Razem",
   "{name} options": "Opcje modelu {name}",
+  "Chief assistant": "Główny asystent",
+  "Computer model": "Model komputera",
+  "Expression pack": "Pakiet wyrażeń",
+  Off: "Wyłączone",
+  "Routine tasks": "Zadania rutynowe",
+  "Voice model": "Model głosowy",
+  "Voice settings": "Ustawienia głosu",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
