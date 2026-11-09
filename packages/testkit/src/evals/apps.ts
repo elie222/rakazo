@@ -172,7 +172,10 @@ export const APPS_EVAL_CASES: EvalCase[] = [
           "one-reply-draft",
           drafts.length === 1 &&
             draft?.threadId === thread &&
-            draft.to.some((to) => address(to) === DANA_ADDRESS),
+            // Only Dana: a copy to anyone else would go out when the user sends it.
+            draft.to.length === 1 &&
+            address(draft.to[0]!) === DANA_ADDRESS &&
+            draft.cc.length === 0,
         ),
         check(
           "links-latest-proposal",
@@ -225,6 +228,24 @@ export const APPS_EVAL_CASES: EvalCase[] = [
           if (page.properties.PO === "PO-4476") now.Notes = page.properties.Notes ?? "";
           return JSON.stringify(now) === JSON.stringify(page.properties);
         });
+      // Updated rows keep their order details; only status, ETA and notes may change.
+      const detailsKept = [...seed.pages.values()]
+        .filter(
+          (page) =>
+            page.parentId === noteId("deliveries") && changed.has(String(page.properties.PO)),
+        )
+        .every((page) => {
+          const { Status: _s, ETA: _e, Notes: _n, ...before } = page.properties;
+          const {
+            Status: _s2,
+            ETA: _e2,
+            Notes: _n2,
+            ...after
+          } = {
+            ...notes.pages.get(page.id)?.properties,
+          };
+          return JSON.stringify(after) === JSON.stringify(before);
+        });
       // A date-time on the right day is the same ETA.
       const eta = (po: string) => String(tracked(notes, po)?.ETA ?? "").slice(0, 10);
       return [
@@ -238,6 +259,7 @@ export const APPS_EVAL_CASES: EvalCase[] = [
           tracked(notes, "PO-4480")?.Status === "In transit" && eta("PO-4480") === facts.lumenEta,
         ),
         check("other-rows-unchanged", untouched),
+        check("order-details-kept", detailsKept),
         check("no-duplicate-rows", notes.writesTo("create_page").length === 0),
         check(
           "no-mail-sent",

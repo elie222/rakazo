@@ -63,6 +63,15 @@ describe("connected-apps eval graders", () => {
     const v3 = `Hi Dana, v3: ${facts.proposalV3Url} — EUR 41,250 incl. delivery.`;
     expect(run(v3, false, "x.dana.whitfield@juniperrow.example")).toEqual(["one-reply-draft"]);
     expect(run(v3, false, "DANA.Whitfield@JuniperRow.example")).toEqual([]);
+    // Anyone else on the draft would get it when the user sends it.
+    const copied = world(c);
+    copied.mail!.call("create_draft", {
+      to: DANA,
+      cc: "someone@elsewhere.example",
+      body: v3,
+      thread_id: mailThreadId("juniper-update"),
+    });
+    expect(failing(c, evidence(copied))).toContain("one-reply-draft");
     expect(run(`Hi Dana, v3: ${facts.proposalV3Url}`, true)).toEqual([
       "one-reply-draft",
       "links-latest-proposal",
@@ -93,6 +102,17 @@ describe("connected-apps eval graders", () => {
     update(sideEdit, "PO-4480", { Status: "In transit", ETA: facts.lumenEta });
     update(sideEdit, "PO-4483", { Notes: "Check kiln capacity" });
     expect(failing(c, evidence(sideEdit))).toEqual(["other-rows-unchanged"]);
+
+    // Updating a row must not change its order details.
+    const relabelled = world(c);
+    update(relabelled, "PO-4471", {
+      Status: "Delayed",
+      ETA: facts.ostravaNewEta,
+      PO: "PO-9999",
+    });
+    update(relabelled, "PO-4465", { Status: "Delivered" });
+    update(relabelled, "PO-4480", { Status: "In transit", ETA: facts.lumenEta });
+    expect(failing(c, evidence(relabelled))).toContain("order-details-kept");
 
     const wrong = world(c);
     update(wrong, "PO-4471", { Status: "Delayed", ETA: facts.ostravaNewEta });
