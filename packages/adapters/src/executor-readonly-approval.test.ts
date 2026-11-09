@@ -4662,3 +4662,49 @@ it("keeps explicit fetch deny rules on exact image search URLs", async () => {
   expect(f.pauseRunForInput).not.toHaveBeenCalled();
   expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked") });
 });
+
+it.each(["image_search", "web_search"])(
+  "does not trust search URLs when %s result settlement fails",
+  async (name) => {
+    const f = fixture({ builtin: true, rules: [{ ...imageAskRule, matchValue: name }] });
+    const found = image("unsettled");
+    const fetch = fixtureFetch([searchItem([found]), terminal]);
+    f.web.searchHits = [{ title: "Found", url: found.source_website_url, snippet: "" }];
+    if (name === "image_search") driveImageSearch(f, fetch);
+    else f.setCalls([{ name, args: { query: "harbor" }, executionId: "search-call" }]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    const update = f.prisma.externalEffect.updateMany;
+    const original = update.getMockImplementation()!;
+    update.mockImplementation(async (args) =>
+      args.data.status === "completed" ? { count: 0 } : original(args),
+    );
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      const { host } = hostFor(fetch, request);
+      const tool = toAgentTools(builtinAgentTools, host).find(
+        (entry) => entry.name === "image_search",
+      )!;
+      f.results.push(
+        name === "image_search"
+          ? await tool.execute("image-call", { query: "harbor" })
+          : await request.executeTool!(name, { query: "harbor" }, "search-call"),
+      );
+      f.results.push(
+        await request.executeTool!(
+          "web_fetch",
+          { url: found.source_website_url },
+          "unsettled-fetch",
+        ),
+      );
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    expect(fetch).toHaveBeenCalledTimes(name === "image_search" ? 1 : 0);
+    expect(f.results.at(-2)).toMatchObject(
+      name === "image_search" ? { details: { uncertain: true } } : { uncertain: true },
+    );
+    expect(f.fetchedUrls).toEqual([]);
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+  },
+);

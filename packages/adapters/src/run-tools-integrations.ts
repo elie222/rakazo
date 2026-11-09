@@ -154,12 +154,14 @@ export const integrationTools: ToolHandlers = {
     const { context } = ctx;
     const { args } = call;
     const found = await webSearchFromTool(ctx.providers.web, context, args);
+    const settled = await call.finish(found);
+    if (settled !== found) return settled;
     // A result's exact URL was chosen by the search index, not by text in this run.
     for (const hit of ("results" in found && found.results) || []) {
       const url = normalizedHttpUrl(hit.url);
       if (url) ctx.trust.searchResultUrls.add(url);
     }
-    return call.finish(found);
+    return settled;
   },
   async web_fetch(ctx, call) {
     const { context } = ctx;

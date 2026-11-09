@@ -163,7 +163,8 @@ async function dispatchTool(
   const handler: ToolHandler = run
     ? async (ctx, call) => {
         const found = await run(call.args);
-        if ("results" in found) {
+        const settled = await call.finish(found);
+        if (settled === found && "results" in found) {
           for (const hit of found.results) {
             for (const value of [hit.imageUrl, hit.sourceUrl]) {
               const url = normalizedHttpUrl(value);
@@ -171,7 +172,7 @@ async function dispatchTool(
             }
           }
         }
-        return call.finish(found);
+        return settled;
       }
     : toolHandler(gate.call.name);
   if (!gate.call.applied) return handler(ctx, gate.call);
