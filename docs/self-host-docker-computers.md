@@ -15,11 +15,11 @@ Each Docker computer runs Xvfb, a window manager and a full Chromium driven by a
 decides for itself what to open, so it is capped. These defaults provide a starting point for the
 Docker computer topology:
 
-| Variable | Default | Accepts |
-| --- | --- | --- |
-| `RAKAZO_COMPUTER_MEMORY` | `2g` | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
-| `RAKAZO_COMPUTER_CPUS` | `2` | Whole or fractional cores, e.g. `1.5` |
-| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048` | A positive integer |
+| Variable                     | Default | Accepts                                                                                              |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `RAKAZO_COMPUTER_MEMORY`     | `2g`    | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
+| `RAKAZO_COMPUTER_CPUS`       | `2`     | Whole or fractional cores, e.g. `1.5`                                                                |
+| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048`  | A positive integer                                                                                   |
 
 Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
 supervisor at startup naming the variable, rather than surfacing later as a failed bot.
@@ -188,3 +188,13 @@ keeps a share already mounted below the source visible. Repeat it at boot, befor
 mounts, for example from a systemd mount unit the share's unit depends on). The source must
 exist on the Docker host. Recreate the supervisor after a change; each computer picks the new
 set up on its next provision, which replaces it.
+
+## Time zone and language
+
+Each computer runs in its owner's time zone and app language when the account has them: the
+supervisor sets `TZ` and `LANGUAGE` on the container, and the browser offers pages that language
+(`Accept-Language` and `navigator.languages`), also for a browser profile saved earlier. Without
+them, the computer stays on UTC and the browser's default language. A changed time zone or
+language replaces the computer on its next start, so after upgrading, each computer whose owner
+has either set is replaced once. The home and saved browser profiles are kept. A custom computer
+image should not set `TZ` or `LANGUAGE`: the computer gets them from the account.

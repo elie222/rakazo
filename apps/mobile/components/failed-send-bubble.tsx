@@ -1,7 +1,8 @@
 import { isModelRequiredSendError } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { ActionSheetIOS, Alert, Image, Platform, Pressable, Text, View } from "react-native";
+import { Alert, Image, Platform, Pressable, Text, View } from "react-native";
 import { useI18n } from "../lib/i18n";
+import { showIOSActionSheet } from "../lib/ios-action-sheet";
 import { openModelSettings } from "../lib/model-settings";
 import { useMobileTokens } from "../lib/native";
 import type { SendAttempt } from "../lib/thread-feedback";
@@ -77,7 +78,7 @@ export function FailedSendBubble({
             .join("\n\n")
         : attempt.error;
     if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
+      showIOSActionSheet(
         {
           message,
           options: [...actions.map((action) => action.text), t("Cancel")],

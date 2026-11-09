@@ -14,7 +14,7 @@ import { ComputerMaintenanceActions } from "../../components/ComputerMaintenance
 import { TeachCaptureOverlay } from "../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../../components/teach/TeachRecordingChrome";
-import { screenIframeSandbox } from "../../lib/computer-screen";
+import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
 import { computerTakeoverBlocked } from "../../lib/thread-events";
 import { ComputerReleaseActions } from "./computer-release-actions";
 import { computerLabel, DesktopKindEmptyState } from "./computer-view";
@@ -34,6 +34,7 @@ type ComputerOverlayProps = {
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
   screenFrameKey?: string;
+  heldScreen?: { url: string; key: string } | null;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -61,6 +62,7 @@ export function ComputerOverlay({
   sendError,
   embeddedScreenUrl,
   screenFrameKey,
+  heldScreen,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -202,18 +204,22 @@ export function ComputerOverlay({
             <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-body text-muted-foreground/80" />
           ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
             <>
-              <iframe
-                key={screenFrameKey}
-                title={t`Bot screen`}
-                ref={screenFrameRef}
-                src={embeddedScreenUrl}
-                sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                className="h-full w-full border-0 bg-black"
-                allow="clipboard-read; clipboard-write; fullscreen"
-                style={{
-                  pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                }}
-              />
+              {screenFrames(screenFrameKey, embeddedScreenUrl, heldScreen).map((frame) => (
+                <iframe
+                  key={frame.key}
+                  title={frame.held ? undefined : t`Bot screen`}
+                  aria-hidden={frame.held || undefined}
+                  tabIndex={frame.held ? -1 : undefined}
+                  ref={frame.held ? undefined : screenFrameRef}
+                  src={frame.url}
+                  sandbox={screenIframeSandbox(frame.url)}
+                  className={`h-full w-full border-0 bg-black${frame.held ? " absolute inset-0" : ""}`}
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                  style={{
+                    pointerEvents: frame.held || recordingSkill || !hasControl ? "none" : "auto",
+                  }}
+                />
+              ))}
               {bot ? (
                 <TeachCaptureOverlay
                   botId={bot.id}

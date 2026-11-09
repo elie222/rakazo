@@ -21,6 +21,13 @@ import {
 import { AttentionListOutputSchema } from "./attention.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import {
+  BillingClientSchema,
+  BillingStatusSchema,
+  ByokIntervalSchema,
+  ByokTierSchema,
+  ModelCreditAmountSchema,
+} from "./billing.js";
+import {
   BoardEventSchema,
   BoardSchema,
   CommentTicketInput,
@@ -52,6 +59,14 @@ import {
   CreateBotFromTemplateOutput,
 } from "./bot-template.js";
 import {
+  ComputerModeSchema,
+  ComputerProviderSettingsSchema,
+  ComputerProviderUpdateSchema,
+  ComputerReleaseReasonSchema,
+  ComputerStatusSchema,
+  ComputerUpdateSchema,
+} from "./computer.js";
+import {
   AccessGrantInputSchema,
   AccessGrantSchema,
   AccountItemSchema,
@@ -69,24 +84,13 @@ import {
   ArtifactWithContentSchema,
   AvailabilityKindSchema,
   AvatarStyleSchema,
-  BillingClientSchema,
-  BillingStatusSchema,
-  BotMcpServerSchema,
   BotSchema,
   BotSectionName,
   BotSectionSchema,
-  ByokIntervalSchema,
-  ByokTierSchema,
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CapabilityInstallSchema,
   ChatAlertSchema,
   CONNECTION_LABEL_MAX_LENGTH,
-  ComputerModeSchema,
-  ComputerProviderSettingsSchema,
-  ComputerProviderUpdateSchema,
-  ComputerReleaseReasonSchema,
-  ComputerStatusSchema,
-  ComputerUpdateSchema,
   ConnectionCatalogItemSchema,
   ConnectionSchema,
   CreateAgentSkillInput,
@@ -101,9 +105,6 @@ import {
   GroupSchema,
   IncomingBotCallSchema,
   IntegrationCatalogResultSchema,
-  McpServerConfigInput,
-  McpServerSchema,
-  McpSourcePresetSchema,
   MemoryDocumentSchema,
   MemoryPromptBudgetSchema,
   MemoryScopeSchema,
@@ -113,17 +114,6 @@ import {
   MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
-  ModelApiProtocolSchema,
-  ModelBackupChoiceSchema,
-  ModelBackupListSchema,
-  ModelCatalogEntrySchema,
-  ModelConnectInputSchema,
-  ModelConnectionLabelSchema,
-  ModelConnectionTargetSchema,
-  ModelCredentialSchema,
-  ModelCreditAmountSchema,
-  ModelOAuthBeginSchema,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
@@ -144,7 +134,6 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
-  SpaceAvailabilitySchema,
   SpaceInviteLinkSchema,
   SpaceInvitePreviewSchema,
   SpaceMembersSchema,
@@ -153,6 +142,7 @@ import {
   SpaceSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
   TimeZoneSchema,
@@ -173,6 +163,24 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import {
+  BotMcpServerSchema,
+  McpServerConfigInput,
+  McpServerSchema,
+  McpSourcePresetSchema,
+} from "./mcp.js";
+import {
+  ModelApiProtocolSchema,
+  ModelBackupChoiceSchema,
+  ModelBackupListSchema,
+  ModelCatalogEntrySchema,
+  ModelConnectInputSchema,
+  ModelConnectionLabelSchema,
+  ModelConnectionTargetSchema,
+  ModelCredentialSchema,
+  ModelOAuthBeginSchema,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import {
@@ -199,6 +207,7 @@ import {
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
+import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -229,7 +238,7 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendFields = threadTarget.safeExtend({
   imageHandling: z.enum(["confirm", "file"]).optional(),
-  text: z.string().optional(),
+  text: z.string().max(THREAD_MESSAGE_TEXT_MAX_LENGTH).optional(),
   artifactIds: z.array(Id).max(ATTACHMENT_COUNT_CEILING).optional(),
   /** Bare bot ids (legacy) or typed mention chips from the composer. */
   mentions: z
@@ -243,7 +252,7 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-const threadSendInput = threadSendFields.superRefine((input, ctx) => {
+export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
   const text = input.text?.trim() ?? "";
   const artifactIds = input.artifactIds ?? [];
   if (!text && artifactIds.length === 0) {
@@ -621,6 +630,7 @@ export const appContract = {
         webhookConfigured: z.literal(true),
       }),
     ),
+    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
   },
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),
@@ -690,6 +700,10 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    // Its own route, so a server without it refuses rather than stopping the whole chat.
+    stopHelper: oc
+      .input(threadTarget.safeExtend({ messageId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(
         threadTarget.safeExtend({
@@ -788,6 +802,10 @@ export const appContract = {
     /** With `messageId`, the chat reads as unread from that message: the next open puts New above it. */
     markUnread: oc
       .input(threadTarget.and(z.object({ messageId: Id.optional() })))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Hides the chat from the caller's list until `until`; null wakes it now. */
+    snooze: oc
+      .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
       .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
@@ -1478,6 +1496,13 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
+    /**
+     * Keeps this phone's live status card of the user's bots at work up to date. `following` is
+     * false when the server cannot update the card or no bot is at work, so the app ends it.
+     */
+    followWorkActivity: oc
+      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .output(z.object({ following: z.boolean() })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
@@ -1564,7 +1589,13 @@ export const appContract = {
       )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().optional(),
+          /** BCP-47 tag or ISO 639-1 code; providers narrow it to what they support. */
+          language: z.string().max(35).optional(),
+        }),
+      )
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(

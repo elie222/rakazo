@@ -1,10 +1,13 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  computerScreenSize,
   displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
+  teamWorkspaceInstruction,
   workspaceCwd,
 } from "./computer-support.js";
 
@@ -53,6 +56,17 @@ describe("Team Computer bot folders", () => {
       "bots/bot-1/projects/site",
     );
     expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project")).toBe("/Users/me/project");
+  });
+
+  it("tells the bot how its shell reaches the same shared folder as the file tools", () => {
+    const shellDefaultCwd = resolveBotWorkspaceCwd("team", "bot-1", undefined) ?? "";
+    const sharedForFileTools = resolveBotWorkspacePath("team", "bot-1", "shared/report.xlsx");
+    const instruction = teamWorkspaceInstruction("bot-1");
+    const shellPath = instruction.match(/(\.\.\/)+shared\//)?.[0];
+    expect(shellPath).toBeDefined();
+    expect(path.posix.join(shellDefaultCwd, `${shellPath}report.xlsx`)).toBe(sharedForFileTools);
+    expect(instruction).toContain("shell cwd of shared");
+    expect(resolveBotWorkspaceCwd("team", "bot-1", "shared")).toBe("shared");
   });
 
   it("preserves Windows absolute working directories even when the backend runs on Linux", () => {
@@ -149,5 +163,15 @@ describe("resolveBotUploadPath", () => {
     expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt")).toThrow(
       /escapes the bot workspace/,
     );
+  });
+});
+
+describe("computerScreenSize", () => {
+  it("uses boat geometry and the 1280x800 default for other sandboxes", () => {
+    expect(computerScreenSize("boat")).toEqual({ width: 1920, height: 1080 });
+    expect(computerScreenSize("e2b")).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize("daytona")).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize(null)).toEqual({ width: 1280, height: 800 });
+    expect(computerScreenSize(undefined)).toEqual({ width: 1280, height: 800 });
   });
 });

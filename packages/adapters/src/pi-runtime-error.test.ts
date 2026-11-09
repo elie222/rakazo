@@ -1,6 +1,7 @@
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   modelFallbackFailure,
 } from "@rakazo/core";
@@ -38,7 +39,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import { PiAgentRuntime } from "./pi-runtime.js";
 
-function consume() {
+function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
   const runtime = new PiAgentRuntime();
   return (async () => {
     for await (const _event of runtime.run(
@@ -50,7 +51,7 @@ function consume() {
         instructions: "test",
         history: [],
         tools: [],
-        model: { provider: "openai-codex", id: "gpt-test" },
+        model,
       },
       {
         operationId: "operation",
@@ -106,6 +107,9 @@ describe("Pi runtime errors", () => {
     '400: {"code":"400","message":"Unsupported model example-model"}',
     '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
     '400: {"message":"Model example is not a chat model; call /v1/example instead of /v1/chat/completions","type":"invalid_request_error","param":null,"code":null}',
+    'openai-compatible API error (400): {"message":"example:27b is a decision model and only supports /v1/example (ref: <ref-id>)","type":"invalid_request_error","param":null,"code":null}',
+    "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
+    MODEL_CREDITS_EXHAUSTED_ERROR,
     `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
@@ -121,6 +125,7 @@ describe("Pi runtime errors", () => {
     "Unhandled stop reason: MALFORMED_RESPONSE",
     "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
     "Provider returned an empty response",
+    "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
     'unexpected tokens remaining in message header: Some("to=functions.example")',
     'HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
     '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
@@ -147,6 +152,27 @@ describe("Pi runtime errors", () => {
     "Internal failure while handling unexpected tokens remaining in message header: unknown",
   ])("keeps a request we built or an unknown failure ordinary: %s", async (message) => {
     provider.errorMessage = message;
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+  });
+
+  it.each([
+    ["openai-compatible", "example-model"],
+    ["local", "example-local"],
+  ])(
+    "marks a request the user's own %s endpoint rejects as theirs to fix",
+    async (endpoint, id) => {
+      provider.errorMessage = '400 "Invalid request parameters"';
+      const failure = consume({ provider: endpoint, id });
+      await expect(failure).rejects.toBeInstanceOf(ModelAccountError);
+      await expect(failure).rejects.toThrow("Invalid request parameters");
+    },
+  );
+
+  it("keeps a named provider's bare 400 a server error, since Rakazo may have built it wrong", async () => {
+    provider.errorMessage = '400 "Invalid request parameters"';
     const failure = consume();
     await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
     await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
@@ -244,6 +270,18 @@ describe("Pi runtime errors after every backup failed", () => {
     const failure = consume();
     await expect(failure).rejects.toBeInstanceOf(kind);
     await expect(failure).rejects.toThrow(message);
+  });
+
+  it("credits a backup's bare 400 to its own endpoint, not to the primary's provider", async () => {
+    const rejected = '400 "Invalid request parameters"';
+    const chain = (backupProvider: string) =>
+      modelFallbackFailure(timedOut, [
+        { provider: backupProvider, modelId: "example", status: "failed", reason: rejected },
+      ]);
+    provider.errorMessage = chain("openai-compatible");
+    await expect(consume()).rejects.toBeInstanceOf(ModelAccountError);
+    provider.errorMessage = chain("fake-provider");
+    await expect(consume()).rejects.not.toBeInstanceOf(ModelAccountError);
   });
 
   it("keeps the chain a server error when any failure is unexplained", async () => {

@@ -14,12 +14,8 @@ import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
-import {
-  aiConsentCoalesceKey,
-  captureApiRequestContext,
-  rpc,
-  subscribeConfirmedSpaceSwitch,
-} from "./api";
+import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
@@ -448,22 +444,30 @@ export async function speakUtterance(
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
   const requestContext = opts.requestContext ?? (await captureApiRequestContext());
+  await ensureVoiceConsent(requestContext, opts.scope);
+  return renderUtterance(text, opts, requestContext);
+}
+
+/** Asks before audio or text goes to the voice provider; throws AiConsentBlocked on a refusal. */
+export async function ensureVoiceConsent(
+  requestContext: ApiRequestContext,
+  scope?: SettingsScope,
+): Promise<void> {
   await ensureAiDataConsent({
     uses: ["voice"],
     status: () =>
       rpc(
         "aiConsent/status",
-        { uses: ["voice"], ...(opts.scope ? { settingsScope: opts.scope } : {}) },
+        { uses: ["voice"], ...(scope ? { settingsScope: scope } : {}) },
         { requestContext },
       ),
     prompt: promptAiConsent,
     allow: (input) =>
-      rpc("aiConsent/allow", opts.scope ? { ...input, settingsScope: opts.scope } : input, {
+      rpc("aiConsent/allow", scope ? { ...input, settingsScope: scope } : input, {
         requestContext,
       }),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
-  return renderUtterance(text, opts, requestContext);
 }
 
 async function renderUtterance(
@@ -643,7 +647,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
     `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
   );
   file.create({ overwrite: true });
-  file.write(bytesToBase64(bytes), { encoding: "base64" });
+  file.writeSync(bytesToBase64(bytes), { encoding: "base64" });
   const player = createAudioPlayer({ uri: file.uri });
   try {
     await new Promise<void>((resolve, reject) => {

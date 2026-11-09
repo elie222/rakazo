@@ -16,6 +16,7 @@ describe("suggestedEmailName", () => {
   it("drops what an address cannot hold", () => {
     expect(suggestedEmailName("研究")).toBe("");
     expect(suggestedEmailName("a".repeat(80))).toHaveLength(64);
+    expect(suggestedEmailName("Support Bot")).toBe("");
   });
 });
 
@@ -25,5 +26,25 @@ describe("parseBotEmailName", () => {
     expect(parseBotEmailName("a")).toEqual({ problem: "length" });
     expect(parseBotEmailName("postmaster")).toEqual({ problem: "taken" });
     expect(parseBotEmailName("not ok!")).toEqual({ problem: "characters" });
+  });
+
+  it("keeps reserved names and their lookalikes for no bot", () => {
+    for (const name of [
+      "hello",
+      "elie",
+      "support.ts",
+      "admin-bot",
+      "help_desk",
+      "rakazo",
+      "rakazobot",
+      "no-reply",
+      "no-reply.bot",
+      "mailer-daemon",
+    ]) {
+      expect(parseBotEmailName(name)).toEqual({ problem: "taken" });
+    }
+    for (const name of ["helper", "admiral", "hiker", "scout-team", "my-support"]) {
+      expect(parseBotEmailName(name)).toEqual({ name });
+    }
   });
 });

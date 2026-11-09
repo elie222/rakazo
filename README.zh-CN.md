@@ -9,61 +9,95 @@
 
 ![Rakazo：由你掌控的 AI 队友](./docs/readme-hero.png)
 
-Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI 队友，也可以作为自托管 AI 助手在自己的电脑上运行。
-它提供网页版、Electron 桌面应用，以及 [iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
-[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 应用。
-你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
+Rakazo 是 Grok Bot 的开源、自托管替代方案。
 
-它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
+长期在线的 AI 队友，各自拥有记忆、例行任务、应用和计算机。在自己的机器上运行，使用自己的模型。
 
-Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
+可在[网页](https://app.rakazo.com)、[桌面端](https://rakazo.com/download/)、[iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 上使用。
+
+它也是 Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的替代方案。
+
+详情见 [rakazo.com](https://rakazo.com)。
 
 本文是 [英文 README](./README.md) 的简体中文译文。[自托管指南](./docs/zh-CN/self-host.md)已提供中文。
 
-## 与其他产品的比较
-
-Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
-Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
-后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
-
-- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
-- [Muse](https://rakazo.com/muse-alternative/)
-- [Dots](https://rakazo.com/dots-alternative/)
-- [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
-- [OpenClaw](https://rakazo.com/openclaw-alternative/)
-- [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
-- [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
-- [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
-- [全部对比](https://rakazo.com/alternatives/)
-- [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
-
 ## 功能
 
-- 可长期运行的机器人，各自拥有对话、记忆、例行任务和历史记录
-- 语音模式：朗读回复、语音输入和机器人通话；可接入自己的 ElevenLabs、OpenAI、Cartesia 或 Fish Audio 密钥
-- 共享的团队计算机（Team Computers）和隔离的私有计算机（Private computers）
-- 浏览器、终端、文件和图形桌面访问
-- 机器人可将任务委派给其他机器人或临时子智能体
-- 通过 Pi 接入自己的模型凭据
-- 通过 Composio 或 Pipedream Connect 集成应用，也支持用户自行安装的 Treg、远程 MCP 和 OpenAPI 工具来源
-- 支持 Docker、E2B、Daytona、CreateOS、Boat，以及受信任的本机计算环境
+- 例行任务
+- 记忆
+- 使用计算机和浏览器
+- 私有或共享的团队计算机
+- 在 Docker、云端或自己的机器上运行沙箱
+- 群聊
+- 任务委派与子智能体
+- 构建可通过链接分享的仪表盘和文档
+- 语音聊天和通话
+- 任意模型，使用自己的密钥
+- 数千个应用集成，并支持 MCP
 
-## 演示
+<table>
+<tr>
+<td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
+### 每个机器人都有一台计算机
 
-## 技术栈
+浏览器、终端、文件和完整桌面。看着它工作，需要登录时接管，再交还给它。
 
-- TypeScript
-- React 19、Vite 和 Tailwind CSS
-- Electron 和 Expo
-- Hono 和 oRPC
-- PostgreSQL 和 Prisma
-- Better Auth
-- Graphile Worker
-- Pi
-- Docker、E2B、Daytona、CreateOS 和 Boat
-- Composio、Pipedream Connect、MCP 和 OpenAPI 集成
+<img src="./docs/screenshots/readme/computer.png" alt="机器人的团队计算机，打开着浏览器" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### 协同工作的机器人
+
+把机器人拉进群聊并 @ 它们。它们分工合作、互相检查，再向你汇报。
+
+<img src="./docs/screenshots/readme/groups.png" alt="三个机器人在群聊中一起回应请求" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 例行任务
+
+按计划、收到邮件或 Webhook 时运行机器人，并查看每一次运行。
+
+<img src="./docs/screenshots/readme/routines.png" alt="工作日例行任务及其运行记录，旁边是机器人的聊天" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### 页面
+
+机器人构建实时仪表盘和文档，可全屏打开、分享，并就其提问。
+
+<img src="./docs/screenshots/readme/pages.png" alt="机器人构建的全屏增长仪表盘" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 连接应用
+
+Gmail、Slack、GitHub、Notion、Linear 等数千个应用，以及你自己的 MCP 服务器和 OpenAPI 工具。
+
+<img src="./docs/screenshots/readme/integrations.png" alt="应用集成目录" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### 全平台可用
+
+网页、桌面端、iPhone 和 Android，连接同一台服务器。
+
+<img src="./docs/screenshots/readme/mobile.png" alt="iPhone 上的机器人列表和聊天" width="100%">
+
+</td>
+</tr>
+</table>
 
 ## 部署到 Railway
 
@@ -114,8 +148,8 @@ bash install-images.sh
 
 ## 本地开发（从源码运行）
 
-需要 Node.js 22.x（至少 22.22.2）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
-不支持 Node.js 23.x 和 25.x。
+需要 Node.js 24.x（至少 24.15.0）或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
+不支持 Node.js 25.x。
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -135,12 +169,13 @@ Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 
 托管应用目录是可选功能。使用 Composio 时设置 `COMPOSIO_API_KEY`；
 使用 Pipedream Connect 时设置 `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET` 和 `PIPEDREAM_PROJECT_ID`。
-即使不启用这两个托管目录，用户也可以在 **Integrations**（集成）中添加 HTTPS MCP 服务器、
-Treg 端点或 OpenAPI JSON 文档。连接器凭据在服务器上加密存储，API 不会返回这些凭据。
+即使不启用这两个托管目录，用户也可以在 **Integrations**（集成）中添加 HTTPS MCP 服务器或
+OpenAPI JSON 文档。连接器凭据在服务器上加密存储，API 不会返回这些凭据。
 
-Treg 按用量计费。自托管用户需提供自己的 Treg 令牌；
-将 Treg 嵌入托管产品的运营方应查阅 [Treg 集成条款](https://treg.to/integrate.md)，
-其中要求托管转售须签订书面协议。
+付费数据服务（地图地点、搜索结果、工作邮箱、个人资料、SEO 数据）同样是可选的。
+设置 `PAID_SERVICES_PROVIDER=treg`，并在 `PAID_SERVICES_API_KEY` 中填入组织级 [Treg](https://treg.to) 令牌，
+机器人即可使用部署方的账户查找并调用这些服务。启用模型额度时，每次调用按服务商成本加 20%
+从组织的额度中扣除。
 
 ```bash
 pnpm install
@@ -274,6 +309,46 @@ pnpm test:e2e
 - [存储与加密](./docs/self-host-storage.md)、[生产部署](./docs/self-host-production.md)、[日志与监控](./docs/self-host-observability.md)、[审计日志](./docs/self-host-audit-log.md)（英文）
 - [客户端](./docs/self-host-clients.md)、[计费](./docs/self-host-billing.md)、[计算机运行时与隔离](./docs/computer-runtime.md)（英文）
 - [桌面端发布](./docs/desktop-release.md)、[移动端发布](./docs/mobile-release.md)、[性能测试](./docs/performance.md)、[管理机器人的机器人](./docs/fleet-management.md)（英文）
+
+## 与其他产品的比较
+
+Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
+Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
+后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
+
+- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
+- [Muse](https://rakazo.com/muse-alternative/)
+- [Dots](https://rakazo.com/dots-alternative/)
+- [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
+- [OpenClaw](https://rakazo.com/openclaw-alternative/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
+- [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
+- [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
+- [全部对比](https://rakazo.com/alternatives/)
+- [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
+
+## 致谢
+
+- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+
+## 技术栈
+
+- TypeScript
+- React 19、Vite 和 Tailwind CSS
+- Electron 和 Expo
+- Hono 和 oRPC
+- PostgreSQL 和 Prisma
+- Better Auth
+- Graphile Worker
+- Pi
+- Docker、E2B、Daytona、CreateOS 和 Boat
+- Composio、Pipedream Connect、MCP 和 OpenAPI 集成
 
 ## 参与贡献
 

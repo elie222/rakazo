@@ -32,6 +32,8 @@ bash install-images.sh --prepare-only
 bash install-images.sh
 ```
 
+当 `RAKAZO_IMAGE_TAG` 为 `v0.8.0` 这样的发布版本时，安装脚本会从该版本而不是 `main` 下载 Compose 文件。
+
 `SANDBOX_PROVIDER` 默认为 `docker`，无需远程计算机服务账号即可使用本地 Docker 计算机。
 镜像版 Compose 会在内部网络运行沙箱监督服务，并拉取计算机镜像。
 远程计算机的选择与密钥配置见[计算机提供商（英文）](../self-host-sandbox-providers.md)。
@@ -65,7 +67,7 @@ app.example.com {
 
 ## 从源码运行
 
-需要 Node.js 22.x（至少 22.22.2）、24.x 或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 23.x 和 25.x。
+需要 Node.js 24.x（至少 24.15.0）或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 25.x。
 从仓库根目录开始：
 
 ```bash

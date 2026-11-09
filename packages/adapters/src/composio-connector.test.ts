@@ -6,13 +6,10 @@ import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  ConnectorRegistry,
   collectLogIds,
-  collectPages,
   composioResultError,
   executeSessionKey,
   expandComposioMultiExecute,
-  filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
   isNoManagedAuthError,
@@ -22,6 +19,8 @@ import {
   planLiveConnectionSync,
   sanitizeIntegrationError,
 } from "./composio-connector.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
+import { ConnectorRegistry } from "./connector-registry.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
 const composioSdkState = vi.hoisted(() => ({
@@ -32,7 +31,11 @@ const composioSdkState = vi.hoisted(() => ({
     args: Record<string, unknown>;
     options?: { account?: string };
   }>,
-  executeResult: null as null | { data: Record<string, unknown>; error: string | null },
+  executeResult: null as null | {
+    data: Record<string, unknown>;
+    error: string | null;
+    resultType?: "completed" | "failed" | "blocked";
+  },
   failTools: null as null | string[],
   logIds: null as null | string[],
   connectedAccounts: {
@@ -131,10 +134,12 @@ vi.mock("@composio/core", () => ({
         ) => {
           composioSdkState.executions.push(options ? { tool, args, options } : { tool, args });
           const failed = composioSdkState.failTools?.includes(tool) ?? false;
+          const result = failed
+            ? { data: { ok: false }, error: "listing failed" }
+            : (composioSdkState.executeResult ?? { data: { ok: true }, error: null });
           return {
-            ...(failed
-              ? { data: { ok: false }, error: "listing failed" }
-              : (composioSdkState.executeResult ?? { data: { ok: true }, error: null })),
+            resultType: result.error ? "failed" : "completed",
+            ...result,
             logId: composioSdkState.logIds?.shift() ?? "log-github",
           };
         },
@@ -975,6 +980,43 @@ describe("composio tool mapping", () => {
           '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
       },
     ]);
+  });
+
+  it("reports a call the provider marked failed even when its error text is empty", async () => {
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = { data: {}, error: null, resultType: "failed" };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-failed-without-error",
+      traceId: "composio-failed-without-error",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "GITHUB_GET_REPOS", args: {}, executionId: "composio-failed-without-error" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([{ type: "error", message: "GITHUB_GET_REPOS failed" }]);
   });
 
   it("redacts credential values in successful tool results without dropping the payload", async () => {

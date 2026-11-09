@@ -26,8 +26,7 @@ import { mountAccountExportRoute } from "./account-export.js";
 import { importAccount } from "./account-import.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("account export (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
@@ -166,6 +165,30 @@ describePostgres("account export (PostgreSQL)", () => {
             text: `Built [Launch plan](page:${page.id}) for you.`,
           },
         ],
+      });
+      // A background helper works in a thread of its own; its id sorts after the bot's thread.
+      const helperThread = await prisma.thread.create({
+        data: {
+          id: `zz-helper-${suffix}`,
+          spaceId: ownedSpace,
+          userId: exporter,
+          helperBotId: `mine-${suffix}`,
+        },
+      });
+      await createThreadMessage(prisma, {
+        threadId: helperThread.id,
+        role: "bot",
+        botId: `mine-${suffix}`,
+        blocks: [{ kind: "text", text: "Helper found SAFFRON" }],
+      });
+      const theirHelperThread = await prisma.thread.create({
+        data: { spaceId: sharedSpace, userId: other, helperBotId: `theirs-${suffix}` },
+      });
+      await createThreadMessage(prisma, {
+        threadId: theirHelperThread.id,
+        role: "bot",
+        botId: `theirs-${suffix}`,
+        blocks: [{ kind: "text", text: "Their helper's notes" }],
       });
       const theirThread = await prisma.thread.create({
         data: { spaceId: sharedSpace, userId: other, botId: `theirs-${suffix}` },
@@ -323,6 +346,8 @@ describePostgres("account export (PostgreSQL)", () => {
       "message",
       "message",
       "message",
+      "thread",
+      "message",
       "artifact",
       "artifact",
       "memory_document",
@@ -337,6 +362,16 @@ describePostgres("account export (PostgreSQL)", () => {
         (record): record is Extract<AccountExportRecord, { type: T }> => record.type === type,
       );
     expect(owns("thread")[0]!.historyCompactionSummary).toBe("Summary mentions PERIWINKLE");
+    expect(owns("thread")[1]).toMatchObject({
+      id: `zz-helper-${suffix}`,
+      botId: null,
+      groupId: null,
+      helperBotId: `mine-${suffix}`,
+    });
+    expect(owns("message")[3]).toMatchObject({
+      threadId: `zz-helper-${suffix}`,
+      blocks: [{ kind: "text", text: "Helper found SAFFRON" }],
+    });
     expect(owns("message")[0]!.blocks).toEqual([
       { kind: "text", text: "The codeword is MARIGOLD" },
     ]);

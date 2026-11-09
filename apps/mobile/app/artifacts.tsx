@@ -2,7 +2,7 @@ import { artifactTypeLabel } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LayoutChangeEvent } from "react-native";
+import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -19,12 +19,12 @@ import { BotAvatar } from "../components/bot-avatar";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
 import { formatActivityRelativeTime } from "../lib/activity";
-import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts";
 import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -43,7 +43,7 @@ export default function ArtifactsScreen() {
   const { botId } = useLocalSearchParams<{ botId?: string }>();
   const [activeBotId, setActiveBotId] = useState<string | null>(botId || null);
   const [madeByBots, setMadeByBots] = useState(false);
-  const chipsScrollRef = useRef<ScrollView>(null);
+  const chipsScrollRef = useRef<ScrollViewInstance>(null);
   const initialChipLayout = useRef({
     viewportWidth: 0,
     contentWidth: 0,
@@ -352,7 +352,7 @@ export default function ArtifactsScreen() {
             <View style={styles.footer}>
               <ActivityIndicator color={native.secondaryLabel} />
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <ArtifactRow

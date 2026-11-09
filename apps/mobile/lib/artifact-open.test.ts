@@ -32,7 +32,7 @@ vi.mock("expo-file-system", () => {
     }
   }
   class File extends Node {
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
     textSync() {
@@ -62,6 +62,9 @@ vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => state.apiBase,

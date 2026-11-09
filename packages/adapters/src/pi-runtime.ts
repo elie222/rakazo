@@ -58,6 +58,14 @@ import {
   MAX_CONTINUATION_OVERLAP,
   MAX_SELF_RECOVERIES_PER_RUN,
 } from "./pi-runtime-fallback.js";
+import {
+  isHistoryReply,
+  speakerText,
+  toHistory,
+  toPiImages,
+  withLeadingUser,
+  withoutSteeringMessages,
+} from "./pi-runtime-history.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import {
   cardOutputCeiling,
@@ -70,9 +78,11 @@ import {
 } from "./pi-runtime-models.js";
 import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.js";
 import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
-import type { EventQueue, ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
+import type { ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
 import {
   agentToolDefinitions,
+  createGate,
+  createQueue,
   describeToolActivity,
   redactAskUserDetailInMessage,
   releaseToolCallBudget,
@@ -484,6 +494,13 @@ export class PiAgentRuntime implements AgentRuntime {
             agent.state.model = target.model;
             contextPolicy = contextPolicyFor(target);
           },
+          // A throwaway policy, so judging a backup leaves the active policy's sent transcript
+          // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
+          // turn is added as on each call, so the backup is judged on what it would be sent.
+          prepareForTarget: (target, ctx) => ({
+            ...ctx,
+            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
+          }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
@@ -609,8 +626,10 @@ export class PiAgentRuntime implements AgentRuntime {
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
+              // Steered, so the output reaches the next model request like a tool result. A
+              // follow-up waits until the model stops and then costs one model turn each.
               (text) => {
-                agent.followUp({
+                agent.steer({
                   role: "user",
                   content: text,
                   timestamp: Date.now(),
@@ -650,7 +669,7 @@ export class PiAgentRuntime implements AgentRuntime {
             for (const item of steering) representedHistoryIds.add(item.messageId);
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
-            for (const item of steering) {
+            const messages = steering.map((item): Message => {
               const images = toPiImages(item.images);
               const text =
                 item.origin === "user"
@@ -659,18 +678,21 @@ export class PiAgentRuntime implements AgentRuntime {
                       toolDefs.some((tool) => tool.name === "message_user"),
                     )
                   : midTaskMessageFromPrompt(steeringText(item), item.origin);
-              agent.steer({
+              return {
                 role: "user",
                 content: images.length ? [{ type: "text", text }, ...images] : text,
                 timestamp: Date.now(),
-              });
-            }
+              };
+            });
             // Ordered with the turn's other events, so the run can treat it as a turn boundary.
             queue.push({
               type: "steered",
               fromRunUser: steering.some((item) => item.origin === "user"),
             });
-            return update;
+            // Returned rather than steered: Pi polls its steering queue once per turn before
+            // this hook runs, and skips the poll after it when that one found a message, such
+            // as a finished shell's output. Returned messages always go into the next request.
+            return { ...update, messages };
           },
           initialState: {
             systemPrompt,
@@ -1153,7 +1175,10 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message);
+          throw modelFailure(error, message, {
+            provider: activeStreamTarget.config.provider,
+            primaryProvider: fallbackState.request.model.provider,
+          });
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.
@@ -1256,210 +1281,4 @@ export class PiAgentRuntime implements AgentRuntime {
       if (running.get(request.runId) === active) running.delete(request.runId);
     }
   }
-}
-
-function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
-  return (images ?? []).map((image) => ({
-    type: "image" as const,
-    data: Buffer.from(image.data).toString("base64"),
-    mimeType: image.mimeType,
-  }));
-}
-
-/**
- * Provider, api and model stamped on replayed own replies. None matches a real model, so Pi
- * replays them as plain text from another model: no signatures or reasoning, same on every provider.
- */
-const HISTORY_ASSISTANT = { api: "rakazo-history", provider: "rakazo-history", model: "history" };
-const NO_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-/** Stands in for the opening turn when the window starts on a bot message (Bedrock needs a user first). */
-const CONVERSATION_START = "[Conversation start]";
-
-type HistoryMessage = Message & {
-  rakazoHistory: true;
-  rakazoMessageId?: string;
-  rakazoCreatedAt?: string;
-};
-
-/** What the model reads for a message by someone other than this bot or the human of a direct chat. */
-function speakerText(speaker: string, text: string): string {
-  return `[${speaker}]: ${neutralizeSpeakerLabels(text)}`;
-}
-
-/**
- * Replays stored messages with their real roles. This bot's own replies are assistant turns;
- * a message with a `speaker` (another bot, or the human in a group) is a user turn that starts
- * with "[speaker]: ". A system line (a stop or expiry note) is a user turn that starts with
- * "System note: ". These labels exist only here: they are never stored or shown in the app.
- * Content is a pure function of the message, so replayed history is stable for prompt caching.
- */
-function toHistory(
-  history: AgentRunRequest["history"],
-  prompt: string,
-  sourceMessageId?: string | null,
-): HistoryMessage[] {
-  let duplicatePromptIndex = -1;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const message = history[index];
-    if (
-      message?.role === "user" &&
-      (sourceMessageId ? message.id === sourceMessageId : message.content === prompt)
-    ) {
-      duplicatePromptIndex = index;
-      break;
-    }
-  }
-  const prior =
-    duplicatePromptIndex < 0
-      ? history
-      : history.filter((_, index) => index !== duplicatePromptIndex);
-  return prior.flatMap((m): HistoryMessage[] => {
-    const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
-    const common = {
-      timestamp: Number.isNaN(created) ? 0 : created,
-      rakazoHistory: true as const,
-      rakazoMessageId: m.id,
-      rakazoCreatedAt: m.createdAt,
-    };
-    if (m.role === "assistant" && !m.speaker) {
-      // A reply that holds only tool work has no text to replay.
-      if (!m.content.trim()) return [];
-      return [
-        {
-          role: "assistant" as const,
-          content: [{ type: "text" as const, text: m.content }],
-          ...HISTORY_ASSISTANT,
-          usage: NO_USAGE,
-          stopReason: "stop" as const,
-          ...common,
-        },
-      ];
-    }
-    if (m.role === "system" && !m.content.trim()) return [];
-    const text =
-      m.role === "system"
-        ? `System note: ${neutralizeSpeakerLabels(m.content)}`
-        : m.speaker
-          ? speakerText(m.speaker, m.content)
-          : m.content;
-    // Pictures ride on the human's turn only, never on a bot's.
-    const images = m.role === "assistant" ? [] : toPiImages(m.images);
-    return [
-      {
-        role: "user" as const,
-        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
-        ...common,
-      },
-    ];
-  });
-}
-
-function isHistoryReply(message: Message | undefined): boolean {
-  return (
-    message?.role === "assistant" &&
-    Boolean((message as Message & { rakazoHistory?: true }).rakazoHistory)
-  );
-}
-
-/**
- * Every provider needs the first message to be the user's (Bedrock rejects anything else, and
- * chat templates assume it), but a window or a trim can start on one of this bot's replies.
- * Called on each model call, so it holds whatever the context policy kept.
- */
-function withLeadingUser(context: Context): Context {
-  const first = context.messages.findIndex((message) => (message.role as string) !== "system");
-  if (first < 0 || context.messages[first]!.role === "user") return context;
-  const start: Message = { role: "user", content: CONVERSATION_START, timestamp: 0 };
-  return {
-    ...context,
-    messages: [...context.messages.slice(0, first), start, ...context.messages.slice(first)],
-  };
-}
-
-function withoutSteeringMessages(
-  history: AgentRunRequest["history"],
-  steering: AgentSteeringMessage[],
-): AgentRunRequest["history"] {
-  if (steering.length === 0) return history;
-  const result = [...history];
-  let beforeIndex = result.length - 1;
-  for (let steeringIndex = steering.length - 1; steeringIndex >= 0; steeringIndex -= 1) {
-    const steeringMessage = steering[steeringIndex];
-    for (let index = beforeIndex; index >= 0; index -= 1) {
-      const message = result[index];
-      if (
-        message?.role !== "user" ||
-        (message.id
-          ? message.id !== steeringMessage?.messageId
-          : message.content !== (steeringMessage?.historyText ?? steeringMessage?.text))
-      ) {
-        continue;
-      }
-      result.splice(index, 1);
-      beforeIndex = index - 1;
-      break;
-    }
-  }
-  return result;
-}
-
-function createGate(max: number) {
-  let active = 0;
-  const waiters: Array<() => void> = [];
-  return {
-    async acquire() {
-      if (active >= max) {
-        await new Promise<void>((resolve) => {
-          waiters.push(resolve);
-        });
-      }
-      active += 1;
-    },
-    release() {
-      active = Math.max(0, active - 1);
-      waiters.shift()?.();
-    },
-  };
-}
-
-function createQueue(): EventQueue {
-  const items: AgentRuntimeEvent[] = [];
-  let wake: (() => void) | undefined;
-  let closed = false;
-  let failure: Error | undefined;
-  return {
-    push(event) {
-      items.push(event);
-      wake?.();
-    },
-    fail(error) {
-      failure = error;
-      closed = true;
-      wake?.();
-    },
-    close() {
-      closed = true;
-      wake?.();
-    },
-    async *iterate() {
-      while (true) {
-        if (items.length) {
-          yield items.shift()!;
-          continue;
-        }
-        if (failure) throw failure;
-        if (closed) return;
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
-      }
-    },
-  };
 }

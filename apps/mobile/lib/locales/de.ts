@@ -1,4 +1,12 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Snooze: "Schlummern",
+  Snoozed: "Geschlummert",
+  Unsnooze: "Nicht mehr schlummern",
+  Woke: "Wieder da",
+  "1 hour": "1 Stunde",
+  "3 hours": "3 Stunden",
+  Tomorrow: "Morgen",
+  "Next week": "Nächste Woche",
   "No matches": "Keine Treffer",
   "Always ask": "Immer fragen",
   "Search tools": "Tools durchsuchen",
@@ -460,6 +468,7 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",
   Versions: "Versionen",
   Stop: "Stoppen",
+  Stopped: "Gestoppt",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",
   "Type your answer": "Gib deine Antwort ein",
@@ -499,6 +508,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Minimal: "Minimal",
   Model: "Modell",
   Name: "Name",
+  "Name your Bot": "Benenne deinen Bot",
   "Read replies aloud": "Antworten vorlesen",
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",
@@ -581,7 +591,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Name this routine.": "Gib der Routine einen Namen.",
   "New routine": "Neue Routine",
   "Remove schedule": "Zeitplan entfernen",
-  "Test run": "Testlauf",
+  "Run now": "Jetzt ausführen",
   "Time of day": "Uhrzeit",
   Unit: "Einheit",
   "When to run": "Ausführungszeit",
@@ -994,6 +1004,9 @@ export const DE_MESSAGES: Record<string, string> = {
   Call: "Anrufen",
   "Calls need transcription": "Anrufe brauchen eine Transkription",
   "Could not hear that.": "Das war nicht zu verstehen.",
+  "Approve or deny it on screen.": "Genehmige oder lehne es auf dem Bildschirm ab.",
+  "Hang up, then enter the code on screen.":
+    "Lege auf und gib dann den Code auf dem Bildschirm ein.",
   "Could not speak that.": "Das konnte nicht vorgelesen werden.",
   "Could not transcribe that.": "Das konnte nicht transkribiert werden.",
   "Hang up": "Auflegen",
@@ -1139,6 +1152,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Available credits": "Verfügbares Guthaben",
   "Computer hours left": "Verbleibende Computerstunden",
   Upgrade: "Upgraden",
+  "Your trial's computer hours are used up.":
+    "Die Computerstunden deines Testzeitraums sind aufgebraucht.",
+  "This month's computer hours are used up.":
+    "Die Computerstunden dieses Monats sind aufgebraucht.",
   "Cancelled trials have no computer hours.":
     "Gekündigte Testzeiträume haben keine Computerstunden.",
   "Renew plan": "Plan verlängern",

@@ -200,6 +200,7 @@ function fixture(
         findFirst: async () => ({ id: "fixture-key", ciphertext: "fixture-ciphertext" }),
       },
       $queryRaw: async () => [],
+      $executeRaw: async () => 0,
       $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(prisma),
       externalEffect: {
         ...empty,

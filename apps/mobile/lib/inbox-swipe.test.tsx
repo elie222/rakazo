@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
-import type { MobileBotSection } from "./api";
+import { NativeListRowContext } from "../components/native-list-row";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -16,6 +16,7 @@ import {
   inboxRowActions,
   unreadOverrideKey,
 } from "./inbox-swipe";
+import type { MobileBotSection } from "./mobile-types";
 
 const swift = vi.hoisted(() => ({
   groups: [] as Array<{ edge?: string; allowsFullSwipe?: boolean; labels: string[] }>,
@@ -24,7 +25,9 @@ const swift = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   PlatformColor: (name: string) => ({ semantic: [name] }),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, style }: { children: ReactNode; style?: { width?: number } }) => (
+    <div data-width={style?.width}>{children}</div>
+  ),
 }));
 vi.mock("./native", () => ({
   native: { page: "page", fill: "fill" },
@@ -32,12 +35,27 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 // SwiftUI views render as plain DOM so tests can read the row's structure.
+// Tests load the shared module; the list rows are the iOS one.
+vi.mock("../components/native-row", () => import("../components/native-row.ios"));
 vi.mock("@expo/ui/swift-ui", async () => {
   const { Children, isValidElement } = await import("react");
   const box =
     (name: string) =>
     ({ children }: { children?: ReactNode }) => <div data-ui={name}>{children}</div>;
-  const SwipeActions = box("SwipeActions") as ReturnType<typeof box> & {
+  const SwipeActions = (({
+    children,
+    modifiers,
+  }: {
+    children?: ReactNode;
+    modifiers?: Array<{ name: string }>;
+  }) => (
+    <div
+      data-ui="SwipeActions"
+      data-row-modifiers={(modifiers ?? []).map((modifier) => modifier.name).join(" ")}
+    >
+      {children}
+    </div>
+  )) as ReturnType<typeof box> & {
     Actions: (props: {
       edge?: string;
       allowsFullSwipe?: boolean;
@@ -260,6 +278,7 @@ describe("iOS swipe row", () => {
     const onAction = vi.fn<(action: InboxRowAction) => void>();
     const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
     const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
+    const onSnooze = vi.fn<NonNullable<InboxSwipeRowProps["onSnooze"]>>();
     const container = document.createElement("div");
     const root = createRoot(container);
     act(() =>
@@ -271,6 +290,8 @@ describe("iOS swipe row", () => {
           onAction={onAction}
           onOrganize={onOrganize}
           onEditSection={onEditSection}
+          snoozed={false}
+          onSnooze={onSnooze}
           {...row}
         >
           <span>{key}</span>
@@ -281,7 +302,7 @@ describe("iOS swipe row", () => {
     const items = find('[data-ui="ContextMenu.Items"]')!;
     const press = (label: string) =>
       act(() => items.querySelector<HTMLElement>(`[data-label="${label}"]`)!.click());
-    return { container, find, items, press, onAction, onOrganize, onEditSection, root };
+    return { container, find, items, press, onAction, onOrganize, onEditSection, onSnooze, root };
   }
 
   const entry = (item: Element) => [
@@ -298,7 +319,7 @@ describe("iOS swipe row", () => {
     const { container, onAction, root } = render({ unread: true, pinned: true });
     expect(swift.groups).toEqual([
       { edge: "leading", allowsFullSwipe: undefined, labels: ["Mark as Read"] },
-      { edge: "trailing", allowsFullSwipe: false, labels: ["Archive", "Unpin"] },
+      { edge: "trailing", allowsFullSwipe: undefined, labels: ["Archive", "Unpin"] },
     ]);
     const buttons = Array.from(
       container.querySelectorAll<HTMLElement>('[data-ui="SwipeActions.Actions"] > button'),
@@ -321,6 +342,38 @@ describe("iOS swipe row", () => {
       for (const button of buttons) button.click();
     });
     expect(onAction.mock.calls).toEqual([["read"], ["archive"], ["unpin"]]);
+    act(() => root.unmount());
+  });
+
+  it("joins the native inbox list as one of its rows, sized to its row", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <NativeListRowContext.Provider
+          value={{ modifiers: [{ name: "listRowInsets" } as never], width: 300 }}
+        >
+          <InboxSwipeRow
+            rowKey="bot:1"
+            sections={sections}
+            preview={{ title: "Ada", message: "Hi", avatar: <i /> }}
+            onAction={vi.fn()}
+            onOrganize={vi.fn()}
+            onEditSection={vi.fn()}
+          >
+            <span>Ada</span>
+          </InboxSwipeRow>
+        </NativeListRowContext.Provider>,
+      ),
+    );
+    // No list of its own: the row takes the list's row modifiers.
+    expect(container.querySelector('[data-ui="Host"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLElement>('[data-ui="SwipeActions"]')?.dataset.rowModifiers,
+    ).toBe("listRowInsets");
+    // Hosted content takes the width the list lays the row out at.
+    const trigger = container.querySelector('[data-ui="ContextMenu.Trigger"]');
+    expect(trigger?.querySelector("[data-width]")?.getAttribute("data-width")).toBe("300");
     act(() => root.unmount());
   });
 
@@ -352,6 +405,7 @@ describe("iOS swipe row", () => {
       ["Mark as Read", "checkmark.message.fill", null],
       ["Pin", "pin", null],
       ["Silence notifications", "bell.slash", null],
+      ["Snooze", "moon.zzz", null],
       ["Move to", "folder", null],
       ["Archive", "eye.slash", null],
       ["Delete…", "trash", "destructive"],
@@ -360,7 +414,7 @@ describe("iOS swipe row", () => {
     for (const button of items.querySelectorAll<HTMLElement>("button")) {
       expect(button.dataset.modifiers ?? "[]").toBe("[]");
     }
-    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+    expect(entries(find('[data-ui="Menu"][data-label="Move to"]')!)).toEqual([
       ["Work", "true", null],
       ["Home", "false", null],
       ["Unassigned", "false", null],
@@ -375,6 +429,7 @@ describe("iOS swipe row", () => {
     expect(entries(items).map(([label]) => label)).toEqual([
       "Mark as Unread",
       "Unpin",
+      "Snooze",
       "Move to",
       "Archive",
       "Delete…",
@@ -383,13 +438,32 @@ describe("iOS swipe row", () => {
     expect(items.querySelector('[data-label="Delete…"]')?.getAttribute("data-role")).toBe(
       "destructive",
     );
-    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+    expect(entries(find('[data-ui="Menu"][data-label="Move to"]')!)).toEqual([
       ["Work", "false", null],
       ["Home", "false", null],
       ["Unassigned", "true", null],
       ["New section", "folder.badge.plus", null],
     ]);
     act(() => root.unmount());
+  });
+
+  it("snoozes until a preset, or offers Unsnooze while snoozed", () => {
+    const { find, press, onSnooze, root } = render();
+    expect(entries(find('[data-ui="Menu"][data-label="Snooze"]')!).map(([label]) => label)).toEqual(
+      ["1 hour", "3 hours", "Tomorrow", "Next week"],
+    );
+    const before = Date.now();
+    press("1 hour");
+    const until = Date.parse(onSnooze.mock.calls[0]![0]!);
+    expect(until - before).toBeGreaterThanOrEqual(60 * 60 * 1000 - 1000);
+    expect(until - before).toBeLessThanOrEqual(60 * 60 * 1000 + 1000);
+    act(() => root.unmount());
+
+    const snoozed = render({ snoozed: true });
+    expect(snoozed.find('[data-ui="Menu"][data-label="Snooze"]')).toBeNull();
+    snoozed.press("Unsnooze");
+    expect(snoozed.onSnooze).toHaveBeenCalledWith(null);
+    act(() => snoozed.root.unmount());
   });
 
   it("runs menu items through the swipe and organize paths", () => {

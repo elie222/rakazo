@@ -67,6 +67,7 @@ Human input and agent input may coexist on distinct Team screens. “Take contro
 The web and desktop computer view opens a terminal and a file browser from a dock over the screen. The dock's browser button hides those windows, keeping their sessions, so the whole screen is visible again.
 
 **Terminal**
+
 - The Activity view always shows what the bot did on its computer, live and from history. Each action is recorded as a `computer.command` event:
   - `shell` commands, with the redacted command and the tail of their output;
   - `write_file`, `attach_file`, `open_path`, and `launch_app`, as one line each, with the size for writes and the error if they failed.
@@ -81,6 +82,7 @@ The web and desktop computer view opens a terminal and a file browser from a doc
 - The fake provider serves an emulated shell from a loopback websocket gateway that speaks the same frame protocol. Tests can then drive the browser terminal through the sealed capability and web proxy without exposing a host shell.
 
 **Files**
+
 - Browsing and text preview work on stopped computers through the stored workspace.
 - While the Files window is visible, the open folder refreshes every few seconds and after each bot command, so changes from a shell or the bot appear without reopening.
 - Download needs a running computer.

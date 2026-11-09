@@ -14,14 +14,19 @@ vi.mock("./monitoring", () => ({
   reportMobileError: state.report,
   resetMobileMonitoring: vi.fn(),
 }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => {
   if (state.importBroken) throw new Error("app import failed");
   return {
     authHeaders: async () => ({ authorization: "Bearer fake-session" }),
     currentApiBase: () => state.storedBase,
-    loadApiBase: async () => state.storedBase,
     subscribeApiBase: state.subscribe,
   };
+});
+vi.mock("./api-server", () => {
+  if (state.importBroken) throw new Error("app import failed");
+  return { loadApiBase: async () => state.storedBase };
 });
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 0,

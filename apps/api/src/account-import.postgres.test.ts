@@ -24,8 +24,7 @@ import {
 } from "./account-import.test-support.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const at = "2026-03-01T10:00:00.000Z";
 
@@ -155,6 +154,31 @@ function sourceRecords(): AccountExportRecord[] {
       role: "user",
       blocks: [{ kind: "text", text: "hello crew" }],
       botId: null,
+      replyToMessageId: null,
+      replyQuote: null,
+      createdAt: at,
+    },
+    {
+      type: "thread",
+      id: "src-thread-helper",
+      botId: null,
+      groupId: null,
+      helperBotId: "src-bot-child",
+      historyCompactedUpToSeq: null,
+      historyCompactionSummary: null,
+      createdAt: at,
+    },
+    {
+      type: "message",
+      id: "src-msg-helper",
+      threadId: "src-thread-helper",
+      seq: 0,
+      role: "bot",
+      blocks: [
+        { kind: "text", text: "helper found the venue" },
+        { kind: "subagent", agentId: "a1", name: "Scout", task: "venues", status: "running" },
+      ],
+      botId: "src-bot-child",
       replyToMessageId: null,
       replyQuote: null,
       createdAt: at,
@@ -440,10 +464,10 @@ describePostgres("account import (PostgreSQL)", () => {
     const thread = child.thread!;
     expect(thread).toMatchObject({
       nextMessageSeq: 2,
-      lastReadSeq: 1,
-      unread: false,
       historyCompactionSummary: "summary of the secret plan",
     });
+    // Imported history reads as caught up: nobody has an unread mark on it.
+    await expect(system.threadRead.count({ where: { threadId: thread.id } })).resolves.toBe(0);
     const messages = await system.message.findMany({
       where: { threadId: thread.id },
       orderBy: { seq: "asc" },
@@ -507,6 +531,27 @@ describePostgres("account import (PostgreSQL)", () => {
     );
     expect(group.thread?.messages.map((message) => message.blocks)).toEqual([
       [{ kind: "text", text: "hello crew" }],
+    ]);
+    const helperThread = await system.thread.findFirstOrThrow({
+      where: { spaceId, helperBotId: child.id },
+      include: { messages: true },
+    });
+    expect(helperThread).toMatchObject({ botId: null, groupId: null, nextMessageSeq: 1 });
+    expect(helperThread.messages.map((message) => [message.botId, message.blocks])).toEqual([
+      [
+        child.id,
+        [
+          { kind: "text", text: "helper found the venue" },
+          {
+            kind: "subagent",
+            agentId: "a1",
+            name: "Scout",
+            task: "venues",
+            status: "failed",
+            result: "stopped",
+          },
+        ],
+      ],
     ]);
     expect(
       await system.routine.findFirstOrThrow({

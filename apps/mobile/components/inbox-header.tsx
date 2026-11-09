@@ -8,10 +8,14 @@ import type { CreateAction } from "../lib/create-chooser";
 import { createMenuActions, isCreateAction } from "../lib/create-chooser";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
+import { GlassSurface } from "./glass-surface";
 import { CREATE_MENU_GAP, createHomeStyles } from "./home-styles";
 import { NativeSymbol } from "./native-symbol";
 
-/** The inbox's own header where the native Liquid Glass bar is unavailable. */
+/**
+ * The inbox's own header where it has no native bar: beside a chat in split view, and before
+ * iOS 26. Its controls sit on Liquid Glass wherever that exists.
+ */
 export function InboxHeader({
   initials,
   activityMode,
@@ -44,13 +48,13 @@ export function InboxHeader({
         },
       ]}
     >
-      <View style={styles.circleButton}>
+      <GlassSurface shape="circle" style={styles.headerCircle} fallbackStyle={styles.headerFill}>
         <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </HeaderButton>
-      </View>
+      </GlassSurface>
       {title}
-      <View style={styles.headerActions}>
+      <GlassSurface style={styles.headerActions} fallbackStyle={styles.headerFill}>
         <HeaderButton
           accessibilityLabel={t("Activity")}
           active={activityMode}
@@ -87,7 +91,7 @@ export function InboxHeader({
             <NativeSymbol ios="plus" android="add" size={18} />
           </View>
         </MenuView>
-      </View>
+      </GlassSurface>
     </View>
   );
 }

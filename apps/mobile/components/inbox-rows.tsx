@@ -1,8 +1,9 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { isRunWorking } from "@rakazo/core";
+import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
-import type { ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -11,24 +12,34 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/api";
 import { AvatarRow } from "../lib/avatar-life";
 import { useI18n } from "../lib/i18n";
-import { formatThreadTime } from "../lib/inbox";
+import { formatSnoozeWake, formatThreadTime } from "../lib/inbox";
 import type { PinnedChat } from "../lib/inbox-spaces";
+import { botNeedsAttention } from "../lib/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../lib/inbox-swipe";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
+import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
 import { BotAvatar } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
+import { DragSafePressable } from "./drag-safe-pressable";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles, INBOX_ROW } from "./home-styles";
 import { InboxSwipeRow } from "./inbox-swipe-row";
 import { NativeSymbol } from "./native-symbol";
 
 export const FALLBACK_COLOR = botColors[3];
+
+/** A bot waiting on you, which marks its row like an unread chat. */
+function useWaitingOnYou(bot: MobileBot | SpaceBot | undefined): boolean {
+  return useSyncExternalStore(mobileLogoAvatarActivity.subscribe, () =>
+    bot ? botNeedsAttention(bot) : false,
+  );
+}
 export const CompactRowsContext = createContext(false);
 // The chat open beside the list, so its row can show as selected.
 export const SelectedChatContext = createContext<string | null>(null);
@@ -70,7 +81,7 @@ export function ConversationRow({
     label: t(INBOX_ROW_ACTIONS[action].label),
   }));
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
@@ -109,7 +120,7 @@ export function ConversationRow({
           {preview}
         </Text>
       </View>
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -119,7 +130,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
   const { t } = useI18n();
   if (count < 1) return null;
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={`${t("Archived")}, ${count}`}
       onPress={onPress}
@@ -138,7 +149,7 @@ export function ArchivedChatsRow({ count, onPress }: { count: number; onPress: (
         size={12}
         color={native.tertiaryLabel}
       />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -178,16 +189,19 @@ export function SectionToggle({
   count,
   collapsed,
   onPress,
+  onLongPress,
+  accessibilityActions,
+  onAccessibilityAction,
 }: {
   title: string;
   count?: number;
   collapsed: boolean;
   onPress: () => void;
-}) {
+} & Pick<PressableProps, "onLongPress" | "accessibilityActions" | "onAccessibilityAction">) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   return (
-    <Pressable
+    <DragSafePressable
       accessibilityRole="button"
       accessibilityLabel={
         collapsed ? t("Expand {name}", { name: title }) : t("Collapse {name}", { name: title })
@@ -195,12 +209,15 @@ export function SectionToggle({
       accessibilityState={{ expanded: !collapsed }}
       accessibilityValue={count === undefined ? undefined : { text: String(count) }}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
     >
       <Text style={styles.sectionTitle}>{title}</Text>
       {count === undefined ? null : <Text style={styles.sectionCount}>{count}</Text>}
       <SectionChevron collapsed={collapsed} />
-    </Pressable>
+    </DragSafePressable>
   );
 }
 
@@ -258,7 +275,6 @@ export const PinnedTiles = memo(function PinnedTiles({
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
-        const unread = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
         const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
@@ -299,17 +315,30 @@ export const PinnedTiles = memo(function PinnedTiles({
             ) : (
               <GroupAvatar members={chat.group.members} size={avatarSize} />
             )}
-            <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
-              {name}
-            </Text>
+            <PinnedName chat={chat} name={name} />
           </Pressable>
         );
       })}
     </View>
   );
 });
+function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
+  const styles = useThemedStyles(createHomeStyles);
+  const waiting = useWaitingOnYou(chat.kind === "bot" ? chat.bot : undefined);
+  const marked = (chat.kind === "bot" ? chat.bot.unread : chat.group.unread) || waiting;
+  return (
+    <Text style={[styles.pinnedName, marked && styles.pinnedUnread]} numberOfLines={1}>
+      {name}
+    </Text>
+  );
+}
+
+// The iOS row menu opens on a long press; a press handler without onLongPress would still open the
+// chat when the finger lifts.
+const holdForMenu = () => undefined;
+
 /** What the iOS row menu needs to organize a chat in place. */
-type RowMenuProps = {
+export type RowMenuProps = {
   sections: readonly MobileBotSection[];
   onOrganize: (
     kind: InboxChatKind,
@@ -320,33 +349,116 @@ type RowMenuProps = {
     kind: InboxChatKind,
     chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
     mode: "create" | "rename",
+    sections: readonly MobileBotSection[],
+  ) => void;
+  /** Without it the menu offers no snooze. */
+  onSnooze?: (
+    kind: InboxChatKind,
+    chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+    until: string | null,
   ) => void;
 };
+
+/** The row's time slot: when a snoozed chat wakes, that it woke, or its last activity. */
+function chatTime(
+  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+  day: number,
+  now: number,
+  t: (text: string) => string,
+) {
+  if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
+  if (chatWoke(chat, now)) return t("Woke");
+  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
+}
+
+/** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
+export function ChatSwipe({
+  target,
+  rowKey = `${target.kind}:${target.chat.id}`,
+  onAction,
+  sections,
+  onOrganize,
+  onEditSection,
+  snoozed,
+  onSnooze,
+  children,
+}: {
+  /** Snoozed until a time still ahead. */
+  snoozed?: boolean;
+  onSnooze?: (until: string | null) => void;
+  target:
+    | { kind: "bot"; chat: MobileBot | SpaceBot }
+    | { kind: "group"; chat: MobileGroup | SpaceGroup };
+  /** Height cache key, for rows of a different layout than the inbox's. */
+  rowKey?: string;
+  onAction: (action: InboxRowAction) => void;
+  children: ReactElement;
+} & RowMenuProps) {
+  const { kind, chat } = target;
+  return (
+    <InboxSwipeRow
+      rowKey={rowKey}
+      unread={chat.unread}
+      pinned={chat.pinned}
+      notifyOnFinish={target.kind === "bot" ? target.chat.notifyOnFinish : undefined}
+      sectionId={chat.sectionId}
+      sections={sections}
+      preview={{
+        title: chat.name,
+        message: chat.preview,
+        avatar:
+          target.kind === "bot" ? (
+            <BotAvatar
+              color={target.chat.color || FALLBACK_COLOR}
+              avatarSet={target.chat.avatarSet}
+              identity={target.chat.id}
+              size={32}
+            />
+          ) : (
+            <GroupAvatar members={target.chat.members} size={32} />
+          ),
+      }}
+      onAction={onAction}
+      onOrganize={(update) => onOrganize(kind, chat, update)}
+      onEditSection={(mode) => onEditSection(kind, chat, mode, sections)}
+      snoozed={snoozed}
+      onSnooze={onSnooze}
+    >
+      {children}
+    </InboxSwipeRow>
+  );
+}
 
 export const BotRow = memo(function BotRow({
   bot,
   day,
+  now,
   onPress,
   onLongPress,
   onAction,
   sections,
   onOrganize,
   onEditSection,
+  onSnooze,
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
+  /** The snooze clock, so a row redraws when its chat wakes. */
+  now: number;
   onPress: (bot: MobileBot | SpaceBot) => void;
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
 } & RowMenuProps) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || t("No messages yet");
-  const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
+  const time = chatTime(bot, day, now, t);
   const working = isRunWorking(bot.status);
+  const waiting = useWaitingOnYou(bot);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
     working ? t("Working…") : null,
+    waiting ? t("Needs attention") : null,
     bot.notifyOnFinish === false ? t("notifications silenced") : null,
     bot.unread ? t("unread") : null,
     time,
@@ -361,13 +473,13 @@ export const BotRow = memo(function BotRow({
       title={bot.name}
       preview={preview}
       time={time}
-      unread={bot.unread}
+      unread={bot.unread || waiting}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={() => onPress(bot)}
-      onLongPress={onLongPress ? () => onLongPress(bot) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(bot) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(bot) : undefined}
       onAction={runAction}
       avatar={
@@ -386,31 +498,17 @@ export const BotRow = memo(function BotRow({
     />
   );
   return onAction ? (
-    <InboxSwipeRow
-      rowKey={`bot:${bot.id}`}
-      unread={bot.unread}
-      pinned={bot.pinned}
-      notifyOnFinish={bot.notifyOnFinish}
-      sectionId={bot.sectionId}
-      sections={sections}
-      preview={{
-        title: bot.name,
-        message: bot.preview,
-        avatar: (
-          <BotAvatar
-            color={bot.color || FALLBACK_COLOR}
-            avatarSet={bot.avatarSet}
-            identity={bot.id}
-            size={32}
-          />
-        ),
-      }}
+    <ChatSwipe
+      target={{ kind: "bot", chat: bot }}
       onAction={runAction}
-      onOrganize={(update) => onOrganize("bot", bot, update)}
-      onEditSection={(mode) => onEditSection("bot", bot, mode)}
+      sections={sections}
+      onOrganize={onOrganize}
+      onEditSection={onEditSection}
+      snoozed={chatSnoozed(bot, now)}
+      onSnooze={onSnooze && ((until) => onSnooze("bot", bot, until))}
     >
       {row}
-    </InboxSwipeRow>
+    </ChatSwipe>
   ) : (
     row
   );
@@ -419,15 +517,19 @@ export const BotRow = memo(function BotRow({
 export const GroupRow = memo(function GroupRow({
   group,
   day,
+  now,
   onPress,
   onLongPress,
   onAction,
   sections,
   onOrganize,
   onEditSection,
+  onSnooze,
 }: {
   group: MobileGroup | SpaceGroup;
   day: number;
+  /** The snooze clock, so a row redraws when its chat wakes. */
+  now: number;
   onPress: (group: MobileGroup | SpaceGroup) => void;
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
   onAction?: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
@@ -435,7 +537,7 @@ export const GroupRow = memo(function GroupRow({
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = group.updatedAt ? formatThreadTime(group.updatedAt, new Date(day)) : "";
+  const time = chatTime(group, day, now, t);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
@@ -451,30 +553,24 @@ export const GroupRow = memo(function GroupRow({
         onLongPress || onAction ? t("Long press to pin or move to a section") : undefined
       }
       onPress={() => onPress(group)}
-      onLongPress={onLongPress ? () => onLongPress(group) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
       avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
     />
   );
   return onAction ? (
-    <InboxSwipeRow
-      rowKey={`group:${group.id}`}
-      unread={group.unread}
-      pinned={group.pinned}
-      sectionId={group.sectionId}
-      sections={sections}
-      preview={{
-        title: group.name,
-        message: group.preview,
-        avatar: <GroupAvatar members={group.members} size={32} />,
-      }}
+    <ChatSwipe
+      target={{ kind: "group", chat: group }}
       onAction={runAction}
-      onOrganize={(update) => onOrganize("group", group, update)}
-      onEditSection={(mode) => onEditSection("group", group, mode)}
+      sections={sections}
+      onOrganize={onOrganize}
+      onEditSection={onEditSection}
+      snoozed={chatSnoozed(group, now)}
+      onSnooze={onSnooze && ((until) => onSnooze("group", group, until))}
     >
       {row}
-    </InboxSwipeRow>
+    </ChatSwipe>
   ) : (
     row
   );

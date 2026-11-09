@@ -209,6 +209,15 @@ class NotificationPollingTest {
   }
 
   @Test
+  fun `an agent-to-agent turn is left to the server push and never posted`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val peer = run("peer").copy(trigger = "bot_message")
+    assertTrue(completions.page(listOf(peer)).isEmpty())
+    assertTrue("peer" in seen)
+  }
+
+  @Test
   fun `deliberately skipped completion is remembered without posting`() {
     val seen = mutableSetOf<String>()
     handleUnseenCompletion("reply", seen) { true }

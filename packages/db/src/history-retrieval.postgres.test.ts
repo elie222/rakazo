@@ -9,7 +9,7 @@ import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
 const enabled = process.env.VERIFY_DATABASE && process.env.DATABASE_URL;
-const postgres = enabled ? describe.sequential : describe.skip;
+const postgres = enabled ? describe : describe.skip;
 postgres("history retrieval (PostgreSQL)", () => {
   let pool: Pool;
   let prisma: PrismaClient;
@@ -42,7 +42,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
@@ -163,6 +163,55 @@ postgres("history retrieval (PostgreSQL)", () => {
         executionMs: plan["Execution Time"],
       })}\n`,
     );
+  });
+  it("finds an earlier reply by its tool step note and returns the steps it ran", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-reply', 'synthetic-thread', 10001, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 2, note: "Installing Quillfeather into Chromium." }],
+          },
+          { kind: "text", text: "Done." },
+        ]),
+      ],
+    );
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const results = await searchHistory(prisma, scope, { query: "quillfeather" });
+    const searchQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-reply"]);
+    expect(results.messages[0]!.text).toContain(
+      "- Shell ×2: Installing Quillfeather into Chromium.",
+    );
+    const explained = await pool.query(
+      `EXPLAIN (FORMAT JSON) ${searchQuery.text}`,
+      searchQuery.values,
+    );
+    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
+  });
+  it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-only-reply', 'synthetic-thread', 10002, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 1, note: "Pruning Larkspur caches." }],
+          },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, {
+      query: "larkspur",
+      kinds: ["bot_replies"],
+    });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-only-reply"]);
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-only-reply'`);
   });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,

@@ -1,8 +1,7 @@
 import type { MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { usePreventRemove } from "expo-router/react-navigation";
+import { useLocalSearchParams, useNavigation, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -32,6 +31,7 @@ export default function MemoryNoteScreen() {
   const [state, setState] = useState<"loading" | "ready" | "failed" | "gone">("loading");
   const [busy, setBusy] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const live = useRef(true);
@@ -79,7 +79,7 @@ export default function MemoryNoteScreen() {
   // A note deleted elsewhere keeps its draft on screen, read-only, with nothing left to save,
   // and leaving still asks before the draft is lost.
   const writable = state === "ready" && !busy && !closing;
-  usePreventRemove(dirty && !closing, ({ data }) => {
+  usePreventRemove(dirty && !closing && !discarding, ({ repeat }) => {
     // A save in flight decides the outcome; discarding now could not stop it.
     if (busy) return;
     Alert.alert(t("Discard changes?"), undefined, [
@@ -87,7 +87,10 @@ export default function MemoryNoteScreen() {
       {
         text: t("Discard"),
         style: "destructive",
-        onPress: () => navigation.dispatch(data.action),
+        onPress: () => {
+          setDiscarding(true);
+          repeat();
+        },
       },
     ]);
   });

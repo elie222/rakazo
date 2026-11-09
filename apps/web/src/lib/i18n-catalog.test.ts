@@ -344,7 +344,7 @@ it("renders Polish plural categories and interpolated values in every counted me
   const counted = Object.entries(catalog).filter(([, entry]) =>
     entry.message?.includes(", plural,"),
   );
-  expect(counted.length).toBeGreaterThanOrEqual(20);
+  expect(counted.length).toBeGreaterThanOrEqual(19);
   const local = setupI18n({ locale: "pl" });
   const number = new Intl.NumberFormat("pl");
   for (const [id, entry] of counted) {

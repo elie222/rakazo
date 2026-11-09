@@ -1,8 +1,9 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
-import { cloudAgentHttpsUrl, displayName as safeDisplayName } from "@rakazo/core";
+import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
+import type { ViewInstance } from "react-native";
 import { Linking, Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -10,13 +11,15 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { MobileBot, MobileSnapshot } from "../../lib/api";
+import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
+import type { MobileBot, MobileSnapshot } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
 import { BotMention } from "../bot-mention";
+import { NativeActionButton } from "../native-action-button";
 import { NativeSymbol } from "../native-symbol";
 import type { MessageActionProps } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
@@ -42,6 +45,8 @@ type SpecialMessageCardProps = {
   onOpenBot: (botId: string, name: string) => void;
   onHelperToggle?: MessageRowActions["helperToggle"];
   userBubble?: UserBubble;
+  /** A background helper's card: the bot chat and card message that Stop names. */
+  stopHelper?: { botId: string; messageId: string };
 };
 
 function HelperMessageCard({
@@ -49,14 +54,15 @@ function HelperMessageCard({
   actionProps,
   onHelperToggle,
   userBubble,
-}: Pick<SpecialMessageCardProps, "actionProps" | "onHelperToggle" | "userBubble"> & {
+  stopHelper,
+}: Pick<SpecialMessageCardProps, "actionProps" | "onHelperToggle" | "userBubble" | "stopHelper"> & {
   special: Extract<MessageBlock, { kind: "subagent" }>;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
-  const helperHeader = useRef<View>(null);
-  const helperCard = useRef<View>(null);
+  const helperHeader = useRef<ViewInstance>(null);
+  const helperCard = useRef<ViewInstance>(null);
   const helperReducedMotion = useReducedMotion();
   const [subagentOpen, setSubagentOpen] = useState(() => openHelpers.has(special.agentId));
   const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
@@ -70,8 +76,9 @@ function HelperMessageCard({
   const helperChevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${helperRotation.value}deg` }],
   }));
+  const [stopping, setStopping] = useState(false);
   const running = special.status === "running";
-  const failed = special.status === "failed";
+  const { stopped, failed, body } = helperCardState(special);
   return (
     <Pressable
       {...actionProps}
@@ -129,17 +136,25 @@ function HelperMessageCard({
             </Text>
             <Text
               style={{
-                color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+                color: failed
+                  ? tokens.destructive
+                  : running
+                    ? tokens.warning
+                    : stopped
+                      ? tokens.mutedForeground
+                      : tokens.success,
                 ...typeScale.caption,
               }}
             >
               {running
                 ? t("Running")
-                : special.status === "failed"
-                  ? t("Failed")
-                  : special.status === "completed"
-                    ? t("Completed")
-                    : special.status}
+                : stopped
+                  ? t("Stopped")
+                  : special.status === "failed"
+                    ? t("Failed")
+                    : special.status === "completed"
+                      ? t("Completed")
+                      : special.status}
             </Text>
             <Animated.View style={helperChevronStyle}>
               <NativeSymbol
@@ -160,10 +175,24 @@ function HelperMessageCard({
           ) : null}
         </View>
       </Pressable>
-      {subagentOpen && (special.result || special.progress) ? (
+      {running && stopHelper ? (
+        <NativeActionButton
+          label={t("Stop")}
+          prominence="secondary"
+          size="compact"
+          busy={stopping}
+          style={{ marginHorizontal: 16, marginBottom: 14 }}
+          onPress={() => {
+            setStopping(true);
+            // The card settles from the chat's events once the helper stops.
+            rpc("threads/stopHelper", stopHelper).catch(() => setStopping(false));
+          }}
+        />
+      ) : null}
+      {subagentOpen && body ? (
         <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
           <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
-            {special.result || special.progress || ""}
+            {body}
           </ChatMarkdown>
         </View>
       ) : null}

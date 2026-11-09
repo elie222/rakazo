@@ -21,6 +21,9 @@ const input = vi.hoisted(() => ({
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mentionApi.rpc,
   captureApiRequestContext: mentionApi.capture,
@@ -53,7 +56,7 @@ vi.mock("expo-file-system", () => {
     create() {
       files.set(this.uri, "");
     }
-    write(text: string) {
+    writeSync(text: string) {
       disk.writes += 1;
       // A full disk leaves the file empty, as a failed native write would.
       if (disk.full) throw new Error("No space left on device");
