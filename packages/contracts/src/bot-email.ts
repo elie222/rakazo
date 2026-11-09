@@ -103,10 +103,11 @@ export type BotEmailAddresses = z.infer<typeof BotEmailAddressesSchema>;
 
 /**
  * A first address suggestion from a bot's name, such as "research-helper". ASCII only: many mail
- * servers still refuse non-ASCII addresses. Empty when nothing in the name can be kept.
+ * servers still refuse non-ASCII addresses. Empty when nothing in the name can be kept or what
+ * is left is reserved.
  */
 export function suggestedEmailName(botName: string): string {
-  return botName
+  const name = botName
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[\u0300-\u036f]/g, "")
@@ -114,4 +115,5 @@ export function suggestedEmailName(botName: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
     .replace(/-+$/, "");
+  return isReservedBotEmailName(name) ? "" : name;
 }

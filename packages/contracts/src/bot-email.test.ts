@@ -16,6 +16,7 @@ describe("suggestedEmailName", () => {
   it("drops what an address cannot hold", () => {
     expect(suggestedEmailName("研究")).toBe("");
     expect(suggestedEmailName("a".repeat(80))).toHaveLength(64);
+    expect(suggestedEmailName("Support Bot")).toBe("");
   });
 });
 
