@@ -278,5 +278,12 @@ describe("builtin tools", () => {
         .map((tool) => tool.name)
         .filter((name) => purchaseNames.includes(name)),
     ).toEqual(purchaseNames);
+    const serviceNames = ["service_search", "service_call"];
+    const services = (extra: Partial<Parameters<typeof selectBuiltinToolsForRun>[0]>) =>
+      selectBuiltinToolsForRun({ ...options, ...extra })
+        .map((tool) => tool.name)
+        .filter((name) => serviceNames.includes(name));
+    expect(services({})).toEqual([]);
+    expect(services({ paidServicesEnabled: true })).toEqual(serviceNames);
   });
 });

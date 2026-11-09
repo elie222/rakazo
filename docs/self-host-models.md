@@ -161,6 +161,31 @@ worker eviction, or a process restart can require fresh prompt processing.
 These settings do not create backend KV snapshots or keep a model loaded;
 the inference server is responsible for retention and conversation switching.
 
+## Paid data services
+
+Bots can look up paid data (map places, search results, work emails, people and company profiles,
+social posts, SEO data) through one deployment account. It is off by default. Configure the worker
+(and API for inline execution):
+
+```dotenv
+PAID_SERVICES_PROVIDER=treg
+PAID_SERVICES_API_KEY=replace-with-org-scoped-token
+```
+
+`PAID_SERVICES_PROVIDER` accepts `disabled` (the default), `treg`, or `fake` (for offline testing
+only). `PAID_SERVICES_BASE_URL` points at a self-hosted Treg instead of `https://treg.to`. Use an
+org-scoped token, and keep the account topped up or on automatic top-up: an empty balance makes
+every call fail.
+
+Bots get `service_search` and `service_call` in every run; `service_call` follows the bot's
+approval mode like other actions. Only read-only lookups are offered: actions on accounts, generation tasks, and services that need the account's own connections are left out.
+Each call has a cost ceiling the bot sets and the approval card shows (at most $2) that the
+provider enforces before it charges. When model credits are on, a call first holds that ceiling
+from the organization's credits and then settles to what the provider charged plus 20%, never
+above the ceiling; calls the provider does not bill are
+free. A call that may have run without an answer keeps its hold for the credit
+reconciler to flag. Every call appears in Usage under the `services` provider.
+
 ## Image and video generation
 
 Bot media tools are disabled by default. Configure the worker (and API for inline
