@@ -101,7 +101,66 @@ interface MolaActionResponse {
     size?: number;
     mime_type?: string;
     image_base64?: string;
+    ok?: boolean;
+    path?: string;
+    bytes_written?: number;
   };
+}
+
+/**
+ * Read PNG dimensions from the image header.
+ * PNG spec: bytes 16-23 contain width (4 bytes big-endian) and height (4 bytes big-endian).
+ */
+function readPngDimensions(pngBuffer: Uint8Array): { width: number; height: number } {
+  // PNG signature: 89 50 4E 47 0D 0A 1A 0A (8 bytes)
+  // IHDR chunk starts at byte 8: length (4) + "IHDR" (4) + width (4) + height (4)
+  if (pngBuffer.length < 24) {
+    throw new Error("Invalid PNG: buffer too short");
+  }
+  
+  // Check PNG signature
+  if (
+    pngBuffer[0] !== 0x89 ||
+    pngBuffer[1] !== 0x50 ||
+    pngBuffer[2] !== 0x4e ||
+    pngBuffer[3] !== 0x47
+  ) {
+    throw new Error("Invalid PNG: bad signature");
+  }
+  
+  // Width is at bytes 16-19 (big-endian)
+  const width = ((pngBuffer[16] ?? 0) << 24) | ((pngBuffer[17] ?? 0) << 16) | ((pngBuffer[18] ?? 0) << 8) | (pngBuffer[19] ?? 0);
+  
+  // Height is at bytes 20-23 (big-endian)
+  const height = ((pngBuffer[20] ?? 0) << 24) | ((pngBuffer[21] ?? 0) << 16) | ((pngBuffer[22] ?? 0) << 8) | (pngBuffer[23] ?? 0);
+  
+  return { width, height };
+}
+
+/**
+ * Map Rakazo key name to Mola key format.
+ * Mola accepts keys matching /^[a-zA-Z0-9_+\-]{1,80}$/
+ */
+function mapKeyToMola(key: string, modifiers?: string[]): string {
+  // Build the key string with modifiers
+  const parts: string[] = [];
+  
+  if (modifiers?.includes("control") || modifiers?.includes("ctrl")) {
+    parts.push("ctrl");
+  }
+  if (modifiers?.includes("alt")) {
+    parts.push("alt");
+  }
+  if (modifiers?.includes("shift")) {
+    parts.push("shift");
+  }
+  if (modifiers?.includes("meta") || modifiers?.includes("command")) {
+    parts.push("meta");
+  }
+  
+  parts.push(key.toLowerCase());
+  
+  return parts.join("+");
 }
 
 export class MolaSandboxProvider implements SandboxProvider {
@@ -149,7 +208,7 @@ export class MolaSandboxProvider implements SandboxProvider {
         pty: false,
         snapshots: false,
         takeover: false,
-        persistentHome: false,
+        persistentHome: true,
         multiScreen: false,
       },
     };
@@ -333,7 +392,7 @@ export class MolaSandboxProvider implements SandboxProvider {
         ? {
             name,
             image: "ubuntu",
-            auto_stop_minutes: 120,
+            auto_stop_minutes: 30,
           }
         : {
             name,
@@ -499,25 +558,117 @@ export class MolaSandboxProvider implements SandboxProvider {
 
     const image = Buffer.from(result.data.image_base64, "base64");
     const now = new Date().toISOString();
+    
+    let width = 1280;
+    let height = 800;
+    try {
+      const dimensions = readPngDimensions(image);
+      width = dimensions.width;
+      height = dimensions.height;
+    } catch (error) {
+      log.warn("Failed to read PNG dimensions, using defaults", { error });
+    }
 
     return {
       frameId: randomUUID(),
       capturedAt: now,
       mimeType: "image/png",
       image,
-      width: 1280,
-      height: 800,
+      width,
+      height,
     };
   }
 
   async act(
     computer: ComputerRef,
-    _request: ComputerActionRequest,
+    request: ComputerActionRequest,
     context: AdapterContext,
   ): Promise<ComputerActionResult> {
-    const observation = await this.observe(computer, context);
+    context.signal.throwIfAborted();
+    
+    let completed = 0;
+    
+    for (const action of request.actions) {
+      context.signal.throwIfAborted();
+      
+      try {
+        if (action.kind === "key") {
+          // Map key action to Mola key format
+          const molaKey = mapKeyToMola(action.key, action.modifiers);
+          await this.executeAction(computer.providerRef, {
+            action: "key",
+            key: molaKey,
+          });
+          completed++;
+        } else if (action.kind === "pointer") {
+          if (action.type === "click") {
+            // Single click
+            const button = action.button === "right" ? 3 : action.button === "left" ? 1 : 1;
+            await this.executeAction(computer.providerRef, {
+              action: "click",
+              x: Math.round(action.x),
+              y: Math.round(action.y),
+              button,
+            });
+            completed++;
+          } else if (action.type === "move") {
+            // Move cursor
+            await this.executeAction(computer.providerRef, {
+              action: "move",
+              x: Math.round(action.x),
+              y: Math.round(action.y),
+            });
+            completed++;
+          } else if (action.type === "down" || action.type === "up") {
+            // Mouse button down/up not directly supported by Mola
+            throw new Error(`Unsupported pointer action: ${action.type}. Mola only supports 'click' and 'move'.`);
+          }
+        } else if (action.kind === "scroll") {
+          // Map scroll direction (Mola only supports up/down)
+          if (action.direction === "left" || action.direction === "right") {
+            throw new Error(`Unsupported scroll direction: ${action.direction}. Mola only supports 'up' and 'down'.`);
+          }
+          
+          const amount = Math.min(action.amount ?? 5, 20); // Clamp to Mola's 1-20 range
+          await this.executeAction(computer.providerRef, {
+            action: "scroll",
+            direction: action.direction,
+            amount,
+          });
+          completed++;
+        } else if (action.kind === "clipboard") {
+          // Map clipboard to type action (Mola supports text up to 10000 chars)
+          const text = action.text.slice(0, 10000);
+          await this.executeAction(computer.providerRef, {
+            action: "type",
+            text,
+          });
+          completed++;
+        } else if (action.kind === "wait") {
+          // Wait is local, not sent to Mola
+          await delay(action.ms, { signal: context.signal });
+          completed++;
+        } else if (action.kind === "open" || action.kind === "launch" || action.kind === "focus") {
+          // These actions are not directly supported by Mola's API
+          throw new Error(`Unsupported action: ${action.kind}. Mola does not provide direct ${action.kind} actions.`);
+        }
+      } catch (error) {
+        // If an action fails, stop executing further actions
+        log.warn("Action execution failed", { action, error });
+        throw error;
+      }
+    }
+    
+    // Apply settle time if requested
+    if (request.settleMs && request.settleMs > 0) {
+      await delay(request.settleMs, { signal: context.signal });
+    }
+    
+    // Take observation if requested
+    const observation = request.observe !== false ? await this.observe(computer, context) : undefined;
+    
     return {
-      completed: 1,
+      completed,
       observation,
     };
   }

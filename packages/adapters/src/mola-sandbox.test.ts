@@ -56,7 +56,7 @@ describe("MolaSandboxProvider", () => {
         pty: false,
         snapshots: false,
         takeover: false,
-        persistentHome: false,
+        persistentHome: true,
         multiScreen: false,
       });
     });
@@ -72,7 +72,7 @@ describe("MolaSandboxProvider", () => {
         pty: false,
         snapshots: false,
         takeover: false,
-        persistentHome: false,
+        persistentHome: true,
         multiScreen: false,
       });
     });
