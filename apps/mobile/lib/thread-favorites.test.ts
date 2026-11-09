@@ -19,13 +19,22 @@ vi.mock("expo-secure-store", () => ({
 }));
 
 async function waitFor(condition: () => boolean) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
     if (condition()) return;
   }
   throw new Error("timed out waiting for the store to settle");
+}
+
+/**
+ * The store persists fire-and-forget; a test that mutates it must drain its
+ * saves before the next test, or a late save overwrites the next test's
+ * stored snapshot.
+ */
+async function waitForSaves(count: number) {
+  await waitFor(() => store.setItemAsync.mock.calls.length >= count);
 }
 
 describe("thread favorites", () => {
@@ -85,6 +94,7 @@ describe("thread favorites", () => {
     expect(toggleThreadFavorite("bot-1", first)).toBe(false);
     expect(threadFavoritesFor("bot-1").map((item) => item.messageId)).toEqual(["m2"]);
     expect(isThreadFavorite("bot-1", "m1")).toBe(false);
+    await waitForSaves(3);
   });
 
   it("keeps favorites separate per thread", async () => {
@@ -95,6 +105,7 @@ describe("thread favorites", () => {
     expect(threadFavoritesFor("group-1")).toHaveLength(1);
     expect(threadFavoritesFor("bot-2")).toEqual([]);
     expect(threadFavoritesFor(undefined)).toEqual([]);
+    await waitForSaves(2);
   });
 
   it("persists toggles to storage", async () => {

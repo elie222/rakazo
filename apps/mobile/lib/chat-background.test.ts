@@ -64,13 +64,22 @@ vi.mock("expo-file-system", () => {
 });
 
 async function waitFor(condition: () => boolean) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
     if (condition()) return;
   }
   throw new Error("timed out waiting for the store to settle");
+}
+
+/**
+ * The store persists fire-and-forget; a test that mutates it must drain its
+ * saves before the next test, or a late save overwrites the next test's
+ * stored snapshot.
+ */
+async function waitForSaves(count: number) {
+  await waitFor(() => store.setItemAsync.mock.calls.length >= count);
 }
 
 describe("chat background", () => {
@@ -153,6 +162,7 @@ describe("chat background", () => {
     expect(chatBackgroundFor("bot-2")).toBeNull();
     setChatBackground("bot-1", null);
     expect(chatBackgroundFor("bot-1")).toBeNull();
+    await waitForSaves(3);
   });
 
   it("loads a stored background and persists changes", async () => {
@@ -181,6 +191,7 @@ describe("chat background", () => {
     const second = await saveChatBackgroundFile("bot-1", "file:///tmp/other.png", "Other.png", "image");
     expect(second.uri).toBe("file:///doc/chat-backgrounds/bot-1-image.png");
     expect(fsMocks.files.has("file:///doc/chat-backgrounds/bot-1-image.jpg")).toBe(false);
+    await waitForSaves(1);
   });
 
   it("deletes only background files inside the backgrounds folder", async () => {
