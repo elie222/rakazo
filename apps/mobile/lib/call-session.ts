@@ -915,13 +915,10 @@ export async function recordClip(
       // A missing level is unknown, not 0 dB: a stand-in that loud hears speech in
       // silence and holds the clip to the cap. A recorder may still be starting; once it
       // has reported a level, or never does, nothing is left to endpoint on, so stop.
-      // A dictated clip has `until` to end it, so it keeps recording and sends what it has.
+      // A dictated clip has `until` to end it, so it keeps recording.
       const level = recorder.getStatus().metering;
       if (level === undefined) {
-        if (until) {
-          heardSpeech = true;
-          continue;
-        }
+        if (until) continue;
         if (metered || elapsed + METER_POLL_MS >= METER_START_MS) break;
         continue;
       }
@@ -936,7 +933,9 @@ export async function recordClip(
     }
     await recorder.stop();
     const uri = recorder.uri;
-    if (!uri || !heardSpeech || signal.aborted) {
+    // A dictated clip is kept even when it stayed under the speech level: soft speech is
+    // still speech, and the provider returns nothing for silence.
+    if (!uri || (!heardSpeech && !until) || signal.aborted) {
       deleteQuietly(uri);
       return null;
     }

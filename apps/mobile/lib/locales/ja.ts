@@ -390,7 +390,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Failed: "失敗",
   "Failed to refresh": "更新できませんでした",
   "Failed to send message": "メッセージを送信できませんでした",
-  "Failed to stop work": "作業を停止できませんでした",
   File: "ファイル",
   "Hide {label}": "{label}を非表示",
   Diagram: "図",
@@ -455,8 +454,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Type your answer": "回答を入力",
   Username: "ユーザー名",
   "Waiting for this bot’s response.": "このボットの応答を待っています。",
-  "Work stopped, but the thread could not refresh: {detail}":
-    "作業は停止しましたが、スレッドを更新できませんでした: {detail}",
   archived: "アーカイブ済み",
   bot: "ボット",
   cancelled: "キャンセル済み",
@@ -976,6 +973,12 @@ export const JA_MESSAGES: Record<string, string> = {
     "ログインを待機中です。コードの有効期限は約{minutes}分です。",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "ログインを待機中です。リンクの有効期限は約{minutes}分です。",
+  "Allow microphone access to dictate.": "音声入力するにはマイクへのアクセスを許可してください。",
+  "Allow speech recognition in Settings, or connect a voice provider that transcribes.":
+    "設定で音声認識を許可するか、文字起こしに対応した音声プロバイダを接続してください。",
+  "Could not dictate": "音声入力できませんでした",
+  Dictate: "音声入力",
+  "Stop dictating": "音声入力を停止",
   "Allow microphone access to call a bot.":
     "ボットと通話するにはマイクへのアクセスを許可してください。",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":

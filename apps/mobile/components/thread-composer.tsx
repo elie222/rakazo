@@ -791,7 +791,8 @@ export function ThreadComposer({
               </GlassSurface>
             </Pressable>
           )}
-          {!canSend && botId && !onCall ? (
+          {/* No call while dictation still owns the microphone or its words are on the way. */}
+          {!canSend && botId && !onCall && dictation.status === "idle" ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("Call")}

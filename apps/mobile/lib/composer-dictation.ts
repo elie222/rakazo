@@ -7,6 +7,7 @@ import { recordClip, transcribeClip } from "./call-session";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, useI18n } from "./i18n";
+import { currentSessionGeneration } from "./session";
 import { errorText } from "./user-error";
 import { ensureVoiceConsent } from "./voice";
 import { resolveVoiceCallPlan } from "./voice-call-entry";
@@ -89,6 +90,11 @@ export function useComposerDictation({
       };
       const clip = await recordClip(mine.cancel.signal, stopped.signal);
       if (session.current !== mine) return;
+      // A sign-in to another account meanwhile must not send this audio with the old session.
+      if (requestContext.sessionGeneration !== currentSessionGeneration()) {
+        end(mine);
+        return;
+      }
       setStatus("transcribing");
       const text = clip ? await transcribeClip(clip, mine.cancel.signal, requestContext) : "";
       if (end(mine) && text.trim()) onWordsRef.current(text.trim());
@@ -96,7 +102,12 @@ export function useComposerDictation({
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
     if (session.current !== mine) return;
-    mine.finish = dictation.finishListening;
+    // A stop tap while the recognizer is still loading lands once it has started.
+    let stopRequested = false;
+    mine.finish = () => {
+      stopRequested = true;
+      dictation.finishListening();
+    };
     await dictation.listen({
       lang,
       endpointMs: null,
@@ -112,6 +123,7 @@ export function useComposerDictation({
         if (end(mine) && reason === "failed") Alert.alert(t("Could not dictate"), t("Try again."));
       },
     });
+    if (stopRequested && session.current === mine) dictation.finishListening();
   }
 
   function toggle() {
