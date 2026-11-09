@@ -360,6 +360,44 @@ describe.each([
     expect(caller.signal.aborted).toBe(false);
   });
 
+  it("keeps raw-only progress alive, forwards unchanged events, then times out on real silence", async () => {
+    vi.useFakeTimers();
+    const inner = new AssistantMessageEventStream();
+    const streamSimple = vi.fn(
+      (_model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => inner,
+    );
+    const onProviderStreamEvent = vi.fn();
+    const stream = reliableModelStream(
+      { streamSimple } as unknown as Models,
+      model,
+      context,
+      { onProviderStreamEvent },
+      undefined,
+    );
+    const options = streamSimple.mock.calls[0]![2]!;
+    await options.onResponse?.({ status: 200, headers: {} }, model);
+    for (let index = 0; index < 3; index++) {
+      await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS - 1);
+      const raw = Object.freeze({ type: "response.web_search_call.searching", item_id: "search" });
+      await options.onProviderStreamEvent?.(raw, model);
+      expect(onProviderStreamEvent).toHaveBeenLastCalledWith(raw, model);
+      expect(onProviderStreamEvent.mock.calls.at(-1)?.[0]).toBe(raw);
+      expect(options.signal?.aborted).toBe(false);
+    }
+    await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS - 1);
+    expect(options.signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(options.signal?.aborted).toBe(true);
+    inner.push(abortedByPi());
+    inner.end();
+    for await (const _event of stream) {
+    }
+    await expect(stream.result()).resolves.toMatchObject({
+      errorMessage: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("arms only on successful responses, leaving retry backoff uncovered", async () => {
     vi.useFakeTimers();
     const caller = new AbortController();

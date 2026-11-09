@@ -225,6 +225,10 @@ export function reliableModelStream(
         fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
           ? options?.fetch
           : modelRequestFetch(options?.fetch, modelStreamIdleTimeoutMs()),
+        onProviderStreamEvent: async (event, eventModel) => {
+          watchdog.ping();
+          await options?.onProviderStreamEvent?.(event, eventModel);
+        },
         // Only a 2xx arms the shared watchdog. Error bodies are bounded by
         // the fetch wrapper where supported; caller hooks still see every status.
         onResponse: (response, requestModel) => {
