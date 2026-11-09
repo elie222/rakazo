@@ -104,6 +104,8 @@ x-app-environment: &app-environment
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
   RAKAZO_LOCAL_MODELS_API_KEY:
+  # Where a localhost model or speech URL goes: the computer running Docker.
+  RAKAZO_LOOPBACK_HOST: host.docker.internal
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
@@ -399,6 +401,8 @@ services:
     # process before its graceful shutdown finishes in-flight requests and jobs.
     working_dir: /app/apps/api
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
@@ -485,6 +489,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 2m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
