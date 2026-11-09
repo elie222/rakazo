@@ -1,5 +1,5 @@
-import { blockText } from "./mobile-types";
 import type { MobileMessage } from "./mobile-types";
+import { blockText } from "./mobile-types";
 
 /**
  * The loaded messages whose plain text contains the query, in reading order
@@ -12,9 +12,7 @@ export function searchThreadMessages(
 ): MobileMessage[] {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return [];
-  return messages.filter((message) =>
-    blockText(message).toLocaleLowerCase().includes(needle),
-  );
+  return messages.filter((message) => blockText(message).toLocaleLowerCase().includes(needle));
 }
 
 /** Steps the current hit forward (1) or back (-1), wrapping around the list. */

@@ -114,10 +114,7 @@ export function isThreadFavorite(threadKey: string, messageId: string): boolean 
  * stores the snippet at favorite time, so the sheet works even after the
  * message has scrolled out of the loaded window.
  */
-export function toggleThreadFavorite(
-  threadKey: string,
-  favorite: ThreadFavorite,
-): boolean {
+export function toggleThreadFavorite(threadKey: string, favorite: ThreadFavorite): boolean {
   const list = favorites[threadKey] ?? [];
   const at = list.findIndex((item) => item.messageId === favorite.messageId);
   const next =
@@ -132,7 +129,7 @@ export function toggleThreadFavorite(
 
 export function removeThreadFavorite(threadKey: string, messageId: string): void {
   const list = favorites[threadKey];
-  if (!list || !list.some((item) => item.messageId === messageId)) return;
+  if (!list?.some((item) => item.messageId === messageId)) return;
   favorites = {
     ...favorites,
     [threadKey]: list.filter((item) => item.messageId !== messageId),
