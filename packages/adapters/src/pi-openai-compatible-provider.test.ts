@@ -927,6 +927,18 @@ describe("openai-compatible provider", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("points an unreachable loopback server at host.docker.internal", async () => {
+    const down: typeof fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:11234/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow(/host\.docker\.internal/);
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://10.0.0.5:8000/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("fetch failed");
+  });
+
   it("clarifies probe timeouts with hand-fill hint", async () => {
     const fetchImpl: typeof fetch = async (_input, init) =>
       new Promise((_, reject) => {

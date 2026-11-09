@@ -13,6 +13,7 @@ import {
   ipVersion,
   isCloudMetadataAddress,
   isLinkLocalAddress,
+  isLoopbackHost,
   isNonPublicAddress,
   MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
@@ -547,6 +548,10 @@ export async function verifyOpenAiCompatibleApiKey(
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
+/** Inside a container, localhost is the container itself rather than the computer running it. */
+const LOOPBACK_UNREACHABLE_MESSAGE =
+  "Could not reach the model server. If Rakazo runs in Docker, use host.docker.internal instead of localhost.";
+
 export async function probeOpenAiCompatibleModels(
   input: {
     baseUrl: string;
@@ -611,6 +616,9 @@ export async function probeOpenAiCompatibleModels(
       // Caller-cancelled probes keep the original AbortError; the 5s probe budget gets a hint.
       if (signal?.aborted) throw error;
       throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+    }
+    if (error instanceof TypeError && isLoopbackHost(baseUrl.hostname)) {
+      throw new Error(LOOPBACK_UNREACHABLE_MESSAGE);
     }
     throw error;
   } finally {
