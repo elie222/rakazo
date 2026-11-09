@@ -743,6 +743,7 @@ export async function prepareAllowedThinkingLevels(
   resolution: ConnectedModelResolution = {},
 ): Promise<{
   allowed: string[] | undefined;
+  credentialId?: string;
   secret?: { id: string; ciphertext: string };
   enabledModelIds?: string[];
   storedEnabledModelIds?: string[];
@@ -775,6 +776,7 @@ export async function prepareAllowedThinkingLevels(
       secret.status === "loaded" ? secret.plaintext : undefined,
       modelId,
     ),
+    credentialId: credential.id,
     secret:
       secret.status === "missing"
         ? undefined

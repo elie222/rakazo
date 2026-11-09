@@ -8910,6 +8910,38 @@ describe("openai-compatible enabled models", () => {
     expect(secrets.put).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["an owned bot", { bots: [{ name: "Ada", modelId: "m-a" }] }],
+    [
+      "a shared bot",
+      {
+        sharedBotChoices: [
+          {
+            modelId: "m-a",
+            credentialId: "cred-other",
+            bot: { name: "Ada", spaceId: "space-2" },
+          },
+        ],
+      },
+    ],
+  ])("lets a default change pass %s pinned to another connection", async (_name, pins) => {
+    const { call, prisma } = fixture({ plaintext: secretText(), defaultModel: "m-a", ...pins });
+    prisma.bot.findMany.mockImplementation(
+      async () =>
+        ("bots" in pins ? pins.bots : []).map((bot) => ({
+          ...bot,
+          spaceId: "space-1",
+          modelConnections: [
+            { provider: compatible, modelId: bot.modelId, credentialId: "cred-other" },
+          ],
+        })) as never,
+    );
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-c" });
+
+    expect(result.status).toBe(200);
+  });
+
   it("stores the new list with the default included when nothing pins a dropped id", async () => {
     const { call, secrets } = fixture({
       plaintext: secretText(["m-a", "m-c"]),

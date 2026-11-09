@@ -159,7 +159,11 @@ export async function assertCompatibleDefaultChange(
   deps: RouterDeps,
   actor: Actor,
   modelId: string,
-  thinking: { enabledModelIds?: string[]; storedEnabledModelIds?: string[] },
+  thinking: {
+    credentialId?: string;
+    enabledModelIds?: string[];
+    storedEnabledModelIds?: string[];
+  },
 ) {
   const requested = modelId.trim();
   const enabled = thinking.enabledModelIds ?? [];
@@ -182,7 +186,8 @@ export async function assertCompatibleDefaultChange(
         (row) => !(row.role === "main" && row.position === 0 && row.spaceId === replacedSpaceId),
       ),
     },
-    () => true,
+    // A row pinned to another connection is unaffected by this connection's default.
+    (row) => !row.credentialId || row.credentialId === thinking.credentialId,
   );
 }
 
