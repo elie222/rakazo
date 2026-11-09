@@ -36,6 +36,9 @@ describe("parseBotEmailName", () => {
       "help_desk",
       "rakazo",
       "rakazobot",
+      "no-reply",
+      "no-reply.bot",
+      "mailer-daemon",
     ]) {
       expect(parseBotEmailName(name)).toEqual({ problem: "taken" });
     }

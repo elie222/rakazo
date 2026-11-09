@@ -42,8 +42,13 @@ const RESERVED_BOT_EMAIL_NAMES = new Set([
 
 /** A reserved name, alone or before a separator (support-team, admin.bot), or anything rakazo*. */
 function isReservedBotEmailName(name: string): boolean {
-  const [first = name] = name.split(/[._-]/);
-  return RESERVED_BOT_EMAIL_NAMES.has(first) || name.startsWith("rakazo");
+  return (
+    name.startsWith("rakazo") ||
+    [...RESERVED_BOT_EMAIL_NAMES].some(
+      (reserved) =>
+        name.startsWith(reserved) && ["", ".", "-", "_"].includes(name.charAt(reserved.length)),
+    )
+  );
 }
 
 /** The part of a bot's address before the @, as its owner chose it. */
