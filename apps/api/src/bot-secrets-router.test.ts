@@ -647,11 +647,15 @@ describe("vault router", () => {
     );
     expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
 
-    // A space member who did not create the bot never reads its key.
+    // A space member who did not create the bot never reads its key, and is refused before
+    // being asked to confirm it's them.
     prisma.bot.findFirst.mockResolvedValue({ ...bot, userId: "user-2" } as never);
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(false);
     secrets.load.mockClear();
     const forbidden = await call("bots/revealWebhookSecret", { botId: "bot-1" });
     expect(forbidden.status).toBe(403);
+    expect(forbidden.text).toContain("FORBIDDEN");
+    expect(forbidden.text).not.toContain("IDENTITY_CONFIRMATION_REQUIRED");
     expect(forbidden.text).not.toContain(FAKE_VALUE);
     expect(secrets.load).not.toHaveBeenCalled();
   });

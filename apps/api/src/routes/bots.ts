@@ -692,10 +692,11 @@ export function botsRoutes(ctx: RouterContext) {
         };
       }),
       revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
-        await requireIdentityConfirmation(deps.auth, context);
         const bot = await repos.getBot(context.actor, input.botId);
-        // Only the creator can issue the secret, so only the creator can read it back.
+        // Only the creator can issue the secret, so only the creator can read it back. Checked
+        // first, so another member is never asked to confirm their identity for nothing.
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        await requireIdentityConfirmation(deps.auth, context);
         const stored = bot.webhookSecretId
           ? await deps.prisma.secret.findFirst({
               where: {

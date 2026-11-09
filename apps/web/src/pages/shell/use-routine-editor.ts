@@ -181,7 +181,11 @@ export function useRoutineEditor({
             // The editor asks the person to confirm it's them and tries again.
             if (isIdentityConfirmationRequired(error)) throw error;
             if (stale()) return;
-            setRoutineError(webhookErrorText(error, t`Could not show the webhook key`));
+            setRoutineError(
+              errorCode(error) === "FORBIDDEN"
+                ? t`Only the bot's creator can see its webhook key.`
+                : errorText(error, t`Could not show the webhook key`),
+            );
           }
         },
         onHideWebhook: () => hideWebhookSecret(active.id),
