@@ -4842,6 +4842,53 @@ it.each(["image_search", "web_search"])(
 );
 
 it.each(
+  ["request_takeover", "run_subagent"].flatMap((name) =>
+    [true, false].map((persist) => ({ name, persist })),
+  ),
+)(
+  "settles approved $name acknowledgements before replay, persistence: $persist",
+  async ({ name, persist }) => {
+    const f = fixture({
+      name,
+      builtin: true,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: name }],
+    });
+    f.setCalls([
+      {
+        args: { task: "Summarize the notes", reason: "Review the screen" },
+        executionId: "read-call",
+      },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    f.effects[0]!.status = "approved";
+    const update = f.prisma.externalEffect.updateMany;
+    const original = update.getMockImplementation()!;
+    if (!persist)
+      update.mockImplementation(async (args) =>
+        args.data.status === "completed" ? { count: 0 } : original(args),
+      );
+    await f.run();
+    const expected =
+      name === "request_takeover" ? { ok: true } : { ok: true, result: "Summarize the notes" };
+    if (persist) {
+      expect(f.effects[0]).toMatchObject({ status: "completed", result: expected });
+      expect(f.results.at(-1)).toEqual(expected);
+    } else {
+      expect(f.effects[0]!.status).toBe("executing");
+      expect(f.results.at(-1)).toMatchObject({ uncertain: true });
+    }
+    update.mockImplementation(original);
+    await f.run();
+    expect(f.results.at(-1)).toEqual(f.results.at(-2));
+    expect(f.effects).toHaveLength(1);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+  },
+);
+
+it.each(
   ["list_files", "read_file", "schedule_list"].flatMap((name) =>
     [true, false].map((persist) => ({ name, persist })),
   ),
