@@ -1,0 +1,467 @@
+import { zstdDecompressSync } from "node:zlib";
+import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
+import { executeImageSearch, supportsModelImageSearch } from "./pi-image-search.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
+import type { ToolHost } from "./pi-runtime-tools.js";
+import { describeToolActivity, toAgentTools } from "./pi-runtime-tools.js";
+import { READ_ONLY_AGENT_TOOLS, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+
+const accountId = "image-search-test-account";
+function fakeToken(suffix = "fake-signature") {
+  const claims = {
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: accountId,
+      chatgpt_compute_residency: "eu",
+    },
+  };
+  return `fake-header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.${suffix}`;
+}
+
+const image = (name: string) => ({
+  type: "image_result",
+  image_url: `https://images.example.com/${name}.jpg`,
+  source_website_url: `https://example.com/photos/${name}`,
+  caption: `Photo ${name}`,
+  thumbnail_url: `https://images.example.com/${name}-small.jpg`,
+});
+const searchItem = (results: unknown[], id = "search-1", status = "completed") => ({
+  type: "response.output_item.done",
+  output_index: 0,
+  item: { id, type: "web_search_call", status, results },
+});
+const terminal = {
+  type: "response.completed",
+  response: {
+    id: "response-test",
+    status: "completed",
+    output: [],
+    usage: {
+      input_tokens: 12,
+      output_tokens: 3,
+      total_tokens: 15,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens_details: { reasoning_tokens: 1 },
+    },
+  },
+};
+const textItem = {
+  id: "text-1",
+  type: "message",
+  role: "assistant",
+  content: [{ type: "output_text", text: "Invented prose https://example.com/not-a-result.jpg" }],
+};
+const prose = [
+  { type: "response.output_item.added", output_index: 1, item: { ...textItem, content: [] } },
+  {
+    type: "response.content_part.added",
+    output_index: 1,
+    content_index: 0,
+    part: textItem.content[0],
+  },
+  {
+    type: "response.output_text.delta",
+    output_index: 1,
+    content_index: 0,
+    delta: "Invented prose",
+  },
+  { type: "response.output_item.done", output_index: 1, item: textItem },
+];
+const sse = (events: unknown[]) =>
+  events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+
+function hostFor(fetch: typeof globalThis.fetch) {
+  const token = fakeToken();
+  const config = {
+    provider: "openai-codex",
+    id: "gpt-5.1-codex",
+    oauth: {
+      credential: {
+        type: "oauth" as const,
+        access: token,
+        refresh: "fake-refresh",
+        expires: Date.now() + 3_600_000,
+        accountId,
+      },
+      persist: vi.fn(async () => undefined),
+      retire: vi.fn(async () => false),
+    },
+  };
+  const resolved = resolveRuntimeModel(config);
+  if (!resolved.model) throw new Error("Installed Pi subscription model is missing");
+  const events: AgentRuntimeEvent[] = [];
+  const controller = new AbortController();
+  const observer = {
+    beforeCall: vi.fn(async () => "reservation-test"),
+    afterCall: vi.fn(async () => undefined),
+    onRequestId: vi.fn(async () => undefined),
+  };
+  const executeTool = vi.fn();
+  const onUsage = vi.fn(async () => undefined);
+  const host: ToolHost = {
+    request: {
+      botId: "bot-test",
+      threadId: "thread-test",
+      runId: "run-test",
+      model: config,
+      prompt: "Find existing photos",
+      instructions: "test",
+      history: [],
+      tools: builtinAgentTools,
+      executeTool,
+      onUsage,
+    },
+    activeModel: { ...resolved, model: resolved.model, config },
+    models: resolved.models,
+    model: resolved.model,
+    apiKey: undefined,
+    modelFetch: fetch,
+    modelCallObserver: observer,
+    context: { userId: "user-test" },
+    queue: {
+      push: (event) => events.push(event),
+      fail: () => undefined,
+      close: () => undefined,
+      async *iterate() {},
+    },
+    signal: controller.signal,
+    nestedAgents: new Set(),
+    subagentGate: { acquire: async () => undefined, release: () => undefined },
+    toolCallBudget: { count: 0, exceeded: false, limit: 0, inFlight: 0 },
+    toolCallSeq: { value: 0 },
+    abortTurn: () => undefined,
+    depth: 0,
+    pausePending: false,
+    pendingShells: [],
+  };
+  return { host, events, token, observer, controller, executeTool, onUsage };
+}
+
+function fixtureFetch(events: unknown[]) {
+  return vi.fn<typeof globalThis.fetch>(
+    async () =>
+      new Response(sse(events), {
+        headers: { "content-type": "text/event-stream", "x-request-id": "request-test" },
+      }),
+  );
+}
+
+async function requestBody(call: Parameters<typeof globalThis.fetch>) {
+  const request = new Request(...call);
+  const bytes = Buffer.from(await request.arrayBuffer());
+  const decoded =
+    request.headers.get("content-encoding") === "zstd" ? zstdDecompressSync(bytes) : bytes;
+  return JSON.parse(decoded.toString());
+}
+
+describe("Pi image search through the installed provider", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("uses the active credential store and returns only completed structured images with retrieval accounting", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "unrelated-fake-key");
+    const fetch = fixtureFetch([
+      searchItem([image("partial")], "partial", "in_progress"),
+      searchItem([image("first")]),
+      searchItem([image("replacement")]),
+      searchItem([image("replacement"), image("second")], "search-2"),
+      ...prose,
+      terminal,
+    ]);
+    const { host, events, observer, executeTool, onUsage } = hostFor(fetch);
+    const rotatedToken = fakeToken("rotated-signature");
+    await host.activeModel.credentials?.modify("openai-codex", async (current) =>
+      current?.type === "oauth" ? { ...current, access: rotatedToken } : current,
+    );
+    const tool = toAgentTools(builtinAgentTools, host).find(
+      (entry) => entry.name === "image_search",
+    );
+    if (!tool) throw new Error("image_search was deferred or omitted");
+    const result = await tool.execute("search-call", { query: "harbor photos", maxResults: 2 });
+    expect(result.details).toEqual({
+      results: ["replacement", "second"].map((name) => ({
+        imageUrl: image(name).image_url,
+        sourceUrl: image(name).source_website_url,
+        title: image(name).caption,
+        thumbnailUrl: image(name).thumbnail_url,
+      })),
+    });
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.details) }]);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledOnce();
+    const call = fetch.mock.calls[0];
+    if (!call) throw new Error("Missing request");
+    const request = new Request(...call);
+    expect(request.headers.get("authorization")).toBe(`Bearer ${rotatedToken}`);
+    expect(request.headers.get("chatgpt-account-id")).toBe(accountId);
+    expect(request.headers.get("x-openai-internal-codex-residency")).toBe("eu");
+    const body = await requestBody(call);
+    expect(body).toMatchObject({
+      model: host.activeModel.model.id,
+      store: false,
+      tools: [
+        {
+          type: "web_search",
+          search_content_types: ["image"],
+          image_settings: { max_results: 2, caption: true },
+        },
+      ],
+      tool_choice: { type: "web_search" },
+    });
+    expect(body.include).toEqual(["reasoning.encrypted_content", "web_search_call.results"]);
+    expect(body.tools).toHaveLength(1);
+    expect(body.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: [{ type: "input_text", text: "harbor photos" }],
+        }),
+      ]),
+    );
+    expect(body).not.toHaveProperty("prompt_cache_key");
+    expect(observer.beforeCall).toHaveBeenCalledWith(
+      expect.objectContaining({ operationKind: "retrieval", runId: "run-test" }),
+    );
+    expect(observer.afterCall).toHaveBeenCalledWith(
+      "reservation-test",
+      expect.objectContaining({ inputTokens: 12, outputTokens: 3 }),
+    );
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "usage", operationKind: "retrieval" }),
+    );
+    expect(events.filter((event) => event.type === "usage")).toEqual([
+      expect.objectContaining({ operationKind: "retrieval", accounted: true }),
+    ]);
+    expect(events.some((event) => event.type === "text")).toBe(false);
+    expect(JSON.stringify(events)).not.toContain("Invented prose");
+    expect(describeToolActivity("image_search", { query: "harbor photos" })).toBe(
+      "Searching images: harbor photos",
+    );
+  });
+
+  it("ignores malformed and non-public result links and bounds optional strings", async () => {
+    const badUrls = [
+      "file:///tmp/photo.jpg",
+      "data:image/png;base64,abcd",
+      "https://localhost/a",
+      "http://127.0.0.1/a",
+      "http://[::1]/a",
+      "http://169.254.169.254/a",
+      "http://10.0.0.1/a",
+      "https://user:pass@example.com/a",
+      `https://example.com/${"a".repeat(4096)}`,
+    ];
+    const fetch = fixtureFetch([
+      searchItem([
+        null,
+        7,
+        { type: "image_result" },
+        { ...image("wrong-type"), type: "text_result" },
+        ...badUrls.map((url) => ({ ...image("bad-image"), image_url: url })),
+        ...badUrls.map((url) => ({ ...image("bad-source"), source_website_url: url })),
+        { ...image("safe"), caption: "x".repeat(1000), thumbnail_url: "http://192.168.1.1/a" },
+        { ...image("other"), caption: { bad: true }, thumbnail_url: 42 },
+      ]),
+      terminal,
+    ]);
+    const { host } = hostFor(fetch);
+    await expect(executeImageSearch(host, { query: "photos" })).resolves.toEqual({
+      results: [
+        {
+          imageUrl: image("safe").image_url,
+          sourceUrl: image("safe").source_website_url,
+          title: "x".repeat(500),
+        },
+        { imageUrl: image("other").image_url, sourceUrl: image("other").source_website_url },
+      ],
+    });
+  });
+
+  it.each([0, 1, 10, 50])("bounds the requested and returned count for %s", async (requested) => {
+    const fetch = fixtureFetch([
+      searchItem(Array.from({ length: 20 }, (_, i) => image(String(i)))),
+      terminal,
+    ]);
+    const { host } = hostFor(fetch);
+    const result = await executeImageSearch(host, { query: "photos", maxResults: requested });
+    expect("results" in result && result.results.length).toBe(Math.max(1, Math.min(10, requested)));
+    const call = fetch.mock.calls[0];
+    if (!call) throw new Error("Missing request");
+    expect((await requestBody(call)).tools[0].image_settings.max_results).toBe(
+      Math.max(1, Math.min(10, requested)),
+    );
+  });
+
+  it("returns successful zero results for a completed empty search", async () => {
+    const { host } = hostFor(fixtureFetch([searchItem([]), ...prose, terminal]));
+    await expect(executeImageSearch(host, { query: "photos" })).resolves.toEqual({ results: [] });
+  });
+
+  it.each([
+    [...prose, terminal],
+    [searchItem([image("partial")], "partial", "in_progress"), terminal],
+  ])("rejects a reply without a completed search", async (...events) => {
+    const { host } = hostFor(fixtureFetch(events));
+    await expect(executeImageSearch(host, { query: "photos" })).resolves.toEqual({
+      error: "Image search returned no completed search.",
+    });
+  });
+
+  it.each([
+    [searchItem([image("partial")])],
+    [
+      searchItem([image("partial")]),
+      { type: "response.failed", response: { error: { message: "Provider prose must not leak" } } },
+    ],
+  ])("discards completed items if the enclosing stream fails", async (...events) => {
+    const { host, observer } = hostFor(fixtureFetch(events));
+    await expect(executeImageSearch(host, { query: "photos" })).resolves.toEqual({
+      error: "Image search failed.",
+    });
+    expect(observer.afterCall).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])(
+    "handles raw-only progress through Pi and the usage wrapper, completes: %s",
+    async (complete) => {
+      vi.useFakeTimers();
+      let body!: ReadableStreamDefaultController<Uint8Array>;
+      const fetch = vi.fn<typeof globalThis.fetch>(
+        async (_input, init) =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                body = controller;
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => controller.error(init.signal?.reason),
+                  { once: true },
+                );
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      );
+      const { host } = hostFor(fetch);
+      let settled = false;
+      const result = executeImageSearch(host, { query: "photos" }).then((value) => {
+        settled = true;
+        return value;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      body.enqueue(new TextEncoder().encode(sse([searchItem([image("first")])])));
+      await vi.advanceTimersByTimeAsync(0);
+      for (let index = 0; index < 3; index++) {
+        await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS - 1);
+        expect(settled).toBe(false);
+        body.enqueue(
+          new TextEncoder().encode(
+            sse([{ type: "response.web_search_call.searching", item_id: "search-2" }]),
+          ),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      if (complete) {
+        body.enqueue(new TextEncoder().encode(sse([terminal])));
+        body.close();
+        await vi.advanceTimersByTimeAsync(0);
+        await expect(result).resolves.toMatchObject({
+          results: [{ imageUrl: image("first").image_url }],
+        });
+      } else {
+        await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS);
+        await expect(result).resolves.toEqual({ error: "Image search failed." });
+      }
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("discards partial results on caller abort", async () => {
+    vi.useFakeTimers();
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async (_input, init) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(sse([searchItem([image("partial")])])));
+              init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), {
+                once: true,
+              });
+              started();
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    );
+    const { host, controller } = hostFor(fetch);
+    const result = executeImageSearch(host, { query: "photos" });
+    await ready;
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    await expect(result).resolves.toEqual({ error: "Image search was stopped." });
+  });
+
+  it("does not make a request for invalid queries or an already stopped run", async () => {
+    const fetch = fixtureFetch([terminal]);
+    const { host, controller } = hostFor(fetch);
+    for (const query of [undefined, " ", "a".repeat(2001)])
+      expect(await executeImageSearch(host, { query })).toHaveProperty("error");
+    controller.abort();
+    expect(await executeImageSearch(host, { query: "photos" })).toEqual({
+      error: "Image search was stopped.",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns an explicit error after the active target switches to an unsupported provider", async () => {
+    const fetch = fixtureFetch([terminal]);
+    const { host, executeTool } = hostFor(fetch);
+    host.activeModel = {
+      ...host.activeModel,
+      model: { ...host.activeModel.model, provider: "other" },
+    };
+    const tool = toAgentTools(builtinAgentTools, host).find(
+      (entry) => entry.name === "image_search",
+    );
+    if (!tool) throw new Error("image_search missing");
+    await expect(tool.execute("search", { query: "photos" })).resolves.toMatchObject({
+      details: { error: "Image search is unavailable for this model." },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+});
+
+it("offers image search only for a supported model and lets bots disable it independently", () => {
+  const base = {
+    graphicalToolsAllowed: false,
+    groupId: null,
+    trigger: "user",
+    semanticMemoryEnabled: false,
+    messagingChannelRun: false,
+  };
+  const names = (provider: string, disabledBuiltinTools?: string[]) =>
+    selectBuiltinToolsForRun({
+      ...base,
+      modelImageSearchEnabled: supportsModelImageSearch(provider),
+      disabledBuiltinTools,
+    }).map((tool) => tool.name);
+  expect(names("openai-codex")).toContain("image_search");
+  for (const provider of ["openai", "openrouter", "other"])
+    expect(names(provider)).not.toContain("image_search");
+  expect(names("openai-codex", ["image_search"])).not.toContain("image_search");
+  expect(names("openai-codex", ["image_search"])).toContain("web_search");
+  expect(names("openai-codex", ["web_search", "generate_image"])).toContain("image_search");
+  expect(READ_ONLY_AGENT_TOOLS.has("image_search")).toBe(true);
+  expect(builtinAgentTools.find((tool) => tool.name === "image_search")?.readOnly).toBe(true);
+});

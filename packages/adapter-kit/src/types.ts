@@ -1098,6 +1098,15 @@ export interface WebSearchRequest {
   signal?: AbortSignal;
 }
 
+export interface ImageSearchHit {
+  imageUrl: string;
+  sourceUrl: string;
+  title?: string;
+  thumbnailUrl?: string;
+}
+
+export type ImageSearchResult = { results: ImageSearchHit[] } | { error: string };
+
 export interface WebSearchHit {
   title: string;
   url: string;

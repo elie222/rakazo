@@ -635,6 +635,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma: transactionalPrisma,
+    runtimeRun,
     effects,
     spending: spending.state,
     web,
@@ -4245,3 +4246,35 @@ it("does not blame the webhook on cards every run shows", async () => {
   expect(connection.pauseRunForInput).toHaveBeenCalledOnce();
   expect(askDetail(connection)).toBe("Telegram: fake");
 });
+
+it.each([false, true])(
+  "checks a new connector read after runtime image search returned outside content: %s",
+  async (searched) => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+    const f = fixture({ autoReview: true });
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      if (searched) {
+        await request.onToolCompleted?.({
+          name: "image_search",
+          executionId: "image-call",
+          durationMs: 1,
+          result: {
+            content: [{ type: "text", text: "External image caption" }],
+            details: {
+              results: [
+                { imageUrl: "https://example.com/image.jpg", sourceUrl: "https://example.com" },
+              ],
+            },
+          },
+        });
+      }
+      f.results.push(await request.executeTool!("demo_get_item", { id: "item-1" }, "read-call"));
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(searched ? 1 : 0);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(searched ? 1 : 0);
+    expect(f.execute).toHaveBeenCalledTimes(searched ? 0 : 1);
+  },
+);

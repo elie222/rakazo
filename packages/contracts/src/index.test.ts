@@ -264,9 +264,11 @@ describe("contracts", () => {
 
   it("rejects unknown built-in tool names and keeps a known denylist", () => {
     expect(
-      UpdateBotInput.parse({ botId: "bot-1", disabledBuiltinTools: ["web_search", "web_search"] })
-        .disabledBuiltinTools,
-    ).toEqual(["web_search"]);
+      UpdateBotInput.parse({
+        botId: "bot-1",
+        disabledBuiltinTools: ["web_search", "web_search", "image_search"],
+      }).disabledBuiltinTools,
+    ).toEqual(["web_search", "image_search"]);
     const unknown = UpdateBotInput.safeParse({
       botId: "bot-1",
       disabledBuiltinTools: ["not_a_tool"],

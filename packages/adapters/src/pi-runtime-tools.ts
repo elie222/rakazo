@@ -27,6 +27,7 @@ import {
 } from "./bot-secrets.js";
 import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
+import { executeImageSearch } from "./pi-image-search.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -263,6 +264,7 @@ export function describeToolActivity(
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
+  if (toolName === "image_search") return `Searching images: ${detail(record.query)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
   if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
@@ -617,6 +619,13 @@ function toAgentTool(
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,
+                };
+              }
+              if (tool.name === "image_search") {
+                const result = await executeImageSearch(host, args);
+                return {
+                  content: [{ type: "text", text: JSON.stringify(result) }],
+                  details: result,
                 };
               }
               // A background helper is its own run, which the executor starts like any tool effect.

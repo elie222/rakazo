@@ -83,6 +83,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "web_fetch",
   "web_search",
   "service_search",
+  "image_search",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;

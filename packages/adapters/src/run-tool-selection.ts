@@ -34,6 +34,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "ticket_get",
   "skill_read",
   "web_search",
+  "image_search",
   "web_fetch",
   "service_search",
   "browser_snapshot",
@@ -111,6 +112,7 @@ export function selectBuiltinToolsForRun(options: {
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
+  modelImageSearchEnabled?: boolean;
   mediaVideoEnabled?: boolean;
   /** The deployment configured paid data services. */
   paidServicesEnabled?: boolean;
@@ -170,6 +172,7 @@ export function selectBuiltinToolsForRun(options: {
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
+      (options.modelImageSearchEnabled || tool.name !== "image_search") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||

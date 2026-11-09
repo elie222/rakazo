@@ -234,6 +234,7 @@ describe("unattendedTriggerToolRequiresApproval", () => {
       "computer_observe",
       "read_file",
       "web_search",
+      "image_search",
       "browser_snapshot",
       "request_takeover",
       "run_subagent",
@@ -980,6 +981,7 @@ describe("toolResultTaintsRun", () => {
     for (const tool of [
       "web_fetch",
       "web_search",
+      "image_search",
       "browser_snapshot",
       "computer_observe",
       "shell",

@@ -797,6 +797,30 @@ export const builtinAgentTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
+    name: "image_search",
+    description:
+      "Search for existing public images and photos. Returns image URLs and source pages. Use generate_image to create a new image.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          minLength: 1,
+          maxLength: 2000,
+          description: "Image search query.",
+        },
+        maxResults: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
+          description: "Max results to return (default 5, max 10).",
+        },
+      },
+      required: ["query"],
+    },
+    readOnly: true,
+  },
+  {
     name: "web_fetch",
     description:
       "Fetch a public http(s) page and return readable text (title + content). Read-only; no JavaScript. Use after web_search when you need the page itself.",
