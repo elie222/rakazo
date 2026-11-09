@@ -1,7 +1,7 @@
 import type { AttentionItem } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useIsFocused, useRouter } from "expo-router";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -55,13 +55,20 @@ export default function NeedsYouScreen() {
   const items = query.data?.items ?? [];
   const sections = attentionSections(items, t);
 
-  useFocusEffect(
-    useCallback(() => {
-      void query.refetch();
-    }, [query.refetch]),
+  // The first poll run would duplicate the fetch useQuery already made on mount; a later
+  // focus re-enables the poll and refreshes at once.
+  const polled = useRef(false);
+  useForegroundPoll(
+    async () => {
+      if (!polled.current) {
+        polled.current = true;
+        return;
+      }
+      await query.refetch();
+    },
+    ATTENTION_POLL_INTERVAL_MS,
+    isFocused,
   );
-
-  useForegroundPoll(() => query.refetch(), ATTENTION_POLL_INTERVAL_MS, isFocused);
 
   async function answer(item: AttentionItem, actionId: string, answerValue: string) {
     if (!item.runId || !item.messageId || busy) return;

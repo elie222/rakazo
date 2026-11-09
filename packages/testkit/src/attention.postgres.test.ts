@@ -223,10 +223,16 @@ describeAttention("attention.list", () => {
     const cookie = await signup(app, `attention-group-${stamp}@rakazo.test`, "Group User");
     const bot = await createBot(app, cookie, "Group Bot");
     const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const mate = await createBot(app, cookie, "Crew Mate");
     const group = await prisma.chatGroup.create({
       data: { spaceId: thread.spaceId, userId: thread.userId, name: "Crew" },
     });
-    await prisma.chatGroupMember.create({ data: { groupId: group.id, botId: bot.id } });
+    await prisma.chatGroupMember.createMany({
+      data: [
+        { groupId: group.id, botId: bot.id },
+        { groupId: group.id, botId: mate.id },
+      ],
+    });
     const groupThread = await prisma.thread.create({
       data: { spaceId: thread.spaceId, userId: thread.userId, groupId: group.id },
     });
@@ -257,11 +263,17 @@ describeAttention("attention.list", () => {
   it("hides failed work from an archived group", async () => {
     const cookie = await signup(app, `attention-archive-${stamp}@rakazo.test`, "Archive User");
     const bot = await createBot(app, cookie, "Archived Group Bot");
+    const mate = await createBot(app, cookie, "Old Crew Mate");
     const botThread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
     const group = await prisma.chatGroup.create({
       data: { spaceId: botThread.spaceId, userId: botThread.userId, name: "Old Crew" },
     });
-    await prisma.chatGroupMember.create({ data: { groupId: group.id, botId: bot.id } });
+    await prisma.chatGroupMember.createMany({
+      data: [
+        { groupId: group.id, botId: bot.id },
+        { groupId: group.id, botId: mate.id },
+      ],
+    });
     const groupThread = await prisma.thread.create({
       data: { spaceId: botThread.spaceId, userId: botThread.userId, groupId: group.id },
     });
@@ -326,6 +338,53 @@ describeAttention("attention.list", () => {
     expect(routines).toHaveLength(1);
     expect(routines[0]!.detail).toContain("Morning brief");
     expect(routines[0]!.detail).toContain("Weekly report");
+  });
+
+  it("hides a group that fell below its minimum active bots", async () => {
+    const cookie = await signup(app, `attention-hidden-${stamp}@rakazo.test`, "Hidden User");
+    const bot = await createBot(app, cookie, "Hidden Group Bot");
+    const mate = await createBot(app, cookie, "Hidden Mate");
+    const botThread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const group = await prisma.chatGroup.create({
+      data: { spaceId: botThread.spaceId, userId: botThread.userId, name: "Fading Crew" },
+    });
+    await prisma.chatGroupMember.createMany({
+      data: [
+        { groupId: group.id, botId: bot.id },
+        { groupId: group.id, botId: mate.id },
+      ],
+    });
+    const groupThread = await prisma.thread.create({
+      data: { spaceId: botThread.spaceId, userId: botThread.userId, groupId: group.id },
+    });
+    const task = await prisma.task.create({
+      data: {
+        spaceId: botThread.spaceId,
+        userId: botThread.userId,
+        botId: bot.id,
+        threadId: groupThread.id,
+        prompt: "fail in the group",
+        status: "failed",
+      },
+    });
+    await prisma.run.create({
+      data: {
+        spaceId: botThread.spaceId,
+        userId: botThread.userId,
+        botId: bot.id,
+        threadId: groupThread.id,
+        taskId: task.id,
+        status: "failed",
+        trigger: "user",
+        completedAt: new Date(),
+      },
+    });
+    await markUnread(prisma, groupThread.id);
+    await prisma.bot.update({ where: { id: mate.id }, data: { archivedAt: new Date() } });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+
+    expect(result.items.some((item) => item.kind === "failed")).toBe(false);
   });
 });
 

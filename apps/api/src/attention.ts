@@ -1,5 +1,5 @@
 import type { Actor, AttentionItem, MessageBlock } from "@rakazo/contracts";
-import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   attentionActionsForBlock,
   attentionKindForBlock,
@@ -42,7 +42,11 @@ type RoutineThread = {
   id: string;
   botId: string | null;
   groupId: string | null;
-  group: { name: string; archivedAt: Date | null; members: { botId: string | null }[] } | null;
+  group: {
+    name: string;
+    archivedAt: Date | null;
+    members: { botId: string | null; bot: { archivedAt: Date | null } }[];
+  } | null;
 };
 
 type RoutineRow = {
@@ -57,11 +61,14 @@ type RoutineRow = {
 /** The thread a routine runs in, matching dispatch: its own target when valid, else the bot's. */
 function routineThread(routine: RoutineRow): RoutineThread | null {
   const candidate = routine.thread;
+  const activeMembers =
+    candidate?.group?.members.filter((member) => member.bot.archivedAt === null).length ?? 0;
   if (
     candidate &&
     (candidate.botId === routine.botId ||
       (candidate.group &&
         !candidate.group.archivedAt &&
+        activeMembers >= GROUP_MEMBER_MIN &&
         candidate.group.members.some((member) => member.botId === routine.botId)))
   ) {
     return candidate;
@@ -109,6 +116,22 @@ export async function listAttentionItems(
   actor: Actor,
   now = new Date(),
 ): Promise<AttentionItem[]> {
+  // Groups left below the minimum active bots are hidden everywhere else, so they cannot
+  // produce an inbox card that opens an unavailable chat.
+  const visibleGroups = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT g.id
+    FROM chat_groups g
+    WHERE g."spaceId" = ${actor.spaceId}
+      AND g."archivedAt" IS NULL
+      AND (
+        SELECT COUNT(*)
+        FROM chat_group_members gm
+        JOIN bots b ON b.id = gm."botId"
+        WHERE gm."groupId" = g.id AND b."archivedAt" IS NULL
+      ) >= ${GROUP_MEMBER_MIN}
+  `;
+  const visibleGroupIds = visibleGroups.map((group) => group.id);
+
   const [waitingRuns, failedRuns, routines] = await Promise.all([
     prisma.run.findMany({
       where: {
@@ -117,7 +140,7 @@ export async function listAttentionItems(
         bot: { archivedAt: null },
         // A background run that waits on a person is conversation, whatever started it.
         status: { in: ["waiting_input", "waiting_takeover"] },
-        thread: { OR: [{ groupId: null }, { group: { archivedAt: null } }] },
+        thread: { OR: [{ groupId: null }, { groupId: { in: visibleGroupIds } }] },
       },
       select: {
         id: true,
@@ -145,7 +168,7 @@ export async function listAttentionItems(
         completedAt: { gte: new Date(now.getTime() - FAILED_WINDOW_MS) },
         thread: {
           reads: { some: { userId: actor.userId, spaceId: actor.spaceId, unread: true } },
-          OR: [{ groupId: null }, { group: { archivedAt: null } }],
+          OR: [{ groupId: null }, { groupId: { in: visibleGroupIds } }],
         },
       },
       select: {
@@ -191,7 +214,7 @@ export async function listAttentionItems(
               select: {
                 name: true,
                 archivedAt: true,
-                members: { select: { botId: true } },
+                members: { select: { botId: true, bot: { select: { archivedAt: true } } } },
               },
             },
           },
@@ -208,7 +231,7 @@ export async function listAttentionItems(
                   select: {
                     name: true,
                     archivedAt: true,
-                    members: { select: { botId: true } },
+                    members: { select: { botId: true, bot: { select: { archivedAt: true } } } },
                   },
                 },
               },
