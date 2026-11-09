@@ -16,7 +16,7 @@ RUN /tmp/apt-security.sh \
   && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .pnpmfile.cjs ./
 COPY patches patches
 COPY packages/contracts packages/contracts
 COPY packages/core packages/core

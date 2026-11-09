@@ -461,7 +461,8 @@ it("renders saved bot rows without a notification setting", () => {
 
 it("says working only while the bot works, and shows nothing beside the time", () => {
   const bots = ["running", "waiting_takeover", "waiting_input", "idle"].map(
-    (status) => ({ id: status, name: "Helper", preview: "Hi", status }) as MobileBot,
+    (status) =>
+      ({ id: status, name: "Helper", preview: "Hi", status, color: "#8B5CF6" }) as MobileBot,
   );
   render(
     bots.map((bot) => (
@@ -487,6 +488,30 @@ it("says working only while the bot works, and shows nothing beside the time", (
     "HelperHi",
     "HelperHi",
   ]);
+});
+
+it("marks a ghost bot waiting on you like an unread chat", () => {
+  const bot = {
+    id: "asks",
+    name: "Helper",
+    preview: "Hi",
+    status: "waiting_input",
+    avatarSet: "rakazo",
+    color: "#8B5CF6",
+  } as MobileBot;
+  render(
+    <BotRow
+      bot={bot}
+      day={0}
+      now={0}
+      onPress={action}
+      sections={[]}
+      onOrganize={action}
+      onEditSection={action}
+      onSnooze={action}
+    />,
+  );
+  expect(rowLabels()).toEqual(["Helper, Needs attention, Hi"]);
 });
 
 it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
