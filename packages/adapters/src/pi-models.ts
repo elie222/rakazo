@@ -13,6 +13,7 @@ import {
   MODEL_KEY_REJECTED_ERROR,
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
+import { compareVersions } from "./model-version.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
@@ -392,12 +393,12 @@ export function catalogModelLabel(
   const aliases = members.filter((member) => member.alias);
   if (!aliases.length) return base;
   const newer = (member: FamilyMember) =>
-    members.some((other) => compareVersions(other.version, member.version) > 0);
+    members.some((other) => newerVersion(other.version, member.version));
   if (self.alias) return newer(self) ? base : `${base} (latest)`;
   return self.version && aliases.every(newer) && !newer(self) ? `${base} (latest)` : base;
 }
 
-type FamilyMember = { id: string; base: string; version: number[] | null; alias: boolean };
+type FamilyMember = { id: string; base: string; version: string | null; alias: boolean };
 
 const familyIndexes = new WeakMap<readonly CatalogModelName[], Map<string, FamilyMember[]>>();
 
@@ -434,19 +435,13 @@ function familyKey(base: string): string {
   return base.replace(VERSION, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function versionOf(base: string): number[] | null {
-  const match = VERSION.exec(base);
-  return match ? match[0].split(".").map(Number) : null;
+function versionOf(base: string): string | null {
+  return VERSION.exec(base)?.[0] ?? null;
 }
 
 /** An unversioned label is neither newer nor older than anything. */
-function compareVersions(a: number[] | null, b: number[] | null): number {
-  if (!a || !b) return 0;
-  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+function newerVersion(a: string | null, b: string | null): boolean {
+  return a !== null && b !== null && compareVersions(a, b) > 0;
 }
 
 /**
