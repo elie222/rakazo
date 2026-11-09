@@ -42,31 +42,10 @@ const MOLA_READY_TIMEOUT_MS = 5 * 60_000;
 const MOLA_POLL_MS = 2_000;
 const MOLA_API_TIMEOUT_MS = 30_000;
 const MOLA_HANDLE_PROBE_MS = 60_000;
-const MOLA_DEFAULT_VIEWER_ORIGIN = "https://app.rakazo.com";
 
 const log = getLogger();
 
 type MolaApiMode = "cloud" | "selfhosted";
-
-function getViewerOrigin(): string {
-  const override = process.env.MOLA_VIEWER_ORIGIN?.trim();
-  if (override) {
-    try {
-      const url = new URL(override);
-      if (url.protocol !== "https:") {
-        throw new Error("MOLA_VIEWER_ORIGIN must use HTTPS");
-      }
-      if (url.pathname !== "/" || url.search || url.hash) {
-        throw new Error("MOLA_VIEWER_ORIGIN must be an origin (scheme + host only, no path)");
-      }
-      return `${url.protocol}//${url.host}`;
-    } catch (error) {
-      log.warn("Invalid MOLA_VIEWER_ORIGIN, using default", { error });
-      return MOLA_DEFAULT_VIEWER_ORIGIN;
-    }
-  }
-  return MOLA_DEFAULT_VIEWER_ORIGIN;
-}
 
 interface MolaMachine {
   id: string;
@@ -166,10 +145,10 @@ export class MolaSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        graphical: true,
+        graphical: this.apiMode === "selfhosted",
         pty: false,
         snapshots: false,
-        takeover: true,
+        takeover: false,
         persistentHome: false,
         multiScreen: false,
       },
@@ -276,21 +255,7 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   private async getDesktopUrl(
     machineId: string,
-    interactive: boolean = false,
-  ): Promise<{ url: string; token?: string; expires_in: number }> {
-    if (this.apiMode === "cloud") {
-      const response = await this.request(`/computers/${machineId}/viewers`, {
-        method: "POST",
-        body: {
-          origin: getViewerOrigin(),
-          mode: "desktop",
-          interactive,
-          expires_in_minutes: 60,
-        },
-      });
-      const result: { data: { embed_url: string; token: string; expires_at?: string } } = await response.json();
-      return { url: result.data.embed_url, token: result.data.token, expires_in: 3600 };
-    }
+  ): Promise<{ url: string; expires_in: number }> {
     const response = await this.request(`/machines/${machineId}/desktop`, {
       method: "POST",
     });
@@ -497,23 +462,23 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   async connectScreen(
     computer: ComputerRef,
-    request: ScreenRequest,
+    _request: ScreenRequest,
     _context: AdapterContext,
   ): Promise<ScreenSession> {
-    const desktop = await this.getDesktopUrl(computer.providerRef, request.interactive ?? false);
-    const session: ScreenSession = {
+    if (this.apiMode === "cloud") {
+      throw new Error(
+        "Live view for Mola Cloud is not supported in Rakazo yet. Mola Cloud's iframe-based viewer requires postMessage authentication that is incompatible with Rakazo's HTTP proxy pattern.",
+      );
+    }
+
+    const desktop = await this.getDesktopUrl(computer.providerRef);
+    return {
       url: desktop.url,
       mimeType: "text/html",
       async close() {
         // Mola desktop URLs expire automatically
       },
     };
-    
-    if (desktop.token) {
-      session.headers = { "x-mola-viewer-token": desktop.token };
-    }
-    
-    return session;
   }
 
   async sendInput(): Promise<void> {

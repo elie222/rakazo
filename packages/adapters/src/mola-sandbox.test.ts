@@ -3,15 +3,15 @@ import { createMolaSandboxProvider } from "./mola-sandbox.js";
 
 describe("MolaSandboxProvider", () => {
   describe("construction and configuration", () => {
-    it("constructs with API key and default cloud URL", () => {
+    it("constructs with API key and default cloud URL (no live view)", () => {
       const provider = createMolaSandboxProvider({ apiKey: "test-key" });
       expect(provider).toBeDefined();
       const descriptor = provider.describe();
       expect(descriptor.id).toBe("mola");
-      expect(descriptor.capabilities.graphical).toBe(true);
+      expect(descriptor.capabilities.graphical).toBe(false);
     });
 
-    it("constructs with API key and custom self-hosted URL", () => {
+    it("constructs with API key and custom self-hosted URL (with live view)", () => {
       const provider = createMolaSandboxProvider({
         apiKey: "test-key",
         apiUrl: "http://localhost:4141/v1",
@@ -48,14 +48,30 @@ describe("MolaSandboxProvider", () => {
   });
 
   describe("capabilities", () => {
-    it("reports correct capabilities", () => {
+    it("reports no graphical capabilities for Cloud (default)", () => {
       const provider = createMolaSandboxProvider({ apiKey: "test-key" });
+      const descriptor = provider.describe();
+      expect(descriptor.capabilities).toEqual({
+        graphical: false,
+        pty: false,
+        snapshots: false,
+        takeover: false,
+        persistentHome: false,
+        multiScreen: false,
+      });
+    });
+
+    it("reports graphical capabilities for self-hosted", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://localhost:4141/v1",
+      });
       const descriptor = provider.describe();
       expect(descriptor.capabilities).toEqual({
         graphical: true,
         pty: false,
         snapshots: false,
-        takeover: true,
+        takeover: false,
         persistentHome: false,
         multiScreen: false,
       });

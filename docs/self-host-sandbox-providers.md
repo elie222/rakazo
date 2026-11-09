@@ -62,8 +62,9 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
   self-hosted). Open source at https://github.com/obaid/mola-core. Each computer starts from a fresh
   Ubuntu 24.04 XFCE desktop with Chrome and runs in its own VM. Rakazo keeps the portable workspace
   under `/home/dev/rakazo-home`. Mola computers are ephemeral: the saved workspace is the persistence
-  boundary. Supports the shared Linux desktop runtime for screens, takeover, and portable workspace
-  transfer.
+  boundary. **Live view is not available for Mola Cloud** (cloud.mola.sh uses iframe-based viewers
+  incompatible with Rakazo's proxy). Self-hosted mola-core may support screens and takeover. Portable
+  workspace transfer works on both.
 - **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
   or Linux through the native bridge. Bots can read/change local files and launch installed apps
   through OS commands, subject to your account and OS permissions. Portable file tools and
