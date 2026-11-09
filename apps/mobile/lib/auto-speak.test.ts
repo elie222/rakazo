@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { nextAutoSpeakAction } from "./auto-speak";
+import { nextAutoSpeakAction, readAloudText } from "./auto-speak";
+
+describe("readAloudText", () => {
+  it("reads only the reply's own words, never the working narration ahead of them", () => {
+    expect(
+      readAloudText([
+        { kind: "progress", text: "Using browser" },
+        { kind: "text", text: "Shanghai is 18 degrees today." },
+      ]),
+    ).toBe("Shanghai is 18 degrees today.");
+  });
+
+  it("drops system notes, tool steps and subagent status, keeps the reply and its question", () => {
+    expect(
+      readAloudText([
+        { kind: "meta", text: "Run stopped." },
+        { kind: "steps", steps: [{ label: "weather", count: 1 }] },
+        { kind: "text", text: "Done." },
+        { kind: "ask", text: "Ship it?", status: "pending" },
+        {
+          kind: "subagent",
+          agentId: "agent-1",
+          name: "Scout",
+          task: "check the weather",
+          status: "completed",
+          result: "Scout finished",
+        },
+      ]),
+    ).toBe("Done.\nShip it?");
+  });
+
+  it("is empty when a message holds no reply text at all", () => {
+    expect(readAloudText([{ kind: "progress", text: "Using browser" }])).toBe("");
+  });
+});
 
 function textMessage(id: string, text: string) {
   return {
@@ -66,6 +100,28 @@ describe("nextAutoSpeakAction", () => {
 
   it("speaks a finished reply that has not been spoken yet", () => {
     expect(nextAutoSpeakAction(base)).toEqual({
+      action: "speak",
+      messageId: "msg-2",
+      text: "Hello from the bot.",
+    });
+  });
+
+  it("does not read the working narration ahead of a finished reply", () => {
+    expect(
+      nextAutoSpeakAction({
+        ...base,
+        messages: [
+          {
+            id: "msg-2",
+            role: "bot",
+            blocks: [
+              { kind: "progress", text: "Using browser" },
+              { kind: "text", text: "Hello from the bot." },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
       action: "speak",
       messageId: "msg-2",
       text: "Hello from the bot.",

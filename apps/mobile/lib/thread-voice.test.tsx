@@ -8,7 +8,6 @@ import type { CallState } from "./call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "./call-session";
 import { loadCallGreetingEnabled } from "./call-sounds";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
-import { blockText } from "./mobile-types";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "./session";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "./thread-voice";
 import { speakQueue, speakText } from "./voice";
@@ -30,10 +29,6 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
-// Signed out, every request fails; device voice needs none of them to start the microphone.
-vi.mock("./mobile-types", () => ({
-  blockText: vi.fn(),
-}));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -233,7 +228,6 @@ describe("read-aloud while a call is active", () => {
     vi.mocked(getCallSnapshot).mockReturnValue(null);
     vi.mocked(speakText).mockClear();
     vi.mocked(speakQueue).mockClear();
-    vi.mocked(blockText).mockReturnValue("read from here");
     await saveSessionToken("fake-token-a");
     root = createRoot(document.createElement("div"));
   });
@@ -351,7 +345,7 @@ describe("read-aloud while a call is active", () => {
     act(() => latestSpeakFrom(message("m2", "second reply")));
     expect(speakQueue).toHaveBeenCalledOnce();
     expect(vi.mocked(speakQueue).mock.calls[0]?.[0]?.[0]).toMatchObject({
-      text: "read from here",
+      text: "second reply",
       botId: "bot-b",
       messageId: "m2",
     });

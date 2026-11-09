@@ -1,5 +1,6 @@
 /**
- * Full-screen voice chat: pick a scenario, hold to talk, hear the reply.
+ * Full-screen voice chat: the microphone listens continuously, like a voice
+ * assistant — tap it to stop listening, hold below to talk for one turn.
  * The orb breathes with the conversation; the transcript lists what was
  * heard and what the bot said, with the reply's action row underneath.
  */
@@ -60,6 +61,9 @@ export default function VoiceChatScreen() {
       return;
     }
     session.start(botId, botName);
+    // Listening starts with the screen: the caller talks whenever they want,
+    // and the microphone reopens after each reply.
+    session.setHandsFree(true);
     return () => session.end();
   }, [botId, botName, router, session]);
 
@@ -232,10 +236,9 @@ export default function VoiceChatScreen() {
               testID="voice-chat-mic"
               accessibilityRole="button"
               accessibilityLabel={t("Microphone")}
-              accessibilityState={{ selected: state.phase === "listening" }}
+              accessibilityState={{ selected: state.handsFree || state.phase === "listening" }}
               hitSlop={8}
-              onPressIn={() => session.pressToTalk()}
-              onPressOut={() => session.releaseToSend()}
+              onPress={() => session.setHandsFree(!state.handsFree)}
               style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
             >
               <NativeSymbol

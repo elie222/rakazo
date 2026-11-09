@@ -8,7 +8,9 @@
  * - A tap while dictating cancels it.
  *
  * The dictate step mirrors the call loop's: on-device recognition first, so
- * this works with a speak-only voice provider.
+ * this works with a speak-only voice provider. When the device has no
+ * recognition of its own, a clip is recorded and the voice provider
+ * transcribes it instead.
  */
 
 import { recognitionLocaleTag } from "@rakazo/core";
@@ -16,6 +18,12 @@ import { useEffect, useRef, useState } from "react";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale } from "./i18n";
+import {
+  finishServerDictation,
+  listenServerDictation,
+  serverTranscribeAvailable,
+  stopServerDictation,
+} from "./server-dictation";
 
 /** A press held at least this long is a voice message, not a tap to dictate. */
 export const COMPOSER_VOICE_HOLD_MS = 400;
@@ -158,11 +166,23 @@ export function useComposerVoiceInput(
 
 export const productionComposerVoiceInputDeps: ComposerVoiceInputDeps = {
   dictate: async (handlers, signal) => {
-    if (!(await dictation.available())) return false;
-    const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
-    await dictation.listen({ ...handlers, signal, lang });
+    if (await dictation.available()) {
+      const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
+      await dictation.listen({ ...handlers, signal, lang });
+      return true;
+    }
+    // No on-device recognition (some Android ROMs ship without it): record a
+    // clip and have the voice provider transcribe it instead.
+    if (!(await serverTranscribeAvailable())) return false;
+    await listenServerDictation({ ...handlers, signal });
     return true;
   },
-  finishDictation: () => dictation.finish(),
-  stopDictation: () => dictation.stop(),
+  finishDictation: () => {
+    dictation.finish();
+    finishServerDictation();
+  },
+  stopDictation: () => {
+    dictation.stop();
+    stopServerDictation();
+  },
 };

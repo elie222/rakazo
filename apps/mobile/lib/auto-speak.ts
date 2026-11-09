@@ -1,5 +1,19 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { speechFromBlocks } from "@rakazo/core";
+
+/**
+ * What read-aloud speaks: the reply's own words only. Working narration
+ * (progress, steps, tool calls) and system notes are status, not the message:
+ * they sit before the reply's text, so reading them puts a stray sentence
+ * ahead of the message the caller asked to hear.
+ */
+export function readAloudText(blocks: readonly MessageBlock[]): string {
+  return blocks
+    .filter((block) => block.kind === "text" || block.kind === "ask")
+    .map((block) => block.text)
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
 
 const IN_PROGRESS_RUN_STATUSES = new Set(["running", "queued", "leased"]);
 
@@ -43,7 +57,7 @@ export function nextAutoSpeakAction(input: {
     return { action: "wait" };
   }
   if (!lastBot || lastBot.id === input.lastSpokenMessageId) return { action: "wait" };
-  const text = speechFromBlocks(lastBot.blocks).trim();
+  const text = readAloudText(lastBot.blocks);
   if (!text) return { action: "seed", messageId: lastBot.id };
   return { action: "speak", messageId: lastBot.id, text };
 }

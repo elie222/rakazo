@@ -1,7 +1,10 @@
 /**
- * Push-to-talk voice chat: hold to speak, release to send, the reply is read
- * aloud. Unlike the hands-free call loop in call-session, this session only
- * listens while the caller holds the microphone, and one turn at a time.
+ * Push-to-talk voice chat, with a hands-free mode that keeps listening like a
+ * voice assistant: the microphone reopens after each reply, so the caller
+ * talks whenever they want instead of holding the button for every turn.
+ * Unlike the hands-free call loop in call-session, this session listens one
+ * turn at a time and only while the caller holds the microphone or has
+ * hands-free on.
  */
 
 import {
@@ -14,11 +17,17 @@ import {
 } from "@rakazo/core";
 import { rpc } from "./api";
 import { subscribeThread } from "./api-live";
+import { readAloudText } from "./auto-speak";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
-import { blockText } from "./mobile-types";
+import {
+  finishServerDictation,
+  listenServerDictation,
+  serverTranscribeAvailable,
+  stopServerDictation,
+} from "./server-dictation";
 import { errorText } from "./user-error";
 import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
 import { DEFAULT_VOICE_CHAT_SCENARIO_ID, voiceChatScenario } from "./voice-chat-scenarios";
@@ -45,6 +54,8 @@ export type VoiceChatState = {
   botId: string;
   botName: string;
   phase: VoiceChatPhase;
+  /** Hands-free listening is on: the microphone reopens after each reply. */
+  handsFree: boolean;
   /** What the recognizer hears right now, before the turn is sent. */
   heard: string;
   exchanges: VoiceChatExchange[];
@@ -88,6 +99,8 @@ export type VoiceChatSession = {
   start: (botId: string, botName: string) => void;
   /** Picks a scenario; its instruction rides on the next turn sent. */
   setScenario: (id: string) => void;
+  /** Turns hands-free listening on or off; on opens the microphone between turns. */
+  setHandsFree: (on: boolean) => void;
   /** Opens the microphone; a reply playing is cut off first. */
   pressToTalk: () => void;
   /** Sends what was heard so far, or closes the microphone when nothing was heard. */
@@ -105,6 +118,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     botId: "",
     botName: "",
     phase: "idle",
+    handsFree: false,
     heard: "",
     exchanges: [],
     notice: null,
@@ -135,6 +149,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
       botId,
       botName,
       phase: "idle",
+      handsFree: false,
       heard: "",
       exchanges: [],
       notice: null,
@@ -164,49 +179,38 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     set({ scenarioId: scenario.id });
   }
 
-  /** Sends a turn, carrying a picked scenario's instruction exactly once. */
-  async function sendWithScenario(text: string) {
-    const prefix = pendingInstruction;
-    pendingInstruction = null;
-    await deps.send(state.botId, prefix ? `${prefix}\n\n${text}` : text);
+  /**
+   * Idle with hands-free on reopens the microphone, so the session keeps
+   * listening until the caller switches it off. The phase is set first: a
+   * turn that just settled still reports thinking or speaking.
+   */
+  function toIdle() {
+    set({ phase: "idle", heard: "" });
+    if (state.handsFree) beginListening();
   }
 
-  function onWatchLost() {
-    if (state.phase === "thinking") {
-      set({ phase: "idle", notice: t("The connection dropped. Try again.") });
+  function setHandsFree(on: boolean) {
+    if (on === state.handsFree || !state.botId) return;
+    set({ handsFree: on });
+    if (!on) {
+      // Switching off stops the microphone; a reply in flight keeps playing
+      // and lands idle when it finishes.
+      if (state.phase === "listening") {
+        turn?.abort();
+        deps.stopDictation();
+        set({ phase: "idle", heard: "" });
+      }
+      return;
     }
+    // Switching on opens the microphone when the session is between turns;
+    // a reply or a pending send reopens it when it settles, through toIdle.
+    if (state.phase === "idle") beginListening();
   }
 
-  function onReply(messageId: string, text: string) {
-    if (state.exchanges.some((exchange) => exchange.messageId === messageId)) return;
-    const mine = generation;
-    set({
-      phase: "speaking",
-      exchanges: [...state.exchanges, { role: "bot", text, messageId }],
-    });
-    void deps
-      .speak(state.botId, text)
-      .then((spoken) => {
-        if (generation !== mine) return;
-        if (!spoken) {
-          set({
-            phase: "idle",
-            notice: t("Add a voice provider in Voice settings."),
-          });
-          return;
-        }
-        if (state.phase === "speaking") set({ phase: "idle" });
-      })
-      .catch((error: unknown) => {
-        if (generation !== mine) return;
-        set({ phase: "idle", notice: errorText(error, t("Could not speak that.")) });
-      });
-  }
-
-  function pressToTalk() {
+  /** Opens the microphone for one turn, from a press or from hands-free. */
+  function beginListening() {
     if (state.phase === "not-ready" || state.phase === "thinking") return;
     if (!state.botId) return;
-    if (state.phase === "speaking") deps.stopSpeaking();
     turn?.abort();
     const controller = new AbortController();
     turn = controller;
@@ -226,6 +230,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
             if (reason === "failed") {
               set({
                 phase: "not-ready",
+                handsFree: false,
                 heard: "",
                 notice: t(
                   "Allow speech recognition in Settings, or connect a voice provider in Voice settings.",
@@ -233,7 +238,9 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
               });
               return;
             }
-            if (state.phase === "listening") set({ phase: "idle", heard: "" });
+            // Silence ends the turn; hands-free reopens the microphone so
+            // the caller can speak again without pressing anything.
+            if (state.phase === "listening") toIdle();
           },
         },
         controller.signal,
@@ -241,8 +248,10 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
       .then((started) => {
         if (generation !== mine) return;
         if (started) return;
+        // No recognizer at all: hands-free must not spin on a dead microphone.
         set({
           phase: "not-ready",
+          handsFree: false,
           heard: "",
           notice: t(
             "Allow speech recognition in Settings, or connect a voice provider in Voice settings.",
@@ -251,8 +260,67 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
       })
       .catch((error: unknown) => {
         if (generation !== mine) return;
-        set({ phase: "idle", notice: errorText(error, t("Could not hear that.")) });
+        // A listen that throws cannot recover by retrying: a persistent
+        // failure would spin the microphone, so hands-free switches off
+        // and the caller re-enables it from the microphone button.
+        set({
+          phase: "idle",
+          handsFree: false,
+          notice: errorText(error, t("Could not hear that.")),
+        });
       });
+  }
+
+  /** Sends a turn, carrying a picked scenario's instruction exactly once. */
+  async function sendWithScenario(text: string) {
+    const prefix = pendingInstruction;
+    pendingInstruction = null;
+    await deps.send(state.botId, prefix ? `${prefix}\n\n${text}` : text);
+  }
+
+  function onWatchLost() {
+    if (state.phase === "thinking") {
+      toIdle();
+      set({ notice: t("The connection dropped. Try again.") });
+    }
+  }
+
+  function onReply(messageId: string, text: string) {
+    if (state.exchanges.some((exchange) => exchange.messageId === messageId)) return;
+    const mine = generation;
+    set({
+      phase: "speaking",
+      exchanges: [...state.exchanges, { role: "bot", text, messageId }],
+    });
+    void deps
+      .speak(state.botId, text)
+      .then((spoken) => {
+        if (generation !== mine) return;
+        if (!spoken) {
+          // No voice to answer with: hands-free switches off instead of
+          // listening for turns that cannot be spoken back.
+          set({
+            phase: "idle",
+            handsFree: false,
+            notice: t("Add a voice provider in Voice settings."),
+          });
+          return;
+        }
+        // A reply playing when the caller presses the microphone was already
+        // cut off into a new listen; only a reply still playing reopens it.
+        if (state.phase === "speaking") toIdle();
+      })
+      .catch((error: unknown) => {
+        if (generation !== mine) return;
+        set({ phase: "idle", notice: errorText(error, t("Could not speak that.")) });
+      });
+  }
+
+  function pressToTalk() {
+    if (state.phase === "not-ready" || state.phase === "thinking") return;
+    if (!state.botId) return;
+    if (state.phase === "speaking") deps.stopSpeaking();
+    beginListening();
   }
 
   function releaseToSend() {
@@ -260,7 +328,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     const text = state.heard.trim();
     if (!text) {
       deps.stopDictation();
-      set({ phase: "idle", heard: "" });
+      toIdle();
       return;
     }
     deps.finishDictation();
@@ -275,7 +343,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
   async function handleTranscript(raw: string) {
     const text = raw.trim();
     if (!text) {
-      if (state.phase === "listening") set({ phase: "idle", heard: "" });
+      if (state.phase === "listening") toIdle();
       return;
     }
     const mine = generation;
@@ -288,7 +356,8 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
       await sendWithScenario(text);
     } catch (error) {
       if (generation !== mine) return;
-      set({ phase: "idle", notice: errorText(error, t("Try again.")) });
+      toIdle();
+      set({ notice: errorText(error, t("Try again.")) });
     }
   }
 
@@ -300,7 +369,8 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     set({ phase: "thinking", heard: "", notice: null });
     void sendWithScenario(last.text).catch((error: unknown) => {
       if (generation !== mine) return;
-      set({ phase: "idle", notice: errorText(error, t("Try again.")) });
+      toIdle();
+      set({ notice: errorText(error, t("Try again.")) });
     });
   }
 
@@ -314,10 +384,16 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
       .speak(state.botId, last.text)
       .then((spoken) => {
         if (generation !== mine) return;
-        set({
-          phase: "idle",
-          notice: spoken ? null : t("Add a voice provider in Voice settings."),
-        });
+        if (state.phase !== "speaking") return;
+        if (!spoken) {
+          set({
+            phase: "idle",
+            handsFree: false,
+            notice: t("Add a voice provider in Voice settings."),
+          });
+          return;
+        }
+        toIdle();
       })
       .catch((error: unknown) => {
         if (generation !== mine) return;
@@ -334,7 +410,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     unwatch?.();
     unwatch = null;
     pendingInstruction = null;
-    if (state.botId) set({ phase: "idle", heard: "", notice: null });
+    if (state.botId) set({ phase: "idle", handsFree: false, heard: "", notice: null });
   }
 
   return {
@@ -347,6 +423,7 @@ export function createVoiceChatSession(deps: VoiceChatDeps): VoiceChatSession {
     },
     start,
     setScenario,
+    setHandsFree,
     pressToTalk,
     releaseToSend,
     resendLastUserTurn,
@@ -399,7 +476,7 @@ function watchVoiceChatReplies(
               snapshot?.activeRuns?.find((active) => active.id === message.runId) ?? snapshot?.run;
             const fromAnotherRun = Boolean(message.runId && message.runId !== run?.id);
             if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) return;
-            const text = blockText(message).trim();
+            const text = readAloudText(message.blocks).trim();
             if (!text) return;
             lastSeen = message.id;
             onReply(message.id, text);
@@ -425,9 +502,15 @@ async function dictateTurn(
   handlers: VoiceChatDictationHandlers,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!(await dictation.available())) return false;
-  const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
-  await dictation.listen({ ...handlers, signal, lang });
+  if (await dictation.available()) {
+    const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
+    await dictation.listen({ ...handlers, signal, lang });
+    return true;
+  }
+  // No on-device recognition (some Android ROMs ship without it): record a
+  // clip and have the voice provider transcribe it instead.
+  if (!(await serverTranscribeAvailable())) return false;
+  await listenServerDictation({ ...handlers, signal });
   return true;
 }
 
@@ -437,8 +520,14 @@ export function productionVoiceChatDeps(): VoiceChatDeps {
   const speechOwner = createSpeechOwner();
   return {
     dictate: dictateTurn,
-    finishDictation: () => dictation.finish(),
-    stopDictation: () => dictation.stop(),
+    finishDictation: () => {
+      dictation.finish();
+      finishServerDictation();
+    },
+    stopDictation: () => {
+      dictation.stop();
+      stopServerDictation();
+    },
     send: async (botId, text) => {
       const sent = await rpc("threads/send", { botId, clientNonce: newClientId(), text });
       return sent.runId;

@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as dictation from "./dictation";
+import * as serverDictation from "./server-dictation";
 import type { VoiceChatDeps, VoiceChatDictationHandlers } from "./voice-chat";
-import { createVoiceChatSession, voiceChatOrbVariant } from "./voice-chat";
+import { createVoiceChatSession, productionVoiceChatDeps, voiceChatOrbVariant } from "./voice-chat";
 
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   deviceLanguage: async () => "en-US",
-  getActiveUiLocale: () => "en-US",
+  getActiveUiLocale: () => "en",
 }));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./api-live", () => ({ subscribeThread: vi.fn() }));
@@ -15,7 +17,12 @@ vi.mock("./dictation", () => ({
   finish: vi.fn(),
   stop: vi.fn(),
 }));
-vi.mock("./mobile-types", () => ({ blockText: () => "" }));
+vi.mock("./server-dictation", () => ({
+  serverTranscribeAvailable: vi.fn(async () => false),
+  listenServerDictation: vi.fn(),
+  finishServerDictation: vi.fn(),
+  stopServerDictation: vi.fn(),
+}));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("voice-chat-test"),
@@ -312,5 +319,132 @@ describe("mobile voice chat", () => {
     fake.loseWatch();
     expect(session.getState().phase).toBe("idle");
     expect(session.getState().notice).toBe("The connection dropped. Try again.");
+  });
+});
+
+describe("hands-free voice chat", () => {
+  it("opens the microphone on switch-on and reopens it after a reply", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+
+    session.setHandsFree(true);
+    await flush();
+    expect(session.getState().handsFree).toBe(true);
+    expect(session.getState().phase).toBe("listening");
+    expect(fake.deps.dictate).toHaveBeenCalledOnce();
+
+    fake.hear("你好");
+    session.releaseToSend();
+    expect(fake.deps.send).toHaveBeenCalledWith("bot-1", "你好");
+    fake.reply("m1", "你好呀");
+    await flush();
+    expect(fake.deps.speak).toHaveBeenCalledWith("bot-1", "你好呀");
+    expect(session.getState().phase).toBe("listening");
+    expect(fake.deps.dictate).toHaveBeenCalledTimes(2);
+  });
+
+  it("reopens the microphone after silence instead of going idle", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+    session.setHandsFree(true);
+    await flush();
+    expect(fake.deps.dictate).toHaveBeenCalledOnce();
+
+    fake.giveUp("idle");
+    expect(session.getState().phase).toBe("listening");
+    expect(fake.deps.dictate).toHaveBeenCalledTimes(2);
+  });
+
+  it("switching hands-free off stops the microphone", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+    session.setHandsFree(true);
+    await flush();
+    expect(session.getState().phase).toBe("listening");
+
+    session.setHandsFree(false);
+    expect(session.getState().handsFree).toBe(false);
+    expect(session.getState().phase).toBe("idle");
+    expect(fake.deps.stopDictation).toHaveBeenCalled();
+  });
+
+  it("a dead microphone switches hands-free off instead of retrying", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+    vi.mocked(fake.deps.dictate).mockResolvedValueOnce(false);
+
+    session.setHandsFree(true);
+    await flush();
+    expect(session.getState().phase).toBe("not-ready");
+    expect(session.getState().handsFree).toBe(false);
+    expect(fake.deps.dictate).toHaveBeenCalledOnce();
+  });
+
+  it("a failed recognizer switches hands-free off", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+    session.setHandsFree(true);
+    await flush();
+
+    fake.giveUp("failed");
+    expect(session.getState().phase).toBe("not-ready");
+    expect(session.getState().handsFree).toBe(false);
+  });
+
+  it("ending the session switches hands-free off", async () => {
+    const fake = fakeDeps();
+    const session = createVoiceChatSession(fake.deps);
+    session.start("bot-1", "小智");
+    session.setHandsFree(true);
+    await flush();
+    expect(session.getState().phase).toBe("listening");
+
+    session.end();
+    expect(session.getState().handsFree).toBe(false);
+    expect(session.getState().phase).toBe("idle");
+  });
+});
+
+describe("production voice chat dictation", () => {
+  const handlers = {
+    onInterim: () => undefined,
+    onFinal: () => undefined,
+    onGiveUp: () => undefined,
+  };
+  const signal = new AbortController().signal;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses on-device recognition when the device has it", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(true);
+    const started = await productionVoiceChatDeps().dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(dictation.listen).toHaveBeenCalledOnce();
+    expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to server transcription when the device has no recognition", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(false);
+    vi.mocked(serverDictation.serverTranscribeAvailable).mockResolvedValueOnce(true);
+    const started = await productionVoiceChatDeps().dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(dictation.listen).not.toHaveBeenCalled();
+    expect(serverDictation.listenServerDictation).toHaveBeenCalledOnce();
+  });
+
+  it("reports not ready when neither recognition path exists", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(false);
+    vi.mocked(serverDictation.serverTranscribeAvailable).mockResolvedValueOnce(false);
+    const started = await productionVoiceChatDeps().dictate(handlers, signal);
+    expect(started).toBe(false);
+    expect(dictation.listen).not.toHaveBeenCalled();
+    expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
   });
 });

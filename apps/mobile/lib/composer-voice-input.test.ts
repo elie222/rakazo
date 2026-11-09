@@ -5,7 +5,13 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComposerVoiceInputDeps, ComposerVoiceInputHandlers } from "./composer-voice-input";
-import { COMPOSER_VOICE_HOLD_MS, useComposerVoiceInput } from "./composer-voice-input";
+import {
+  COMPOSER_VOICE_HOLD_MS,
+  productionComposerVoiceInputDeps,
+  useComposerVoiceInput,
+} from "./composer-voice-input";
+import * as dictation from "./dictation";
+import * as serverDictation from "./server-dictation";
 
 vi.mock("./dictation", () => ({
   available: vi.fn(),
@@ -13,10 +19,16 @@ vi.mock("./dictation", () => ({
   finish: vi.fn(),
   stop: vi.fn(),
 }));
+vi.mock("./server-dictation", () => ({
+  serverTranscribeAvailable: vi.fn(async () => false),
+  listenServerDictation: vi.fn(),
+  finishServerDictation: vi.fn(),
+  stopServerDictation: vi.fn(),
+}));
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   deviceLanguage: async () => "en-US",
-  getActiveUiLocale: () => "en-US",
+  getActiveUiLocale: () => "en",
 }));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 
@@ -167,5 +179,53 @@ describe("mobile composer voice input", () => {
     });
     expect(filled).toEqual([]);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("production composer voice input", () => {
+  const handlers = {
+    onInterim: () => undefined,
+    onFinal: () => undefined,
+    onGiveUp: () => undefined,
+  };
+  const signal = new AbortController().signal;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses on-device recognition when the device has it", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(true);
+    const started = await productionComposerVoiceInputDeps.dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(dictation.listen).toHaveBeenCalledOnce();
+    expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to server transcription when the device has no recognition", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(false);
+    vi.mocked(serverDictation.serverTranscribeAvailable).mockResolvedValueOnce(true);
+    const started = await productionComposerVoiceInputDeps.dictate(handlers, signal);
+    expect(started).toBe(true);
+    expect(dictation.listen).not.toHaveBeenCalled();
+    expect(serverDictation.listenServerDictation).toHaveBeenCalledOnce();
+  });
+
+  it("reports not ready when neither recognition path exists", async () => {
+    vi.mocked(dictation.available).mockResolvedValueOnce(false);
+    vi.mocked(serverDictation.serverTranscribeAvailable).mockResolvedValueOnce(false);
+    const started = await productionComposerVoiceInputDeps.dictate(handlers, signal);
+    expect(started).toBe(false);
+    expect(dictation.listen).not.toHaveBeenCalled();
+    expect(serverDictation.listenServerDictation).not.toHaveBeenCalled();
+  });
+
+  it("finishes and stops both backends", () => {
+    productionComposerVoiceInputDeps.finishDictation();
+    expect(dictation.finish).toHaveBeenCalled();
+    expect(serverDictation.finishServerDictation).toHaveBeenCalled();
+    productionComposerVoiceInputDeps.stopDictation();
+    expect(dictation.stop).toHaveBeenCalled();
+    expect(serverDictation.stopServerDictation).toHaveBeenCalled();
   });
 });

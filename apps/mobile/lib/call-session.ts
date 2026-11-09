@@ -126,12 +126,13 @@ const FEED_RETRY_MAX_MS = 5_000;
 
 // ponytail: naive fixed-threshold endpointing on the fallback path only. Swap for a VAD
 // model if rooms with steady background noise start cutting people off mid-sentence.
-const SPEECH_LEVEL_DB = -35;
-const SILENCE_HANG_MS = 1_200;
-const METER_POLL_MS = 200;
+// Exported so server dictation endpoints its clips the same way as the call loop.
+export const SPEECH_LEVEL_DB = -35;
+export const SILENCE_HANG_MS = 1_200;
+export const METER_POLL_MS = 200;
 /** How long a starting recorder may go without a level (web reports one once it records). */
-const METER_START_MS = 1_000;
-const MAX_CLIP_MS = 30_000;
+export const METER_START_MS = 1_000;
+export const MAX_CLIP_MS = 30_000;
 
 let state: CallState | null = null;
 /** The session the call started in: a sign-out or an account or server change ends the call. */

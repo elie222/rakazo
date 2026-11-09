@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Alert, AppState } from "react-native";
 import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
-import { nextAutoSpeakAction } from "./auto-speak";
+import { nextAutoSpeakAction, readAloudText } from "./auto-speak";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "./bot-switch";
 import {
   getSnapshot as getCallSnapshot,
@@ -17,7 +17,6 @@ import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
-import { blockText } from "./mobile-types";
 import { currentSessionGeneration } from "./session";
 import { speakerColorFor } from "./thread-message-text";
 import { errorText } from "./user-error";
@@ -32,7 +31,7 @@ import { onShortcutVoiceChat, takeShortcutVoiceChat } from "./voice-chat-intent"
 const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
 
 function speakableMessageText(message: MobileMessage): string {
-  return blockText(message)
+  return readAloudText(message.blocks)
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !ATTACHMENT_PLACEHOLDER_LINE.test(line))
