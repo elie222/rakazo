@@ -1064,10 +1064,10 @@ it("asks for a model as the New bot screen opens, only for a first bot without o
     if (method === "bots/create") return { id: "bot-new", name: "Scout" };
     return method === "bots/list" ? bots : [];
   });
-  expect(await askForModelBeforeFirstBot()).toBe(true);
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(true);
   expect(ui.alert).toHaveBeenCalledOnce();
   bots = [{ id: "bot-existing" }];
-  expect(await askForModelBeforeFirstBot()).toBe(false);
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(false);
   expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("created");
   bots = [];
   expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("needsModel");
@@ -1084,7 +1084,17 @@ it("does not ask for a model after the space changes during the opening check", 
     }
     return method === "me" ? { needsModel: true } : [];
   });
-  expect(await askForModelBeforeFirstBot("space-work")).toBe(false);
+  expect(await askForModelBeforeFirstBot("space-work", () => true)).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
+it("does not ask for a model once the New bot screen has closed", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) => (method === "me" ? { needsModel: true } : []));
+  expect(await askForModelBeforeFirstBot(undefined, () => false)).toBe(false);
   expect(ui.alert).not.toHaveBeenCalled();
 });
 

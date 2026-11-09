@@ -57,7 +57,7 @@ export default function NewBot() {
       })
       .catch(() => undefined);
     // A first bot needs a model; ask before the form is filled in rather than after.
-    modelCheck.current = askForModelBeforeFirstBot(params.spaceId);
+    modelCheck.current = askForModelBeforeFirstBot(params.spaceId, () => !gone.current);
     void modelCheck.current.then((asked) => {
       if (asked && !gone.current) router.back();
     });

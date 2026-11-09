@@ -51,12 +51,15 @@ function askedHere() {
 
 /**
  * Asks for a model before the New bot screen is filled in, when the first bot would need one.
- * True when it asked; the screen then closes.
+ * True when it asked; the screen then closes. `open` says whether the screen is still showing.
  */
-export async function askForModelBeforeFirstBot(spaceId?: string): Promise<boolean> {
+export async function askForModelBeforeFirstBot(
+  spaceId: string | undefined,
+  open: () => boolean,
+): Promise<boolean> {
   const asked = askedHere();
   const gate = await firstBotModelGate(spaceId, await requestOptions(spaceId)).catch(() => null);
-  if (!gate?.needsModel || !asked.unchanged()) return false;
+  if (!gate?.needsModel || !asked.unchanged() || !open()) return false;
   askToAddModel(gate.modelSpaceId);
   return true;
 }
