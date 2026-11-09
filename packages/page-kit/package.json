@@ -17,8 +17,8 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "esbuild": "0.28.2",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
     "sucrase": "3.35.1"
   },
   "devDependencies": {
