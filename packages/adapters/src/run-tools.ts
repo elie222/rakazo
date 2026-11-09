@@ -1,6 +1,5 @@
 import type { AgentRunRequest, AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
-import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
@@ -18,7 +17,12 @@ import { emailTools } from "./run-tools-email.js";
 import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
 import { fleetTools } from "./run-tools-fleet.js";
-import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
+import {
+  cloudAgentTool,
+  connectorTool,
+  finishSearchResult,
+  integrationTools,
+} from "./run-tools-integrations.js";
 import { memoryTools } from "./run-tools-memory.js";
 import { messagingTools } from "./run-tools-messaging.js";
 import { pageTools } from "./run-tools-pages.js";
@@ -37,9 +41,7 @@ import {
 import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
-type RuntimeToolExecution = Parameters<NonNullable<AgentRunRequest["gateRuntimeTool"]>>[3];
-
-const RUNTIME_TOOL_NAMES: ReadonlySet<string> = new Set(["image_search"]);
+type ImageSearchExecution = Parameters<NonNullable<AgentRunRequest["gateImageSearch"]>>[2];
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
@@ -75,7 +77,7 @@ export async function applyTool(
   executionId: string,
   route?: unknown,
   observer?: AgentToolExecutionObserver,
-  run?: RuntimeToolExecution,
+  run?: ImageSearchExecution,
 ) {
   // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
   // the own path everywhere: preparation, the stored approval, the handler and the check below.
@@ -102,7 +104,7 @@ async function dispatchTool(
   args: Record<string, unknown>,
   executionId: string,
   observer: AgentToolExecutionObserver | undefined,
-  run: RuntimeToolExecution | undefined,
+  run: ImageSearchExecution | undefined,
   route: unknown,
 ) {
   ctx.context.signal.throwIfAborted();
@@ -128,7 +130,7 @@ async function dispatchTool(
       error: `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
     };
   }
-  if (RUNTIME_TOOL_NAMES.has(name) !== (run !== undefined)) {
+  if ((name === "image_search") !== (run !== undefined)) {
     return { error: `${name} is unavailable here.` };
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
@@ -163,16 +165,12 @@ async function dispatchTool(
   const handler: ToolHandler = run
     ? async (ctx, call) => {
         const found = await run(call.args);
-        const settled = await call.finish(found);
-        if (settled === found && "results" in found) {
-          for (const hit of found.results) {
-            for (const value of [hit.imageUrl, hit.sourceUrl]) {
-              const url = normalizedHttpUrl(value);
-              if (url) ctx.trust.searchResultUrls.add(url);
-            }
-          }
-        }
-        return settled;
+        return finishSearchResult(
+          ctx,
+          call,
+          found,
+          "results" in found ? found.results.flatMap((hit) => [hit.imageUrl, hit.sourceUrl]) : [],
+        );
       }
     : toolHandler(gate.call.name);
   if (!gate.call.applied) return handler(ctx, gate.call);

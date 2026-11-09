@@ -632,9 +632,8 @@ export interface AgentRunRequest {
     route?: ConnectorRoute,
     observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
-  /** Gate a registered runtime builtin, invoking run only with authorized, saved arguments. */
-  gateRuntimeTool?: (
-    name: string,
+  /** Gate image search, invoking run only with authorized, saved arguments. */
+  gateImageSearch?: (
     args: Record<string, unknown>,
     executionId: string,
     run: (approvedArgs: Record<string, unknown>) => Promise<ImageSearchResult>,

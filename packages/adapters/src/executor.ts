@@ -1918,10 +1918,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 ? undefined
                 : (name, args, executionId, route, observer) =>
                     applyTool(ctx, name, args, executionId, route, observer),
-              gateRuntimeTool: scripted
+              gateImageSearch: scripted
                 ? undefined
-                : (name, args, executionId, run) =>
-                    applyTool(ctx, name, args, executionId, undefined, undefined, run),
+                : (args, executionId, run) =>
+                    applyTool(ctx, "image_search", args, executionId, undefined, undefined, run),
               resolveModel: scripted
                 ? undefined
                 : (provider, modelId) =>

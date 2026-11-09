@@ -99,8 +99,8 @@ function hostFor(fetch: typeof globalThis.fetch, request?: AgentRunRequest) {
   const onUsage = vi.fn(async (usage: Parameters<NonNullable<AgentRunRequest["onUsage"]>>[0]) => {
     await request?.onUsage?.(usage);
   });
-  const gateRuntimeTool = vi.fn<NonNullable<AgentRunRequest["gateRuntimeTool"]>>(
-    (_name, args, _id, run) => run(args),
+  const gateImageSearch = vi.fn<NonNullable<AgentRunRequest["gateImageSearch"]>>((args, _id, run) =>
+    run(args),
   );
   const host: ToolHost = {
     request: {
@@ -113,7 +113,7 @@ function hostFor(fetch: typeof globalThis.fetch, request?: AgentRunRequest) {
       history: [],
       tools: builtinAgentTools,
       executeTool,
-      gateRuntimeTool,
+      gateImageSearch,
       ...request,
       onUsage,
     },
@@ -140,7 +140,7 @@ function hostFor(fetch: typeof globalThis.fetch, request?: AgentRunRequest) {
     pausePending: false,
     pendingShells: [],
   };
-  return { host, events, token, observer, controller, executeTool, gateRuntimeTool, onUsage };
+  return { host, events, token, observer, controller, executeTool, gateImageSearch, onUsage };
 }
 
 function fixtureFetch(events: unknown[]) {

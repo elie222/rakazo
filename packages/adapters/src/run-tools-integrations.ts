@@ -148,20 +148,28 @@ export async function callPaidService(ctx: RunContext, call: ToolCall) {
   );
 }
 
+export async function finishSearchResult(
+  ctx: RunContext,
+  call: ToolCall,
+  found: unknown,
+  urls: readonly string[],
+) {
+  const settled = await call.finish(found);
+  if (settled !== found) return settled;
+  for (const value of urls) {
+    const url = normalizedHttpUrl(value);
+    if (url) ctx.trust.searchResultUrls.add(url);
+  }
+  return settled;
+}
+
 /** Web, cloud agents, MCP servers, app connections and connector tools. */
 export const integrationTools: ToolHandlers = {
   async web_search(ctx, call) {
     const { context } = ctx;
     const { args } = call;
     const found = await webSearchFromTool(ctx.providers.web, context, args);
-    const settled = await call.finish(found);
-    if (settled !== found) return settled;
-    // A result's exact URL was chosen by the search index, not by text in this run.
-    for (const hit of ("results" in found && found.results) || []) {
-      const url = normalizedHttpUrl(hit.url);
-      if (url) ctx.trust.searchResultUrls.add(url);
-    }
-    return settled;
+    return finishSearchResult(ctx, call, found, found.results?.map((hit) => hit.url) ?? []);
   },
   async web_fetch(ctx, call) {
     const { context } = ctx;

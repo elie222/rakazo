@@ -4327,7 +4327,7 @@ function driveImageSearch(
     const fixtureHost = hostFor(fetch, request);
     hosts.push(fixtureHost);
     const { host } = fixtureHost;
-    if (missingGate) host.request.gateRuntimeTool = undefined;
+    if (missingGate) host.request.gateImageSearch = undefined;
     if (unsupported) host.activeModel.model = { ...host.activeModel.model, provider: "other" };
     const tool = toAgentTools(builtinAgentTools, host).find(
       (tool) => tool.name === "image_search",
@@ -4576,27 +4576,18 @@ describe("runtime image search through the executor gate", () => {
     expect(f.execute).not.toHaveBeenCalled();
   });
 
-  it.each(["image_search", "write_file", "demo_get_item", "demo_execute_tool"])(
-    "refuses callback mismatch for %s",
-    async (name) => {
-      const f = fixture();
-      const run = vi.fn(async () => ({ results: [] }));
-      f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
-        f.results.push(
-          name === "image_search"
-            ? await request.executeTool!(name, { query: "harbor" }, "forged")
-            : await request.gateRuntimeTool!(name, {}, "forged", run),
-        );
-        yield { type: "done" as const, text: "Done" };
-      });
-      await f.run();
-      expect(f.results).toEqual([{ error: `${name} is unavailable here.` }]);
-      expect(run).not.toHaveBeenCalled();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.effects).toEqual([]);
-      expect(f.pauseRunForInput).not.toHaveBeenCalled();
-    },
-  );
+  it("refuses image search without its runtime execution callback", async () => {
+    const f = fixture();
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      f.results.push(await request.executeTool!("image_search", { query: "harbor" }, "forged"));
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    expect(f.results).toEqual([{ error: "image_search is unavailable here." }]);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
 });
 
 it.each(["read_history", "search_history", "board_tickets", "ticket_get"])(

@@ -642,12 +642,12 @@ function toAgentTool(
                   details: { error: IMAGE_SEARCH_UNAVAILABLE },
                 };
               }
-              const { gateRuntimeTool, executeTool } = host.request;
+              const { gateImageSearch, executeTool } = host.request;
               const execute =
                 tool.name === "image_search"
-                  ? gateRuntimeTool &&
+                  ? gateImageSearch &&
                     (() =>
-                      gateRuntimeTool(tool.name, args, executionId, (approved) =>
+                      gateImageSearch(args, executionId, (approved) =>
                         executeImageSearch(host, approved),
                       ))
                   : executeTool &&

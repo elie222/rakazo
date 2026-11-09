@@ -173,8 +173,7 @@ describe("Pi image search through the installed provider", () => {
     ]);
     expect(JSON.stringify(result)).not.toContain("Invented prose");
     expect(executeTool).not.toHaveBeenCalled();
-    expect(host.request.gateRuntimeTool).toHaveBeenCalledWith(
-      "image_search",
+    expect(host.request.gateImageSearch).toHaveBeenCalledWith(
       { query: "harbor photos", maxResults: 2 },
       expect.any(String),
       expect.any(Function),
@@ -425,7 +424,7 @@ describe("Pi image search through the installed provider", () => {
     });
     expect(fetch).not.toHaveBeenCalled();
     expect(executeTool).not.toHaveBeenCalled();
-    expect(host.request.gateRuntimeTool).not.toHaveBeenCalled();
+    expect(host.request.gateImageSearch).not.toHaveBeenCalled();
   });
 });
 
@@ -456,7 +455,7 @@ it("offers image search only for a supported model and lets bots disable it inde
 it("refuses runtime image search without its gate even when executeTool exists", async () => {
   const fetch = fixtureFetch([terminal]);
   const { host, executeTool } = hostFor(fetch);
-  host.request.gateRuntimeTool = undefined;
+  host.request.gateImageSearch = undefined;
   const tool = toAgentTools(builtinAgentTools, host).find((tool) => tool.name === "image_search")!;
   await expect(tool.execute("missing-gate", { query: "harbor" })).resolves.toMatchObject({
     content: [{ type: "text", text: "image_search is unavailable without an executor." }],
