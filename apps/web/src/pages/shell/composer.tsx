@@ -84,6 +84,7 @@ const ComposerBody = memo(function Composer({
   runErrorId,
   onRunErrorPresented,
   onDismissError,
+  onRetryRun,
   sending,
   fileInputRef,
   onAttachmentPick,
@@ -120,6 +121,8 @@ const ComposerBody = memo(function Composer({
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
   onDismissError: () => void;
+  /** Present while the failed reply on screen can run again. */
+  onRetryRun?: () => void;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | readonly File[] | null) => boolean;
@@ -612,6 +615,7 @@ const ComposerBody = memo(function Composer({
         onOpenConnections={onOpenConnections}
         onOpenBilling={onOpenBilling}
         onDismissError={onDismissError}
+        onRetryRun={onRetryRun}
         textareaRef={textareaRef}
       />
       {replyTarget ? (

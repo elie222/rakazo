@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIVE_RUN_STATUSES,
   assertTransition,
+  canRetryRun,
   canTransition,
   helperCardState,
   isActive,
@@ -137,6 +138,24 @@ describe("run state machine", () => {
         },
       ),
     );
+  });
+});
+
+describe("canRetryRun", () => {
+  const failed = { status: "failed", trigger: "user", userId: "u1" };
+
+  it("lets the sender retry a failed reply to a typed message", () => {
+    expect(canRetryRun(failed, "u1")).toBe(true);
+    // A live run may not know its sender yet; the server checks it.
+    expect(canRetryRun({ status: "failed", trigger: "user" }, "u1")).toBe(true);
+  });
+
+  it("refuses other runs, other people, and no one", () => {
+    expect(canRetryRun({ ...failed, status: "completed" }, "u1")).toBe(false);
+    expect(canRetryRun({ ...failed, trigger: "routine" }, "u1")).toBe(false);
+    expect(canRetryRun(failed, "u2")).toBe(false);
+    expect(canRetryRun(failed, undefined)).toBe(false);
+    expect(canRetryRun(null, "u1")).toBe(false);
   });
 });
 

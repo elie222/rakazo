@@ -1232,7 +1232,7 @@ model Run {
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  // The failed run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
   // Durable retry schedule; null means runnable immediately when queued.
   wakeAt               DateTime?

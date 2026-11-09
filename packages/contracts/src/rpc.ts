@@ -699,6 +699,8 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    /** Runs a failed reply again from the message that started it. */
+    retry: oc.input(threadTarget.safeExtend({ runId: Id })).output(z.object({ runId: Id })),
     // Its own route, so a server without it refuses rather than stopping the whole chat.
     stopHelper: oc
       .input(threadTarget.safeExtend({ messageId: Id }))

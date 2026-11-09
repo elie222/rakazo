@@ -43,6 +43,7 @@ import {
   setThreadSnooze,
   setThreadUnreadState,
 } from "../thread-read-state.js";
+import { retryThreadRun } from "../thread-retry.js";
 import { threadSnapshot } from "../thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
 import type { ThreadTarget } from "../thread-target.js";
@@ -308,6 +309,13 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      retry: authed.threads.retry.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind === "bot") {
+          await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
+        }
+        return retryThreadRun(deps, context.actor, target, input.runId);
       }),
       stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
