@@ -1,7 +1,7 @@
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
-import type { ComputerScript } from "./sandbox.js";
+import type { ComputerScript } from "./scripted-shell.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 import type { EvalServices, ServiceCall } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";

@@ -3,8 +3,8 @@ import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { HistoryFixture, HistoryMessage } from "./history-fixtures.js";
 import { historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
-import type { ComputerScript } from "./sandbox.js";
-import { scriptedShell } from "./sandbox.js";
+import type { ComputerScript } from "./scripted-shell.js";
+import { scriptedShell } from "./scripted-shell.js";
 
 /** Files shared long before the question, beyond what the active context keeps. */
 export const RECALL_FIXTURE_VERSION = "recall-files-v1-seed-73";

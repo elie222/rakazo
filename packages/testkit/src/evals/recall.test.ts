@@ -7,7 +7,7 @@ import {
   RECALL_JUDGE_CALIBRATION,
   RECALL_JUDGE_VERSION,
 } from "./recall.js";
-import { scriptedShell } from "./sandbox.js";
+import { scriptedShell } from "./scripted-shell.js";
 
 const scenario = (id: string) => RECALL_EVAL_CASES.find((c) => c.id === `recall-${id}`)!;
 const LEASE_PATH = "attachments/abc123.md";
