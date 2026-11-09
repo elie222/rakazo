@@ -92,6 +92,7 @@ vi.mock("react-native", () => {
         {children}
       </button>
     ),
+    useWindowDimensions: () => ({ width: 390, height: 844, scale: 1, fontScale: 1 }),
   };
 });
 vi.mock("react-native-safe-area-context", () => ({
@@ -204,13 +205,16 @@ afterEach(() => {
 async function render() {
   await act(async () => root.render(<SignIn />));
 }
+function labelOf(node: Element) {
+  return node.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
 function ssoButtons() {
   return [...host.querySelectorAll("button")].filter(
-    (button) => button.textContent === "Continue with Example",
+    (button) => labelOf(button) === "Continue with Example",
   );
 }
 function button(label: string) {
-  return [...host.querySelectorAll("button")].find((button) => button.textContent === label);
+  return [...host.querySelectorAll("button")].find((button) => labelOf(button) === label);
 }
 function input(label: string) {
   return host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
@@ -234,8 +238,10 @@ it.each(["in", "up"])("offers a provider before the email form in %s mode", asyn
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
   await render();
   expect(input("Email")).toBeNull();
-  expect(button("Example")).toBeDefined();
+  expect(button("Continue with Example")).toBeDefined();
   expect(button("Continue with email")).toBeDefined();
+  expect(host.textContent).toContain("or");
+  expect(host.textContent).toContain(mode === "in" ? "Welcome back" : "Create your Rakazo");
   await press("Continue with email");
   expect(input("Email")).not.toBeNull();
   expect(button("Back")).toBeDefined();
@@ -273,13 +279,13 @@ it("offers each configured provider and uses native Apple on iOS", async () => {
   vi.mocked(continueWithNativeSignIn).mockResolvedValue(false);
   await render();
   expect(input("Email")).toBeNull();
-  expect(button("Google")).toBeDefined();
-  expect(button("Apple")).toBeDefined();
+  expect(button("Continue with Google")).toBeDefined();
+  expect(button("Continue with Apple")).toBeDefined();
   expect(button("Continue with email")).toBeDefined();
-  await press("Google");
+  await press("Continue with Google");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");
   expect(continueWithNativeSignIn).not.toHaveBeenCalled();
-  await press("Apple");
+  await press("Continue with Apple");
   expect(continueWithNativeSignIn).toHaveBeenCalledWith("apple");
   await press("Continue with email");
   expect(input("Email")).not.toBeNull();
@@ -566,7 +572,7 @@ it("returns to the pending share after SSO", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
   vi.mocked(continueWithSso).mockResolvedValue(true);
   await render();
-  await press("Example");
+  await press("Continue with Example");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "oidc");
   expect(router.replace).toHaveBeenCalledWith("/share");
 });

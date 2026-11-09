@@ -1,13 +1,12 @@
 import { Trans } from "@lingui/react/macro";
 import type { SignInProvider } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
-
-const choiceClass =
-  "h-12 min-w-0 rounded-xl border-input bg-transparent px-3 text-body font-medium shadow-none hover:bg-accent focus-visible:border-ring dark:bg-input/30 dark:hover:bg-input/50";
+import { Mail } from "lucide-react";
 
 /**
- * Provider choices for the first sign-in screen. One provider spans the row;
- * two or more share it equally. Email is a separate step.
+ * Provider choices for the first sign-in screen. Google and Apple are the
+ * primary actions; email is a quieter step underneath. One provider spans
+ * the row. Narrow widths stack the pair so the labels stay intact.
  */
 export function SocialSignInButtons({
   providers,
@@ -21,41 +20,65 @@ export function SocialSignInButtons({
   onEmail?: () => void;
 }) {
   if (providers.length === 0 && !onEmail) return null;
+  const alone = providers.length === 1;
   return (
-    <div className="flex w-full flex-col gap-3">
+    <div className="flex w-full flex-col items-center">
       {providers.length > 0 ? (
-        <div className="flex w-full gap-3">
+        <div className={alone ? "w-full" : "flex w-full flex-col gap-3 sm:flex-row"}>
           {providers.map((provider) => (
             <Button
               key={provider.id}
               type="button"
-              variant="outline"
+              variant={provider.id === "google" ? "outline" : "default"}
               size="xl"
               disabled={disabled}
-              className={`${choiceClass} flex-1`}
+              className={choiceClass(provider.id, alone)}
               onClick={() => onPress(provider.id)}
             >
               <ProviderMark id={provider.id} />
-              <span className="truncate">{provider.name}</span>
+              <span className="truncate">
+                <Trans>Continue with {provider.name}</Trans>
+              </span>
             </Button>
           ))}
         </div>
       ) : null}
       {onEmail ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="xl"
-          disabled={disabled}
-          className={`${choiceClass} w-full`}
-          onClick={onEmail}
-        >
-          <MailMark />
-          <Trans>Continue with email</Trans>
-        </Button>
+        <>
+          <div className="my-5 flex w-full items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-body-sm text-muted-foreground">
+              <Trans>or</Trans>
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="text"
+            size="sm"
+            disabled={disabled}
+            className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={onEmail}
+          >
+            <Mail />
+            <Trans>Continue with email</Trans>
+          </Button>
+        </>
       ) : null}
     </div>
   );
+}
+
+function choiceClass(id: string, alone: boolean) {
+  const width = alone ? "w-full" : "w-full sm:w-auto sm:flex-1";
+  const shared = `${width} shadow-none`;
+  if (id === "apple") {
+    return `${shared} border-transparent bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90`;
+  }
+  if (id === "google") {
+    return `${shared} border-border bg-white text-black hover:bg-black/5 dark:border-white/25 dark:bg-background dark:text-white dark:hover:bg-white/10`;
+  }
+  return shared;
 }
 
 function ProviderMark({ id }: { id: string }) {
@@ -96,15 +119,6 @@ function AppleMark() {
   return (
     <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true" fill="currentColor">
       <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-    </svg>
-  );
-}
-
-function MailMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true" fill="none">
-      <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M4 7l8 6 8-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

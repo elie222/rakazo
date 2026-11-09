@@ -8,6 +8,7 @@ import {
   suggestEmailCorrection,
 } from "@rakazo/core";
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
@@ -67,10 +68,16 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const chooser = Boolean(
     reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
   );
+  // The chooser and the email step share a card. A server with no providers keeps today's form.
+  const presented = Boolean(
+    reset?.passwordAuth && providers.length > 0 && mode !== "forgot" && !sent && !codeStep,
+  );
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
+    ) : presented && mode === "in" ? (
+      <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
       <Trans>Sign in to Rakazo</Trans>
     ) : mode === "up" ? (
@@ -78,6 +85,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : (
       <Trans>Reset your password</Trans>
     );
+  const subtitle = !presented ? null : mode === "in" ? (
+    <Trans>Sign in to continue to Rakazo</Trans>
+  ) : (
+    <Trans>Persistent AI teammates that do real work</Trans>
+  );
 
   useEffect(() => {
     setEmailStep(false);
@@ -245,7 +257,29 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <AuthFrame onSubmit={submit} title={title}>
+    <AuthFrame
+      onSubmit={submit}
+      title={title}
+      subtitle={subtitle}
+      surface={presented}
+      leading={
+        presented && emailStep ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setError(null);
+              setEmailStep(false);
+            }}
+          >
+            <ChevronLeft />
+            <Trans>Back</Trans>
+          </Button>
+        ) : null
+      }
+    >
       {sent ? (
         <div className="w-full text-center">
           <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
@@ -306,24 +340,27 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
+              <p className="mt-8 text-center text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                )}
+              </p>
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (
             <>
-              {providers.length > 0 && mode !== "forgot" && !codeStep ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="mb-4 self-start px-0 text-muted-foreground"
-                  onClick={() => {
-                    setError(null);
-                    setEmailStep(false);
-                  }}
-                >
-                  <Trans>Back</Trans>
-                </Button>
-              ) : null}
               {mode === "up" && !codeStep ? (
                 <div className="mb-4 w-full">
                   <Label htmlFor="name" className="text-muted-foreground">
@@ -472,7 +509,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 </Button>
               ) : null}
               {codeStep ? null : (
-                <p className="mt-8 text-muted-foreground">
+                <p className="mt-8 text-center text-muted-foreground">
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
@@ -587,10 +624,16 @@ export function PasswordResetPage() {
 
 export function AuthFrame({
   title,
+  subtitle,
+  surface = false,
+  leading,
   onSubmit,
   children,
 }: {
   title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  surface?: boolean;
+  leading?: React.ReactNode;
   onSubmit: (event: React.FormEvent) => void;
   children: React.ReactNode;
 }) {
@@ -604,17 +647,38 @@ export function AuthFrame({
         <WindowChrome />
       </div>
       <div className="flex flex-1 items-center justify-center px-6 pb-16">
-        <form onSubmit={onSubmit} className="flex w-full max-w-[460px] flex-col items-center">
-          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-            <span className="h-5 w-[9px] rounded-full bg-primary" />
-            <span className="h-5 w-[9px] rounded-full bg-primary" />
+        <form
+          onSubmit={onSubmit}
+          className={
+            surface
+              ? "flex w-full max-w-[520px] flex-col rounded-3xl border border-border bg-card px-8 pt-8 pb-9 shadow-sm"
+              : "flex w-full max-w-[460px] flex-col items-center"
+          }
+        >
+          {leading ? <div className="mb-4 self-start">{leading}</div> : null}
+          <div className={surface ? "flex w-full flex-col items-center" : "contents"}>
+            <div
+              className={`flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full ${surface ? "bg-background" : "bg-muted"}`}
+            >
+              <span className="h-5 w-[9px] rounded-full bg-primary" />
+              <span className="h-5 w-[9px] rounded-full bg-primary" />
+            </div>
+            <h1
+              aria-live="polite"
+              className={
+                surface
+                  ? "mt-5 text-balance text-center text-display font-medium tracking-tight"
+                  : "mt-7 mb-9 text-balance text-center text-display font-medium tracking-tight"
+              }
+            >
+              {title}
+            </h1>
+            {subtitle ? (
+              <p className="mt-2 mb-6 max-w-sm text-balance text-center text-body text-muted-foreground">
+                {subtitle}
+              </p>
+            ) : null}
           </div>
-          <h1
-            aria-live="polite"
-            className="mb-9 mt-7 text-balance text-center text-display font-medium tracking-tight"
-          >
-            {title}
-          </h1>
           {children}
         </form>
       </div>
