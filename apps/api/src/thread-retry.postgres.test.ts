@@ -138,11 +138,14 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     );
     expect(enqueue).toHaveBeenCalledTimes(1);
 
-    // A second tap returns the same retry instead of starting another turn.
+    // A second tap returns the same retry instead of starting another turn, and wakes it again
+    // in case the first wake was lost.
     const again = await retry(run.id);
     expect(again.status).toBe(200);
     expect(again.body.json).toEqual({ runId });
     expect(await system.run.count({ where: { threadId, retryOfRunId: run.id } })).toBe(1);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
   });
 
   it("refuses once the conversation moved on or the run was not a typed message", async () => {

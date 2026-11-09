@@ -25,107 +25,103 @@ export async function retryThreadRun(
   target: ThreadTarget,
   runId: string,
 ) {
-  const existingRetry = () =>
-    deps.prisma.run.findUnique({
+  const existingRetry = async () => {
+    const existing = await deps.prisma.run.findUnique({
       where: { retryOfRunId: runId },
-      select: { id: true, threadId: true, userId: true },
+      select: { id: true, status: true, threadId: true, userId: true },
     });
-  const repeated = await existingRetry();
-  if (repeated) return ownRetry(repeated, actor, target);
-  let retry: { id: string; status: string };
-  try {
-    retry = await deps.prisma.$transaction(async (tx) => {
-      if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
-      const members =
-        target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
-      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-      const failed = await tx.run.findFirst({
-        where: { id: runId, spaceId: actor.spaceId, threadId: target.threadId },
-        include: {
-          task: { select: { prompt: true } },
-          sourceMessage: { select: { id: true, seq: true, role: true, runId: true } },
-        },
-      });
-      if (!failed) throw new IsolationError();
-      const botId = failed.botId;
-      const source = failed.sourceMessage;
-      if (
-        !canRetryRun(failed, actor.userId) ||
-        source?.role !== "user" ||
-        (members && !members.some((member) => member.botId === botId))
-      ) {
-        throw new ORPCError("CONFLICT", { message: STALE_RETRY });
-      }
-      const [newerMessage, busyRun] = await Promise.all([
-        tx.message.findFirst({
-          where: { threadId: target.threadId, role: "user", seq: { gt: source.seq } },
-          select: { id: true },
-        }),
-        tx.run.findFirst({
-          where: {
-            threadId: target.threadId,
-            botId,
-            status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
-          },
-          select: { id: true },
-        }),
-      ]);
-      if (newerMessage || busyRun) throw new ORPCError("CONFLICT", { message: STALE_RETRY });
-      const task = await tx.task.create({
-        data: {
-          spaceId: actor.spaceId,
-          botId,
-          threadId: target.threadId,
-          userId: actor.userId,
-          prompt: failed.task.prompt,
-          status: "queued",
-        },
-      });
-      const run = await tx.run.create({
-        data: {
-          spaceId: actor.spaceId,
-          botId,
-          threadId: target.threadId,
-          taskId: task.id,
-          userId: actor.userId,
-          status: "queued",
-          trigger: failed.trigger,
-          groupReplyOptional: failed.groupReplyOptional,
-          sourceMessageId: source.id,
-          retryOfRunId: failed.id,
-          ...(failed.modelPinned
-            ? {
-                modelProvider: failed.modelProvider,
-                modelId: failed.modelId,
-                thinkingLevel: failed.thinkingLevel,
-                modelPinned: true,
-              }
-            : {}),
-        },
-        select: { id: true, status: true },
-      });
-      if (source.runId === failed.id) {
-        await tx.message.update({ where: { id: source.id }, data: { runId: run.id } });
-      }
-      return run;
-    }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  } catch (error) {
-    // retryOfRunId is unique: a concurrent tap already queued this retry.
-    const concurrent = isUniqueViolation(error) ? await existingRetry() : null;
-    if (!concurrent) throw error;
-    return ownRetry(concurrent, actor, target);
-  }
+    if (existing && (existing.threadId !== target.threadId || existing.userId !== actor.userId)) {
+      throw new IsolationError();
+    }
+    return existing;
+  };
+  // A repeat wakes the existing retry again, in case the first wake was lost.
+  const retry = (await existingRetry()) ?? (await createRetry());
   await enqueueRunsNeedingContinue(deps.jobs, [retry]);
   return { runId: retry.id };
-}
 
-function ownRetry(
-  retry: { id: string; threadId: string; userId: string },
-  actor: Actor,
-  target: ThreadTarget,
-) {
-  if (retry.threadId !== target.threadId || retry.userId !== actor.userId) {
-    throw new IsolationError();
+  async function createRetry() {
+    try {
+      return await deps.prisma.$transaction(async (tx) => {
+        if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
+        const members =
+          target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        const failed = await tx.run.findFirst({
+          where: { id: runId, spaceId: actor.spaceId, threadId: target.threadId },
+          include: {
+            task: { select: { prompt: true } },
+            sourceMessage: { select: { id: true, seq: true, role: true, runId: true } },
+          },
+        });
+        if (!failed) throw new IsolationError();
+        const botId = failed.botId;
+        const source = failed.sourceMessage;
+        if (
+          !canRetryRun(failed, actor.userId) ||
+          source?.role !== "user" ||
+          (members && !members.some((member) => member.botId === botId))
+        ) {
+          throw new ORPCError("CONFLICT", { message: STALE_RETRY });
+        }
+        const [newerMessage, busyRun] = await Promise.all([
+          tx.message.findFirst({
+            where: { threadId: target.threadId, role: "user", seq: { gt: source.seq } },
+            select: { id: true },
+          }),
+          tx.run.findFirst({
+            where: {
+              threadId: target.threadId,
+              botId,
+              status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+            },
+            select: { id: true },
+          }),
+        ]);
+        if (newerMessage || busyRun) throw new ORPCError("CONFLICT", { message: STALE_RETRY });
+        const task = await tx.task.create({
+          data: {
+            spaceId: actor.spaceId,
+            botId,
+            threadId: target.threadId,
+            userId: actor.userId,
+            prompt: failed.task.prompt,
+            status: "queued",
+          },
+        });
+        const run = await tx.run.create({
+          data: {
+            spaceId: actor.spaceId,
+            botId,
+            threadId: target.threadId,
+            taskId: task.id,
+            userId: actor.userId,
+            status: "queued",
+            trigger: failed.trigger,
+            groupReplyOptional: failed.groupReplyOptional,
+            sourceMessageId: source.id,
+            retryOfRunId: failed.id,
+            ...(failed.modelPinned
+              ? {
+                  modelProvider: failed.modelProvider,
+                  modelId: failed.modelId,
+                  thinkingLevel: failed.thinkingLevel,
+                  modelPinned: true,
+                }
+              : {}),
+          },
+          select: { id: true, status: true },
+        });
+        if (source.runId === failed.id) {
+          await tx.message.update({ where: { id: source.id }, data: { runId: run.id } });
+        }
+        return run;
+      }, THREAD_LOCK_TRANSACTION_OPTIONS);
+    } catch (error) {
+      // retryOfRunId is unique: a concurrent tap already queued this retry.
+      const concurrent = isUniqueViolation(error) ? await existingRetry() : null;
+      if (!concurrent) throw error;
+      return concurrent;
+    }
   }
-  return { runId: retry.id };
 }
