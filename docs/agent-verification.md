@@ -645,7 +645,11 @@ every recorded effect but the judge failed it because it could not
 see the proposal its draft quoted. With the proposal text in the judge's
 evidence (v2) and that reviewed draft added as a label, a second run passed all
 three. The rate-limited search was retried and the restricted file was reported
-as unshared, not answered from the prior year's budget.
+as unshared, not answered from the prior year's budget. After the review fixes (a day-independent
+tracker prompt, stricter recipient, retry and row checks, and studio-v2
+fixtures), one run passed two of three: the draft and restricted-file cases
+passed, and the tracker case failed on a real miss, setting a delayed order's
+new date but leaving its status "In transit".
 
 ### Long conversation and cost evals
 
