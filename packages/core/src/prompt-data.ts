@@ -1,19 +1,11 @@
+import type { MessageBlock } from "@rakazo/contracts";
+
 export function escapePromptData(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-/** The fields of the owner's email the model reads: what an `email` message block keeps. */
-export type OwnerEmail = {
-  emailId: string;
-  from: string;
-  to: string[];
-  cc?: string[];
-  subject: string;
-  date?: string;
-  text: string;
-  files?: Array<{ name: string; mimeType: string; size: number }>;
-  unavailable?: string[];
-};
+/** The fields of the owner's email the model reads: the `email` message block's. */
+export type OwnerEmail = Omit<Extract<MessageBlock, { kind: "email" }>, "kind">;
 
 /**
  * The owner's own verified mail, with no routine to run: like a message in the bot's chat. What

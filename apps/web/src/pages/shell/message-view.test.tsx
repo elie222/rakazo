@@ -138,7 +138,7 @@ it("shows the owner's email by its subject and words, not the model's fenced cop
     },
   ]);
   const bubble = container.querySelector('[data-testid="message-user-email"]');
-  expect(bubble?.textContent).toBe("✉︎ Weekly planSend me the plan <today>.");
+  expect(bubble?.textContent).toBe("✉︎ Weekly plan\nSend me the plan <today>.");
   expect(bubble?.closest(".items-end")).not.toBeNull();
 });
 

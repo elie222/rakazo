@@ -25,6 +25,19 @@ describe("visibleTextFromMarkdown", () => {
 });
 
 describe("deriveMessageQuote", () => {
+  it("quotes an owner's email from its shown, unformatted text", () => {
+    const email: MessageBlock = {
+      kind: "email",
+      emailId: "email-1",
+      from: "Owner <owner@example.test>",
+      to: ["bot@bots.example.test"],
+      subject: "Weekly plan",
+      text: "Send me the **plan**.\n",
+    };
+    expect(deriveMessageQuote([email], "the **plan**", "markdown")).toBe("the **plan**");
+    expect(deriveMessageQuote([email], "Weekly plan", "markdown")).toBe("Weekly plan");
+  });
+
   it.each([
     ["formatted text", "we saw **42%** growth", "42% growth", "42% growth"],
     [

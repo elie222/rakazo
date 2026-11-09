@@ -10,7 +10,12 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
+import {
+  emailDisplayText,
+  isPeerReceiptBlocks,
+  isToolActivityBlock,
+  otherAuthor,
+} from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -581,8 +586,7 @@ export const MessageView = memo(function MessageView({
                   className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-2xl bg-chat-user px-[18px] py-3 text-body-lg text-chat-user-foreground"
                   dir="auto"
                 >
-                  {block.subject ? <div className="font-medium">✉︎ {block.subject}</div> : null}
-                  <LinkifiedText onOpenPage={openPage}>{block.text.trim()}</LinkifiedText>
+                  <LinkifiedText onOpenPage={openPage}>{emailDisplayText(block)}</LinkifiedText>
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>

@@ -17,10 +17,11 @@ function toolSteps(block: MessageBlock): Extract<MessageBlock, { kind: "steps" }
 
 function conversationText(block: MessageBlock): string[] {
   if (block.kind === "subagent") return [block.task, block.result ?? ""].filter(Boolean);
+  // The subject can carry the whole request.
+  if (block.kind === "email") return [block.subject, block.text].filter(Boolean);
   return [
     "text",
     "channel_message",
-    "email",
     "bot_message_received",
     "bot_message_sent",
     "handoff",

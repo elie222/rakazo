@@ -5,6 +5,7 @@ import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
+  emailDisplayText,
   formatFileSize,
   isApprovalAskBlock,
   isQuestionAskBlock,
@@ -32,7 +33,7 @@ import {
 } from "../../lib/message-mentions";
 import { messagePresentationSegments } from "../../lib/message-presentation";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
-import { blockText, emailText } from "../../lib/mobile-types";
+import { blockText } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import { speakerColorFor } from "../../lib/thread-message-text";
 import type { UserBubble } from "../../lib/user-bubble";
@@ -560,7 +561,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`,
         ];
       }
-      if (block.kind === "email") return [emailText(block)];
+      if (block.kind === "email") return [emailDisplayText(block)];
       return block.kind === "text" && block.text ? [block.text] : [];
     })
     .join("\n");
