@@ -5,9 +5,12 @@ import { gunzipSync } from "node:zlib";
 import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
 import { buildSkillMd, findSkillByName, parseSkillMd } from "@rakazo/core";
+import type { Dispatcher } from "undici";
+import { EnvHttpProxyAgent } from "undici";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 import { fetchSafeWebText, readBodyCapped } from "./web-ssrf.js";
 
 export type PluginSourceRef = { gitUrl: string; ref?: string; subdir?: string };
@@ -308,10 +311,19 @@ export function parsePluginArchives(value: string | undefined): PluginArchive[] 
 }
 
 // The deployment chose the address and pinned the bytes, so it may be on its own network.
+// HTTP(S)_PROXY and NO_PROXY apply as they do to other outbound requests.
 const loadArchive = async (url: string, signal: AbortSignal): Promise<Uint8Array> => {
-  const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
-  return readBodyCapped(response, MAX_ARCHIVE_BYTES, signal);
+  const dispatcher = new EnvHttpProxyAgent();
+  try {
+    const response = await dispatcherFetch(url, {
+      signal,
+      dispatcher,
+    } as RequestInit & { dispatcher: Dispatcher });
+    if (!response.ok) throw new Error(`Request failed: HTTP ${response.status}`);
+    return await readBodyCapped(response, MAX_ARCHIVE_BYTES, signal);
+  } finally {
+    void dispatcher.close().catch(() => undefined);
+  }
 };
 
 export async function fetchPluginArchive(

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -668,5 +670,33 @@ describe("plugin archives", () => {
     await expect(
       pluginSourceFetcher([listed])(parsePluginSource("https://elsewhere.example.test/other.tgz")),
     ).rejects.toThrow("github.com");
+  });
+
+  it("downloads through the configured proxy", async () => {
+    const requested: string[] = [];
+    const proxy = createServer((request, response) => {
+      requested.push(request.url ?? "");
+      response.end(archive);
+    });
+    await new Promise<void>((done) => proxy.listen(0, "127.0.0.1", done));
+    const url = "http://plugins.example.test/example.tar.gz";
+    const load = () => fetchPluginArchive({ url, sha256: listed.sha256 });
+    try {
+      // The host does not resolve, so a direct download fails.
+      vi.stubEnv("HTTP_PROXY", "");
+      vi.stubEnv("http_proxy", "");
+      await expect(load()).rejects.toThrow();
+      const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+      vi.stubEnv("HTTP_PROXY", proxyUrl);
+      vi.stubEnv("http_proxy", proxyUrl);
+      vi.stubEnv("NO_PROXY", "");
+      vi.stubEnv("no_proxy", "");
+      expect((await load()).resolvedSha).toBe(listed.sha256);
+      expect(requested).toEqual([url]);
+    } finally {
+      vi.unstubAllEnvs();
+      proxy.closeAllConnections();
+      await new Promise((done) => proxy.close(done));
+    }
   });
 });
