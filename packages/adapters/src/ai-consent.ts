@@ -15,7 +15,6 @@ const PRIVACY_URLS: Record<string, string> = {
   elevenlabs: "https://elevenlabs.io/privacy-policy",
   cartesia: "https://cartesia.ai/legal/privacy",
   "fish-audio": "https://fish.audio/privacy/",
-  supermemory: "https://supermemory.ai/privacy",
   honcho: "https://app.honcho.dev/privacy",
 };
 
@@ -50,7 +49,6 @@ export function aiRecipient(input: {
 function recipientName(provider: string, use: AiDataUse) {
   if (use === "voice") return voiceCatalogEntry(provider)?.name ?? provider;
   if (use === "memory") {
-    if (provider === "supermemory") return "Supermemory";
     if (provider === "honcho") return "Honcho";
     return provider;
   }

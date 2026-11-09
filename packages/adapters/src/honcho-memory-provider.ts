@@ -27,12 +27,12 @@ import {
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
+  MemoryProviderPrivateEndpointRequiredError,
   parseServiceBaseUrl,
   pinLocalServiceHost,
 } from "./local-service-endpoint.js";
 import type { ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { truncateUtf8 } from "./utf8.js";
 
 export const HONCHO_PROVIDER_ID = "honcho";

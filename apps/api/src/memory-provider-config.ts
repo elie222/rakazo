@@ -1,7 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import {
-  classifyMemoryProviderSettings,
   MemoryProviderPrivateEndpointRequiredError,
   memoryProviderRequiresPrivateEndpoint,
   prepareMemoryProviderConnection,
@@ -15,11 +14,6 @@ export interface MemoryProviderConfigDeps {
   prisma: PrismaClient;
   env?: { mcpAllowPrivateEndpoint?: boolean };
   secrets: Pick<SecretStore, "put">;
-  /** Test seam: override DNS/trust classification without probing. */
-  classifySettings?: (
-    provider: string,
-    settings: Record<string, string>,
-  ) => Promise<Record<string, string>>;
   /** Test seam: override prepare/probe. */
   prepareConnection?: (
     input: Parameters<typeof prepareMemoryProviderConnection>[0],
@@ -45,19 +39,9 @@ export async function persistMemoryProviderConfig(
     ) {
       throw new ORPCError("FORBIDDEN");
     }
-    const classify = deps.classifySettings ?? classifyMemoryProviderSettings;
     const prepare = deps.prepareConnection ?? prepareMemoryProviderConnection;
-    // Classify DNS/trust before any credentialed probe so LAN endpoints stay operator-authorized.
-    const classifiedSettings = await classify(input.provider, input.settings);
-    if (
-      memoryProviderRequiresPrivateEndpoint(input.provider, classifiedSettings) &&
-      deps.env?.mcpAllowPrivateEndpoint !== true
-    ) {
-      throw new ORPCError("FORBIDDEN");
-    }
     prepared = await prepare({
       ...input,
-      settings: classifiedSettings,
       allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint === true,
     });
     // Defense in depth if prepare reclassified further.

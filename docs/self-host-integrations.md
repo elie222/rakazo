@@ -29,7 +29,7 @@ the default work as described for Parallel.
 
 ## Self-hosted memory
 
-Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**
+Honcho can run on your own network. In **Settings → Memory**, choose **Local**
 and enter the instance's base URL. The operator must set `MCP_ALLOW_PRIVATE_ENDPOINT=true`; workspace owners can then save a local endpoint. It must
 be loopback or resolve to private addresses (a Compose service name, an RFC1918 or unique-local
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved

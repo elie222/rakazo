@@ -8,8 +8,8 @@ import {
   honchoWorkspaceId,
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./local-service-endpoint.js";
 import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 const context: AdapterContext = {
   operationId: "op-1",

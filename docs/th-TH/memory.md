@@ -14,7 +14,7 @@ bot เขียนโน้ตลง `MEMORY.md` สูงสุดประม
 
 ## memory provider (ทางเลือก)
 
-**ตั้งค่า (Settings) → Memory** → **Connect memory provider**: Supermemory, Serenity, Honcho ฯลฯ
+**ตั้งค่า (Settings) → Memory** → **Connect memory provider**: Honcho
 
 **Default scope**:
 

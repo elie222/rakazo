@@ -158,12 +158,8 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings.getByTestId("memory-settings")).toBeVisible();
   const memory = settings.getByTestId("memory-settings");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
-  await expect(memory.getByLabel("Provider")).toBeVisible();
-  await memory.getByLabel("Provider").selectOption("serenity");
-  await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
-  await expect(memory.getByLabel("Bearer token")).toBeVisible();
-  await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
+  await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-memory-provider");
 
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
@@ -189,7 +185,6 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(memory.getByLabel("Provider")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "memory-default");
   await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
-  await memory.getByLabel("Provider").selectOption("honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("User peer", { exact: true })).toHaveCount(0);
@@ -236,19 +231,10 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
     memory.locator(".rk-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
-  await memory.getByLabel("Provider").selectOption("supermemory");
-  await scrollToTop();
-  await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
-  await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
-  await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
-  await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "memory-supermemory-local");
-
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await memory.getByLabel("Provider").selectOption("honcho");
   await scrollToTop();
+  await memory.getByRole("button", { name: "Cloud", exact: true }).click();
   await expect(memory.getByRole("button", { name: "Cloud", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",

@@ -11,12 +11,19 @@ import {
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
 import { createPrivateNetworkFetch, isPrivateRemoteMcpHostname } from "./remote-mcp.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 /**
  * Self-hosted ("local") memory services: a loopback or private-network endpoint the
  * server operator runs. Hostnames are resolved once, checked, and pinned for requests.
  */
+
+export class MemoryProviderPrivateEndpointRequiredError extends Error {
+  readonly code = "PRIVATE_ENDPOINT_REQUIRED" as const;
+  constructor(message = "This memory provider endpoint requires operator authorization.") {
+    super(message);
+    this.name = "MemoryProviderPrivateEndpointRequiredError";
+  }
+}
 
 const LOCAL_NETWORK_ERROR = "Local mode requires a loopback or private-network address.";
 const BLOCKED_TARGET_ERROR = "Local mode cannot target a blocked address.";

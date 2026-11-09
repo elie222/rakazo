@@ -228,7 +228,7 @@ describe("formatRecalledMemory", () => {
     expect(formatRecalledMemory([])).toBe("");
   });
 
-  it("preserves Serenity citations alongside the fact text", () => {
+  it("preserves memory citations alongside the fact text", () => {
     const block = formatRecalledMemory([
       {
         memory: "Ava prefers feature flags.",

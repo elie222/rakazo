@@ -8,23 +8,8 @@ import {
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
 import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
-import {
-  classifySerenityConnectionSettings,
-  createSerenityProvider,
-  prepareSerenityConnection,
-  SERENITY_PROVIDER_ID,
-  serenityRequiresPrivateEndpoint,
-} from "./serenity-memory-provider.js";
 
-export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
-
-import {
-  createSupermemoryProvider,
-  decodeLegacySupermemoryCredentials,
-  prepareSupermemoryConnection,
-  SUPERMEMORY_PROVIDER_ID,
-  supermemoryRequiresPrivateEndpoint,
-} from "./supermemory-memory-provider.js";
+export { MemoryProviderPrivateEndpointRequiredError } from "./local-service-endpoint.js";
 
 export interface MemoryProviderConnectionInput {
   provider: string;
@@ -51,8 +36,6 @@ export interface MemoryProviderResolver {
 
 interface MemoryProviderAdapter {
   requiresPrivateEndpoint(settings: Record<string, string>): boolean;
-  /** Async trust classification (e.g. DNS) without probing credentials. */
-  classifySettings?(settings: Record<string, string>): Promise<Record<string, string>>;
   /** Recheck persisted endpoint settings before their credentials are decrypted. */
   revalidate?(settings: Record<string, string>): Promise<void>;
   prepare(
@@ -64,33 +47,9 @@ interface MemoryProviderAdapter {
     settings: Record<string, string>,
     credentials: Record<string, string>,
   ): SemanticMemoryProvider;
-  decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
 }
 
 const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
-  [
-    SUPERMEMORY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: supermemoryRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareSupermemoryConnection,
-      create: createSupermemoryProvider,
-      decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
-    },
-  ],
-  [
-    SERENITY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: serenityRequiresPrivateEndpoint,
-      classifySettings: classifySerenityConnectionSettings,
-      prepare: (
-        settings: Record<string, string>,
-        credentials: Record<string, string>,
-        options?: { allowPrivateEndpoint?: boolean },
-      ) => prepareSerenityConnection(settings, credentials, undefined, options),
-      create: createSerenityProvider,
-    },
-  ],
   [
     HONCHO_PROVIDER_ID,
     {
@@ -114,18 +73,6 @@ export function memoryProviderRequiresPrivateEndpoint(
   settings: Record<string, string>,
 ): boolean {
   return memoryProviderAdapter(provider).requiresPrivateEndpoint(settings);
-}
-
-/**
- * Run provider-specific trust classification (DNS, etc.) without credentialed probes.
- * Callers must authorize private endpoints through operator configuration before prepare/probe.
- */
-export async function classifyMemoryProviderSettings(
-  provider: string,
-  settings: Record<string, string>,
-): Promise<Record<string, string>> {
-  const adapter = memoryProviderAdapter(provider);
-  return adapter.classifySettings ? adapter.classifySettings(settings) : settings;
 }
 
 export async function prepareMemoryProviderConnection(
@@ -161,10 +108,8 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
     const credentials = toStringRecord(JSON.parse(plaintext));
     if (Object.keys(credentials).length > 0) return credentials;
   } catch {
-    // Configurations created before the generic provider boundary stored the API key directly.
+    // Fall through to the invalid-credentials error below.
   }
-  const legacyCredentials = memoryProviderAdapter(provider).decodeLegacyCredentials?.(plaintext);
-  if (legacyCredentials) return legacyCredentials;
   throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
 }
 
@@ -180,12 +125,17 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       include: { secret: true },
     });
     if (!config) return null;
+    const adapter = MEMORY_PROVIDER_ADAPTERS.get(config.provider);
+    if (!adapter) {
+      // A provider removed from this build leaves its saved row behind; treat it as unconfigured.
+      getLogger().warn("Semantic memory disabled: stored provider is not available in this build");
+      return null;
+    }
     const settings = toStringRecord(config.settings);
-    if (memoryProviderRequiresPrivateEndpoint(config.provider, settings)) {
+    if (adapter.requiresPrivateEndpoint(settings)) {
       // Saved configurations cannot bypass an operator's current network policy.
       if (process.env.MCP_ALLOW_PRIVATE_ENDPOINT !== "true") return null;
     }
-    const adapter = memoryProviderAdapter(config.provider);
     try {
       await adapter.revalidate?.(settings);
     } catch {
@@ -197,7 +147,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       await this.secrets.load(config.secret.ciphertext, config.secret.id),
     );
     return {
-      provider: createMemoryProvider(config.provider, settings, credentials),
+      provider: adapter.create(settings, credentials),
       defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
     };
   }

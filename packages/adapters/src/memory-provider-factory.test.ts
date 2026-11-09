@@ -19,10 +19,10 @@ function resolverFor(
     spaceMemoryConfig: {
       findUnique: vi.fn(async () => ({
         userId: "config-author",
-        provider: options.provider ?? "supermemory",
+        provider: options.provider ?? "honcho",
         settings: {
           mode: options.mode ?? "cloud",
-          baseUrl: options.baseUrl ?? "https://api.supermemory.ai",
+          ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
         },
         defaultMemoryScope: "shared",
         secret: { ciphertext: "encrypted" },
@@ -44,22 +44,27 @@ afterEach(() => {
 });
 
 describe("SpaceMemoryProviderResolver", () => {
-  it.each(["honcho", "supermemory"])(
-    "disables %s without loading credentials when local DNS revalidation fails",
-    async (provider) => {
-      vi.mocked(lookup).mockRejectedValue(new Error("DNS unavailable"));
-      const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-key" }), {
-        provider,
-        mode: "local",
-        baseUrl: "http://memory.example.test:8000",
-        allowPrivateEndpoint: true,
-      });
+  it("disables a saved provider without loading credentials when local DNS revalidation fails", async () => {
+    vi.mocked(lookup).mockRejectedValue(new Error("DNS unavailable"));
+    const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-key" }), {
+      mode: "local",
+      baseUrl: "http://memory.example.test:8000",
+      allowPrivateEndpoint: true,
+    });
 
-      await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
-      expect(lookup).toHaveBeenCalled();
-      expect(secrets.load).not.toHaveBeenCalled();
-    },
-  );
+    await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
+    expect(lookup).toHaveBeenCalled();
+    expect(secrets.load).not.toHaveBeenCalled();
+  });
+
+  it("treats a saved provider this build no longer includes as unconfigured", async () => {
+    const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-key" }), {
+      provider: "removed-provider",
+    });
+
+    await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
+    expect(secrets.load).not.toHaveBeenCalled();
+  });
 
   it("gates and revalidates saved local Honcho endpoints like other local providers", async () => {
     const fetchMock = vi.fn();
@@ -105,7 +110,7 @@ describe("SpaceMemoryProviderResolver", () => {
     async (allowPrivateEndpoint) => {
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
-      const { resolver, secrets } = resolverFor("sm_fake_key", {
+      const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-api-key" }), {
         mode: "local",
         baseUrl: "http://127.0.0.1:8123/internal-action#",
         allowPrivateEndpoint,
@@ -117,32 +122,10 @@ describe("SpaceMemoryProviderResolver", () => {
     },
   );
 
-  it("retains deployment-owner-configured local memory for Space members", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ results: [] }));
-    vi.stubGlobal("fetch", fetchMock);
-    const { resolver } = resolverFor("sm_fake_key", {
-      mode: "local",
-      baseUrl: "http://localhost:6767/memory/",
-      allowPrivateEndpoint: true,
-    });
-    const configured = await resolver.resolve("workspace-1");
-    await configured!.provider.recall(
-      { query: "project", scope: "isolated", botId: "bot-1", limit: 1 },
-      {
-        operationId: "op-1",
-        traceId: "trace-1",
-        spaceId: "workspace-1",
-        userId: "space-member",
-        signal: new AbortController().signal,
-      },
-    );
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:6767/memory/v4/search");
-  });
-
   it("disables ambiguous persisted URLs even when the deployment owner configured them", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { resolver } = resolverFor("sm_fake_key", {
+    const { resolver } = resolverFor(JSON.stringify({ apiKey: "fake-api-key" }), {
       mode: "local",
       baseUrl: "http://127.0.0.1:8123/internal-action#",
       allowPrivateEndpoint: true,
@@ -152,24 +135,22 @@ describe("SpaceMemoryProviderResolver", () => {
   });
 
   it("loads generic JSON credential payloads", async () => {
-    const { resolver } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
+    const { resolver } = resolverFor(JSON.stringify({ apiKey: "fake-json-key" }));
 
     const configured = await resolver.resolve("workspace-1");
 
-    expect(configured?.provider.describe().id).toBe("supermemory");
+    expect(configured?.provider.describe().id).toBe("honcho");
     expect(configured?.defaultScope).toBe("shared");
   });
 
-  it("keeps legacy raw Supermemory credentials usable after the schema migration", async () => {
-    const { resolver } = resolverFor("sm_legacy_key");
+  it("rejects stored credentials that are not a JSON object", async () => {
+    const { resolver } = resolverFor("fake-raw-key");
 
-    const configured = await resolver.resolve("workspace-1");
-
-    expect(configured?.provider.describe().id).toBe("supermemory");
+    await expect(resolver.resolve("workspace-1")).rejects.toThrow(/invalid/);
   });
 
   it("revalidates persisted provider endpoints before using decrypted credentials", async () => {
-    const { resolver, secrets } = resolverFor("sm_fake_key", {
+    const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-api-key" }), {
       mode: "local",
       baseUrl: "http://203.0.113.10:6767",
       allowPrivateEndpoint: true,
@@ -192,37 +173,11 @@ describe("SpaceMemoryProviderResolver", () => {
 
     expect(() =>
       createMemoryProvider(
-        "supermemory",
+        "honcho",
         { mode: "local", baseUrl: "http://203.0.113.10:6767" },
-        { apiKey: "sm_test_key" },
+        { apiKey: "fake-api-key" },
       ),
     ).toThrow(/private-network/);
-
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ results: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = createMemoryProvider(
-      "supermemory",
-      { mode: "cloud", baseUrl: "https://memory.example.com" },
-      { apiKey: "sm_test_key" },
-    );
-
-    await provider.recall(
-      { query: "project", scope: "isolated", botId: "bot-1", limit: 1 },
-      {
-        operationId: "op-1",
-        traceId: "trace-1",
-        spaceId: "workspace-1",
-        userId: "user-1",
-        signal: new AbortController().signal,
-      },
-    );
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.supermemory.ai/v4/search");
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });

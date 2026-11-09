@@ -39,16 +39,16 @@ function makeDeps(
   const findUnique = vi.fn().mockResolvedValue(overrides.existing ?? null);
   const upsert = vi.fn().mockResolvedValue(
     overrides.upsertResult ?? {
-      provider: "supermemory",
-      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+      provider: "honcho",
+      settings: { reasoningLevel: "low", workspaceId: "team-notes" },
       defaultMemoryScope: "isolated",
       updatedAt: new Date("2026-08-19T00:00:00.000Z"),
     },
   );
   const update = vi.fn().mockResolvedValue(
     overrides.updateResult ?? {
-      provider: "supermemory",
-      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+      provider: "honcho",
+      settings: { reasoningLevel: "low", workspaceId: "team-notes" },
       defaultMemoryScope: "shared",
       updatedAt: new Date("2026-08-20T00:00:00.000Z"),
     },
@@ -87,9 +87,9 @@ function makeDeps(
 
 function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
   return {
-    provider: "supermemory",
-    settings: { mode, ...(baseUrl ? { baseUrl } : {}) },
-    credentials: { apiKey: "sm_test_key_12345" },
+    provider: "honcho",
+    settings: { mode, workspaceId: "team-notes", ...(baseUrl ? { baseUrl } : {}) },
+    credentials: { apiKey: "hch-test-key-12345" },
     defaultMemoryScope: "isolated" as const,
   };
 }
@@ -200,7 +200,7 @@ describe("persistMemoryProviderConfig", () => {
     "http://127.0.0.1:8123/internal-action#",
     "http://localhost:6767",
     "http://10.0.0.8:6767",
-    "http://supermemory:6767",
+    "http://memory:6767",
   ])("rejects ordinary Space owners before any local probe or write: %s", async (baseUrl) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
     vi.stubGlobal("fetch", fetchMock);
@@ -305,11 +305,16 @@ describe("persistMemoryProviderConfig", () => {
       connectionInput("local", "http://10.0.0.8:6767"),
     );
 
-    expect(fetchMock.mock.calls[0]![0]).toBe("http://10.0.0.8:6767/v3/container-tags/list");
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://10.0.0.8:6767/v3/workspaces");
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          settings: { mode: "local", baseUrl: "http://10.0.0.8:6767" },
+          settings: {
+            mode: "local",
+            baseUrl: "http://10.0.0.8:6767",
+            reasoningLevel: "low",
+            workspaceId: "team-notes",
+          },
         }),
       }),
     );
@@ -325,7 +330,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         {
           ...connectionInput("local", "http://localhost:6767"),
-          credentials: { apiKey: "sm_bad_key" },
+          credentials: { apiKey: "hch-bad-key" },
         },
       ),
     ).rejects.toThrow();
@@ -344,12 +349,12 @@ describe("persistMemoryProviderConfig", () => {
       connectionInput("local", "http://[::1]:6767"),
     );
 
-    expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/v3/container-tags/list");
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/v3/workspaces");
     expect(upsert).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
-  it("connects cloud mode, defaulting the base URL, and returns the serialized config", async () => {
+  it("connects cloud mode and returns the serialized config", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
     const { deps, upsert, transaction } = makeDeps();
     const result = await persistMemoryProviderConfig(deps, actor, connectionInput("cloud"));
@@ -357,14 +362,14 @@ describe("persistMemoryProviderConfig", () => {
       expect.objectContaining({
         where: { spaceId: "ws-1" },
         create: expect.objectContaining({
-          provider: "supermemory",
-          settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+          provider: "honcho",
+          settings: { reasoningLevel: "low", workspaceId: "team-notes" },
         }),
       }),
     );
     expect(result).toEqual({
-      provider: "supermemory",
-      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+      provider: "honcho",
+      settings: { reasoningLevel: "low", workspaceId: "team-notes" },
       defaultMemoryScope: "isolated",
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
@@ -379,39 +384,13 @@ describe("persistMemoryProviderConfig", () => {
     });
     await persistMemoryProviderConfig(deps, actor, {
       ...connectionInput("cloud"),
-      credentials: { apiKey: "sm_new_key_12345" },
+      credentials: { apiKey: "hch-new-key-12345" },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
     vi.unstubAllGlobals();
   });
 
-  it("rejects non-deployment-owners for public-looking Serenity hostnames that resolve private, without probing", async () => {
-    const prepareConnection = vi.fn();
-    const { deps, transaction } = makeDeps();
-    await expect(
-      persistMemoryProviderConfig(
-        {
-          ...deps,
-          classifySettings: async () => ({
-            endpoint: "https://serenity.example.test/mcp",
-            endpointTrust: "private",
-          }),
-          prepareConnection,
-        },
-        actor,
-        {
-          provider: "serenity",
-          settings: { endpoint: "https://serenity.example.test/mcp", allowWrites: "false" },
-          credentials: { token: "serenity_test_token" },
-          defaultMemoryScope: "isolated",
-        },
-      ),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(prepareConnection).not.toHaveBeenCalled();
-    expect(transaction).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-owners when prepare reclassifies a hostname as private before probing", async () => {
+  it("rejects non-owners when prepare finds the endpoint is private before probing", async () => {
     const prepareConnection = vi.fn(async () => {
       throw new MemoryProviderPrivateEndpointRequiredError();
     });
@@ -420,18 +399,10 @@ describe("persistMemoryProviderConfig", () => {
       persistMemoryProviderConfig(
         {
           ...deps,
-          classifySettings: async () => ({
-            endpoint: "https://serenity.example.test/mcp",
-          }),
           prepareConnection,
         },
         actor,
-        {
-          provider: "serenity",
-          settings: { endpoint: "https://serenity.example.test/mcp", allowWrites: "false" },
-          credentials: { token: "serenity_test_token" },
-          defaultMemoryScope: "isolated",
-        },
+        connectionInput("cloud"),
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(prepareConnection).toHaveBeenCalledWith(

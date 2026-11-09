@@ -1,8 +1,6 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
-import { SerenitySettingsForm } from "./SerenitySettingsForm";
-import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
 
 export interface MemoryProviderConnectionDraft {
   settings: Record<string, string>;
@@ -22,26 +20,6 @@ export interface MemoryProviderSettingsRegistration {
 }
 
 export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistration[] = [
-  {
-    id: "supermemory",
-    name: "Supermemory",
-    SettingsForm: SupermemorySettingsForm,
-    connectedLabel: (config) =>
-      config.settings.mode === "cloud"
-        ? "Supermemory Cloud"
-        : `Self-hosted (${config.settings.baseUrl})`,
-  },
-  {
-    id: "serenity",
-    name: "Serenity",
-    SettingsForm: SerenitySettingsForm,
-    connectedLabel: (config) => {
-      const label = config.settings.brainLabel?.trim();
-      const endpoint = config.settings.endpoint ?? "Serenity";
-      const mode = config.settings.allowWrites === "true" ? "read/write" : "recall only";
-      return `${label || endpoint}, ${mode}`;
-    },
-  },
   {
     id: "honcho",
     name: "Honcho",
