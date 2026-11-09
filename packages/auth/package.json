@@ -15,18 +15,18 @@
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
-    "@better-auth/expo": "1.7.16",
-    "@better-auth/passkey": "1.7.16",
-    "@better-auth/scim": "1.7.16",
+    "@better-auth/expo": "1.7.18",
+    "@better-auth/passkey": "1.7.18",
+    "@better-auth/scim": "1.7.18",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "better-auth": "1.7.16",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-email": "6.11.6"
+    "better-auth": "1.7.18",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "react-email": "6.11.8"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
