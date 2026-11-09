@@ -641,7 +641,7 @@ export async function validateBotModelChange(
     model !== input.current?.model;
   if (changing && provider && model) {
     const hosted =
-      !input.credentialId &&
+      !input.connectionChanging &&
       deps.hostedProvider === provider &&
       (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted

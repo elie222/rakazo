@@ -597,6 +597,18 @@ describe("connectionModelChoices", () => {
     ]);
   });
 
+  it("lists a funded model once, under no connection", () => {
+    const choices = connectionModelChoices(
+      [anthropic("sub", "Subscription"), anthropic("api", "API key")],
+      [{ ...entry("anthropic", "funded"), managed: true }, entry("anthropic", "opus")],
+    );
+    expect(choices.map(({ key, credentialId }) => [key, credentialId])).toEqual([
+      ["sub@@anthropic::opus", "sub"],
+      ["api@@anthropic::opus", "api"],
+      ["anthropic::funded", undefined],
+    ]);
+  });
+
   it("leaves a provider with one connection as it was", () => {
     const [choice, ...rest] = connectionModelChoices([anthropic("sub", "Claude")], catalog);
     expect(rest).toEqual([]);

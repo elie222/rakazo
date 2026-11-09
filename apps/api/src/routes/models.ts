@@ -76,7 +76,10 @@ export function modelsRoutes(ctx: RouterContext) {
       list: authed.models.list.handler(async ({ context }) => {
         const catalog = await chatCatalog(context.actor);
         // Only narrows which connection lists a model; saving a bot still checks its connection.
-        return withServingConnections(context.actor, catalog).catch(() => catalog);
+        return withServingConnections(context.actor, catalog).catch((error: unknown) => {
+          getLogger().error("models list serving connections", error);
+          return catalog;
+        });
       }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([

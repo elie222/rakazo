@@ -385,6 +385,7 @@ export function connectionModelChoices(
       catalog.filter(
         (entry) =>
           provider(entry) === provider(credential) &&
+          !entry.managed &&
           (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
       ),
     ).map((choice) => ({
@@ -399,7 +400,13 @@ export function connectionModelChoices(
     credentials.filter((credential) => !several(credential)),
     catalog,
   );
-  return [...separate, ...shared.filter((choice) => !several(choice))];
+  // Funded models run on the deployment's key, so they are listed once, under no connection.
+  const funded = (choice: ConnectedModelChoice) =>
+    catalog.some(
+      (entry) =>
+        entry.managed && provider(entry) === provider(choice) && entry.id === choice.modelId,
+    );
+  return [...separate, ...shared.filter((choice) => !several(choice) || funded(choice))];
 }
 
 export type ChatModelChoice = {
