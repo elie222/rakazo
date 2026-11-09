@@ -1,5 +1,6 @@
 import { botColors, typeScale } from "@rakazo/ui-tokens";
-import { useFocusEffect, useRouter } from "expo-router";
+import type { NativeStackNavigationProp } from "expo-router";
+import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { TextInputInstance } from "react-native";
 import {
@@ -43,6 +44,7 @@ const kindIcons = {
 export default function SearchSheet() {
   const { t, locale } = useI18n();
   const router = useRouter();
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
@@ -65,11 +67,22 @@ export default function SearchSheet() {
 
   useFocusEffect(
     useCallback(() => {
-      focused.current = true;
-      opening.current = false;
-      // Removal blurs the sheet first, so this also cancels an open that is still pending.
-      return cancelOpen;
-    }, [cancelOpen]),
+      const arm = () => {
+        focused.current = true;
+        opening.current = false;
+      };
+      arm();
+      // A native dismissal blurs the sheet only once its animation ends, so a pending open is
+      // cancelled as soon as the sheet starts closing, and re-armed if the gesture is abandoned.
+      const unsubscribe = navigation.addListener("transitionStart", (event) => {
+        if (event.data.closing) cancelOpen();
+        else arm();
+      });
+      return () => {
+        cancelOpen();
+        unsubscribe();
+      };
+    }, [navigation, cancelOpen]),
   );
 
   useEffect(() => {

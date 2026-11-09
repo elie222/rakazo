@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   replace: vi.fn(),
   back: vi.fn(),
   lifecycle: new Map<string, () => void>(),
+  transitionStart: undefined as undefined | ((event: { data: { closing: boolean } }) => void),
   selectSpace: vi.fn(),
   selectionSeq: 0,
   spaceId: "space-a" as string | null,
@@ -53,8 +54,17 @@ const message = {
   snippet: "A **matching** line",
   messageId: "message-a",
 };
+const navigation = {
+  addListener: (_event: string, listener: typeof state.transitionStart) => {
+    state.transitionStart = listener;
+    return () => {
+      if (state.transitionStart === listener) state.transitionStart = undefined;
+    };
+  },
+};
 vi.mock("expo-router", () => ({
   useRouter: () => state,
+  useNavigation: () => navigation,
   useFocusEffect: (effect: () => () => void) =>
     useEffect(() => {
       const cleanup = effect();
@@ -446,6 +456,40 @@ it.each(
   expect(state.replace).not.toHaveBeenCalled();
   expect(state.spaceId).toBe("space-a");
   expect(state.persistedSpaceId).toBe("space-a");
+});
+
+it.each(["space switch", "keyboard dismiss"])(
+  "cancels a pending %s as soon as a native dismissal starts",
+  async (stage) => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    if (stage === "space switch") {
+      state.selectSpace.mockImplementationOnce(async (id: string) => {
+        state.spaceId = id;
+        await pending;
+        state.persistedSpaceId = id;
+        return true;
+      });
+    } else {
+      state.dismiss.mockReturnValueOnce(pending);
+    }
+    await act(async () => row("Team, Group").click());
+    // The sheet is still focused: blur only follows once the dismissal animation ends.
+    act(() => state.transitionStart?.({ data: { closing: true } }));
+    await act(async () => resolve());
+    expect(state.replace).not.toHaveBeenCalled();
+    expect(state.spaceId).toBe("space-a");
+    expect(state.persistedSpaceId).toBe("space-a");
+  },
+);
+
+it("opens results again after an abandoned dismissal gesture", async () => {
+  act(() => state.transitionStart?.({ data: { closing: true } }));
+  act(() => state.transitionStart?.({ data: { closing: false } }));
+  await act(async () => row("Team, Group").click());
+  expect(state.replace).toHaveBeenCalledOnce();
 });
 
 it("keeps the selected space when successful navigation removes the sheet", async () => {
