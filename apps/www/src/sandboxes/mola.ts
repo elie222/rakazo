@@ -12,7 +12,7 @@ export const mola: Sandbox = {
     "Mola provides instant Linux computers for AI agents. Open source and self-hostable with QEMU/KVM, or use the managed service. Each bot gets a clean Ubuntu 24.04 machine with Chrome.",
   h1: "Mola for AI agents: instant Linux computers you can run anywhere",
   intro: [
-    "[Mola](https://mola.sh) creates Ubuntu 24.04 XFCE desktops in about one second, each in its own VM. Open source at [GitHub](https://github.com/obaid/mola-core), so you can self-host on your own hardware with QEMU/KVM, or use the managed service at cloud.mola.sh. Each bot gets a clean machine with Chrome pre-installed.",
+    "[Mola](https://mola.sh) creates Ubuntu 24.04 XFCE desktops in about 12 seconds, each in its own VM. Open source at [GitHub](https://github.com/obaid/mola-core), so you can self-host on your own hardware with QEMU/KVM, or use the managed service at cloud.mola.sh. Each bot gets a clean machine with Chrome pre-installed.",
   ],
   image: homepage("mola", "Mola", "Screenshot of the Mola homepage showing instant Linux computers"),
   scene: {

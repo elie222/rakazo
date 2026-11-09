@@ -71,12 +71,22 @@ function getViewerOrigin(): string {
 interface MolaMachine {
   id: string;
   name: string;
-  status: "starting" | "ready" | "stopped" | "unknown";
+  status: "provisioning" | "booting" | "starting" | "ready" | "stopped" | "unknown";
+  is_transitional?: boolean;
   runtime_status?: string;
   vcpus: number;
   memory_mb: number;
   disk_gb: number;
   created_at: string;
+  ready_at?: string;
+  address?: string;
+  health?: {
+    is_healthy?: boolean;
+  };
+  error?: {
+    code?: string;
+    message?: string;
+  };
   capabilities?: {
     shell?: boolean;
     display?: boolean;
@@ -195,6 +205,20 @@ export class MolaSandboxProvider implements SandboxProvider {
         throw new SandboxUnresponsiveError("Mola API key is invalid or expired");
       }
 
+      if (response.status === 403) {
+        let errorMessage = "Permission denied";
+        try {
+          const error = await response.json();
+          if (error.error?.code === "insufficient_token_ability") {
+            const required = error.error?.details?.required;
+            errorMessage = `Mola API key lacks required permission: ${required || "computers:read and computers:write"}. Generate a new key with both abilities.`;
+          }
+        } catch {
+          // Fallback if JSON parsing fails
+        }
+        throw new SandboxUnresponsiveError(errorMessage);
+      }
+
       if (response.status === 429) {
         throw new SandboxRateLimitError();
       }
@@ -252,18 +276,20 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   private async getDesktopUrl(
     machineId: string,
-  ): Promise<{ url: string; expires_in: number }> {
+    interactive: boolean = false,
+  ): Promise<{ url: string; token?: string; expires_in: number }> {
     if (this.apiMode === "cloud") {
       const response = await this.request(`/computers/${machineId}/viewers`, {
         method: "POST",
         body: {
           origin: getViewerOrigin(),
           mode: "desktop",
+          interactive,
           expires_in_minutes: 60,
         },
       });
-      const result: { data: { embed_url: string; expires_at?: string } } = await response.json();
-      return { url: result.data.embed_url, expires_in: 3600 };
+      const result: { data: { embed_url: string; token: string; expires_at?: string } } = await response.json();
+      return { url: result.data.embed_url, token: result.data.token, expires_in: 3600 };
     }
     const response = await this.request(`/machines/${machineId}/desktop`, {
       method: "POST",
@@ -282,11 +308,18 @@ export class MolaSandboxProvider implements SandboxProvider {
         return;
       }
 
+      if (machine.is_transitional || machine.status === "provisioning" || machine.status === "booting" || machine.status === "starting") {
+        await abortableDelay(MOLA_POLL_MS, context.signal);
+        continue;
+      }
+
       if (machine.status === "stopped") {
         throw new SandboxUnavailableError({ cause: new Error("Machine stopped during startup") });
       }
 
-      await abortableDelay(MOLA_POLL_MS, context.signal);
+      throw new SandboxUnavailableError({
+        cause: new Error(`Unexpected machine status: ${machine.status}`),
+      });
     }
 
     throw new SandboxUnavailableError({ cause: new Error("Machine did not become ready in time") });
@@ -464,17 +497,23 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   async connectScreen(
     computer: ComputerRef,
-    _request: ScreenRequest,
+    request: ScreenRequest,
     _context: AdapterContext,
   ): Promise<ScreenSession> {
-    const desktop = await this.getDesktopUrl(computer.providerRef);
-    return {
+    const desktop = await this.getDesktopUrl(computer.providerRef, request.interactive ?? false);
+    const session: ScreenSession = {
       url: desktop.url,
       mimeType: "text/html",
       async close() {
-        // Mola desktop URLs are single-use tickets that expire
+        // Mola desktop URLs expire automatically
       },
     };
+    
+    if (desktop.token) {
+      session.headers = { "x-mola-viewer-token": desktop.token };
+    }
+    
+    return session;
   }
 
   async sendInput(): Promise<void> {

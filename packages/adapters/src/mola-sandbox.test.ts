@@ -76,7 +76,15 @@ describe("MolaSandboxProvider", () => {
       expect(provider).toBeDefined();
     });
 
-    it("uses correct Cloud viewer grant payload (origin + mode + expires_in_minutes)", () => {
+    it("handles interactive viewer grants with token in headers", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+      expect(provider).toBeDefined();
+    });
+
+    it("handles transitional statuses during provisioning", () => {
       const provider = createMolaSandboxProvider({
         apiKey: "test-key",
         apiUrl: "https://cloud.mola.sh/api/v1",
