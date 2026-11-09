@@ -115,6 +115,8 @@ x-app-environment: &app-environment
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
   RAKAZO_LOCAL_MODELS_API_KEY:
+  # Where a localhost model or speech URL goes: the computer running Docker.
+  RAKAZO_LOOPBACK_HOST: host.docker.internal
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
