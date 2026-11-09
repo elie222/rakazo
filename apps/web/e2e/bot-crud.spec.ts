@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   createBotFromPicker,
   openBotPanelTab,
@@ -148,7 +149,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(openWork).toHaveCount(0);
   const disabledTools = settings.getByLabel("Disable a tool");
   await expect(disabledTools).toBeVisible();
-  await disabledTools.selectOption("web_search");
+  await chooseOption(disabledTools, "Web search");
   await expect(settings.getByRole("button", { name: "Enable Web search" })).toBeVisible();
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
@@ -156,9 +157,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
   const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
   await replyMode.scrollIntoViewIfNeeded();
-  await expect(replyMode).toHaveValue("chat");
-  await replyMode.selectOption("messages");
-  await expect(replyMode).toHaveValue("messages");
+  await expect(replyMode).toContainText("Chat");
+  await chooseOption(replyMode, "Messages");
+  await expect(replyMode).toContainText("Messages");
   await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");

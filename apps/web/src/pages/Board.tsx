@@ -18,14 +18,13 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  NativeSelect,
-  NativeSelectOption,
   Textarea,
 } from "@rakazo/ui-web";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { AppSelect } from "../components/AppSelect";
 import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
@@ -303,55 +302,45 @@ function TicketDialog({
             <span>
               <Trans>Owner</Trans>
             </span>
-            <NativeSelect
+            <AppSelect
               className="w-full"
               id={`${formId}-owner`}
               value={owner}
-              onChange={(event) => setOwner(event.target.value)}
-              required
-            >
-              {bots.map((bot) => (
-                <NativeSelectOption key={bot.id} value={bot.id}>
-                  {bot.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+              onValueChange={setOwner}
+            />
           </label>
           {ticket ? (
             <label htmlFor={`${formId}-status`} className="block space-y-1 text-body">
               <span>
                 <Trans>Status</Trans>
               </span>
-              <NativeSelect
+              <AppSelect
                 className="w-full"
                 id={`${formId}-status`}
                 value={status}
-                onChange={(event) => setStatus(event.target.value as TicketStatus)}
-              >
-                {TICKET_STATUSES.map((value) => (
-                  <NativeSelectOption key={value} value={value}>
-                    {statuses[value]}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                options={TICKET_STATUSES.map((value) => ({
+                  value,
+                  label: statuses[value],
+                }))}
+                onValueChange={setStatus}
+              />
             </label>
           ) : null}
           <label htmlFor={`${formId}-priority`} className="block space-y-1 text-body">
             <span>
               <Trans>Priority</Trans>
             </span>
-            <NativeSelect
+            <AppSelect
               className="w-full"
               id={`${formId}-priority`}
               value={priority}
-              onChange={(event) => setPriority(event.target.value as TicketPriority)}
-            >
-              {TICKET_PRIORITIES.map((value) => (
-                <NativeSelectOption key={value} value={value}>
-                  {priorities[value]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={TICKET_PRIORITIES.map((value) => ({
+                value,
+                label: priorities[value],
+              }))}
+              onValueChange={setPriority}
+            />
           </label>
           <div className="flex justify-end">
             <Button type="submit" disabled={busy || !title.trim() || !owner}>

@@ -4,6 +4,7 @@ import type { Bot, Routine } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   openBotPanelTab,
   rpc,
@@ -93,7 +94,7 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await page.getByRole("button", { name: /Tokyo check-in/ }).click();
   await page.locator("label:has-text('Name') input").fill("Weekday check-in");
   await page.locator("label:has-text('Instruction') textarea").fill("Send the revised update");
-  await page.getByLabel("How often").selectOption("Weekdays");
+  await chooseOption(page.getByLabel("How often"), "Weekdays");
   const patch = await saveAndReturn(page, "routines/update");
   for (const column of ["modelProvider", "modelId", "thinkingLevel"])
     expect(patch).not.toHaveProperty(column);
@@ -142,7 +143,6 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
   const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
-  await expect(modelSelect).toHaveValue("");
   await expect(modelSelect).toContainText("Bot's model");
   await captureScreenshot(page, testInfo, "routine-model-picker");
 
@@ -168,7 +168,8 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   });
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
-  await modelSelect.selectOption("openai-compatible::llama-3.3-70b");
+  await modelSelect.click();
+  await page.getByRole("option").filter({ hasText: "llama-3.3-70b" }).click();
   await page.keyboard.press("Escape");
   expect(await saveAndReturn(page, "routines/update")).toMatchObject({
     modelProvider: "openai-compatible",
@@ -214,7 +215,10 @@ test("an email trigger claims the bot's address and saves who can start it", asy
   await name.fill(`triage-${stamp}`);
   await page.getByRole("button", { name: "Claim" }).click();
   await expect(page.getByText(`triage-${stamp}@bots.rakazo.test`)).toBeVisible();
-  await page.getByRole("combobox", { name: "Who can start it" }).selectOption("domain");
+  await chooseOption(
+    page.getByRole("combobox", { name: "Who can start it" }),
+    "Anyone at @rakazo.test",
+  );
   await captureScreenshot(page, testInfo, "routine-email-trigger");
 
   expect(await saveAndReturn(page, "routines/create")).toMatchObject({ emailSenders: "domain" });
@@ -413,7 +417,7 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
   await page.locator("label:has-text('Name') input").fill("Inbox watch");
   await page.locator("label:has-text('Instruction') textarea").fill("Summarize what arrived");
   await addScheduleTrigger(page, "Every day");
-  await expect(page.getByLabel("How often")).toHaveValue("Every day");
+  await expect(page.getByLabel("How often")).toContainText("Every day");
   await captureScreenshot(page, testInfo, "routine-watch-02-editor-scheduled");
 
   await page.getByRole("button", { name: "Add trigger" }).click();
@@ -431,25 +435,23 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
 
   const card = page.getByTestId("routine-watch-card");
   const kind = card.getByRole("combobox", { name: "What to watch" });
-  await expect(kind).toHaveValue("files");
+  await expect(kind).toContainText("Files or folders on the computer");
   await expect(card.getByRole("spinbutton", { name: "Check every" })).toHaveValue("15");
   await expect(card.getByRole("textbox", { name: "Files or folders, one per line" })).toBeEmpty();
   await captureScreenshot(page, testInfo, "routine-watch-04-empty-card");
-  // Native select popups are not captured by page screenshots; show each selected kind below.
-  await expect(kind).toHaveJSProperty("tagName", "SELECT");
   await card
     .getByRole("textbox", { name: "Files or folders, one per line" })
     .fill("inbox/\nreports/latest.csv");
   await captureScreenshot(page, testInfo, "routine-watch-06-files");
 
-  await kind.selectOption("command");
+  await chooseOption(kind, "A command's output");
   await card
     .getByRole("textbox", { name: "Command", exact: true })
     .fill("curl -s https://example.com/status.json");
   await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("status, updatedAt");
   await captureScreenshot(page, testInfo, "routine-watch-07-command");
 
-  await kind.selectOption("tool");
+  await chooseOption(kind, "An integration tool");
   await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("brain_changed");
   await card.getByRole("textbox", { name: "Tool arguments (JSON)" }).fill('{"path":"reports/"}');
   await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("id, modifiedTime");
@@ -462,7 +464,7 @@ test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page
   await page.getByRole("alert").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "routine-watch-09-validation");
 
-  await kind.selectOption("files");
+  await chooseOption(kind, "Files or folders on the computer");
   const interval = card.getByRole("spinbutton", { name: "Check every" });
   await expect(interval).toHaveAttribute("min", "5");
   await interval.fill("");

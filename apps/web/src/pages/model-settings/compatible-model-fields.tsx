@@ -9,9 +9,8 @@ import {
   Label,
   ListSearchInput,
   ModelThinkingOptions,
-  NativeSelect,
-  NativeSelectOption,
 } from "@rakazo/ui-web";
+import { AppSelect } from "../../components/AppSelect";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
 import { useListSearch } from "../../lib/use-list-search";
@@ -161,29 +160,24 @@ export function CompatibleModelFields({
       <div className="mt-4 block">
         <label className="block" htmlFor="model-protocol">
           <Trans>Protocol</Trans>
-          <NativeSelect
+          <AppSelect
             id="model-protocol"
             className="mt-2 w-full text-foreground"
             value={apiProtocol}
             disabled={busy}
-            onChange={(event) => {
+            aria-label={t`Protocol`}
+            options={[
+              { value: "chat-completions", label: t`Chat Completions` },
+              { value: "responses", label: t`Responses` },
+              { value: "anthropic-messages", label: t`Anthropic Messages` },
+            ]}
+            onValueChange={(next) => {
               selectionRevisionRef.current += 1;
-              updateApiProtocol(event.target.value as ModelSettingsState["apiProtocol"]);
+              updateApiProtocol(next);
               setError(null);
               setNotice(null);
             }}
-            aria-label={t`Protocol`}
-          >
-            <NativeSelectOption value="chat-completions">
-              <Trans>Chat Completions</Trans>
-            </NativeSelectOption>
-            <NativeSelectOption value="responses">
-              <Trans>Responses</Trans>
-            </NativeSelectOption>
-            <NativeSelectOption value="anthropic-messages">
-              <Trans>Anthropic Messages</Trans>
-            </NativeSelectOption>
-          </NativeSelect>
+          />
         </label>
       </div>
       {preflightTarget === "compatible" ? (
@@ -194,28 +188,23 @@ export function CompatibleModelFields({
           <Trans>Model</Trans>
         </span>
         {compatibleRows.includes(modelId) ? (
-          <NativeSelect
+          <AppSelect
             className="mt-2 w-full text-foreground"
             value={modelId}
-            onChange={(event) => {
+            aria-label={t`Models from server`}
+            options={[
+              ...defaultModelOptions.map((id) => ({ value: id, label: id })),
+              { value: "", label: t`Other model…` },
+            ]}
+            onValueChange={(next) => {
               cancelOAuthAttempt();
               selectionRevisionRef.current += 1;
               invalidatePreflight();
-              stageCompatibleModelId(event.target.value);
+              stageCompatibleModelId(next);
               setError(null);
               setNotice(null);
             }}
-            aria-label={t`Models from server`}
-          >
-            {defaultModelOptions.map((id) => (
-              <NativeSelectOption key={id} value={id}>
-                {id}
-              </NativeSelectOption>
-            ))}
-            <NativeSelectOption value="">
-              <Trans>Other model…</Trans>
-            </NativeSelectOption>
-          </NativeSelect>
+          />
         ) : (
           <Input
             value={modelId}

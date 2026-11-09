@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Switch, Textarea } from "@rakazo/ui-web";
+import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { Eye, GitBranch, Globe, Mail, MessageSquare, X } from "lucide-react";
 import { useId } from "react";
+import { AppSelect } from "../../components/AppSelect";
 import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { authClient } from "../../lib/auth";
 import type { RoutineWatchDraft } from "../../lib/routine-draft";
@@ -46,18 +47,17 @@ export function WatchTriggerCard({
         </Button>
       </div>
       <div className="mt-3 space-y-3">
-        <NativeSelect
+        <AppSelect
           size="sm"
           aria-label={t`What to watch`}
           value={watch.kind}
-          onChange={(event) =>
-            onChange({ ...watch, kind: event.target.value as RoutineWatchDraft["kind"] })
-          }
-        >
-          <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
-          <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
-          <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
-        </NativeSelect>
+          options={[
+            { value: "files", label: t`Files or folders on the computer` },
+            { value: "command", label: t`A command's output` },
+            { value: "tool", label: t`An integration tool` },
+          ]}
+          onValueChange={(kind) => onChange({ ...watch, kind })}
+        />
         {watch.kind === "files" ? (
           <Textarea
             aria-label={t`Files or folders, one per line`}
@@ -234,15 +234,16 @@ export function EmailTriggerCard({
         <div className="mt-2.5 space-y-2.5 text-body">
           <BotEmailAddressField bot={bot} domain={domain} address={address} />
           {ownerDomain ? (
-            <NativeSelect
+            <AppSelect
               aria-label={t`Who can start it`}
               className="w-full"
               value={senders}
-              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
-            >
-              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
-              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
-            </NativeSelect>
+              options={[
+                { value: "owner", label: t`Only me` },
+                { value: "domain", label: t`Anyone at @${ownerDomain}` },
+              ]}
+              onValueChange={onChange}
+            />
           ) : null}
         </div>
       ) : null}

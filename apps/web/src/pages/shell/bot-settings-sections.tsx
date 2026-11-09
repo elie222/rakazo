@@ -6,17 +6,10 @@ import {
   BUILTIN_TOOL_NAMES,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import {
-  Button,
-  NativeSelect,
-  NativeSelectOption,
-  SectionHeading,
-  Switch,
-  Textarea,
-  Toggle,
-} from "@rakazo/ui-web";
+import { Button, SectionHeading, Switch, Textarea, Toggle } from "@rakazo/ui-web";
 import { Download, Settings, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
+import { AppSelect } from "../../components/AppSelect";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { ChatModelPicker } from "./chat-model-picker";
 
@@ -172,21 +165,22 @@ export function ModelSection({
             className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
           >
             <Trans>Thinking</Trans>
-            <NativeSelect
+            <AppSelect
               id={`${ids}-thinking`}
               className="max-w-2/3"
               value={thinkingLevel}
-              onChange={(event) => onThinkingLevelChange(event.target.value)}
-            >
-              <NativeSelectOption value="">
-                {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-              </NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                {
+                  value: "",
+                  label: t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`,
+                },
+                ...thinkingOptions.map((level) => ({
+                  value: level,
+                  label: thinkingLevelLabel(level),
+                })),
+              ]}
+              onValueChange={onThinkingLevelChange}
+            />
           </label>
         ) : null}
       </div>
@@ -279,19 +273,16 @@ export function VoiceGroup({
           className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
         >
           <Trans>Voice</Trans>
-          <NativeSelect
+          <AppSelect
             id={`${ids}-voice`}
             className="max-w-2/3"
             value={voiceId}
-            onChange={(event) => onVoiceIdChange(event.target.value)}
-          >
-            <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
-            {voices.map((voice) => (
-              <NativeSelectOption key={voice.id} value={voice.id}>
-                {voice.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={[
+              { value: "", label: t`Account default` },
+              ...voices.map((voice) => ({ value: voice.id, label: voice.label })),
+            ]}
+            onValueChange={onVoiceIdChange}
+          />
         </label>
       ) : null}
     </BotPanelGroup>
@@ -371,17 +362,18 @@ export function RepliesGroup({
   const { t } = useLingui();
   return (
     <BotPanelGroup label={t`Replies`} plain>
-      <NativeSelect
+      <AppSelect
         id={`${ids}-reply-mode`}
         aria-label={t`Replies`}
         className="w-full"
         value={replyMode}
         disabled={saving}
-        onChange={(event) => onReplyModeChange(event.target.value as ReplyMode)}
-      >
-        <NativeSelectOption value="chat">{t`Chat`}</NativeSelectOption>
-        <NativeSelectOption value="messages">{t`Messages`}</NativeSelectOption>
-      </NativeSelect>
+        options={[
+          { value: "chat", label: t`Chat` },
+          { value: "messages", label: t`Messages` },
+        ]}
+        onValueChange={onReplyModeChange}
+      />
     </BotPanelGroup>
   );
 }
@@ -433,22 +425,21 @@ export function ToolsGroup({
       <section data-testid="bot-settings-tools">
         <div className="space-y-2 [&>*]:mt-0">
           <div>
-            <NativeSelect
+            <AppSelect
               id={`${ids}-disabled-tools`}
               aria-label={t`Disable a tool`}
               value=""
-              onChange={(event) => onDisable(event.target.value)}
               className="w-full"
-            >
-              <NativeSelectOption value="">{t`Disable a tool`}</NativeSelectOption>
-              {BUILTIN_TOOL_NAMES.filter((name) => !disabledBuiltinTools.includes(name)).map(
-                (name) => (
-                  <NativeSelectOption key={name} value={name}>
-                    {humanizeTool(name)}
-                  </NativeSelectOption>
+              options={[
+                { value: "", label: t`Disable a tool` },
+                ...BUILTIN_TOOL_NAMES.filter((name) => !disabledBuiltinTools.includes(name)).map(
+                  (name) => ({ value: name, label: humanizeTool(name) }),
                 ),
-              )}
-            </NativeSelect>
+              ]}
+              onValueChange={(name) => {
+                if (name) onDisable(name);
+              }}
+            />
           </div>
           {disabledBuiltinTools.map((toolName) => (
             <div

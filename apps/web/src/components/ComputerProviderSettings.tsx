@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerProviderSettings as Settings } from "@rakazo/contracts";
-import { Button, Field, FieldLabel, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import {
   Collapsible,
   CollapsibleContent,
@@ -9,6 +9,7 @@ import {
 import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { AppSelect } from "./AppSelect";
 import { SuccessPop } from "./ai/primitives";
 
 type Draft = { provider: string; values: Record<string, string> };
@@ -95,6 +96,15 @@ export function ComputerProviderSettings({
   };
   async function save() {
     if (!draft || pending) return;
+    const missing = settings?.providers
+      .find((provider) => provider.id === draft.provider)
+      ?.fields.find(
+        (field) => field.kind === "select" && field.required && !draft.values[field.key],
+      );
+    if (missing) {
+      setError(t`${fieldLabel(missing)} is required`);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -130,24 +140,24 @@ export function ComputerProviderSettings({
             <FieldLabel htmlFor={selectId}>
               <Trans>New computers run on</Trans>
             </FieldLabel>
-            <NativeSelect
+            <AppSelect
               id={selectId}
               value={draft.provider}
-              onChange={(event) =>
+              className="w-full"
+              options={[
+                { value: "default", label: t`Default` },
+                ...settings.providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.displayName,
+                })),
+              ]}
+              onValueChange={(provider) =>
                 set({
-                  provider: event.target.value,
-                  values: event.target.value === settings.provider ? settings.values : {},
+                  provider,
+                  values: provider === settings.provider ? settings.values : {},
                 })
               }
-              className="w-full"
-            >
-              <NativeSelectOption value="default">{t`Default`}</NativeSelectOption>
-              {settings.providers.map((provider) => (
-                <NativeSelectOption key={provider.id} value={provider.id}>
-                  {provider.displayName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            />
           </Field>
           {descriptor?.fields.map((field) => {
             const saved =
@@ -163,19 +173,18 @@ export function ComputerProviderSettings({
             return field.kind === "select" ? (
               <Field key={field.key}>
                 <FieldLabel htmlFor={`${selectId}-${field.key}`}>{fieldLabel(field)}</FieldLabel>
-                <NativeSelect
+                <AppSelect
                   id={`${selectId}-${field.key}`}
                   value={draft.values[field.key] ?? ""}
-                  onChange={(event) => change(event.target.value)}
-                  required={field.required}
-                >
-                  <NativeSelectOption value="" />
-                  {field.options?.map((option) => (
-                    <NativeSelectOption key={option.value} value={option.value}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  options={[
+                    { value: "", label: "" },
+                    ...(field.options ?? []).map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    })),
+                  ]}
+                  onValueChange={change}
+                />
               </Field>
             ) : (
               <TextField

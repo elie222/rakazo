@@ -1,6 +1,13 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, createNamedBot, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  createNamedBot,
+  rpc,
+  signup,
+} from "./helpers";
 
 /** Match activity rows by their aria-label. */
 function activityRow(page: Page, botName: string) {
@@ -116,7 +123,7 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await filtersButton.focus();
   await page.keyboard.press("Enter");
   await expect(filtersButton).toHaveAttribute("aria-expanded", "true");
-  await page.getByTestId("activity-status-filter").selectOption("running");
+  await chooseOption(page.getByTestId("activity-status-filter"), "Running");
   await expect(aside.getByTestId("activity-filter-indicator")).toBeVisible();
   await captureActivitySidebar(page, testInfo, "58b-activity-now-filters");
   await filtersButton.click();
@@ -174,7 +181,7 @@ test("sidebar Working and Recent surface active and terminal runs", async ({ pag
   await expect(activityRow(page, "Chief")).toBeVisible();
 
   await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByTestId("activity-status-filter").selectOption("failed");
+  await chooseOption(page.getByTestId("activity-status-filter"), "Failed");
   await expect(aside.getByText("No runs match these filters.")).toBeVisible();
   await expect(activityRow(page, "Chief")).toHaveCount(0);
   await page.getByTestId("activity-reset-filters").click();

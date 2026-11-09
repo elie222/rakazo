@@ -11,8 +11,6 @@ import {
   GroupAvatar,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
@@ -20,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
+import { AppSelect } from "../components/AppSelect";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
   activityFiltersActive,
@@ -271,25 +270,20 @@ function ActivityFilters({
               <Label htmlFor={statusId} className="text-body-sm text-muted-foreground/80">
                 <Trans>Status</Trans>
               </Label>
-              <NativeSelect
+              <AppSelect
                 id={statusId}
                 data-testid="activity-status-filter"
                 value={filters.status}
-                onChange={(event) =>
-                  onChange({
-                    ...filters,
-                    status: event.target.value as ActivityListFilters["status"],
-                  })
-                }
                 className="mt-1 w-full"
-              >
-                <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
-                {STATUS_FILTERS.map((status) => (
-                  <NativeSelectOption key={status} value={status}>
-                    {statusLabel(status)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                options={[
+                  { value: "all", label: t`All statuses` },
+                  ...STATUS_FILTERS.map((status) => ({
+                    value: status,
+                    label: statusLabel(status),
+                  })),
+                ]}
+                onValueChange={(status) => onChange({ ...filters, status })}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0">

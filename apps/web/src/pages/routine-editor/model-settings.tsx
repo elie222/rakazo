@@ -1,16 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { credentialForModel } from "@rakazo/core";
-import {
-  Button,
-  NativeSelect,
-  NativeSelectOption,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@rakazo/ui-web";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AppSelect } from "../../components/AppSelect";
 import {
   connectedModelOptions,
   parseModelOptionKey,
@@ -83,26 +77,19 @@ export function RoutineModelSettings({
       <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
         <label htmlFor={`${fieldId}-model`} className="block text-body text-muted-foreground">
           <Trans>Model</Trans>
-          <NativeSelect
+          <AppSelect
             id={`${fieldId}-model`}
             className="mt-2 w-full"
             value={draft.modelKey}
-            onChange={(event) =>
-              onChange({ ...draft, modelKey: event.target.value, thinkingLevel: "" })
-            }
-          >
-            <NativeSelectOption value="">{t`Bot's model`}</NativeSelectOption>
-            {draft.modelKey && !modelOptions.some((option) => option.key === draft.modelKey) ? (
-              <NativeSelectOption value={draft.modelKey}>
-                {selectedModel?.modelId ?? draft.modelKey}
-              </NativeSelectOption>
-            ) : null}
-            {modelOptions.map((option) => (
-              <NativeSelectOption key={option.key} value={option.key}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={[
+              { value: "", label: t`Bot's model` },
+              ...(draft.modelKey && !modelOptions.some((option) => option.key === draft.modelKey)
+                ? [{ value: draft.modelKey, label: selectedModel?.modelId ?? draft.modelKey }]
+                : []),
+              ...modelOptions.map((option) => ({ value: option.key, label: option.label })),
+            ]}
+            onValueChange={(modelKey) => onChange({ ...draft, modelKey, thinkingLevel: "" })}
+          />
         </label>
 
         {thinkingOptions.length ? (
@@ -111,21 +98,22 @@ export function RoutineModelSettings({
             className="mt-5 block text-body text-muted-foreground"
           >
             <Trans>Thinking</Trans>
-            <NativeSelect
+            <AppSelect
               id={`${fieldId}-thinking`}
               className="mt-2 w-full"
               value={draft.thinkingLevel}
-              onChange={(event) => onChange({ ...draft, thinkingLevel: event.target.value })}
-            >
-              <NativeSelectOption value="">
-                {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-              </NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={[
+                {
+                  value: "",
+                  label: t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`,
+                },
+                ...thinkingOptions.map((level) => ({
+                  value: level,
+                  label: thinkingLevelLabel(level),
+                })),
+              ]}
+              onValueChange={(thinkingLevel) => onChange({ ...draft, thinkingLevel })}
+            />
           </label>
         ) : null}
       </PopoverContent>

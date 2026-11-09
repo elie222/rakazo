@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { NativeSelect, NativeSelectOption, Spinner } from "@rakazo/ui-web";
+import { Spinner } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AppSelect } from "../components/AppSelect";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { rpc } from "../lib/rpc";
 
@@ -40,18 +41,13 @@ export function IntegrationSetupPage() {
     <div className="min-h-full bg-background px-6 py-12">
       <div className="mx-auto max-w-[560px]">
         {bots.length > 1 ? (
-          <NativeSelect
+          <AppSelect
             aria-label={t`Bot`}
             value={botId}
-            onChange={(event) => setBotId(event.target.value)}
             className="mb-6 w-full"
-          >
-            {bots.map((bot) => (
-              <NativeSelectOption key={bot.id} value={bot.id}>
-                {bot.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+            onValueChange={setBotId}
+          />
         ) : null}
         {ready ? (
           <IntegrationSetup

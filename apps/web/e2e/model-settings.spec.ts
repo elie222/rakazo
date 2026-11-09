@@ -5,6 +5,7 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
@@ -266,11 +267,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
     await page.getByRole("button", { name: "Use a found model" }).click();
     const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
-    await discoveredModels.selectOption("");
+    await expect(discoveredModels).toContainText(LOCAL_MODEL_ID);
+    await chooseOption(discoveredModels, "Other model…");
     await expect(page.getByLabel("Model id")).toBeVisible();
     await page.getByRole("button", { name: "Find models" }).click();
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
+    await expect(discoveredModels).toContainText(LOCAL_MODEL_ID);
     await expect(page.getByText("Found 2 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
@@ -343,23 +344,12 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     // The Model select sits inside its wrapping <label>, so the label text includes
     // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
     const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
-    await expect(botModel.locator("option")).toContainText([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
-    await botModel.selectOption(`openai-compatible::${SECOND_MODEL_ID}`);
-    // Native select popups are outside Playwright's screenshots. Render the
-    // same options as an expanded native list for the CI screenshot, then restore.
-    // An expanded select is a listbox, so keep a role-independent handle.
-    const botModelSelect = settings.locator(`[id="${await botModel.getAttribute("id")}"]`);
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = select.options.length;
-      select.style.height = "auto";
-    });
-    await botModelSelect.scrollIntoViewIfNeeded();
+    await botModel.click();
+    await expect(page.getByRole("option").filter({ hasText: LOCAL_MODEL_ID })).toBeVisible();
+    await expect(page.getByRole("option").filter({ hasText: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = 0;
-      select.style.removeProperty("height");
-    });
-    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
+    await page.getByRole("option").filter({ hasText: SECOND_MODEL_ID }).click();
+    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );

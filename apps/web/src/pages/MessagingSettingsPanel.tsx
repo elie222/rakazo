@@ -8,8 +8,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  NativeSelect,
-  NativeSelectOption,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +15,7 @@ import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "../components/AppSelect";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { providerLabel } from "../lib/messaging";
 import { useSpaceQueries } from "../lib/query";
@@ -234,20 +233,15 @@ export function MessagingSettingsPanel() {
 
   const botPicker =
     bots.length > 1 ? (
-      <NativeSelect
+      <AppSelect
         aria-label={t`Bot`}
         value={linkBotId}
-        onChange={(event) => {
-          setSelectedBotId(event.target.value);
+        options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+        onValueChange={(id) => {
+          setSelectedBotId(id);
           setLinkRequest(null);
         }}
-      >
-        {bots.map((bot) => (
-          <NativeSelectOption key={bot.id} value={bot.id}>
-            {bot.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+      />
     ) : null;
 
   const memberLinkControls = (

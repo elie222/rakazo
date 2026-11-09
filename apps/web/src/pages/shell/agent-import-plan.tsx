@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
-  AgentImportMemoryDestination,
   AgentImportPlan,
   AgentImportSkipReason,
   AgentImportStatus,
@@ -9,7 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { looksLikeCredential } from "@rakazo/core";
-import { Button, Checkbox, Input, Label, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Button, Checkbox, Input, Label } from "@rakazo/ui-web";
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,6 +16,7 @@ import {
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { AppSelect } from "../../components/AppSelect";
 import { ComputerModePicker } from "./bot-settings-sections";
 import { useImportStatusText } from "./import-status";
 import type { AgentImportSource } from "./use-agent-import-source";
@@ -222,21 +222,22 @@ export function AgentImportPlanReview({
                 ),
                 entry.content,
                 <>
-                  <NativeSelect
+                  <AppSelect
                     size="sm"
                     aria-label={t`Memory for ${title}`}
                     value={destination}
                     disabled={unchecked.has(entry.id)}
-                    onChange={(event) =>
+                    options={[
+                      { value: "bot", label: t`This bot` },
+                      { value: "space", label: t`All bots` },
+                    ]}
+                    onValueChange={(next) =>
                       setDestinations((current) => ({
                         ...current,
-                        [entry.id]: event.target.value as AgentImportMemoryDestination,
+                        [entry.id]: next,
                       }))
                     }
-                  >
-                    <NativeSelectOption value="bot">{t`This bot`}</NativeSelectOption>
-                    <NativeSelectOption value="space">{t`All bots`}</NativeSelectOption>
-                  </NativeSelect>
+                  />
                   {entry.containsKey || entry.stock
                     ? note(
                         [entry.containsKey ? keyNote : null, entry.stock ? defaultNote : null]

@@ -13,9 +13,6 @@ import {
   FieldLabel,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
-  OptionSelect,
   SectionHeading,
   Switch,
   ToggleGroup,
@@ -33,6 +30,7 @@ import type { RefObject } from "react";
 import { useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
+import { AppSelect } from "../components/AppSelect";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
 import { ComputerProviderSettings } from "../components/ComputerProviderSettings";
@@ -362,20 +360,18 @@ export function GeneralSettingsPanels({
                 </span>
               }
               control={
-                <NativeSelect
+                <AppSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
                   value={timezone ?? deviceTimezone}
                   disabled={timezonePending}
-                  onChange={(event) => void chooseTimezone(event.target.value)}
+                  onValueChange={(zone) => void chooseTimezone(zone)}
                   className="w-56 max-w-full"
-                >
-                  {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone.replaceAll("_", " ")}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  options={timezoneOptions(timezone ?? deviceTimezone).map((zone) => ({
+                    value: zone,
+                    label: zone.replaceAll("_", " "),
+                  }))}
+                />
               }
             >
               {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
@@ -835,7 +831,7 @@ function UiLocalePicker({
 }) {
   const { t } = useLingui();
   return (
-    <OptionSelect
+    <AppSelect
       className="w-56 max-w-full"
       data-testid="ui-locale-select"
       aria-label={t`Language`}

@@ -19,8 +19,6 @@ import {
 import {
   Button,
   Input,
-  NativeSelect,
-  NativeSelectOption,
   SectionHeading,
   Select,
   SelectContent,
@@ -32,6 +30,7 @@ import {
 } from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
+import { AppSelect } from "../components/AppSelect";
 import { SuccessPop } from "../components/ai/primitives";
 import { errorText } from "../lib/user-error";
 
@@ -177,27 +176,19 @@ export function ExternalConversationSettings({
                     <span className="min-w-0 truncate text-body text-foreground">
                       {sender.name}
                     </span>
-                    <NativeSelect
+                    <AppSelect
                       size="sm"
                       aria-label={t`${sender.name} handling`}
                       value={policy.mode}
-                      onChange={(event) =>
-                        updatePolicies((current) =>
-                          withSenderMode(
-                            current,
-                            sender,
-                            event.target.value as AutomatedSenderPolicyMode,
-                          ),
-                        )
-                      }
                       className="max-w-[165px]"
-                    >
-                      {AUTOMATED_SENDER_MODES.map((value) => (
-                        <NativeSelectOption key={value} value={value}>
-                          {senderModeLabels[value]}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
+                      options={AUTOMATED_SENDER_MODES.map((value) => ({
+                        value,
+                        label: senderModeLabels[value],
+                      }))}
+                      onValueChange={(mode) =>
+                        updatePolicies((current) => withSenderMode(current, sender, mode))
+                      }
+                    />
                   </div>
                   {policy.mode === "rollup" ? (
                     <label
