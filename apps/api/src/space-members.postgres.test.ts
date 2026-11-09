@@ -26,7 +26,7 @@ import { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 const webOrigin = "https://app.example.test";
 
