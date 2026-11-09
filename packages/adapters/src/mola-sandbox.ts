@@ -42,10 +42,31 @@ const MOLA_READY_TIMEOUT_MS = 5 * 60_000;
 const MOLA_POLL_MS = 2_000;
 const MOLA_API_TIMEOUT_MS = 30_000;
 const MOLA_HANDLE_PROBE_MS = 60_000;
+const MOLA_DEFAULT_VIEWER_ORIGIN = "https://app.rakazo.com";
 
 const log = getLogger();
 
 type MolaApiMode = "cloud" | "selfhosted";
+
+function getViewerOrigin(): string {
+  const override = process.env.MOLA_VIEWER_ORIGIN?.trim();
+  if (override) {
+    try {
+      const url = new URL(override);
+      if (url.protocol !== "https:") {
+        throw new Error("MOLA_VIEWER_ORIGIN must use HTTPS");
+      }
+      if (url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("MOLA_VIEWER_ORIGIN must be an origin (scheme + host only, no path)");
+      }
+      return `${url.protocol}//${url.host}`;
+    } catch (error) {
+      log.warn("Invalid MOLA_VIEWER_ORIGIN, using default", { error });
+      return MOLA_DEFAULT_VIEWER_ORIGIN;
+    }
+  }
+  return MOLA_DEFAULT_VIEWER_ORIGIN;
+}
 
 interface MolaMachine {
   id: string;
@@ -138,7 +159,7 @@ export class MolaSandboxProvider implements SandboxProvider {
         graphical: true,
         pty: false,
         snapshots: false,
-        takeover: false,
+        takeover: true,
         persistentHome: false,
         multiScreen: false,
       },
@@ -236,7 +257,7 @@ export class MolaSandboxProvider implements SandboxProvider {
       const response = await this.request(`/computers/${machineId}/viewers`, {
         method: "POST",
         body: {
-          origin: "https://rakazo.app",
+          origin: getViewerOrigin(),
           mode: "desktop",
           expires_in_minutes: 60,
         },
