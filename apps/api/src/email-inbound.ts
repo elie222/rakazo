@@ -190,6 +190,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     }
     getLogger().info("inbound email saved without a run", {
       reason: ineligible ?? "sender not allowed",
+      ...(email.unauthenticatedReason
+        ? { unauthenticatedReason: email.unauthenticatedReason }
+        : {}),
       ...dropped,
     });
     return { ok: true as const, saved: true, skipped: ineligible ?? "sender not allowed" };

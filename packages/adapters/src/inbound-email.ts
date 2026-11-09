@@ -8,6 +8,9 @@ export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
 /** DKIM signatures checked per message; mail carrying more is never verified. */
 export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
 
+/** How old a message may be when its signature leaves its recipients out. */
+export const INBOUND_EMAIL_UNSIGNED_RECIPIENTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 /** Body text handed to the bot; longer mail is cut here. */
 export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
 
@@ -33,6 +36,8 @@ export type InboundEmail = {
    * From, To, Cc and Subject field, so that domain vouches for the sender, recipients and subject.
    */
   authenticated: boolean;
+  /** Why it isn't authenticated, for logs; null when it is. */
+  unauthenticatedReason: string | null;
   /** Not authenticated only because a DKIM key lookup failed for now; worth trying again later. */
   temporaryFailure: boolean;
   to: string[];
@@ -48,7 +53,7 @@ export type InboundEmail = {
 /** Parse a raw RFC 5322 message and check its DKIM signatures. */
 export async function readInboundEmail(
   raw: Uint8Array,
-  options: { resolver?: InboundEmailResolver } = {},
+  options: { resolver?: InboundEmailResolver; now?: Date } = {},
 ): Promise<InboundEmail> {
   // Loaded only on servers that receive email.
   const [{ default: PostalMime }, { dkimVerify }] = await Promise.all([
@@ -91,28 +96,49 @@ export async function readInboundEmail(
   // An extra To, Cc or Subject added above the signed one would be read but not verified.
   const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1 && fieldCount("subject") <= 1;
   const fromDomain = fromAddress?.slice(fromAddress.lastIndexOf("@") + 1);
+  const now = (options.now ?? new Date()).getTime();
+  const sentAt = fieldCount("date") === 1 && email.date ? Date.parse(email.date) : Number.NaN;
+  const recent =
+    sentAt > now - INBOUND_EMAIL_UNSIGNED_RECIPIENTS_MAX_AGE_MS && sentAt < now + 60 * 60 * 1000;
+  const fromDomainPasses = (dkim?.results ?? []).filter(
+    (result) =>
+      result.status.result === "pass" &&
+      // Exactly the From domain: a subdomain (often run by a sending service) would align too.
+      result.signingDomain?.toLowerCase() === fromDomain &&
+      // l= leaves trailing body bytes unsigned; anything could be appended there.
+      (result.status.underSized ?? 0) === 0 &&
+      result.signatureTimeValid !== false,
+  );
   const signature =
     fromAddress === null || !singleFields
       ? undefined
-      : dkim?.results.find((result) => {
-          const status = result.status;
-          // Exactly the From domain: a subdomain (often run by a sending service) would align too.
-          if (status.result !== "pass" || result.signingDomain?.toLowerCase() !== fromDomain) {
-            return false;
-          }
-          // l= leaves trailing body bytes unsigned; anything could be appended there.
-          if ((status.underSized ?? 0) > 0 || result.signatureTimeValid === false) return false;
+      : fromDomainPasses.find((result) => {
           const signed = new Set(
             (result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()),
           );
+          const recipientsSigned =
+            (fieldCount("to") === 0 || signed.has("to")) &&
+            (fieldCount("cc") === 0 || signed.has("cc"));
           return (
             signed.has("from") &&
-            (fieldCount("to") === 0 || signed.has("to")) &&
-            (fieldCount("cc") === 0 || signed.has("cc")) &&
             // The owner's mail is taken as instructions, subject included.
-            (fieldCount("subject") === 0 || signed.has("subject"))
+            (fieldCount("subject") === 0 || signed.has("subject")) &&
+            // Microsoft 365 never signs To or Cc. A signed, recent Date stands in, so only the
+            // owner's mail from the last day, not all they ever sent, could be replayed to the bot.
+            (recipientsSigned || (signed.has("date") && recent))
           );
         });
+  const unauthenticatedReason = signature
+    ? null
+    : !dkim
+      ? "too many signatures"
+      : fromAddress === null
+        ? "no single valid From"
+        : !singleFields
+          ? "repeated To, Cc or Subject"
+          : fromDomainPasses.length === 0
+            ? "no valid signature from the sender's domain"
+            : "signature leaves out required headers";
 
   // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
   const automated =
@@ -174,6 +200,7 @@ export async function readInboundEmail(
       ...new Set([...messageIds(email.references), ...messageIds(email.inReplyTo)]),
     ].slice(-MAX_REFERENCES),
     authenticated: signature !== undefined,
+    unauthenticatedReason,
     // Only the From domain's own signature decides; another domain's slow DNS changes nothing.
     temporaryFailure:
       signature === undefined &&
@@ -186,7 +213,7 @@ export async function readInboundEmail(
     to,
     cc,
     subject: email.subject?.trim() ?? "",
-    // Date is not required to be signed, so cut it like any other unverified header.
+    // Date is not always signed, so cut it like any other unverified header.
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,

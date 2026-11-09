@@ -216,8 +216,31 @@ describe("readInboundEmail", () => {
       { resolver },
     );
 
-    expect(toUnsigned.authenticated).toBe(false);
+    expect(toUnsigned).toMatchObject({
+      authenticated: false,
+      unauthenticatedReason: "signature leaves out required headers",
+    });
     expect(injected.authenticated).toBe(false);
+  });
+
+  it("authenticates recent mail whose signature covers its Date but not its recipients", async () => {
+    // How Microsoft 365 signs: no To or Cc.
+    const raw = bytes(
+      await signed(message(plain), "example.test", "From:Date:Subject:Message-ID:MIME-Version"),
+    );
+    const sent = Date.parse("2026-11-05T10:00:00Z");
+    const read = (hoursLater: number) =>
+      readInboundEmail(raw, { resolver, now: new Date(sent + hoursLater * 3_600_000) });
+
+    expect(await read(1)).toMatchObject({ authenticated: true, unauthenticatedReason: null });
+    expect((await read(25)).authenticated).toBe(false);
+    expect((await read(-2)).authenticated).toBe(false);
+
+    const dateUnsigned = await readInboundEmail(
+      bytes(await signed(message(plain), "example.test", "From:Subject:Message-ID")),
+      { resolver, now: new Date(sent) },
+    );
+    expect(dateUnsigned.authenticated).toBe(false);
   });
 
   it("does not authenticate a subject the signature leaves out or one added on top", async () => {
