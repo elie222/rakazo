@@ -21,8 +21,8 @@ supportedArchitectures:
     - arm64
 
 overrides:
-  react: 19.2.3
-  react-dom: 19.2.3
+  react: 19.2.9
+  react-dom: 19.2.9
   proxy-addr@<2.0.8: 2.0.8
   dompurify@<3.4.17: 3.4.17
   ws@>=8 <8.21.1: 8.22.0
@@ -37,6 +37,7 @@ overrides:
   body-parser@>=2 <2.4.0: 2.4.0
   follow-redirects@<1.16.2: 1.16.2
   ip-address@<10.7.1: 10.7.1
+  react-server-dom-webpack@<19.2.9: 19.2.9
 
 patchedDependencies:
   app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
@@ -58,3 +59,24 @@ allowBuilds:
   cpu-features: false
   protobufjs: false
   ssh2: false
+minimumReleaseAgeExclude:
+  - "@rolldown/binding-android-arm-eabi@1.2.18"
+  - "@rolldown/binding-android-arm64@1.2.18"
+  - "@rolldown/binding-darwin-arm64@1.2.18"
+  - "@rolldown/binding-darwin-x64@1.2.18"
+  - "@rolldown/binding-freebsd-x64@1.2.18"
+  - "@rolldown/binding-linux-arm-gnueabihf@1.2.18"
+  - "@rolldown/binding-linux-arm64-gnu@1.2.18"
+  - "@rolldown/binding-linux-arm64-musl@1.2.18"
+  - "@rolldown/binding-linux-ppc64-gnu@1.2.18"
+  - "@rolldown/binding-linux-s390x-gnu@1.2.18"
+  - "@rolldown/binding-linux-x64-gnu@1.2.18"
+  - "@rolldown/binding-linux-x64-musl@1.2.18"
+  - "@rolldown/binding-openharmony-arm64@1.2.18"
+  - "@rolldown/binding-win32-arm64-msvc@1.2.18"
+  - "@rolldown/binding-win32-x64-msvc@1.2.18"
+  - "@vitejs/plugin-react@6.3.0"
+  - posthog-js@1.447.4
+  - rolldown@1.2.18
+  - vite@8.3.7
+  - ws@8.22.2
