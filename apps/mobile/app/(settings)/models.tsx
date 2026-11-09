@@ -166,7 +166,11 @@ export default function Models() {
       if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
-        name: entry.providerName ?? entry.provider,
+        // The compatible entry is the generic third-party door, not one vendor.
+        name:
+          entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? t("Third-party access")
+            : (entry.providerName ?? entry.provider),
       });
     }
     const all = [...grouped.values()];
@@ -177,7 +181,7 @@ export default function Models() {
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog]);
+  }, [catalog, t]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {

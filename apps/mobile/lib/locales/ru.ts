@@ -1579,6 +1579,9 @@ export const RU_MESSAGES: Record<string, string> = {
     "Скоро здесь можно будет создать друга со своим характером, голосом и внешностью и говорить с ним. Пока настраивать нечего — это просто предпросмотр.",
   "Message or hold to talk…": "Напишите или удерживайте, чтобы говорить...",
   "Computer operation float window": "Плавающее окно операций компьютера",
+  "Third-party access": "Сторонний доступ",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Для серверов, совместимых с Anthropic, используйте адрес без /v1.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

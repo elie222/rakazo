@@ -9,6 +9,7 @@ import {
   connectionDisplayName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  effectiveAuthMode,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   matchCompatibleEndpointPreset,
@@ -251,7 +252,8 @@ export default function ModelConnection() {
       : undefined;
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    : (endpointPreset?.name ??
+      (provider === OPENAI_COMPATIBLE_PROVIDER_ID ? t("Third-party access") : providerName));
   useLayoutEffect(() => {
     if (selectedProviderLabel) navigation.setOptions({ title: selectedProviderLabel });
   }, [navigation, selectedProviderLabel]);
@@ -303,6 +305,13 @@ export default function ModelConnection() {
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
+    // Anthropic Messages authenticates with x-api-key. Move the auth method with the protocol
+    // only while it is still the previous protocol's default, so an explicit choice is kept.
+    setAuthMode((current) =>
+      current === effectiveAuthMode(undefined, apiProtocol)
+        ? effectiveAuthMode(undefined, nextProtocol)
+        : current,
+    );
     setThinkingLevel(
       clampCatalogThinkingLevel(
         thinkingLevel,

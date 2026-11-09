@@ -1551,6 +1551,9 @@ export const DE_MESSAGES: Record<string, string> = {
     "Bald kannst du hier einen Begleiter mit eigener Persönlichkeit, Stimme und Aussehen erstellen und mit ihm sprechen. Noch gibt es nichts einzurichten — das ist nur eine Vorschau.",
   "Message or hold to talk…": "Nachricht schreiben oder zum Sprechen gedrückt halten...",
   "Computer operation float window": "Schwebendes Fenster für Computervorgänge",
+  "Third-party access": "Zugriff von Drittanbietern",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Für Anthropic-kompatible Server die Adresse ohne /v1 verwenden.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

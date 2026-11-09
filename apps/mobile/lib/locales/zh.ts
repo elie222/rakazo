@@ -1543,6 +1543,9 @@ export const ZH_MESSAGES: Record<string, string> = {
     "以后可以在这里创建属于你的虚拟伙伴：自定义性格、声音和形象，再和它语音聊天。现在还不能创建，这里只是提前占个位置。",
   "Message or hold to talk…": "发消息或按住说话...",
   "Computer operation float window": "电脑操作悬浮窗",
+  "Third-party access": "第三方接入",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Anthropic 兼容服务请使用不带 /v1 的地址。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

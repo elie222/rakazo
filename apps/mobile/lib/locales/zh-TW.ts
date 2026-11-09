@@ -1538,6 +1538,9 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "以後可以在這裡建立屬於你的虛擬夥伴：自訂性格、聲音和形象，再和它語音聊天。現在還不能建立，這裡只是提前佔個位置。",
   "Message or hold to talk…": "傳送訊息或按住說話...",
   "Computer operation float window": "電腦操作懸浮窗",
+  "Third-party access": "第三方接入",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Anthropic 相容服務請使用不帶 /v1 的位址。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

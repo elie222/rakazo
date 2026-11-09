@@ -199,6 +199,11 @@ export function CompatibleEndpointForm({
           />
         </View>
       </MenuPickerMenu>
+      {apiProtocol === "anthropic-messages" ? (
+        <Text style={styles.hint}>
+          {t("For Anthropic-compatible servers, use the address without /v1.")}
+        </Text>
+      ) : null}
       <MenuPickerMenu
         label={t("Auth method")}
         choices={authModeChoices}

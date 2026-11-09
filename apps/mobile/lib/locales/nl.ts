@@ -1539,6 +1539,9 @@ export const NL_MESSAGES: Record<string, string> = {
     "Binnenkort kun je hier een metgezel maken met een eigen persoonlijkheid, stem en uiterlijk, en met hem praten. Er valt nog niets in te stellen — dit is slechts een voorbeeld.",
   "Message or hold to talk…": "Stuur een bericht of houd ingedrukt om te praten...",
   "Computer operation float window": "Zwevend venster voor computerbediening",
+  "Third-party access": "Toegang van derden",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Gebruik voor Anthropic-compatibele servers het adres zonder /v1.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

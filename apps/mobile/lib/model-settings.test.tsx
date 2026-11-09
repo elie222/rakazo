@@ -385,6 +385,22 @@ it("offers deployment-funded providers and Ollama Cloud once among providers to 
   ]);
 });
 
+it("lists the generic third-party door as “Third-party access” among providers to add", async () => {
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  const add = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Add provider",
+  );
+  expect(add).toBeDefined();
+  await act(async () => add!.click());
+  const route = push.mock.calls.at(-1)?.[0] as { params: { requestId: string } };
+  const choices = modelPickerRequest(route.params.requestId)!.choices ?? [];
+  expect(choices.map((choice) => choice.label)).toContain("Third-party access");
+  expect(choices.map((choice) => choice.label)).not.toContain("openai-compatible");
+  expect(choices.map((choice) => choice.label)).not.toContain("OpenAI-compatible");
+});
+
 it("does not offer Ollama Cloud again once it is the saved connection", async () => {
   saved.baseUrl = "https://ollama.com/";
   try {
@@ -586,6 +602,20 @@ function currentProtocol(): string | undefined {
   );
 }
 
+const AUTH_LABELS = ["Authorization: Bearer", "x-api-key", "Both", "None"] as const;
+
+function authMenu() {
+  return container.querySelector('div[aria-label="Auth method"]')!;
+}
+
+function authChoice(label: string) {
+  return [...authMenu().querySelectorAll("button")].find((button) => button.textContent === label)!;
+}
+
+function currentAuthMode(): string | undefined {
+  return AUTH_LABELS.find((label) => authChoice(label).getAttribute("aria-pressed") === "true");
+}
+
 const EFFORT_LABELS = ["Default", "Minimal", "Low", "Medium", "High", "Extra high", "Max"];
 
 /** The reasoning-effort choice the picker marks current, when reasoning is on. */
@@ -634,6 +664,36 @@ it("offers the wire protocol on the compatible form and sends the saved choice",
   } finally {
     saved.apiProtocol = undefined;
   }
+});
+
+it("moves auth to x-api-key when the protocol switches to Anthropic Messages", async () => {
+  expect(currentProtocol()).toBe("Chat Completions");
+  expect(currentAuthMode()).toBe("Authorization: Bearer");
+  await act(async () => protocolChoice("Anthropic Messages").click());
+  expect(currentProtocol()).toBe("Anthropic Messages");
+  expect(currentAuthMode()).toBe("x-api-key");
+  await saveConnection();
+  expect(rpcCalls.find(([procedure]) => procedure === "models/connect")?.[1]).toMatchObject({
+    provider: "openai-compatible",
+    apiProtocol: "anthropic-messages",
+    authMode: "x-api-key",
+  });
+});
+
+it("keeps an explicit auth choice when the protocol switches", async () => {
+  await act(async () => authChoice("Both").click());
+  expect(currentAuthMode()).toBe("Both");
+  await act(async () => protocolChoice("Anthropic Messages").click());
+  expect(currentProtocol()).toBe("Anthropic Messages");
+  expect(currentAuthMode()).toBe("Both");
+});
+
+it("shows the no-/v1 hint for Anthropic Messages only", async () => {
+  expect(container.textContent).not.toContain("without /v1");
+  await act(async () => protocolChoice("Anthropic Messages").click());
+  expect(container.textContent).toContain("without /v1");
+  await act(async () => protocolChoice("Chat Completions").click());
+  expect(container.textContent).not.toContain("without /v1");
 });
 
 it("keeps the chosen protocol when the endpoint changes", async () => {

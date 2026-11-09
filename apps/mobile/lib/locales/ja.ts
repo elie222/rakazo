@@ -1572,6 +1572,9 @@ export const JA_MESSAGES: Record<string, string> = {
     "ここで自分だけの性格・声・見た目を持つパートナーを作り、話しかけられるようになります。まだ設定はできません。これはプレビューです。",
   "Message or hold to talk…": "メッセージを送るか、長押しで話す...",
   "Computer operation float window": "コンピューター操作のフローティングウィンドウ",
+  "Third-party access": "サードパーティ接続",
+  "For Anthropic-compatible servers, use the address without /v1.":
+    "Anthropic 互換サーバーの場合は、/v1 を含まないアドレスを使ってください。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };
