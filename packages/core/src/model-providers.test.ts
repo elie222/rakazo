@@ -6,10 +6,13 @@ import {
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
+  connectionChoiceKey,
   connectionMaxTokensField,
+  connectionModelChoices,
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
+  parseConnectionChoiceKey,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
@@ -556,5 +559,63 @@ describe("connectionMaxTokensField", () => {
     expect(connectionMaxTokensField("openai-compatible", 8_000)).toBe("8000");
     expect(connectionMaxTokensField("anthropic", undefined)).toBe("");
     expect(connectionMaxTokensField("anthropic", 2_000)).toBe("2000");
+  });
+});
+
+describe("connectionModelChoices", () => {
+  const entry = (provider: string, id: string) => ({
+    provider,
+    id,
+    label: id,
+    providerName: provider === "anthropic" ? "Anthropic" : "xAI",
+  });
+  const catalog = [entry("anthropic", "opus"), entry("xai", "grok")];
+  const anthropic = (id: string, label: string) => ({ id, label, provider: "anthropic" });
+
+  it("lists a model under each connection of a provider that has several", () => {
+    const choices = connectionModelChoices(
+      [anthropic("sub", "Claude subscription"), anthropic("api", "API key")],
+      catalog,
+    );
+    expect(
+      choices.map(({ key, credentialId, providerLabel }) => [key, credentialId, providerLabel]),
+    ).toEqual([
+      ["sub@@anthropic::opus", "sub", "Claude subscription"],
+      ["api@@anthropic::opus", "api", "API key"],
+    ]);
+  });
+
+  it("leaves a provider with one connection as it was", () => {
+    const [choice, ...rest] = connectionModelChoices([anthropic("sub", "Claude")], catalog);
+    expect(rest).toEqual([]);
+    expect(choice).toMatchObject({ key: "anthropic::opus", providerLabel: "Anthropic" });
+    expect(choice?.credentialId).toBeUndefined();
+  });
+
+  it("keeps a connection's own enabled models apart from the other connection's", () => {
+    const connection = (id: string, enabledModelIds: string[]) => ({
+      id,
+      label: id,
+      provider: "openai-compatible",
+      enabledModelIds,
+    });
+    const keys = connectionModelChoices(
+      [connection("kourier", ["a", "shared"]), connection("synthetic", ["shared"])],
+      [],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual([
+      "kourier@@openai-compatible::a",
+      "kourier@@openai-compatible::shared",
+      "synthetic@@openai-compatible::shared",
+    ]);
+  });
+
+  it("round-trips a key, and reads a plain key whose model id contains the separator", () => {
+    expect(parseConnectionChoiceKey(connectionChoiceKey("sub", "anthropic::opus"))).toEqual({
+      credentialId: "sub",
+      modelKey: "anthropic::opus",
+    });
+    expect(parseConnectionChoiceKey("xai::a@@b")).toEqual({ modelKey: "xai::a@@b" });
+    expect(parseConnectionChoiceKey("")).toEqual({ modelKey: "" });
   });
 });

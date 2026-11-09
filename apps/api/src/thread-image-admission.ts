@@ -4,7 +4,7 @@ import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveModel,
-  findConnectedModelCredential,
+  findConnectedBotModelCredential,
   knownModelImageInput,
   modelAcceptsImageInput,
   modelIdSupportsImages,
@@ -17,7 +17,12 @@ import {
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { appliedModelRole, findModelCredential, findModelCredentialById } from "@rakazo/db";
+import {
+  appliedModelRole,
+  findBotModelCredential,
+  findModelCredential,
+  findModelCredentialById,
+} from "@rakazo/db";
 
 type ModelChoice = {
   modelProvider: string | null;
@@ -56,14 +61,21 @@ export async function assertThreadImageInput(
   const overrideCredential =
     override.modelProvider && override.modelId
       ? configuration
-        ? await findConnectedModelCredential(
+        ? await findConnectedBotModelCredential(
             prisma,
             configuration.secrets,
             actor,
+            botId,
             override.modelProvider,
             override.modelId,
           )
-        : await findModelCredential(prisma, actor, override.modelProvider, override.modelId)
+        : await findBotModelCredential(
+            prisma,
+            actor,
+            botId,
+            override.modelProvider,
+            override.modelId,
+          )
       : null;
   const selected = selectConfiguredModel({
     override,

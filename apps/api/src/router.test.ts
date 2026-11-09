@@ -5891,10 +5891,22 @@ describe("model disconnect", () => {
     secretId: `${id}-secret`,
   });
 
+  type PinnedBot = {
+    provider: string;
+    modelId: string;
+    bot: { name: string; modelProvider: string | null; modelId: string | null };
+  };
+  const pinnedBot = (name: string, botModelId = "gpt-x"): PinnedBot => ({
+    provider: "openai-codex",
+    modelId: "gpt-x",
+    bot: { name, modelProvider: "openai-codex", modelId: botModelId },
+  });
+
   function disconnectDeps() {
     const connections = [connection("personal"), connection("work")];
     const tx = {
       $queryRaw: vi.fn(async () => [{ bypass: null }]),
+      userBotModelConnection: { findMany: vi.fn(async () => [] as PinnedBot[]) },
       userModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
       spaceModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
       userModelCredential: {
@@ -5931,6 +5943,40 @@ describe("model disconnect", () => {
       );
     return { tx, cancelProvider, call };
   }
+
+  it("refuses removing a connection a bot runs on while another remains", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([pinnedBot("Ada")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: "In use by Ada. Pick another connection for them first." },
+    });
+    expect(tx.userModelCredential.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("ignores a choice left behind by a bot that moved to another model", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([pinnedBot("Ada", "gpt-y")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(200);
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalled();
+  });
+
+  it("allows removing the provider's last connection", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userModelCredential.findMany.mockResolvedValue([connection("work")]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(200);
+    expect(tx.userBotModelConnection.findMany).not.toHaveBeenCalled();
+  });
 
   it("removes one connection and its rows, keeping the other account's", async () => {
     const { tx, cancelProvider, call } = disconnectDeps();
@@ -8125,6 +8171,7 @@ describe("openai-compatible enabled models", () => {
     userId?: string;
     role?: string;
     position?: number;
+    modelConnections?: { provider: string; modelId: string; credentialId: string }[];
   };
   type PinWhere = {
     spaceId?: string;
@@ -8195,7 +8242,8 @@ describe("openai-compatible enabled models", () => {
       })),
     ];
     return {
-      bots: (where: PinWhere) => matching(options.bots, where),
+      bots: (where: PinWhere) =>
+        matching(options.bots, where).map((row) => ({ modelConnections: [], ...row })),
       routine: {
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
           matching(options.routines, where),
@@ -8321,9 +8369,17 @@ describe("openai-compatible enabled models", () => {
     }
     const pins = pinStores(options);
     const bot = botRow(options.botModelId ?? options.defaultModel);
+    const botModelConnection = {
+      findUnique: vi.fn(async () => null),
+      upsert: vi.fn(async () => ({})),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    };
     const prisma = {
       ...pins,
+      userBotModelConnection: botModelConnection,
       $queryRaw: vi.fn(async () => []),
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
@@ -8424,8 +8480,11 @@ describe("openai-compatible enabled models", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-      const payload = (await response.json()) as { json: { message?: string } };
-      return { status: response.status, message: payload.json.message };
+      const payload = (await response.json()) as {
+        json: { message?: string; credentialId?: string | null; pinned?: boolean };
+      };
+      const { message, credentialId, pinned } = payload.json;
+      return { status: response.status, message, credentialId, pinned };
     };
     const enabledInDto = () =>
       modelCredentialDto(
@@ -8600,6 +8659,78 @@ describe("openai-compatible enabled models", () => {
     expect(result).toEqual({ status: 400, message: refusal("Ada") });
     expect(secrets.put).not.toHaveBeenCalled();
     expect(state.credential).toEqual(initialCredential);
+  });
+
+  it("refuses dropping a model from the connection a bot was put on", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [
+        {
+          name: "Ada",
+          modelId: "m-b",
+          modelConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-compat" }],
+        },
+      ],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      credentialId: "cred-compat",
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+  });
+
+  it("saves a bot's connection with its model", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelConnectionId: "cred-compat" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    const pin = { provider: compatible, modelId: "X", credentialId: "cred-compat" };
+    expect(prisma.userBotModelConnection.upsert).toHaveBeenCalledWith({
+      where: { userId_botId: { userId: actor.userId, botId: "bot-1" } },
+      create: { userId: actor.userId, botId: "bot-1", ...pin },
+      update: pin,
+    });
+  });
+
+  it("refuses a bot's connection that does not serve its model", async () => {
+    const { call, prisma, state } = fixture({
+      plaintext: secretText(["Y"]),
+      defaultModel: "Y",
+      botModelId: "X",
+    });
+    state.credential.userPreferences = [];
+
+    const result = await call("bots/update", { botId: "bot-1", modelConnectionId: "cred-compat" });
+
+    expect(result.status).toBe(400);
+    expect(prisma.userBotModelConnection.upsert).not.toHaveBeenCalled();
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+  });
+
+  it("reports the connection running a bot's model and whether it was chosen", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+    prisma.userBotModelConnection.findUnique.mockResolvedValue({
+      provider: compatible,
+      modelId: "X",
+      credentialId: "cred-compat",
+    } as never);
+
+    await expect(call("bots/modelConnection", { botId: "bot-1" })).resolves.toMatchObject({
+      status: 200,
+      credentialId: "cred-compat",
+      pinned: true,
+    });
   });
 
   it("accepts the same key replacement when the client lists the pinned id", async () => {

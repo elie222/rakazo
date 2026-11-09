@@ -26,7 +26,14 @@ async function compatibleModelPins(
       Promise.all([
         deps.prisma.bot.findMany({
           where: { ...where, archivedAt: null, modelProvider: provider },
-          select: { ...pin, name: true },
+          select: {
+            ...pin,
+            name: true,
+            modelConnections: {
+              where: { userId: actor.userId },
+              select: { provider: true, modelId: true, credentialId: true },
+            },
+          },
         }),
         deps.prisma.routine.findMany({
           where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
@@ -44,7 +51,16 @@ async function compatibleModelPins(
       ]),
   );
   return {
-    named: [...bots, ...routines],
+    named: [
+      // A bot's model runs on the connection its member chose for it.
+      ...bots.map(({ modelConnections, ...bot }) => ({
+        ...bot,
+        credentialId: modelConnections.find(
+          (row) => row.provider === provider && row.modelId === bot.modelId,
+        )?.credentialId,
+      })),
+      ...routines,
+    ],
     backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
   };
 }

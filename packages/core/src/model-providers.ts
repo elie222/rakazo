@@ -341,6 +341,61 @@ export function connectedModelChoices(
   });
 }
 
+/** A choice tied to one connection, when its provider has several. */
+export type ConnectionModelChoice = ConnectedModelChoice & { credentialId?: string };
+
+const CONNECTION_KEY_SEPARATOR = "@@";
+
+export function connectionChoiceKey(credentialId: string, modelKey: string): string {
+  return `${credentialId}${CONNECTION_KEY_SEPARATOR}${modelKey}`;
+}
+
+/** Splits a picker key; a model id may itself contain the separator, after the provider's `::`. */
+export function parseConnectionChoiceKey(key: string): {
+  credentialId?: string;
+  modelKey: string;
+} {
+  const separator = key.indexOf(CONNECTION_KEY_SEPARATOR);
+  const model = key.indexOf("::");
+  if (separator <= 0 || (model >= 0 && model < separator)) return { modelKey: key };
+  return {
+    credentialId: key.slice(0, separator),
+    modelKey: key.slice(separator + CONNECTION_KEY_SEPARATOR.length),
+  };
+}
+
+/**
+ * The models to offer one bot. A provider with several connections is listed once per
+ * connection, under that connection's name, so choosing a model also chooses what runs it.
+ */
+export function connectionModelChoices(
+  credentials: readonly (CredentialModelRef & { id: string })[],
+  catalog: readonly CatalogModelRef[],
+): ConnectionModelChoice[] {
+  const provider = (entry: { provider: string }) => canonicalPiProviderId(entry.provider);
+  const counts = new Map<string, number>();
+  for (const credential of credentials)
+    counts.set(provider(credential), (counts.get(provider(credential)) ?? 0) + 1);
+  const several = (entry: { provider: string }) => (counts.get(provider(entry)) ?? 0) > 1;
+  const separate = credentials.filter(several).flatMap((credential) =>
+    connectedModelChoices(
+      [credential],
+      catalog.filter((entry) => provider(entry) === provider(credential)),
+    ).map((choice) => ({
+      ...choice,
+      key: connectionChoiceKey(credential.id, choice.key),
+      credentialId: credential.id,
+      label: withConnectionName(choice.modelLabel ?? choice.modelId, credential.label),
+      providerLabel: credential.label,
+    })),
+  );
+  const shared = connectedModelChoices(
+    credentials.filter((credential) => !several(credential)),
+    catalog,
+  );
+  return [...separate, ...shared.filter((choice) => !several(choice))];
+}
+
 export type ChatModelChoice = {
   key: string;
   label: string;

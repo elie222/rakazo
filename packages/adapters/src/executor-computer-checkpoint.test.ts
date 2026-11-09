@@ -16,6 +16,10 @@ vi.mock("./model-selection.js", async (importOriginal) => ({
     id: "main-account",
     provider,
   })),
+  findConnectedBotModelCredential: vi.fn(async (_prisma, _secrets, _scope, _botId, provider) => ({
+    id: "main-account",
+    provider,
+  })),
 }));
 
 vi.mock("./model-roles.js", async (importOriginal) => ({
@@ -284,6 +288,7 @@ function fixture(runId = "run-1") {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Update shared state" })),
     },
     connection: { findMany: vi.fn(async () => []) },
+    userBotModelConnection: { findUnique: vi.fn(async () => null) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role?: string } }) =>

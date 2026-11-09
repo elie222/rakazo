@@ -73,6 +73,7 @@ model User {
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   modelRoleChoices            UserModelRoleChoice[]
   modelPreferences            UserModelPreference[]
+  botModelConnections         UserBotModelConnection[]
   voicePreferences            UserVoicePreference[]
   approvalRules               UserActionApprovalRule[]
   autoReviewPreference        UserActionAutoReviewPreference?
@@ -836,6 +837,7 @@ model UserModelCredential {
   roleChoices SpaceModelRoleChoice[]
   userPreferences UserModelPreference[]
   userRoleChoices UserModelRoleChoice[]
+  botConnections UserBotModelConnection[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -956,6 +958,7 @@ model Bot {
   memoryScope       String?
   parent            Bot?              @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
   children          Bot[]             @relation("BotChildren")
+  modelConnections  UserBotModelConnection[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   thread            Thread?           @relation("BotThread")
@@ -2615,6 +2618,27 @@ model UserModelPreference {
 
   @@id([userId, credentialId])
   @@map("user_model_preferences")
+}
+
+/// Which of a member's connections runs a bot's model for that member. Connections belong to one
+/// member while a bot is shared in a Space, so this is not a column on Bot. It applies only while
+/// the bot is still on this provider and model.
+model UserBotModelConnection {
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot                 @relation(fields: [botId], references: [id], onDelete: Cascade)
+  provider     String
+  modelId      String
+  credentialId String
+  credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@id([userId, botId])
+  @@index([botId])
+  @@index([credentialId, userId])
+  @@map("user_bot_model_connections")
 }
 
 /// The member's account-wide voice per voice connection; one is the default.

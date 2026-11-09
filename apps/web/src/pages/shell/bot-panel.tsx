@@ -11,9 +11,11 @@ import type {
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   chatModelChoices,
-  connectedModelChoices,
+  connectionChoiceKey,
+  connectionModelChoices,
   credentialForModel,
   modelOptionKey,
+  parseConnectionChoiceKey,
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
@@ -106,6 +108,7 @@ export function BotSettings({
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
+    modelConnectionId?: string;
     thinkingLevel?: ThinkingLevel | null;
     disabledBuiltinTools?: string[];
   }) => Promise<void>;
@@ -189,6 +192,15 @@ export function BotSettings({
     credentialsQuery.data !== undefined &&
     catalogQuery.data !== undefined &&
     meQuery.data !== undefined;
+  const connectionQuery = useQuery({
+    ...queries.bots.modelConnection.queryOptions({ input: { botId: bot.id } }),
+    enabled: Boolean(bot.modelProvider && bot.modelId),
+    ...refresh,
+  });
+  const [pendingConnection, setPendingConnection] = useState<string | null>(null);
+  const connectionChanged =
+    pendingConnection !== null &&
+    (pendingConnection !== connectionQuery.data?.credentialId || !connectionQuery.data?.pinned);
   const [saving, setSaving] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
   const advancedSnapshot = JSON.stringify([
@@ -202,6 +214,7 @@ export function BotSettings({
   const dirty =
     name.trim() !== savedNameRef.current.trim() ||
     advancedSnapshot !== savedAdvanced ||
+    connectionChanged ||
     description.trim() !== savedDescriptionRef.current;
   const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
@@ -256,7 +269,7 @@ export function BotSettings({
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
-  const connectedOptions = connectedModelChoices(credentials, catalog);
+  const connectedOptions = connectionModelChoices(credentials, catalog);
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
@@ -271,9 +284,19 @@ export function BotSettings({
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
     : undefined;
+  // A provider with several connections lists each one; show the one that runs this model now.
+  const runningConnection = connectionQuery.data?.credentialId ?? null;
+  const shownConnection = pendingConnection ?? runningConnection;
+  const connectionKey =
+    shownConnection && selectedModelKey
+      ? connectionChoiceKey(shownConnection, selectedModelKey)
+      : "";
+  const pickerValue = connectedOptions.some((option) => option.key === connectionKey)
+    ? connectionKey
+    : selectedModelKey;
   const modelChoices = chatModelChoices(
     connectedOptions,
-    selectedModelKey,
+    pickerValue,
     t`Space default`,
     defaultEntry?.images,
   );
@@ -362,6 +385,7 @@ export function BotSettings({
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
+        ...(pendingConnection ? { modelConnectionId: pendingConnection } : {}),
         ...(modelMetaReady &&
         (thinkingOptions.length > 0 ||
           (selected?.provider ?? null) !== bot.modelProvider ||
@@ -410,6 +434,10 @@ export function BotSettings({
         avatarSet: nextAvatarSet,
         notifyOnFinish: nextNotify,
       };
+      if (pendingConnection) {
+        await connectionQuery.refetch();
+        setPendingConnection(null);
+      }
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;
       setSavedAdvanced(
@@ -577,10 +605,12 @@ export function BotSettings({
               containerRef={modelRef}
               onOpenConnections={onOpenConnections}
               choices={modelChoices}
-              value={selectedModelKey}
+              value={pickerValue}
               onModelChange={(key) => {
-                setModelKey(key);
-                setThinkingLevel("");
+                const { credentialId, modelKey: nextModelKey } = parseConnectionChoiceKey(key);
+                setPendingConnection(credentialId ?? null);
+                setModelKey(nextModelKey);
+                if (nextModelKey !== selectedModelKey) setThinkingLevel("");
               }}
               thinkingOptions={thinkingOptions}
               thinkingLevel={thinkingLevel}

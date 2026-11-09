@@ -5,6 +5,7 @@ import {
   archiveBot,
   checkpointAndStopComputer,
   defaultVaultItemTitle,
+  findConnectedBotModelCredential,
   forgetBotSecret,
   forgetPageShareSecrets,
   hasActiveComputerControl,
@@ -20,6 +21,7 @@ import {
   storeBotSecret,
   toComputerRef,
   validateBotModelChange,
+  validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -33,6 +35,7 @@ import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/c
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
+  botModelConnectionId,
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
@@ -424,6 +427,25 @@ export function botsRoutes(ctx: RouterContext) {
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
+        let modelConnection: Parameters<typeof commitBotUpdate>[0]["modelConnection"];
+        if (input.modelConnectionId) {
+          const provider =
+            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
+          const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
+          if (!provider || !modelId)
+            throw new ORPCError("BAD_REQUEST", { message: "Pick a model for this bot first" });
+          const credentialId = input.modelConnectionId;
+          const refusal = await validateConnectedModelChoice(
+            deps.prisma,
+            deps.secrets,
+            context.actor,
+            provider,
+            modelId,
+            { credentialId, codexCatalog: botModelValidation(context.actor).codexCatalog },
+          );
+          if (refusal) throw new ORPCError("BAD_REQUEST", { message: refusal });
+          modelConnection = { userId: context.actor.userId, provider, modelId, credentialId };
+        }
         if (!existing.thread) throw new IsolationError();
         // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
         const avatarSetPinned =
@@ -448,6 +470,7 @@ export function botsRoutes(ctx: RouterContext) {
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
+          modelConnection,
           data: {
             name: input.name,
             description: input.description,
@@ -496,6 +519,23 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
         return bot;
+      }),
+      modelConnection: authed.bots.modelConnection.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const { modelProvider: provider, modelId } = await repos.getBot(actor, input.botId);
+        if (!provider || !modelId) return { credentialId: null, pinned: false };
+        const [credential, pin] = await Promise.all([
+          findConnectedBotModelCredential(
+            deps.prisma,
+            deps.secrets,
+            actor,
+            input.botId,
+            provider,
+            modelId,
+          ),
+          botModelConnectionId(deps.prisma, actor, input.botId, provider, modelId),
+        ]);
+        return { credentialId: credential?.id ?? null, pinned: Boolean(pin) };
       }),
       restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

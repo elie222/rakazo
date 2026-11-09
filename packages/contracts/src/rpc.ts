@@ -601,6 +601,10 @@ export const appContract = {
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
+    /** The connection that runs this bot's model for the caller, and whether they chose it. */
+    modelConnection: oc
+      .input(botId)
+      .output(z.object({ credentialId: Id.nullable(), pinned: z.boolean() })),
     restoreInstructions: oc
       .input(
         z.object({

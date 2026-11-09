@@ -35,6 +35,7 @@ function fixture(group = false) {
         ]),
     },
     bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1", ...model }) },
+    userBotModelConnection: { findUnique: vi.fn(async () => null) },
     userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
     userModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
     spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },

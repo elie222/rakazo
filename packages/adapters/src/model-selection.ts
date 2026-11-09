@@ -8,6 +8,7 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  botModelConnectionId,
   chooseModelCredential,
   findModelCredential,
   findModelCredentialById,
@@ -527,6 +528,20 @@ export type ConnectedModelResolution = {
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
 };
+
+/** A bot's model on the connection this member chose for it, or else on the usual one. */
+export async function findConnectedBotModelCredential(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  botId: string,
+  provider: string,
+  modelId?: string | null,
+): Promise<ModelCredential> {
+  return findConnectedModelCredential(prisma, secretStore, actor, provider, modelId, {
+    credentialId: await botModelConnectionId(prisma, actor, botId, provider, modelId),
+  });
+}
 
 /** Keep space/model ownership first, then use another connection that explicitly enables the id. */
 export async function findConnectedModelCredential(

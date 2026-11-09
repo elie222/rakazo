@@ -33,6 +33,7 @@ import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
+  findConnectedBotModelCredential,
   findConnectedModelCredential,
   hasHostedModelCredits,
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -514,7 +515,7 @@ export async function resolveRunModel(
     botId?: string;
   },
 ): Promise<AgentRunRequest["model"]> {
-  // The bot's model is shared config; the credential that runs it stays the run user's.
+  // The bot's model is shared config; the connection that runs it stays the run user's choice.
   const override = scope.botId
     ? await deps.prisma.bot.findFirst({
         where: { id: scope.botId, spaceId: scope.spaceId },
@@ -524,10 +525,11 @@ export async function resolveRunModel(
   const hasOverride = Boolean(override?.modelProvider && override.modelId);
   const [overrideCredential, main, settings] = await Promise.all([
     hasOverride
-      ? findConnectedModelCredential(
+      ? findConnectedBotModelCredential(
           deps.prisma,
           deps.secretStore,
           scope,
+          scope.botId!,
           override!.modelProvider!,
           override!.modelId,
         )

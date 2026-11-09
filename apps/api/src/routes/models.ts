@@ -624,6 +624,36 @@ export function modelsRoutes(ctx: RouterContext) {
               if (input.credentialId && existing.length === 0) return;
               const ids = existing.map((row) => row.id);
               const lastConnection = existing.length === connections.length;
+              // Removing one of several connections would silently move these bots onto another.
+              if (!lastConnection) {
+                const pinned = await runAsSystemInTransaction(
+                  tx,
+                  "bots using a model connection in every Space",
+                  () =>
+                    tx.userBotModelConnection.findMany({
+                      where: {
+                        userId: context.actor.userId,
+                        credentialId: { in: ids },
+                        bot: { archivedAt: null },
+                      },
+                      select: {
+                        provider: true,
+                        modelId: true,
+                        bot: { select: { name: true, modelProvider: true, modelId: true } },
+                      },
+                    }),
+                );
+                const names = pinned
+                  .filter(
+                    (pin) =>
+                      pin.provider === pin.bot.modelProvider && pin.modelId === pin.bot.modelId,
+                  )
+                  .map((pin) => pin.bot.name);
+                if (names.length > 0)
+                  throw new ORPCError("BAD_REQUEST", {
+                    message: `In use by ${[...new Set(names)].join(", ")}. Pick another connection for them first.`,
+                  });
+              }
               const roleRows = {
                 userId: context.actor.userId,
                 provider,
