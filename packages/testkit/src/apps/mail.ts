@@ -233,14 +233,14 @@ export class MailEmulator extends AppEmulator {
             .toLowerCase()
             .includes(text),
         );
+      // "me" is the account itself, never a substring of someone else's name or address.
       case "from":
-        return any(
-          (m) => people([m.from]) || (text === "me" && address(m.from) === this.account.email),
+        return any((m) =>
+          text === "me" ? address(m.from) === this.account.email : people([m.from]),
         );
       case "to":
-        return any(
-          (m) =>
-            people(m.to) || (text === "me" && m.to.some((t) => address(t) === this.account.email)),
+        return any((m) =>
+          text === "me" ? m.to.some((t) => address(t) === this.account.email) : people(m.to),
         );
       case "cc":
         return any((m) => people(m.cc));
@@ -278,6 +278,12 @@ export class MailEmulator extends AppEmulator {
 
   /** Rejects what the search cannot evaluate before any thread is filtered. */
   private parseQuery(query: string) {
+    // Grouping isn't supported; refuse it rather than search for the literal brackets.
+    if (/[(){}]/.test(query.replace(/"[^"]*"/g, "")))
+      throw new AppError(
+        "invalid_argument",
+        "Grouping with brackets is not supported; use OR between single terms instead.",
+      );
     const terms = queryTerms(query);
     for (const { key, text } of terms) {
       if (key === undefined) continue;

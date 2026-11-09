@@ -48,6 +48,13 @@ describe("mail emulator", () => {
     }
     // A quoted OR is part of the phrase, not an operator.
     expect(ok(mail.call("search_threads", { query: '"PO-4419 OR PO-4480"' })).threads).toEqual([]);
+    // Brackets are refused, not searched for literally.
+    expect(mail.call("search_threads", { query: "(PO-4419 OR PO-4480) newer_than:7d" }).ok).toBe(
+      false,
+    );
+    // "me" is the account, not any sender whose name contains "me" (e.g. Lumen).
+    const fromMe = ok(mail.call("search_threads", { query: "from:me" })).threads;
+    expect(fromMe.every((t: { from?: string }) => !/lumen/i.test(JSON.stringify(t)))).toBe(true);
 
     const first = ok(mail.call("search_threads", { query: "", max_results: 5 }));
     expect(first.threads).toHaveLength(5);
