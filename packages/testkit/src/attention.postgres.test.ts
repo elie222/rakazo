@@ -297,6 +297,36 @@ describeAttention("attention.list", () => {
 
     expect(result.items.some((item) => item.kind === "failed")).toBe(false);
   });
+
+  it("names every overdue routine in one item per bot", async () => {
+    const cookie = await signup(app, `attention-routines-${stamp}@rakazo.test`, "Routines User");
+    const bot = await createBot(app, cookie, "Routines Bot");
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const base = {
+      spaceId: thread.spaceId,
+      botId: bot.id,
+      userId: thread.userId,
+      threadId: thread.id,
+      prompt: "Send the update",
+      crons: ["30 7 * * *"],
+      timezone: "UTC",
+      active: true,
+      notify: true,
+    };
+    await prisma.routine.createMany({
+      data: [
+        { ...base, name: "Morning brief", nextRunAt: new Date(Date.now() - 120 * 60_000) },
+        { ...base, name: "Weekly report", nextRunAt: new Date(Date.now() - 60 * 60_000) },
+      ],
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+    const routines = result.items.filter((item) => item.kind === "routine_delayed");
+
+    expect(routines).toHaveLength(1);
+    expect(routines[0]!.detail).toContain("Morning brief");
+    expect(routines[0]!.detail).toContain("Weekly report");
+  });
 });
 
 async function createBot(app: App, cookie: string, name: string) {

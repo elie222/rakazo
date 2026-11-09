@@ -310,13 +310,23 @@ export async function listAttentionItems(
     );
   }
 
+  // One item per bot keeps the inbox calm, but it names every overdue routine so none hides.
+  const delayedByBot = new Map<
+    string,
+    { routine: RoutineRow; thread: RoutineThread; names: string[] }
+  >();
   for (const routine of routines as RoutineRow[]) {
     if (busyBots.has(routine.botId)) continue;
     const nextRunAt = routine.nextRunAt?.getTime() ?? null;
     if (!routineScheduleDelayed({ active: true, nextRunAt }, now.getTime())) continue;
     const thread = routineThread(routine);
     if (!thread) continue;
-    busyBots.add(routine.botId);
+    const seen = delayedByBot.get(routine.botId);
+    if (seen) seen.names.push(routine.name);
+    else delayedByBot.set(routine.botId, { routine, thread, names: [routine.name] });
+  }
+
+  for (const { routine, thread, names } of delayedByBot.values()) {
     items.push({
       id: `routine:${routine.id}`,
       kind: "routine_delayed",
@@ -328,7 +338,7 @@ export async function listAttentionItems(
       runId: null,
       routineId: routine.id,
       messageId: null,
-      detail: routine.name,
+      detail: detailText(names.join(", ")),
       createdAt: (routine.nextRunAt ?? now).toISOString(),
       actions: [],
     });
