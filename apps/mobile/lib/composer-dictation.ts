@@ -1,7 +1,7 @@
 import { AiConsentBlocked, recognitionLocaleTag } from "@rakazo/core";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import { captureApiRequestContext, rpc } from "./api";
 import { recordClip, transcribeClip } from "./call-session";
 import { loadDeviceVoiceEnabled } from "./device-voice";
@@ -31,6 +31,7 @@ export function useComposerDictation({
 }) {
   const { t } = useI18n();
   const router = useRouter();
+  const navigation = useNavigation();
   const [status, setStatus] = useState<ComposerDictationStatus>("idle");
   const session = useRef<Session | null>(null);
   const onWordsRef = useRef(onWords);
@@ -54,6 +55,18 @@ export function useComposerDictation({
     if (disabled) cancel();
   }, [disabled]);
   useEffect(() => cancel, []);
+  // A hidden composer must not keep listening: leaving the chat or the app drops the session
+  // and its audio. Inactive is left alone, since a permission prompt makes the app inactive.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("blur", cancel);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "background") cancel();
+    });
+    return () => {
+      unsubscribe();
+      appState.remove();
+    };
+  }, [navigation]);
 
   async function start(mine: Session) {
     const plan = await resolveVoiceCallPlan({
