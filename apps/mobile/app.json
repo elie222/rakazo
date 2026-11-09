@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Rakazo",
+    "name": "Rakazo mickvvw",
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
@@ -59,7 +59,7 @@
         {
           "ios": {
             "enabled": true,
-            "appGroupId": "group.com.rakazo.app",
+            "appGroupId": "group.com.rakazo.app.mickvvw",
             "activationRule": {
               "supportsText": true,
               "supportsWebUrlWithMaxCount": 1,
@@ -102,7 +102,7 @@
       "pl": "./locales/pl.json"
     },
     "ios": {
-      "bundleIdentifier": "com.rakazo.app",
+      "bundleIdentifier": "com.rakazo.app.mickvvw",
       "buildNumber": "1",
       "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
@@ -125,7 +125,7 @@
       }
     },
     "android": {
-      "package": "com.rakazo.app",
+      "package": "com.rakazo.app.mickvvw",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
@@ -142,25 +142,24 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e",
         "build": {
           "experimental": {
             "ios": {
               "appExtensions": [
                 {
                   "targetName": "RakazoWidgets",
-                  "bundleIdentifier": "com.rakazo.app.widgets"
+                  "bundleIdentifier": "com.rakazo.app.mickvvw.widgets"
                 },
                 {
                   "targetName": "expo-sharing-extension",
-                  "bundleIdentifier": "com.rakazo.app.expo-sharing-extension",
+                  "bundleIdentifier": "com.rakazo.app.mickvvw.expo-sharing-extension",
                   "entitlements": {
-                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                    "com.apple.security.application-groups": ["group.com.rakazo.app.mickvvw"]
                   }
                 },
                 {
                   "targetName": "AgentNotifications",
-                  "bundleIdentifier": "com.rakazo.app.notifications",
+                  "bundleIdentifier": "com.rakazo.app.mickvvw.notifications",
                   "entitlements": {
                     "com.apple.developer.usernotifications.communication": true
                   }
@@ -173,9 +172,6 @@
     },
     "runtimeVersion": {
       "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e"
     }
   }
 }
