@@ -446,12 +446,13 @@ export function ModelCreditsSettings({
   const { t, i18n } = useLingui();
   const recurring =
     status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
-  // Only a live plan keeps a retired amount; a new checkout must pick an offered one.
-  const [amount, setAmount] = useState<HeldCreditAmount>(
+  const [chosenAmount, setChosenAmount] = useState<CreditAmount | null>(null);
+  // Follows the plan until the owner picks an offered amount; only a live plan keeps a retired one.
+  const amount: HeldCreditAmount =
+    chosenAmount ??
     (recurring ? HeldCreditAmountSchema : ModelCreditAmountSchema)
       .catch(DEFAULT_MONTHLY_CREDIT_AMOUNT)
-      .parse(status.monthlyAmountCents),
-  );
+      .parse(status.monthlyAmountCents);
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
@@ -793,7 +794,13 @@ export function ModelCreditsSettings({
             <Trans>Monthly credits</Trans>
           </h3>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <CreditAmountSelect monthly value={amount} onChange={setAmount} />
+            <CreditAmountSelect
+              monthly
+              value={amount}
+              onChange={(next) =>
+                setChosenAmount(ModelCreditAmountSchema.safeParse(next).data ?? null)
+              }
+            />
             <Button
               variant="secondary"
               disabled={
