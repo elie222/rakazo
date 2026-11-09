@@ -1,4 +1,3 @@
-// Added Mola sandbox provider information for marketing site
 import { homepage } from "./shared.js";
 import type { Sandbox } from "./types.js";
 
@@ -6,7 +5,7 @@ export const mola: Sandbox = {
   name: "Mola",
   slug: "mola",
   runsOn: "Ubuntu VM (KVM)",
-  keeps: "Workspace only",
+  keeps: "Its disk and each bot's workspace",
   bestFor: "Open source, self-hosted",
   title: "Mola AI agent sandbox: open source instant Linux computers",
   description:
