@@ -23,7 +23,7 @@ ALTER TABLE "user_bot_model_connections" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY user_bot_model_connections_tenant ON "user_bot_model_connections"
   USING ("userId" = NULLIF(current_setting('app.user_id', true), ''));
 CREATE POLICY user_bot_model_connections_system ON "user_bot_model_connections"
-  USING (current_setting('app.rls_bypass', true) = 'on');
+  USING ((SELECT app_rls_bypass()));
 
 DO $$
 BEGIN
