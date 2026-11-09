@@ -82,6 +82,6 @@ body:
     id: node
     attributes:
       label: Node.js version
-      placeholder: v22.x
+      placeholder: v24.x
     validations:
       required: true
