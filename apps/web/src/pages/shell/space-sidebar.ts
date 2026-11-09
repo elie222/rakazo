@@ -64,9 +64,17 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
       ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
     ];
-    if (byActivity) items.sort((a, b) => b.chat.updatedAt.localeCompare(a.chat.updatedAt));
+    // Pinned chats keep their hand-picked order; only the rest follow activity.
+    const ordered = byActivity
+      ? [
+          ...items.filter((item) => item.chat.pinned),
+          ...items
+            .filter((item) => !item.chat.pinned)
+            .sort((a, b) => b.chat.updatedAt.localeCompare(a.chat.updatedAt)),
+        ]
+      : items;
     const grouped = groupBotsForSidebar(
-      items.map((item) => ({
+      ordered.map((item) => ({
         ...item,
         id: item.chat.id,
         pinned: item.chat.pinned,

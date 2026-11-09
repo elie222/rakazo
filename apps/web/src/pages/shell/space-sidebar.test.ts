@@ -150,12 +150,13 @@ describe("sidebarGroupsForSpaces", () => {
         { ...chat("old", "Old"), sectionId: "s1", updatedAt: at(8) },
         { ...chat("new", "New"), updatedAt: at(11) },
         { ...chat("pin", "Pin"), pinned: true, updatedAt: at(7) },
+        { ...chat("pin2", "Pin two"), pinned: true, updatedAt: at(12) },
       ],
       botSections: [{ id: "s1", name: "Projects" }],
     };
     const groups = sidebarGroupsForSpaces([input], "", undefined, Date.now(), "activity");
     expect(groups.map((group) => [group.key, group.bots.map((item) => item.chat.id)])).toEqual([
-      ["pinned", ["pin"]],
+      ["pinned", ["pin", "pin2"]],
       ["unassigned", ["new", "old"]],
     ]);
   });

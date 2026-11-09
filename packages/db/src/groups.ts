@@ -31,7 +31,7 @@ type GroupRecord = {
   thread: {
     id: string;
     reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
-    messages: Array<{ blocks: unknown }>;
+    messages: Array<{ blocks: unknown; createdAt: Date }>;
   } | null;
   members: Array<{
     bot: {
@@ -50,7 +50,7 @@ type SpaceGroupRecord = Pick<
 > & {
   thread: {
     reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
-    messages: Array<{ blocks: unknown }>;
+    messages: Array<{ blocks: unknown; createdAt: Date }>;
   } | null;
 };
 
@@ -64,6 +64,7 @@ function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
   }));
 }
 
+// Roster rows sort and show the newest message's time; the group row also moves on renames and pins.
 function mapGroup(group: GroupRecord): Group {
   if (!group.thread) throw new IsolationError("Group is missing its thread");
   const preview = previewFromBlocks(group.thread.messages[0]?.blocks);
@@ -79,7 +80,7 @@ function mapGroup(group: GroupRecord): Group {
     preview,
     unread: unreadFor(group.thread),
     snoozedUntil: snoozedUntilFor(group.thread),
-    updatedAt: group.updatedAt.toISOString(),
+    updatedAt: (group.thread.messages[0]?.createdAt ?? group.updatedAt).toISOString(),
     createdAt: group.createdAt.toISOString(),
   };
 }
@@ -96,7 +97,7 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
     preview: previewFromBlocks(group.thread.messages[0]?.blocks),
     unread: unreadFor(group.thread),
     snoozedUntil: snoozedUntilFor(group.thread),
-    updatedAt: group.updatedAt.toISOString(),
+    updatedAt: (group.thread.messages[0]?.createdAt ?? group.updatedAt).toISOString(),
   };
 }
 

@@ -44,7 +44,7 @@ describe("listSpaceGroupsForSpaces", () => {
           replyQuote: null,
           runId: null,
           clientNonce: null,
-          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          createdAt: new Date("2026-08-22T10:00:00.000Z"),
         },
       ]),
     } as unknown as PrismaClient);
@@ -69,7 +69,8 @@ describe("listSpaceGroupsForSpaces", () => {
         preview: "Escalation pending",
         unread: true,
         snoozedUntil: "2026-08-21T09:00:00.000Z",
-        updatedAt: "2026-08-20T00:00:00.000Z",
+        // The newest message's time, not the group row's.
+        updatedAt: "2026-08-22T10:00:00.000Z",
       },
     ]);
     const query = findMany.mock.calls[0]![0];

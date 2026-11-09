@@ -211,7 +211,8 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
       name,
       preview: `${name} ${count - 1}`,
       unread,
-      updatedAt: updatedAt.toISOString(),
+      // Roster time is the newest message's, not the group row's.
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, count - 1)).toISOString(),
     };
   }
 
@@ -312,13 +313,11 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
     const { result: archived, rowCount } = await messageRowsDuring("listArchivedGroups", () =>
       runAsTenant(owner, () => groups.listGroups(actor, { archived: true })),
     );
-    const stored = await runAsTenant(owner, () =>
-      prisma.chatGroup.findUniqueOrThrow({ where: { id: gamma.id } }),
-    );
     expect(archived.find((group) => group.id === gamma.id)).toMatchObject({
       preview: gamma.preview,
       unread: gamma.unread,
-      updatedAt: stored.updatedAt.toISOString(),
+      // Archiving touches the group row but not its roster time.
+      updatedAt: gamma.updatedAt,
     });
     expect(rowCount).toBeLessThanOrEqual(1);
     const active = await runAsTenant(owner, () => groups.listGroups(actor));
