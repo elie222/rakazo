@@ -192,8 +192,17 @@ export function BotSettings({
     credentialsQuery.data !== undefined &&
     catalogQuery.data !== undefined &&
     meQuery.data !== undefined;
+  const connectionOptions = queries.bots.modelConnection.queryOptions({
+    input: { botId: bot.id },
+  });
   const connectionQuery = useQuery({
-    ...queries.bots.modelConnection.queryOptions({ input: { botId: bot.id } }),
+    ...connectionOptions,
+    // The answer is for one model, so another session changing it must not reuse this one.
+    queryKey: [
+      ...connectionOptions.queryKey,
+      bot.modelProvider,
+      bot.modelId,
+    ] as unknown as typeof connectionOptions.queryKey,
     enabled: Boolean(bot.modelProvider && bot.modelId),
     ...refresh,
   });

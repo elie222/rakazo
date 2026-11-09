@@ -495,6 +495,23 @@ describe("BotSettings thinking options", () => {
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
   });
 
+  it("asks again which connection runs the bot when another session changes its model", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    await render("Billing", { modelProvider: "anthropic", modelId: "claude-opus" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    vi.mocked(rpc.bots.modelConnection).mockClear();
+
+    await render("Billing", { modelProvider: "anthropic", modelId: "claude-sonnet" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(rpc.bots.modelConnection).toHaveBeenCalledTimes(1);
+  });
+
   it("clears a thinking level the newly picked connection does not offer", async () => {
     i18n.load("en", {});
     i18n.activate("en");

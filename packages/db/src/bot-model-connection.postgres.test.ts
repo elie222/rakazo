@@ -3,7 +3,11 @@ import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
-import { botModelConnectionId, findBotModelCredential } from "./model-credentials.js";
+import {
+  botModelConnectionId,
+  copyBotModelConnection,
+  findBotModelCredential,
+} from "./model-credentials.js";
 import { createRepos } from "./repos.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
@@ -124,6 +128,23 @@ describePostgres("a bot's model connection (PostgreSQL)", () => {
     );
 
     await expect(served(botId, owner, "claude-haiku")).resolves.toMatchObject({ id: opusOnApiKey });
+  });
+
+  it("copies a member's choice to a duplicate of the bot", async () => {
+    const source = await newBot("Original");
+    const copy = await newBot("Original copy");
+    await pin(source, opusOnApiKey);
+
+    await runAsTenant(owner, () =>
+      copyBotModelConnection(
+        prisma,
+        owner,
+        { id: source, modelProvider: "anthropic", modelId: model },
+        copy,
+      ),
+    );
+
+    await expect(served(copy)).resolves.toMatchObject({ id: opusOnApiKey });
   });
 
   it("keeps a member's choice away from other members", async () => {

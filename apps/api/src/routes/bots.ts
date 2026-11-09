@@ -38,6 +38,7 @@ import {
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
+  copyBotModelConnection,
   expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
@@ -378,6 +379,7 @@ export function botsRoutes(ctx: RouterContext) {
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
           });
+        await copyBotModelConnection(deps.prisma, context.actor, source, duplicate.id);
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
             botId: source.id,

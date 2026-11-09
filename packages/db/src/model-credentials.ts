@@ -341,6 +341,22 @@ export async function botModelConnectionId(
     : undefined;
 }
 
+/** A copy of a bot runs on the connection this member chose for the original. */
+export async function copyBotModelConnection(
+  prisma: Pick<PrismaClient, "userBotModelConnection">,
+  scope: Pick<ModelCredentialScope, "userId">,
+  source: { id: string; modelProvider: string | null; modelId: string | null },
+  botId: string,
+) {
+  const { modelProvider: provider, modelId } = source;
+  if (!provider || !modelId) return;
+  const credentialId = await botModelConnectionId(prisma, scope, source.id, provider, modelId);
+  if (!credentialId) return;
+  await prisma.userBotModelConnection.create({
+    data: { userId: scope.userId, botId, provider, modelId, credentialId },
+  });
+}
+
 /** The connection that serves a bot's model for this member: their choice, or the usual one. */
 export async function findBotModelCredential(
   prisma: Pick<
