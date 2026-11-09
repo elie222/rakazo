@@ -11,8 +11,7 @@ import {
 } from "./model-credits.js";
 import { asSystem } from "./row-security.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("model credits ledger", () => {
   let organizationId: string;
   let db: ReturnType<typeof createDb>;

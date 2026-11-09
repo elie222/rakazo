@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@12.18.0",
   "engines": {
-    "node": "^22.22.2 || ^24.0.0 || >=26.0.0"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -51,6 +51,6 @@
     "tsx": "4.23.15",
     "turbo": "2.11.10",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

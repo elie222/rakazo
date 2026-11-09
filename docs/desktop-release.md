@@ -19,10 +19,6 @@ macOS (required):
 The API key needs the Developer role. The workflow writes it to a mode 600 file
 in the runner's temp directory for the packaging step and deletes it afterwards.
 
-`patches/app-builder-lib@26.15.3.patch` carries electron-builder PR #10101:
-without it `CSC_LINK` signing fails while creating the temporary keychain. Drop
-the patch once an electron-builder release includes that fix.
-
 Windows signs through Azure Artifact Signing once it is configured, logging in
 with GitHub OIDC instead of a stored secret. Create a Public Trust certificate
 profile, then an app registration with the Artifact Signing Certificate Profile
