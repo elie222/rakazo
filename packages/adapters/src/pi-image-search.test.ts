@@ -1,7 +1,8 @@
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { executeImageSearch, supportsModelImageSearch } from "./pi-image-search.js";
-import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MS, TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { describeToolActivity, toAgentTools } from "./pi-runtime-tools.js";
 import { READ_ONLY_AGENT_TOOLS, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
@@ -22,7 +23,71 @@ describe("Pi image search through the installed provider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   });
+
+  it.each([true, false])(
+    "keeps whole image/source pairs within the result budget, current: %s",
+    async (current) => {
+      const entries = Array.from({ length: 10 }, (_, index) => ({
+        ...image(String(index)),
+        image_url: `https://images.example.com/${index}/${"a".repeat(4000)}`,
+        source_website_url: `https://example.com/${index}/${"b".repeat(4000)}`,
+        thumbnail_url: `https://images.example.com/${index}/${"c".repeat(4000)}`,
+        caption: "x".repeat(500),
+      }));
+      const { host } = hostFor(fixtureFetch([searchItem(entries), terminal]));
+      if (current) host.request.contextStrategy = "current";
+      const tool = toAgentTools(builtinAgentTools, host).find(
+        (entry) => entry.name === "image_search",
+      )!;
+      const result = await tool.execute("long-links", { query: "harbor", maxResults: 10 });
+      const content = result.content[0];
+      if (content?.type !== "text") throw new Error("Missing structured result");
+      expect(content.text.length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT);
+      const parsed = JSON.parse(content.text);
+      expect(parsed).toEqual(result.details);
+      expect(parsed.results).toHaveLength(1);
+      expect(parsed.results[0]).toMatchObject({
+        imageUrl: entries[0]!.image_url,
+        sourceUrl: entries[0]!.source_website_url,
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "records scrubbed failure diagnostics without exposing them to the model, reservation: %s",
+    async (reservation) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const query = "private-query-content";
+      const secret = "owner-private-value";
+      const fetch = fixtureFetch([
+        {
+          type: "response.failed",
+          response: { error: { message: `quota exhausted ${secret} ${query}` } },
+        },
+      ]);
+      const { host, observer, token } = hostFor(fetch);
+      host.request.secrets = [secret];
+      if (reservation)
+        observer.beforeCall.mockRejectedValue(
+          new Error(`quota exhausted ${secret} ${query} ${token}`),
+        );
+      await expect(executeImageSearch(host, { query })).resolves.toEqual({
+        error: "Image search failed.",
+      });
+      const event = sink.events.find((entry) => entry.message === "image_search.failed");
+      expect(event).toMatchObject({
+        level: "warn",
+        "run.id": host.request.runId,
+        "model.id": host.activeModel.model.id,
+      });
+      expect(event?.error?.message).toContain("quota exhausted");
+      const serialized = JSON.stringify(event);
+      for (const value of [query, secret, token]) expect(serialized).not.toContain(value);
+    },
+  );
 
   it("uses the active credential store and returns only completed structured images with retrieval accounting", async () => {
     vi.stubEnv("OPENAI_API_KEY", "unrelated-fake-key");

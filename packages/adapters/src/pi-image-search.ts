@@ -1,7 +1,11 @@
 import type { Context } from "@earendil-works/pi-ai";
 import type { ImageSearchHit, ImageSearchResult } from "@rakazo/adapter-kit";
+import { redactSecrets } from "@rakazo/core";
+import { getLogger, redactSensitiveText } from "@rakazo/logging";
+import { sanitizedError } from "@rakazo/logging/monitoring";
 import * as z from "zod";
 import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import { reliableModelStream } from "./pi-runtime-stream.js";
 import type { ToolHost } from "./pi-runtime-tools.js";
 import { observedPiStream } from "./pi-usage.js";
@@ -82,6 +86,22 @@ export async function executeImageSearch(
   const query = typeof args.query === "string" ? args.query.trim() : "";
   if (!query || query.length > MAX_QUERY_LENGTH)
     return { error: "query must contain between 1 and 2000 characters" };
+  const reportFailure = (error: unknown) => {
+    getLogger().warn("image_search.failed", {
+      "run.id": host.request.runId,
+      "model.id": target.model.id,
+      "model.provider": target.model.provider,
+      error: sanitizedError(error, (text) =>
+        redactSecrets(redactSensitiveText(text), [
+          query,
+          ...(host.request.secrets ?? []),
+          target.apiKey ?? "",
+          target.credentials?.accessToken ?? "",
+        ]).slice(0, 2000),
+      ),
+    });
+    return { error: "Image search failed." };
+  };
   const maxResults = clampMaxResults(args.maxResults);
   const completed = new Map<string, ImageSearchHit[]>();
   const context: Context = {
@@ -152,17 +172,29 @@ export async function executeImageSearch(
     const message = await stream.result();
     if (host.signal.aborted || message.stopReason === "aborted")
       return { error: "Image search was stopped." };
-    if (message.stopReason !== "stop") return { error: "Image search failed." };
-    if (!completed.size) return { error: "Image search returned no completed search." };
+    if (message.stopReason !== "stop")
+      return reportFailure(
+        new Error(message.errorMessage || `Search stopped with ${message.stopReason}.`),
+      );
+    if (!completed.size) {
+      reportFailure(new Error("No completed structured image search item."));
+      return { error: "Image search returned no completed search." };
+    }
     const unique = new Map<string, ImageSearchHit>();
     for (const hits of completed.values()) {
       for (const hit of hits) {
-        if (!unique.has(hit.imageUrl)) unique.set(hit.imageUrl, hit);
+        if (unique.has(hit.imageUrl)) continue;
+        unique.set(hit.imageUrl, hit);
+        if (JSON.stringify({ results: [...unique.values()] }).length > TOOL_RESULT_TEXT_LIMIT) {
+          unique.set(hit.imageUrl, { imageUrl: hit.imageUrl, sourceUrl: hit.sourceUrl });
+          if (JSON.stringify({ results: [...unique.values()] }).length > TOOL_RESULT_TEXT_LIMIT)
+            unique.delete(hit.imageUrl);
+        }
         if (unique.size >= maxResults) return { results: [...unique.values()] };
       }
     }
     return { results: [...unique.values()] };
-  } catch {
-    return { error: host.signal.aborted ? "Image search was stopped." : "Image search failed." };
+  } catch (error) {
+    return host.signal.aborted ? { error: "Image search was stopped." } : reportFailure(error);
   }
 }
