@@ -54,6 +54,18 @@ const MAX_SEARCH_OFFSET = 10_000;
 // result clipping; newer strategies preserve structured results within their context budget.
 const MAX_RESPONSE_BYTES = 10_000;
 const LINK_PAGE_SIZE = 5;
+/** An empty literal search rules out only those words, not what they were meant to find. */
+const NO_MATCH_NOTE = "No message matched these words, which does not show it never happened.";
+/** A continued search that ends empty found nothing more; earlier pages may have matched. */
+const NO_MORE_NOTE = "No further matches for these words.";
+/** Only where earlier replies used tools, since tool work described in other words is hard to find. */
+function toolWorkHint(myChats: boolean): string {
+  // A kinds-only search defaults to this chat, so a hint after an all-chats search keeps its scope.
+  const args = myChats ? 'scope "my_chats", kinds ["tool_work"]' : 'kinds ["tool_work"]';
+  return `Earlier replies that used tools may describe it in other words: list them with ${args} and no query, newest first; nextSearch continues to older ones.`;
+}
+const UNFINISHED_NOTE = "No match in the part searched so far; nextSearch continues the search.";
+const CAPPED_NOTE = "The search stopped early without a match; narrow it by date to continue.";
 function bounded<T extends { messages: ReturnType<typeof reference>[] }>(response: T): T {
   const refs = [...response.messages];
   if ("runs" in response) {
@@ -126,6 +138,8 @@ const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
   '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
+/** Replies that used tools; matches the predicate of messages_tool_work_idx exactly. */
+const TOOL_WORK = Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')`;
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
   // Match loadRunHistoryMessages: only an unassigned row for this bot means waiting.
   // Cross-chat direct threads use their owning bot; groups retain the reading bot.
@@ -307,6 +321,17 @@ function withAttachments<T extends { messageId: string }>(
     : ref;
 }
 
+/** Whether any reply the search could reach used tools; messages_tool_work_idx keeps this cheap. */
+async function hasToolWork(prisma: PrismaClient, scope: HistoryScope, myChats: boolean) {
+  const rows = await prisma.$queryRaw<unknown[]>(Prisma.sql`
+    SELECT 1 FROM messages m JOIN threads t ON t.id = m."threadId"
+    WHERE ${visible(scope, myChats)} AND ${TOOL_WORK}
+      ${scope.searchBeforeSeq !== undefined ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${scope.searchBeforeSeq})` : Prisma.empty}
+      ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}
+    LIMIT 1`);
+  return rows.length > 0;
+}
+
 /**
  * Blind-index (or full-text) search, at most five excerpts. A single query in
  * this chat pages by descending sequence; variants or my_chats page newest first
@@ -317,16 +342,20 @@ export async function searchHistory(
   scope: HistoryScope,
   input: HistorySearchInput,
 ) {
-  const queries =
-    input.queries === undefined
+  // With neither query nor queries, kinds alone list the newest messages of those kinds.
+  const browsing = input.query === undefined && input.queries === undefined;
+  const queries = browsing
+    ? []
+    : input.queries === undefined
       ? [input.query?.trim() ?? ""]
       : HistoryQueriesSchema.parse(input.queries);
   if (
-    (input.query !== undefined) === (input.queries !== undefined) ||
+    (input.query !== undefined && input.queries !== undefined) ||
+    (browsing && !input.kinds?.length) ||
     queries.some((query) => !query || query.length > 500)
   )
     throw new Error("History query must contain 1 to 500 characters");
-  const query = queries[0]!;
+  const query = queries[0];
   const myChats = input.scope === "my_chats";
   if (myChats && (!scope.allowMyChats || scope.channelId))
     throw new Error("my_chats is available only in direct human app runs; use this_chat.");
@@ -360,15 +389,17 @@ export async function searchHistory(
             ? Prisma.sql`jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "bot_message_sent" || @.kind == "bot_message_received" || @.kind == "handoff")')`
             : kind === "user_messages"
               ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "file" || @.kind == "image")')`
-              : // A reply can be only tool steps; search indexes those too.
-                Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "steps")')`,
+              : kind === "tool_work"
+                ? TOOL_WORK
+                : // A reply can be only tool steps; search indexes those too.
+                  Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "steps")')`,
         ),
         " OR ",
       )})`
     : Prisma.empty;
   const filters = Prisma.sql`
     ${visible(scope, myChats)}
-    AND (${Prisma.join(matches, " OR ")})
+    ${matches.length ? Prisma.sql`AND (${Prisma.join(matches, " OR ")})` : Prisma.empty}
     ${
       input.botId
         ? Prisma.sql`AND (t."botId" = ${input.botId} OR EXISTS (
@@ -420,7 +451,7 @@ export async function searchHistory(
       const matchedQueryIndexes = terms.flatMap((words, index) =>
         words.every((word) => text.has(word)) ? [index] : [],
       );
-      if (!row.indexed || matchedQueryIndexes.length)
+      if (browsing || !row.indexed || matchedQueryIndexes.length)
         rows.push({ ...row, matchedQueryIndexes, nextOffset: scanned });
     }
     if (batch.length <= limit) break;
@@ -431,6 +462,25 @@ export async function searchHistory(
   const hasMore = rows.length > limit || unscanned;
   const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
   const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
+  // An empty page says what it covered: nothing matched, or the scan has more to go.
+  // A page continuing an earlier search (from nextSearch) can't say nothing ever matched.
+  const continued = input.beforeSeq !== undefined || offset > 0;
+  const coverageNote = capped
+    ? CAPPED_NOTE
+    : hasMore
+      ? UNFINISHED_NOTE
+      : continued
+        ? NO_MORE_NOTE
+        : NO_MATCH_NOTE;
+  // Any empty keyword search, finished or not, can point at listing earlier tool work instead.
+  // A search narrowed by date or bot gets no hint: the listing it suggests would leave that range.
+  const narrowed = Boolean(input.before || input.after || input.botId);
+  const note =
+    page.length || browsing
+      ? undefined
+      : !narrowed && !continued && (await hasToolWork(prisma, scope, myChats))
+        ? `${coverageNote} ${toolWorkHint(myChats)}`
+        : coverageNote;
   const nextBeforeSeq =
     byOffset || !hasMore ? null : rows.length > limit ? page.at(-1)!.seq : (cursor as number);
   return bounded({
@@ -455,6 +505,7 @@ export async function searchHistory(
       status: hasMore ? ("partial" as const) : ("exhausted" as const),
       ...(capped ? { capped: true } : {}),
     },
+    ...(note ? { note } : {}),
     messages: page.map((row) => ({
       ...withAttachments(reference(row, queries[row.matchedQueryIndexes[0] ?? 0]), attachments),
       ...(byOffset ? { threadId: row.threadId, matchedQueryIndexes: row.matchedQueryIndexes } : {}),
@@ -464,7 +515,7 @@ export async function searchHistory(
       !hasMore || capped
         ? null
         : {
-            ...(input.queries ? { queries } : { query }),
+            ...(input.queries ? { queries } : browsing ? {} : { query }),
             ...(byOffset ? { offset: nextOffset } : { beforeSeq: nextBeforeSeq! }),
             ...(byOffset && input.beforeSeq !== undefined ? { beforeSeq: input.beforeSeq } : {}),
             ...(input.scope ? { scope: input.scope } : {}),

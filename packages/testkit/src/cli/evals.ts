@@ -617,7 +617,7 @@ async function main() {
           pricing,
           judge,
           createApp: async (composio, messaging, witnesses) => {
-            const sandbox = new EvalSandboxProvider();
+            const sandbox = new EvalSandboxProvider(scenario.computer);
             let acceptingCalls = true;
             const cacheDecisions: CacheDecisionMeasurement[] = [];
             const runtime = new PiAgentRuntime({

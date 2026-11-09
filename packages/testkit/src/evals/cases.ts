@@ -2,6 +2,7 @@ import type { AppEmulator } from "../apps/app-emulator.js";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
+import type { ComputerScript } from "./scripted-shell.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 import type { EvalServices, ServiceCall } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
@@ -111,6 +112,8 @@ export type EvalCase = {
   peer?: { name: string; description: string; instructions: string; ownComputer?: true };
   /** Files written onto a computer before the first step: the subject's home, or the peer's. */
   computerFiles?: Array<{ path: string; content: string | Uint8Array; owner?: "peer" }>;
+  /** What the eval computer answers when the bot checks it, instead of refusing every command. */
+  computer?: ComputerScript;
   /**
    * Run the case in a group thread with these other member bots, named as history authors. With
    * `roles`, every member (the subject as "Assistant" too) gets that description, any
