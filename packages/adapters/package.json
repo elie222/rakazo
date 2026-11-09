@@ -44,6 +44,7 @@
     "@opentelemetry/api": "1.10.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.301.0",
     "@opentelemetry/resources": "3.1.0",
+    "@opentelemetry/sdk-trace": "3.1.0",
     "@photon-ai/chat-adapter-imessage": "3.2.0",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
@@ -73,8 +74,7 @@
     "undici": "8.12.4",
     "ws": "8.22.0",
     "yaml": "2.9.1",
-    "zod": "4.6.7",
-    "@opentelemetry/sdk-trace": "3.1.0"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@chat-adapter/tests": "4.41.1",
