@@ -30,7 +30,7 @@
     "@rakazo/adapters": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "45.2.3",
+    "electron": "45.2.2",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
