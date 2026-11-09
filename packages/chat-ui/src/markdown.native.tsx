@@ -89,6 +89,7 @@ export {
   LinkFaviconsContext,
   plainTextLinkParts,
   RemoteImagesContext,
+  useLinkFavicon,
   withBlockMentions,
 } from "./markdown";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

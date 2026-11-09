@@ -9,6 +9,7 @@ export * from "./board.js";
 export * from "./board-live.js";
 export * from "./bootstrap-user.js";
 export * from "./bot-email-address.js";
+export * from "./bot-email-sends.js";
 export * from "./bot-instructions.js";
 export * from "./bot-update.js";
 export * from "./cancel-runs.js";
@@ -25,7 +26,12 @@ export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
 export * from "./database-access.js";
 export * from "./deferred-migrations.js";
-export { eventsAfter, followThreadEvents, notifyRealtime } from "./event-stream.js";
+export {
+  eventsAfter,
+  followThreadEvents,
+  notifyRealtime,
+  observeThreadChanges,
+} from "./event-stream.js";
 export * from "./events.js";
 export * from "./expire-stuck-run.js";
 export * from "./external-conversations.js";
@@ -56,6 +62,7 @@ export * from "./spaces.js";
 export * from "./spending.js";
 export * from "./thread-ask.js";
 export { primaryActiveRun } from "./thread-listing.js";
+export * from "./thread-reads.js";
 export type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 export {
   claimSteering,

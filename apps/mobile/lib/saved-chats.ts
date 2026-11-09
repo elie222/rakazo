@@ -1,5 +1,11 @@
 import { displayIdentityResult, identitySource } from "@rakazo/core";
 import { Directory, File, Paths } from "expo-file-system";
+import { currentApiBase, selectedSpaceId } from "./api";
+import { artifactCacheSession } from "./artifact-cache-session";
+import { onConversationCleared } from "./conversation-cleared";
+import { identityLabels } from "./identity-display";
+import type { IntegrationsCacheScope } from "./integrations-cache";
+import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
 import type {
   MobileBot,
   MobileBotSection,
@@ -8,13 +14,7 @@ import type {
   MobileSnapshot,
   MobileSpace,
   MobileSpaceNavigation,
-} from "./api";
-import { currentApiBase, selectedSpaceId } from "./api";
-import { artifactCacheSession } from "./artifact-cache-session";
-import { onConversationCleared } from "./conversation-cleared";
-import { identityLabels } from "./identity-display";
-import type { IntegrationsCacheScope } from "./integrations-cache";
-import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
+} from "./mobile-types";
 import {
   currentSessionGeneration,
   loadSessionToken,
@@ -114,6 +114,7 @@ export function writeSavedInbox(
           color,
           preview,
           unread,
+          snoozedUntil,
           pinned,
           spaceId,
           status,
@@ -129,6 +130,7 @@ export function writeSavedInbox(
             color,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             status,
@@ -140,7 +142,18 @@ export function writeSavedInbox(
           }) as MobileBot,
       ),
       groups: navigation.current.groups.slice(0, SAVED_INBOX_ROWS).map(
-        ({ id, name, members, preview, unread, pinned, spaceId, sectionId, updatedAt }) =>
+        ({
+          id,
+          name,
+          members,
+          preview,
+          unread,
+          snoozedUntil,
+          pinned,
+          spaceId,
+          sectionId,
+          updatedAt,
+        }) =>
           ({
             id,
             name,
@@ -148,6 +161,7 @@ export function writeSavedInbox(
             sectionId,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             updatedAt,

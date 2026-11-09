@@ -2,6 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   nextBotMessageHop,
@@ -42,9 +43,10 @@ export async function handoffToGroupBot(
   },
 ) {
   const text = input.message.trim();
-  if (!text || text.length > BOT_MESSAGE_MAX_LENGTH) {
+  if (!text) {
     return { error: `message must contain 1 to ${BOT_MESSAGE_MAX_LENGTH} characters` } as const;
   }
+  if (text.length > BOT_MESSAGE_MAX_LENGTH) return { error: BOT_MESSAGE_TOO_LONG } as const;
   const committed = await deps.prisma.$transaction(async (tx) => {
     try {
       await lockSpaceGroup(tx, run, groupId);

@@ -168,9 +168,13 @@ async function runWithModel(
   });
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
-    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
+    spaceMember: {
+      findUnique: vi.fn(async () => ({ id: "member-1" })),
+      findMany: vi.fn(async () => [{ userId: "user-1" }]),
+    },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),

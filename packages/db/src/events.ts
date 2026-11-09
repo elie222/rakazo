@@ -6,6 +6,7 @@ import {
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
   messageBypassesTakeoverWait,
@@ -18,8 +19,10 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
+import { contentEncryptionOf } from "./content-encryption.js";
 import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
@@ -41,12 +44,14 @@ import {
   RunHistoryWriteError,
 } from "./messages.js";
 import { isRecordNotFound } from "./prisma-errors.js";
+import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
+import { clearThreadReads } from "./thread-reads.js";
 import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steering.js";
 import {
   claimSteering,
@@ -242,14 +247,23 @@ export async function clearThread(
         spaceId: input.spaceId,
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
-      data: { unread: false },
+      // Takes the thread's row lock, as every message writer does; nothing in it changes.
+      data: { nextMessageSeq: { increment: 0 } },
       select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
+    await clearThreadReads(tx, input.threadId);
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        threadId: input.threadId,
-        ...(input.groupId ? {} : { botId: input.botId }),
+        ...(input.groupId
+          ? { threadId: input.threadId }
+          : {
+              OR: [
+                { threadId: input.threadId, botId: input.botId },
+                // Background helpers this chat started work in threads of their own.
+                { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId: input.threadId } },
+              ],
+            }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -258,8 +272,20 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.message.deleteMany({ where: { threadId: input.threadId } });
-    await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
+    // with it, including imported ones that have no runs.
+    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };
+    const cleared = input.groupId
+      ? { threadId: input.threadId }
+      : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    await tx.message.deleteMany({ where: cleared });
+    await tx.event.deleteMany({ where: cleared });
+    if (!input.groupId) {
+      await tx.thread.updateMany({
+        where: { ...helperThreads, historyCompactionSummary: { not: null } },
+        data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
+      });
+    }
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset
@@ -544,28 +570,103 @@ export async function appendEvent(
   realtime?: RealtimeFanout,
   analytics?: ProductAnalytics,
 ): Promise<ProductEvent> {
-  // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
-  const event = await withTransactionRetry(() =>
-    prisma.$transaction(
-      (tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input),
-      THREAD_LOCK_TRANSACTION_OPTIONS,
-    ),
-  );
+  const event = await insertEventAlone(prisma, input);
   if (
     input.runId &&
     (input.type === "run.started" || input.type === "run.completed" || input.type === "run.failed")
   ) {
     void captureRunAnalytics(prisma, analytics, input.runId, input.type);
   }
-  const productEvent = mapProductEvent(event);
   await notifyCommittedEvent(
     prisma,
     realtime,
-    event.threadId,
+    input.threadId,
     event.seq,
     event.firstResponse ? input.runId : undefined,
   );
-  return productEvent;
+  return mapProductEvent(event);
+}
+
+/**
+ * appendEventInTransaction as one autocommit statement. Readers trust that events commit in seq
+ * order, which the thread row lock taken with the seq guarantees, so that lock is held only while
+ * Postgres runs this statement instead of across an interactive transaction's round trips.
+ * The run is locked after the thread, as everywhere else, and FOR SHARE checks its newest
+ * version, so a run cancelled or re-leased while this waited for the thread writes nothing.
+ * A rejected write still uses its seq; readers already skip gaps left by deleted events.
+ */
+async function insertEventAlone(prisma: PrismaClient, input: AppendEventInput) {
+  const activity = isActivityEvent(input);
+  const { runId, lease } = input;
+  if (input.type === "run.cancelled" && !runId) throw new RunHistoryWriteError();
+  // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
+  const payload = sanitizeJsonValue(input.payload) as Record<string, unknown>;
+  const row = {
+    id: createRowId(),
+    spaceId: input.spaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    payload,
+  };
+  const stored = (await contentEncryptionOf(prisma)?.sealRow("Event", row)) ?? row;
+  const runWritable =
+    input.type === "run.cancelled"
+      ? Prisma.sql`r.status = 'cancelled'`
+      : Prisma.join(
+          [
+            input.allowCancelledRun ? Prisma.sql`TRUE` : Prisma.sql`r.status <> 'cancelled'`,
+            lease
+              ? Prisma.sql`r."leaseFence" = ${lease.fence}
+                  AND (r."leaseOwner" IS NULL OR r."leaseOwner" = ${lease.owner})`
+              : Prisma.sql`TRUE`,
+            activity
+              ? Prisma.sql`r.status = 'running' AND r."leaseOwner" = ${lease?.owner ?? null}`
+              : Prisma.sql`TRUE`,
+          ],
+          " AND ",
+        );
+  const recordsFirstResponse = Boolean(runId) && isRunResponse(input.type, input.payload);
+  const [event] = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      seq: number;
+      createdAt: Date;
+      runId: string | null;
+      firstResponse: boolean;
+    }>
+  >`
+    WITH next AS (
+      UPDATE threads SET "nextEventSeq" = "nextEventSeq" + 1
+      WHERE id = ${input.threadId}
+      RETURNING "nextEventSeq" - 1 AS seq
+    ),
+    run AS (
+      SELECT r.id FROM runs r CROSS JOIN next
+      WHERE r.id = ${runId ?? null} AND ${runWritable}
+      FOR SHARE OF r
+    ),
+    inserted AS (
+      INSERT INTO events (id, "spaceId", "threadId", "botId", seq, type, payload, "runId")
+      SELECT ${row.id}, ${input.spaceId}, ${input.threadId}, ${input.botId}, next.seq,
+        ${input.type}, ${JSON.stringify(stored.payload)}::jsonb, ${runId ?? null}
+      FROM next
+      WHERE ${runId ? Prisma.sql`EXISTS (SELECT 1 FROM run)` : Prisma.sql`TRUE`}
+      RETURNING id, seq, "createdAt", "runId"
+    ),
+    first AS (
+      UPDATE runs SET "firstResponseAt" = inserted."createdAt"
+      FROM inserted
+      WHERE ${recordsFirstResponse} AND runs.id = inserted."runId" AND runs."firstResponseAt" IS NULL
+      RETURNING runs.id
+    )
+    SELECT inserted.*, EXISTS (SELECT 1 FROM first) AS "firstResponse" FROM inserted`;
+  if (!event) {
+    // Deleting the bot or space cascades the thread and its runs away under in-flight work;
+    // that run has no history left to write to.
+    if (runId) throw new RunHistoryWriteError();
+    throw new Error("Thread not found");
+  }
+  return { ...row, ...event, type: input.type };
 }
 
 export async function finalizeRun(
@@ -767,11 +868,7 @@ export async function appendEventInTransaction(
   tx: Prisma.TransactionClient,
   input: AppendEventInput,
 ) {
-  const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
-  if (activity) {
-    ThreadActivityPayloadSchema.parse(input.payload);
-    if (!input.runId || !input.lease) throw new RunHistoryWriteError();
-  }
+  const activity = isActivityEvent(input);
   const thread = await tx.thread
     .update({
       where: { id: input.threadId },
@@ -824,6 +921,14 @@ export async function appendEventInTransaction(
       ).count === 1,
   );
   return { ...event, firstResponse };
+}
+
+/** Thinking markers come only from the run's current lease holder. */
+function isActivityEvent(input: AppendEventInput): boolean {
+  if (input.type !== "thread.meta" || !hasThinkingActivityMarker(input.payload)) return false;
+  ThreadActivityPayloadSchema.parse(input.payload);
+  if (!input.runId || !input.lease) throw new RunHistoryWriteError();
+  return true;
 }
 
 async function captureRunAnalytics(

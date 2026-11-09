@@ -9,7 +9,6 @@ import { hapticImpact, hapticSuccess } from "./haptics";
 
 vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 
-import type { MobileSnapshot } from "./api";
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   ExpectedTurnFailure,
@@ -26,6 +25,7 @@ import {
 import type { SpeechRecognizer } from "./dictation";
 import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
 import { activateUiLocale, getActiveUiLocale } from "./i18n";
+import type { MobileSnapshot } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
 import { saveServerHeaders } from "./server-headers";
 import {
@@ -37,6 +37,7 @@ import {
   saveSessionToken,
 } from "./session";
 import type { UiLocale } from "./ui-locale";
+import { ensureVoiceConsent } from "./voice";
 
 const device = vi.hoisted(() => ({ languageTag: "en-US", os: "ios" }));
 
@@ -61,6 +62,7 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  ensureVoiceConsent: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
@@ -99,12 +101,24 @@ const expoAudioMock = vi.hoisted(() => () => ({
   setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
 }));
 vi.mock("expo-audio", () => expoAudioMock());
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
-  captureApiRequestContext: vi.fn(),
-  configureSessionEndHangUp: vi.fn(),
+  // The live session's context, so the production recorder's voice consent check can run.
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "https://api.test",
+    headers: {},
+    sessionGeneration: (await import("./session")).currentSessionGeneration(),
+  })),
   rpc: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 
@@ -1739,7 +1753,8 @@ describe("mobile call session on a timer", () => {
   });
 
   it("retries the first snapshot load instead of losing the feed", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     vi.mocked(rpc)
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
@@ -1758,7 +1773,8 @@ describe("mobile call session on a timer", () => {
   });
 
   it("stops the call feed when the server refuses it but keeps retrying a 503", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
     vi.mocked(rpc).mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
     vi.mocked(subscribeThread)
@@ -1832,6 +1848,31 @@ describe("mobile call session on a timer", () => {
     expect(fake.closeCall).toHaveBeenCalledOnce();
   });
 
+  it("waits muted instead of recording when voice consent is refused without a greeting", async () => {
+    const fake = fakes();
+    const record = vi
+      .fn<CallDeps["record"]>()
+      .mockRejectedValueOnce(new AiConsentBlocked("voice consent denied"))
+      .mockImplementation(fake.deps.record);
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...fake.deps, record });
+    await tick();
+
+    expect(record).toHaveBeenCalledOnce();
+    expect(fake.recordings).toEqual([]);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "voice consent denied",
+    });
+    await tick(20_000);
+    expect(record).toHaveBeenCalledOnce();
+
+    toggleMute();
+    await tick();
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false });
+  });
+
   it("does not start speech again after consent refuse until the caller unmutes", async () => {
     const fake = fakes({ onDevice: true });
     fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
@@ -1867,7 +1908,8 @@ describe("mobile call session on a timer", () => {
   });
 
   it("reconnects the call feed when the live stream ends", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     vi.mocked(rpc).mockResolvedValue({ cursor: 7, messages: [], run: null } as never);
     vi.mocked(subscribeThread).mockResolvedValue(undefined as never);
     const fake = fakes();
@@ -1938,6 +1980,8 @@ describe("mobile call recording without metering", () => {
     await vi.advanceTimersByTimeAsync(1_600);
 
     expect(transcribe).toHaveBeenCalledTimes(1);
+    // The recorder sends audio to the voice provider, so it asks before it opens.
+    expect(ensureVoiceConsent).toHaveBeenCalled();
   });
 });
 

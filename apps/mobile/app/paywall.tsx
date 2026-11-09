@@ -31,7 +31,8 @@ import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSymbol } from "../components/native-symbol";
 import { useOrganizationMenuAction } from "../components/organization-menu";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import { rpc, signOut } from "../lib/api";
+import { rpc } from "../lib/api";
+import { signOut } from "../lib/api-auth";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import type { Plan } from "../lib/billing";
 import {

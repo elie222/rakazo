@@ -56,7 +56,7 @@ jobs:
             --model claude-haiku-5-5
             --effort high
             --max-turns 25
-            --allowedTools Read,Grep,Glob
+            --allowedTools "Read(./**)",Grep,Glob
             --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,"Read(./.git/**)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["type","size","priority_high","duplicate_of","reason"],"properties":{"type":{"enum":["bug","enhancement","question","documentation","self-host"]},"size":{"enum":["small","medium","large"]},"priority_high":{"type":"boolean"},"duplicate_of":{"type":["integer","null"]},"reason":{"type":"string"}}}'
 

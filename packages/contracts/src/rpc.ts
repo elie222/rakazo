@@ -632,6 +632,7 @@ export const appContract = {
         webhookConfigured: z.literal(true),
       }),
     ),
+    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
   },
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),
@@ -701,6 +702,10 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    // Its own route, so a server without it refuses rather than stopping the whole chat.
+    stopHelper: oc
+      .input(threadTarget.safeExtend({ messageId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(
         threadTarget.safeExtend({
@@ -799,6 +804,10 @@ export const appContract = {
     /** With `messageId`, the chat reads as unread from that message: the next open puts New above it. */
     markUnread: oc
       .input(threadTarget.and(z.object({ messageId: Id.optional() })))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Hides the chat from the caller's list until `until`; null wakes it now. */
+    snooze: oc
+      .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
       .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
@@ -1489,6 +1498,13 @@ export const appContract = {
       )
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
+    /**
+     * Keeps this phone's live status card of the user's bots at work up to date. `following` is
+     * false when the server cannot update the card or no bot is at work, so the app ends it.
+     */
+    followWorkActivity: oc
+      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .output(z.object({ following: z.boolean() })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),

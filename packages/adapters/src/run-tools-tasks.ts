@@ -14,6 +14,7 @@ import {
   listSchedulesFromTool,
   scheduleCreateError,
   scheduleCreateFields,
+  scheduleTimingArgs,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 import {
@@ -234,15 +235,7 @@ export const taskTools: ToolHandlers = {
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
-        schedule: compactScheduleInput({
-          cron: args.cron,
-          every: args.every,
-          unit: args.unit,
-          runAt: args.runAt,
-          delayMinutes: args.delayMinutes,
-          delaySeconds: args.delaySeconds,
-          startAt: args.startAt,
-        }),
+        schedule: compactScheduleInput(scheduleTimingArgs(args)),
       }),
     );
   },

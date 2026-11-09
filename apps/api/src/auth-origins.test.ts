@@ -151,3 +151,27 @@ describe("mobile auth origins", () => {
     }
   });
 });
+
+describe("extra auth origins", () => {
+  it("adds nothing by default", () => {
+    expect(trustedRequestOrigins(env)).toEqual(
+      trustedRequestOrigins({ ...env, extraAuthOrigins: [] }),
+    );
+    expect(isTrustedOrigin("https://host.tailnet.ts.net", env)).toBe(false);
+  });
+
+  it("trusts a configured extra origin for requests and sign-in callbacks", async () => {
+    const extra = "https://host.tailnet.ts.net";
+    expect(isTrustedOrigin(extra, { ...env, extraAuthOrigins: [extra] })).toBe(true);
+    expect(
+      isTrustedOrigin("https://other.tailnet.ts.net", { ...env, extraAuthOrigins: [extra] }),
+    ).toBe(false);
+  });
+
+  it("trusts a loopback extra exactly, not its twins", () => {
+    const withExtra = { ...env, extraAuthOrigins: ["http://localhost:6000"] };
+    expect(isTrustedOrigin("http://localhost:6000", withExtra)).toBe(true);
+    expect(isTrustedOrigin("http://127.0.0.1:6000", withExtra)).toBe(false);
+    expect(isTrustedOrigin("http://[::1]:6000", withExtra)).toBe(false);
+  });
+});

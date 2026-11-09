@@ -74,6 +74,29 @@ export function isScheduleValueProvided(value: unknown): boolean {
   return typeof value !== "string" || value.trim().length > 0;
 }
 
+/** The timing fields every schedule tool takes; only schedule_create also takes `watch`. */
+export const SCHEDULE_TIMING_FIELDS = [
+  "cron",
+  "every",
+  "unit",
+  "runAt",
+  "delayMinutes",
+  "delaySeconds",
+] as const;
+
+/** A schedule tool call's timing arguments and `startAt`, before blanks are dropped. */
+export function scheduleTimingArgs(args: Record<string, unknown>) {
+  return {
+    cron: args.cron,
+    every: args.every,
+    unit: args.unit,
+    runAt: args.runAt,
+    delayMinutes: args.delayMinutes,
+    delaySeconds: args.delaySeconds,
+    startAt: args.startAt,
+  };
+}
+
 export function compactScheduleInput(input: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => isScheduleValueProvided(value)),
@@ -595,16 +618,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     name: String(args.name ?? ""),
     prompt: String(args.prompt ?? ""),
     timezone: args.timezone ? String(args.timezone) : undefined,
-    schedule: compactScheduleInput({
-      cron: args.cron,
-      every: args.every,
-      unit: args.unit,
-      runAt: args.runAt,
-      delayMinutes: args.delayMinutes,
-      delaySeconds: args.delaySeconds,
-      startAt: args.startAt,
-      watch: args.watch,
-    }),
+    schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
   };
 }
 
@@ -803,8 +817,6 @@ async function groupNotFoundError(
   };
 }
 
-const TIMING_FIELDS = ["cron", "every", "unit", "runAt", "delayMinutes", "delaySeconds"] as const;
-
 /**
  * The pending occurrence a timezone move keeps. A new timezone alone keeps the next run's
  * local time, so a start set for later holds. In a timezone behind, the first run is the
@@ -887,7 +899,9 @@ export async function updateScheduleFromTool(
     }
     timezone = parsed.data;
   }
-  const hasTiming = TIMING_FIELDS.some((field) => isScheduleValueProvided(input.schedule[field]));
+  const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
+    isScheduleValueProvided(input.schedule[field]),
+  );
   const retime =
     hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
   if (!retime && name === undefined && prompt === undefined && input.active === undefined) {

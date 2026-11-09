@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
+import { MODEL_CREDITS_EXHAUSTED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { Prisma } from "./generated/prisma/client.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
@@ -15,6 +16,8 @@ import {
 import { isUniqueViolation } from "./prisma-errors.js";
 
 export const MICROS_PER_DOLLAR = 1_000_000;
+/** A charge the reconciler settled from counted tokens once the provider could not report one. */
+export const RECONCILED_ESTIMATE_COST_SOURCE = "reconciled-estimate";
 
 export async function creditAccount(prisma: PrismaClient, organizationId: string) {
   try {
@@ -127,10 +130,7 @@ export async function reserveModelCredits(
       where: { organizationId, balanceMicros: { gte: amountMicros } },
       data: { balanceMicros: { decrement: amountMicros } },
     });
-    if (reserved.count !== 1)
-      throw new Error(
-        "Not enough model credits. Add credits in Billing or connect your own API key.",
-      );
+    if (reserved.count !== 1) throw new Error(MODEL_CREDITS_EXHAUSTED_ERROR);
     const allocations = await allocateCreditLots(tx, organizationId, amountMicros, now);
     return (
       await tx.modelCreditEntry.create({
@@ -203,7 +203,7 @@ export function settleModelCredits(
   return prisma.$transaction((tx) => settleModelCreditsTx(tx, reservationId, costUsd, false, now));
 }
 
-/** A provider cost or a proven pre-generation stop can finalize accounting. */
+/** A provider cost, the reconciler's last resort, or a proven pre-generation stop is final. */
 export function hasFinalModelCost(
   usage: Pick<AgentUsage, "costUsd" | "costSource" | "usageSource">,
 ): boolean {
@@ -212,6 +212,7 @@ export function hasFinalModelCost(
     Number.isFinite(usage.costUsd) &&
     usage.costUsd >= 0 &&
     (usage.costSource === "provider-reported" ||
+      usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE ||
       (usage.costUsd === 0 &&
         ["not-started", "provider-rejected"].includes(usage.usageSource ?? "")))
   );

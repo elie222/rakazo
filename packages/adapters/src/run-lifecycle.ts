@@ -6,6 +6,7 @@ import {
 import type { RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
+  BACKGROUND_HELPER_TRIGGER,
   displayName,
   isTerminal,
   nextFence,
@@ -16,6 +17,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { isTooManyDatabaseConnections, spaceTakesWork } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { sleepDeferReason } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
@@ -105,11 +107,7 @@ export async function failRunBeforeTurn(
     error: message,
   });
   if (!failed) return false;
-  if (failed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(failed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, failed.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -120,7 +118,12 @@ export async function failRunBeforeTurn(
       { forceUnread: true },
     ).catch((error) => getLogger().error("bot message failure return", error));
   }
-  if (!failed.continuationRunId) {
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    // The chat that started the helper hears about its failure there, so it sends no push.
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
+      getLogger().error("background helper failure return", error),
+    );
+  } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(botName, "Bot")} failed`,
@@ -130,6 +133,17 @@ export async function failRunBeforeTurn(
     });
   }
   return true;
+}
+
+/** Queues the steered run that was waiting on this one, if any; a failed enqueue is logged, not thrown. */
+export async function enqueueSteeringContinuation(
+  deps: Pick<ExecutorDeps, "jobs">,
+  continuationRunId: string | null,
+): Promise<void> {
+  if (!continuationRunId) return;
+  await deps.jobs
+    .enqueue(runContinueJob(continuationRunId))
+    .catch((error) => getLogger().error("steering continuation enqueue", error));
 }
 
 export async function renewRunLease(
@@ -152,6 +166,16 @@ export async function renewRunLease(
 
 /** Consecutive setup failures, including this one, after which a run fails instead of retrying. */
 export const RUN_SETUP_FAILURE_LIMIT = 8;
+
+/** A paused turn's pending tool is not offered right now, such as while the user's own computer is offline. */
+export class PausedTurnToolsUnavailableError extends Error {
+  constructor() {
+    super(
+      "A tool this paused task was using is not available, so it cannot continue. Start the task again.",
+    );
+    this.name = "PausedTurnToolsUnavailableError";
+  }
+}
 
 /**
  * Setup failures in a row before the current attempt. Busy-computer and database waits are
@@ -446,10 +470,12 @@ export async function retryRunSetup(
   const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
   const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
-  // An outage at the computer provider is retried like any setup failure, but is not a
-  // Rakazo bug to report.
+  // An outage at the computer provider, or a paused turn's tool going offline, is retried like
+  // any setup failure, but is not a Rakazo bug to report.
   const providerOutage =
-    setupError instanceof SandboxUnavailableError || setupError instanceof SandboxUnresponsiveError;
+    setupError instanceof SandboxUnavailableError ||
+    setupError instanceof SandboxUnresponsiveError ||
+    setupError instanceof PausedTurnToolsUnavailableError;
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (providerOutage || !plan.leaseValid) {
     getLogger().warn("run setup failed", { error: reportedSetupError });

@@ -17,7 +17,6 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "@ronradtke/react-native-markdown-display": "9.0.3",
     "linkify-it": "5.0.2",
     "mermaid": "11.17.2",
     "prism-react-renderer": "2.4.1",
@@ -29,13 +28,17 @@
   "peerDependencies": {
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": ">=0.79"
+    "react-native": ">=0.79",
+    "@ronradtke/react-native-markdown-display": "9.0.3"
   },
   "peerDependenciesMeta": {
     "react-dom": {
       "optional": true
     },
     "react-native": {
+      "optional": true
+    },
+    "@ronradtke/react-native-markdown-display": {
       "optional": true
     }
   },
@@ -46,6 +49,7 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "@ronradtke/react-native-markdown-display": "9.0.3"
   }
 }

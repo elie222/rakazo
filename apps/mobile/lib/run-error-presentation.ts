@@ -1,9 +1,10 @@
-import type { normalizeRunError, RunErrorTranslator } from "@rakazo/core";
+import type { computerHoursOut } from "@rakazo/contracts";
+import type { normalizeRunError, RunErrorRecovery, RunErrorTranslator } from "@rakazo/core";
 
 /** The label of the one action that fixes the failure; transient failures have none. */
 export function runErrorActionLabel(
   t: RunErrorTranslator,
-  error: { recovery?: "connection" | "model"; kind?: string },
+  error: { recovery?: RunErrorRecovery; kind?: string },
 ) {
   if (error.recovery === "model") return t("Change model");
   if (error.recovery === "connection")
@@ -39,11 +40,31 @@ function readable(value: string) {
   return value.replace(/[{}[\]"“”]/g, "").trim();
 }
 
+/** Why computers ran out of hours, and the billing action that gives them more. */
+export function computerHoursOutCopy(
+  t: RunErrorTranslator,
+  reason: ReturnType<typeof computerHoursOut>,
+) {
+  switch (reason) {
+    case "trial":
+      return {
+        summary: t("Your trial's computer hours are used up."),
+        action: t("Start plan now"),
+      };
+    case "cancelled_trial":
+      return { summary: t("Cancelled trials have no computer hours."), action: t("Renew plan") };
+    default:
+      return { summary: t("This month's computer hours are used up."), action: t("Upgrade") };
+  }
+}
+
 /** The shared classifier owns error meaning; recovery actions only open settings. */
 export function runErrorWhatHappened(
   t: RunErrorTranslator,
-  error: { kind?: string; period?: string },
+  error: { kind?: string; period?: string; recovery?: RunErrorRecovery },
 ) {
+  // The summary already names the plan's hours as the cause.
+  if (error.recovery === "plan") return null;
   if (error.kind === "key") {
     switch (error.period) {
       case "daily":

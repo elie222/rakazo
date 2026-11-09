@@ -7,13 +7,15 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
-import type { MobileBot } from "./api";
-import { createInboxBot } from "./create-inbox-bot";
+import type { NativeRowMenu } from "../components/native-row";
+import { askForModelBeforeFirstBot, createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
+import { onInboxChanged } from "./inbox-changes";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
+import type { MobileBot } from "./mobile-types";
 import { useCollapsedSections } from "./use-collapsed-sections";
 import { useInboxDay } from "./use-inbox-day";
 import { usePublishSearchInbox } from "./use-publish-search-inbox";
@@ -29,6 +31,8 @@ const ui = vi.hoisted(() => ({
   previews: 0,
   push: vi.fn(),
   menus: [] as MenuProps[],
+  rowMenus: [] as NativeRowMenu[],
+  a11yActions: new Map<string, (event: { nativeEvent: { actionName: string } }) => void>(),
   swipeRows: [] as string[],
   avatars: [] as string[],
   chevronStarts: [] as number[],
@@ -69,13 +73,19 @@ vi.mock("react-native", () => {
       accessibilityState,
       accessibilityValue,
       onPress,
+      onLongPress,
+      accessibilityActions,
+      onAccessibilityAction,
       style,
     }: {
       children?: ReactNode;
+      accessibilityActions?: Array<{ name: string }>;
+      onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
       accessibilityLabel?: string;
       accessibilityState?: { expanded?: boolean };
       accessibilityValue?: { text?: string };
       onPress?: () => void;
+      onLongPress?: () => void;
       style?: unknown;
     }) => (
       <button
@@ -83,6 +93,12 @@ vi.mock("react-native", () => {
         aria-label={accessibilityLabel}
         aria-expanded={accessibilityState?.expanded}
         data-value={accessibilityValue?.text}
+        data-long-press={onLongPress ? "true" : undefined}
+        data-actions={accessibilityActions?.map((action) => action.name).join(" ")}
+        ref={() => {
+          if (accessibilityLabel && onAccessibilityAction)
+            ui.a11yActions.set(accessibilityLabel, onAccessibilityAction);
+        }}
         data-min-height={
           flatten(typeof style === "function" ? style({ pressed: false }) : style).minHeight
         }
@@ -116,6 +132,13 @@ vi.mock("@expo/ui/community/menu", () => ({
     return props.children;
   },
 }));
+// On iOS a heading's menu is the native list row's long-press menu.
+vi.mock("../components/native-row", () => ({
+  NativeRow: ({ menu, children }: { menu?: NativeRowMenu; children: ReactNode }) => {
+    if (menu) ui.rowMenus.push(menu);
+    return children;
+  },
+}));
 vi.mock("expo-router", () => {
   const router = { push: ui.push };
   return {
@@ -128,6 +151,9 @@ vi.mock("expo-router", () => {
     },
   };
 });
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: ui.rpc,
   captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({
@@ -195,8 +221,16 @@ vi.mock("../components/bot-avatar", () => ({
 vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
 // Rows in the current space carry the iOS swipe host and its long-press menu.
 vi.mock("../components/inbox-swipe-row", () => ({
-  InboxSwipeRow: ({ rowKey, children }: { rowKey: string; children: ReactElement }) => {
-    ui.swipeRows.push(rowKey);
+  InboxSwipeRow: ({
+    rowKey,
+    sections,
+    children,
+  }: {
+    rowKey: string;
+    sections: { id: string }[];
+    children: ReactElement;
+  }) => {
+    ui.swipeRows.push([rowKey, ...sections.map((section) => section.id)].join(" "));
     return children;
   },
 }));
@@ -206,7 +240,6 @@ const action = vi.fn();
 const callbacks = {
   appearance: "light" as const,
   botAction: action,
-  botSections: [],
   chooseInboxSpace: action,
   confirmDeleteSpace: action,
   createBotInSpace: action,
@@ -219,6 +252,8 @@ const callbacks = {
   organizeFromMenu: action,
   organizeGroup: action,
   sharing: false,
+  snoozeChat: action,
+  spaces: [],
   spaceBusy: false,
   spaceRecoveryId: null,
   toggleCollapsed: action,
@@ -236,7 +271,7 @@ function List({
   day?: number;
   options?: Partial<Parameters<typeof useInboxRenderItem>[0]>;
 }) {
-  const renderItem = useInboxRenderItem({ ...callbacks, ...options, day, spaceId });
+  const renderItem = useInboxRenderItem({ now: 0, ...callbacks, ...options, day, spaceId });
   onRenderItem?.(renderItem);
   // Keyed like the inbox's FlatList.
   return items.map((item) => cloneElement(renderItem({ item }), { key: inboxItemKey(item) }));
@@ -261,6 +296,7 @@ beforeEach(() => {
     focused: true,
     previews: 0,
     menus: [],
+    rowMenus: [],
     swipeRows: [],
     avatars: [],
     chevronStarts: [],
@@ -391,10 +427,12 @@ it("renders saved bot rows without a notification setting", () => {
         key={bot.id}
         bot={bot}
         day={0}
+        now={0}
         onPress={action}
         sections={[]}
         onOrganize={action}
         onEditSection={action}
+        onSnooze={action}
       />
     )),
   );
@@ -424,7 +462,8 @@ it("renders saved bot rows without a notification setting", () => {
 
 it("says working only while the bot works, and shows nothing beside the time", () => {
   const bots = ["running", "waiting_takeover", "waiting_input", "idle"].map(
-    (status) => ({ id: status, name: "Helper", preview: "Hi", status }) as MobileBot,
+    (status) =>
+      ({ id: status, name: "Helper", preview: "Hi", status, color: "#8B5CF6" }) as MobileBot,
   );
   render(
     bots.map((bot) => (
@@ -432,10 +471,12 @@ it("says working only while the bot works, and shows nothing beside the time", (
         key={bot.id}
         bot={bot}
         day={0}
+        now={0}
         onPress={action}
         sections={[]}
         onOrganize={action}
         onEditSection={action}
+        onSnooze={action}
       />
     )),
   );
@@ -450,6 +491,30 @@ it("says working only while the bot works, and shows nothing beside the time", (
   ]);
 });
 
+it("marks a ghost bot waiting on you like an unread chat", () => {
+  const bot = {
+    id: "asks",
+    name: "Helper",
+    preview: "Hi",
+    status: "waiting_input",
+    avatarSet: "rakazo",
+    color: "#8B5CF6",
+  } as MobileBot;
+  render(
+    <BotRow
+      bot={bot}
+      day={0}
+      now={0}
+      onPress={action}
+      sections={[]}
+      onOrganize={action}
+      onEditSection={action}
+      onSnooze={action}
+    />,
+  );
+  expect(rowLabels()).toEqual(["Helper, Needs attention, Hi"]);
+});
+
 it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
   const bot = { id: "bot-p", name: "Pinned", preview: "", pinned: true } as MobileBot;
   render(<List items={[{ type: "pinned", chats: [{ kind: "bot", bot }] }]} />);
@@ -461,7 +526,13 @@ it("collapses a section from its heading and keeps the choice for the account", 
   ui.saveCollapsedSections.mockReset();
   function SectionList({ spaces, me }: { spaces: InboxSpace[]; me: { userId: string } }) {
     const { collapsed, toggleCollapsed, loaded } = useCollapsedSections(me.userId);
-    const renderItem = useInboxRenderItem({ ...callbacks, toggleCollapsed, day: 0, spaceId });
+    const renderItem = useInboxRenderItem({
+      ...callbacks,
+      toggleCollapsed,
+      day: 0,
+      now: 0,
+      spaceId,
+    });
     // The inbox waits for the saved choice, so a collapsed section never draws open first.
     if (!loaded) return null;
     return spaceInboxItems(spaces, collapsed, spaceId).map((item) =>
@@ -587,7 +658,7 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   expect(publish).toHaveBeenLastCalledWith([]);
 });
 
-it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
+it("gives chats in every space the long-press menu, with their own space's sections", () => {
   const chat = (id: string, spaceId: string) => ({
     id,
     spaceId,
@@ -595,15 +666,35 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     preview: "",
     members: [],
   });
-  // Chats listed from another space have no row menu, as with Archive.
   const items = [
     { type: "bot", bot: chat("current-bot", "space-current") },
     { type: "group", group: chat("current-group", "space-current") },
     { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
   ] as unknown as InboxItem[];
-  render(<List items={items} spaceId="space-current" />);
-  expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
+  const section = (id: string) => ({ id, name: id, position: 0, createdAt: "", updatedAt: "" });
+  render(
+    <List
+      items={items}
+      spaceId="space-current"
+      options={{
+        spaces: [
+          { id: "space-current", botSections: [section("current-section")] },
+          { id: "space-other", botSections: [section("other-section")] },
+        ],
+      }}
+    />,
+  );
+  expect(ui.swipeRows).toEqual([
+    "bot:current-bot current-section",
+    "group:current-group current-section",
+    "bot:other-bot other-section",
+    "group:other-group other-section",
+  ]);
+  // A long press opens the menu and never the chat.
+  const rows = Array.from(container.querySelectorAll("button"));
+  expect(rows).toHaveLength(4);
+  for (const row of rows) expect(row.dataset.longPress).toBe("true");
 });
 
 it("offers every space heading's Members and Settings, and Delete only where the member may delete it", () => {
@@ -623,22 +714,22 @@ it("offers every space heading's Members and Settings, and Delete only where the
       options={{ confirmDeleteSpace }}
     />,
   );
-  expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
+  expect(ui.rowMenus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
     ["new-bot", "members", "settings"],
     ["new-bot", "members", "settings", "delete"],
   ]);
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "members" } }));
+  act(() => ui.rowMenus[1]!.onAction("members"));
   expect(ui.push).toHaveBeenLastCalledWith({
     pathname: "/space-members",
     params: { spaceId: "space-work", name: "Work" },
   });
   // Settings open the Space's own page, which edits that Space even when another is selected.
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
+  act(() => ui.rowMenus[1]!.onAction("settings"));
   expect(ui.push).toHaveBeenCalledWith({
     pathname: "/space",
     params: { spaceId: "space-work", name: "Work" },
   });
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
+  act(() => ui.rowMenus[1]!.onAction("delete"));
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });
 
@@ -653,21 +744,18 @@ it("creates a bot in the heading's own space, and not while a space switch or re
     }) as unknown as InboxItem;
   const items = [heading("space-home", "Home"), heading("space-work", "Work")];
   render(<List items={items} spaceId="space-home" options={{ createBotInSpace }} />);
-  const newBot = (menu: MenuProps) => menu.actions.find((entry) => entry.id === "new-bot");
-  expect(ui.menus.map((menu) => newBot(menu))).toEqual([
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
-    expect.objectContaining({ title: "New bot", attributes: { disabled: false } }),
+  const newBot = (menu: NativeRowMenu) => menu.actions.find((entry) => entry.id === "new-bot");
+  expect(ui.rowMenus.map((menu) => newBot(menu))).toEqual([
+    expect.objectContaining({ title: "New bot", disabled: false }),
+    expect.objectContaining({ title: "New bot", disabled: false }),
   ]);
   // A heading of a space that is not selected still makes the bot in that space.
-  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "new-bot" } }));
+  act(() => ui.rowMenus[1]!.onAction("new-bot"));
   expect(createBotInSpace).toHaveBeenCalledWith("space-work");
   for (const options of [{ spaceBusy: true }, { spaceRecoveryId: "space-home" }]) {
-    ui.menus = [];
+    ui.rowMenus = [];
     render(<List items={items} spaceId="space-home" options={{ createBotInSpace, ...options }} />);
-    expect(ui.menus.map((menu) => newBot(menu)?.attributes)).toEqual([
-      { disabled: true },
-      { disabled: true },
-    ]);
+    expect(ui.rowMenus.map((menu) => newBot(menu)?.disabled)).toEqual([true, true]);
   }
 });
 
@@ -684,7 +772,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   ui.searchInboxSession.mockReset().mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.addToSearchInbox.mockReset();
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: vi.fn(),
     spaceId: "space-work",
   });
@@ -702,7 +790,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   );
   // The Create menu's bot sends no pin, so it follows the selected space as before.
   ui.rpc.mockClear();
-  await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(4));
   expect(spaces()).toEqual([
     ["bots/list", undefined],
@@ -723,7 +811,7 @@ it.each(["session", "space"])(
       );
     const openChat = vi.fn();
     const creating = createInboxBot({
-      refreshBots: async () => undefined,
+      input: { name: "Scout" },
       openChat,
       spaceId: "space-work",
     });
@@ -749,7 +837,7 @@ it("does not open a created bot after its account or server changes", async () =
     );
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -770,7 +858,7 @@ it("opens a heading-created bot in its space after the selection changes during 
   });
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -796,7 +884,7 @@ it.each([true, false])(
       return [];
     });
     const openChat = vi.fn();
-    await createInboxBot({ refreshBots: async () => undefined, openChat, spaceId: "space-work" });
+    await createInboxBot({ input: { name: "Scout" }, openChat, spaceId: "space-work" });
     expect(ui.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, {
       requestContext: { headers: { "x-rakazo-space-id": "space-work" } },
     });
@@ -822,7 +910,7 @@ it("asks for a model instead of making the first bot when the account has none",
     return method === "bots/list" ? bots : { id: "bot-new", name: "New Bot" };
   });
   const openChat = vi.fn();
-  const create = () => createInboxBot({ refreshBots: async () => undefined, openChat });
+  const create = () => createInboxBot({ input: { name: "Scout" }, openChat });
   const buttons = () =>
     ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[] | undefined;
   const select = (spaceId: string) => {
@@ -939,13 +1027,18 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
       calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(session)}`),
     );
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
   // The server gives the bot the account's set, so the inbox sends none.
   expect(ui.rpc).toHaveBeenCalledWith(
     "bots/create",
     expect.not.objectContaining({ avatarSet: expect.anything() }),
+    undefined,
+  );
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ name: "Scout" }),
     undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
@@ -962,15 +1055,72 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
   expect(ui.hapticSuccess).toHaveBeenCalledOnce();
 });
 
+it("asks for a model as the New bot screen opens, only for a first bot without one", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  let bots: unknown[] = [];
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "me") return { needsModel: true };
+    if (method === "bots/create") return { id: "bot-new", name: "Scout" };
+    return method === "bots/list" ? bots : [];
+  });
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(true);
+  expect(ui.alert).toHaveBeenCalledOnce();
+  bots = [{ id: "bot-existing" }];
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(false);
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("created");
+  bots = [];
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("needsModel");
+  expect(ui.rpc.mock.calls.filter(([method]) => method === "bots/create")).toHaveLength(1);
+});
+
+it("does not ask for a model after the space changes during the opening check", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/list") {
+      ui.spaceSeq++;
+      return [];
+    }
+    return method === "me" ? { needsModel: true } : [];
+  });
+  expect(await askForModelBeforeFirstBot("space-work", () => true)).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
+it("does not ask for a model once the New bot screen has closed", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) => (method === "me" ? { needsModel: true } : []));
+  expect(await askForModelBeforeFirstBot(undefined, () => false)).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
+it("tells the inbox to reload once the bot exists", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) =>
+      method === "bots/create" ? { id: "bot-new", name: "Scout" } : [{ id: "bot-existing" }],
+    );
+  const changed = vi.fn();
+  const stop = onInboxChanged(changed);
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
+  stop();
+  expect(changed).toHaveBeenCalledOnce();
+});
+
 it("does not confirm a failed inbox bot creation with success feedback", async () => {
   ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.rpc.mockReset().mockImplementation(async (method: string) => {
     if (method === "bots/create") throw new Error("Creation failed");
     return [];
   });
-  await expect(
-    createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() }),
-  ).rejects.toThrow("Creation failed");
+  await expect(createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).rejects.toThrow(
+    "Creation failed",
+  );
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });
 
@@ -988,7 +1138,7 @@ it.each([
         })
       : [],
   );
-  const creating = createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  const creating = createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() =>
     expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
   );
@@ -996,4 +1146,41 @@ it.each([
   finish({ id: "bot-new", name: "New Bot" });
   await creating;
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
+});
+
+it("lets screen readers reach a heading's long-press menu through the heading", () => {
+  const deleteSection = vi.fn();
+  const confirmDeleteSpace = vi.fn();
+  render(
+    <List
+      items={[
+        {
+          type: "heading",
+          key: "space-work",
+          title: "Work",
+          space: {
+            id: "space-work",
+            name: "Work",
+            isDefault: false,
+            canDelete: true,
+            bots: [],
+            groups: [],
+            botSections: [],
+          },
+        } as unknown as InboxItem,
+        { type: "heading", key: "section:s1", title: "Ideas", sectionId: "s1" } as InboxItem,
+      ]}
+      spaceId="space-home"
+      options={{ deleteSection, confirmDeleteSpace }}
+    />,
+  );
+  const space = container.querySelector<HTMLElement>('button[aria-label="Work"]')!;
+  // A disabled item is left out; here none is.
+  expect(space.dataset.actions).toBe("new-bot members settings delete");
+  const section = container.querySelector<HTMLElement>('button[aria-label="Collapse Ideas"]')!;
+  expect(section.dataset.actions).toBe("delete");
+  act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
+  expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
+  act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));
+  expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });

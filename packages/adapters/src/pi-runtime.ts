@@ -494,6 +494,13 @@ export class PiAgentRuntime implements AgentRuntime {
             agent.state.model = target.model;
             contextPolicy = contextPolicyFor(target);
           },
+          // A throwaway policy, so judging a backup leaves the active policy's sent transcript
+          // alone. Cache use is recorded only on usage, which a throwaway never sees. The opening
+          // turn is added as on each call, so the backup is judged on what it would be sent.
+          prepareForTarget: (target, ctx) => ({
+            ...ctx,
+            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
+          }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
@@ -619,8 +626,10 @@ export class PiAgentRuntime implements AgentRuntime {
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
+              // Steered, so the output reaches the next model request like a tool result. A
+              // follow-up waits until the model stops and then costs one model turn each.
               (text) => {
-                agent.followUp({
+                agent.steer({
                   role: "user",
                   content: text,
                   timestamp: Date.now(),
@@ -660,7 +669,7 @@ export class PiAgentRuntime implements AgentRuntime {
             for (const item of steering) representedHistoryIds.add(item.messageId);
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
-            for (const item of steering) {
+            const messages = steering.map((item): Message => {
               const images = toPiImages(item.images);
               const text =
                 item.origin === "user"
@@ -669,18 +678,21 @@ export class PiAgentRuntime implements AgentRuntime {
                       toolDefs.some((tool) => tool.name === "message_user"),
                     )
                   : midTaskMessageFromPrompt(steeringText(item), item.origin);
-              agent.steer({
+              return {
                 role: "user",
                 content: images.length ? [{ type: "text", text }, ...images] : text,
                 timestamp: Date.now(),
-              });
-            }
+              };
+            });
             // Ordered with the turn's other events, so the run can treat it as a turn boundary.
             queue.push({
               type: "steered",
               fromRunUser: steering.some((item) => item.origin === "user"),
             });
-            return update;
+            // Returned rather than steered: Pi polls its steering queue once per turn before
+            // this hook runs, and skips the poll after it when that one found a message, such
+            // as a finished shell's output. Returned messages always go into the next request.
+            return { ...update, messages };
           },
           initialState: {
             systemPrompt,
@@ -1163,7 +1175,10 @@ export class PiAgentRuntime implements AgentRuntime {
               ...fallbackState.backupOutcomes.values(),
             ]);
           }
-          throw modelFailure(error, message);
+          throw modelFailure(error, message, {
+            provider: activeStreamTarget.config.provider,
+            primaryProvider: fallbackState.request.model.provider,
+          });
         }
         // Only an assistant message can hold the answer a provider left off the deltas;
         // a trailing tool result is tool output, not the model's reply.

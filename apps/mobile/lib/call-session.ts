@@ -24,14 +24,10 @@ import {
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
 import { useSyncExternalStore } from "react";
-import type { ApiRequestContext, MobileSnapshot } from "./api";
-import {
-  blockText,
-  captureApiRequestContext,
-  configureSessionEndHangUp,
-  rpc,
-  subscribeThread,
-} from "./api";
+import type { ApiRequestContext } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
+import { subscribeThread } from "./api-live";
+import { configureSessionEndHangUp } from "./api-server";
 import type { CallCue } from "./call-sounds";
 import {
   playCallCue,
@@ -44,12 +40,14 @@ import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
+import type { MobileSnapshot } from "./mobile-types";
+import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
 import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
-import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
+import { createSpeechOwner, ensureVoiceConsent, speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 
@@ -79,7 +77,10 @@ export type DictationHandlers = {
 export type CallDeps = {
   /** On-device dictation for one turn. False when the device cannot recognise speech. */
   dictate: (handlers: DictationHandlers, signal: AbortSignal) => Promise<boolean>;
-  /** Fallback when the device cannot: record a clip and send it to the voice provider. */
+  /**
+   * Fallback when the device cannot: record a clip and send it to the voice provider. Asks for
+   * voice data sharing first, so it can throw AiConsentBlocked before the microphone opens.
+   */
   record: (signal: AbortSignal) => Promise<CallClip | null>;
   transcribe: (clip: CallClip, signal: AbortSignal) => Promise<string>;
   /** Resolves with the run the message started, so only that run's reply is spoken. */
@@ -474,7 +475,8 @@ async function openMic(): Promise<void> {
   } catch (error) {
     if (!mine()) return;
     micOpen = false;
-    failTurn(error);
+    if (error instanceof AiConsentBlocked) blockForConsent(error);
+    else failTurn(error);
   }
 }
 
@@ -815,7 +817,10 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   };
   const own: CallDeps = {
     dictate: dictateTurn,
-    record: recordClip,
+    record: async (signal) => {
+      await ensureVoiceConsent(await callContext());
+      return recordClip(signal);
+    },
     transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
     send: (botId, text, clientNonce) =>
       endOnUnauthorized(

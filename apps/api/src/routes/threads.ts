@@ -25,6 +25,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { releaseComputerControl } from "../computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -39,6 +40,7 @@ import { reactToThreadMessage } from "../thread-reactions.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
+  setThreadSnooze,
   setThreadUnreadState,
 } from "../thread-read-state.js";
 import { threadSnapshot } from "../thread-snapshot.js";
@@ -52,7 +54,6 @@ import {
   threadHead,
 } from "../thread-target.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -306,6 +307,11 @@ export function threadsRoutes(ctx: RouterContext) {
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
+        return { ok: true as const };
+      }),
+      stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await stopThreadRuns(deps, context.actor, target, input.messageId);
         return { ok: true as const };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
@@ -660,6 +666,11 @@ export function threadsRoutes(ctx: RouterContext) {
         } else {
           await setThreadUnreadState(deps.prisma, context.actor, target, true);
         }
+        return { ok: true as const };
+      }),
+      snooze: authed.threads.snooze.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadSnooze(deps.prisma, context.actor, target, input.until);
         return { ok: true as const };
       }),
     },

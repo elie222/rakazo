@@ -21,9 +21,9 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { handleRpcError } from "./app.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+import { handleRpcError } from "./rpc-errors.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -956,6 +956,44 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await expect(
       call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
     ).resolves.toMatchObject({ status: 409 });
+    // A background helper never uses the computer, so it doesn't keep teaching away, and the
+    // teacher's own helper keeps working through the lesson.
+    await system.run.updateMany({
+      where: { botId: bot.id, status: "running" },
+      data: { trigger: "helper" },
+    });
+    const helperThread = await system.thread.create({
+      data: { spaceId: home, helperBotId: otherBot.id, userId: invitee.id },
+    });
+    const helperTask = await system.task.create({
+      data: {
+        spaceId: home,
+        botId: otherBot.id,
+        threadId: helperThread.id,
+        userId: invitee.id,
+        prompt: "Compare menus",
+        status: "running",
+      },
+    });
+    const ownHelper = await system.run.create({
+      data: {
+        spaceId: home,
+        botId: otherBot.id,
+        threadId: helperThread.id,
+        taskId: helperTask.id,
+        userId: invitee.id,
+        status: "running",
+        trigger: "helper",
+      },
+    });
+    expect(
+      JSON.stringify(
+        await call(asInvitee, "skills/start", { botId: otherBot.id, goal: "Book a table" }),
+      ),
+    ).not.toContain("working for someone else");
+    await expect(
+      system.run.findUniqueOrThrow({ where: { id: ownHelper.id } }),
+    ).resolves.toMatchObject({ status: "running" });
 
     // A member removed while holding the screen frees it at once, not when the lease runs out.
     await system.computer.update({
@@ -1408,5 +1446,104 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     const { spaceIds } = await claimSpacesLeavingWithAccount(prisma, leaver.id);
     expect(spaceIds).toContain(guestsOnly);
     expect(spaceIds).not.toContain(shared);
+  });
+
+  it.each([
+    { name: "hands over and departs in one go", failFirst: false, coOwner: false },
+    {
+      name: "a retry after a failed departure still departs",
+      failFirst: true,
+      coOwner: false,
+    },
+    { name: "an owner beside another owner stays", failFirst: false, coOwner: true },
+  ])("leaving a Space it owns elsewhere: $name", async ({ failFirst, coOwner }) => {
+    const lead = await person("lead");
+    const teammate = await person("teammate");
+    const leaver = await person("leaver");
+    const createdAt = new Date();
+    for (const member of [teammate, leaver]) {
+      await system.member.create({
+        data: {
+          id: `m-${member.id}-team`,
+          organizationId: lead.organizationId,
+          userId: member.id,
+          role: "member",
+          createdAt,
+        },
+      });
+    }
+    const shared = await sharedSpace(lead, "Shared");
+    await system.spaceMember.deleteMany({ where: { spaceId: shared, userId: lead.id } });
+    for (const [member, role] of [
+      [leaver, "owner"],
+      [teammate, coOwner ? "owner" : "member"],
+    ] as const) {
+      await system.spaceMember.create({
+        data: {
+          id: randomUUID(),
+          spaceId: shared,
+          organizationId: lead.organizationId,
+          userId: member.id,
+          role,
+          createdAt,
+        },
+      });
+    }
+    const bot = await system.bot.create({
+      data: { spaceId: shared, userId: leaver.id, name: "Planner", color: "test" },
+    });
+    const onDeparture = vi.fn(async (_departure: { spaceId: string }) => undefined);
+
+    if (failFirst) {
+      // A transient database error as the departure takes the leaver out of the Space.
+      const ownerDb = createDb(process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL!);
+      await ownerDb.prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION space_departure_test_fail() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'injected failure'; END $$ LANGUAGE plpgsql`);
+      await ownerDb.prisma.$executeRawUnsafe(
+        `CREATE TRIGGER space_departure_test_fail BEFORE DELETE ON space_members
+         FOR EACH ROW WHEN (OLD."userId" = '${leaver.id}' AND OLD."spaceId" = '${shared}')
+         EXECUTE FUNCTION space_departure_test_fail()`,
+      );
+      try {
+        await expect(leaveInvitedSpaces(prisma, leaver.id, onDeparture)).rejects.toThrow(
+          "injected failure",
+        );
+      } finally {
+        await ownerDb.prisma.$executeRawUnsafe(
+          "DROP TRIGGER space_departure_test_fail ON space_members",
+        );
+        await ownerDb.prisma.$executeRawUnsafe("DROP FUNCTION space_departure_test_fail()");
+        await ownerDb.prisma.$disconnect();
+        await ownerDb.pool.end();
+      }
+    }
+
+    const departures = await leaveInvitedSpaces(prisma, leaver.id, onDeparture);
+
+    const left = !coOwner;
+    // Both also joined the organization's default Space, which they leave either way.
+    const fromShared = (spaceIds: string[]) => spaceIds.filter((spaceId) => spaceId === shared);
+    expect(fromShared(departures.map((departure) => departure.spaceId))).toEqual(
+      left ? [shared] : [],
+    );
+    expect(fromShared(onDeparture.mock.calls.map(([departure]) => departure.spaceId))).toEqual(
+      left ? [shared] : [],
+    );
+    await expect(
+      system.spaceMember.findMany({
+        where: { spaceId: shared },
+        select: { userId: true, role: true },
+        orderBy: { userId: "asc" },
+      }),
+    ).resolves.toEqual(
+      [
+        ...(left ? [] : [{ userId: leaver.id, role: "owner" }]),
+        { userId: teammate.id, role: "owner" },
+      ].sort((a, b) => a.userId.localeCompare(b.userId)),
+    );
+    await expect(system.bot.findUniqueOrThrow({ where: { id: bot.id } })).resolves.toMatchObject({
+      userId: left ? teammate.id : leaver.id,
+    });
   });
 });

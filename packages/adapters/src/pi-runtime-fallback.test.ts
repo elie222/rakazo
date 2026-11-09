@@ -1864,6 +1864,84 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledTimes(1);
   });
 
+  it("uses a smaller backup on the context its own policy shortens to fit", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id }]);
+    input.resolveFallbackModel = async (provider, id) => ({
+      provider,
+      id,
+      apiKey: "fake-small-window-key",
+    });
+    // Each turn alone fits the 8K backup; together they fit only the 32K primary.
+    input.history = Array.from({ length: 8 }, (_, index) => ({
+      id: `older-${index}`,
+      role: index % 2 ? ("assistant" as const) : ("user" as const),
+      content: `Older turn ${index}. `.repeat(400),
+    })) as AgentRunRequest["history"];
+    const sent: { provider: string; messages: number }[] = [];
+    providerState.stream.mockImplementation(
+      (target: Model<"openai-completions">, context: { messages: unknown[] }) => {
+        sent.push({ provider: target.provider, messages: context.messages.length });
+        return target.provider === primary.provider
+          ? stream(target, message(target, [], "error", "429 quota exhausted"))
+          : stream(target, message(target, [{ type: "text", text: "done" }], "stop"));
+      },
+    );
+    await run(input);
+    expect(sent.map((call) => call.provider)).toEqual([primary.provider, backupA.provider]);
+    expect(sent[1]!.messages).toBeLessThan(sent[0]!.messages);
+  });
+
+  it("still skips a smaller backup when the context strategy keeps the transcript as is", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id }]);
+    input.contextStrategy = "current";
+    input.resolveFallbackModel = async (provider, id) => ({
+      provider,
+      id,
+      apiKey: "fake-small-window-key",
+    });
+    input.history = Array.from({ length: 8 }, (_, index) => ({
+      id: `older-${index}`,
+      role: index % 2 ? ("assistant" as const) : ("user" as const),
+      content: `Older turn ${index}. `.repeat(400),
+    })) as AgentRunRequest["history"];
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", "429 quota exhausted")),
+    );
+    const error = await run(input).catch((error: Error) => error);
+    expect(JSON.parse((error as Error).message).backups).toEqual([
+      {
+        provider: backupA.provider,
+        modelId: backupA.id,
+        status: "skipped",
+        reason: "Conversation exceeds the backup model's context limit.",
+      },
+    ]);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it("still skips a backup whose window cannot hold the instructions", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id }]);
+    input.instructions = "Mandatory instruction. ".repeat(4_000);
+    input.resolveFallbackModel = async (provider, id) => ({
+      provider,
+      id,
+      apiKey: "fake-small-window-key",
+    });
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", "429 quota exhausted")),
+    );
+    const error = await run(input).catch((error: Error) => error);
+    expect(JSON.parse((error as Error).message).backups).toEqual([
+      {
+        provider: backupA.provider,
+        modelId: backupA.id,
+        status: "skipped",
+        reason: "Conversation exceeds the backup model's context limit.",
+      },
+    ]);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+  });
+
   it("retains the primary failure when a backup fails for a different reason", async () => {
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       stream(

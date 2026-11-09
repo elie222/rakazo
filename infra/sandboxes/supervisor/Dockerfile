@@ -2,7 +2,7 @@ FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b34
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 WORKDIR /app
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .pnpmfile.cjs ./
 COPY patches patches
 COPY packages/contracts packages/contracts
 COPY packages/core packages/core
