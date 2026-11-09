@@ -529,6 +529,49 @@ contract on both versions; two further trials stalled waiting on the provider
 and are not counted. The offline protocol fixture checks the seeding and
 the grading path for both a read and an unread lease.
 
+### Connected app evals
+
+```sh
+pnpm test:evals --suite apps --list
+pnpm test:evals --live --suite apps --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --spend-cap-usd 1 --output test-report/evals/apps.json
+```
+
+`packages/testkit/src/apps` holds three stateful service emulators: mail
+(threads with real headers, labels, search operators, drafts and sends), files
+(folders, documents, spreadsheets and PDFs with content, sharing, permission
+errors) and notes (pages of blocks and databases with typed properties). They
+are offline and deterministic for a given clock, and log every call and write.
+A fixture can switch on not-found, permission-denied, rate-limit (with a retry
+time) and expired-auth failures for any tool.
+
+A case lists the emulators it needs in `apps`. The runner serves each one as a
+streamable HTTP MCP server on loopback with a bearer token and adds it through
+`mcp/servers/create`, the way a person adds a remote MCP server. The bot then
+reaches it through the product's own MCP client, tool naming, read/write
+classification and Auto Review, and sees `mcp__mail__search_threads` and
+similar names. Emulators are generic service kinds; no vendor's name or API
+is copied.
+
+The seed is one invented furniture studio across all three services, with
+dates relative to the trial's clock so "this week" stays true. Cases: draft a
+reply to a client that links the latest proposal file and its total without
+sending or sharing; update the matching rows of a 25-row supplier deliveries
+database from this week's mail; and, after a mail rate limit, follow a link to
+a spreadsheet the account cannot open and say so. Deterministic checks read
+the emulators' recorded calls, writes and final state. The
+`connected-apps-meaning-v2` rubric judges the draft and the restricted-file
+reply by meaning; calibration covers a paraphrased total, a stale total, an
+invented discount, a claimed send, an honest refusal, a labelled prior-year
+figure, an invented figure and a wrong cause.
+
+The first November 2026 run, one trial per case on a small Anthropic model judging
+itself, passed the tracker and restricted-file cases. The draft case was right on
+every recorded effect but the judge failed it because it could not
+see the proposal its draft quoted. With the proposal text in the judge's
+evidence (v2) and that reviewed draft added as a label, a second run passed all
+three. The rate-limited search was retried and the restricted file was reported
+as unshared, not answered from the prior year's budget.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:

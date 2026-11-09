@@ -1,3 +1,4 @@
+import type { AppEmulator } from "../apps/app-emulator.js";
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
 import type { JudgeInput } from "./judge.js";
@@ -43,6 +44,8 @@ export type Evidence = {
   seededAttachments?: Record<string, { path: string; content: string | null }>;
   records: EvalServices["records"];
   notes: EvalServices["notes"];
+  /** The case's connected services by kind, with every call and write they recorded. */
+  apps?: Record<string, AppEmulator>;
   calls: ServiceCall[];
   routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
@@ -94,6 +97,11 @@ export type EvalCase = {
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
+  /**
+   * Services the bot reaches as MCP servers the user added, built fresh for each trial on the
+   * trial's clock and served over streamable HTTP on loopback.
+   */
+  apps?: (now: Date) => AppEmulator[];
   routine?: { prompt: string };
   /**
    * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
