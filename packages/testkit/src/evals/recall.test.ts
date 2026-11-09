@@ -190,6 +190,8 @@ describe("recall outcome grading", () => {
       expect(shell(id, "chromium --version")!.stdout).toMatch(/^Chromium 131\./);
       expect(shell(id, "uname -a")).toBeUndefined();
     }
+    // Only the installed extension's own manifest shows it; an unrelated path proves nothing.
+    expect(shell("tool-steps-replayed", "cat ~/notes/manifest.json")).toBeUndefined();
     // A redirect silences only the check it follows, so an earlier failure still shows.
     const loop = shell(
       absent,

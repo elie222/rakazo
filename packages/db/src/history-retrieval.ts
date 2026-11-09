@@ -318,13 +318,13 @@ function withAttachments<T extends { messageId: string }>(
 }
 
 /** Whether any reply the search could reach used tools. */
-async function hasToolWork(prisma: PrismaClient, scope: HistoryScope, myChats: boolean) {
+/** Whether this chat has earlier replies that used tools; this chat only, so it stays indexed. */
+async function hasToolWork(prisma: PrismaClient, scope: HistoryScope) {
   const rows = await prisma.$queryRaw<unknown[]>(Prisma.sql`
     SELECT 1 FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope, myChats)}
+    WHERE ${visible(scope, false)}
       AND m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')
       ${scope.searchBeforeSeq !== undefined ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${scope.searchBeforeSeq})` : Prisma.empty}
-      ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}
     LIMIT 1`);
   return rows.length > 0;
 }
@@ -465,7 +465,7 @@ export async function searchHistory(
   const note =
     page.length || browsing
       ? undefined
-      : (await hasToolWork(prisma, scope, myChats))
+      : (await hasToolWork(prisma, scope))
         ? `${coverageNote} ${toolWorkHint(myChats)}`
         : coverageNote;
   const nextBeforeSeq =

@@ -275,7 +275,8 @@ const INSTALLED_COMPUTER: ComputerScript = {
     { match: FIND, output: MANIFEST },
     { match: GREP_TREE, output: MANIFEST },
     {
-      match: /manifest\.json/,
+      // Only the installed extension's own manifest (or a glob over the folder) shows it.
+      match: new RegExp(`Extensions/(?:${EXTENSION_ID}|\\*)[^\\s;&|]*manifest\\.json`),
       output:
         '{\n  "name": "Midnight Lizard",\n  "version": "10.7.1",\n  "manifest_version": 3,\n  "description": "Color schemes and dark mode for web pages."\n}',
     },

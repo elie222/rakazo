@@ -31,6 +31,11 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(script, "echo hi 2>/dev/null")?.stdout).toBe("hi");
   });
 
+  it("hides a check's output when its stdout is redirected", () => {
+    expect(scriptedShell(script, "df -h > /dev/null")).toEqual({ stdout: "", stderr: "", code: 0 });
+    expect(scriptedShell(script, "df -h 2>/dev/null")?.stdout).not.toBe("");
+  });
+
   it("covers no command list with an unscripted command in it", () => {
     expect(scriptedShell(script, "uptime")).toBeUndefined();
     expect(scriptedShell(script, "cat /etc/os-release; df -h")).toBeUndefined();

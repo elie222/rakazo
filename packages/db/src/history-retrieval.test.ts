@@ -49,7 +49,8 @@ describe("local history retrieval", () => {
         messageId: "message-4",
         ...(crossChat ? { threadId: "peer-thread" } : {}),
       });
-      // The empty search also checks for earlier tool work, under the same visibility.
+      // The empty search also checks this chat (call 1) for earlier tool work, so that check
+      // never takes the cross-chat path.
       expect(mock.$queryRaw).toHaveBeenCalledTimes(5);
       for (let call = 0; call < 5; call++) {
         const query = sql(mock, call);
@@ -58,7 +59,7 @@ describe("local history retrieval", () => {
         expect(query.sql).toContain('pending."messageId" = m.id AND pending."botId" =');
         expect(query.sql).toContain('pending."runId" IS NULL');
         expect(query.values).toContain(scope.botId);
-        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat);
+        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat && call !== 1);
       }
     },
   );

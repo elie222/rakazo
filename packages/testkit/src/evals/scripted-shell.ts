@@ -27,6 +27,8 @@ export interface ComputerScript {
 const COMPOUND =
   /\b(?:for|while|until|if|case|function)\b|\$\(|`|\b(?:python3?|node|perl|awk|sh|bash)\b/;
 const SILENCED = /2>\s*\/dev\/null|2>&-|&>\s*\/dev\/null/;
+/** `>`, `>>`, `1>` or `&>` send stdout elsewhere; `2>` only moves stderr. */
+const STDOUT_REDIRECT = /(?<![2>])>(?!&2)/;
 
 /**
  * What the script answers for a shell command, or undefined when it covers none of it. A plain
@@ -40,11 +42,13 @@ export function scriptedShell(
 ): { stdout: string; stderr: string; code: number } | undefined {
   const out: string[] = [];
   const err: string[] = [];
-  const emit = (check: ScriptedCheck, silenced: boolean) => {
+  // `segment` is the command text a check answers for: its redirects decide what is shown.
+  const emit = (check: ScriptedCheck, segment: string) => {
     const code = check.exitCode ?? 0;
     if (!check.output) return code;
-    if (code === 0) out.push(check.output);
-    else if (!silenced) err.push(check.output);
+    if (code === 0) {
+      if (!STDOUT_REDIRECT.test(segment)) out.push(check.output);
+    } else if (!SILENCED.test(segment)) err.push(check.output);
     return code;
   };
   if (COMPOUND.test(command)) {
@@ -58,7 +62,7 @@ export function scriptedShell(
     if (!found.length) return undefined;
     // Each check is silenced only by a redirect before the next check, not by one elsewhere.
     const codes = found.map(({ check, at }, index) =>
-      emit(check, SILENCED.test(command.slice(at, found[index + 1]?.at ?? command.length))),
+      emit(check, command.slice(at, found[index + 1]?.at ?? command.length)),
     );
     return { stdout: out.join("\n"), stderr: err.join("\n"), code: codes.at(-1)! };
   }
@@ -71,13 +75,13 @@ export function scriptedShell(
     const echo = /^echo\s+(?:-[en]+\s+)?(.*)$/s.exec(part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""));
     if (echo) {
       // `echo … > file` writes to the file, so nothing reaches stdout.
-      if (!/(?<!2)>/.test(part)) out.push(echo[1]!.replace(/^(["'])(.*)\1$/s, "$2"));
+      if (!STDOUT_REDIRECT.test(part)) out.push(echo[1]!.replace(/^(["'])(.*)\1$/s, "$2"));
       code = 0;
       continue;
     }
     const check = script.shell.find((entry) => entry.match.test(part));
     if (!check) return undefined;
-    code = emit(check, SILENCED.test(part));
+    code = emit(check, part);
   }
   return { stdout: out.join("\n"), stderr: err.join("\n"), code };
 }
