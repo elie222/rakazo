@@ -912,7 +912,8 @@ export async function sendThreadMessage(
             blocks,
             author,
             callId,
-            runIds: [],
+            // The stopped run is the receipt a retry of this send replays.
+            runIds: [working.id],
             replyToMessageId,
             replyQuote,
             replyPreview,

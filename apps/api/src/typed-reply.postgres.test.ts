@@ -791,7 +791,9 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     };
     const runs = [await working(botId), await working(peerBotId)];
 
-    const result = await send(groupTarget, "stop");
+    const result = await send(groupTarget, "stop", "group-stop");
+    // A retry of the same send replays the stop instead of failing on its nonce.
+    expect((await send(groupTarget, "stop", "group-stop")).runId).toBe(result.runId);
 
     expect(runs.map((run) => run.id)).toContain(result.runId);
     for (const run of runs) {

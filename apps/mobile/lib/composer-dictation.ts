@@ -97,6 +97,7 @@ export function useComposerDictation({
     }
     if (plan.kind === "provider" && plan.transcribe) {
       const requestContext = await captureApiRequestContext();
+      if (session.current !== mine) return;
       await ensureVoiceConsent(requestContext);
       if (session.current !== mine) return;
       const stopped = new AbortController();
@@ -131,7 +132,8 @@ export function useComposerDictation({
         clearTimeout(timer);
         mine.cancel.signal.removeEventListener("abort", forward);
       }
-      if (end(mine) && text.trim()) onWordsRef.current(text.trim(), true);
+      if (!end(mine) || requestContext.sessionGeneration !== currentSessionGeneration()) return;
+      if (text.trim()) onWordsRef.current(text.trim(), true);
       return;
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
