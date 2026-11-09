@@ -12,14 +12,14 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/markdown-satteri": "0.4.4",
-    "@astrojs/react": "6.0.6",
+    "@astrojs/markdown-satteri": "0.4.7",
+    "@astrojs/react": "7.1.4",
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@vercel/functions": "3.10.6",
-    "astro": "7.4.1",
+    "astro": "7.4.7",
     "posthog-js": "1.445.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",

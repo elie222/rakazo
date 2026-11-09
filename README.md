@@ -145,7 +145,7 @@ Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see th
 
 ## Local development (source checkout)
 
-You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
+You need Node.js 22.23.4 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
 pnpm 12; and Docker. Node.js 23.x and 25.x are not supported.
 
 ```bash

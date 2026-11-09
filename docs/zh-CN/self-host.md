@@ -67,7 +67,7 @@ app.example.com {
 
 ## 从源码运行
 
-需要 Node.js 22.x（至少 22.22.2）、24.x 或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 23.x 和 25.x。
+需要 Node.js 22.x（至少 22.23.4）、24.x 或 26 及以上版本、pnpm 12 和 Docker；不支持 Node.js 23.x 和 25.x。
 从仓库根目录开始：
 
 ```bash
