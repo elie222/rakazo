@@ -50,12 +50,12 @@ export function useRoutineEditor({
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
   const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
-  // Bumped by each rotation, so a reveal that started before it never shows the revoked key.
-  const webhookKeyGeneration = useRef(0);
+  // Bumped by each rotation of a bot's key, so a reveal that started before it never shows the revoked key.
+  const webhookKeyGenerations = useRef(new Map<string, number>());
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      webhookKeyGeneration.current += 1;
+      webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
       showWebhookSecret(botId, result.secret);
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
@@ -167,12 +167,12 @@ export function useRoutineEditor({
         onRevealWebhook: async () => {
           const targetBotId = active.id;
           const request = routineSaveRequest.current;
-          const generation = webhookKeyGeneration.current;
+          const generation = webhookKeyGenerations.current.get(targetBotId) ?? 0;
           // A reveal that lands after the person left this routine, or after a rotation, shows nothing.
           const stale = () =>
             routineSaveRequest.current !== request ||
             activeBotId.current !== targetBotId ||
-            webhookKeyGeneration.current !== generation;
+            (webhookKeyGenerations.current.get(targetBotId) ?? 0) !== generation;
           try {
             const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
             if (stale()) return;
