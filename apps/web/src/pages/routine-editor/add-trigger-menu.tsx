@@ -1,4 +1,3 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CronFreq, CronPreset } from "@rakazo/core";
 import { cronFromPreset, defaultCronPreset } from "@rakazo/core";
@@ -13,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus } from "lucide-react";
+import { cronFreqLabel } from "../../lib/cron";
 import type { RoutineDraftState } from "../../lib/routine-draft";
 import { emptyWatchDraft } from "../../lib/routine-draft";
 
@@ -89,7 +89,7 @@ export function AddTriggerMenu({
           <DropdownMenuSubContent className="min-w-[170px]">
             {SCHEDULE_PRESETS.map((freq) => (
               <DropdownMenuItem key={freq} onClick={() => addSchedule(freq)}>
-                {schedulePresetLabel(freq)}
+                {freq === "Advanced" ? t`Advanced...` : cronFreqLabel(freq)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
@@ -141,25 +141,4 @@ export function AddTriggerMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function schedulePresetLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    case "Every week":
-      return t`Every Monday`;
-    case "Every month":
-      return t`Monthly on the 1st`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced...`;
-    default:
-      return freq;
-  }
 }

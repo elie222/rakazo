@@ -1,4 +1,3 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CronFreq, CronPreset, CronUnit } from "@rakazo/core";
 import {
@@ -11,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Clock, X } from "lucide-react";
-import { cronUnitLabel } from "../lib/cron";
+import { cronFreqLabel, cronUnitLabel } from "../lib/cron";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const TIMES = [
@@ -26,28 +25,6 @@ const TIMES = [
 ];
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
-
-function cronFreqLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    // The day is fixed, so the label carries it.
-    case "Every week":
-      return t`Every Monday`;
-    case "Every month":
-      return t`Monthly on the 1st`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced`;
-    default:
-      return freq;
-  }
-}
 
 function russianIntervalControlLead(): string {
   // The amount select stays visible for 1, so use a construction that keeps
