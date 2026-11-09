@@ -126,8 +126,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const searchBarHeight = searchOpen ? 48 : 0;
-  // The list's top clearance always reserves the hero's full height, subtitle or not, so
-  // the oldest message starts below the hero instead of scrolling underneath it. The
+  // The list's top clearance always reserves the hero's full height, so the
+  // oldest message starts below the hero instead of scrolling underneath it. The
   // height is a layout constant, never measured, so the clearance and the hero can never
   // disagree and leave a gap for the conversation to show through.
   const listClearance = {
@@ -443,7 +443,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     groupMembers,
     currentBotStatus,
     composingBots,
-    activityLine,
     onCleared: history.clear,
     autoSpeak: !inGroup ? currentBot?.autoSpeak : undefined,
     onToggleAutoSpeak: !inGroup && !readOnly && botId && currentBot ? toggleAutoSpeak : undefined,
@@ -721,14 +720,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       />
     ) : null;
 
-  // The big title hero, at the top of a one-to-one chat: the 84pt state-linked avatar beside
-  // the bot's name. Groups keep only their native title. It floats above the message list
+  // The big title hero, at the top of a one-to-one chat: the 88pt state-linked avatar with
+  // the bot's name under it. Groups keep only their native title. It floats above the message list
   // instead of scrolling with it, so it stays visible; the list's top clearance makes room
-  // for it, and the capsule in the native bar stays as the title when scrolled. While this
-  // bot's reply is being read aloud the subtitle says so; tapping the avatar opens the
-  // bot menu.
+  // for it, and the capsule in the native bar stays as the title when scrolled. No live
+  // process line here — the top bar shows no real-time process. Tapping the avatar opens
+  // the bot menu.
   const titleComposing = Boolean(botId) && composingBots.split(",").includes(botId ?? "");
-  const isSpeakingThisBot = playback.status === "playing" && playback.botId === botId;
   const chatHero =
     !inGroup && botId ? (
       <ChatTitleHero
@@ -736,12 +734,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         status={currentBotStatus}
         composing={titleComposing}
         name={titleName}
-        activityLine={activityLine}
-        speakingLine={
-          isSpeakingThisBot
-            ? t("Reading aloud · Tap the speaker or message button to stop")
-            : undefined
-        }
         onAvatarPress={() => setBotMenuOpen(true)}
       />
     ) : null;
@@ -820,9 +812,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             />
           </NewestPageCards.Provider>
           {/* The title hero floats above the list, flush against the native header with
-              zero gap, and never scrolls away; it has no background, so only the avatar
-              and the process line are visible. Only the avatar intercepts touches, so
-              the list still scrolls under the hero. */}
+              zero gap, and never scrolls away; it paints a solid background, so the
+              scrolling conversation can never show through it. Only the avatar
+              intercepts touches, so the list still scrolls under the hero. */}
           {chatHero ? (
             <View
               pointerEvents="box-none"
@@ -831,6 +823,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                 top: heroTop + searchBarHeight,
                 left: 0,
                 right: 0,
+                backgroundColor: tokens.background,
               }}
             >
               {chatHero}

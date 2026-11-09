@@ -508,7 +508,7 @@ describe("computer float window", () => {
     expect(avatarState.props).toMatchObject({ size: 88, status: "working", composing: false });
   });
 
-  it("renders the hero with the big avatar and the live activity, without a name row", () => {
+  it("renders the hero with the big avatar and its name, and no live process line", () => {
     const bot = {
       id: "bot-1",
       name: "Chief",
@@ -517,25 +517,18 @@ describe("computer float window", () => {
       notifyOnFinish: true,
     } as never;
     const rendered = render(
-      <ChatTitleHero
-        bot={bot}
-        status="working"
-        composing={false}
-        name="Chief"
-        activityLine="Thinking…"
-      />,
+      <ChatTitleHero bot={bot} status="working" composing={false} name="Chief" />,
     );
     expect(avatarState.props).toMatchObject({ size: 88 });
-    expect(rendered.textContent).not.toContain("Chief");
-    expect(rendered.textContent).toContain("Thinking…");
+    expect(rendered.textContent).toContain("Chief");
   });
 
-  it("reserves the hero's full height for the list clearance, subtitle or not", () => {
-    // Avatar 88 + subtitle gap 7 + one subtitle line 18 + bottom padding 16. The thread
+  it("reserves the hero's full height for the list clearance", () => {
+    // Avatar 88 + one name line 22 (typeScale.cardTitle) + bottom padding 16. The thread
     // screen reserves this much top clearance so the oldest message never drifts into
     // the hero area; if any part of the hero's layout changes, this must move with it.
-    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(CHAT_TITLE_HERO_AVATAR_SIZE + 7 + 18 + 16);
-    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(129);
+    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(CHAT_TITLE_HERO_AVATAR_SIZE + 22 + 16);
+    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(126);
   });
 
   it("shows the done badge only once a run finishes, with the done face", () => {

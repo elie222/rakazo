@@ -15,6 +15,7 @@ import { mobileTokens } from "../../lib/appearance";
 import {
   CHAT_BACKGROUND_DEFAULT_OPACITY,
   chatBackgroundOpacityFromRatio,
+  deleteChatBackgroundFile,
   isChatBackgroundUrl,
   saveChatBackgroundFile,
   setChatBackground,
@@ -51,22 +52,28 @@ export function ThreadBackgroundSheet({
   const [sliderWidth, setSliderWidth] = useState(0);
   const sliderWidthRef = useRef(0);
   sliderWidthRef.current = sliderWidth;
+  // The slider's responder is created once, so it reads the thread key through a ref:
+  // a stale first-render key would adjust another thread's background.
+  const threadKeyRef = useRef(threadKey);
+  threadKeyRef.current = threadKey;
   const slider = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (event) => {
-        if (sliderWidthRef.current > 0 && threadKey) {
+        const key = threadKeyRef.current;
+        if (sliderWidthRef.current > 0 && key) {
           setChatBackgroundOpacity(
-            threadKey,
+            key,
             chatBackgroundOpacityFromRatio(event.nativeEvent.locationX / sliderWidthRef.current),
           );
         }
       },
       onPanResponderMove: (event) => {
-        if (sliderWidthRef.current > 0 && threadKey) {
+        const key = threadKeyRef.current;
+        if (sliderWidthRef.current > 0 && key) {
           setChatBackgroundOpacity(
-            threadKey,
+            key,
             chatBackgroundOpacityFromRatio(event.nativeEvent.locationX / sliderWidthRef.current),
           );
         }
@@ -287,7 +294,13 @@ export function ThreadBackgroundSheet({
         accessibilityLabel={t("Restore default background")}
         disabled={!background || busy}
         onPress={() => {
-          if (threadKey) setChatBackground(threadKey, null);
+          if (!threadKey) return;
+          // Clearing the background also removes its local file, so a restored
+          // default leaves nothing behind in documents.
+          if (background && (background.kind === "image" || background.kind === "video")) {
+            void deleteChatBackgroundFile(background.uri);
+          }
+          setChatBackground(threadKey, null);
         }}
         style={({ pressed }) => ({
           flexDirection: "row",
