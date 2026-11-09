@@ -243,8 +243,6 @@ export function createHomeStyles() {
       paddingBottom: 4,
     },
     activitySection: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: native.fillPressed,
       marginBottom: 4,
       paddingBottom: 4,
     },

@@ -1,7 +1,10 @@
+import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
+import type { ReactNode } from "react";
 import { useCallback } from "react";
+import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import type { ResolvedAppearance } from "../lib/appearance";
 import { AvatarRow } from "../lib/avatar-life";
@@ -11,8 +14,11 @@ import { canDeleteInboxSpace, inboxItemKey } from "../lib/inbox-spaces";
 import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import type { useInboxChatActions } from "../lib/use-inbox-chat-actions";
+import { DragSafePressable } from "./drag-safe-pressable";
 import { createHomeStyles } from "./home-styles";
 import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionToggle } from "./inbox-rows";
+import type { NativeRowMenu } from "./native-row";
+import { NativeRow } from "./native-row";
 import { NativeSymbol } from "./native-symbol";
 
 // Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
@@ -39,6 +45,171 @@ export function InboxListFooter({
       {createHint ? <Text style={styles.empty}>{t("Tap + to create a bot")}</Text> : null}
       <ArchivedChatsRow count={archivedCount} onPress={() => router.push("/archived-bots")} />
     </>
+  );
+}
+
+type HeadingMenu = NativeRowMenu & {
+  /** The Android "…" button's accessible name. */
+  label: string;
+};
+
+/**
+ * A heading's menu: a long press on the heading on iOS, as with the chat rows, and a "…" button
+ * on Android, where a menu trigger on an older binary can collapse to zero width.
+ */
+function HeadingWithMenu({
+  space,
+  menu,
+  appearance,
+  children,
+}: {
+  /** A space heading, which has its own row style. */
+  space?: boolean;
+  menu?: HeadingMenu;
+  appearance: ResolvedAppearance;
+  children: (press: HeadingPress) => ReactNode;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
+  const row = space ? styles.spaceHeading : styles.sectionHeadingRow;
+  const plain = <View style={row}>{children({})}</View>;
+  if (!menu) return Platform.OS === "ios" ? <NativeRow>{plain}</NativeRow> : plain;
+  if (Platform.OS === "ios")
+    return (
+      <NativeRow menu={menu}>
+        <View style={row}>
+          {children({
+            // Holding for the menu must not also count as a tap when the finger lifts.
+            onLongPress: holdForMenu,
+            // Screen readers reach the long-press menu's items through the heading.
+            accessibilityActions: menu.actions
+              .filter((action) => !action.disabled)
+              .map((action) => ({ name: action.id, label: action.title })),
+            onAccessibilityAction: (event) => menu.onAction(event.nativeEvent.actionName),
+          })}
+        </View>
+      </NativeRow>
+    );
+  const actions: MenuAction[] = menu.actions.map((action) => ({
+    id: action.id,
+    title: action.title,
+    image: action.image,
+    attributes: { destructive: action.destructive, disabled: action.disabled },
+  }));
+  return (
+    <View style={row}>
+      {children({})}
+      {actions.length === 1 ? (
+        <Pressable
+          accessibilityLabel={menu.actions[0]!.title}
+          accessibilityRole="button"
+          onPress={() => menu.onAction(menu.actions[0]!.id)}
+          style={styles.spaceActions}
+        >
+          <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+        </Pressable>
+      ) : (
+        <MenuView
+          actions={actions}
+          colorScheme={appearance}
+          onPressAction={({ nativeEvent }) => menu.onAction(nativeEvent.event)}
+        >
+          <View
+            accessibilityLabel={menu.label}
+            accessibilityRole="button"
+            style={styles.spaceActions}
+          >
+            <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+          </View>
+        </MenuView>
+      )}
+    </View>
+  );
+}
+
+const holdForMenu = () => undefined;
+
+/** What a heading's own pressable takes from its menu. */
+type HeadingPress = Pick<
+  PressableProps,
+  "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
+>;
+
+function SpaceHeading({
+  title,
+  selected,
+  busy,
+  onPress,
+  menu,
+  appearance,
+}: {
+  title: string;
+  selected: boolean;
+  busy: boolean;
+  onPress: () => void;
+  menu?: HeadingMenu;
+  appearance: ResolvedAppearance;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
+  return (
+    <HeadingWithMenu space menu={menu} appearance={appearance}>
+      {(press) => (
+        <DragSafePressable
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          accessibilityState={{ selected, disabled: busy }}
+          disabled={busy}
+          onPress={onPress}
+          {...press}
+          style={({ pressed }) => [styles.spaceSelect, pressed && styles.rowPressed]}
+        >
+          <Text style={styles.spaceTitle}>{title}</Text>
+        </DragSafePressable>
+      )}
+    </HeadingWithMenu>
+  );
+}
+
+function SectionHeading({
+  title,
+  count,
+  collapsed,
+  onPress,
+  onDelete,
+  appearance,
+}: {
+  title: string;
+  count?: number;
+  collapsed: boolean;
+  onPress: () => void;
+  onDelete?: () => void;
+  appearance: ResolvedAppearance;
+}) {
+  const { t } = useI18n();
+  return (
+    <HeadingWithMenu
+      menu={
+        onDelete
+          ? {
+              actions: [
+                { id: "delete", title: t("Delete section"), image: "trash", destructive: true },
+              ],
+              label: t("Section actions for {name}", { name: title }),
+              onAction: onDelete,
+            }
+          : undefined
+      }
+      appearance={appearance}
+    >
+      {(press) => (
+        <SectionToggle
+          title={title}
+          count={count}
+          collapsed={collapsed}
+          onPress={onPress}
+          {...press}
+        />
+      )}
+    </HeadingWithMenu>
   );
 }
 
@@ -118,115 +289,68 @@ export function useInboxRenderItem({
         </AvatarRow>
       ) : item.type === "heading" ? (
         item.space ? (
-          <View style={styles.spaceHeading}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={item.title}
-              accessibilityState={{
-                selected: item.space.id === spaceId,
-                disabled: spaceBusy,
-              }}
-              disabled={spaceBusy}
-              onPress={() => {
-                if (item.space) void chooseInboxSpace(item.space.id);
-              }}
-              style={({ pressed }) => [styles.spaceSelect, pressed && styles.rowPressed]}
-            >
-              <Text style={styles.spaceTitle}>{item.title}</Text>
-            </Pressable>
-            {sharing ? null : (
-              <MenuView
-                actions={[
-                  {
-                    id: "new-bot",
-                    title: t("New bot"),
-                    image: "person.crop.circle.badge.plus",
-                    attributes: { disabled: spaceBusy || !!spaceRecoveryId },
-                  },
-                  { id: "members", title: t("Members"), image: "person.2" },
-                  { id: "settings", title: t("Settings"), image: "gearshape" },
-                  ...(canDeleteInboxSpace(item.space)
-                    ? [
-                        {
-                          id: "delete",
-                          title: t("Delete space"),
-                          image: "trash" as const,
-                          attributes: {
-                            destructive: true,
-                            disabled: spaceBusy || !!spaceRecoveryId,
-                          },
-                        },
-                      ]
-                    : []),
-                ]}
-                colorScheme={appearance}
-                onPressAction={({ nativeEvent }) => {
-                  if (!item.space) return;
-                  if (nativeEvent.event === "new-bot") createBotInSpace(item.space.id);
-                  else if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
-                  else
-                    router.push({
-                      pathname: nativeEvent.event === "members" ? "/space-members" : "/space",
-                      params: { spaceId: item.space.id, name: item.space.name },
-                    });
-                }}
-              >
-                <View
-                  accessibilityLabel={t("Space actions for {name}", { name: item.title })}
-                  accessibilityRole="button"
-                  style={styles.spaceActions}
-                >
-                  <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
-                </View>
-              </MenuView>
-            )}
-          </View>
+          <SpaceHeading
+            title={item.title}
+            selected={item.space.id === spaceId}
+            busy={spaceBusy}
+            onPress={() => {
+              if (item.space) void chooseInboxSpace(item.space.id);
+            }}
+            menu={
+              sharing
+                ? undefined
+                : {
+                    actions: [
+                      {
+                        id: "new-bot",
+                        title: t("New bot"),
+                        image: "person.crop.circle.badge.plus",
+                        disabled: spaceBusy || !!spaceRecoveryId,
+                      },
+                      { id: "members", title: t("Members"), image: "person.2" },
+                      { id: "settings", title: t("Settings"), image: "gearshape" },
+                      ...(canDeleteInboxSpace(item.space)
+                        ? [
+                            {
+                              id: "delete",
+                              title: t("Delete space"),
+                              image: "trash" as const,
+                              destructive: true,
+                              disabled: spaceBusy || !!spaceRecoveryId,
+                            },
+                          ]
+                        : []),
+                    ],
+                    label: t("Space actions for {name}", { name: item.title }),
+                    onAction: (id) => {
+                      if (!item.space) return;
+                      if (id === "new-bot") createBotInSpace(item.space.id);
+                      else if (id === "delete") confirmDeleteSpace(item.space);
+                      else
+                        router.push({
+                          pathname: id === "members" ? "/space-members" : "/space",
+                          params: { spaceId: item.space.id, name: item.space.name },
+                        });
+                    },
+                  }
+            }
+            appearance={appearance}
+          />
         ) : (
-          <View style={styles.sectionHeadingRow}>
-            <SectionToggle
-              title={item.title}
-              count={item.collapsed ? (item.count ?? 0) : undefined}
-              collapsed={item.collapsed === true}
-              onPress={() => toggleCollapsed(item.key)}
-            />
-            {sharing || !item.sectionId ? null : Platform.OS === "android" ? (
-              // A plain button, like the create control: the Android menu trigger can collapse to
-              // zero width on an older binary, which would hide the only way to delete an empty section.
-              <Pressable
-                accessibilityLabel={t("Delete section")}
-                accessibilityRole="button"
-                onPress={() => {
-                  if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
-                }}
-                style={styles.spaceActions}
-              >
-                <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
-              </Pressable>
-            ) : (
-              <MenuView
-                actions={[
-                  {
-                    id: "delete",
-                    title: t("Delete section"),
-                    image: "trash",
-                    attributes: { destructive: true },
-                  },
-                ]}
-                colorScheme={appearance}
-                onPressAction={() => {
-                  if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
-                }}
-              >
-                <View
-                  accessibilityLabel={t("Section actions for {name}", { name: item.title })}
-                  accessibilityRole="button"
-                  style={styles.spaceActions}
-                >
-                  <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
-                </View>
-              </MenuView>
-            )}
-          </View>
+          <SectionHeading
+            title={item.title}
+            count={item.collapsed ? (item.count ?? 0) : undefined}
+            collapsed={item.collapsed === true}
+            onPress={() => toggleCollapsed(item.key)}
+            onDelete={
+              sharing || !item.sectionId
+                ? undefined
+                : () => {
+                    if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
+                  }
+            }
+            appearance={appearance}
+          />
         )
       ) : item.type === "group" ? (
         <GroupRow

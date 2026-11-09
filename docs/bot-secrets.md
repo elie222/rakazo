@@ -113,9 +113,24 @@ The bot types a saved card with `browser_act` `fill_card`, passing `card` and `s
 ```json
 {
   "actions": [
-    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "number" },
-    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "expiry" },
-    { "kind": "fill_card", "card": "visa-4242", "site": "https://shop.example.test", "field": "cvc" }
+    {
+      "kind": "fill_card",
+      "card": "visa-4242",
+      "site": "https://shop.example.test",
+      "field": "number"
+    },
+    {
+      "kind": "fill_card",
+      "card": "visa-4242",
+      "site": "https://shop.example.test",
+      "field": "expiry"
+    },
+    {
+      "kind": "fill_card",
+      "card": "visa-4242",
+      "site": "https://shop.example.test",
+      "field": "cvc"
+    }
   ]
 }
 ```

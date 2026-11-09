@@ -49,7 +49,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   const botId = activeBotId(page);
 
   await openBotPanelTab(page, "Routines");
-  await expect(page.getByRole("button", { name: "Test run" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run now" })).toHaveCount(0);
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Daily verification");
   await page
@@ -78,7 +78,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   );
   const runs = async () =>
     (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
-  await page.getByRole("button", { name: "Test run" }).click();
+  await page.getByRole("button", { name: "Run now" }).click();
   // The open editor's instruction already shows the marker text, so wait on the run itself
   // and read the marker from the bot reply the run recorded.
   await expect

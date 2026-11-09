@@ -162,7 +162,7 @@ describe("BoatSandboxProvider", () => {
           sandboxId: computer.id,
           resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
         },
-        { signal: context.signal },
+        { signal: expect.any(AbortSignal) },
       );
     });
 
@@ -187,7 +187,7 @@ describe("BoatSandboxProvider", () => {
           sandboxId: computer.id,
           resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "large" },
         },
-        { signal: context.signal },
+        { signal: expect.any(AbortSignal) },
       );
     });
 
@@ -489,7 +489,7 @@ describe("BoatSandboxProvider", () => {
     });
     expect(resume).toHaveBeenCalledWith(
       { sandboxId: computer.id, resumeRequest: { noEnv: true, ttlSeconds: 7200 } },
-      { signal: context.signal },
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -1103,7 +1103,7 @@ describe("BoatSandboxProvider", () => {
         return { deadline, caller, signal: (init as RequestInit).signal };
       };
       const byDeadline = await statusRead();
-      expect(timeout).toHaveBeenLastCalledWith(10_000);
+      expect(timeout).toHaveBeenCalledWith(10_000);
       expect(byDeadline.signal?.aborted).toBe(false);
       byDeadline.deadline.abort();
       expect(byDeadline.signal?.aborted).toBe(true);

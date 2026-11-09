@@ -20,9 +20,7 @@ import type { WebhookDeps } from "./webhook.js";
 import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "./webhook.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 const image: MessageBlock[] = [
   { kind: "image", artifactId: "image-1", name: "picture.png", mimeType: "image/png" },
