@@ -52,7 +52,7 @@ vi.mock("expo-file-system", () => {
     textSync() {
       return state.files.get(this.uri);
     }
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
   }

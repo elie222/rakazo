@@ -4,6 +4,7 @@ import { displayName, loadPeerHistory, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -50,7 +51,7 @@ export default function PeerChat() {
   >({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const userScrolled = useRef(false);
 
   useEffect(() => {

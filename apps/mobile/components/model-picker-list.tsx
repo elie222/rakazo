@@ -3,7 +3,7 @@ import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import type { ViewToken } from "react-native";
+import type { ListViewToken } from "react-native";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -143,7 +143,7 @@ export function ModelPickerList({
 
   // Viewability is reported after layout, including when an async catalog arrives.
   const revealInitialSelection = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<ChatModelChoice>[] }) => {
+    ({ viewableItems }: { viewableItems: ListViewToken[] }) => {
       const state = initialScroll.current;
       if (
         !state.ready ||
@@ -235,7 +235,7 @@ export function ModelPickerList({
       ListHeaderComponent={
         Platform.OS === "android" && showSearch ? (
           <ListSearchInput query={query} setQuery={changeQuery} />
-        ) : null
+        ) : undefined
       }
       ListEmptyComponent={
         error || noMatches ? (

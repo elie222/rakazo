@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { TextInputInstance } from "react-native";
 import { StyleSheet, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,7 +40,7 @@ export function ComputerKeyboardBar({
   const appearance = useResolvedAppearance();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   // The field's text as last handled, updated at once. A keystroke can be reported twice before
   // React re-renders; measured from here, the repeat finds nothing new to send.
   const handled = useRef("");

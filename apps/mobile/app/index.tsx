@@ -10,7 +10,7 @@ import {
   useRouter,
 } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ViewToken } from "react-native";
+import type { ListViewToken } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -702,7 +702,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
 
   const [avatarViewport] = useState(createAvatarViewport);
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) =>
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) =>
     avatarViewport.update(viewableItems.map((token) => token.key)),
   ).current;
   const renderItem = useInboxRenderItem({
