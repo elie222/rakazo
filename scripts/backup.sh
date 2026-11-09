@@ -4,29 +4,254 @@ umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAMP="${1-$(date +%Y%m%d-%H%M%S)}"
 case "$STAMP" in
-  ""|.|..|*/*) echo "backup stamp must be a single nonempty path component" >&2; exit 1 ;;
+  ""|"."|".."|*/*) echo "backup stamp must be a single nonempty path component" >&2; exit 1 ;;
 esac
 OUT="${ROOT}/backups/${STAMP}"
 compose=(docker compose -f "$ROOT/infra/compose/docker-compose.yml")
 # Compose resolves its default env file relative to the compose file, not the
-# repo root; point it at the root .env when one exists (vars may also come
+# repo [redacted]; point it at the [redacted] .env when one exists (vars may also come
 # from the environment, so its absence is not an error).
 if [[ -f "$ROOT/.env" ]]; then compose=(docker compose --env-file "$ROOT/.env" -f "$ROOT/infra/compose/docker-compose.yml"); fi
 [[ ! -L "$ROOT/backups" && ! -L "$OUT" ]] || { echo "backup directory must not be a symlink" >&2; exit 1; }
+
+# ---------------------------------------------------------------- WHY
+# The data directory holds the artifact blobs: the files behind every chat
+# attachment, stored under data/artifacts/<spaceId>/<storageKey> (see
+# apps/api/src/artifacts.ts and packages/adapters/src/artifacts.ts). The
+# Postgres rows in the `artifacts` table only point at those files.
+#
+# This script used to write an EMPTY homes.tgz whenever $ROOT/data did not
+# exist, which is exactly the case for a compose deployment that keeps the
+# data in a named volume mounted at /data. It reported success. A backup taken
+# that way was useless: on 2026-11-05 a restore from such a set re-created the
+# `artifacts` ROWS in Postgres with no matching BLOBS on disk, and every
+# attachment created before 2026-11-06 became permanently unrecoverable.
+#
+# So a backup that cannot archive the data directory now FAILS LOUDLY. The
+# only way to accept a data-less backup is the explicit escape hatch
+# RAKAZO_BACKUP_SKIP_HOMES=1, and the MANIFEST then says the data was skipped.
+
+# ---------------------------------------------------------------- options
+SKIP_HOMES="${RAKAZO_BACKUP_SKIP_HOMES:-0}"
+# Explicit data source: a host directory or a docker volume name. When set it
+# wins over detection.
+DATA_SOURCE="${RAKAZO_BACKUP_DATA_SOURCE:-}"
+HELPER_IMAGE="${RAKAZO_BACKUP_HELPER_IMAGE:-alpine:latest}"
+COMPOSE_PROJECT="${RAKAZO_COMPOSE_PROJECT:-}"
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+die() { printf 'backup failed: %s\n' "$*" >&2; exit 1; }
+
+# ------------------------------------------------------- data source lookup
+# Prints "<kind> <path>" where kind is "dir" (a host directory) or "volume"
+# (a docker volume name). Prints nothing when no data source can be found.
+resolve_data_source() {
+  if [[ -n "$DATA_SOURCE" ]]; then
+    if [[ -d "$DATA_SOURCE" ]]; then printf 'dir %s\n' "$DATA_SOURCE"; return 0; fi
+    if docker volume inspect "$DATA_SOURCE" >/dev/null 2>&1; then
+      printf 'volume %s\n' "$DATA_SOURCE"
+      return 0
+    fi
+    die "RAKAZO_BACKUP_DATA_SOURCE='$DATA_SOURCE' is neither a directory nor a docker volume"
+  fi
+  # A source checkout binds $ROOT/data into the containers.
+  if [[ -d "$ROOT/data" && ! -L "$ROOT/data" ]]; then printf 'dir %s\n' "$ROOT/data"; return 0; fi
+  # A compose deployment keeps the data in a named volume mounted at /data.
+  # Ask the running compose project first, then any other running container.
+  #
+  # Only the mount AT /data is the data directory. Any other volume on the
+  # container (web assets, a database, a cache) is not, and picking one of
+  # those would archive the wrong thing and report success.
+  local container source type destination
+  local -a candidates=()
+  if command -v docker >/dev/null 2>&1; then
+    while IFS= read -r container; do
+      [[ -n "$container" ]] && candidates+=("$container")
+    done < <("${compose[@]}" ps -q 2>/dev/null || true)
+    if [[ -n "$COMPOSE_PROJECT" ]]; then
+      while IFS= read -r container; do
+        [[ -n "$container" ]] && candidates+=("$container")
+      done < <(docker ps -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT}" 2>/dev/null || true)
+    fi
+    while IFS= read -r container; do
+      [[ -n "$container" ]] && candidates+=("$container")
+    done < <(docker ps -q --filter "label=com.docker.compose.service=api" 2>/dev/null || true)
+    for container in "${candidates[@]}"; do
+      while IFS=$'\t' read -r type source destination; do
+        [[ -z "$source" ]] && continue
+        [[ "$destination" == "/data" ]] || continue
+        if [[ "$type" == "volume" ]]; then
+          printf 'volume %s\n' "$source"
+          return 0
+        fi
+        if [[ "$type" == "bind" && -d "$source" ]]; then
+          printf 'dir %s\n' "$source"
+          return 0
+        fi
+      done < <(docker inspect --format '{{range .Mounts}}{{.Type}}{{"\t"}}{{.Source}}{{"\t"}}{{.Destination}}{{"\n"}}{{end}}' "$container" 2>/dev/null || true)
+    done
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------- preflight
+if [[ -d "$OUT" && -n "$(ls -A "$OUT" 2>/dev/null)" ]]; then
+  die "backup directory '$OUT' already exists and is not empty; refusing to overwrite it"
+fi
 mkdir -p "$OUT"
 chmod 700 "$ROOT/backups" "$OUT"
-for artifact in "$OUT/rakazo.sql" "$OUT/homes.tgz"; do
+for artifact in "$OUT/rakazo.sql" "$OUT/rakazo.dump" "$OUT/homes.tgz" "$OUT/MANIFEST"; do
   [[ ! -L "$artifact" ]] || { echo "backup artifact must not be a symlink" >&2; exit 1; }
   if [[ -e "$artifact" ]]; then
     [[ -f "$artifact" ]] || { echo "backup artifact is not a file" >&2; exit 1; }
     chmod 600 "$artifact"
   fi
 done
+
+# ------------------------------------------------------------- 1. pg dump
+# The plain SQL dump keeps restore.sh working; the custom-format dump is the
+# one that can be checked with pg_restore --list, which is what proves the
+# dump is restorable instead of merely present.
+log "dumping the database"
 "${compose[@]}" exec -T postgres pg_dump -U rakazo rakazo > "$OUT/rakazo.sql"
-if [[ "${RAKAZO_BACKUP_SKIP_HOMES:-0}" == "1" ]] || [[ ! -e "$ROOT/data" && ! -L "$ROOT/data" ]]; then
+[[ -s "$OUT/rakazo.sql" ]] || die "the SQL dump is empty"
+"${compose[@]}" exec -T postgres pg_dump -U rakazo -Fc rakazo > "$OUT/rakazo.dump"
+[[ -s "$OUT/rakazo.dump" ]] || die "the custom-format dump is empty"
+chmod 600 "$OUT/rakazo.sql" "$OUT/rakazo.dump"
+
+# --------------------------------------------------- 2. archive the data dir
+SKIPPED_DATA=0
+SRC_KIND=""
+SRC_PATH=""
+if [[ "$SKIP_HOMES" == "1" ]]; then
+  SKIPPED_DATA=1
+  log "RAKAZO_BACKUP_SKIP_HOMES=1: the data directory is NOT archived"
   tar -czf "$OUT/homes.tgz" --files-from /dev/null
 else
-  [[ ! -L "$ROOT/data" && -d "$ROOT/data" ]] || { echo "data must be a directory, not a symlink" >&2; exit 1; }
-  tar -czf "$OUT/homes.tgz" -C "$ROOT" data
+  resolved="$(resolve_data_source)"
+  [[ -n "$resolved" ]] || die "no data directory found: \$ROOT/data does not exist and no running container exposes a /data volume. Set RAKAZO_BACKUP_DATA_SOURCE to the directory or docker volume holding the data, or set RAKAZO_BACKUP_SKIP_HOMES=1 to accept a backup without the artifact blobs (NOT recommended)"
+  SRC_KIND="${resolved%% *}"
+  SRC_PATH="${resolved#* }"
+  log "archiving the data directory ($SRC_KIND $SRC_PATH) into homes.tgz"
+  if [[ "$SRC_KIND" == "dir" ]]; then
+    # A host directory: tar it directly, keeping the "data" prefix that
+    # restore.sh expects inside the archive.
+    [[ ! -L "$SRC_PATH" && -d "$SRC_PATH" ]] || die "data must be a directory, not a symlink"
+    parent="$(cd "$SRC_PATH/.." && pwd)"
+    base="$(basename "$SRC_PATH")"
+    tar -czf "$OUT/homes.tgz" -C "$parent" "$base"
+  else
+    # A named volume: read it through a throwaway container so no host path
+    # is needed and the volume is never modified.
+    docker run --rm \
+      -v "${SRC_PATH}:/data:ro" \
+      -v "${OUT}:/out" \
+      "$HELPER_IMAGE" \
+      tar -czf /out/homes.tgz -C / data \
+      || die "archiving the docker volume '$SRC_PATH' failed"
+  fi
+  [[ -s "$OUT/homes.tgz" ]] || die "the data archive is empty"
 fi
+chmod 600 "$OUT/homes.tgz"
+
+# ------------------------------------------------------------ 3. VERIFY
+# A backup is only worth keeping if it can be restored, so check both halves
+# before declaring success and name the check that failed when one does.
+log "verifying the backup"
+
+# 3a. The dump must be non-empty and readable by pg_restore.
+dump_toc="$(mktemp)"
+trap 'rm -f "$dump_toc"' EXIT
+if ! "${compose[@]}" exec -T postgres sh -c \
+  'cat > /tmp/rakazo_verify.dump && pg_restore --list /tmp/rakazo_verify.dump && rm -f /tmp/rakazo_verify.dump' \
+  < "$OUT/rakazo.dump" > "$dump_toc"; then
+  die "the database dump did not pass pg_restore --list"
+fi
+[[ -s "$dump_toc" ]] || die "pg_restore --list produced no output: the dump is not a valid archive"
+
+# 3b. The archive must contain the artifact blobs, and their count must equal
+#     the count on disk. This is the check the old script could not make,
+#     because it never archived anything.
+ARCHIVE_BLOBS=0
+DISK_BLOBS=0
+if [[ "$SKIPPED_DATA" != "1" ]]; then
+  ARCHIVE_BLOBS="$( { tar -tzf "$OUT/homes.tgz" | grep -E '^data/artifacts/[^/]+/[^/]+$' || true; } | wc -l | tr -d '[:space:]')"
+  [[ "$ARCHIVE_BLOBS" =~ ^[0-9]+$ ]] || die "could not count the artifact blobs inside the archive"
+  if [[ "$SRC_KIND" == "dir" ]]; then
+    DISK_BLOBS="$(find "$SRC_PATH/artifacts" -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+  else
+    DISK_BLOBS="$(docker run --rm -v "${SRC_PATH}:/data:ro" "$HELPER_IMAGE" \
+      sh -c 'find /data/artifacts -type f 2>/dev/null | wc -l' | tr -d '[:space:]')"
+  fi
+  [[ "$DISK_BLOBS" =~ ^[0-9]+$ ]] || die "could not count the artifact blobs on disk"
+  if [[ "$ARCHIVE_BLOBS" -lt 1 ]]; then
+    die "the data archive contains ZERO artifact blobs: the attachment files are not in this backup"
+  fi
+  if [[ "$ARCHIVE_BLOBS" != "$DISK_BLOBS" ]]; then
+    die "artifact blob count mismatch: archive=$ARCHIVE_BLOBS on-disk=$DISK_BLOBS"
+  fi
+  log "verified: $ARCHIVE_BLOBS artifact blobs in the archive == $DISK_BLOBS on disk"
+fi
+
+# ------------------------------------------------------------- 4. MANIFEST
+ART_ROWS=0
+MISSING_BLOBS=""
+if "${compose[@]}" exec -T postgres psql -U rakazo -d rakazo -tAc \
+  'select count(*) from artifacts' > "$OUT/.artifact-rows" 2>/dev/null; then
+  ART_ROWS="$(awk 'NF {print $1; exit}' "$OUT/.artifact-rows")"
+  rm -f "$OUT/.artifact-rows"
+fi
+if [[ "$SKIPPED_DATA" != "1" && "$ART_ROWS" =~ ^[0-9]+$ ]]; then
+  # An artifact row points at its blob through artifacts/<spaceId>/<storageKey>.
+  row_keys="$(mktemp)"
+  archive_keys="$(mktemp)"
+  "${compose[@]}" exec -T postgres psql -U rakazo -d rakazo -tAc \
+    'select "spaceId" || chr(47) || "storageKey" from artifacts' 2>/dev/null \
+    | awk 'NF {print $1}' | sort -u > "$row_keys" || true
+  { tar -tzf "$OUT/homes.tgz" | grep -E '^data/artifacts/[^/]+/[^/]+$' || true; } \
+    | sed -E 's#^data/artifacts/##' | awk 'NF {print $1}' | sort -u > "$archive_keys"
+  MISSING_BLOBS="$(comm -23 "$row_keys" "$archive_keys" | wc -l | tr -d '[:space:]')"
+  rm -f "$row_keys" "$archive_keys"
+fi
+
+SQL_SHA="$(sha256sum "$OUT/rakazo.sql" | awk '{print $1}')"
+DUMP_SHA="$(sha256sum "$OUT/rakazo.dump" | awk '{print $1}')"
+TGZ_SHA="$(sha256sum "$OUT/homes.tgz" | awk '{print $1}')"
+{
+  echo "# Rakazo backup manifest"
+  echo "stamp: ${STAMP}"
+  echo "created-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "host: $(hostname)"
+  echo "data-source-kind: ${SRC_KIND:-none}"
+  echo "data-source: ${SRC_PATH:-none}"
+  echo "data-skipped: $([[ "$SKIPPED_DATA" == "1" ]] && echo yes || echo no)"
+  echo "pg-version: $("${compose[@]}" exec -T postgres postgres --version 2>/dev/null | tr -d '\r')"
+  echo "pg-dump-version: $("${compose[@]}" exec -T postgres pg_dump --version 2>/dev/null | tr -d '\r')"
+  echo "sql-sha256: ${SQL_SHA}"
+  echo "dump-sha256: ${DUMP_SHA}"
+  echo "homes-tgz-sha256: ${TGZ_SHA}"
+  echo "homes-tgz-bytes: $(stat -c %s "$OUT/homes.tgz")"
+  echo "artifact-rows: ${ART_ROWS}"
+  echo "artifact-blob-files-in-archive: ${ARCHIVE_BLOBS}"
+  echo "artifact-blob-files-on-disk: ${DISK_BLOBS}"
+  echo "artifact-rows-without-blob: ${MISSING_BLOBS:-unknown}"
+  echo
+  echo "## NOT RECOVERABLE FROM THIS BACKUP"
+  if [[ "$SKIPPED_DATA" == "1" ]]; then
+    echo "The data directory was NOT archived (RAKAZO_BACKUP_SKIP_HOMES=1)."
+    echo "NO artifact blob is recoverable from this backup: restoring it re-creates"
+    echo "the artifact ROWS in Postgres with no matching files on disk."
+  else
+    echo "${MISSING_BLOBS:-0} of ${ART_ROWS} artifact rows have no blob on disk, so no"
+    echo "backup can restore their bytes. A restore of this set re-creates those"
+    echo "artifact ROWS but the attachment files stay missing (the 2026-11-05"
+    echo "restore failure). Rows without a blob are the ones whose"
+    echo "artifacts/<spaceId>/<storageKey> file is absent from the data directory."
+    echo "Everything that IS on disk (${DISK_BLOBS} blob files) is captured by"
+    echo "homes.tgz, together with the rest of the data directory."
+  fi
+} > "$OUT/MANIFEST"
+chmod 600 "$OUT/MANIFEST"
+
+log "backup verified and written to $OUT"
 echo "Backup written to $OUT"
