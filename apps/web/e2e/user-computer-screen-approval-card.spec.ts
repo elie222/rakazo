@@ -3,7 +3,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("asks before using an app on the user's computer", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `user-screen-${stamp}@rakazo.test`, "password12", "User Screen");
+  await signup(page, `user-screen-${stamp}@rakazo.test`, "password12345678", "User Screen");
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);

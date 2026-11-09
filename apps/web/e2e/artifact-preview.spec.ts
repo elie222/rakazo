@@ -5,7 +5,7 @@ test("agent-attached files appear as cards with previews and downloads", async (
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `artifact-card-${stamp}@rakazo.test`, "password12", "Artifact Card");
+  await signup(page, `artifact-card-${stamp}@rakazo.test`, "password12345678", "Artifact Card");
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);

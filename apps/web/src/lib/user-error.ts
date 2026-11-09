@@ -10,6 +10,7 @@ import {
   CALL_NOT_RINGING_ERROR,
   errorHelpUrl,
   MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_IMAGE_INPUT_UNKNOWN,
   userErrorMessage,
@@ -67,6 +68,8 @@ export function authErrorText(error: unknown, fallback: string): string {
     return t`Email verification required`;
   if (code === "REAUTHENTICATION_REQUIRED") return t`Sign in again`;
   if (code === "PASSWORD_AUTH_DISABLED") return t`Password sign-in is turned off on this server`;
+  if (code === "PASSWORD_TOO_SHORT")
+    return t`Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
   if (code === "PASSWORD_TOO_LONG")
     return t`Password must be ${MAX_PASSWORD_LENGTH} characters or fewer`;
   if (code === "EMAIL_DELETION_UNAVAILABLE") return t`Could not continue`;

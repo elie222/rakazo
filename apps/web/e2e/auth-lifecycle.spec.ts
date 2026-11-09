@@ -1,5 +1,6 @@
 import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import { captureScreenshot, completeOnboarding, signup, signupThroughForm } from "./helpers";
 
 test(
@@ -60,7 +61,7 @@ test("signup suggests a fix for a mistyped email domain", async ({ page }, testI
   await page.goto("/sign-up");
   await page.getByLabel("Name").fill("Typo User");
   await page.getByLabel("Email").fill("typo@gmial.com");
-  await page.getByLabel("Password", { exact: true }).fill("password12");
+  await page.getByLabel("Password", { exact: true }).fill("password12345678");
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   const fix = page.getByRole("button", { name: "typo@gmail.com" });
   await expect(fix).toBeVisible();
@@ -91,7 +92,7 @@ test(
     await page.goto("/sign-up");
     await page.getByLabel("Name").fill("Pending User");
     await page.getByLabel("Email").fill("pending@example.test");
-    await page.getByLabel("Password", { exact: true }).fill("password12");
+    await page.getByLabel("Password", { exact: true }).fill("password12345678");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
     await expect(page).toHaveURL(/\/sign-up\?verify=email$/);
@@ -147,7 +148,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 }, testInfo) => {
   const stamp = Date.now();
   const email = `auth-lifecycle-${stamp}@rakazo.test`;
-  const password = "password12";
+  const password = "password12345678";
   const userName = "Auth Lifecycle";
 
   await page.goto("/sign-up");
@@ -266,7 +267,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 test("changes and recovers an email password", async ({ page }, testInfo) => {
   const stamp = Date.now();
   const email = `password-recovery-${stamp}@rakazo.test`;
-  const originalPassword = "password12";
+  const originalPassword = "password12345678";
   const changedPassword = "changed-password12";
   const resetPassword = "reset-password12";
   const userName = "Password Recovery";
@@ -302,7 +303,10 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
     "current-password",
   );
   await expect(settings.getByLabel("New password")).toHaveAttribute("autocomplete", "new-password");
-  await expect(settings.getByLabel("New password")).toHaveAttribute("minlength", "8");
+  await expect(settings.getByLabel("New password")).toHaveAttribute(
+    "minlength",
+    String(MIN_PASSWORD_LENGTH),
+  );
   await expect(settings.getByLabel("Current password")).not.toHaveAttribute("minlength");
   await expect(settings.getByLabel("Confirm password")).toHaveAttribute(
     "autocomplete",

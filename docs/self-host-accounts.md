@@ -116,7 +116,9 @@ link, after it first signs in. It needs one of the providers above.
 
 ## Password policy
 
-New passwords (signup, reset and change) must be 8 to 128 characters, with no composition rules.
+New passwords (signup, reset, change and `bootstrap-owner`) must be 16 to 128 characters, with no
+composition rules. Sign-in does not check the minimum, so a shorter password set before it was
+raised keeps working until it is next changed.
 Optionally reject new passwords that appear in known breaches:
 
 ```env

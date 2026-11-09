@@ -4,7 +4,7 @@ import { captureScreenshot, completeOnboarding, openUserSettings, signup } from 
 test("picks a tool for a rule and moves it from Always ask to Blocked", async ({
   page,
 }, testInfo) => {
-  await signup(page, `approval-rules-${Date.now()}@rakazo.test`, "password12", "Permissions");
+  await signup(page, `approval-rules-${Date.now()}@rakazo.test`, "password12345678", "Permissions");
   await completeOnboarding(page);
   const settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-confirmations").click();

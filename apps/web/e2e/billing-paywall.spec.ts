@@ -34,7 +34,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `credit-choice-${stamp}@rakazo.test`, "password12", "Demo Customer");
+  await signup(page, `credit-choice-${stamp}@rakazo.test`, "password12345678", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();
@@ -240,7 +240,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
 
 test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `byok-yearly-${stamp}@rakazo.test`, "password12", "Demo Customer");
+  await signup(page, `byok-yearly-${stamp}@rakazo.test`, "password12345678", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();
@@ -279,7 +279,7 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
 });
 
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
-  await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12345678", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();
@@ -326,7 +326,12 @@ test("end an own-key trial early to get full computer hours", async ({ page }, t
 test("a cancelled trial explains its missing computer hours and offers renewal", async ({
   page,
 }, testInfo) => {
-  await signup(page, `trial-cancelled-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await signup(
+    page,
+    `trial-cancelled-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Demo Customer",
+  );
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();
@@ -367,7 +372,7 @@ test("a cancelled trial explains its missing computer hours and offers renewal",
 });
 
 test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
-  await signup(page, `byok-switch-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await signup(page, `byok-switch-${Date.now()}@rakazo.test`, "password12345678", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();
@@ -412,7 +417,7 @@ test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {
 });
 
 test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
-  await signup(page, `byok-tier-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await signup(page, `byok-tier-${Date.now()}@rakazo.test`, "password12345678", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
     const response = await route.fetch();

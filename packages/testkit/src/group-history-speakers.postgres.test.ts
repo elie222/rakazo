@@ -102,7 +102,7 @@ describe.skipIf(!databaseAvailable)("group history keeps roles and speakers", ()
         headers: { "content-type": "application/json", origin: fixtureOrigin },
         body: JSON.stringify({
           email: `group-history-${randomUUID()}@rakazo.test`,
-          password: "password12",
+          password: "password12345678",
           name: personName,
         }),
       });

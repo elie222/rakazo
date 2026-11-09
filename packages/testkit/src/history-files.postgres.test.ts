@@ -88,7 +88,7 @@ describe.skipIf(!enabled)("earlier files through history tools", () => {
         headers: { "content-type": "application/json", origin },
         body: JSON.stringify({
           email: `history-files-${randomUUID()}@rakazo.test`,
-          password: "password12",
+          password: "password12345678",
           name: "History files fixture",
         }),
       });

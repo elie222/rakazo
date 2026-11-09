@@ -6,7 +6,7 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await signup(page, `templates-${Date.now()}@rakazo.test`, "password12", "Template Test");
+  await signup(page, `templates-${Date.now()}@rakazo.test`, "password12345678", "Template Test");
   await completeOnboarding(page);
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();

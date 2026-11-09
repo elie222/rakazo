@@ -12,7 +12,12 @@ test(
   "screen connection failures stay visible and can be retried",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
-    await signup(page, `screen-error-${Date.now()}@rakazo.test`, "password12", "Screen Error");
+    await signup(
+      page,
+      `screen-error-${Date.now()}@rakazo.test`,
+      "password12345678",
+      "Screen Error",
+    );
     await completeOnboarding(page);
     const botId = activeBotId(page);
     await rpc(page, "computer/boot", { botId });
@@ -92,7 +97,12 @@ test(
   "a running computer without a screen URL offers recovery",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
-    await signup(page, `screen-missing-${Date.now()}@rakazo.test`, "password12", "Screen Missing");
+    await signup(
+      page,
+      `screen-missing-${Date.now()}@rakazo.test`,
+      "password12345678",
+      "Screen Missing",
+    );
     await completeOnboarding(page);
     const botId = activeBotId(page);
     await rpc(page, "computer/boot", { botId });
@@ -128,7 +138,12 @@ test(
 test("a healthy running computer is not diagnosed while its screen URL loads", async ({
   page,
 }, testInfo) => {
-  await signup(page, `screen-loading-${Date.now()}@rakazo.test`, "password12", "Screen Loading");
+  await signup(
+    page,
+    `screen-loading-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Screen Loading",
+  );
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });
@@ -166,7 +181,12 @@ test("a healthy running computer is not diagnosed while its screen URL loads", a
 test("a takeover failure does not diagnose a screen connection failure", async ({
   page,
 }, testInfo) => {
-  await signup(page, `screen-control-${Date.now()}@rakazo.test`, "password12", "Screen Control");
+  await signup(
+    page,
+    `screen-control-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Screen Control",
+  );
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });
@@ -210,7 +230,7 @@ test("a takeover failure does not diagnose a screen connection failure", async (
 test("a framed screen that drops after connecting loads again by itself through every restart", async ({
   page,
 }) => {
-  await signup(page, `screen-drop-${Date.now()}@rakazo.test`, "password12", "Screen Drop");
+  await signup(page, `screen-drop-${Date.now()}@rakazo.test`, "password12345678", "Screen Drop");
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });

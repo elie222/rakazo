@@ -22,7 +22,7 @@ test.describe.configure({ mode: "serial" });
 
 test("takeover, routine, plugins, and export are reachable", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `flow-${stamp}@rakazo.test`, "password12", "Flow");
+  await signup(page, `flow-${stamp}@rakazo.test`, "password12345678", "Flow");
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
@@ -354,7 +354,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   });
   const stamp = Date.now();
   const email = `shell-${stamp}@rakazo.test`;
-  await signup(page, email, "password12", "Shell");
+  await signup(page, email, "password12345678", "Shell");
   await completeOnboarding(page);
   await page.evaluate(() => {
     Object.defineProperty(globalThis.crypto, "randomUUID", {
@@ -436,7 +436,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await page.context().clearCookies();
   await page.goto("/sign-in");
   await page.getByPlaceholder("Your email address").fill(email);
-  await page.getByPlaceholder("Password").fill("password12");
+  await page.getByPlaceholder("Password").fill("password12345678");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/app/, { timeout: 20_000 });
   await expect(sidebarBotButton(page, /^Chief/)).toBeVisible();

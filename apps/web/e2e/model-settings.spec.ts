@@ -28,7 +28,7 @@ test.afterEach(async ({ page }) => {
 test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const stamp = Date.now();
-  await signup(page, `model-cleanup-${stamp}@rakazo.test`, "password12", "Model Preview");
+  await signup(page, `model-cleanup-${stamp}@rakazo.test`, "password12345678", "Model Preview");
   await completeOnboarding(page);
 
   // Keep account persistence real; the harness supplies offline provider verification.
@@ -236,7 +236,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     // the fake endpoint from settings instead, so skip that step on the client.
     const skipModelStep = process.env.AGENT_RUNTIME === "pi";
     if (skipModelStep) await page.route("**/rpc/me", fulfillWithoutModelStep);
-    await signup(page, `local-model-${stamp}@rakazo.test`, "password12", userName);
+    await signup(page, `local-model-${stamp}@rakazo.test`, "password12345678", userName);
     await completeOnboarding(page);
     if (skipModelStep) await page.unroute("**/rpc/me", fulfillWithoutModelStep);
 
@@ -388,7 +388,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
 
 test("a rejected subscription sign-in asks to sign in again", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `reconnect-${stamp}@rakazo.test`, "password12", "Reconnect Preview");
+  await signup(page, `reconnect-${stamp}@rakazo.test`, "password12345678", "Reconnect Preview");
   await completeOnboarding(page);
   await page.route("**/rpc/models/credentials", (route) =>
     route.fulfill({
@@ -417,7 +417,12 @@ test("a refused private model server names the setting that allows it", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `private-model-${stamp}@rakazo.test`, "password12", "Private Model Preview");
+  await signup(
+    page,
+    `private-model-${stamp}@rakazo.test`,
+    "password12345678",
+    "Private Model Preview",
+  );
   await completeOnboarding(page);
   // The e2e server allows private endpoints, so replay the refusal a default install sends.
   const message =

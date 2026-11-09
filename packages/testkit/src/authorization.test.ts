@@ -956,7 +956,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         body: JSON.stringify({ email, password }),
       });
     const responses = {
-      signIn: await signIn("password12"),
+      signIn: await signIn("password12345678"),
       wrongPassword: await signIn("wrong-pass"),
       blockedAuthPath: await app.request("/api/auth/organization/list"),
       oversizedAuthBody: await app.request("/api/auth/sign-in/email", {
@@ -1056,13 +1056,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(await rawSession.json()).toBeNull();
 
-    const signedIn = await authJson("/sign-in/email", "", { email, password: "password12" });
+    const signedIn = await authJson("/sign-in/email", "", { email, password: "password12345678" });
     expect(await me(signedIn)).toBe(200);
 
     // Replacing the session on a password change hands the phone the signed replacement.
     const replaced = await authJson("/change-password", signedIn, {
-      currentPassword: "password12",
-      newPassword: "password34",
+      currentPassword: "password12345678",
+      newPassword: "password34567890",
       revokeOtherSessions: true,
     });
     expect(replaced).not.toBe(signedIn);
@@ -1088,25 +1088,25 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const relogged = await signin(app, email);
     await rpc(app, relogged, "notifications/registerPush", { token });
     await authPost(app, await signin(app, email), "/change-password", {
-      currentPassword: "password12",
-      newPassword: "password34",
+      currentPassword: "password12345678",
+      newPassword: "password34567890",
       revokeOtherSessions: true,
     });
     await expect(loadPushToken(userId)).resolves.toBeUndefined();
 
     // Changing the password on the phone itself replaces its session; the token follows it.
-    const samePhone = await signin(app, email, "password34");
+    const samePhone = await signin(app, email, "password34567890");
     await rpc(app, samePhone, "notifications/registerPush", { token });
     await authPost(app, samePhone, "/change-password", {
-      currentPassword: "password34",
-      newPassword: "password56",
+      currentPassword: "password34567890",
+      newPassword: "password56789012",
       revokeOtherSessions: true,
     });
     await expect(loadPushToken(userId)).resolves.toBe(token);
-    await authPost(app, await signin(app, email, "password56"), "/revoke-other-sessions");
+    await authPost(app, await signin(app, email, "password56789012"), "/revoke-other-sessions");
     await expect(loadPushToken(userId)).resolves.toBeUndefined();
 
-    const signedIn = await signin(app, email, "password56");
+    const signedIn = await signin(app, email, "password56789012");
     await rpc(app, signedIn, "notifications/registerPush", { token });
     await authPost(app, signedIn, "/revoke-sessions");
     await expect(loadPushToken(userId)).resolves.toBeUndefined();
@@ -2336,7 +2336,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const second = await app.request("/api/auth/sign-in/email", {
       method: "POST",
       headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
-      body: JSON.stringify({ email, password: "password12" }),
+      body: JSON.stringify({ email, password: "password12345678" }),
     });
     const { token } = (await second.json()) as { token: string };
     expect(token).toEqual(expect.any(String));
@@ -2461,7 +2461,7 @@ async function signup(app: App, email: string, name: string) {
   const response = await app.request("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
-    body: JSON.stringify({ email, password: "password12", name }),
+    body: JSON.stringify({ email, password: "password12345678", name }),
   });
   if (response.status >= 400) {
     throw new Error(`signup failed ${response.status}: ${await response.text()}`);
@@ -2473,7 +2473,7 @@ async function phoneSession(app: App, email: string) {
   const response = await app.request("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://" },
-    body: JSON.stringify({ email, password: "password12", name: "Phone" }),
+    body: JSON.stringify({ email, password: "password12345678", name: "Phone" }),
   });
   const { token, user } = (await response.json()) as { token: string; user: { id: string } };
   const cookie = sessionCookieHeader(response);
@@ -2490,7 +2490,7 @@ async function phoneSession(app: App, email: string) {
   return { headers, me, cookie, userId: user.id, token, setAuthToken };
 }
 
-async function signin(app: App, email: string, password = "password12") {
+async function signin(app: App, email: string, password = "password12345678") {
   return sessionCookieHeader(await authPost(app, "", "/sign-in/email", { email, password }));
 }
 

@@ -25,7 +25,7 @@ function seenRunErrorCount(page: Page) {
 
 test("a failed run is visible once without returning after reload", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `run-failure-${stamp}@rakazo.test`, "password12", "Run Failure");
+  await signup(page, `run-failure-${stamp}@rakazo.test`, "password12345678", "Run Failure");
   await completeOnboarding(page);
 
   // "fail this run" makes the scripted runtime throw, so the run fails the same way a
@@ -70,7 +70,12 @@ test("a failed run is visible once without returning after reload", async ({ pag
 
 test("a covered run error is not remembered until it is presented", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `covered-run-failure-${stamp}@rakazo.test`, "password12", "Covered Failure");
+  await signup(
+    page,
+    `covered-run-failure-${stamp}@rakazo.test`,
+    "password12345678",
+    "Covered Failure",
+  );
   await completeOnboarding(page);
   await page.setViewportSize({ width: 390, height: 844 });
 

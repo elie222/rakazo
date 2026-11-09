@@ -5,7 +5,12 @@ import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 test("a call answers each turn and sends the caller to the screen for an approval", async ({
   page,
 }, testInfo) => {
-  await signup(page, `call-approval-${Date.now()}@rakazo.test`, "password12", "Call Approval");
+  await signup(
+    page,
+    `call-approval-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Call Approval",
+  );
   await completeOnboarding(page);
   const call = await startCall(page);
 

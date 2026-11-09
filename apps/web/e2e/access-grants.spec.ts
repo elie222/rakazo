@@ -5,7 +5,7 @@ import { captureScreenshot, completeOnboarding, makeAdmin, signup } from "./help
 test("an admin grants free access to an email", async ({ page }, testInfo) => {
   const stamp = Date.now();
   const admin = `access-admin-${stamp}@rakazo.test`;
-  await signup(page, admin, "password12", `Access Admin ${stamp}`);
+  await signup(page, admin, "password12345678", `Access Admin ${stamp}`);
   await completeOnboarding(page);
 
   let grants: AccessGrant[] = [

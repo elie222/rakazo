@@ -4,7 +4,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 test("incoming calls show answer and decline controls in both themes", async ({
   page,
 }, testInfo) => {
-  await signup(page, `incoming-call-${Date.now()}@rakazo.test`, "password12", "Caller");
+  await signup(page, `incoming-call-${Date.now()}@rakazo.test`, "password12345678", "Caller");
   await completeOnboarding(page);
   await page.route("**/rpc/spaces/list", async (route) => {
     const response = await route.fetch();

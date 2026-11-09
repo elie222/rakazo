@@ -21,7 +21,12 @@ function stopComputer(computer: unknown) {
 }
 
 test("unavailable computers say so plainly and link setup help", async ({ page }, testInfo) => {
-  await signup(page, `computers-off-${Date.now()}@rakazo.test`, "password12", "Computers Off");
+  await signup(
+    page,
+    `computers-off-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Computers Off",
+  );
   await completeOnboarding(page);
   let sandboxProvider = "none";
   let meFails = false;

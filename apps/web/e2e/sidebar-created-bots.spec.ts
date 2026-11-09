@@ -12,7 +12,7 @@ test("created bots appear as regular bots and reorder across their creator", asy
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `created-bots-${stamp}@rakazo.test`, "password12", "Test User");
+  await signup(page, `created-bots-${stamp}@rakazo.test`, "password12345678", "Test User");
   await completeOnboarding(page);
 
   const composer = page.locator('textarea[name="chat-message"]');

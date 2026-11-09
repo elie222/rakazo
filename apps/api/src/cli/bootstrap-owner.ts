@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { createAuth } from "@rakazo/auth";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import { bootstrapUserSpace, createDb, runAsSystem } from "@rakazo/db";
 
 function required(name: string): string {
@@ -25,7 +26,15 @@ async function bootstrap() {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (!existing?.emailVerified) {
     const password = required("OWNER_PASSWORD");
-    if (password.length < 16) throw new Error("OWNER_PASSWORD must contain at least 16 characters");
+    // The length policy applies to a new password. An existing account only proves its current one,
+    // which may predate a raised minimum.
+    if (
+      !existing &&
+      (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH)
+    )
+      throw new Error(
+        `OWNER_PASSWORD must contain ${MIN_PASSWORD_LENGTH} to ${MAX_PASSWORD_LENGTH} characters`,
+      );
     const baseURL = required("BETTER_AUTH_URL");
     const auth = createAuth(prisma, {
       secret: required("BETTER_AUTH_SECRET"),

@@ -83,7 +83,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
         headers: { "content-type": "application/json", origin: fixtureOrigin },
         body: JSON.stringify({
           email: `offline-pi-${randomUUID()}@rakazo.test`,
-          password: "password12",
+          password: "password12345678",
           name: "Offline fixture",
         }),
       });

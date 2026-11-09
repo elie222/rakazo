@@ -6,7 +6,12 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.setViewportSize({ width: 1400, height: 900 });
-  await signup(page, `sidebar-rail-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await signup(
+    page,
+    `sidebar-rail-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Sidebar Sample",
+  );
   await completeOnboarding(page);
   const bot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Research",
@@ -96,7 +101,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
 
 test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await signup(page, `sidebar-rtl-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await signup(page, `sidebar-rtl-${Date.now()}@rakazo.test`, "password12345678", "Sidebar Sample");
   await completeOnboarding(page);
   await page.evaluate(() => {
     document.documentElement.dir = "rtl";
@@ -133,7 +138,12 @@ test("narrow desktop keeps the chat width when both panels are open", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 800, height: 900 });
-  await signup(page, `sidebar-panels-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await signup(
+    page,
+    `sidebar-panels-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Sidebar Sample",
+  );
   await completeOnboarding(page);
   const sidebar = page.getByTestId("bots-sidebar");
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
@@ -158,7 +168,12 @@ test("sidebar snaps its layout during a held drag in both directions", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: "dark" });
-  await signup(page, `sidebar-snaps-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await signup(
+    page,
+    `sidebar-snaps-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Sidebar Sample",
+  );
   await completeOnboarding(page);
   for (const name of ["Research", "Notes", "Planner"]) {
     await rpc(page, "bots/create", {

@@ -1259,6 +1259,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Not sent. Tap to retry": "未傳送。點一下重試",
   "OTA {id}": "OTA {id}",
   "OTA {id}, {date}": "OTA {id}，{date}",
+  "Password must be at least {min} characters": "密碼至少需要 {min} 個字元",
   "Password must be {max} characters or fewer": "密碼不得超過 {max} 個字元",
   Pending: "待處理",
   Requests: "請求",

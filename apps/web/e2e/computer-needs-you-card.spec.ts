@@ -11,7 +11,7 @@ import {
 
 test("needs-you computer card opens a group member bot computer", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `needs-you-group-${stamp}@rakazo.test`, "password12", "Needs You Group");
+  await signup(page, `needs-you-group-${stamp}@rakazo.test`, "password12345678", "Needs You Group");
   await completeOnboarding(page);
   const chiefId = activeBotId(page);
   const writerId = await createNamedBot(page, "Writer");

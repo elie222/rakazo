@@ -39,7 +39,12 @@ for (const theme of ["light", "dark"]) {
         },
       }),
     );
-    await signup(page, `app-marks-${theme}-${Date.now()}@rakazo.test`, "password12", "Demo User");
+    await signup(
+      page,
+      `app-marks-${theme}-${Date.now()}@rakazo.test`,
+      "password12345678",
+      "Demo User",
+    );
     await completeOnboarding(page);
     const footer = page.getByTestId("sidebar-footer");
     const pill = footer.getByRole("button", { name: "Connect apps", exact: true });

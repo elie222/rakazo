@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { createAuth } from "@rakazo/auth";
+import { MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import { createDb, createPool } from "@rakazo/db";
 import { expect, it } from "vitest";
 
@@ -36,10 +37,20 @@ it.skipIf(!testDatabase)(
       await run("pnpm", ["--filter", "@rakazo/api", "db:migrate"], {
         env: { ...env, DATABASE_MIGRATION_URL: at(ownerDatabase) },
       });
-      const boot = (password: string) =>
+      const boot = (password: string, email = env.OWNER_EMAIL) =>
         run("pnpm", ["--filter", "@rakazo/api", "exec", "tsx", "src/cli/bootstrap-owner.ts"], {
-          env: { ...env, DATABASE_MIGRATION_URL: undefined, OWNER_PASSWORD: password },
+          env: {
+            ...env,
+            DATABASE_MIGRATION_URL: undefined,
+            OWNER_EMAIL: email,
+            OWNER_PASSWORD: password,
+          },
         });
+      // A new account takes the same minimum as signup.
+      await expect(boot("x".repeat(MIN_PASSWORD_LENGTH - 1))).rejects.toThrow(
+        `OWNER_PASSWORD must contain ${MIN_PASSWORD_LENGTH} to`,
+      );
+      expect(await prisma.user.count()).toBe(0);
       await boot(env.OWNER_PASSWORD);
       const owner = await prisma.user.findUniqueOrThrow({ where: { email: env.OWNER_EMAIL } });
       expect(
@@ -97,6 +108,29 @@ it.skipIf(!testDatabase)(
         ).status,
       ).toBe(400);
       expect(await prisma.user.count()).toBe(1);
+
+      // An unverified account whose password predates the minimum can still prove it.
+      const legacyId = randomUUID();
+      const legacy = await prisma.user.create({
+        data: {
+          id: legacyId,
+          name: "Legacy",
+          email: "legacy@example.test",
+          emailVerified: false,
+          accounts: {
+            create: {
+              id: randomUUID(),
+              accountId: legacyId,
+              providerId: "credential",
+              password: await (await auth.$context).password.hash("eight-ch"),
+            },
+          },
+        },
+      });
+      await boot("eight-ch", legacy.email);
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: legacy.id } })).emailVerified,
+      ).toBe(true);
     } finally {
       await prisma.$disconnect();
       await pool.end();
@@ -104,6 +138,6 @@ it.skipIf(!testDatabase)(
       await admin.end();
     }
   },
-  // A fresh migration and four CLI cold starts take up to a minute on a busy CI shard.
+  // A fresh migration and six CLI cold starts take up to a minute on a busy CI shard.
   180_000,
 );

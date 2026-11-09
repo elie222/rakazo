@@ -94,6 +94,11 @@ describe("mobile API sign-in and account", () => {
       [403, '{"code":"PASSWORD_AUTH_DISABLED"}', "Password sign-in is turned off on this server"],
       [
         400,
+        '{"code":"PASSWORD_TOO_SHORT","message":"Password too short"}',
+        "Password must be at least 16 characters",
+      ],
+      [
+        400,
         '{"code":"PASSWORD_TOO_LONG","message":"Password too long"}',
         "Password must be 128 characters or fewer",
       ],

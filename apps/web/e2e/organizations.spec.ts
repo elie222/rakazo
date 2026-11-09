@@ -43,7 +43,7 @@ async function switchFromAvatarMenu(page: Page, name: string, spaceId: string) {
 
 test("create, switch, rename and delete an organization", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `organizations-${stamp}@rakazo.test`, "password12", "Org Owner");
+  await signup(page, `organizations-${stamp}@rakazo.test`, "password12345678", "Org Owner");
   await completeOnboarding(page);
 
   // One organization: the menu lists none, and creating one lives in settings.

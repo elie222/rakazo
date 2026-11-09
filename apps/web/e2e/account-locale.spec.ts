@@ -27,7 +27,7 @@ for (const language of [
     await signup(
       page,
       `ui-locale-${language.locale}-${Date.now()}@rakazo.test`,
-      "password12",
+      "password12345678",
       "Locale QA",
     );
     await completeOnboarding(page, testInfo);

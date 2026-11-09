@@ -185,6 +185,7 @@ export const PL_MESSAGES: Record<string, string> = {
     "Wystąpił problem z serwerem. Spróbuj ponownie za chwilę.",
   "Password sign-in is turned off on this server":
     "Logowanie hasłem jest wyłączone na tym serwerze",
+  "Password must be at least {min} characters": "Hasło musi mieć co najmniej {min} znaków",
   "Password must be {max} characters or fewer": "Hasło może mieć maksymalnie {max} znaków",
   "Could not save your sign-in on this device. Try again.":
     "Nie udało się zapisać logowania na tym urządzeniu. Spróbuj ponownie.",

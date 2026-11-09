@@ -14,7 +14,7 @@ test("new users answer the signup survey before their first chat", async ({ page
     await route.fulfill({ json: { json: { ok: true } } });
   });
 
-  await signup(page, `survey-${Date.now()}@rakazo.test`, "password12", "Survey");
+  await signup(page, `survey-${Date.now()}@rakazo.test`, "password12345678", "Survey");
 
   await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
   await expect(page).toHaveURL(/\/onboarding\/survey$/);

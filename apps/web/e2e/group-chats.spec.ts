@@ -15,7 +15,7 @@ async function createBot(page: Page, name: string) {
 
 test("create group from + and see two bots in one transcript", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `group-${stamp}@rakazo.test`, "password12", "Group E2E");
+  await signup(page, `group-${stamp}@rakazo.test`, "password12345678", "Group E2E");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

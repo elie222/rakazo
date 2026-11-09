@@ -27,7 +27,7 @@ test("adds a passkey after signup and signs in with it", async ({ page }, testIn
   const email = `passkey-${Date.now()}@example.test`;
   const userName = "Passkey Person";
 
-  await signup(page, email, "password12", userName);
+  await signup(page, email, "password12345678", userName);
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
 

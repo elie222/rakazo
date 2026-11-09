@@ -11,7 +11,7 @@ test("a page chip in a right-to-left chat keeps its icon gap on the text side", 
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `page-chip-rtl-${stamp}@rakazo.test`, "password12", "Locale QA");
+  await signup(page, `page-chip-rtl-${stamp}@rakazo.test`, "password12345678", "Locale QA");
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const botId = activeBotId(page);

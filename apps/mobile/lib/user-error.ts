@@ -10,6 +10,7 @@ import {
   isServerUnreachable,
   isUnreachableStatus,
   MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_IMAGE_INPUT_UNKNOWN,
   userErrorMessage,
@@ -70,6 +71,8 @@ export function authErrorText(body: unknown, fallback: string): string {
     return t("Email verification required");
   if (code === "REAUTHENTICATION_REQUIRED") return t("Sign in again");
   if (code === "PASSWORD_AUTH_DISABLED") return t("Password sign-in is turned off on this server");
+  if (code === "PASSWORD_TOO_SHORT")
+    return t("Password must be at least {min} characters", { min: MIN_PASSWORD_LENGTH });
   if (code === "PASSWORD_TOO_LONG")
     return t("Password must be {max} characters or fewer", { max: MAX_PASSWORD_LENGTH });
   if (code === "EMAIL_DELETION_UNAVAILABLE") return t("Could not continue");

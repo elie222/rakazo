@@ -53,7 +53,7 @@ for (const plan of plans) {
     await signup(
       page,
       `computer-hours-${plan.name}-${Date.now()}@rakazo.test`,
-      "password12",
+      "password12345678",
       "Hours Out",
     );
     await completeOnboarding(page);

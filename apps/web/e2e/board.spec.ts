@@ -6,7 +6,7 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   const stamp = Date.now();
   const title = "Ship the board";
   const description = "Track the kanban launch.";
-  await signup(page, `board-${stamp}@rakazo.test`, "password12", "Board QA");
+  await signup(page, `board-${stamp}@rakazo.test`, "password12345678", "Board QA");
   await completeOnboarding(page);
   await createNamedBot(page, "Planner");
 

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("colored user bubbles keep white text in both themes", async ({ page }, testInfo) => {
-  await signup(page, `bubble-colors-${Date.now()}@rakazo.test`, "password12", "Bubble Demo");
+  await signup(page, `bubble-colors-${Date.now()}@rakazo.test`, "password12345678", "Bubble Demo");
   await completeOnboarding(page);
   await rpc(page, "bots/update", { botId: activeBotId(page), color: "#A855F7" });
   await page.reload();

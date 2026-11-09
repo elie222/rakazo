@@ -217,7 +217,7 @@ async function prepareAuthenticatedProfile(benchmark: BenchmarkContext, profile:
     await page.goto(`${webOrigin}/sign-up`);
     await page.getByPlaceholder("Your name").fill("Benchmark User");
     await page.getByPlaceholder("Your email address").fill(`benchmark-${stamp}@rakazo.test`);
-    await page.getByPlaceholder("Password").fill("password12");
+    await page.getByPlaceholder("Password").fill("password12345678");
     await page.getByRole("button", { name: "Create account" }).click();
     await page
       .waitForFunction(() => /^\/(?:onboarding|app)/.test(window.location.pathname), undefined, {

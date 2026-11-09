@@ -592,7 +592,7 @@ async function signup(app: App, email: string, name: string) {
       "content-type": "application/json",
       origin: "http://127.0.0.1:5173",
     },
-    body: JSON.stringify({ email, password: "password12", name }),
+    body: JSON.stringify({ email, password: "password12345678", name }),
   });
   if (res.status >= 400) {
     throw new Error(`signup failed ${res.status}: ${await res.text()}`);

@@ -11,7 +11,7 @@ test("an operator menu link opens its page sandboxed inside the app", async ({
       body: "<!doctype html><title>Clients</title><h1>Client list</h1>",
     }),
   );
-  await signup(page, `nav-links-${Date.now()}@rakazo.test`, "password12", "Links QA");
+  await signup(page, `nav-links-${Date.now()}@rakazo.test`, "password12345678", "Links QA");
   await completeOnboarding(page);
 
   await page.getByTestId("user-menu-trigger").click();

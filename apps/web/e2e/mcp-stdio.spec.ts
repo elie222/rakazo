@@ -23,7 +23,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await page.context().route("**/rpc/me", (route) => asAdmin(route, "me"));
   await page.context().route("**/rpc/bootstrap", (route) => asAdmin(route, "bootstrap"));
   const stamp = Date.now();
-  await signup(page, `mcp-stdio-${stamp}@rakazo.test`, "password12", "MCP stdio");
+  await signup(page, `mcp-stdio-${stamp}@rakazo.test`, "password12345678", "MCP stdio");
   await completeOnboarding(page);
 
   const servers: McpServer[] = [];

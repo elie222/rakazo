@@ -13,7 +13,7 @@ test("A change asks without an approval model, and approvals settings shape what
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `action-approvals-${stamp}@rakazo.test`, "password12", "Approval UI");
+  await signup(page, `action-approvals-${stamp}@rakazo.test`, "password12345678", "Approval UI");
   await completeOnboarding(page, testInfo);
 
   await requestDestinationWrite(page, "write this to the destination crm as a note");
@@ -105,7 +105,12 @@ test("A change asks without an approval model, and approvals settings shape what
 
 test("A webhook run's card says why it asks after Always allow", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `webhook-approval-${stamp}@rakazo.test`, "password12", "Webhook Approval");
+  await signup(
+    page,
+    `webhook-approval-${stamp}@rakazo.test`,
+    "password12345678",
+    "Webhook Approval",
+  );
   await completeOnboarding(page);
   const reason = page.getByText(
     "Asked because a webhook started this run. Always allow doesn't skip this.",

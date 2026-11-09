@@ -186,6 +186,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "The server had a problem. Try again in a moment.":
     "На сервере возникла проблема. Попробуйте снова чуть позже.",
   "Password sign-in is turned off on this server": "Вход по паролю на этом сервере отключён",
+  "Password must be at least {min} characters": "Пароль должен содержать не менее {min} символов",
   "Password must be {max} characters or fewer": "Пароль должен содержать не более {max} символов",
   "Could not save your sign-in on this device. Try again.":
     "Не удалось сохранить вход на этом устройстве. Попробуйте снова.",

@@ -60,7 +60,7 @@ async function swipe(page: Page, start: [number, number], end: [number, number])
 test("swiping inward from the mobile edge opens the bots sidebar", async ({ page }, testInfo) => {
   await prepareOnboarding(page);
   const stamp = Date.now();
-  await signup(page, `mobile-sidebar-swipe-${stamp}@rakazo.test`, "password12", "Swipe Test");
+  await signup(page, `mobile-sidebar-swipe-${stamp}@rakazo.test`, "password12345678", "Swipe Test");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

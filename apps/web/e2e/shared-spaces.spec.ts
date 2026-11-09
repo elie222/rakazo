@@ -25,7 +25,7 @@ test("an owner invites someone by link and both see the space's members", async 
   await owner.grantPermissions(["clipboard-read", "clipboard-write"]);
   const stamp = Date.now();
 
-  await signup(ownerPage, `share-owner-${stamp}@rakazo.test`, "password12", "Ada Owner");
+  await signup(ownerPage, `share-owner-${stamp}@rakazo.test`, "password12345678", "Ada Owner");
   await completeOnboarding(ownerPage);
   const home = await rpc<{ id: string }>(ownerPage, "spaces/create", { name: "Home" });
   await ownerPage.reload();
@@ -50,7 +50,12 @@ test("an owner invites someone by link and both see the space's members", async 
   await inviteePage.goto(invitePath);
   await expect(inviteePage).toHaveURL(/\/sign-in\?next=%2Finvite%2F/);
 
-  await signup(inviteePage, `share-invitee-${stamp}@rakazo.test`, "password12", "Bob Invitee");
+  await signup(
+    inviteePage,
+    `share-invitee-${stamp}@rakazo.test`,
+    "password12345678",
+    "Bob Invitee",
+  );
   await completeOnboarding(inviteePage);
   await inviteePage.goto(invitePath);
   await expect(inviteePage.getByRole("heading", { name: "Join Home" })).toBeVisible();
@@ -130,7 +135,7 @@ test("an owner invites someone by link and both see the space's members", async 
   // change and navigate the page, which aborts the next sign-up navigation.
   await inviteePage.goto("about:blank");
   await invitee.clearCookies();
-  await signup(inviteePage, `share-late-${stamp}@rakazo.test`, "password12", "Late Invitee");
+  await signup(inviteePage, `share-late-${stamp}@rakazo.test`, "password12345678", "Late Invitee");
   await completeOnboarding(inviteePage);
   await inviteePage.goto(invitePath);
   await expect(

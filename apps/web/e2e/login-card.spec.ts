@@ -5,7 +5,7 @@ test("saves a website login from a username and password card without echoing ei
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `login-card-${stamp}@rakazo.test`, "password12", "Login Card");
+  await signup(page, `login-card-${stamp}@rakazo.test`, "password12345678", "Login Card");
   await completeOnboarding(page);
 
   const botId = activeBotId(page);

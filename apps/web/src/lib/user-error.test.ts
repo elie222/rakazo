@@ -21,6 +21,12 @@ describe("authErrorText", () => {
     }
   });
 
+  it("replaces Better Auth's raw too-short password message with the minimum", () => {
+    expect(
+      authErrorText({ code: "PASSWORD_TOO_SHORT", message: "Password too short" }, "Fallback"),
+    ).toBe("Password must be at least 16 characters");
+  });
+
   it("replaces Better Auth's raw too-long password message with the limit", () => {
     expect(
       authErrorText({ code: "PASSWORD_TOO_LONG", message: "Password too long" }, "Fallback"),

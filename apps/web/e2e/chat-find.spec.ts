@@ -17,7 +17,7 @@ test("the desktop app finds text in the open chat", async ({ page }, testInfo) =
       },
     });
   });
-  await signup(page, `find-${Date.now()}@rakazo.test`, "password12", "Find Chat");
+  await signup(page, `find-${Date.now()}@rakazo.test`, "password12345678", "Find Chat");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

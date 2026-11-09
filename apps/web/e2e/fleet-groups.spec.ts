@@ -4,7 +4,12 @@ import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from 
 test("a group a bot creates after approval appears in the sidebar without a reload", async ({
   page,
 }, testInfo) => {
-  await signup(page, `bot-management-groups-${Date.now()}@rakazo.test`, "password12", "Bot Groups");
+  await signup(
+    page,
+    `bot-management-groups-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Bot Groups",
+  );
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);
@@ -55,7 +60,7 @@ test(
     await signup(
       page,
       `bot-management-model-${Date.now()}@rakazo.test`,
-      "password12",
+      "password12345678",
       "Bot Models",
     );
     await completeOnboarding(page);

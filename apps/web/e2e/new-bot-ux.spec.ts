@@ -4,7 +4,7 @@ import { captureScreenshot, completeOnboarding, createBotFromPicker, rpc, signup
 test("a stale roster refresh started before creation keeps the new bot selected", async ({
   page,
 }, testInfo) => {
-  await signup(page, `stale-create-${Date.now()}@rakazo.test`, "password12", "Stale Create");
+  await signup(page, `stale-create-${Date.now()}@rakazo.test`, "password12345678", "Stale Create");
   await completeOnboarding(page);
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
 
@@ -67,7 +67,7 @@ test("a stale roster refresh started before creation keeps the new bot selected"
 });
 
 test("creation actions stay visible above a long bot list", async ({ page }, testInfo) => {
-  await signup(page, `create-menu-${Date.now()}@rakazo.test`, "password12", "Create menu");
+  await signup(page, `create-menu-${Date.now()}@rakazo.test`, "password12345678", "Create menu");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

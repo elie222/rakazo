@@ -7,7 +7,7 @@ import { captureScreenshot, completeOnboarding, openIntegrationsAdd, signup } fr
 
 test("connects an MCP server through the OAuth popup callback", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `mcp-oauth-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await signup(page, `mcp-oauth-${stamp}@rakazo.test`, "password12345678", "MCP OAuth");
   await completeOnboarding(page);
 
   let oauthStatus: McpServer["oauthStatus"] = "none";
@@ -123,7 +123,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
 
 test("adds an MCP server with a pre-registered OAuth client", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `mcp-oauth-client-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await signup(page, `mcp-oauth-client-${stamp}@rakazo.test`, "password12345678", "MCP OAuth");
   await completeOnboarding(page);
 
   const browserOrigin = new URL(page.url()).origin;
@@ -200,7 +200,7 @@ test("adds an MCP server with a pre-registered OAuth client", async ({ page }, t
 
 test("asks for a client ID when the MCP server cannot register one", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `mcp-oauth-dcr-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await signup(page, `mcp-oauth-dcr-${stamp}@rakazo.test`, "password12345678", "MCP OAuth");
   await completeOnboarding(page);
 
   const message = "Incompatible auth server: does not support dynamic client registration";

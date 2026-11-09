@@ -194,6 +194,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "El servidor tuvo un problema. Vuelve a intentarlo en un momento.",
   "Password sign-in is turned off on this server":
     "El inicio de sesión con contraseña está desactivado en este servidor",
+  "Password must be at least {min} characters":
+    "La contraseña debe tener al menos {min} caracteres",
   "Password must be {max} characters or fewer": "La contraseña debe tener {max} caracteres o menos",
   "Could not save your sign-in on this device. Try again.":
     "No se pudo guardar tu inicio de sesión en este dispositivo. Inténtalo de nuevo.",

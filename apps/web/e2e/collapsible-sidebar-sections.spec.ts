@@ -3,7 +3,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("titled sidebar section expands and collapses", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `sidebar-collapse-${stamp}@rakazo.test`, "password12", "Test User");
+  await signup(page, `sidebar-collapse-${stamp}@rakazo.test`, "password12345678", "Test User");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

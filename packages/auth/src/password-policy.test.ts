@@ -19,8 +19,10 @@ vi.mock("@rakazo/db", () => ({
 const baseURL = "http://auth.example.test";
 const webOrigin = "http://web.example.test";
 const strongPassword = "offline-password-1234";
+// Long enough before the minimum was raised to 16.
+const legacyPassword = "eight-ch";
 
-function fixture({ breachedPasswordCheck = false } = {}) {
+function fixture({ breachedPasswordCheck = false, email = false } = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
     account: [],
@@ -39,6 +41,7 @@ function fixture({ breachedPasswordCheck = false } = {}) {
     spaceMember: { findFirst: vi.fn(async () => ({ spaceId: "space-1" })) },
   };
   const log = vi.fn();
+  const messages: { text: string }[] = [];
   const auth = createAuth(prisma as never, {
     secret: "offline-auth-secret-at-least-32-characters",
     baseURL,
@@ -47,6 +50,19 @@ function fixture({ breachedPasswordCheck = false } = {}) {
     signupAllowlist: "",
     breachedPasswordCheck,
     logger: { level: "error", log },
+    email: email
+      ? {
+          describe: () => ({
+            id: "offline-email",
+            contractVersion: "1",
+            adapterVersion: "1",
+            capabilities: { transactional: true },
+          }),
+          send: async (message) => {
+            messages.push(message);
+          },
+        }
+      : undefined,
   });
   const request = (path: string, body: unknown, token?: string) =>
     auth.handler(
@@ -62,7 +78,30 @@ function fixture({ breachedPasswordCheck = false } = {}) {
     );
   const signup = (password: string) =>
     request("/sign-up/email", { email: "ada@example.test", password, name: "Ada" });
-  return { data, request, signup, log };
+  const signin = (password: string) =>
+    request("/sign-in/email", { email: "ada@example.test", password });
+  /** A verified account whose password was stored as is, without today's length check. */
+  const account = async (password: string) => {
+    const now = new Date();
+    data.user!.push({
+      id: "existing-user",
+      name: "Ada",
+      email: "ada@example.test",
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    data.account!.push({
+      id: "existing-account",
+      userId: "existing-user",
+      providerId: "credential",
+      accountId: "existing-user",
+      password: await (await auth.$context).password.hash(password),
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
+  return { data, request, signup, signin, account, messages, log };
 }
 
 /** A Have I Been Pwned range response listing `password` as breached. */
@@ -75,6 +114,10 @@ async function pwnedRange(password: string): Promise<string> {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("password length", () => {
+  it("requires 16 characters", () => {
+    expect(MIN_PASSWORD_LENGTH).toBe(16);
+  });
+
   it("enforces the shared minimum on new passwords", async () => {
     const f = fixture();
     const short = await f.signup("x".repeat(MIN_PASSWORD_LENGTH - 1));
@@ -87,6 +130,50 @@ describe("password length", () => {
     const long = await fixture().signup("x".repeat(MAX_PASSWORD_LENGTH + 1));
     expect(long.status).toBe(400);
     expect(await long.json()).toMatchObject({ code: "PASSWORD_TOO_LONG" });
+  });
+
+  it("applies the same minimum to a password change", async () => {
+    const f = fixture();
+    const signedUp = await f.signup(strongPassword);
+    const { token } = (await signedUp.json()) as { token: string };
+    const change = (newPassword: string) =>
+      f.request("/change-password", { currentPassword: strongPassword, newPassword }, token);
+    const short = await change("y".repeat(MIN_PASSWORD_LENGTH - 1));
+    expect(short.status).toBe(400);
+    expect(await short.json()).toMatchObject({ code: "PASSWORD_TOO_SHORT" });
+    const changed = await change("y".repeat(MIN_PASSWORD_LENGTH));
+    expect(changed.status, await changed.clone().text()).toBe(200);
+  });
+
+  it("applies the same minimum to a password reset", async () => {
+    const f = fixture({ email: true });
+    await f.account(strongPassword);
+    expect((await f.request("/request-password-reset", { email: "ada@example.test" })).status).toBe(
+      200,
+    );
+    const token = f.messages.at(-1)!.text.match(/reset-password\/([^?\s]+)/)![1]!;
+    const reset = (newPassword: string) => f.request("/reset-password", { token, newPassword });
+    const short = await reset("z".repeat(MIN_PASSWORD_LENGTH - 1));
+    expect(short.status).toBe(400);
+    expect(await short.json()).toMatchObject({ code: "PASSWORD_TOO_SHORT" });
+    const done = await reset("z".repeat(MIN_PASSWORD_LENGTH));
+    expect(done.status, await done.clone().text()).toBe(200);
+  });
+
+  it("keeps a shorter password set before the minimum was raised working", async () => {
+    const f = fixture();
+    await f.account(legacyPassword);
+    const signedIn = await f.signin(legacyPassword);
+    expect(signedIn.status, await signedIn.clone().text()).toBe(200);
+    const { token } = (await signedIn.json()) as { token: string };
+    // It still proves identity, and can be replaced by a password that meets the minimum.
+    const changed = await f.request(
+      "/change-password",
+      { currentPassword: legacyPassword, newPassword: strongPassword },
+      token,
+    );
+    expect(changed.status, await changed.clone().text()).toBe(200);
+    expect((await f.signin(strongPassword)).status).toBe(200);
   });
 });
 

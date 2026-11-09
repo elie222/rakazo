@@ -333,7 +333,7 @@ describePiApp("live OpenRouter product journey", () => {
     const signup = await handles.app.request("/api/auth/sign-up/email", {
       method: "POST",
       headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
-      body: JSON.stringify({ email, password: "password12", name: "Pi Canary" }),
+      body: JSON.stringify({ email, password: "password12345678", name: "Pi Canary" }),
     });
     expect(signup.status).toBeLessThan(400);
     const cookie = sessionCookieHeader(signup);

@@ -258,7 +258,7 @@ async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
     const page = await context.newPage();
     const email = `benchmark-${Date.now()}@rakazo.test`;
     const response = await page.request.post("/api/auth/sign-up/email", {
-      data: { email, password: "password12", name: "Benchmark User" },
+      data: { email, password: "password12345678", name: "Benchmark User" },
       headers: { origin: bench.webOrigin },
     });
     if (!response.ok()) throw new Error(`sign-up ${response.status()}: ${await response.text()}`);

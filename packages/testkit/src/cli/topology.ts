@@ -147,7 +147,7 @@ async function signup(baseUrl: string) {
     headers: { "content-type": "application/json", origin: baseUrl },
     body: JSON.stringify({
       email: `topology-${Date.now()}@rakazo.test`,
-      password: "password12",
+      password: "password12345678",
       name: "Topology",
     }),
   });

@@ -7,7 +7,7 @@ for (const platform of ["darwin", "linux"]) {
     await signup(
       page,
       `host-choice-${platform}-${Date.now()}@rakazo.test`,
-      "password12",
+      "password12345678",
       "Host Tester",
     );
     await completeOnboarding(page);
@@ -106,7 +106,12 @@ for (const platform of ["darwin", "linux"]) {
 }
 
 test("a saved host choice closes when refreshing the profile fails", async ({ page }) => {
-  await signup(page, `host-choice-refresh-${Date.now()}@rakazo.test`, "password12", "Host Tester");
+  await signup(
+    page,
+    `host-choice-refresh-${Date.now()}@rakazo.test`,
+    "password12345678",
+    "Host Tester",
+  );
   await completeOnboarding(page);
   await page.addInitScript(() => {
     Object.defineProperty(window, "rakazoDesktop", {

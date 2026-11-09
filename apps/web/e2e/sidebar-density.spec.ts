@@ -14,7 +14,7 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `sidebar-density-${stamp}@rakazo.test`, "password12", "Sidebar Density");
+  await signup(page, `sidebar-density-${stamp}@rakazo.test`, "password12345678", "Sidebar Density");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

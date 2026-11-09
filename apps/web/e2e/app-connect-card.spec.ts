@@ -10,7 +10,7 @@ import {
 
 test("a bot connects an app inline in a normal chat", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await signup(page, `inline-connect-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await signup(page, `inline-connect-${Date.now()}@rakazo.test`, "password12345678", "Sample");
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "onboarding/dismissFocus", { botId });
@@ -46,7 +46,7 @@ test("a bot connects an app inline in a normal chat", async ({ page }, testInfo)
 test("a group card authorizes in its own thread without duplicate pending cards", async ({
   page,
 }, testInfo) => {
-  await signup(page, `group-connect-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await signup(page, `group-connect-${Date.now()}@rakazo.test`, "password12345678", "Sample");
   await completeOnboarding(page);
   const firstBotId = activeBotId(page);
   const peerId = await createNamedBot(page, "Assistant");

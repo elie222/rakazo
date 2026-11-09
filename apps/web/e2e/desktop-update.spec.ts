@@ -58,7 +58,7 @@ test("desktop update can be checked, deferred, and installed from settings", asy
     });
   });
   const stamp = Date.now();
-  await signup(page, `desktop-update-${stamp}@rakazo.test`, "password12", "Update Tester");
+  await signup(page, `desktop-update-${stamp}@rakazo.test`, "password12345678", "Update Tester");
   await completeOnboarding(page);
   await expect(page.getByRole("complementary", { name: "Desktop update" })).toHaveCount(0);
   await openUserSettings(page, "updates");

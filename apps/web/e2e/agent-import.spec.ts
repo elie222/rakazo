@@ -103,7 +103,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   context,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `agent-import-${stamp}@rakazo.test`, "password12", "Import User");
+  await signup(page, `agent-import-${stamp}@rakazo.test`, "password12345678", "Import User");
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);

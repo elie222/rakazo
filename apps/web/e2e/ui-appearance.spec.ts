@@ -5,7 +5,7 @@ test("sidebar list fades above the transparent footer and keeps the last row rea
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 720 });
-  await signup(page, `footer-scroll-${Date.now()}@rakazo.test`, "password12", "Demo User");
+  await signup(page, `footer-scroll-${Date.now()}@rakazo.test`, "password12345678", "Demo User");
   await completeOnboarding(page);
   for (let index = 0; index < 20; index++) {
     await rpc(page, "bots/create", {

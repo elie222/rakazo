@@ -4,7 +4,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 test("ordinary accounts can add personal MCP connections without server setup", async ({
   page,
 }, testInfo) => {
-  await signup(page, `personal-mcp-${Date.now()}@rakazo.test`, "password12", "Personal MCP");
+  await signup(page, `personal-mcp-${Date.now()}@rakazo.test`, "password12345678", "Personal MCP");
   await completeOnboarding(page);
   await page.goto("/integrations/setup");
   await expect(page.getByRole("heading", { name: "Add MCP server" })).toBeVisible();

@@ -1398,7 +1398,7 @@ describeIntegration("run executor lifecycle", () => {
     const response = await handles.app.request("/api/auth/sign-up/email", {
       method: "POST",
       headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
-      body: JSON.stringify({ email, password: "password12", name }),
+      body: JSON.stringify({ email, password: "password12345678", name }),
     });
     expect(response.status).toBeLessThan(400);
     const raw = response.headers.get("set-cookie") ?? "";

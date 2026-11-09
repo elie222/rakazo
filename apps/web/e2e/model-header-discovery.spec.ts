@@ -34,7 +34,7 @@ for (const surface of ["settings", "onboarding"] as const) {
       await signup(
         page,
         `header-${surface}-${action}-${Date.now()}@rakazo.test`,
-        "password12",
+        "password12345678",
         "Header discovery",
       );
       if (surface === "settings") {

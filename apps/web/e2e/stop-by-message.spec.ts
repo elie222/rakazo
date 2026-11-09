@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("typing stop while the bot works stops it and says so", async ({ page }, testInfo) => {
-  await signup(page, `stop-message-${Date.now()}@rakazo.test`, "password12", "Stopper");
+  await signup(page, `stop-message-${Date.now()}@rakazo.test`, "password12345678", "Stopper");
   await completeOnboarding(page);
 
   const composer = page.locator('textarea[name="chat-message"]');
