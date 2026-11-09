@@ -35,7 +35,7 @@ import {
 } from "./session";
 import { authResponseErrorText, sessionSaveErrorText } from "./user-error";
 
-async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
+async function postAuth(path: string, input: object, apiBase = currentApiBase()) {
   return fetchMobileJson<unknown>(
     `${apiBase}/api/auth/${path}`,
     {
@@ -55,7 +55,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
 }
 async function authenticate(
   path: string,
-  input: Record<string, string>,
+  input: object,
   missingSession: string,
 ): Promise<{ verificationRequired: boolean }> {
   const apiBase = currentApiBase();
@@ -99,6 +99,18 @@ async function authenticate(
     throw new Error(t("Could not continue"));
   }
   return { verificationRequired: false };
+}
+/** Signs in with an identity token from a native provider such as Sign in with Apple. */
+export function signInWithIdentityToken(
+  provider: string,
+  token: string,
+  user?: { name?: { firstName?: string; lastName?: string }; email?: string },
+) {
+  return authenticate(
+    "sign-in/social",
+    { provider, idToken: { token, ...(user ? { user } : {}) } },
+    t("Sign-in did not return a session"),
+  );
 }
 export function signIn(email: string, password: string) {
   return authenticate("sign-in/email", { email, password }, t("Sign-in did not return a session"));

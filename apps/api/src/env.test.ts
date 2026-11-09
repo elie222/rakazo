@@ -1,3 +1,7 @@
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadEnv, parseExtraAuthOrigins } from "./env.js";
 
@@ -384,6 +388,73 @@ describe("OIDC environment", () => {
     expect(
       loadEnv({ ...base, ...oidc, OIDC_ALLOW_SIGNUP_BYPASS: "true" }).oidc?.allowSignupBypass,
     ).toBe(true);
+  });
+});
+
+describe("social sign-in environment", () => {
+  const privateKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+    .privateKey.export({
+      type: "pkcs8",
+      format: "pem",
+    })
+    .toString();
+  const apple = {
+    APPLE_CLIENT_ID: "com.example.service",
+    APPLE_TEAM_ID: "TEAMID1234",
+    APPLE_KEY_ID: "KEYID12345",
+    APPLE_PRIVATE_KEY: privateKey,
+  };
+
+  it("leaves sign-in unchanged when no provider is configured", () => {
+    expect(loadEnv(base).social).toBeUndefined();
+  });
+
+  it("enables a provider only when its credentials are complete", () => {
+    expect(() => loadEnv({ ...base, GOOGLE_CLIENT_ID: "client" })).toThrow(/configured together/);
+    expect(() => loadEnv({ ...base, ...apple, APPLE_KEY_ID: undefined })).toThrow(
+      /configured together/,
+    );
+    expect(
+      loadEnv({ ...base, GOOGLE_CLIENT_ID: "client", GOOGLE_CLIENT_SECRET: "secret" }).social,
+    ).toEqual({
+      providers: [{ id: "google", name: "Google", clientId: "client", clientSecret: "secret" }],
+    });
+    expect(
+      loadEnv({ ...base, ...apple, APPLE_APP_BUNDLE_IDENTIFIER: "com.example.app" }).social,
+    ).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          id: "apple",
+          clientId: "com.example.service",
+          bundleId: "com.example.app",
+        }),
+      ],
+    });
+  });
+
+  it("reads the Apple private key from a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rakazo-apple-"));
+    const file = join(dir, "key.p8");
+    try {
+      writeFileSync(file, privateKey);
+      expect(
+        loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY: undefined, APPLE_PRIVATE_KEY_FILE: file })
+          .social?.providers[0],
+      ).toMatchObject({ id: "apple" });
+      expect(() => loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY_FILE: file })).toThrow(
+        /not both/,
+      );
+      expect(() =>
+        loadEnv({
+          ...base,
+          ...apple,
+          APPLE_PRIVATE_KEY: undefined,
+          APPLE_PRIVATE_KEY_FILE: join(dir, "missing.p8"),
+        }),
+      ).toThrow(/could not be read/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

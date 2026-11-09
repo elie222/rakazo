@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const signInProviderSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** The server accepts a native identity token for this provider. */
+  native: z.boolean().optional(),
+});
+export type SignInProvider = z.infer<typeof signInProviderSchema>;
+
 export const authCapabilitiesSchema = z.object({
   sso: z
     .object({
@@ -7,6 +15,11 @@ export const authCapabilitiesSchema = z.object({
       availability: z.enum(["available", "unavailable", "checking"]),
     })
     .nullable(),
+  /**
+   * Sign-in buttons. Older servers omit it; clients then show `sso` alone.
+   * An empty list means this server configured none.
+   */
+  providers: z.array(signInProviderSchema).max(8).optional(),
   passwordAuth: z.boolean(),
   passwordReset: z.boolean(),
   resetUrl: z.string().url().nullable(),
@@ -21,6 +34,18 @@ export const authCapabilitiesSchema = z.object({
   crispWebsiteId: z.string().min(1).nullable().optional(),
 });
 export type AuthCapabilities = z.infer<typeof authCapabilitiesSchema>;
+
+/**
+ * The buttons on sign-in. A server that lists `providers` wins, including an empty list.
+ * Older servers only had `sso`.
+ */
+export function signInProviders(capabilities: {
+  sso: { name: string } | null;
+  providers?: SignInProvider[] | undefined;
+}): SignInProvider[] {
+  if (capabilities.providers) return capabilities.providers;
+  return capabilities.sso ? [{ id: "oidc", name: capabilities.sso.name }] : [];
+}
 
 export const accountSecuritySchema = z.object({
   hasPassword: z.boolean(),

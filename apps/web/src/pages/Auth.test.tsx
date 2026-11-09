@@ -166,6 +166,40 @@ it.each(["in", "up"] as const)("puts quiet SSO below the primary action on %s", 
   expect(sso.dataset.size).toBe("sm");
 });
 
+it("shows a configured provider beside the password form and hides the rest", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({
+    ...capabilities,
+    passwordAuth: true,
+    sso: null,
+    providers: [
+      { id: "google", name: "Google" },
+      { id: "apple", name: "Apple", native: true },
+    ],
+  });
+  await render();
+  expect(host.querySelector('input[name="email"]')).not.toBeNull();
+  const google = button("Continue with Google");
+  const apple = button("Continue with Apple");
+  expect(google.dataset.variant).toBe("link");
+  expect(apple.dataset.variant).toBe("link");
+  expect(host.querySelector('button[type="submit"]')!.compareDocumentPosition(google)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  await act(async () => google.click());
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "google" }),
+  );
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({
+    ...capabilities,
+    passwordAuth: true,
+    sso: null,
+    providers: [],
+  });
+  await render("up");
+  expect(host.textContent).not.toContain("Continue with");
+  expect(host.querySelector('input[name="email"]')).not.toBeNull();
+});
+
 it("hides SSO in password recovery", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
   await render("forgot");

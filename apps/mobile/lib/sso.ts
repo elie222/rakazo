@@ -14,6 +14,7 @@ let inFlight = false;
 /** Better Auth Expo proxy transfers the state cookie into the native auth browser. */
 export async function continueWithSso(
   action: "sign-in" | "link" | "reauthenticate" = "sign-in",
+  provider = "oidc",
 ): Promise<boolean> {
   if (inFlight) return false;
   inFlight = true;
@@ -43,7 +44,7 @@ export async function continueWithSso(
           ...headers,
         },
         body: JSON.stringify({
-          provider: "oidc",
+          provider,
           callbackURL,
           errorCallbackURL: callbackURL,
           disableRedirect: true,

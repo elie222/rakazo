@@ -1,3 +1,4 @@
+import { signInProviders } from "@rakazo/contracts";
 import {
   credentialIssue,
   MAX_PASSWORD_LENGTH,
@@ -32,6 +33,7 @@ import {
   signInWithCode,
   signUp,
 } from "../lib/api-auth";
+import { continueWithNativeSignIn } from "../lib/apple-sign-in";
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { displayApiHost, usesCustomApiBase } from "../lib/endpoint";
@@ -138,6 +140,9 @@ export default function SignIn() {
   }
   if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
+  const providers = reset ? signInProviders(reset) : [];
+  const primaryProvider = reset && !reset.passwordAuth ? providers[0] : undefined;
+  const linkProviders = primaryProvider ? providers.slice(1) : providers;
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const usingCode = codeFlow && (codeSent || !password);
@@ -217,6 +222,13 @@ export default function SignIn() {
     if (hasIncomingShare()) return router.replace("/share");
     const me = await rpc("me").catch(() => null);
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
+  }
+
+  function startProvider(provider: (typeof providers)[number]) {
+    const native = Boolean(provider.native) && Platform.OS === "ios";
+    return externalSignIn(() =>
+      native ? continueWithNativeSignIn(provider.id) : continueWithSso("sign-in", provider.id),
+    );
   }
 
   async function externalSignIn(run: () => Promise<boolean>) {
@@ -305,14 +317,26 @@ export default function SignIn() {
                       style={{ marginTop: 16 }}
                     />
                   ) : null}
-                  {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
+                  {primaryProvider && mode !== "forgot" ? (
                     <NativeActionButton
-                      label={t("Continue with {name}", { name: reset.sso.name })}
+                      label={t("Continue with {name}", { name: primaryProvider.name })}
                       disabled={pending}
-                      onPress={() => void externalSignIn(continueWithSso)}
+                      onPress={() => void startProvider(primaryProvider)}
                       style={{ marginTop: 16 }}
                     />
                   ) : null}
+                  {!reset?.passwordAuth && mode !== "forgot"
+                    ? linkProviders.map((provider) => (
+                        <NativeActionButton
+                          key={provider.id}
+                          label={t("Continue with {name}", { name: provider.name })}
+                          prominence="quiet"
+                          disabled={pending}
+                          onPress={() => void startProvider(provider)}
+                          style={{ alignSelf: "center", marginTop: 16 }}
+                        />
+                      ))
+                    : null}
                   {error && !reset?.passwordAuth ? (
                     <Text
                       accessibilityRole="alert"
@@ -499,15 +523,18 @@ export default function SignIn() {
                           style={{ marginTop: 12 }}
                         />
                       ) : null}
-                      {reset.sso && mode !== "forgot" ? (
-                        <NativeActionButton
-                          label={t("Continue with {name}", { name: reset.sso.name })}
-                          prominence="quiet"
-                          disabled={pending}
-                          onPress={() => void externalSignIn(continueWithSso)}
-                          style={{ alignSelf: "center", marginTop: 16 }}
-                        />
-                      ) : null}
+                      {mode !== "forgot" && !codeStep
+                        ? linkProviders.map((provider) => (
+                            <NativeActionButton
+                              key={provider.id}
+                              label={t("Continue with {name}", { name: provider.name })}
+                              prominence="quiet"
+                              disabled={pending}
+                              onPress={() => void startProvider(provider)}
+                              style={{ alignSelf: "center", marginTop: 16 }}
+                            />
+                          ))
+                        : null}
                       {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"

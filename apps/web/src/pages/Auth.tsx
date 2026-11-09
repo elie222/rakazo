@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { signInProviders } from "@rakazo/contracts";
 import {
   credentialIssue,
   MAX_PASSWORD_LENGTH,
@@ -58,6 +59,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
   const codeStep = useCode && codeSent;
+  const providers = reset ? signInProviders(reset) : [];
+  const primaryProvider = reset && !reset.passwordAuth ? providers[0] : undefined;
+  const linkProviders = primaryProvider ? providers.slice(1) : providers;
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     sent || codeStep ? (
@@ -207,14 +211,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setError(null);
   }
 
-  async function signInWithSso() {
+  async function signInWithProvider(provider: string) {
     setError(null);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
           authClient.signIn.social({
             disableRedirect,
-            provider: "oidc",
+            provider,
             newUserCallbackURL: callbackURL(newAccountDestination(next)),
             callbackURL: callbackURL(next ?? "/app"),
             errorCallbackURL: callbackURL("/sign-in"),
@@ -225,6 +229,22 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     } catch {
       setError(t`Could not continue`);
     }
+  }
+
+  function providerLinks(list: typeof linkProviders) {
+    return list.map((provider) => (
+      <Button
+        key={provider.id}
+        type="button"
+        variant="link"
+        size="sm"
+        disabled={pending}
+        className="mt-3 text-muted-foreground"
+        onClick={() => void signInWithProvider(provider.id)}
+      >
+        <Trans>Continue with {provider.name}</Trans>
+      </Button>
+    ));
   }
 
   if (!sent && !reset && !capabilityError) {
@@ -255,16 +275,17 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
             </div>
           ) : null}
-          {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
+          {primaryProvider && mode !== "forgot" ? (
             <Button
               type="button"
               disabled={pending}
               className={submitClass}
-              onClick={() => void signInWithSso()}
+              onClick={() => void signInWithProvider(primaryProvider.id)}
             >
-              <Trans>Continue with {reset.sso.name}</Trans>
+              <Trans>Continue with {primaryProvider.name}</Trans>
             </Button>
           ) : null}
+          {!reset?.passwordAuth && mode !== "forgot" ? providerLinks(linkProviders) : null}
           {error && !reset?.passwordAuth ? (
             <p role="alert" className="mt-3 text-body text-destructive">
               {error}
@@ -419,18 +440,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {reset.sso && mode !== "forgot" && !codeStep ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  disabled={pending}
-                  className="mt-3 text-muted-foreground"
-                  onClick={() => void signInWithSso()}
-                >
-                  <Trans>Continue with {reset.sso.name}</Trans>
-                </Button>
-              ) : null}
+              {mode !== "forgot" && !codeStep ? providerLinks(linkProviders) : null}
               {codeStep ? null : (
                 <p className="mt-8 text-muted-foreground">
                   {mode === "in" ? (

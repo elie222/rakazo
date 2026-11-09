@@ -14,6 +14,7 @@ import {
   signInWithCode,
   signUp,
 } from "./api-auth";
+import { continueWithNativeSignIn } from "./apple-sign-in";
 import type * as Endpoint from "./endpoint";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
@@ -146,6 +147,7 @@ vi.mock("./api-auth", () => ({
 }));
 vi.mock("./incoming-share", () => ({ hasIncomingShare: () => route.waiting }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
+vi.mock("./apple-sign-in", () => ({ continueWithNativeSignIn: vi.fn() }));
 vi.mock("./passkey", () => ({ passkeysAvailable: vi.fn(), signInWithPasskey: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 
@@ -244,6 +246,35 @@ it.each(["in", "up"])(
     expect(host.querySelector("input")).toBeNull();
   },
 );
+
+it("offers each configured provider and uses native Apple on iOS", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({
+    ...capabilities,
+    sso: null,
+    providers: [
+      { id: "google", name: "Google" },
+      { id: "apple", name: "Apple", native: true },
+    ],
+  });
+  vi.mocked(continueWithSso).mockResolvedValue(false);
+  vi.mocked(continueWithNativeSignIn).mockResolvedValue(false);
+  await render();
+  expect(input("Email")).not.toBeNull();
+  expect(button("Continue with Google")!.dataset.prominence).toBe("quiet");
+  expect(button("Continue with Apple")!.dataset.prominence).toBe("quiet");
+  await press("Continue with Google");
+  expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");
+  expect(continueWithNativeSignIn).not.toHaveBeenCalled();
+  await press("Continue with Apple");
+  expect(continueWithNativeSignIn).toHaveBeenCalledWith("apple");
+});
+
+it("hides social buttons when the server configures none", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: null });
+  await render();
+  expect(host.textContent).not.toContain("Continue with");
+  expect(input("Email")).not.toBeNull();
+});
 
 it("hides SSO when switching to password recovery", async () => {
   await render();

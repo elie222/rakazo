@@ -212,6 +212,60 @@ email configured, **Send deletion code** sends a single-use code to the account 
 minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
 invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
 
+## Google and Apple sign-in
+
+Google and Apple sign-in are off until you set their credentials on the API. With nothing set,
+sign-in stays email and password (and any OpenID Connect provider you already configured). Each
+provider turns on only when its own values are complete. Email and password stay available next
+to the buttons.
+
+```env
+GOOGLE_CLIENT_ID=replace-with-client-id
+GOOGLE_CLIENT_SECRET=replace-with-client-secret
+
+APPLE_CLIENT_ID=replace-with-services-id
+APPLE_TEAM_ID=replace-with-team-id
+APPLE_KEY_ID=replace-with-key-id
+APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-key\n-----END PRIVATE KEY-----"
+APPLE_APP_BUNDLE_IDENTIFIER=com.example.app
+```
+
+Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
+with Apple `.p8` file. A line break in the env value can be a real newline or the two characters
+`\n`. To mount the file instead, set `APPLE_PRIVATE_KEY_FILE` to its path and leave
+`APPLE_PRIVATE_KEY` empty. Set one of them, not both.
+
+The API signs Apple's client secret itself (ES256, from the key, team id, and key id), caches
+it, and signs a new one before it expires. Apple refuses a secret dated more than six months
+ahead, so there is nothing to rotate by hand and no client-secret JWT to paste in.
+
+Register these redirect URIs, using your public `BETTER_AUTH_URL` origin:
+
+```text
+https://app.example.com/api/auth/callback/google
+https://app.example.com/api/auth/callback/apple
+```
+
+For Google, create a web OAuth client and add that redirect URI. For Apple, create a Services ID
+(that value is `APPLE_CLIENT_ID`), enable Sign in with Apple on it, and return to the same
+redirect URI. The key is created under Keys with Sign in with Apple enabled; its id is
+`APPLE_KEY_ID`, and the team id is on the account page. Download the `.p8` once and store it
+with the API's other secrets.
+
+`APPLE_APP_BUNDLE_IDENTIFIER` is the iOS app's bundle id. Set it so the iPhone app can use the
+system Sign in with Apple sheet. Without it, Apple sign-in still works in the browser. The App
+Store requires Apple sign-in on a build that also offers Google, so enable both for that app.
+Android and the web app use the system browser for either provider. Secrets stay on the API; the
+sign-in screen only learns which providers are enabled.
+
+Someone who already has an account can sign in with Google or Apple when the provider's email is
+verified and the account's email is already verified. The accounts are linked. A provider that
+does not say the email is verified, or an account that has not verified its address, is not
+linked. Generic OpenID Connect is unchanged: it still does not link by email.
+
+Signup through Google or Apple follows the same closed registration and allowlist as email
+signup. The provider email has to be verified when an allowlist is set.
+
 ## Directory provisioning (SCIM)
 
 Your identity provider can add people to Rakazo and remove them over SCIM 2.0. Generate a token

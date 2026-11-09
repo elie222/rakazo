@@ -35,6 +35,7 @@
     "@tanstack/react-query": "5.105.3",
     "expo": "57.0.32",
     "expo-application": "57.0.3",
+    "expo-apple-authentication": "57.0.2",
     "expo-audio": "57.0.5",
     "expo-clipboard": "57.0.2",
     "expo-constants": "57.0.23",

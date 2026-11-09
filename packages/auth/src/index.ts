@@ -39,6 +39,7 @@ import {
   sessionForAuthHook,
   signedBearer,
 } from "./account-security.js";
+import { createAppleClientSecretCache } from "./apple-client-secret.js";
 import { breachedPasswordCheck } from "./breached-password.js";
 import { DEACTIVATED_AT_FIELD } from "./directory.js";
 import type { EmailLocaleOf } from "./email.js";
@@ -47,6 +48,14 @@ import { hasRecentIdentityConfirmation, identityConfirmation } from "./identity-
 import type { OidcConfig } from "./oidc.js";
 import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 import { passkeyRelyingParty } from "./passkey.js";
+import type { AppleProviderConfig, GoogleProviderConfig, SocialAuthConfig } from "./social.js";
+import {
+  appleUserInfo,
+  isBuiltinAuthorizationURL,
+  requestProviderId,
+  socialTrustedOrigins,
+  trustedSocialLinking,
+} from "./social.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
@@ -69,6 +78,8 @@ export {
   pluginSubmissionReviewedEmail,
 } from "./plugin-submission-email.js";
 export { referralEmail } from "./referral-email.js";
+export type { SocialAuthConfig } from "./social.js";
+export { publicSignInProviders, socialAuthFromFields } from "./social.js";
 export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {
@@ -77,6 +88,8 @@ export interface AuthEnv {
   /** Opt-in: rejects new passwords found in Have I Been Pwned. Calls an outside service. */
   breachedPasswordCheck?: boolean;
   oidc?: OidcConfig;
+  /** Google and Apple, each present only when its credentials are set. */
+  social?: SocialAuthConfig;
   secret: string;
   baseURL: string;
   webOrigin: string;
@@ -241,6 +254,32 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     env.passwordAuth === false
       ? null
       : passkeyRelyingParty(env.webOrigin, env.androidAppCertFingerprints);
+  const google = env.social?.providers.find(
+    (provider): provider is GoogleProviderConfig => provider.id === "google",
+  );
+  const apple = env.social?.providers.find(
+    (provider): provider is AppleProviderConfig => provider.id === "apple",
+  );
+  const appleSecret = apple ? createAppleClientSecretCache(apple) : undefined;
+  let appleRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleAppleRefresh = (failed = false) => {
+    if (!appleSecret) return;
+    clearTimeout(appleRefreshTimer);
+    const wait = failed ? 60_000 : Math.max(1_000, appleSecret.refreshIn());
+    appleRefreshTimer = setTimeout(() => {
+      void appleSecret.current().then(
+        () => scheduleAppleRefresh(false),
+        () => scheduleAppleRefresh(true),
+      );
+    }, wait);
+    appleRefreshTimer.unref?.();
+  };
+  if (appleSecret) {
+    void appleSecret.current().then(
+      () => scheduleAppleRefresh(false),
+      () => scheduleAppleRefresh(true),
+    );
+  }
   // Better Auth's own token key, so every stored token shares one cipher and key.
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
@@ -255,6 +294,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         extraOrigins: env.extraOrigins,
       }),
       APP_SCHEME_ORIGIN,
+      ...socialTrustedOrigins(env.social),
     ],
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
@@ -274,6 +314,37 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     },
     rateLimit: authRateLimitOptions(),
     advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
+    socialProviders: {
+      ...(google
+        ? {
+            google: {
+              clientId: google.clientId,
+              clientSecret: google.clientSecret,
+              mapProfileToUser: (profile: { email_verified?: boolean }) => ({
+                emailVerified: profile.email_verified === true,
+              }),
+            },
+          }
+        : {}),
+      ...(apple && appleSecret
+        ? {
+            apple: {
+              clientId: apple.clientId,
+              get clientSecret() {
+                return appleSecret.peek() ?? "";
+              },
+              ...(apple.bundleId
+                ? {
+                    appBundleIdentifier: apple.bundleId,
+                    audience: [apple.clientId, apple.bundleId],
+                  }
+                : {}),
+              getUserInfo: (token: Parameters<typeof appleUserInfo>[1]) =>
+                appleUserInfo(prisma, token),
+            },
+          }
+        : {}),
+    },
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: env.passwordAuth !== false,
@@ -324,7 +395,30 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       // Set by the directory; read with every session so a deactivated account is refused.
       additionalFields: DEACTIVATED_AT_FIELD,
       validateUserInfo: async ({ user, source }, ctx) => {
-        if (source.method !== "oauth" || source.oauth?.providerId !== "oidc") return;
+        if (source.method !== "oauth") return;
+        const providerId = source.oauth?.providerId;
+        if (providerId === "google" || providerId === "apple") {
+          const verified = user.emailVerified === true;
+          const email = String(user.email ?? "").toLowerCase();
+          if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
+          if (source.action === "create-user") {
+            const policy = await admission();
+            if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
+            if (!emailAllowed(email, policy.allowlist)) return { error: "EMAIL_NOT_ALLOWED" };
+            if (policy.allowlist.length > 0 && !verified)
+              return { error: "EMAIL_VERIFICATION_REQUIRED" };
+            return;
+          }
+          // A verified provider email may join an account whose address is already verified.
+          if (source.action === "link-account") {
+            if (!verified) return { error: "unable_to_link_account" };
+            const target = await ctx.context.internalAdapter.findUserById(String(user.id));
+            if (!target?.emailVerified || target.email.toLowerCase() !== email)
+              return { error: "account_not_linked" };
+          }
+          return;
+        }
+        if (providerId !== "oidc") return;
         const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
         if (typeof expectedUser === "string" && user.id !== expectedUser)
           return { error: "REAUTHENTICATION_REQUIRED" };
@@ -455,6 +549,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        const providerId = requestProviderId(ctx);
+        if (appleSecret && providerId === "apple") await appleSecret.current();
+        const socialLinking = trustedSocialLinking(
+          ctx.path === "/callback/:id" || ctx.body?.idToken ? providerId : undefined,
+        );
         if (
           ctx.path === "/sign-in/social" &&
           ctx.body?.provider === "oidc" &&
@@ -479,11 +578,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             reauthStartedAt: Math.floor(Date.now() / 1_000),
           });
         }
-        if (
-          ctx.path === "/expo-authorization-proxy" &&
-          !(await discovery?.isAuthorizationURL(String(ctx.query?.authorizationURL ?? "")))
-        ) {
-          throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
+        if (ctx.path === "/expo-authorization-proxy") {
+          const authorizationURL = String(ctx.query?.authorizationURL ?? "");
+          const builtin =
+            env.social?.providers.some((provider) =>
+              isBuiltinAuthorizationURL(provider.id, authorizationURL),
+            ) ?? false;
+          if (!(builtin || (await discovery?.isAuthorizationURL(authorizationURL)))) {
+            throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
+          }
         }
         for (const value of [ctx.body?.email, ctx.body?.newEmail]) {
           if (typeof value === "string" && isMessagingEmail(value)) {
@@ -569,7 +672,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         return {
           context: {
             context: {
-              ...(policy || directoryClaim
+              ...(policy || directoryClaim || socialLinking
                 ? {
                     options: {
                       ...(policy ? { emailAndPassword: { requireEmailVerification } } : {}),
@@ -583,6 +686,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                             },
                           }
                         : {}),
+                      ...(socialLinking ? { account: { accountLinking: socialLinking } } : {}),
                     },
                   }
                 : {}),
@@ -821,7 +925,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       issueAccountExportToken((await auth.$context).internalAdapter, userId),
     consumeAccountExportToken: async (token: string) =>
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
-    disposeOidcDiscovery: () => discovery?.dispose(),
+    disposeOidcDiscovery: () => {
+      discovery?.dispose();
+      clearTimeout(appleRefreshTimer);
+    },
   });
 }
 

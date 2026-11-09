@@ -95,7 +95,8 @@
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
       "./plugins/with-android-r8",
-      "./plugins/with-app-intents"
+      "./plugins/with-app-intents",
+      "expo-apple-authentication"
     ],
     "locales": {
       "es": "./locales/es.json",
@@ -103,6 +104,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
+      "usesAppleSignIn": true,
       "buildNumber": "1",
       "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
