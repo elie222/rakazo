@@ -587,10 +587,16 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        question: { type: "string", maxLength: 240 },
+        question: {
+          type: "string",
+          maxLength: 240,
+          description: "The complete question as it should appear in chat.",
+        },
         detail: { type: "string", maxLength: 4_000 },
         options: {
           type: "array",
+          description:
+            "The actual button labels. Write each as a standalone choice the user can understand.",
           items: { type: "string", minLength: 1, maxLength: 80 },
           minItems: 2,
           maxItems: 4,

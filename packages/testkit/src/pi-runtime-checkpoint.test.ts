@@ -21,6 +21,72 @@ async function collect(events: AsyncIterable<AgentRuntimeEvent>) {
 }
 
 describe("paused turn context", () => {
+  it("lets the model correct a placeholder question before pausing for an answer", async () => {
+    const question = "Which format should I export?";
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect(request) {
+            const ask = request.tools?.find((tool) => tool.function.name === "ask_user");
+            expect(ask?.function.parameters).toMatchObject({
+              properties: {
+                question: { description: expect.stringContaining("complete question") },
+                options: { description: expect.stringContaining("actual button labels") },
+              },
+            });
+          },
+          response: {
+            type: "tool",
+            id: "placeholder-question",
+            name: "ask_user",
+            arguments: { question: "placeholder", options: ["a", "b"] },
+          },
+        },
+        {
+          expect(request) {
+            expect(
+              request.messages.find((message) => message.tool_call_id === "placeholder-question")
+                ?.content,
+            ).toContain("actual question and answer labels");
+          },
+          response: {
+            type: "tool",
+            id: "real-question",
+            name: "ask_user",
+            arguments: { question, options: ["PDF", "Markdown"] },
+          },
+        },
+      ],
+    });
+    try {
+      const events = await collect(
+        new PiAgentRuntime().run({
+          runId: "fixture-ask-retry",
+          botId: "fixture-bot",
+          threadId: "fixture-thread",
+          instructions: "Use ask_user to get the user's choice.",
+          prompt: "Ask which format I want.",
+          history: [],
+          model: model.model,
+          tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+        }),
+      );
+      expect(events.filter((event) => event.type === "ask")).toEqual([
+        {
+          type: "ask",
+          text: question,
+          actions: [
+            { id: "choice-1", label: "PDF" },
+            { id: "choice-2", label: "Markdown" },
+          ],
+        },
+      ]);
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+
   it("keeps checkpointed tool batches parallel without serializing successful calls", async () => {
     const started: string[] = [];
     let release!: () => void;
