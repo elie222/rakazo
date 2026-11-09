@@ -778,6 +778,24 @@ function acceptLeaseCommand(leaseId?: string, release = false) {
   ];
 }
 
+export function desktopWorkCommand(
+  screenId: string,
+  leaseId: string | undefined,
+  expectedIndex: number,
+  command: string,
+) {
+  return [
+    ...registryLockCommand(screenId),
+    '[ -f "$slot" ] || exit 75',
+    `[ "$(sed -n '1p' "$slot")" = ${shellQuote(String(expectedIndex))} ] || exit 75`,
+    ...(leaseId === undefined
+      ? []
+      : [`[ "$(sed -n '2p' "$slot")" = ${shellQuote(leaseId)} ] || exit 75`]),
+    "flock -u 9; exec 9>&-",
+    command,
+  ].join("\n");
+}
+
 /** Allocate a live slot while keeping the durable profile keyed by bot identity. */
 export function managedDesktopCommand(
   screenId: string,
