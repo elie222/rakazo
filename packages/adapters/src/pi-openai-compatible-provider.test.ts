@@ -927,6 +927,47 @@ describe("openai-compatible provider", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("points an unreachable loopback server at host.docker.internal", async () => {
+    const down: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      });
+    };
+    const bothAddressesDown: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: new AggregateError([
+          Object.assign(new Error("connect ECONNREFUSED ::1"), { code: "ECONNREFUSED" }),
+          Object.assign(new Error("connect ECONNREFUSED 127.0.0.1"), { code: "ECONNREFUSED" }),
+        ]),
+      });
+    };
+    const redirected: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    };
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:11234/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow(/host\.docker\.internal/);
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://localhost:11234/v1" },
+        bothAddressesDown,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow(/host\.docker\.internal/);
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://10.0.0.5:8000/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("fetch failed");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:11234/v1" },
+        redirected,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("fetch failed");
+  });
+
   it("clarifies probe timeouts with hand-fill hint", async () => {
     const fetchImpl: typeof fetch = async (_input, init) =>
       new Promise((_, reject) => {
