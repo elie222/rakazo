@@ -504,7 +504,12 @@ function RoutineEditor({
                     )
                   }
                 >
-                  <SettingsRow title={trigger.label} />
+                  <SettingsRow
+                    title={trigger.label}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={trigger.label}
+                  />
                 </MenuPickerMenu>
               ))}
             </SettingsGroup>

@@ -48,17 +48,22 @@ function routineTriggerIcon(routine: Routine): LucideIcon {
 
 export function RoutineList({
   routines,
+  loaded,
   runningRoutineId,
   onCreate,
   onEdit,
   onStop,
 }: {
   routines: Routine[];
+  /** False while a bot's routines are still loading for the first time. */
+  loaded: boolean;
   runningRoutineId?: string;
   onCreate: () => void;
   onEdit: (routine: Routine) => void;
   onStop: () => void;
 }) {
+  // An empty list is only "no routines" once the bot's routines have loaded.
+  if (routines.length === 0 && !loaded) return null;
   if (routines.length === 0) {
     return (
       <Empty>
