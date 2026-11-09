@@ -101,6 +101,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
   const headerClearance = threadHeaderClearance(headerHeight);
+  const [heroHeight, setHeroHeight] = useState(0);
+  // The floating hero's height, measured on layout, so the oldest message
+  // starts below it instead of scrolling underneath it.
+  const listClearance = {
+    ...headerClearance,
+    padding: headerClearance.padding + heroHeight,
+  };
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
@@ -596,7 +603,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ) : null;
 
   // The big title hero, at the top of a one-to-one chat: the 84pt state-linked avatar beside
-  // the bot's name. Groups keep only their native title.
+  // the bot's name. Groups keep only their native title. It floats above the message list
+  // instead of scrolling with it, so it stays visible; the list's top clearance makes room
+  // for it, and the capsule in the native bar stays as the title when scrolled.
   const titleComposing = Boolean(botId) && composingBots.split(",").includes(botId ?? "");
   const chatHero =
     !inGroup && botId ? (
@@ -649,13 +658,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         }}
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, position: "relative" }}>
           <NewestPageCards.Provider value={newestPages}>
             <ThreadMessageList
               scroll={scroll}
               pinnedListHandlers={paging.pinnedListHandlers}
               threadKey={threadKey}
-              headerClearance={headerClearance}
+              headerClearance={listClearance}
               bottomInset={bottomInset}
               columnPadding={columnPadding}
               visibleMessages={visibleMessages}
@@ -666,11 +675,27 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               failedSendBubbles={failedSendBubbles}
               errorNotice={errorNotice}
               workingFooter={workingFooter}
-              chatHero={chatHero}
               loadingNewer={paging.loadingNewer}
               showLatest={showLatest}
             />
           </NewestPageCards.Provider>
+          {/* The title hero floats above the list, below the native header, and never
+              scrolls away; it is display-only, so touches pass through to the list. */}
+          {chatHero ? (
+            <View
+              pointerEvents="none"
+              onLayout={(event) => setHeroHeight(event.nativeEvent.layout.height)}
+              style={{
+                position: "absolute",
+                top: headerClearance.padding,
+                left: 0,
+                right: 0,
+                backgroundColor: tokens.background,
+              }}
+            >
+              {chatHero}
+            </View>
+          ) : null}
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
             hidden={readOnly}

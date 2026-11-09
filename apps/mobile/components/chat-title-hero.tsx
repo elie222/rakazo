@@ -10,8 +10,8 @@ import { createThreadHeaderStyles } from "./thread-header-styles";
  * The chat's big title avatar. The native title bar's height is fixed by the OS, and an
  * overflowing title view is clipped on Android, so the 80pt-plus avatar cannot live inside
  * the bar: the bar keeps its 34pt capsule and the title area grows downward instead, with
- * the avatar big and centered at the top of the chat, as in the mockup. It scrolls away
- * with the messages; the capsule stays as the title when scrolled.
+ * the avatar big and centered at the top of the chat, as in the mockup. It floats above
+ * the messages and never scrolls away; the capsule stays as the title when scrolled.
  */
 export const CHAT_TITLE_HERO_AVATAR_SIZE = 88;
 

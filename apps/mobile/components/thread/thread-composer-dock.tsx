@@ -99,6 +99,7 @@ export function ThreadComposerDock({
     >
       <View
         pointerEvents="box-none"
+        style={{ backgroundColor: tokens.background }}
         onLayout={(event) => {
           noticeHeight.current = event.nativeEvent.layout.height;
           report();
@@ -108,7 +109,17 @@ export function ThreadComposerDock({
       </View>
       <Animated.View
         pointerEvents="box-none"
-        style={[{ display: hidden ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+        style={[
+          {
+            display: hidden ? "none" : "flex",
+            flexShrink: 1,
+            // The dock floats over the message list, so its own background
+            // must be opaque: a glass pill over scrolling text lets the
+            // messages show through the chips and the composer.
+            backgroundColor: tokens.background,
+          },
+          composerKeyboardPadding,
+        ]}
       >
         <View
           pointerEvents="box-none"
