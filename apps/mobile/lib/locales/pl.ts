@@ -580,7 +580,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Name this routine.": "Nadaj nazwę tej rutynie.",
   "New routine": "Nowa rutyna",
   "Remove schedule": "Usuń harmonogram",
-  "Test run": "Uruchomienie testowe",
+  "Run now": "Uruchom teraz",
   "Time of day": "Pora dnia",
   Unit: "Jednostka",
   "When to run": "Kiedy uruchamiać",

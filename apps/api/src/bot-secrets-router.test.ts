@@ -609,6 +609,53 @@ describe("vault router", () => {
     expect((await call("vault/reveal", { name: "missing" })).status).toBe(404);
   });
 
+  it("reveals a bot's webhook key only to its creator after they confirm it's them", async () => {
+    const { prisma, secrets, auth, call } = botSecretDeps();
+    const bot = {
+      id: "bot-1",
+      userId: "user-1",
+      spaceId: "space-1",
+      archivedAt: null,
+      webhookSecretId: "whsec-1",
+      thread: null,
+      computer: null,
+    };
+    prisma.bot.findFirst.mockResolvedValue(bot as never);
+    const findSecret = vi.fn(async () => ({ id: "whsec-1", ciphertext: "enc:whsec-1" }));
+    Object.assign(prisma.secret, { findFirst: findSecret });
+    secrets.load.mockResolvedValue(FAKE_VALUE);
+
+    const refused = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(refused.status).toBe(403);
+    expect(refused.text).toContain("IDENTITY_CONFIRMATION_REQUIRED");
+    expect(secrets.load).not.toHaveBeenCalled();
+
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    events.record.mockClear();
+    const shown = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(shown.body.json).toEqual({ secret: FAKE_VALUE });
+    expect(findSecret).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "whsec-1", userId: "user-1", spaceId: "space-1", kind: "webhook" },
+      }),
+    );
+    expect(events.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "credential.revealed",
+        metadata: expect.objectContaining({ kind: "webhook", botId: "bot-1" }),
+      }),
+    );
+    expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
+
+    // A space member who did not create the bot never reads its key.
+    prisma.bot.findFirst.mockResolvedValue({ ...bot, userId: "user-2" } as never);
+    secrets.load.mockClear();
+    const forbidden = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.text).not.toContain(FAKE_VALUE);
+    expect(secrets.load).not.toHaveBeenCalled();
+  });
+
   it("saves an older app's username and password as fields and reveals them", async () => {
     const { auth, call } = botSecretDeps();
     auth.hasRecentIdentityConfirmation.mockResolvedValue(true);

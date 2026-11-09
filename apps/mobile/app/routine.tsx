@@ -1,5 +1,4 @@
 import type { Routine } from "@rakazo/contracts";
-import type { RoutineDraft } from "@rakazo/core";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -7,6 +6,7 @@ import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "r
 import { useBotEmail } from "../components/bot-email";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GrowingTextInput } from "../components/growing-text-input";
+import { MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { RoutineEmailTrigger } from "../components/routine-email-trigger";
 import { RoutineScheduleEditor } from "../components/routine-schedule-editor";
@@ -21,11 +21,13 @@ import { rpc } from "../lib/api";
 import { dateLocaleForUi, useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { deviceTimeZone, routineTriggerRows } from "../lib/routine";
+import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routine";
+import type { MobileRoutineDraft } from "../lib/routine-draft";
 import {
   routineDraftChanged,
   routineSaveRequest,
   routineScheduleLocked,
+  routineWithDraftTriggers,
 } from "../lib/routine-draft";
 import {
   removeBotRoutine,
@@ -172,7 +174,7 @@ function RoutineView({
                   unstable_headerRightItems: () => [
                     {
                       type: "button" as const,
-                      label: t("Test run"),
+                      label: t("Run now"),
                       icon: { type: "sfSymbol" as const, name: "play" },
                       disabled: running,
                       onPress: () => void testRun(),
@@ -182,7 +184,7 @@ function RoutineView({
               : {
                   headerRight: () => (
                     <GlassIconButton
-                      accessibilityLabel={t("Test run")}
+                      accessibilityLabel={t("Run now")}
                       ios="play"
                       android="play"
                       disabled={running}
@@ -291,7 +293,7 @@ function RoutineEditor({
   const { t } = useI18n();
   // The routine as it was when Edit opened; a save sends only what changed since.
   const [base] = useState(routine);
-  const [draft, setDraft] = useState<RoutineDraft>(() =>
+  const [draft, setDraft] = useState<MobileRoutineDraft>(() =>
     base ? draftFromRoutine(base) : emptyRoutineDraft(),
   );
   const [saving, setSaving] = useState(false);
@@ -300,6 +302,9 @@ function RoutineEditor({
   const email = useBotEmail(botId);
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
+  // Triggers set up on web stay listed here so the person sees them and can remove them.
+  const kept = base ? routineWithDraftTriggers(base, draft) : null;
+  const webTriggers = kept ? routineWebTriggers(kept) : [];
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -311,7 +316,7 @@ function RoutineEditor({
     return () => subscription.remove();
   }, [base, onCancel]);
 
-  function update(partial: Partial<RoutineDraft>) {
+  function update(partial: Partial<MobileRoutineDraft>) {
     setSaveError(null);
     setDraft((current) => ({ ...current, ...partial }));
   }
@@ -474,9 +479,36 @@ function RoutineEditor({
               }
             />
           ))}
+          {webTriggers.length ? (
+            <SettingsGroup>
+              {webTriggers.map((trigger) => (
+                <MenuPickerMenu
+                  key={trigger.key}
+                  label={trigger.label}
+                  value=""
+                  choices={[
+                    {
+                      key: "remove",
+                      label: t("Remove {name}", { name: trigger.label }),
+                      destructive: true,
+                    },
+                  ]}
+                  onChange={() =>
+                    update(
+                      trigger.key === "webhookEnabled" || trigger.key === "githubEnabled"
+                        ? { [trigger.key]: false }
+                        : { [trigger.key]: null },
+                    )
+                  }
+                >
+                  <SettingsRow title={trigger.label} />
+                </MenuPickerMenu>
+              ))}
+            </SettingsGroup>
+          ) : null}
           <SettingsGroup>
             {/* A change trigger checks on its own interval, so it never shares a schedule. */}
-            {base?.watch ? null : (
+            {kept?.watch ? null : (
               <SettingsRow
                 key="add"
                 accessibilityRole="button"

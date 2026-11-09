@@ -3,8 +3,19 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import type { CronLabels } from "@rakazo/core";
 import { ENGLISH_CRON_LABELS, formatCron } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web";
-import { Clock, Pause, Plus } from "lucide-react";
+import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@rakazo/ui-web";
+import type { LucideIcon } from "lucide-react";
+import {
+  Clock,
+  Eye,
+  GitBranch,
+  Globe,
+  Mail,
+  MessageSquare,
+  Pause,
+  Plus,
+  Repeat,
+} from "lucide-react";
 import { cronLabels } from "../lib/cron";
 
 export function routineTriggerSummary(
@@ -12,16 +23,27 @@ export function routineTriggerSummary(
   labels: CronLabels = ENGLISH_CRON_LABELS,
 ): string {
   if (!routine.active) return t`Paused`;
-  const parts: string[] = [];
-  if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
-  if (routine.githubEnabled) parts.push(t`Git event`);
+  // Schedules first: they say when it runs, so they matter most when the line is cut off.
+  const parts: string[] = routine.crons.map((cron) => formatCron(cron, labels));
+  if (routine.watch) parts.push(t`When something changes`);
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
   if (routine.emailSenders) parts.push(t({ message: "Email", context: "routine trigger" }));
-  for (const cron of routine.crons) parts.push(formatCron(cron, labels));
-  if (routine.watch) parts.push(t`When something changes`);
+  if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
+  if (routine.githubEnabled) parts.push(t`Git event`);
   return parts.length > 0 ? parts.join(", ") : t`No trigger`;
+}
+
+/** The icon of the trigger the summary leads with. */
+function routineTriggerIcon(routine: Routine): LucideIcon {
+  if (routine.crons.length > 0) return Clock;
+  if (routine.watch) return Eye;
+  if (routine.messageProvider) return MessageSquare;
+  if (routine.emailSenders) return Mail;
+  if (routine.webhookEnabled) return Globe;
+  if (routine.githubEnabled) return GitBranch;
+  return Clock;
 }
 
 export function RoutineList({
@@ -37,21 +59,26 @@ export function RoutineList({
   onEdit: (routine: Routine) => void;
   onStop: () => void;
 }) {
-  const { t } = useLingui();
+  if (routines.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Repeat />
+          </EmptyMedia>
+          <EmptyTitle>
+            <Trans>No routines yet</Trans>
+          </EmptyTitle>
+        </EmptyHeader>
+        <Button variant="outline" data-testid="routine-create-button" onClick={onCreate}>
+          <Plus />
+          <Trans>Create routine</Trans>
+        </Button>
+      </Empty>
+    );
+  }
   return (
     <div>
-      <div className="mb-2 flex justify-end">
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          data-testid="routine-create-button"
-          aria-label={t`Create Routine`}
-          title={t`Create Routine`}
-          onClick={onCreate}
-        >
-          <Plus strokeWidth={1.9} />
-        </Button>
-      </div>
       {routines.map((routine) => (
         <RoutineListRow
           key={routine.id}
@@ -61,6 +88,17 @@ export function RoutineList({
           onStop={onStop}
         />
       ))}
+      <button
+        type="button"
+        data-testid="routine-create-button"
+        onClick={onCreate}
+        className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start text-body-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <span className="grid h-5 w-5 place-items-center">
+          <Plus size={16} strokeWidth={1.6} aria-hidden />
+        </span>
+        <Trans>Create routine</Trans>
+      </button>
     </div>
   );
 }
@@ -78,6 +116,7 @@ function RoutineListRow({
 }) {
   const { i18n } = useLingui();
   const scheduleLabels = cronLabels(i18n.locale);
+  const TriggerIcon = routineTriggerIcon(routine);
   return (
     <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
       <button
@@ -87,7 +126,7 @@ function RoutineListRow({
       >
         <span className="grid h-5 w-5 place-items-center">
           {routine.active ? (
-            <Clock size={16} strokeWidth={1.6} className="text-success" aria-hidden />
+            <TriggerIcon size={16} strokeWidth={1.6} className="text-success" aria-hidden />
           ) : (
             <Pause size={14} className="text-muted-foreground" />
           )}

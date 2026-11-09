@@ -1,8 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
+import { isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { cronFromPreset } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
 import { localTimezone } from "../../lib/local-timezone";
 import { parseModelOptionKey } from "../../lib/model-catalog";
 import type { Panel } from "../../lib/right-panel-state";
@@ -57,6 +59,18 @@ export function useRoutineEditor({
       );
       return result.secret;
     });
+  // A key read back on request hides again after a while, as the Vault's values do.
+  const webhookHideTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(webhookHideTimer.current), []);
+  function hideWebhookSecret(botId: string, secret?: string) {
+    window.clearTimeout(webhookHideTimer.current);
+    setRevealedWebhookSecrets((current) => {
+      if (!(botId in current) || (secret !== undefined && current[botId] !== secret))
+        return current;
+      const { [botId]: _hidden, ...rest } = current;
+      return rest;
+    });
+  }
   const webhookErrorText = (error: unknown, fallback: string) =>
     errorCode(error) === "FORBIDDEN"
       ? t`Only the bot's creator can set its webhook key.`
@@ -132,6 +146,24 @@ export function useRoutineEditor({
             setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
           }
         },
+        onRevealWebhook: async () => {
+          const targetBotId = active.id;
+          try {
+            const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
+            if (activeBotId.current !== targetBotId) return;
+            setRevealedWebhookSecrets((current) => ({ ...current, [targetBotId]: secret }));
+            window.clearTimeout(webhookHideTimer.current);
+            webhookHideTimer.current = window.setTimeout(
+              () => hideWebhookSecret(targetBotId, secret),
+              REVEAL_MS,
+            );
+          } catch (error) {
+            // The editor asks the person to confirm it's them and tries again.
+            if (isIdentityConfirmationRequired(error)) throw error;
+            setRoutineError(webhookErrorText(error, t`Could not show the webhook key`));
+          }
+        },
+        onHideWebhook: () => hideWebhookSecret(active.id),
         onSave: async () => {
           if (routineSavePending.current) return;
           const targetBotId = active.id;

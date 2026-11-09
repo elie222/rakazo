@@ -691,6 +691,32 @@ export function botsRoutes(ctx: RouterContext) {
           webhookConfigured: true as const,
         };
       }),
+      revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
+        await requireIdentityConfirmation(deps.auth, context);
+        const bot = await repos.getBot(context.actor, input.botId);
+        // Only the creator can issue the secret, so only the creator can read it back.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        const stored = bot.webhookSecretId
+          ? await deps.prisma.secret.findFirst({
+              where: {
+                id: bot.webhookSecretId,
+                userId: context.actor.userId,
+                spaceId: context.actor.spaceId,
+                kind: "webhook",
+              },
+              select: { id: true, ciphertext: true },
+            })
+          : null;
+        if (!stored) throw new ORPCError("NOT_FOUND", { message: "Webhook key not found" });
+        const secret = await deps.secrets.load(stored.ciphertext, stored.id);
+        await recordSecurityEvent({
+          type: "credential.revealed",
+          userId: context.actor.userId,
+          spaceId: context.actor.spaceId,
+          metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
+        });
+        return { secret };
+      }),
     },
     groups: {
       create: authed.groups.create.handler(async ({ context, input }) => {

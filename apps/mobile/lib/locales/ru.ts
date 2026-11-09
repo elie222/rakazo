@@ -518,7 +518,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Name this routine.": "Дайте задаче название.",
   "New routine": "Новая задача",
   "Remove schedule": "Удалить расписание",
-  "Test run": "Тестовый запуск",
+  "Run now": "Запустить сейчас",
   "Time of day": "Время суток",
   Unit: "Единица",
   "When to run": "Когда запускать",

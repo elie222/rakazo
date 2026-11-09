@@ -6,13 +6,12 @@ import {
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,
-  describeCronPreset,
   localizedClock,
   russianIntervalUnit,
 } from "@rakazo/core";
-import { Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
-import { Clock } from "lucide-react";
-import { cronLabels, cronUnitLabel } from "../lib/cron";
+import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Clock, X } from "lucide-react";
+import { cronUnitLabel } from "../lib/cron";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const TIMES = [
@@ -36,10 +35,11 @@ function cronFreqLabel(freq: CronFreq): string {
       return t`Every day`;
     case "Weekdays":
       return t`Weekdays`;
+    // The day is fixed, so the label carries it.
     case "Every week":
-      return t`Every week`;
+      return t`Every Monday`;
     case "Every month":
-      return t`Every month`;
+      return t`Monthly on the 1st`;
     case "Interval":
       return t`Interval`;
     case "Advanced":
@@ -58,12 +58,13 @@ function russianIntervalControlLead(): string {
 export function RoutineSchedule({
   value,
   onChange,
+  onRemove,
 }: {
   value: CronPreset;
   onChange: (next: CronPreset) => void;
+  onRemove: () => void;
 }) {
   const { i18n, t } = useLingui();
-  const { lead, detail } = describeCronPreset(value, cronLabels(i18n.locale));
   const times = TIMES.includes(value.time) ? TIMES : [...TIMES, value.time];
   const numbers = cronIntervalAmounts(value.unit, value.n);
 
@@ -120,13 +121,21 @@ export function RoutineSchedule({
   );
 
   return (
-    <div className="mt-2 rounded-xl border border-border p-3">
+    <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
-        <Clock size={17} strokeWidth={1.6} className="shrink-0 text-muted-foreground" aria-hidden />
-        <span className="text-body-lg text-foreground">{lead}</span>
-        {detail ? (
-          <span className="flex-1 text-body-lg text-muted-foreground">{detail}</span>
-        ) : null}
+        <Clock size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-body-lg text-foreground">
+          <Trans>On a schedule</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove schedule`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-2 text-body text-muted-foreground">
         <NativeSelect

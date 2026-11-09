@@ -76,13 +76,11 @@ export function AddTriggerMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="outline" className="mt-2 h-auto w-full rounded-xl py-3" />}
-      >
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="mt-2" />}>
         <Plus />
         <Trans>Add trigger</Trans>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top">
+      <DropdownMenuContent side="top" align="start" className="w-auto">
         <DropdownMenuSub>
           <DropdownMenuSubTrigger disabled={Boolean(draft.watch)}>
             <Clock />
@@ -154,9 +152,9 @@ function schedulePresetLabel(freq: CronFreq): string {
     case "Weekdays":
       return t`Weekdays`;
     case "Every week":
-      return t`Every week`;
+      return t`Every Monday`;
     case "Every month":
-      return t`Every month`;
+      return t`Monthly on the 1st`;
     case "Interval":
       return t`Interval`;
     case "Advanced":
