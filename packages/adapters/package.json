@@ -24,7 +24,7 @@
     "@aws-sdk/client-kms": "3.1161.0",
     "@aws-sdk/client-s3": "3.1161.0",
     "@boatdev/sdk": "1.13.0",
-    "@boxd-sh/sdk": "0.2.20",
+    "@boxd-sh/sdk": "0.3.0",
     "@chat-adapter/slack": "4.44.0",
     "@chat-adapter/state-memory": "4.44.0",
     "@chat-adapter/telegram": "4.44.0",

@@ -822,8 +822,8 @@ importers:
         specifier: 1.13.0
         version: 1.13.0
       '@boxd-sh/sdk':
-        specifier: 0.2.20
-        version: 0.2.20
+        specifier: 0.3.0
+        version: 0.3.0
       '@chat-adapter/slack':
         specifier: 4.44.0
         version: 4.44.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(zod@4.6.7)
@@ -2318,8 +2318,8 @@ packages:
   '@boatdev/sdk@1.13.0':
     resolution: {integrity: sha512-wSmCyFLDL0QTCLF5NfQR4JTdTccFIvlqBBtCMDLPk61hLj48ZPEH/0nF91j4aiMLBkr+kvmkedfqkyFuokn5dw==}
 
-  '@boxd-sh/sdk@0.2.20':
-    resolution: {integrity: sha512-Tsqk7s0FlPGCTsijScmr4hlaP2yiS7SuKD2uxIpPJIKXHV9WzuWFOkYgJr0t8sqV/2oBcx8tywopng+Q6+VhYA==}
+  '@boxd-sh/sdk@0.3.0':
+    resolution: {integrity: sha512-SbskFvVxM+1t3y3CZxQ+5QbjFBKVQIGGELurKaCZZmPC5JpUiFaLYSpmW/9FizBtT5MvoY3sQoHYOhdtMOPDJg==}
     engines: {node: '>=20'}
 
   '@braintree/sanitize-url@7.1.2':
@@ -13248,7 +13248,7 @@ snapshots:
 
   '@boatdev/sdk@1.13.0': {}
 
-  '@boxd-sh/sdk@0.2.20':
+  '@boxd-sh/sdk@0.3.0':
     dependencies:
       '@bufbuild/protobuf': 2.14.1
       '@grpc/grpc-js': 1.14.7
