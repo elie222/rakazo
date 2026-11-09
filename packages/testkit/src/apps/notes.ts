@@ -178,23 +178,33 @@ export class NotesEmulator extends AppEmulator {
     return { type: "page", id: parentId, title: this.pages.get(parentId)?.title ?? "" };
   }
 
-  /** Unshared content does not exist as far as the connection can tell. */
+  /** Unshared content, and anything inside it, does not exist as far as the connection can tell. */
+  private hidden(id: string) {
+    for (let at: string | null = id; at; ) {
+      const node: Page | Database | undefined = this.pages.get(at) ?? this.databases.get(at);
+      if (!node) return false;
+      if (node.access === "unshared") return true;
+      at = node.parentId;
+    }
+    return false;
+  }
+
   private page(id: unknown) {
     const page = this.pages.get(String(id).trim());
-    if (!page || page.access === "unshared")
+    if (!page || this.hidden(page.id))
       throw new AppError(
         "not_found",
-        `Could not find page with ID: ${String(id)}. Make sure the relevant pages and databases are shared with this connection.`,
+        `Page not found: ${String(id)}. It may not be shared with this connection.`,
       );
     return page;
   }
 
   private database(id: unknown) {
     const database = this.databases.get(String(id).trim());
-    if (!database || database.access === "unshared")
+    if (!database || this.hidden(database.id))
       throw new AppError(
         "not_found",
-        `Could not find database with ID: ${String(id)}. Make sure the relevant pages and databases are shared with this connection.`,
+        `Database not found: ${String(id)}. It may not be shared with this connection.`,
       );
     return database;
   }
@@ -249,7 +259,13 @@ export class NotesEmulator extends AppEmulator {
                 );
           break;
         case "date":
-          if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(value))
+          if (
+            typeof value !== "string" ||
+            !/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(value) ||
+            Number.isNaN(Date.parse(value)) ||
+            new Date(`${value.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) !==
+              value.slice(0, 10)
+          )
             throw fail("an ISO 8601 date such as 2026-11-20");
           break;
         case "number":
@@ -382,7 +398,7 @@ export class NotesEmulator extends AppEmulator {
             ...(args.filter === "page"
               ? []
               : [...this.databases.values()]
-                  .filter((d) => d.access !== "unshared" && hit(d.title))
+                  .filter((d) => !this.hidden(d.id) && hit(d.title))
                   .map((d) => ({
                     object: "database",
                     id: d.id,
@@ -394,7 +410,7 @@ export class NotesEmulator extends AppEmulator {
             ...(args.filter === "database"
               ? []
               : [...this.pages.values()]
-                  .filter((p) => p.access !== "unshared" && hit(p.title))
+                  .filter((p) => !this.hidden(p.id) && hit(p.title))
                   .map((p) => this.summary(p))),
           ].sort((a, b) => b.last_edited_time.localeCompare(a.last_edited_time));
           const { page, next } = paginate(results, {
@@ -459,7 +475,7 @@ export class NotesEmulator extends AppEmulator {
                 `Could not find sort property ${sort.property}.`,
               );
           const rows = [...this.pages.values()]
-            .filter((p) => p.parentId === database.id && p.access !== "unshared")
+            .filter((p) => p.parentId === database.id && !this.hidden(p.id))
             .filter((p) => !filter || this.matchesFilter(p, filter, database))
             .sort((a, b) => {
               for (const sort of sorts) {
@@ -497,11 +513,9 @@ export class NotesEmulator extends AppEmulator {
         run: (args) => {
           const page = this.page(args.page_id);
           const children = [
-            ...[...this.pages.values()].filter(
-              (p) => p.parentId === page.id && p.access !== "unshared",
-            ),
+            ...[...this.pages.values()].filter((p) => p.parentId === page.id && !this.hidden(p.id)),
             ...[...this.databases.values()].filter(
-              (d) => d.parentId === page.id && d.access !== "unshared",
+              (d) => d.parentId === page.id && !this.hidden(d.id),
             ),
           ].map((child) => ({
             object: this.databases.has(child.id) ? "database" : "page",
@@ -605,7 +619,7 @@ export class NotesEmulator extends AppEmulator {
           this.validateProperties(database, values, "update_page_properties");
           const before = structuredClone(page.properties);
           Object.assign(page.properties, values);
-          page.title = String(page.properties[this.titleProperty(database)] ?? page.title);
+          page.title = String(page.properties[this.titleProperty(database)] ?? "");
           page.edited = this.stamp();
           page.editedBy = this.seed.member;
           this.record({
@@ -616,32 +630,6 @@ export class NotesEmulator extends AppEmulator {
             after: page.properties,
           });
           return this.row(page);
-        },
-      },
-      {
-        name: "append_blocks",
-        description:
-          "Append content to the end of a page. content is Markdown-style text as in create_page.",
-        inputSchema: {
-          type: "object",
-          properties: { page_id: { type: "string" }, content: { type: "string" } },
-          required: ["page_id", "content"],
-          additionalProperties: false,
-        },
-        readOnly: false,
-        run: (args) => {
-          const page = this.editable(this.page(args.page_id));
-          const added = blocksFromText(String(args.content)).map((block, index) => ({
-            ...block,
-            id: noteId(`${page.id}:block:${page.blocks.length + index}:${this.calls.length}`),
-          }));
-          if (!added.length)
-            throw new AppError("invalid_argument", "content has no blocks to append.");
-          page.blocks.push(...added);
-          page.edited = this.stamp();
-          page.editedBy = this.seed.member;
-          this.record({ tool: "append_blocks", args, target: page.id, after: added });
-          return { id: page.id, appended: added.length, block_count: page.blocks.length };
         },
       },
     ];

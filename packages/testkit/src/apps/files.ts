@@ -1,7 +1,7 @@
 import type { AppEmulatorOptions, AppTool } from "./app-emulator.js";
 import { AppEmulator, AppError, paginate, queryTerms, stableId } from "./app-emulator.js";
 
-export type FileKind = "folder" | "document" | "spreadsheet" | "presentation" | "pdf";
+export type FileKind = "folder" | "document" | "spreadsheet" | "pdf";
 /** The account's access: `none` is a file it knows of (say, from a link) but cannot open. */
 export type FileAccess = "owner" | "writer" | "commenter" | "reader" | "none";
 export type Sheet = { name: string; rows: string[][] };
@@ -19,7 +19,7 @@ export type FileSeed = {
   sharedWith?: Array<{ email: string; role: "writer" | "commenter" | "reader" }>;
   linkSharing?: "restricted" | "domain" | "anyone";
   description?: string;
-  /** Text of a document, presentation or PDF. */
+  /** Text of a document or PDF. */
   content?: string;
   sheets?: Sheet[];
   starred?: boolean;
@@ -44,7 +44,6 @@ const MIME: Record<FileKind, string> = {
   folder: "application/vnd.folder",
   document: "application/vnd.document",
   spreadsheet: "application/vnd.spreadsheet",
-  presentation: "application/vnd.presentation",
   pdf: "application/pdf",
 };
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -176,12 +175,6 @@ export class FilesEmulator extends AppEmulator {
       .toLowerCase();
   }
 
-  private touch(file: StoredFile) {
-    file.modified = this.stamp();
-    file.modifiedBy = this.account.email;
-    file.version += 1;
-  }
-
   tools(): AppTool[] {
     const page = { type: "integer", description: "Results per page, 1-100. Default 20." };
     const token = { type: "string", description: "next_page_token from a previous page." };
@@ -196,7 +189,7 @@ export class FilesEmulator extends AppEmulator {
             query: { type: "string" },
             type: {
               type: "string",
-              enum: ["folder", "document", "spreadsheet", "presentation", "pdf"],
+              enum: ["folder", "document", "spreadsheet", "pdf"],
             },
             folder_id: { type: "string", description: "Only direct children of this folder." },
             owner: { type: "string", description: "Owner email address." },
@@ -209,6 +202,12 @@ export class FilesEmulator extends AppEmulator {
         readOnly: true,
         run: (args) => {
           const terms = queryTerms(String(args.query ?? ""));
+          const operator = terms.find((term) => term.key || term.or);
+          if (operator)
+            throw new AppError(
+              "invalid_argument",
+              `Unsupported search operator: ${operator.key ? `${operator.key}:` : "OR"}. Filter with the type, folder_id, owner and modified_after arguments.`,
+            );
           const folder = args.folder_id ? this.folder(args.folder_id) : undefined;
           const matched = this.visible()
             .filter((file) => {
@@ -320,7 +319,7 @@ export class FilesEmulator extends AppEmulator {
       {
         name: "read_file",
         description:
-          "Read a file's content. Documents, presentations and PDFs return text; spreadsheets return rows per sheet (pass sheet to read one). Accepts an id or a link.",
+          "Read a file's content. Documents and PDFs return text; spreadsheets return rows per sheet (pass sheet to read one). Accepts an id or a link.",
         inputSchema: {
           type: "object",
           properties: {
@@ -353,119 +352,6 @@ export class FilesEmulator extends AppEmulator {
           return {
             ...base,
             sheets: chosen.map((s) => ({ name: s.name, row_count: s.rows.length, rows: s.rows })),
-          };
-        },
-      },
-      {
-        name: "create_document",
-        description:
-          "Create a document with the given text in a folder (default: top of My files).",
-        inputSchema: {
-          type: "object",
-          properties: {
-            name: { type: "string" },
-            content: { type: "string" },
-            folder_id: { type: "string" },
-          },
-          required: ["name"],
-          additionalProperties: false,
-        },
-        readOnly: false,
-        run: (args) => {
-          const folder = this.folder(args.folder_id);
-          if (folder && !canWrite(folder.access))
-            throw new AppError("permission_denied", `You can't add files to "${folder.name}".`);
-          const id = fileId(this.nextId("created:"));
-          const file: StoredFile = {
-            key: id,
-            id,
-            name: String(args.name),
-            kind: "document",
-            parent: folder?.id ?? null,
-            owner: this.account.email,
-            access: "owner",
-            modified: this.stamp(),
-            created: this.stamp(),
-            sharedWith: [],
-            content: String(args.content ?? ""),
-            version: 1,
-          };
-          this.files.set(id, file);
-          this.record({ tool: "create_document", args, target: id, after: this.listing(file) });
-          return this.listing(file);
-        },
-      },
-      {
-        name: "update_document",
-        description: "Replace a document's text, or append to it with mode=append.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            file_id: { type: "string" },
-            content: { type: "string" },
-            mode: { type: "string", enum: ["replace", "append"] },
-          },
-          required: ["file_id", "content"],
-          additionalProperties: false,
-        },
-        readOnly: false,
-        run: (args) => {
-          const file = this.writable(args.file_id);
-          if (file.kind !== "document")
-            throw new AppError(
-              "invalid_argument",
-              `${file.name} is a ${file.kind}, not a document.`,
-            );
-          const before = file.content ?? "";
-          file.content =
-            args.mode === "append" ? `${before}\n${String(args.content)}` : String(args.content);
-          this.touch(file);
-          this.record({
-            tool: "update_document",
-            args,
-            target: file.id,
-            before,
-            after: file.content,
-          });
-          return { id: file.id, version: file.version, modified_time: file.modified };
-        },
-      },
-      {
-        name: "append_sheet_rows",
-        description: "Append rows to the end of a spreadsheet sheet.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            file_id: { type: "string" },
-            sheet: { type: "string" },
-            rows: { type: "array", items: { type: "array", items: { type: "string" } } },
-          },
-          required: ["file_id", "sheet", "rows"],
-          additionalProperties: false,
-        },
-        readOnly: false,
-        run: (args) => {
-          const file = this.writable(args.file_id);
-          const sheet = file.sheets?.find((s) => s.name === args.sheet);
-          if (!sheet)
-            throw new AppError(
-              "not_found",
-              `No sheet named ${String(args.sheet)}. Sheets: ${(file.sheets ?? []).map((s) => s.name).join(", ")}`,
-            );
-          const rows = (args.rows as unknown[][]).map((row) => row.map(String));
-          sheet.rows.push(...rows);
-          this.touch(file);
-          this.record({
-            tool: "append_sheet_rows",
-            args,
-            target: file.id,
-            after: { sheet: sheet.name, rows },
-          });
-          return {
-            id: file.id,
-            sheet: sheet.name,
-            updated_rows: rows.length,
-            row_count: sheet.rows.length,
           };
         },
       },

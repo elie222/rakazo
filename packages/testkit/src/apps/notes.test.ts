@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { studioFacts, studioNotes } from "./fixtures/studio.js";
-import { noteId } from "./notes.js";
+import { NotesEmulator, noteId } from "./notes.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
 const ok = (result: ReturnType<ReturnType<typeof studioNotes>["call"]>) => {
@@ -19,6 +19,41 @@ describe("notes emulator", () => {
     expect(ok(notes.call("search", { query: "leadership" })).results).toEqual([]);
     const hidden = notes.call("read_page", { page_id: noteId("leadership") });
     expect(hidden.ok ? null : hidden.error.code).toBe("not_found");
+  });
+
+  it("hides everything under an unshared parent", () => {
+    const notes = new NotesEmulator(
+      {
+        workspace: "W",
+        baseUrl: "https://notes.example.com/w",
+        member: "Sam",
+        databases: [
+          {
+            key: "secret-db",
+            title: "Secret db",
+            access: "unshared",
+            edited: now.toISOString(),
+            properties: { Name: { type: "title" } },
+          },
+        ],
+        pages: [
+          { key: "secret", title: "Secret", access: "unshared", edited: now.toISOString() },
+          { key: "child", title: "Secret child", parent: "secret", edited: now.toISOString() },
+          { key: "row", title: "Secret row", parent: "secret-db", edited: now.toISOString() },
+        ],
+      },
+      { now },
+    );
+    expect(ok(notes.call("search", { query: "secret" })).results).toEqual([]);
+    for (const key of ["child", "row"]) {
+      const read = notes.call("read_page", { page_id: noteId(key) });
+      expect(read.ok ? null : read.error.code).toBe("not_found");
+    }
+    const edit = notes.call("update_page_properties", {
+      page_id: noteId("row"),
+      properties: { Name: "x" },
+    });
+    expect(edit.ok ? null : edit.error.code).toBe("not_found");
   });
 
   it("filters, sorts and paginates database rows", () => {
@@ -77,6 +112,11 @@ describe("notes emulator", () => {
       properties: { ETA: "next Thursday" },
     });
     expect(badDate.ok ? null : badDate.error.code).toBe("invalid_argument");
+    const impossible = notes.call("update_page_properties", {
+      page_id: row,
+      properties: { ETA: "2026-02-30" },
+    });
+    expect(impossible.ok ? null : impossible.error.code).toBe("invalid_argument");
     const eta = studioFacts(now).ostravaNewEta;
     ok(
       notes.call("update_page_properties", {
@@ -92,22 +132,10 @@ describe("notes emulator", () => {
     });
   });
 
-  it("reads and appends page blocks, creates rows, and refuses view-only pages", () => {
+  it("reads page blocks, creates rows and pages, and refuses view-only pages", () => {
     const notes = studioNotes({ now });
     const sync = ok(notes.call("read_page", { page_id: noteId("ops-sync") }));
     expect(sync.blocks.map((b: { type: string }) => b.type)).toContain("to_do");
-    ok(
-      notes.call("append_blocks", {
-        page_id: noteId("ops-sync"),
-        content: "## This week\n- [ ] Confirm Moss 07",
-      }),
-    );
-    expect(
-      notes.pages
-        .get(noteId("ops-sync"))
-        ?.blocks.slice(-2)
-        .map((b) => b.type),
-    ).toEqual(["heading_2", "to_do"]);
     const created = ok(
       notes.call("create_page", {
         database_id: deliveries,
@@ -116,25 +144,16 @@ describe("notes emulator", () => {
       }),
     );
     expect(created.parent).toMatchObject({ type: "database", title: "Supplier deliveries" });
-    const viewOnly = notes.call("append_blocks", {
-      page_id: noteId("pricing-policy"),
-      content: "Edit",
+    const viewOnly = notes.call("create_page", {
+      parent_page_id: noteId("pricing-policy"),
+      title: "Edit",
     });
     expect(viewOnly.ok ? null : viewOnly.error.code).toBe("permission_denied");
-    expect(notes.writes.map((w) => w.tool)).toEqual(["append_blocks", "create_page"]);
-  });
-
-  it("applies a notes fault only after the calls it skips", () => {
-    const notes = studioNotes({
-      now,
-      faults: { notes: [{ kind: "permission_denied", tool: "update_page_properties" }] },
-    });
-    expect(notes.call("search", { query: "ops" }).ok).toBe(true);
-    const denied = notes.call("update_page_properties", {
-      page_id: noteId("delivery-PO-4480"),
-      properties: { Status: "In transit" },
-    });
-    expect(denied.ok ? null : denied.error.code).toBe("permission_denied");
-    expect(notes.writes).toEqual([]);
+    const cleared = ok(
+      notes.call("update_page_properties", { page_id: created.id, properties: { Order: null } }),
+    );
+    expect(cleared.properties.Order).toBeNull();
+    expect(ok(notes.call("search", { query: "PO-4490" })).results).toEqual([]);
+    expect(notes.writes.map((w) => w.tool)).toEqual(["create_page", "update_page_properties"]);
   });
 });

@@ -17,20 +17,12 @@ export type AppTool = {
   run: (args: Record<string, unknown>) => unknown;
 };
 
-export type AppErrorCode =
-  | "invalid_argument"
-  | "not_found"
-  | "permission_denied"
-  | "rate_limited"
-  | "unauthenticated"
-  | "conflict";
+export type AppErrorCode = "invalid_argument" | "not_found" | "permission_denied" | "rate_limited";
 
 const STATUS: Record<AppErrorCode, number> = {
   invalid_argument: 400,
-  unauthenticated: 401,
   permission_denied: 403,
   not_found: 404,
-  conflict: 409,
   rate_limited: 429,
 };
 
@@ -44,17 +36,8 @@ export class AppError extends Error {
   }
 }
 
-/**
- * A failure a fixture switches on. It applies to `tool` (every tool when omitted), skips the
- * first `after` matching calls, then fails the next `times` (every later call when omitted).
- */
-export type AppFault = {
-  kind: "not_found" | "permission_denied" | "rate_limited" | "auth_expired";
-  tool?: string;
-  after?: number;
-  times?: number;
-  retryAfterSeconds?: number;
-};
+/** A rate limit a fixture switches on: the first `times` calls to `tool` fail with a retry time. */
+export type AppFault = { tool: string; times: number; retryAfterSeconds: number };
 
 export type AppCall = {
   seq: number;
@@ -98,12 +81,12 @@ export abstract class AppEmulator {
   readonly writes: AppWrite[] = [];
   /** The service clock the seed was written against. */
   readonly now: Date;
-  private readonly faults: Array<AppFault & { seen: number; fired: number }>;
+  private readonly faults: Array<AppFault & { fired: number }>;
   private ids = 0;
 
   constructor(options: AppEmulatorOptions) {
     this.now = options.now;
-    this.faults = (options.faults ?? []).map((fault) => ({ ...fault, seen: 0, fired: 0 }));
+    this.faults = (options.faults ?? []).map((fault) => ({ ...fault, fired: 0 }));
   }
 
   abstract tools(): AppTool[];
@@ -165,27 +148,13 @@ export abstract class AppEmulator {
 
   private injectFault(tool: string) {
     for (const fault of this.faults) {
-      if (fault.tool && fault.tool !== tool) continue;
-      fault.seen += 1;
-      if (fault.seen <= (fault.after ?? 0)) continue;
-      if (fault.times !== undefined && fault.fired >= fault.times) continue;
+      if (fault.tool !== tool || fault.fired >= fault.times) continue;
       fault.fired += 1;
-      if (fault.kind === "rate_limited") {
-        const seconds = fault.retryAfterSeconds ?? 30;
-        throw new AppError(
-          "rate_limited",
-          `Rate limit exceeded. Retry after ${seconds} seconds.`,
-          seconds,
-        );
-      }
-      if (fault.kind === "auth_expired")
-        throw new AppError(
-          "unauthenticated",
-          "The access token has expired or was revoked. Reconnect the account to continue.",
-        );
-      if (fault.kind === "permission_denied")
-        throw new AppError("permission_denied", "The caller does not have permission.");
-      throw new AppError("not_found", "Requested entity was not found.");
+      throw new AppError(
+        "rate_limited",
+        `Rate limit exceeded. Retry after ${fault.retryAfterSeconds} seconds.`,
+        fault.retryAfterSeconds,
+      );
     }
   }
 }
@@ -287,18 +256,29 @@ export function relativeDate(now: Date, daysFromNow: number) {
   return new Date(now.getTime() + daysFromNow * DAY).toISOString().slice(0, 10);
 }
 
-/** Split free text into lowercase words and quoted phrases, keeping `-` negations. */
+/**
+ * Split free text into lowercase words and quoted phrases, keeping `-` negations and `key:`
+ * operators. A pasted link stays a plain word, not an `https:` operator. `or` marks a term joined
+ * to the one before it by an uppercase OR, which binds only those neighbours.
+ */
 export function queryTerms(query: string) {
-  const terms: Array<{ text: string; negate: boolean; key?: string }> = [];
-  const pattern = /(-)?(?:([a-z_]+):)?(?:"([^"]*)"|(\S+))/gi;
+  const terms: Array<{ text: string; negate: boolean; key?: string; or?: true }> = [];
+  const pattern = /(-)?(?:([a-z_]+):(?!\/\/))?(?:"([^"]*)"|(\S+))/gi;
+  let or = false;
   for (const match of query.matchAll(pattern)) {
+    if (match[0] === "OR") {
+      or = terms.length > 0;
+      continue;
+    }
     const text = (match[3] ?? match[4] ?? "").toLowerCase();
     if (!text) continue;
     terms.push({
       text,
       negate: Boolean(match[1]),
       ...(match[2] ? { key: match[2].toLowerCase() } : {}),
+      ...(or ? { or: true as const } : {}),
     });
+    or = false;
   }
   return terms;
 }

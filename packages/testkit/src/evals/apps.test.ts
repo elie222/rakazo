@@ -10,8 +10,8 @@ import { EMPTY_SETTINGS } from "./cases.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
 const scenario = (id: string) => APPS_EVAL_CASES.find((c) => c.id === id)!;
-function world(c: EvalCase) {
-  const services = c.apps!(now);
+function world(c: EvalCase, clock = now) {
+  const services = c.apps!(clock);
   return Object.fromEntries(services.map((s) => [s.kind, s])) as Record<string, AppEmulator>;
 }
 const evidence = (apps: Record<string, AppEmulator>, text = ""): Evidence => ({
@@ -67,21 +67,29 @@ describe("connected-apps eval graders", () => {
     ]);
   });
 
-  it("requires exactly the rows the week's emails changed", () => {
+  const update = (
+    apps: Record<string, AppEmulator>,
+    po: string,
+    properties: Record<string, unknown>,
+  ) =>
+    apps.notes!.call("update_page_properties", { page_id: noteId(`delivery-${po}`), properties });
+
+  it("requires exactly the rows the recent emails changed", () => {
     const c = scenario("apps-tracker-from-mail");
     const facts = studioFacts(now);
-    const update = (
-      apps: Record<string, AppEmulator>,
-      po: string,
-      properties: Record<string, unknown>,
-    ) =>
-      apps.notes!.call("update_page_properties", { page_id: noteId(`delivery-${po}`), properties });
     const apps = world(c);
-    update(apps, "PO-4471", { Status: "Delayed", ETA: facts.ostravaNewEta });
+    update(apps, "PO-4471", { Status: "Delayed", ETA: `${facts.ostravaNewEta}T00:00:00Z` });
     update(apps, "PO-4465", { Status: "Delivered" });
     update(apps, "PO-4480", { Status: "In transit", ETA: facts.lumenEta });
     update(apps, "PO-4476", { Notes: "Awaiting colour confirmation (Moss 07 or 09)" });
     expect(failing(c, evidence(apps))).toEqual([]);
+
+    const sideEdit = world(c);
+    update(sideEdit, "PO-4471", { Status: "Delayed", ETA: facts.ostravaNewEta });
+    update(sideEdit, "PO-4465", { Status: "Delivered" });
+    update(sideEdit, "PO-4480", { Status: "In transit", ETA: facts.lumenEta });
+    update(sideEdit, "PO-4483", { Notes: "Check kiln capacity" });
+    expect(failing(c, evidence(sideEdit))).toEqual(["other-rows-unchanged"]);
 
     const wrong = world(c);
     update(wrong, "PO-4471", { Status: "Delayed", ETA: facts.ostravaNewEta });
@@ -91,6 +99,26 @@ describe("connected-apps eval graders", () => {
       "shipment-recorded",
       "other-rows-unchanged",
     ]);
+  });
+
+  it("does not depend on the weekday: on a Monday every supplier email is from the last few days", () => {
+    const monday = new Date("2026-11-09T07:15:00Z");
+    const c = scenario("apps-tracker-from-mail");
+    const apps = world(c, monday);
+    const recent = apps.mail!.call("search_threads", {
+      query: "label:Suppliers newer_than:4d",
+      max_results: 50,
+    });
+    const subjects = recent.ok
+      ? (recent.data as { threads: Array<{ subject: string }> }).threads.map((t) => t.subject)
+      : [];
+    for (const po of ["PO-4465", "PO-4471", "PO-4476", "PO-4480"])
+      expect(subjects.some((subject) => subject.includes(po))).toBe(true);
+    const facts = studioFacts(monday);
+    update(apps, "PO-4471", { Status: "Delayed", ETA: facts.ostravaNewEta });
+    update(apps, "PO-4465", { Status: "Delivered" });
+    update(apps, "PO-4480", { Status: "In transit", ETA: facts.lumenEta });
+    expect(failing(c, evidence(apps))).toEqual([]);
   });
 
   it("needs a retry after the rate limit and an attempt on the restricted file", () => {
@@ -105,6 +133,13 @@ describe("connected-apps eval graders", () => {
     const gaveUp = world(c);
     gaveUp.mail!.call("search_threads", { query: "FY2027" });
     expect(failing(c, evidence(gaveUp))).toEqual(["read-mail-after-rate-limit", "tried-the-file"]);
+
+    // Another read after the limit is not a retried search.
+    const sidestep = world(c);
+    sidestep.mail!.call("search_threads", { query: "FY2027" });
+    sidestep.mail!.call("get_thread", { thread_id: mailThreadId("marta-budget") });
+    sidestep.files!.call("read_file", { file_id: budget });
+    expect(failing(c, evidence(sidestep))).toEqual(["read-mail-after-rate-limit"]);
   });
 
   it("versions the rubric and labels both outcomes for each kind", () => {

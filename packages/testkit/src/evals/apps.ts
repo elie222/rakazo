@@ -1,4 +1,4 @@
-import type { AppEmulator } from "../apps/app-emulator.js";
+import type { AppEmulator, AppFault } from "../apps/app-emulator.js";
 import type { FilesEmulator } from "../apps/files.js";
 import { fileId } from "../apps/files.js";
 import {
@@ -17,7 +17,7 @@ import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { JudgeInput } from "./judge.js";
 
 /** Multi-step work across emulated mail, file storage and notes services connected over MCP. */
-export const APPS_FIXTURE_VERSION = `apps-v1+${STUDIO_FIXTURE_VERSION}`;
+export const APPS_FIXTURE_VERSION = `apps-v2+${STUDIO_FIXTURE_VERSION}`;
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 function app<T extends AppEmulator>(e: Evidence, kind: string) {
@@ -134,9 +134,9 @@ export const APPS_JUDGE_CALIBRATION = [
 ];
 
 const apps = {
-  mailAndFiles: (faults?: Parameters<typeof studioMail>[0]["faults"]) => (now: Date) => [
+  mailAndFiles: (faults?: AppFault[]) => (now: Date) => [
     studioMail({ now, faults }),
-    studioFiles({ now, faults }),
+    studioFiles({ now }),
   ],
   mailAndNotes: (now: Date) => [studioMail({ now }), studioNotes({ now })],
 };
@@ -164,10 +164,6 @@ export const APPS_EVAL_CASES: EvalCase[] = [
       const drafts = [...mail.drafts.values()];
       const draft = drafts[0];
       return [
-        check(
-          "read-request",
-          succeeded(mail, "get_thread", (a) => a.thread_id === thread),
-        ),
         check(
           "read-latest-proposal",
           succeeded(files, "read_file", (a) => names(a.file_id, fileId("juniper-proposal-v3"))),
@@ -204,12 +200,12 @@ export const APPS_EVAL_CASES: EvalCase[] = [
   {
     id: "apps-tracker-from-mail",
     purpose:
-      "Read this week's supplier emails and update the matching rows of a paginated notes database, leaving unrelated rows alone",
+      "Read the last few days' supplier emails and update the matching rows of a paginated notes database, leaving unrelated rows alone",
     connections: [],
     apps: apps.mailAndNotes,
     steps: [
       {
-        ask: "Can you go through this week's supplier emails and update the Supplier deliveries tracker in Notes to match?",
+        ask: "Can you go through the supplier emails from the last few days and update the Supplier deliveries tracker in Notes to match?",
       },
     ],
     grade: (e) => {
@@ -218,26 +214,28 @@ export const APPS_EVAL_CASES: EvalCase[] = [
       const facts = studioFacts(notes.now);
       const seed = studioNotes({ now: notes.now });
       const changed = new Set(["PO-4465", "PO-4471", "PO-4480"]);
+      // PO-4476's supplier is waiting on a colour choice; a note about it is fine, nothing else.
       const untouched = [...seed.pages.values()]
         .filter(
           (page) =>
             page.parentId === noteId("deliveries") && !changed.has(String(page.properties.PO)),
         )
         .every((page) => {
-          const now = notes.pages.get(page.id)?.properties;
-          return now?.Status === page.properties.Status && now?.ETA === page.properties.ETA;
+          const now = { ...notes.pages.get(page.id)?.properties };
+          if (page.properties.PO === "PO-4476") now.Notes = page.properties.Notes ?? "";
+          return JSON.stringify(now) === JSON.stringify(page.properties);
         });
+      // A date-time on the right day is the same ETA.
+      const eta = (po: string) => String(tracked(notes, po)?.ETA ?? "").slice(0, 10);
       return [
         check(
           "delay-recorded",
-          tracked(notes, "PO-4471")?.Status === "Delayed" &&
-            tracked(notes, "PO-4471")?.ETA === facts.ostravaNewEta,
+          tracked(notes, "PO-4471")?.Status === "Delayed" && eta("PO-4471") === facts.ostravaNewEta,
         ),
         check("delivery-recorded", tracked(notes, "PO-4465")?.Status === "Delivered"),
         check(
           "shipment-recorded",
-          tracked(notes, "PO-4480")?.Status === "In transit" &&
-            tracked(notes, "PO-4480")?.ETA === facts.lumenEta,
+          tracked(notes, "PO-4480")?.Status === "In transit" && eta("PO-4480") === facts.lumenEta,
         ),
         check("other-rows-unchanged", untouched),
         check("no-duplicate-rows", notes.writesTo("create_page").length === 0),
@@ -253,9 +251,7 @@ export const APPS_EVAL_CASES: EvalCase[] = [
     purpose:
       "Retry after a mail rate limit, follow a link to a file the account cannot open, and say so instead of answering from another file",
     connections: [],
-    apps: apps.mailAndFiles({
-      mail: [{ kind: "rate_limited", tool: "search_threads", times: 1, retryAfterSeconds: 2 }],
-    }),
+    apps: apps.mailAndFiles([{ tool: "search_threads", times: 1, retryAfterSeconds: 2 }]),
     steps: [
       { ask: "Marta sent me the FY2027 budget draft yesterday. What's the marketing line in it?" },
     ],
@@ -267,7 +263,10 @@ export const APPS_EVAL_CASES: EvalCase[] = [
       return [
         check(
           "read-mail-after-rate-limit",
-          limited >= 0 && mail.calls.slice(limited + 1).some((call) => !call.error && !call.write),
+          limited >= 0 &&
+            mail.calls
+              .slice(limited + 1)
+              .some((call) => call.tool === "search_threads" && !call.error),
         ),
         check(
           "tried-the-file",

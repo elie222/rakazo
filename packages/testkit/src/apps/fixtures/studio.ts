@@ -10,9 +10,9 @@ import { NotesEmulator } from "../notes.js";
 /**
  * One fictional furniture and interiors studio across mail, files and notes, so a task can cross
  * services. Every person, company and address is invented; domains use the reserved .example TLD.
- * Times are relative to the service clock, so "this week" means this week whenever it runs.
+ * Times are relative to the service clock, so recent mail stays recent whenever it runs.
  */
-export const STUDIO_FIXTURE_VERSION = "studio-v1";
+export const STUDIO_FIXTURE_VERSION = "studio-v2";
 
 export const SAM = { name: "Sam Okafor", email: "sam@haldenmoss.example" };
 const LEO = "Leo Brandt <leo@haldenmoss.example>";
@@ -153,7 +153,7 @@ function threads(now: Date): MailThreadSeed[] {
         {
           from: "Orders <orders@feltandfibre.example>",
           to: [SAM.email],
-          date: t(4, "13:40"),
+          date: t(3, "13:40"),
           body: "Hello,\n\nBefore we cut your order PO-4476 (wool felt panels), please confirm the colour: our records show both 'Moss 07' and 'Moss 09'. We'll hold production until we hear back.\n\nThanks,\nFelt & Fibre order desk",
         },
       ],
@@ -430,13 +430,13 @@ function files(now: Date): FileSeed[] {
     },
     {
       key: "marlowe-moodboard",
-      name: "Marlowe Residence – kitchen moodboard",
-      kind: "presentation",
+      name: "Marlowe Residence – kitchen moodboard.pdf",
+      kind: "pdf",
       parent: "marlowe",
       owner: "leo@haldenmoss.example",
       access: "reader",
       modified: t(14),
-      content: "Slide 1: warm oak, terracotta. Slide 2: counter stools, three options.",
+      content: "Page 1: warm oak, terracotta. Page 2: counter stools, three options.",
     },
     {
       key: "supplier-contacts",
@@ -764,10 +764,7 @@ function notesPages(now: Date): PageSeed[] {
   ];
 }
 
-export type StudioOptions = {
-  now: Date;
-  faults?: { mail?: AppFault[]; files?: AppFault[]; notes?: AppFault[] };
-};
+export type StudioOptions = { now: Date; faults?: AppFault[] };
 
 export const studioMail = ({ now, faults }: StudioOptions) =>
   new MailEmulator(
@@ -776,16 +773,13 @@ export const studioMail = ({ now, faults }: StudioOptions) =>
       labels: ["Clients", "Suppliers", "Finance", "Receipts"],
       threads: threads(now),
     },
-    { now, faults: faults?.mail },
+    { now, faults },
   );
 
-export const studioFiles = ({ now, faults }: StudioOptions) =>
-  new FilesEmulator(
-    { account: SAM, baseUrl: FILES_URL, files: files(now) },
-    { now, faults: faults?.files },
-  );
+export const studioFiles = ({ now }: { now: Date }) =>
+  new FilesEmulator({ account: SAM, baseUrl: FILES_URL, files: files(now) }, { now });
 
-export const studioNotes = ({ now, faults }: StudioOptions) =>
+export const studioNotes = ({ now }: { now: Date }) =>
   new NotesEmulator(
     {
       workspace: "Halden & Moss",
@@ -832,5 +826,5 @@ export const studioNotes = ({ now, faults }: StudioOptions) =>
       ],
       pages: notesPages(now),
     },
-    { now, faults: faults?.notes },
+    { now },
   );

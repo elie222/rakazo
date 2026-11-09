@@ -187,20 +187,28 @@ export class MailEmulator extends AppEmulator {
     };
   }
 
-  /** Common mail search operators; every term must match one message in the thread. */
+  /**
+   * Common mail search operators; every term must match a message in the thread, and terms
+   * joined by OR need only one of them to.
+   */
   private matches(thread: Thread, query: string) {
-    const alternatives = query.split(/\s+OR\s+/);
-    return alternatives.some((alternative) => {
-      const terms = queryTerms(alternative);
-      const scope = terms.find((term) => term.key === "in" && !term.negate)?.text;
-      const labels = new Set(this.labelsOf(thread).map((label) => label.toLowerCase()));
-      if (scope !== "anywhere" && (labels.has("trash") || labels.has("spam")))
-        if (scope !== "trash" && scope !== "spam") return false;
-      return terms.every((term) => {
-        const hit = this.termMatches(thread, labels, term);
-        return term.negate ? !hit : hit;
-      });
-    });
+    const terms = queryTerms(query);
+    const scope = terms.find((term) => term.key === "in" && !term.negate)?.text;
+    const labels = new Set(this.labelsOf(thread).map((label) => label.toLowerCase()));
+    if (scope !== "anywhere" && (labels.has("trash") || labels.has("spam")))
+      if (scope !== "trash" && scope !== "spam") return false;
+    const groups: Array<typeof terms> = [];
+    for (const term of terms) {
+      const last = groups.at(-1);
+      if (term.or && last) last.push(term);
+      else groups.push([term]);
+    }
+    // Every term is evaluated, so an unsupported operator always reports an error.
+    return groups
+      .map((group) =>
+        group.map((term) => this.termMatches(thread, labels, term) !== term.negate).some(Boolean),
+      )
+      .every(Boolean);
   }
 
   private termMatches(
@@ -427,52 +435,6 @@ export class MailEmulator extends AppEmulator {
               })),
             })),
           };
-        },
-      },
-      {
-        name: "list_labels",
-        description: "List the mailbox's system and user labels with message counts.",
-        inputSchema: { type: "object", properties: {}, additionalProperties: false },
-        readOnly: true,
-        run: () => ({
-          labels: [...SYSTEM_LABELS, ...CATEGORY_LABELS, ...this.userLabels].map((name) => {
-            const threads = [...this.threads.values()].filter((t) =>
-              this.labelsOf(t).includes(name),
-            );
-            return {
-              id: name,
-              name,
-              type: this.userLabels.has(name) ? "user" : "system",
-              threads_total: name === "DRAFT" ? this.drafts.size : threads.length,
-              threads_unread: threads.filter((t) => t.messages.some((m) => m.unread)).length,
-            };
-          }),
-        }),
-      },
-      {
-        name: "list_drafts",
-        description: "List saved drafts, most recently updated first.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            max_results: { type: "integer" },
-            page_token: { type: "string" },
-          },
-          additionalProperties: false,
-        },
-        readOnly: true,
-        run: (args) => {
-          const drafts = [...this.drafts.values()].sort((a, b) =>
-            b.updated.localeCompare(a.updated),
-          );
-          const { page, next } = paginate(drafts, {
-            size: args.max_results,
-            token: args.page_token,
-            scope: "drafts",
-            fallback: 20,
-            max: 50,
-          });
-          return { drafts: page.map((draft) => this.draftView(draft)), next_page_token: next };
         },
       },
       {

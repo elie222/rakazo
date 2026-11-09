@@ -15,8 +15,8 @@ describe("mail emulator", () => {
     expect(suppliers.threads.map((t: { subject: string }) => t.subject)).toEqual([
       "Delivery confirmation — PO-4465",
       "PO-4471 — revised dispatch date",
-      "Your order PO-4480 has shipped",
       "PO-4476 – colour confirmation needed",
+      "Your order PO-4480 has shipped",
     ]);
     expect(
       ok(mail.call("search_threads", { query: 'from:dana "budget meeting"' })).threads,
@@ -30,6 +30,17 @@ describe("mail emulator", () => {
     expect(ok(mail.call("search_threads", { query: "PO-4419 OR PO-4480" })).threads).toHaveLength(
       2,
     );
+    // OR binds its neighbours only; from:dana still applies to both.
+    expect(
+      ok(mail.call("search_threads", { query: "from:dana walnut OR GM" })).threads.map(
+        (t: { subject: string }) => t.subject,
+      ),
+    ).toEqual(["Lobby seating — updated proposal?", "Juniper Row lobby — proposal v2"]);
+    // A pasted link is a word, not an operator.
+    const link = studioFacts(now).proposalV2Url;
+    expect(ok(mail.call("search_threads", { query: link })).threads).toHaveLength(1);
+    const unknown = mail.call("search_threads", { query: "name:budget" });
+    expect(unknown.ok ? null : unknown.error.code).toBe("invalid_argument");
 
     const first = ok(mail.call("search_threads", { query: "", max_results: 5 }));
     expect(first.threads).toHaveLength(5);
@@ -86,12 +97,10 @@ describe("mail emulator", () => {
     expect(mail.writes).toHaveLength(3);
   });
 
-  it("switches on fixture faults, then recovers", () => {
+  it("rate-limits a tool for the fixture's number of calls, then recovers", () => {
     const mail = studioMail({
       now,
-      faults: {
-        mail: [{ kind: "rate_limited", tool: "search_threads", times: 1, retryAfterSeconds: 2 }],
-      },
+      faults: [{ tool: "search_threads", times: 1, retryAfterSeconds: 2 }],
     });
     const limited = mail.call("search_threads", { query: "PO-4471" });
     expect(limited.ok ? null : limited.error).toMatchObject({
@@ -101,11 +110,6 @@ describe("mail emulator", () => {
     });
     expect(mail.call("search_threads", { query: "PO-4471" }).ok).toBe(true);
     expect(mail.calls.map((c) => c.error?.code ?? "ok")).toEqual(["rate_limited", "ok"]);
-
-    const expired = studioMail({ now, faults: { mail: [{ kind: "auth_expired", after: 1 }] } });
-    expect(expired.call("list_labels").ok).toBe(true);
-    const failed = expired.call("get_thread", { thread_id: mailThreadId("leo-v3") });
-    expect(failed.ok ? null : failed.error).toMatchObject({ code: "unauthenticated", status: 401 });
   });
 
   it("is deterministic for the same clock", () => {

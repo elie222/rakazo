@@ -590,24 +590,28 @@ pnpm test:evals --live --suite apps --connection <private-connection.json> --pri
 (folders, documents, spreadsheets and PDFs with content, sharing, permission
 errors) and notes (pages of blocks and databases with typed properties). They
 are offline and deterministic for a given clock, and log every call and write.
-A fixture can switch on not-found, permission-denied, rate-limit (with a retry
-time) and expired-auth failures for any tool.
+A fixture can rate-limit a tool for a number of calls, with a retry time.
+Search refuses operators a service does not support instead of ignoring them.
 
 A case lists the emulators it needs in `apps`. The runner serves each one as a
 streamable HTTP MCP server on loopback with a bearer token and adds it through
 `mcp/servers/create`, the way a person adds a remote MCP server. The bot then
 reaches it through the product's own MCP client, tool naming, read/write
 classification and Auto Review, and sees `mcp__mail__search_threads` and
-similar names. Emulators are generic service kinds; no vendor's name or API
-is copied.
+similar names. Emulators are generic service kinds named for what they do;
+some tool shapes and messages resemble common services so the bot meets
+familiar behaviour, but none is a copy of one vendor's API.
 
 The seed is one invented furniture studio across all three services, with
-dates relative to the trial's clock so "this week" stays true. Cases: draft a
+dates relative to the trial's clock so recent mail stays recent on any weekday.
+Cases: draft a
 reply to a client that links the latest proposal file and its total without
 sending or sharing; update the matching rows of a 25-row supplier deliveries
-database from this week's mail; and, after a mail rate limit, follow a link to
+database from the last few days' mail; and, after a mail rate limit, follow a link to
 a spreadsheet the account cannot open and say so. Deterministic checks read
-the emulators' recorded calls, writes and final state. The
+the emulators' recorded calls, writes and final state. Reports keep fixture
+links and addresses on reserved example domains readable and redact the
+emulators' endpoints and tokens. The
 `connected-apps-meaning-v2` rubric judges the draft and the restricted-file
 reply by meaning; calibration covers a paraphrased total, a stale total, an
 invented discount, a claimed send, an honest refusal, a labelled prior-year

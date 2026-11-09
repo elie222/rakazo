@@ -27,6 +27,11 @@ describe("files emulator", () => {
     expect(ok(files.call("search_files", { query: '"payment terms"' })).files[0].type).toBe("pdf");
     // A file the account cannot open never appears in search.
     expect(ok(files.call("search_files", { query: "FY2027" })).files).toEqual([]);
+    // Operators the service lacks are refused, not ignored.
+    for (const query of ["name:budget", "type:pdf", "walnut OR oak"]) {
+      const refused = files.call("search_files", { query });
+      expect(refused.ok ? null : refused.error.code).toBe("invalid_argument");
+    }
   });
 
   it("lists folders with pagination", () => {
@@ -79,24 +84,8 @@ describe("files emulator", () => {
     expect(files.writes).toEqual([]);
   });
 
-  it("records writes with before and after", () => {
+  it("records a share with before and after", () => {
     const files = studioFiles({ now });
-    const created = ok(
-      files.call("create_document", {
-        name: "Juniper follow-up",
-        folder_id: fileId("juniper"),
-        content: "Call Dana",
-      }),
-    );
-    expect(created.path).toBe("/My files/Clients/Juniper Row Hotel");
-    ok(files.call("update_document", { file_id: created.id, content: "Sent v3", mode: "append" }));
-    ok(
-      files.call("append_sheet_rows", {
-        file_id: fileId("invoices-2026"),
-        sheet: "Issued",
-        rows: [["HM-2026-043", "Juniper Row Hotel", "16,500", "Due"]],
-      }),
-    );
     ok(
       files.call("share_file", {
         file_id: fileId("juniper-proposal-v3"),
@@ -104,16 +93,15 @@ describe("files emulator", () => {
         role: "commenter",
       }),
     );
-    expect(files.writes.map((w) => w.tool)).toEqual([
-      "create_document",
-      "update_document",
-      "append_sheet_rows",
-      "share_file",
-    ]);
-    expect(files.writesTo("update_document")[0]).toMatchObject({
-      before: "Call Dana",
-      after: "Call Dana\nSent v3",
+    expect(files.writes).toHaveLength(1);
+    expect(files.writes[0]).toMatchObject({
+      tool: "share_file",
+      before: expect.not.arrayContaining([
+        expect.objectContaining({ email: "dana.whitfield@juniperrow.example" }),
+      ]),
+      after: expect.arrayContaining([
+        { email: "dana.whitfield@juniperrow.example", role: "commenter" },
+      ]),
     });
-    expect(ok(files.call("search_files", { query: "follow-up" })).files[0].id).toBe(created.id);
   });
 });
