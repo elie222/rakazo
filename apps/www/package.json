@@ -18,7 +18,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "@vercel/functions": "3.10.6",
+    "@vercel/functions": "3.11.0",
     "astro": "7.4.1",
     "posthog-js": "1.445.3",
     "react": "19.3.1",
@@ -28,11 +28,11 @@
   "devDependencies": {
     "@astrojs/check": "0.9.12",
     "@playwright/test": "1.64.1",
-    "@tailwindcss/vite": "4.3.4",
+    "@tailwindcss/vite": "4.3.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "pagefind": "1.6.0",
-    "tailwindcss": "4.3.4",
+    "tailwindcss": "4.3.5",
     "typescript": "6.0.3"
   }
 }
