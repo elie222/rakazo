@@ -28,7 +28,15 @@ describe("parseBotEmailName", () => {
   });
 
   it("keeps reserved names and their lookalikes for no bot", () => {
-    for (const name of ["hello", "elie", "support.ts", "admin-bot", "help_desk", "rakazo", "rakazobot"]) {
+    for (const name of [
+      "hello",
+      "elie",
+      "support.ts",
+      "admin-bot",
+      "help_desk",
+      "rakazo",
+      "rakazobot",
+    ]) {
       expect(parseBotEmailName(name)).toEqual({ problem: "taken" });
     }
     for (const name of ["helper", "admiral", "hiker", "scout-team", "my-support"]) {
