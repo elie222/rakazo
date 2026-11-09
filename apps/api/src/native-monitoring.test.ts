@@ -68,6 +68,33 @@ describe("native error collector privacy boundary", () => {
     ).toEqual({ surface: "desktop" });
   });
 
+  it("keeps a desktop renderer's route, uptime and memory trend", () => {
+    const tags = {
+      "renderer.route": "/app/:id",
+      "renderer.uptime_min": "184",
+      "renderer.memory_mb": "812,1460,2210",
+    };
+    expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
+    expect(sanitizeNativeEvent({ tags }, "mobile").tags).toEqual({ surface: "mobile" });
+    for (const route of ["file:", "unknown", "/app/:id/:i"])
+      expect(sanitizeNativeEvent({ tags: { "renderer.route": route } }, "desktop").tags).toEqual({
+        surface: "desktop",
+        "renderer.route": route,
+      });
+    expect(
+      sanitizeNativeEvent(
+        {
+          tags: {
+            "renderer.route": "/Users/someone/private",
+            "renderer.uptime_min": "a while",
+            "renderer.memory_mb": "lots",
+          },
+        },
+        "desktop",
+      ).tags,
+    ).toEqual({ surface: "desktop" });
+  });
+
   it("keeps a sanitized mobile breadcrumb trail, including native ones", () => {
     const breadcrumbs = [
       { category: "app.lifecycle", type: "navigation", data: { state: "background" } },
