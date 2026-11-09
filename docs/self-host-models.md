@@ -28,6 +28,9 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+On a server only you use, the deployment model can also run through the
+[Claude Code CLI](#claude-code-cli) signed in on the host.
+
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
@@ -95,6 +98,44 @@ bots run, or firewall / block that path. Linux does not get `host.docker.interna
 way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
+
+## Claude Code CLI
+
+With a Claude subscription, a server that only you use can run its deployment model through the
+official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+`claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
+or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
+conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
+settings, project files and saved sessions turned off.
+
+What it needs:
+
+- The API and worker running from a source checkout on the same machine as the CLI, as the same
+  OS user. The official Docker images and the desktop app's local stack do not include Claude
+  Code, and adding it to them is not supported.
+- Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
+  with `claude auth login`. Rakazo has no Claude sign-in screen and accepts no Claude tokens, so
+  `claude setup-token` is not needed.
+- One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
+  runs while the server has more than one account (people who only message bots from chat apps do
+  not count) or bills for model usage.
+
+```env
+PI_DEFAULT_PROVIDER=claude-code
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=claude-sonnet-5
+```
+
+Use a full model id the CLI accepts with `claude --model`, so Rakazo knows the model's context
+and output limits. Usage counts against your own Claude plan and its limits, which assume
+ordinary individual use; Rakazo shows no cost for these runs, and once the plan's limit is reached
+runs fail with a rate-limit error until it resets. Your use of Claude Code is covered by
+Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
+
+The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
+other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
+own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
+**Settings → Models**.
 
 ## Ollama Cloud
 

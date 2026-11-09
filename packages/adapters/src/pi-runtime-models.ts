@@ -9,6 +9,7 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
+import { registerClaudeCodeProvider } from "./claude-code-provider.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
@@ -31,8 +32,10 @@ import {
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
-    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+  catalogModelsCache ??= registerClaudeCodeProvider(
+    registerOpenAiCompatibleCatalog(
+      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+    ),
   );
   return catalogModelsCache;
 }
