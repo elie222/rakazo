@@ -8829,6 +8829,20 @@ describe("openai-compatible enabled models", () => {
     });
   });
 
+  it("removes a member's chosen connection when asked to", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelConnectionId: null }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+    expect(prisma.userBotModelConnection.upsert).not.toHaveBeenCalled();
+  });
+
   it("refuses a bot's connection that does not serve its model", async () => {
     const { call, prisma, state } = fixture({
       plaintext: secretText(["Y"]),

@@ -367,6 +367,32 @@ export function parseConnectionChoiceKey(key: string): {
 }
 
 /**
+ * Which picker row shows a bot's model: the row for that connection when there is one, otherwise
+ * the row for the model alone.
+ */
+export function connectionPickerKey(
+  choices: readonly { key: string }[],
+  modelKey: string,
+  credentialId: string | null | undefined,
+): string {
+  const key = credentialId && modelKey ? connectionChoiceKey(credentialId, modelKey) : "";
+  return key && choices.some((choice) => choice.key === key) ? key : modelKey;
+}
+
+/**
+ * Whether a bot's picker holds an unsaved connection. `pending` is undefined until a row is
+ * picked, and null when the picked row has no connection, which removes a saved choice.
+ */
+export function botConnectionChanged(
+  pending: string | null | undefined,
+  saved: { credentialId: string | null; pinned: boolean } | null | undefined,
+): boolean {
+  if (pending === undefined) return false;
+  if (pending === null) return Boolean(saved?.pinned);
+  return pending !== saved?.credentialId || !saved?.pinned;
+}
+
+/**
  * The models to offer one bot. A provider with several connections is listed once per
  * connection, under that connection's name, so choosing a model also chooses what runs it.
  */

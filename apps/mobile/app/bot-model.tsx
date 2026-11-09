@@ -1,4 +1,5 @@
 import type { ChatModelChoice } from "@rakazo/core";
+import { connectionModelChoices } from "@rakazo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ModelPickerList } from "../components/model-picker-list";
@@ -16,7 +17,16 @@ export default function BotModelScreen() {
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
       .then(([me, catalog, credentials]) =>
-        setChoices(chatModelPickerChoices(me, catalog, credentials, value, t)),
+        setChoices(
+          chatModelPickerChoices(
+            me,
+            catalog,
+            credentials,
+            value,
+            t,
+            connectionModelChoices(credentials, catalog),
+          ),
+        ),
       )
       .catch((err) => setError(errorText(err, t("Could not load model settings"))));
   }, [t, value]);

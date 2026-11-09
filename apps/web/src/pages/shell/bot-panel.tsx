@@ -10,9 +10,10 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
+  botConnectionChanged,
   chatModelChoices,
-  connectionChoiceKey,
   connectionModelChoices,
+  connectionPickerKey,
   credentialForModel,
   modelOptionKey,
   parseConnectionChoiceKey,
@@ -108,7 +109,7 @@ export function BotSettings({
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
-    modelConnectionId?: string;
+    modelConnectionId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
     disabledBuiltinTools?: string[];
   }) => Promise<void>;
@@ -206,10 +207,8 @@ export function BotSettings({
     enabled: Boolean(bot.modelProvider && bot.modelId),
     ...refresh,
   });
-  const [pendingConnection, setPendingConnection] = useState<string | null>(null);
-  const connectionChanged =
-    pendingConnection !== null &&
-    (pendingConnection !== connectionQuery.data?.credentialId || !connectionQuery.data?.pinned);
+  const [pendingConnection, setPendingConnection] = useState<string | null | undefined>(undefined);
+  const connectionChanged = botConnectionChanged(pendingConnection, connectionQuery.data);
   const [saving, setSaving] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
   const advancedSnapshot = JSON.stringify([
@@ -295,14 +294,8 @@ export function BotSettings({
     : undefined;
   // A provider with several connections lists each one; show the one that runs this model now.
   const runningConnection = connectionQuery.data?.credentialId ?? null;
-  const shownConnection = pendingConnection ?? runningConnection;
-  const connectionKey =
-    shownConnection && selectedModelKey
-      ? connectionChoiceKey(shownConnection, selectedModelKey)
-      : "";
-  const pickerValue = connectedOptions.some((option) => option.key === connectionKey)
-    ? connectionKey
-    : selectedModelKey;
+  const shownConnection = pendingConnection === undefined ? runningConnection : pendingConnection;
+  const pickerValue = connectionPickerKey(connectedOptions, selectedModelKey, shownConnection);
   const modelChoices = chatModelChoices(
     connectedOptions,
     pickerValue,
@@ -322,7 +315,7 @@ export function BotSettings({
       : undefined;
   // Thinking levels belong to the connection, so read them from the one the bot will run on.
   const chosenCredential =
-    shownConnection && pickerValue === connectionKey
+    shownConnection && pickerValue !== selectedModelKey
       ? credentials.find((credential) => credential.id === shownConnection)
       : undefined;
   const effectiveCredential =
@@ -400,7 +393,7 @@ export function BotSettings({
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
-        ...(pendingConnection ? { modelConnectionId: pendingConnection } : {}),
+        ...(pendingConnection || connectionChanged ? { modelConnectionId: pendingConnection } : {}),
         ...(modelMetaReady &&
         (thinkingOptions.length > 0 ||
           (selected?.provider ?? null) !== bot.modelProvider ||
@@ -449,9 +442,9 @@ export function BotSettings({
         avatarSet: nextAvatarSet,
         notifyOnFinish: nextNotify,
       };
-      if (pendingConnection) {
+      if (pendingConnection !== undefined) {
         await connectionQuery.refetch();
-        setPendingConnection(null);
+        setPendingConnection(undefined);
       }
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;

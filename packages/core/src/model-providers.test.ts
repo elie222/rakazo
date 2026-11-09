@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  botConnectionChanged,
   botsWithOwnModel,
   canUseCompatibleModelAsDefault,
   chatModelChoices,
@@ -9,6 +10,7 @@ import {
   connectionChoiceKey,
   connectionMaxTokensField,
   connectionModelChoices,
+  connectionPickerKey,
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
@@ -595,6 +597,24 @@ describe("connectionModelChoices", () => {
       "sub@@anthropic::sonnet",
       "api@@anthropic::sonnet",
     ]);
+  });
+
+  it("shows a bot's saved connection, or the model alone when it has none", () => {
+    const choices = [{ key: "sub@@anthropic::opus" }, { key: "anthropic::funded" }];
+    expect(connectionPickerKey(choices, "anthropic::opus", "sub")).toBe("sub@@anthropic::opus");
+    expect(connectionPickerKey(choices, "anthropic::funded", "sub")).toBe("anthropic::funded");
+    expect(connectionPickerKey(choices, "anthropic::funded", null)).toBe("anthropic::funded");
+  });
+
+  it("counts removing a saved connection as a change, and nothing else without one", () => {
+    const pinned = { credentialId: "sub", pinned: true };
+    const usual = { credentialId: "sub", pinned: false };
+    expect(botConnectionChanged(undefined, pinned)).toBe(false);
+    expect(botConnectionChanged(null, pinned)).toBe(true);
+    expect(botConnectionChanged(null, usual)).toBe(false);
+    expect(botConnectionChanged("sub", pinned)).toBe(false);
+    expect(botConnectionChanged("sub", usual)).toBe(true);
+    expect(botConnectionChanged("api", pinned)).toBe(true);
   });
 
   it("lists a funded model once, under no connection", () => {

@@ -130,6 +130,29 @@ describePostgres("a bot's model connection (PostgreSQL)", () => {
     await expect(served(botId, owner, "claude-haiku")).resolves.toMatchObject({ id: opusOnApiKey });
   });
 
+  it("goes back to the usual connection when the choice is removed", async () => {
+    const botId = await newBot("Removed");
+    await pin(botId, opusOnApiKey);
+    const thread = await runAsTenant(owner, () => createRepos(prisma).getBot(actor(), botId));
+
+    await runAsTenant(owner, () =>
+      commitBotUpdate({
+        prisma,
+        notify: async () => undefined,
+        spaceId: owner.spaceId,
+        threadId: thread.thread!.id,
+        botId,
+        emitBotUpdated: false,
+        data: {},
+        clearModelConnectionFor: owner.userId,
+      }),
+    );
+
+    await expect(
+      runAsTenant(owner, () => botModelConnectionId(prisma, actor(), botId, "anthropic", model)),
+    ).resolves.toBeUndefined();
+  });
+
   it("copies a member's choice to a duplicate of the bot", async () => {
     const source = await newBot("Original");
     const copy = await newBot("Original copy");

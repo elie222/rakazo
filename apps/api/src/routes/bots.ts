@@ -430,16 +430,18 @@ export function botsRoutes(ctx: RouterContext) {
           thinkingLevel: input.thinkingLevel,
           current: { provider: existing.modelProvider, model: existing.modelId },
           credentialId:
-            input.modelConnectionId ??
-            (provider && modelId
-              ? await botModelConnectionId(
-                  deps.prisma,
-                  context.actor,
-                  input.botId,
-                  provider,
-                  modelId,
-                )
-              : undefined),
+            input.modelConnectionId === null
+              ? undefined
+              : (input.modelConnectionId ??
+                (provider && modelId
+                  ? await botModelConnectionId(
+                      deps.prisma,
+                      context.actor,
+                      input.botId,
+                      provider,
+                      modelId,
+                    )
+                  : undefined)),
           connectionChanging: Boolean(input.modelConnectionId),
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
@@ -478,6 +480,8 @@ export function botsRoutes(ctx: RouterContext) {
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
           modelConnection,
+          clearModelConnectionFor:
+            input.modelConnectionId === null ? context.actor.userId : undefined,
           data: {
             name: input.name,
             description: input.description,
