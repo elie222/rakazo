@@ -21,8 +21,8 @@ import {
   BILLING_CANCELLATION_REASONS,
   BYOK_TIERS,
   ByokTierSchema,
+  HeldCreditAmountSchema,
   ModelCreditAmountSchema,
-  RETIRED_MODEL_CREDIT_AMOUNTS,
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
@@ -1061,7 +1061,6 @@ function isByokPlan(subscription: StripeSubscription) {
 }
 
 function creditAmount(value: string | undefined): number | undefined {
-  const amount = Number(value);
-  if (ModelCreditAmountSchema.safeParse(amount).success) return amount;
-  return (RETIRED_MODEL_CREDIT_AMOUNTS as readonly number[]).includes(amount) ? amount : undefined;
+  const parsed = HeldCreditAmountSchema.safeParse(Number(value));
+  return parsed.success ? parsed.data : undefined;
 }
