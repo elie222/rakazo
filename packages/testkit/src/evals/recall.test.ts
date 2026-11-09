@@ -97,6 +97,99 @@ describe("recall outcome grading", () => {
     expect(failed("absent-file", evidence([]))).toEqual(["searched-history"]);
   });
 
+  it("seeds one earlier reply that worked with tools, compacted only in the long chat", () => {
+    for (const [id, size] of [
+      ["tool-steps-replayed", 24],
+      ["tool-steps-compacted", 100],
+    ] as const) {
+      for (const variant of [id, `${id}-absent`]) {
+        const history = scenario(variant).history!;
+        expect(history.messages).toHaveLength(size);
+        expect(history.messages.filter((m) => m.steps).map((m) => [m.seq, m.role])).toEqual([
+          [3, "bot"],
+        ]);
+        expect(history.compact).toBe(size === 100 ? true : undefined);
+        expect(history.summary).toBeUndefined();
+      }
+    }
+    const notes = (id: string) =>
+      scenario(id)
+        .history!.messages[3]!.steps!.map((step) => step.note ?? "")
+        .join(" ");
+    expect(notes("tool-steps-replayed")).toContain("Midnight Lizard");
+    expect(notes("tool-steps-replayed-absent")).not.toMatch(/extension/i);
+  });
+
+  it("keeps the short chat's variants and varies the long chat's small talk", () => {
+    const steps = (id: string) => scenario(id).history!.messages[3]!.steps!;
+    expect(steps("tool-steps-replayed").every((step) => step.outcomes)).toBe(true);
+    expect(steps("tool-steps-replayed-intent").some((step) => step.outcomes)).toBe(false);
+    expect(steps("tool-steps-replayed-intent").map((step) => step.note)).toEqual(
+      steps("tool-steps-replayed").map((step) => step.note),
+    );
+    // The paraphrased earlier turn shares no distinctive word with the question.
+    const earlier = scenario("tool-steps-replayed-paraphrased")
+      .history!.messages.slice(2, 4)
+      .map((m) => `${m.text} ${(m.steps ?? []).map((step) => step.note ?? "").join(" ")}`)
+      .join(" ");
+    expect(earlier).toContain("Midnight Lizard");
+    expect(earlier).not.toMatch(/install|extension|browser/i);
+    const long = scenario("tool-steps-compacted").history!.messages.map((m) => m.text);
+    const chat = long.filter((text) => text && text !== "Done.");
+    expect(new Set(chat).size).toBe(chat.length);
+  });
+
+  it("records re-checks, lookups and judged behaviour without failing on them", () => {
+    const shell = { step: 1, name: "shell", args: {} };
+    for (const c of RECALL_EVAL_CASES.filter((c) => /tool-steps|ordinary/.test(c.id))) {
+      expect(c.shellUnneeded).toBe(true);
+      const observed = c.observe!(evidence([search, shell], "reply"));
+      expect(observed.reverified).toBe(true);
+      expect(observed["looked-back"]).toBe(true);
+      expect(c.observe!(evidence([{ ...shell, step: 0 }], "reply")).reverified).toBe(false);
+      const judged = Object.values(observed).filter((v) => typeof v === "object");
+      expect(judged.length).toBeGreaterThan(0);
+      for (const input of judged) {
+        expect(input.rubric.startsWith(`${RECALL_JUDGE_VERSION} behaviour:`)).toBe(true);
+        const anchors = RECALL_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input.rubric);
+        expect(new Set(anchors.map((a) => a.pass))).toEqual(new Set([true, false]));
+      }
+    }
+    expect(Object.keys(scenario("ordinary-sign-off").observe!(evidence([], "")))).toContain(
+      "unprompted-doubt",
+    );
+    expect(Object.keys(scenario("tool-steps-replayed").observe!(evidence([], "")))).not.toContain(
+      "unprompted-doubt",
+    );
+  });
+
+  it("observes, rather than grades, a reply that copies the replayed marker", () => {
+    const copied = evidence([], "[tool calls this reply made]\n- Shell ×2");
+    expect(failed("tool-steps-replayed", copied)).toEqual([]);
+    expect(scenario("tool-steps-replayed").observe!(copied)["copied-marker"]).toBe(true);
+    expect(
+      scenario("tool-steps-replayed").observe!(evidence([], "Yes, Midnight Lizard."))[
+        "copied-marker"
+      ],
+    ).toBe(false);
+  });
+
+  it("fails a history lookup on everyday turns only when the turn cannot need one", () => {
+    const egg = scenario("ordinary-visible").history!.messages.slice(-2);
+    expect(egg.map((m) => [m.role, m.text])).toEqual([
+      ["user", "How long should I boil an egg for a jammy yolk?"],
+      ["bot", "About six and a half minutes, then into cold water."],
+    ]);
+    for (const id of ["sign-off", "visible", "general", "related", "never-told"]) {
+      const history = scenario(`ordinary-${id}`).history!;
+      expect(history.messages[3]!.steps?.[0]?.note).toContain("Midnight Lizard");
+      expect(failed(`ordinary-${id}`, evidence([], "reply"))).toEqual([]);
+      expect(failed(`ordinary-${id}`, evidence([search], "reply"))).toEqual(
+        id === "related" || id === "never-told" ? [] : ["no-history-lookup"],
+      );
+    }
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
     for (const c of RECALL_EVAL_CASES) {
       const input = c.judge?.(evidence([], "reply"));

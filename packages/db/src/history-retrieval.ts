@@ -11,9 +11,14 @@ import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
 import { contentEncryptionOf, INDEXED_MESSAGE, UNINDEXED_MESSAGE } from "./content-encryption.js";
-import { historyAttachmentBlocks, historyMessageText, historySearchText } from "./history-text.js";
+import {
+  historyAttachmentBlocks,
+  historyMessageText,
+  historyReadText,
+  historySearchText,
+} from "./history-text.js";
 
-export { historyMessageText };
+export { historyMessageText, historyReadText };
 
 /** Only the executor supplies scope; tool arguments cannot widen it. Threads are the space's. */
 export interface HistoryScope {
@@ -113,12 +118,12 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
   return response;
 }
 /**
- * Matches the expression of messages_history_search_files_idx: conversational text plus
- * attachment names. The parser keeps a name like "q3-report.pdf" as one token, so its
- * separators become spaces first, as searchTerms splits them.
+ * Matches the expression of messages_history_search_steps_idx: conversational text, attachment
+ * names, and tool step labels and notes. The parser keeps a name like "q3-report.pdf" as one
+ * token, so its separators become spaces first, as searchTerms splits them.
  */
 const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
-  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ')`;
+  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
@@ -209,7 +214,7 @@ function date(value: string | undefined): Date | undefined {
   return parsed;
 }
 function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0) {
-  const text = historyMessageText(row.blocks);
+  const text = historyReadText(row.blocks);
   const matchedTerm =
     query && !text.toLowerCase().includes(query.toLowerCase())
       ? (query.split(/\s+/).find((term) => text.toLowerCase().includes(term.toLowerCase())) ??
@@ -355,7 +360,8 @@ export async function searchHistory(
             ? Prisma.sql`jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "bot_message_sent" || @.kind == "bot_message_received" || @.kind == "handoff")')`
             : kind === "user_messages"
               ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "file" || @.kind == "image")')`
-              : Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text")')`,
+              : // A reply can be only tool steps; search indexes those too.
+                Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "steps")')`,
         ),
         " OR ",
       )})`

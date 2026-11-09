@@ -514,7 +514,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v1` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v3` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong
@@ -528,6 +528,55 @@ trials, and named the source in five. Every trial admitted the never-shared
 contract on both versions; two further trials stalled waiting on the provider
 and are not counted. The offline protocol fixture checks the seeding and
 the grading path for both a read and an unread lease.
+
+The `recall-tool-steps-*` cases check that a bot remembers work it did with
+tools. Early in a chat the user asks for dark web pages, and the bot installs an
+extension from the command line. The extension's name appears only in a note the
+bot wrote before a tool step, and the reply text says just "Done.". Unrelated,
+varied small talk follows. The bot is then asked whether it installed an
+extension, which one, and how. The stored steps record that each call
+succeeded. The `-intent` variant stores the same steps without outcomes, as
+older messages have them. The `-paraphrased` variant's notes share no
+distinctive word with the question. In the `-absent` controls the earlier tool
+reply only checked disk space. The `-compacted` cases use 100 messages and run
+the product's own compaction job before the question, so the tool reply
+survives only through the summary, which the report saves. Compaction runs only
+with the `current` context strategy.
+
+The `recall-ordinary-*` cases reuse the 24-message chat for everyday turns: a
+sign-off, a question answered two messages earlier, a general knowledge
+question, eye-strain tips close to the install's topic, and "did I ever tell
+you my sister's name?" (never). A deterministic check fails a history lookup on
+the first three.
+
+The `recall-meaning-v3` judge fails a reply laid out as a step log, a reply to
+an everyday turn that casts unprompted doubt on, corrects or retracts the bot's
+earlier work, and a control reply that says the bot never used its computer.
+The install rubric accepts a proportionate hedge only for the `-intent`
+variant. Each trial also records, without deciding it, whether the bot used a
+tool other than history lookups (re-verification), whether it looked back, and
+two judged behaviours: unprompted doubt and false confession (claiming it never
+used tools, never did the work, or made a mistake it did not make). An
+ungraded behaviour is recorded as unknown. The offline sandbox refuses shell
+commands; in these cases no outcome needs one, so a failure after the bot chose
+to run one counts as the agent's, not the harness's.
+
+A November 2026 run with ten trials per case compared main, the change before
+outcomes were recorded, and the change with outcomes, using a small model as bot
+and judge, plus a larger bot under `retrieval` on main and the final change.
+Under `retrieval`, the small model recalled the install in nine of ten trials
+with outcomes, against none on main and none without outcomes (where it said
+it could not confirm the install). The larger bot went from none to seven. Both
+models searched for "extension" or "install"; when the notes used other words,
+or the earlier work was the disk check, the search missed and both models
+mostly said they had never used the computer at all, on every version.
+Everyday turns stayed clean under `retrieval`. Under `current`, outcomes did not
+stop the small model doubting its own work: it still said it could not confirm
+the install, and added a correction to every sign-off. On main those
+corrections said it had never changed anything. With outcomes, after
+compaction it named the install in six of ten, against none before. Recalling
+the install under `retrieval` takes about two extra model calls, roughly
+doubling that answer's cost; everyday turns' prompts grew by under one percent.
 
 ### Long conversation and cost evals
 

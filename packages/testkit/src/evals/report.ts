@@ -24,6 +24,8 @@ export type TrialResult = {
     afterCursor: number | null;
     remainingMessages: number;
     summaryPresent: boolean;
+    /** The compaction summary the run read, synthetic like the fixture it came from. */
+    summary?: string | null;
     generation: number;
   };
   status: "passed" | "failed" | "not-run";
@@ -31,6 +33,8 @@ export type TrialResult = {
   reason: string | null;
   criteria: Criterion[];
   judgment?: Judgment;
+  /** Recorded behaviour; `present` is null when the judge could not grade it. */
+  observations?: Record<string, { present: boolean | null; reason?: string }>;
   assisted: false;
   cleanupFailed: boolean;
   latencyMs: number;
