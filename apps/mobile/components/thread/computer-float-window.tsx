@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  AppState,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -23,6 +26,12 @@ import {
 import { createComputerRefresh } from "../../lib/computer-refresh";
 import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
+import {
+  hideSystemFloat,
+  requestSystemFloatPermission,
+  showSystemFloat,
+  systemFloatHasPermission,
+} from "../../lib/system-float";
 import { isComputerRunning } from "../../lib/use-computer-running";
 import { NativeSymbol } from "../native-symbol";
 
@@ -164,6 +173,10 @@ export function ComputerFloatWindow({
   const [statusError, setStatusError] = useState(false);
   const [size, setSize] = useState({ width: COMPUTER_FLOAT_WIDTH });
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  // The system bubble is up over other apps; tapping it brings the app back.
+  const [bubbleOn, setBubbleOn] = useState(false);
+  // The user was sent to system settings to grant the overlay permission.
+  const pendingPermission = useRef(false);
   const heldScreenUrl = useRef<string | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -214,8 +227,29 @@ export function ComputerFloatWindow({
     if (open) setScreenFailed(false);
   }, [open]);
 
-  // A reopen starts unproven: a run that already ended before this open must not close the
-  // window the moment its first status arrives. Only a run seen ending while open closes it.
+  // Closing the window takes the system bubble with it: its return target is gone.
+  useEffect(() => {
+    if (!open && bubbleOn) {
+      setBubbleOn(false);
+      void hideSystemFloat();
+    }
+  }, [open, bubbleOn]);
+
+  // After the user opens the system settings to grant the overlay permission,
+  // the bubble goes up once they come back to the app.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || !pendingPermission.current) return;
+      pendingPermission.current = false;
+      void systemFloatHasPermission().then((granted) => {
+        if (!granted) return;
+        void showSystemFloat().then((result) => {
+          if (result === "shown") setBubbleOn(true);
+        });
+      });
+    });
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
     if (open) wasRunningRef.current = false;
   }, [open]);
@@ -298,6 +332,49 @@ export function ComputerFloatWindow({
     }),
   ).current;
 
+  /**
+   * Floats the bubble over other apps. The in-app window stays open as the
+   * fallback: the bubble only shows once the app is in the background, and
+   * tapping it brings the app back to this window.
+   */
+  async function toggleSystemFloat() {
+    if (bubbleOn) {
+      setBubbleOn(false);
+      await hideSystemFloat();
+      return;
+    }
+    const result = await showSystemFloat();
+    if (result === "shown") {
+      setBubbleOn(true);
+      return;
+    }
+    if (result === "no-permission") {
+      Alert.alert(
+        t("Allow floating over other apps"),
+        t(
+          "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.",
+        ),
+        [
+          { text: t("Cancel"), style: "cancel" },
+          {
+            text: t("Open Settings"),
+            onPress: () => {
+              pendingPermission.current = true;
+              void requestSystemFloatPermission();
+            },
+          },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      t("Can't float outside the app"),
+      t(
+        "The floating bubble isn't available in this build. The computer screen stays inside the app.",
+      ),
+    );
+  }
+
   if (!open || !botId) return null;
 
   const screenVisible =
@@ -321,6 +398,24 @@ export function ComputerFloatWindow({
         <Text numberOfLines={1} style={styles.title}>
           {t("Computer screen")}
         </Text>
+        {Platform.OS === "android" ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              bubbleOn ? t("Stop floating outside the app") : t("Float outside the app")
+            }
+            accessibilityState={{ selected: bubbleOn }}
+            hitSlop={8}
+            onPress={() => void toggleSystemFloat()}
+          >
+            <NativeSymbol
+              ios="arrow.up.forward.app"
+              android="open-outline"
+              size={18}
+              color={bubbleOn ? mobileTokens().primary : undefined}
+            />
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("Close")}

@@ -1,4 +1,13 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Float outside the app": "Buiten de app laten zweven",
+  "Stop floating outside the app": "Stop zweven buiten de app",
+  "Can't float outside the app": "Zweven buiten de app is niet mogelijk",
+  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
+    "Deze versie heeft geen zwevende bubbel. Het computerscherm blijft in de app.",
+  "Allow floating over other apps": "Zweven boven andere apps toestaan",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
+    "Schakel in Instellingen voor Rakazo ‘Weergeven boven andere apps’ in. Verlaat daarna de app: de bubbel zweeft op je scherm; tik erop om terug te keren.",
+  "Open Settings": "Instellingen openen",
   "No matches": "Geen resultaten",
   "Always ask": "Altijd vragen",
   "Search tools": "Tools zoeken",

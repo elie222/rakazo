@@ -1,4 +1,13 @@
 export const PL_MESSAGES: Record<string, string> = {
+  "Float outside the app": "Wyświetlaj poza aplikacją",
+  "Stop floating outside the app": "Przestań wyświetlać poza aplikacją",
+  "Can't float outside the app": "Nie można wyświetlać poza aplikacją",
+  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
+    "Ta wersja nie ma pływającego dymka. Ekran komputera pozostaje w aplikacji.",
+  "Allow floating over other apps": "Zezwalaj na wyświetlanie nad innymi aplikacjami",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
+    "W Ustawieniach włącz dla Rakazo opcję „Wyświetlanie nad innymi aplikacjami”. Następnie opuść aplikację — dymek będzie unosił się na ekranie; dotknij go, aby wrócić.",
+  "Open Settings": "Otwórz Ustawienia",
   "No matches": "Brak wyników",
   "Always ask": "Zawsze pytaj",
   "Search tools": "Szukaj narzędzi",

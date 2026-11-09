@@ -1,4 +1,13 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "Float outside the app": "懸浮到應用程式外",
+  "Stop floating outside the app": "取消應用程式外懸浮",
+  "Can't float outside the app": "無法懸浮到應用程式外",
+  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
+    "目前版本沒有懸浮氣泡功能，電腦畫面只能留在應用程式內。",
+  "Allow floating over other apps": "允許懸浮在其他應用程式上層",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
+    "在設定裡為 Rakazo 開啟「顯示在其他應用程式的上層」。然後離開應用程式，氣泡就會懸浮在螢幕上；點它可以回到應用程式。",
+  "Open Settings": "開啟設定",
   "No matches": "沒有相符的結果",
   "Always ask": "一律詢問",
   "Search tools": "搜尋工具",

@@ -1,4 +1,13 @@
 export const ES_MESSAGES: Record<string, string> = {
+  "Float outside the app": "Flotar fuera de la app",
+  "Stop floating outside the app": "Dejar de flotar fuera de la app",
+  "Can't float outside the app": "No se puede flotar fuera de la app",
+  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
+    "Esta versión no tiene burbuja flotante. La pantalla del ordenador se queda dentro de la app.",
+  "Allow floating over other apps": "Permitir flotar sobre otras apps",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
+    "Activa en Ajustes «Mostrar sobre otras apps» para Rakazo. Luego sal de la app y la burbuja flotará en tu pantalla; tócala para volver.",
+  "Open Settings": "Abrir Ajustes",
   "No matches": "Sin resultados",
   "Always ask": "Preguntar siempre",
   "Search tools": "Buscar herramientas",

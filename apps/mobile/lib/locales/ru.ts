@@ -1,4 +1,13 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Float outside the app": "Вывести за пределы приложения",
+  "Stop floating outside the app": "Убрать всплывающее окно",
+  "Can't float outside the app": "Не удаётся вывести за пределы приложения",
+  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
+    "В этой сборке нет всплывающего значка. Экран компьютера останется в приложении.",
+  "Allow floating over other apps": "Разрешить показ поверх других приложений",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
+    "В настройках включите для Rakazo «Показ поверх других приложений». Затем сверните приложение — значок будет плавать на экране; нажмите его, чтобы вернуться.",
+  "Open Settings": "Открыть настройки",
   "No matches": "Нет совпадений",
   "Always ask": "Всегда спрашивать",
   "Search tools": "Поиск инструментов",

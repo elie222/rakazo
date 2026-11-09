@@ -22,6 +22,7 @@ import {
   useComputerFloatEnabled,
 } from "./computer-float-settings";
 import { GROUP_SEAT_SIZE } from "./group-seats";
+import { setFloatingBubbleModule } from "./system-float";
 import { isComputerRunning, useComputerRunning } from "./use-computer-running";
 
 const rpc = vi.hoisted(() => vi.fn());
@@ -58,6 +59,20 @@ const statusBox = vi.hoisted(() => ({
 const secureStoreBox = vi.hoisted(() => ({
   items: new Map<string, string>(),
   sets: [] as Array<[string, string]>,
+}));
+const platformBox = vi.hoisted(() => ({ os: "android" }));
+const alertBox = vi.hoisted(() => ({ alert: vi.fn() }));
+const appStateBox = vi.hoisted(() => ({
+  listeners: new Set<(state: string) => void>(),
+  emit(state: string) {
+    for (const listener of [...this.listeners]) listener(state);
+  },
+}));
+const bubbleBox = vi.hoisted(() => ({
+  permitted: true,
+  show: vi.fn(),
+  hide: vi.fn(),
+  requestOverlayPermission: vi.fn(),
 }));
 const navBox = vi.hoisted(() => {
   const setOptions = vi.fn();
@@ -147,6 +162,18 @@ vi.mock("react-native", () => {
   });
   return {
     ActivityIndicator: () => createElement("progress"),
+    Alert: { alert: alertBox.alert },
+    AppState: {
+      addEventListener: (_type: string, handler: (state: string) => void) => {
+        appStateBox.listeners.add(handler);
+        return { remove: () => appStateBox.listeners.delete(handler) };
+      },
+    },
+    Platform: {
+      get OS() {
+        return platformBox.os;
+      },
+    },
     Animated: {
       Value: MockAnimatedValue,
       View: (props: { children?: ReactNode }) =>
@@ -202,6 +229,9 @@ vi.mock("react-native-webview", () => ({
 }));
 
 vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test", rpc }));
+vi.mock("react-native-android-floating-bubble", () => {
+  throw new Error("no native module in tests");
+});
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -219,6 +249,7 @@ vi.mock("./appearance", () => ({
     card: "card",
     foreground: "foreground",
     mutedForeground: "muted-foreground",
+    primary: "primary",
     secondary: "secondary",
     success: "success",
   }),
@@ -356,6 +387,20 @@ describe("computer float window", () => {
     navBox.setOptions.mockClear();
     navBox.push.mockClear();
     navBox.setParams.mockClear();
+    platformBox.os = "android";
+    alertBox.alert.mockClear();
+    appStateBox.listeners.clear();
+    bubbleBox.permitted = true;
+    bubbleBox.show.mockClear();
+    bubbleBox.hide.mockClear();
+    bubbleBox.requestOverlayPermission.mockClear();
+    setFloatingBubbleModule({
+      isSupported: () => true,
+      hasOverlayPermission: () => bubbleBox.permitted,
+      requestOverlayPermission: () => bubbleBox.requestOverlayPermission(),
+      show: () => bubbleBox.show(),
+      hide: () => bubbleBox.hide(),
+    });
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
 
@@ -366,6 +411,7 @@ describe("computer float window", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+    setFloatingBubbleModule(null);
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -526,6 +572,107 @@ describe("computer float window", () => {
       close.click();
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the pop-out button on Android and hides it on iOS", async () => {
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    expect(opened.querySelector('button[aria-label="Float outside the app"]')).not.toBeNull();
+    platformBox.os = "ios";
+    act(() => {
+      root?.render(
+        <ComputerFloatWindow botId="bot-1" name="Chief" open onClose={() => undefined} />,
+      );
+    });
+    expect(opened.querySelector('button[aria-label="Float outside the app"]')).toBeNull();
+  });
+
+  it("floats the bubble from the pop-out button and stops it from the same button", async () => {
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(bubbleBox.show).toHaveBeenCalledTimes(1);
+    // The in-app float stays open as the fallback: the bubble only shows
+    // once the app is in the background.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    const stop = opened.querySelector(
+      'button[aria-label="Stop floating outside the app"]',
+    ) as HTMLButtonElement;
+    expect(stop).not.toBeNull();
+    expect(stop.querySelector('span[data-color="primary"]')).not.toBeNull();
+    act(() => {
+      stop.click();
+    });
+    await settle();
+    expect(bubbleBox.hide).toHaveBeenCalledTimes(1);
+    expect(opened.querySelector('button[aria-label="Float outside the app"]')).not.toBeNull();
+  });
+
+  it("asks for the overlay permission when it is missing, then floats once granted", async () => {
+    bubbleBox.permitted = false;
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(bubbleBox.show).not.toHaveBeenCalled();
+    expect(alertBox.alert).toHaveBeenCalledWith(
+      "Allow floating over other apps",
+      expect.stringContaining("Display over other apps"),
+      expect.any(Array),
+    );
+    // The in-app float stays up: it is the fallback while permission is missing.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    // Grant it in Settings and come back to the app.
+    bubbleBox.permitted = true;
+    const buttons = alertBox.alert.mock.calls[0]![2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    act(() => {
+      buttons.find((button) => button.text === "Open Settings")?.onPress?.();
+    });
+    await settle();
+    expect(bubbleBox.requestOverlayPermission).toHaveBeenCalledTimes(1);
+    act(() => {
+      appStateBox.emit("active");
+    });
+    await settle();
+    expect(bubbleBox.show).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the bubble when the float closes", async () => {
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(bubbleBox.show).toHaveBeenCalledTimes(1);
+    act(() => {
+      root?.render(
+        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
+      );
+    });
+    await settle();
+    expect(bubbleBox.hide).toHaveBeenCalledTimes(1);
   });
 
   it("stops polling once the float is closed", async () => {
