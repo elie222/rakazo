@@ -18,6 +18,7 @@ describe("parseMessagingCommand", () => {
     for (const text of [
       "Stopp!",
       "detente",
+      "¡Detente!",
       "Стоп",
       "停止。",
       "停下！",

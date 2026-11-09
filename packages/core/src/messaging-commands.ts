@@ -50,6 +50,7 @@ export function parseMessagingCommand(text: string): MessagingCommand | null {
   if (normalized === "LEAVE") return "leave";
   const bare = normalized
     .replace(/\s+/g, " ")
+    .replace(/^[¡¿]+/u, "")
     .replace(/[.!?…。！？।]+$/u, "")
     .trim();
   if (STOP_WORDS.has(bare)) return "stop";
