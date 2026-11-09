@@ -208,6 +208,7 @@ import {
 } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
+import { CreateServiceCredentialInput, ServiceCredentialSchema } from "./service-credentials.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 import { SpaceAvailabilitySchema } from "./space-availability.js";
 import { VaultImportInput, VaultImportResult } from "./vault-import.js";
@@ -1664,6 +1665,13 @@ export const appContract = {
     list: oc.output(z.array(AgentSecretSchema)),
     put: oc.input(AgentSecretInputSchema).output(AgentSecretSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  serviceCredentials: {
+    list: oc.output(z.array(ServiceCredentialSchema)),
+    create: oc
+      .input(CreateServiceCredentialInput)
+      .output(z.object({ credential: ServiceCredentialSchema, token: z.string() })),
+    revoke: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   vault: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(BotSecretMetadata)),

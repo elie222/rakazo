@@ -249,7 +249,7 @@ export async function createPendingSteeringRun(
       threadId: input.threadId,
       userId,
       prompt:
-        origin === "webhook"
+        origin === "webhook" || origin === "service"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
           : STEERING_CONTINUATION_PROMPT,
       status: "queued",
@@ -267,8 +267,8 @@ export async function createPendingSteeringRun(
       // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.
       // Rows queued before origins were recorded are recognized by their channel message.
       trigger:
-        origin === "webhook"
-          ? "webhook"
+        origin === "webhook" || origin === "service"
+          ? origin
           : origin === "private" &&
               batch.every(
                 (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
@@ -318,7 +318,9 @@ function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
-  if (item.originTrigger === "webhook") return "webhook";
+  if (item.originTrigger === "webhook" || item.originTrigger === "service") {
+    return item.originTrigger;
+  }
   if (item.originTrigger !== "messaging") return "private";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
   return channelId ? `channel:${channelId}` : "private";

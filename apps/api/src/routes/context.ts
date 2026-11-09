@@ -86,6 +86,8 @@ export function createRouterContext(deps: RouterDeps) {
     signal?: AbortSignal;
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
+    /** The API key behind this call, so what it sends is marked as coming from that key. */
+    serviceOrigin?: { credentialId: string; name: string };
   }>();
   const repos = createRepos(deps.prisma, {
     phoneCallsEnabled: deps.env?.phoneCallsEnabled,

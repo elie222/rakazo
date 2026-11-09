@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { SecurityEventMetadataSchema } from "./security-events.js";
 
-export const AUDIT_ACTOR_TYPES = ["user", "bot", "system"] as const;
+export const AUDIT_ACTOR_TYPES = ["user", "bot", "service", "system"] as const;
 export const AuditActorTypeSchema = z.enum(AUDIT_ACTOR_TYPES);
 export type AuditActorType = z.infer<typeof AuditActorTypeSchema>;
 

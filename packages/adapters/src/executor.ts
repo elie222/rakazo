@@ -894,7 +894,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The send decided whether the message named this member; one it named nobody for
         // reached every member, and each may end its turn without a reply.
         const groupReplyOptional =
-          Boolean(thread.groupId) && run.trigger === "user" && run.groupReplyOptional;
+          Boolean(thread.groupId) &&
+          (run.trigger === "user" || run.trigger === "service") &&
+          run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1896,6 +1898,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               prompt,
               ...(speakers &&
               (run.trigger === "user" ||
+                run.trigger === "service" ||
                 (run.trigger === "follow_up" && sourceMessage?.role === "user"))
                 ? { promptSpeaker: personSpeaker(people, run.userId) }
                 : {}),

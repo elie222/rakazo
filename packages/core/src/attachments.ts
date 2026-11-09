@@ -8,6 +8,7 @@ import {
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { serviceOriginLine } from "./message-text.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -259,6 +260,7 @@ function blockHistoryText(block: MessageBlock): string {
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
   if (block.kind === "steps") return toolStepsHistoryText(block.steps);
+  if (block.kind === "service_origin") return serviceOriginLine(block.name);
   if (block.kind === "chart") return `[chart: ${block.name}]`;
   if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
   if (block.kind === "image") return `[image: ${block.name}]`;

@@ -112,6 +112,7 @@ model User {
   devices                     UserDevice[]
 
   @@unique([email])
+  serviceCredentials ServiceCredential[]
   @@map("user")
   messagingInstallations MessagingInstallation[]
   messagingInstallSessions MessagingInstallSession[]
@@ -695,6 +696,7 @@ model Space {
   agentSkillSpaces            AgentSkillSpace[]
   mcpServerSpaces             McpServerSpace[]
   capabilityInstallSpaces     CapabilityInstallSpace[]
+  serviceCredentials ServiceCredential[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -902,6 +904,52 @@ model FeedbackReport {
 
 /// A site one user opens from chat links without the external-link prompt, in every space.
 /// Never consulted for what a bot may fetch: those are action approval rules.
+model ServiceCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId         String
+  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name            String
+  /// SHA-256 of the token, which is 256 random bits and is shown once.
+  tokenHash       String    @unique
+  tokenPrefix     String
+  scopes          String[]
+  /// The bots it may reach. Empty means every bot the user has in the space.
+  botIds          String[]
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  lastUsedAt      DateTime?
+  windowStartedAt DateTime  @default(now())
+  windowCount     Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  idempotencyKeys ServiceIdempotencyKey[]
+
+  @@index([userId, spaceId])
+  @@map("service_credentials")
+}
+
+/// A write an API key made under an Idempotency-Key, so a retry returns the first answer.
+model ServiceIdempotencyKey {
+  id             String            @id @default(cuid())
+  userId         String
+  spaceId        String
+  credentialId   String
+  credential     ServiceCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  key            String
+  requestHash    String
+  /// Null until the write has finished.
+  responseStatus Int?
+  responseBody   Json?
+  expiresAt      DateTime
+  createdAt      DateTime          @default(now())
+
+  @@unique([credentialId, key])
+  @@index([expiresAt])
+  @@map("service_idempotency_keys")
+}
+
 model TrustedLinkSite {
   id        String   @id @default(cuid())
   userId    String

@@ -494,6 +494,16 @@ function sendAttachmentBlocks(
   });
 }
 
+/** A key's message never joins a run under way: it waits and gets a run of its own. */
+function steeringPlacement(
+  active: Parameters<typeof steersMessageFrom>[0] & { id: string },
+  actor: Actor,
+  serviceOrigin: { credentialId: string; name: string } | undefined,
+) {
+  if (serviceOrigin) return { runId: null, originTrigger: "service" };
+  return { runId: steersMessageFrom(active, actor) ? active.id : null };
+}
+
 export async function sendThreadMessage(
   deps: {
     prisma: PrismaClient;
@@ -518,6 +528,8 @@ export async function sendThreadMessage(
     clientNonce?: string;
     /** No model to start a turn: the send may only stop active work. */
     noModel?: boolean;
+    /** Set from the request's API key, never from the caller's input. */
+    serviceOrigin?: { credentialId: string; name: string };
   },
   releaseTakeover?: (runId: string) => Promise<void>,
   /** Runs saved with the message, after the thread lock and before the message is routed. */
@@ -677,6 +689,7 @@ export async function sendThreadMessage(
         const blocks = buildUserMessageBlocks(
           input.text,
           sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+          input.serviceOrigin,
         );
         const message = await createThreadMessageInTransaction(tx, {
           threadId: target.threadId,
@@ -696,7 +709,12 @@ export async function sendThreadMessage(
         const targetedRunId = targetedQuestionRun(activeRuns);
         // Someone else's question stays on its card; this message starts the sender's own run.
         for (const run of activeRuns.filter(
-          (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
+          // A question is for a person to answer; a key's message waits for its own run.
+          (run) =>
+            !stopping &&
+            !input.serviceOrigin &&
+            run.status === "waiting_input" &&
+            run.userId === actor.userId,
         )) {
           if (targetedRunId && run.id !== targetedRunId) continue;
           if (
@@ -765,13 +783,14 @@ export async function sendThreadMessage(
         if (active) {
           // Another person's message waits for a run of its own, which acts with their accounts,
           // and is never shown as part of theirs.
-          const ownRunId = active.userId === actor.userId ? active.id : null;
+          const ownRunId =
+            active.userId === actor.userId && !input.serviceOrigin ? active.id : null;
           await tx.steeringMessage.create({
             data: {
               messageId: message.id,
               botId: target.botId,
               userId: actor.userId,
-              runId: steersMessageFrom(active, actor) ? active.id : null,
+              ...steeringPlacement(active, actor, input.serviceOrigin),
             },
           });
           if (ownRunId) {
@@ -807,7 +826,7 @@ export async function sendThreadMessage(
             botId: target.botId,
             threadId: target.threadId,
             userId: actor.userId,
-            prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+            prompt: buildSendPrompt(input.text, artifacts, connectorNames, input.serviceOrigin),
             status: "queued",
           },
         });
@@ -819,7 +838,7 @@ export async function sendThreadMessage(
             taskId: task.id,
             userId: actor.userId,
             status: "queued",
-            trigger: "user",
+            trigger: input.serviceOrigin ? "service" : "user",
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
           },
@@ -910,6 +929,7 @@ export async function sendThreadMessage(
       const blocks = buildUserMessageBlocks(
         input.text,
         sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+        input.serviceOrigin,
       );
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
@@ -978,7 +998,12 @@ export async function sendThreadMessage(
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
           // Someone else's question stays on its card; this message starts the sender's own run.
-          if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId)) continue;
+          if (
+            run.userId !== actor.userId ||
+            input.serviceOrigin ||
+            (targetedRunId && run.id !== targetedRunId)
+          )
+            continue;
           const answered = await answerWaitingRunWithTextInTransaction(tx, {
             ...composerAnswerInput(message),
             runId: run.id,
@@ -1038,7 +1063,7 @@ export async function sendThreadMessage(
               messageId: message.id,
               botId,
               userId: actor.userId,
-              runId: steersMessageFrom(active, actor) ? active.id : null,
+              ...steeringPlacement(active, actor, input.serviceOrigin),
             },
           });
           runs.push(active);
@@ -1050,7 +1075,7 @@ export async function sendThreadMessage(
             botId,
             threadId: target.threadId,
             userId: actor.userId,
-            prompt: buildSendPrompt(input.text, artifacts, connectorNames),
+            prompt: buildSendPrompt(input.text, artifacts, connectorNames, input.serviceOrigin),
             status: "queued",
           },
         });
@@ -1062,7 +1087,7 @@ export async function sendThreadMessage(
             taskId: task.id,
             userId: actor.userId,
             status: "queued",
-            trigger: "user",
+            trigger: input.serviceOrigin ? "service" : "user",
             groupReplyOptional: namesNobody,
             clientNonce: sendRunClientNonce(input.clientNonce, message.id, botId),
             sourceMessageId: message.id,
