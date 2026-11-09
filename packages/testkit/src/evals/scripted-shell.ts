@@ -79,9 +79,46 @@ export function scriptedShell(
       code = 0;
       continue;
     }
-    const check = script.shell.find((entry) => entry.match.test(part));
+    // `a | grep b` filters a's output; any other pipe is a program the script cannot run.
+    const [head, ...pipes] = part.split(/\s*(?<!\|)\|(?!\|)\s*/);
+    const check = script.shell.find((entry) => entry.match.test(head!));
     if (!check) return undefined;
-    code = emit(check, part);
+    if (!pipes.length) {
+      code = emit(check, part);
+      continue;
+    }
+    const failed = (check.exitCode ?? 0) !== 0;
+    if (failed && check.output && !SILENCED.test(head!)) err.push(check.output);
+    let text = failed ? "" : (check.output ?? "");
+    for (const pipe of pipes) {
+      const filtered = grepFilter(pipe.replace(/\s*(?:[0-9&]?>).*$/s, ""), text);
+      if (!filtered) return undefined;
+      ({ text, code } = filtered);
+    }
+    if (text && !STDOUT_REDIRECT.test(pipes.at(-1)!)) out.push(text);
   }
   return { stdout: out.join("\n"), stderr: err.join("\n"), code };
+}
+
+/** `grep` over piped text with the flags checks commonly use; anything else is undefined. */
+function grepFilter(command: string, text: string): { text: string; code: number } | undefined {
+  const parsed = /^grep\s+((?:-[iovqcEF]+\s+)*)(?:(["'])(.*)\2|(\S+))$/s.exec(command.trim());
+  if (!parsed) return undefined;
+  const flags = parsed[1] ?? "";
+  const pattern = parsed[3] ?? parsed[4]!;
+  let regex: RegExp;
+  try {
+    const source = flags.includes("F") ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : pattern;
+    regex = new RegExp(source, flags.includes("i") ? "i" : "");
+  } catch {
+    return undefined;
+  }
+  const invert = flags.includes("v");
+  const lines = text.split("\n").filter((line) => line && regex.test(line) !== invert);
+  const code = lines.length ? 0 : 1;
+  if (flags.includes("q")) return { text: "", code };
+  if (flags.includes("c")) return { text: String(lines.length), code };
+  if (flags.includes("o") && !invert)
+    return { text: lines.map((line) => line.match(regex)![0]).join("\n"), code };
+  return { text: lines.join("\n"), code };
 }

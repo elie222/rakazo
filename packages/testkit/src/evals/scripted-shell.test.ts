@@ -36,6 +36,26 @@ describe("scripted eval shell", () => {
     expect(scriptedShell(script, "df -h 2>/dev/null")?.stdout).not.toBe("");
   });
 
+  it("filters piped output through grep and refuses other pipes", () => {
+    expect(scriptedShell(script, "df -h | grep extension")).toEqual({
+      stdout: "",
+      stderr: "",
+      code: 1,
+    });
+    expect(scriptedShell(script, "df -h | grep -i FREE")).toEqual({
+      stdout: "18G free",
+      stderr: "",
+      code: 0,
+    });
+    expect(scriptedShell(script, "df -h | grep -c free")?.stdout).toBe("1");
+    expect(scriptedShell(script, "df -h | grep -q free")).toEqual({
+      stdout: "",
+      stderr: "",
+      code: 0,
+    });
+    expect(scriptedShell(script, "df -h | sort")).toBeUndefined();
+  });
+
   it("covers no command list with an unscripted command in it", () => {
     expect(scriptedShell(script, "uptime")).toBeUndefined();
     expect(scriptedShell(script, "cat /etc/os-release; df -h")).toBeUndefined();
