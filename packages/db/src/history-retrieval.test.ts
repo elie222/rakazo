@@ -394,6 +394,33 @@ describe("local history retrieval", () => {
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]!.text).toContain("reply made]\n- Shell: Installing Quillfeather.");
   });
+  it("lists earlier replies that used tools by kind, without a keyword", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([
+      {
+        ...row(3, ""),
+        indexed: true,
+        blocks: [
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+          { kind: "text", text: "Done." },
+        ],
+      },
+    ]);
+    const result = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
+    expect(result.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    expect(result).not.toHaveProperty("note");
+    const sql = (mock.$queryRaw.mock.calls[0]![0] as Prisma.Sql).sql;
+    expect(sql).not.toContain("to_tsvector");
+    expect(sql).toContain('@.kind == "steps"');
+    await expect(searchHistory(prisma, scope, {})).rejects.toThrow();
+  });
+  it("says an empty search ruled out only the words it searched", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([]);
+    const result = await searchHistory(prisma, scope, { query: "extension install" });
+    expect(result.messages).toEqual([]);
+    expect(result.note).toContain("tool_work");
+  });
   it("validates dates, query size and pagination before accessing the database", async () => {
     const { mock, prisma } = db();
     await expect(searchHistory(prisma, scope, { query: "x", before: "invalid" })).rejects.toThrow(

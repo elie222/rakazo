@@ -62,9 +62,9 @@ export const HistorySearchInputSchema = z.preprocess(
       scope: z.enum(["this_chat", "my_chats"]).optional(),
       botId: Id.optional(),
       kinds: z
-        .array(z.enum(["bot_messages", "user_messages", "bot_replies"]))
+        .array(z.enum(["bot_messages", "user_messages", "bot_replies", "tool_work"]))
         .min(1)
-        .max(3)
+        .max(4)
         .optional(),
       queries: HistoryQueriesSchema.optional(),
       offset: z.number().int().min(0).max(10000).optional(),
@@ -75,8 +75,11 @@ export const HistorySearchInputSchema = z.preprocess(
       limit: z.number().int().min(1).max(20).optional(),
     })
     .refine(
-      (input) => (input.query !== undefined) !== (input.queries !== undefined),
-      "Provide exactly one of query or queries",
+      (input) =>
+        input.query !== undefined
+          ? input.queries === undefined
+          : input.queries !== undefined || input.kinds !== undefined,
+      "Provide exactly one of query or queries, or neither with kinds",
     ),
 );
 /**
