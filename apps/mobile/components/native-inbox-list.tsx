@@ -14,6 +14,8 @@ export type NativeInboxListProps<Item> = {
   footer?: ReactNode;
   /** Space beside the rows, beyond the safe area the list keeps, for a readable column. */
   gutters: { left: number; right: number };
+  /** The inbox column's insets in the screen or pane, safe area included, to centre the pills. */
+  column: { left: number; right: number };
   avatarViewport: AvatarViewport;
   onRefresh: () => Promise<void>;
   /** Unread and attention counts by row, for the pills that jump to rows out of view. */

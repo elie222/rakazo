@@ -135,6 +135,7 @@ function render(
         empty={extra.empty}
         footer={<span data-footer />}
         gutters={{ left: 8, right: 8 }}
+        column={{ left: 8, right: 8 }}
         avatarViewport={
           (extra.viewport ?? {
             update: vi.fn(),
@@ -228,6 +229,7 @@ it("draws no rows until it knows a row's width, so none keeps a wrong first layo
         renderItem={({ item }) => <Row item={item} />}
         isNativeRow={(item) => item.swipe}
         gutters={{ left: 0, right: 0 }}
+        column={{ left: 0, right: 0 }}
         avatarViewport={{ update: vi.fn(), subscribe: () => () => {}, has: () => false } as never}
         onRefresh={async () => undefined}
         signals={[]}

@@ -833,6 +833,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     left: columnInsets.left - insets.left,
                     right: Math.max(0, columnInsets.right - insets.right),
                   }}
+                  column={columnInsets}
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
                   signals={jumpSignals}

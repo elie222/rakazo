@@ -22,7 +22,6 @@ import { native } from "../lib/native";
 import { canScrollNativeList, scrollNativeListToRow } from "../lib/native-list-scroll";
 import type { InboxSignal } from "../lib/offscreen-unreads";
 import { offscreenUnreads } from "../lib/offscreen-unreads";
-import { useSideInsets } from "../lib/side-insets";
 import type { NativeInboxListProps } from "./native-inbox-list";
 import { NativeInsetList } from "./native-inset-list";
 import { NativeListRowContext } from "./native-list-row";
@@ -101,6 +100,7 @@ export function NativeInboxList<Item>({
   empty,
   footer,
   gutters,
+  column,
   avatarViewport,
   onRefresh,
   signals,
@@ -109,7 +109,6 @@ export function NativeInboxList<Item>({
   const hostRef = useRef(null);
   const headerInset = useFloatingHeaderInset();
   const { bottom } = useSafeAreaInsets();
-  const sideInsets = useSideInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
   // the last spacer, which fills its row.
@@ -191,16 +190,10 @@ export function NativeInboxList<Item>({
   return (
     <View style={{ flex: 1 }}>
       {list}
-      {/* Centred over the rows, which keep clear of the side safe area. */}
+      {/* Centred over the inbox column. */}
       <View
         pointerEvents="box-none"
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          left: sideInsets.paddingLeft,
-          right: sideInsets.paddingRight,
-        }}
+        style={{ position: "absolute", top: 0, bottom: 0, left: column.left, right: column.right }}
       >
         <NativeJumpPills
           keys={data.map(keyExtractor)}
