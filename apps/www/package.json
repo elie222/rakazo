@@ -12,7 +12,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/markdown-satteri": "0.4.7",
+    "@astrojs/markdown-satteri": "0.4.4",
     "@astrojs/react": "6.0.6",
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/contracts": "workspace:*",
