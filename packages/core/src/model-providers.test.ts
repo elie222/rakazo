@@ -638,6 +638,25 @@ describe("connectionModelChoices", () => {
     expect(botConnectionChanged("api", pinned)).toBe(true);
   });
 
+  it.each([
+    ["saved", { modelId: "opus" }],
+    ["enabled", { enabledModelIds: ["opus"] }],
+  ])("keeps a %s model off a connection that cannot run it", (_name, saved) => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), ...saved }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["sub@@anthropic::opus"]);
+  });
+
+  it("keeps a custom model id the catalog does not list", () => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), modelId: "custom" }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["api@@anthropic::custom", "sub@@anthropic::opus"]);
+  });
+
   it("lists a funded model once, under no connection", () => {
     const choices = connectionModelChoices(
       [anthropic("sub", "Subscription"), anthropic("api", "API key")],

@@ -649,6 +649,17 @@ describe("bot settings device voice menu", () => {
       );
     });
 
+    it("saves the connection already shown when its row is tapped", async () => {
+      mocks.connection = { credentialId: "sub", pinned: false };
+      await render();
+      await act(async () => row((title) => title.includes("Claude subscription")).click());
+      await save();
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "bots/update",
+        expect.objectContaining({ modelConnectionId: "sub" }),
+      );
+    });
+
     it("removes the saved connection when the funded row is picked", async () => {
       mocks.connection = { credentialId: "sub", pinned: true };
       mocks.catalog = [opus, { ...opus, managed: true }];

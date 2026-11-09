@@ -429,23 +429,30 @@ export function connectionModelChoices(
   for (const credential of credentials)
     counts.set(provider(credential), (counts.get(provider(credential)) ?? 0) + 1);
   const several = (entry: { provider: string }) => (counts.get(provider(entry)) ?? 0) > 1;
-  const separate = credentials.filter(several).flatMap((credential) =>
-    connectedModelChoices(
-      [credential],
-      catalog.filter(
-        (entry) =>
-          provider(entry) === provider(credential) &&
-          !entry.managed &&
-          (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
-      ),
-    ).map((choice) => ({
-      ...choice,
-      key: connectionChoiceKey(credential.id, choice.key),
-      credentialId: credential.id,
-      label: withConnectionName(choice.modelLabel ?? choice.modelId, credential.label),
-      providerLabel: credential.label,
-    })),
-  );
+  const separate = credentials.filter(several).flatMap((credential) => {
+    const listed = catalog.filter(
+      (entry) => provider(entry) === provider(credential) && !entry.managed,
+    );
+    const served = listed.filter(
+      (entry) => !entry.credentialIds || entry.credentialIds.includes(credential.id),
+    );
+    return (
+      connectedModelChoices([credential], served)
+        // A saved or enabled id comes back as free-form, even one this connection does not serve.
+        .filter(
+          (choice) =>
+            served.some((entry) => entry.id === choice.modelId) ||
+            !listed.some((entry) => entry.id === choice.modelId),
+        )
+        .map((choice) => ({
+          ...choice,
+          key: connectionChoiceKey(credential.id, choice.key),
+          credentialId: credential.id,
+          label: withConnectionName(choice.modelLabel ?? choice.modelId, credential.label),
+          providerLabel: credential.label,
+        }))
+    );
+  });
   const shared = connectedModelChoices(
     credentials.filter((credential) => !several(credential)),
     catalog,

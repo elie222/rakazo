@@ -329,7 +329,6 @@ export default function BotSettingsScreen() {
   }, [focus]);
 
   function selectModel(key: string) {
-    if (key === pickerValue) return;
     const pick = pickBotModelChoice(key, {
       modelKey: selectedModelKey,
       thinkingLevel,
