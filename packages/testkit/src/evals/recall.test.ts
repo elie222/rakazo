@@ -223,8 +223,17 @@ describe("recall outcome grading", () => {
     expect(input.evidence.record).toContain("user: Your screenshots of docs");
     expect(input.evidence.record).toContain("Shell ×2 (succeeded)");
     expect(input.evidence.record).toMatch(/bot: .*\n(.|\n)*Done\. Pages in my browser/);
-    expect(input.evidence.checks).toMatch(/returned:\n[a-p]{32}/);
+    expect(input.evidence.checks).toMatch(/returned \(exit 0\):\n[a-p]{32}/);
     expect(input.evidence.checks).toContain("search_history");
+    // A silent failure is told apart from a silent success by its exit code.
+    const prefs = {
+      ...shell,
+      args: { command: "grep pbn ~/.config/chromium/Default/Preferences" },
+    };
+    const plain = scenario("tool-steps-replayed-absent").observe!(
+      evidence([search, prefs], "reply"),
+    ).overclaim as { evidence: Record<string, string> };
+    expect(plain.evidence.checks).toContain("returned (exit 1):\n(no output)");
   });
 
   it("observes, rather than grades, a reply that copies the replayed marker", () => {
