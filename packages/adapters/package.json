@@ -61,7 +61,7 @@
     "jsonrepair": "3.15.0",
     "koffi": "3.3.6",
     "mailauth": "8.0.4",
-    "mppx": "0.13.4",
+    "mppx": "0.17.5",
     "nodemailer": "10.3.1",
     "novita-sandbox": "2.1.2",
     "pg": "8.23.1",
