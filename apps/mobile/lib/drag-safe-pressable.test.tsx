@@ -53,6 +53,14 @@ it("still presses when activated without a touch, as by VoiceOver", () => {
   const { props, root } = render(onPress);
   props.onPress?.(at(0, 0));
   expect(onPress).toHaveBeenCalledTimes(1);
+  // Even after a drag that was cancelled rather than released.
+  act(() => {
+    props.onPressIn?.(at(100, 200));
+    props.onTouchMove?.(at(100, 400));
+    props.onTouchCancel?.(at(100, 400));
+    props.onPress?.(at(0, 0));
+  });
+  expect(onPress).toHaveBeenCalledTimes(2);
   act(() => root.unmount());
 });
 

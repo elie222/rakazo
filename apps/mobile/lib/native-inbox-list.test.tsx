@@ -260,3 +260,24 @@ it("counts every chat as below while only the rows above the chats are on screen
   expect(swift.overlay?.pills.below?.index).toBe(1);
   act(() => root.unmount());
 });
+
+it("keeps the same native list when the pills hide, as during a refresh", () => {
+  const props = {
+    data: [{ key: "bot:1", swipe: true }],
+    keyExtractor: (item: Item) => item.key,
+    renderItem: ({ item }: { item: Item }) => <Row item={item} />,
+    isNativeRow: (item: Item) => item.swipe,
+    gutters: { left: 0, right: 0 },
+    column: { left: 0, right: 0 },
+    avatarViewport: { update: vi.fn(), subscribe: () => () => {}, has: () => false } as never,
+    onRefresh: async () => undefined,
+    signals: [{ unread: 0, attention: 0 }],
+  };
+  const root = createRoot(container);
+  act(() => root.render(<NativeInboxList<Item> {...props} showJumpPills />));
+  act(() => swift.geometry.at(-1)?.({ width: 362 }));
+  const host = container.querySelector('[data-ui="Host"]');
+  act(() => root.render(<NativeInboxList<Item> {...props} showJumpPills={false} />));
+  expect(container.querySelector('[data-ui="Host"]')).toBe(host);
+  act(() => root.unmount());
+});

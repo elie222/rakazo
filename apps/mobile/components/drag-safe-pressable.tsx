@@ -15,7 +15,13 @@ const ANYWHERE = { top: 100_000, bottom: 100_000, left: 100_000, right: 100_000 
  * Inside a native iOS list a scroll does not cancel a React Native press: the content moves with
  * the finger, so the release still lands on the row that was touched and would open it.
  */
-export function DragSafePressable({ onPressIn, onPress, onTouchMove, ...props }: PressableProps) {
+export function DragSafePressable({
+  onPressIn,
+  onPress,
+  onTouchMove,
+  onTouchCancel,
+  ...props
+}: PressableProps) {
   // Where the press started, and whether the finger has since gone further than a tap allows.
   const press = useRef<{ x: number; y: number; travelled: boolean } | null>(null);
   const beyondSlop = (event: GestureResponderEvent) => {
@@ -41,6 +47,11 @@ export function DragSafePressable({ onPressIn, onPress, onTouchMove, ...props }:
       onTouchMove={(event) => {
         if (press.current && beyondSlop(event)) press.current.travelled = true;
         onTouchMove?.(event);
+      }}
+      // A cancelled touch leaves nothing behind for a later activation without one (VoiceOver).
+      onTouchCancel={(event) => {
+        press.current = null;
+        onTouchCancel?.(event);
       }}
       onPress={
         onPress

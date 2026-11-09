@@ -194,26 +194,35 @@ export function NativeInboxList<Item>({
       )}
     </NativeInsetList>
   );
-  if (!showJumpPills || !canScrollNativeList) return list;
+  // The list keeps its place in the tree whether or not the pills show, so hiding them (as a
+  // refresh does) never rebuilds the native list.
   return (
     <View style={{ flex: 1 }}>
       {list}
-      {/* Centred over the inbox column. */}
-      <View
-        pointerEvents="box-none"
-        style={{ position: "absolute", top: 0, bottom: 0, left: column.left, right: column.right }}
-      >
-        <NativeJumpPills
-          keys={data.map(keyExtractor)}
-          signals={signals}
-          viewport={avatarViewport}
-          topInset={headerInset}
-          bottomInset={bottom}
-          onJump={(index) =>
-            void scrollNativeListToRow(findNodeHandle(hostRef.current), firstItemRow + index)
-          }
-        />
-      </View>
+      {showJumpPills && canScrollNativeList ? (
+        // Centred over the inbox column.
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: column.left,
+            right: column.right,
+          }}
+        >
+          <NativeJumpPills
+            keys={data.map(keyExtractor)}
+            signals={signals}
+            viewport={avatarViewport}
+            topInset={headerInset}
+            bottomInset={bottom}
+            onJump={(index) =>
+              void scrollNativeListToRow(findNodeHandle(hostRef.current), firstItemRow + index)
+            }
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
