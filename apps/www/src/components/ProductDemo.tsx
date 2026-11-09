@@ -1,4 +1,3 @@
-import { BOT_COLORS } from "@rakazo/contracts";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { DemoBot, DemoMessage, DemoRoutine, DemoRoutineRun, DemoScreen } from "../demo";
@@ -10,6 +9,7 @@ import { defaultTrigger, describeTrigger, displayRoutineWhen, parseWhen, resolve
 
 export type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
+const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
   "Every hour",
   "Every day",
@@ -708,7 +708,7 @@ export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; s
   }
 
   function startNewBot() {
-    const color = BOT_COLORS[bots.length % BOT_COLORS.length]!;
+    const color = BOT_COLORS[bots.length % BOT_COLORS.length] ?? "#3EC5A8";
     const bot: LiveBot = {
       id: `bot-${Date.now()}`,
       name: text("New bot"),
