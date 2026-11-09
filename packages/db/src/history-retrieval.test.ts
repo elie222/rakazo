@@ -447,6 +447,12 @@ describe("local history retrieval", () => {
       { query: "extension", scope: "my_chats" },
     );
     expect(allChats.note).toContain('scope "my_chats", kinds ["tool_work"] and no query');
+    // A search narrowed by date offers no hint that would take the bot outside that range.
+    mock.$queryRaw.mockReset().mockResolvedValue([]);
+    const dated = await searchHistory(prisma, scope, { query: "extension", after: "2026-01-01" });
+    expect(dated.note).toBe(
+      "No message matched these words, which does not show it never happened.",
+    );
   });
   it("does not say nothing matched when the scan stopped before the end", async () => {
     const { mock, prisma } = db();

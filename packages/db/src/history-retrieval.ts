@@ -462,10 +462,12 @@ export async function searchHistory(
   // An empty page says what it covered: nothing matched, or the scan has more to go.
   const coverageNote = capped ? CAPPED_NOTE : hasMore ? UNFINISHED_NOTE : NO_MATCH_NOTE;
   // Any empty keyword search, finished or not, can point at listing earlier tool work instead.
+  // A search narrowed by date or bot gets no hint: the listing it suggests would leave that range.
+  const narrowed = Boolean(input.before || input.after || input.botId);
   const note =
     page.length || browsing
       ? undefined
-      : (await hasToolWork(prisma, scope))
+      : !narrowed && (await hasToolWork(prisma, scope))
         ? `${coverageNote} ${toolWorkHint(myChats)}`
         : coverageNote;
   const nextBeforeSeq =
