@@ -37,6 +37,16 @@ overrides:
   body-parser@>=2 <2.4.0: 2.4.0
   follow-redirects@<1.16.2: 1.16.2
   ip-address@<10.7.1: 10.7.1
+  # Keeps react-native's optional Babel peer on Babel 7, so chat-ui and mobile share one copy.
+  "@react-native/codegen>@babel/core": 7.29.7
+
+# react-native-worklets' Babel plugin requires these without declaring them. Left to pnpm's
+# hidden hoist they resolve to Babel 8 from the web app and break the mobile bundle.
+packageExtensions:
+  react-native-worklets:
+    dependencies:
+      "@babel/generator": ^7.29.0
+      "@babel/traverse": ^7.29.0
 
 patchedDependencies:
   app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
