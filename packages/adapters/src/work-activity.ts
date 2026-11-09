@@ -45,13 +45,22 @@ export type WorkActivityPush = {
   at: number;
 };
 
-/** Delivers updates to one phone's live status card. */
+/** Delivers updates to one phone's live status card, and starts one on a phone that has none. */
 export interface WorkActivityPushProvider {
   send(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable">;
+  /** `token` is the phone's token for starting cards, not a card's. */
+  start(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable">;
 }
 
-/** Cards kept per user: one per phone they use. */
+/** Cards kept per user: one per phone they use. Phones that can start a card are capped alike. */
 const MAX_CARDS_PER_USER = 5;
+/**
+ * Work this new may be a message the phone just sent, which starts its own card and registers it
+ * a moment later; a phone is started a card only once that would have happened.
+ */
+const START_GRACE_MS = 10_000;
+/** iOS budgets cards started by push: a phone is started one at most this often. */
+const MIN_START_INTERVAL_MS = 60_000;
 /** The card's height fits this many rows; the count covers the rest. */
 export const WORK_ACTIVITY_ROWS = 4;
 const LINE_MAX_CHARS = 120;
@@ -80,6 +89,8 @@ export class WorkActivities {
   private readonly steps = new Map<string, { seq: number; line: string }>();
   /** Retries already scheduled per user since their last push went through. */
   private readonly retries = new Map<string, number>();
+  /** Users whose phones are due a card once the grace for new work passes. */
+  private readonly startsDue = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -144,6 +155,62 @@ export class WorkActivities {
     return true;
   }
 
+  /**
+   * Lets the server start a card on this phone when the user's bots get to work from elsewhere,
+   * for as long as `sessionId` lasts. `token` is the phone's token for starting cards.
+   */
+  async registerStarts(userId: string, sessionId: string, token: string): Promise<void> {
+    const tokenDigest = credentialDigest(token);
+    // Another account signed in on this phone before: its work no longer starts cards here.
+    await runAsSystem("drop a phone another account registered for live status cards", () =>
+      this.prisma.workActivityStartToken.deleteMany({
+        where: { tokenDigest, userId: { not: userId } },
+      }),
+    );
+    const { count } = await runAsSystem("refresh a phone registered for live status cards", () =>
+      this.prisma.workActivityStartToken.updateMany({
+        where: { tokenDigest, userId },
+        data: { sessionId, createdAt: new Date() },
+      }),
+    );
+    if (!count) {
+      const sealed = await this.encryption.put(
+        token,
+        {
+          operationId: "work-activity.register-starts",
+          traceId: "work-activity.register-starts",
+          spaceId: "",
+          userId,
+          signal: new AbortController().signal,
+        },
+        { recordId: startRecordId(tokenDigest) },
+      );
+      await runAsSystem("register a phone for live status cards", () =>
+        this.prisma.workActivityStartToken.upsert({
+          where: { tokenDigest },
+          create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
+          update: { userId, sessionId, createdAt: new Date() },
+        }),
+      );
+    }
+    const extra = await runAsSystem("find a user's oldest phones for live status cards", () =>
+      this.prisma.workActivityStartToken.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        skip: MAX_CARDS_PER_USER,
+        select: { tokenDigest: true },
+      }),
+    );
+    if (extra.length)
+      await runAsSystem("drop a user's oldest phones for live status cards", () =>
+        this.prisma.workActivityStartToken.deleteMany({
+          where: { tokenDigest: { in: extra.map((phone) => phone.tokenDigest) }, userId },
+        }),
+      );
+    // Work already going shows on this phone too.
+    this.userChanged(userId);
+  }
+
   /** A thread changed: update the cards of everyone with work in it, going or just ended. */
   threadChanged(threadId: string): void {
     this.throttle(`thread:${threadId}`, async () => {
@@ -166,14 +233,26 @@ export class WorkActivities {
 
   /** A session ended or was replaced: its cards end, or move to the session that replaced it. */
   async endSession(userId: string, sessionId: string, nextSessionId?: string): Promise<void> {
-    if (nextSessionId)
+    if (nextSessionId) {
       await runAsSystem("move live status cards to a replacement session", () =>
         this.prisma.workActivityToken.updateMany({
           where: { userId, sessionId },
           data: { sessionId: nextSessionId },
         }),
       );
-    else this.userChanged(userId);
+      await runAsSystem("move a phone's live status card starts to a replacement session", () =>
+        this.prisma.workActivityStartToken.updateMany({
+          where: { userId, sessionId },
+          data: { sessionId: nextSessionId },
+        }),
+      );
+      return;
+    }
+    // A signed-out phone is started no more cards.
+    await runAsSystem("stop starting live status cards for a session", () =>
+      this.prisma.workActivityStartToken.deleteMany({ where: { userId, sessionId } }),
+    );
+    this.userChanged(userId);
   }
 
   /** The account is being deleted: its cards end now, before their rows go with it. */
@@ -234,11 +313,16 @@ export class WorkActivities {
     const cards = await runAsSystem("load a user's live status cards", () =>
       this.prisma.workActivityToken.findMany({ where: { userId } }),
     );
-    if (!cards.length) return;
+    const phones = await runAsSystem("load a user's phones for live status cards", () =>
+      this.prisma.workActivityStartToken.findMany({ where: { userId } }),
+    );
+    if (!cards.length && !phones.length) return;
     const sessions = await runAsSystem("check the sessions behind a user's cards", () =>
       this.prisma.session.findMany({
         where: {
-          id: { in: [...new Set(cards.map((card) => card.sessionId))] },
+          id: {
+            in: [...new Set([...cards, ...phones].map((card) => card.sessionId))],
+          },
           userId,
           expiresAt: { gt: new Date() },
         },
@@ -246,7 +330,8 @@ export class WorkActivities {
       }),
     );
     const live = new Set(sessions.map((session) => session.id));
-    const state = await this.state(userId);
+    const { state, since, newest } = await this.work(userId);
+    const started = await this.startCards(userId, state, since, newest, at, cards, phones, live);
     // Keyed, so the stored digest reveals nothing about the chat content it stands for.
     const digest = createHmac("sha256", this.digestKey).update(JSON.stringify(state)).digest("hex");
     const retried = this.retries.get(userId) ?? 0;
@@ -281,6 +366,7 @@ export class WorkActivities {
         return result;
       }),
     );
+    results.push(...started);
     // Nothing else may change to send it again, so a push that did not go through is retried.
     if (!results.includes("unavailable") || retried >= MAX_RETRIES) {
       this.retries.delete(userId);
@@ -290,7 +376,80 @@ export class WorkActivities {
     setTimeout(() => this.userChanged(userId), RETRY_MS * 2 ** retried).unref?.();
   }
 
+  /**
+   * Starts a card on each of the user's signed-in phones that has none, once per stretch of work:
+   * a card the user dismissed stays gone until their bots are next at work.
+   */
+  private async startCards(
+    userId: string,
+    state: WorkActivityState,
+    since: Date | undefined,
+    newest: Date | undefined,
+    at: number,
+    cards: Array<{ sessionId: string }>,
+    phones: Array<{
+      tokenDigest: string;
+      sessionId: string;
+      ciphertext: string;
+      startedAt: Date | null;
+    }>,
+    live: Set<string>,
+  ): Promise<Array<"sent" | "invalid" | "unavailable">> {
+    if (!state.count || !since || !newest) return [];
+    const shown = new Set(cards.map((card) => card.sessionId));
+    const now = Date.now();
+    const due = phones.filter(
+      (phone) =>
+        live.has(phone.sessionId) &&
+        !shown.has(phone.sessionId) &&
+        (!phone.startedAt ||
+          (phone.startedAt < since && now - phone.startedAt.getTime() >= MIN_START_INTERVAL_MS)),
+    );
+    if (!due.length) return [];
+    const wait = newest.getTime() + START_GRACE_MS - now;
+    if (wait > 0) {
+      if (!this.startsDue.has(userId)) {
+        this.startsDue.add(userId);
+        setTimeout(() => {
+          this.startsDue.delete(userId);
+          this.userChanged(userId);
+        }, wait).unref?.();
+      }
+      return [];
+    }
+    return Promise.all(
+      due.map(async (phone) => {
+        const token = await this.encryption.load(
+          phone.ciphertext,
+          startRecordId(phone.tokenDigest),
+        );
+        const result = await this.provider.start(token, { state, ended: false, urgent: true, at });
+        if (result === "invalid")
+          await runAsSystem("forget a phone Apple no longer knows", () =>
+            this.prisma.workActivityStartToken.deleteMany({
+              where: { tokenDigest: phone.tokenDigest, userId },
+            }),
+          );
+        else if (result === "sent")
+          await runAsSystem("record a live status card start", () =>
+            this.prisma.workActivityStartToken.updateMany({
+              where: { tokenDigest: phone.tokenDigest, userId },
+              data: { startedAt: new Date(now) },
+            }),
+          );
+        return result;
+      }),
+    );
+  }
+
   private async state(userId: string): Promise<WorkActivityState> {
+    return (await this.work(userId)).state;
+  }
+
+  /** The user's work as the card shows it, and when its oldest and newest shown work began. */
+  private async work(
+    userId: string,
+  ): Promise<{ state: WorkActivityState; since?: Date; newest?: Date }> {
     const runs = await runAsSystem("read a user's work in progress", () =>
       this.prisma.run.findMany({
         where: { userId, status: { in: [...ACTIVE_RUN_STATUSES] } },
@@ -299,6 +458,7 @@ export class WorkActivities {
           id: true,
           status: true,
           trigger: true,
+          createdAt: true,
           spaceId: true,
           threadId: true,
           botId: true,
@@ -334,7 +494,13 @@ export class WorkActivities {
         }),
       ),
     );
-    return { count: shown.length, waiting: waiting.length, rows };
+    const started = shown.map((run) => run.createdAt.getTime());
+    return {
+      state: { count: shown.length, waiting: waiting.length, rows },
+      ...(started.length
+        ? { since: new Date(Math.min(...started)), newest: new Date(Math.max(...started)) }
+        : {}),
+    };
   }
 
   private async latestStep(runId: string): Promise<string> {
@@ -386,4 +552,8 @@ export class WorkActivities {
 
 function recordId(tokenDigest: string): string {
   return `work-activity:${tokenDigest}`;
+}
+
+function startRecordId(tokenDigest: string): string {
+  return `work-activity-start:${tokenDigest}`;
 }

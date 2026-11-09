@@ -11,6 +11,7 @@ type Run = {
   status: string;
   trigger: string;
   groupId?: string;
+  createdAt: Date;
 };
 type Card = {
   tokenDigest: string;
@@ -21,13 +22,23 @@ type Card = {
   lastWaiting: number;
 };
 
+type Phone = {
+  tokenDigest: string;
+  userId: string;
+  sessionId: string;
+  ciphertext: string;
+  startedAt: Date | null;
+};
+
 const TOKEN = "ab".repeat(32);
+const START_TOKEN = "cd".repeat(32);
 
 /** Just the reads and writes WorkActivities makes, kept in memory. Newer runs come later. */
 function fakeDatabase() {
   const runs: Run[] = [];
   const events: Array<{ runId: string; type: string; seq: number; payload: unknown }> = [];
   const cards = new Map<string, Card>();
+  const phones = new Map<string, Phone>();
   /** Sessions still signed in. */
   const sessions = new Set(["session-1", "session-2"]);
   const newestFirst = (list: Run[]) => [...list].reverse();
@@ -128,14 +139,70 @@ function fakeDatabase() {
         return { count };
       },
     },
+    workActivityStartToken: {
+      upsert: async (input: {
+        where: { tokenDigest: string };
+        create: Omit<Phone, "startedAt">;
+      }) => {
+        if (!phones.has(input.where.tokenDigest))
+          phones.set(input.where.tokenDigest, { startedAt: null, ...input.create });
+      },
+      findMany: async ({ where, skip = 0 }: { where: { userId: string }; skip?: number }) =>
+        [...phones.values()]
+          .filter((phone) => phone.userId === where.userId)
+          .reverse()
+          .slice(skip),
+      deleteMany: async ({
+        where,
+      }: {
+        where: {
+          tokenDigest?: string | { in: string[] };
+          userId: string | { not: string };
+          sessionId?: string;
+        };
+      }) => {
+        for (const [digest, phone] of phones) {
+          const digestMatches =
+            where.tokenDigest === undefined ||
+            (typeof where.tokenDigest === "string"
+              ? digest === where.tokenDigest
+              : where.tokenDigest.in.includes(digest));
+          const ownerMatches =
+            typeof where.userId === "string"
+              ? phone.userId === where.userId
+              : phone.userId !== where.userId.not;
+          const sessionMatches = !where.sessionId || phone.sessionId === where.sessionId;
+          if (digestMatches && ownerMatches && sessionMatches) phones.delete(digest);
+        }
+      },
+      updateMany: async (input: { where: Partial<Phone>; data: Partial<Phone> }) => {
+        let count = 0;
+        for (const phone of phones.values()) {
+          const matches = Object.entries(input.where).every(
+            ([key, value]) => phone[key as keyof Phone] === value,
+          );
+          if (matches) {
+            Object.assign(phone, input.data);
+            count += 1;
+          }
+        }
+        return { count };
+      },
+    },
   } as unknown as PrismaClient;
-  return { prisma, runs, events, cards, sessions };
+  return { prisma, runs, events, cards, phones, sessions };
 }
 
 function setup(reply: "sent" | "invalid" | "unavailable" = "sent", windowMs = 20) {
   const db = fakeDatabase();
   const send = vi.fn<WorkActivityPushProvider["send"]>().mockResolvedValue(reply);
-  const activities = new WorkActivities(db.prisma, "offline-activity-key", { send }, windowMs);
+  const start = vi.fn<WorkActivityPushProvider["start"]>().mockResolvedValue("sent");
+  const activities = new WorkActivities(
+    db.prisma,
+    "offline-activity-key",
+    { send, start },
+    windowMs,
+  );
   const run = (id: string, more: Partial<Run> = {}) =>
     db.runs.push({
       id,
@@ -144,10 +211,12 @@ function setup(reply: "sent" | "invalid" | "unavailable" = "sent", windowMs = 20
       botId: `bot-${id}`,
       status: "running",
       trigger: "message",
+      // Old enough that no phone is still about to register its own card for it.
+      createdAt: new Date(Date.now() - 60_000),
       ...more,
     });
   run("1", { threadId: "thread-1", botId: "bot-1" });
-  return { ...db, send, activities, run };
+  return { ...db, send, start, activities, run };
 }
 
 async function registered(reply?: "sent" | "invalid" | "unavailable", windowMs?: number) {
@@ -433,5 +502,95 @@ describe("live status card of the user's bots at work", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("started by push on a phone without one", () => {
+    it("starts one card per stretch of work on each signed-in phone that has none", async () => {
+      const { activities, phones, runs, run, start, send } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await activities.registerStarts("user-1", "session-2", "ef".repeat(32));
+      // The token is stored encrypted.
+      expect([...phones.values()][0]!.ciphertext).not.toContain(START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+      expect(start).toHaveBeenCalledWith(START_TOKEN, {
+        state: expect.objectContaining({ count: 1 }),
+        ended: false,
+        urgent: true,
+        at: expect.any(Number),
+      });
+      expect(send).not.toHaveBeenCalled();
+      // Until its card registers, or after the user dismissed it, the same work starts no other.
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(2);
+      // New work after a pause starts one again, though not sooner than iOS allows.
+      runs[0]!.status = "completed";
+      run("2", { createdAt: new Date(Date.now() - 20_000) });
+      for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 30_000);
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(2);
+      for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 120_000);
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(4);
+    });
+
+    it("leaves a phone that shows its own card, and waits for the one that just sent", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const { activities, run, runs, start } = setup();
+        runs.length = 0;
+        run("1", { createdAt: new Date() });
+        await activities.registerStarts("user-1", "session-1", START_TOKEN);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(start).not.toHaveBeenCalled();
+        // The phone that sent registers its own card in the meantime.
+        expect(await activities.register("user-1", "session-1", TOKEN)).toBe(true);
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("starts the card once the grace for a just-sent message passes", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const { activities, run, runs, start } = setup();
+        runs.length = 0;
+        run("1", { createdAt: new Date() });
+        await activities.registerStarts("user-1", "session-1", START_TOKEN);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(start).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("starts nothing on a signed-out phone, and forgets one Apple no longer knows", async () => {
+      const { activities, phones, sessions, start } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      phones.get([...phones.keys()][0]!)!.startedAt = null;
+      sessions.delete("session-1");
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledOnce();
+      await activities.endSession("user-1", "session-1");
+      expect(phones.size).toBe(0);
+
+      start.mockResolvedValue("invalid");
+      await activities.registerStarts("user-1", "session-2", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(phones.size).toBe(0));
+    });
+
+    it("moves to a replacement session and to the account signed in last", async () => {
+      const { activities, phones } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await activities.endSession("user-1", "session-1", "session-2");
+      expect([...phones.values()][0]).toMatchObject({ sessionId: "session-2" });
+      await activities.registerStarts("user-2", "session-2", START_TOKEN);
+      expect([...phones.values()]).toEqual([expect.objectContaining({ userId: "user-2" })]);
+    });
   });
 });

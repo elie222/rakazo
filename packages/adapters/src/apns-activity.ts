@@ -7,7 +7,7 @@ const UPDATE_LIFETIME_SECONDS = 5 * 60;
 /** iOS removes a Live Activity after 8 hours anyway. */
 const ACTIVITY_LIFETIME_SECONDS = 8 * 60 * 60;
 
-/** Updates and ends the iOS Live Activity the app starts for the user's bots at work. */
+/** Starts, updates and ends the iOS Live Activity for the user's bots at work. */
 export class ApnsActivityProvider implements WorkActivityPushProvider {
   private readonly client: ApnsClient;
   constructor(config: ApnsVoipConfig, transport?: ApnsTransport) {
@@ -34,6 +34,33 @@ export class ApnsActivityProvider implements WorkActivityPushProvider {
         },
       },
       "work_activity.push_failed",
+    );
+  }
+  start(token: string, push: WorkActivityPush): Promise<"sent" | "invalid" | "unavailable"> {
+    const first = push.state.rows[0];
+    return this.client.send(
+      token,
+      {
+        topic: `${this.client.config.bundleId}.push-type.liveactivity`,
+        pushType: "liveactivity",
+        priority: 10,
+        // Work outlasting an offline phone still shows once it is back; the next update catches up.
+        expiration: push.at + UPDATE_LIFETIME_SECONDS,
+        body: {
+          aps: {
+            timestamp: push.at,
+            event: "start",
+            "attributes-type": "WorkActivityAttributes",
+            attributes: {},
+            "content-state": push.state,
+            // Asks iOS for the started card's own token, which the app hands to the server.
+            "input-push-token": 1,
+            // iOS shows a card started by push only with an alert; no sound, as when the app starts one.
+            alert: { title: first?.title ?? "", body: first?.line ?? "" },
+          },
+        },
+      },
+      "work_activity.start_failed",
     );
   }
 }

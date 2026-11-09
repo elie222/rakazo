@@ -231,12 +231,16 @@ public class RakazoNotificationsModule: Module {
   private var observer: NSObjectProtocol?
   public func definition() -> ModuleDefinition {
     Name("RakazoNotifications")
-    Events("onIncomingCallChanged", "onWorkActivityToken")
+    Events("onIncomingCallChanged", "onWorkActivityToken", "onWorkActivityStartToken")
     OnCreate {
       if #available(iOS 18.0, *) {
         WorkActivities.shared.onToken = { [weak self] token in
           self?.sendEvent("onWorkActivityToken", ["token": token])
         }
+        WorkActivities.shared.onStartToken = { [weak self] token in
+          self?.sendEvent("onWorkActivityStartToken", ["token": token])
+        }
+        WorkActivities.shared.observe()
       }
     }
     OnStartObserving {
@@ -267,7 +271,10 @@ public class RakazoNotificationsModule: Module {
       }
     }.runOnQueue(.main)
     AsyncFunction("refreshWorkActivity") {
-      if #available(iOS 18.0, *) { WorkActivities.shared.refresh() }
+      if #available(iOS 18.0, *) {
+        WorkActivities.shared.refreshStartToken()
+        WorkActivities.shared.refresh()
+      }
     }.runOnQueue(.main)
     AsyncFunction("endWorkActivity") {
       if #available(iOS 18.0, *) { WorkActivities.shared.end() }
