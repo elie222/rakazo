@@ -164,6 +164,11 @@ describe("connected-apps eval graders", () => {
     expect(apps.mail!.call("search_threads", { query: "from:marta FY2027" }).ok).toBe(false);
     apps.mail!.call("search_threads", { query: "from:marta FY2027" });
     apps.files!.call("read_file", { file_id: `https://files.example.com/sheets/d/${budget}` });
+    // Marking Marta's email read is not a write the case cares about.
+    apps.mail!.call("modify_thread_labels", {
+      thread_id: mailThreadId("marta-budget"),
+      remove_labels: ["UNREAD"],
+    });
     expect(failing(c, evidence(apps))).toEqual([]);
 
     const gaveUp = world(c);
