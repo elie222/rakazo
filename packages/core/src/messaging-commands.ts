@@ -11,8 +11,7 @@ const STOP_WORDS = new Set([
   // German
   "STOPP",
   "STOPP JETZT",
-  // Spanish
-  "PARA",
+  // Spanish ("para" alone is too often just "for")
   "DETENTE",
   // Dutch
   "STOP NU",

@@ -1,4 +1,9 @@
-import { AiConsentBlocked, recognitionLocaleTag, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
+import {
+  AiConsentBlocked,
+  recognitionLocaleTag,
+  requestDeadline,
+  VOICE_RESPONSE_TIMEOUT_MS,
+} from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
@@ -115,22 +120,21 @@ export function useComposerDictation({
       setStatus("transcribing");
       // A tap while transcribing gives up on it, and so does a request that stalls.
       mine.finish = cancel;
-      const request = new AbortController();
-      const forward = () => request.abort();
-      mine.cancel.signal.addEventListener("abort", forward, { once: true });
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        request.abort();
-      }, VOICE_RESPONSE_TIMEOUT_MS);
+      const deadline = requestDeadline(
+        VOICE_RESPONSE_TIMEOUT_MS,
+        t("Could not transcribe that."),
+        mine.cancel.signal,
+      );
       let text = "";
       try {
-        text = clip ? await transcribeClip(clip, request.signal, requestContext) : "";
+        text = clip ? await transcribeClip(clip, deadline.signal, requestContext) : "";
       } catch (error) {
-        throw timedOut ? new Error(t("Could not transcribe that.")) : error;
+        // A stall surfaces as the deadline's own message; a cancel stays a cancel.
+        throw deadline.signal.aborted && !mine.cancel.signal.aborted
+          ? deadline.signal.reason
+          : error;
       } finally {
-        clearTimeout(timer);
-        mine.cancel.signal.removeEventListener("abort", forward);
+        deadline.dispose();
       }
       if (!end(mine) || requestContext.sessionGeneration !== currentSessionGeneration()) return;
       if (text.trim()) onWordsRef.current(text.trim(), true);

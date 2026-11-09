@@ -17,7 +17,7 @@ describe("parseMessagingCommand", () => {
       expect(parseMessagingCommand(text)).toBe("stop");
     for (const text of ["Stopp!", "detente", "Стоп", "停止。", "停下！", "przestań"])
       expect(parseMessagingCommand(text)).toBe("stop");
-    for (const text of ["stop it", "stopper", "don't stop", "/stop", "stop, now"])
+    for (const text of ["para", "¿Para?", "stop it", "stopper", "don't stop", "/stop", "stop, now"])
       expect(parseMessagingCommand(text)).toBeNull();
   });
 
