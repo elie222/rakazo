@@ -4608,3 +4608,57 @@ it.each(["read_history", "search_history", "board_tickets", "ticket_get"])(
     expect(f.effects[0]).toMatchObject({ kind: name, status: "intended" });
   },
 );
+
+it.each(["user", "webhook"])(
+  "trusts only exact image search URLs for follow-up reads in %s runs",
+  async (trigger) => {
+    const f = fixture({ builtin: true, trigger });
+    const found = image("follow-up");
+    const fetch = fixtureFetch([searchItem([found]), terminal]);
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      const { host } = hostFor(fetch, request);
+      const tool = toAgentTools(builtinAgentTools, host).find(
+        (entry) => entry.name === "image_search",
+      )!;
+      f.results.push(await tool.execute("image-call", { query: "harbor" }));
+      for (const [index, url] of [
+        found.source_website_url,
+        found.image_url,
+        `${found.source_website_url}?q=changed`,
+      ].entries()) {
+        f.results.push(await request.executeTool!("web_fetch", { url }, `fetch-${index}`));
+      }
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(f.fetchedUrls).toEqual([found.source_website_url, found.image_url]);
+    expect(isApprovalPausedResult(f.results[3])).toBe(trigger === "user");
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(trigger === "user" ? 1 : 0);
+    if (trigger === "webhook")
+      expect(f.results[3]).toMatchObject({ error: expect.stringContaining("cannot ask") });
+  },
+);
+
+it("keeps explicit fetch deny rules on exact image search URLs", async () => {
+  const f = fixture({
+    builtin: true,
+    rules: [{ effect: "deny", matchKind: "tool", matchValue: "web_fetch" }],
+  });
+  const found = image("denied-fetch");
+  f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+    const { host } = hostFor(fixtureFetch([searchItem([found]), terminal]), request);
+    const tool = toAgentTools(builtinAgentTools, host).find(
+      (entry) => entry.name === "image_search",
+    )!;
+    await tool.execute("image-call", { query: "harbor" });
+    f.results.push(
+      await request.executeTool!("web_fetch", { url: found.source_website_url }, "denied-fetch"),
+    );
+    yield { type: "done" as const, text: "Done" };
+  });
+  await f.run();
+  expect(f.fetchedUrls).toEqual([]);
+  expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked") });
+});

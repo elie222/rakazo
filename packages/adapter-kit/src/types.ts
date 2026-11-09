@@ -637,7 +637,7 @@ export interface AgentRunRequest {
     name: string,
     args: Record<string, unknown>,
     executionId: string,
-    run: (approvedArgs: Record<string, unknown>) => Promise<unknown>,
+    run: (approvedArgs: Record<string, unknown>) => Promise<ImageSearchResult>,
   ) => Promise<unknown>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;

@@ -1,5 +1,6 @@
 import type { AgentRunRequest, AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
@@ -160,7 +161,18 @@ async function dispatchTool(
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) return gate.result;
   const handler: ToolHandler = run
-    ? async (_ctx, call) => call.finish(await run(call.args))
+    ? async (ctx, call) => {
+        const found = await run(call.args);
+        if ("results" in found) {
+          for (const hit of found.results) {
+            for (const value of [hit.imageUrl, hit.sourceUrl]) {
+              const url = normalizedHttpUrl(value);
+              if (url) ctx.trust.searchResultUrls.add(url);
+            }
+          }
+        }
+        return call.finish(found);
+      }
     : toolHandler(gate.call.name);
   if (!gate.call.applied) return handler(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
