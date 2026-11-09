@@ -33,6 +33,8 @@ export function useThreadHeader({
   currentBotStatus,
   composingBots,
   onCleared,
+  autoSpeak,
+  onToggleAutoSpeak,
 }: {
   botId?: string;
   groupId?: string;
@@ -48,6 +50,10 @@ export function useThreadHeader({
   composingBots: string;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
   onCleared: () => void;
+  /** Whether the current bot reads its replies aloud; absent outside a one-to-one bot chat. */
+  autoSpeak?: boolean;
+  /** Toggles the current bot's auto-read; absent outside a one-to-one bot chat. */
+  onToggleAutoSpeak?: () => void;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -105,9 +111,12 @@ export function useThreadHeader({
         readOnly,
         t,
         color: tokens.foreground,
+        accentColor: tokens.accent,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
         onInvite: canInvite && botId ? openInvite : undefined,
+        autoSpeak,
+        onToggleAutoSpeak,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
@@ -126,6 +135,8 @@ export function useThreadHeader({
     t,
     tokens,
     colorScheme,
+    autoSpeak,
+    onToggleAutoSpeak,
   ]);
 
   async function restoreConversation() {

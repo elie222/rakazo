@@ -312,6 +312,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ),
   });
 
+  // Header auto-read toggle: flips this bot's autoSpeak and refreshes the roster so the
+  // header re-renders. A failed save leaves the toggle where it was.
+  const toggleAutoSpeak = useCallback(() => {
+    if (!botId || !currentBot || inGroup || readOnly) return;
+    const next = !currentBot.autoSpeak;
+    void rpc("bots/update", { botId, autoSpeak: next })
+      .then(() => refreshMentionBots())
+      .catch(() => undefined);
+  }, [botId, currentBot, inGroup, readOnly, refreshMentionBots]);
+
   useThreadHeader({
     botId,
     groupId,
@@ -324,6 +334,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     currentBotStatus,
     composingBots,
     onCleared: history.clear,
+    autoSpeak: !inGroup ? currentBot?.autoSpeak : undefined,
+    onToggleAutoSpeak: !inGroup && !readOnly && botId && currentBot ? toggleAutoSpeak : undefined,
   });
 
   useThreadFocus({
