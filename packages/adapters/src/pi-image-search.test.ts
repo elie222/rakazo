@@ -55,12 +55,16 @@ describe("Pi image search through the installed provider", () => {
     },
   );
 
-  it.each([false, true])(
-    "records scrubbed failure diagnostics without exposing them to the model, reservation: %s",
-    async (reservation) => {
+  it.each([
+    [false, "private-query-content"],
+    [true, "private-query-content"],
+    [false, "confidential-project photos for owner@example.com"],
+    [true, "confidential-project photos for owner@example.com"],
+  ])(
+    "records scrubbed failure diagnostics without exposing them to the model, reservation: %s, query: %s",
+    async (reservation, query) => {
       const sink = createTestSink();
       installLogger(createLogger({ service: "test", sinks: [sink] }));
-      const query = "private-query-content";
       const secret = "owner-private-value";
       const fetch = fixtureFetch([
         {
@@ -85,7 +89,8 @@ describe("Pi image search through the installed provider", () => {
       });
       expect(event?.error?.message).toContain("quota exhausted");
       const serialized = JSON.stringify(event);
-      for (const value of [query, secret, token]) expect(serialized).not.toContain(value);
+      for (const value of [query, secret, token, "confidential-project"])
+        expect(serialized).not.toContain(value);
     },
   );
 

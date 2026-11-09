@@ -92,12 +92,14 @@ export async function executeImageSearch(
       "provider.status": diagnostic.status,
       "failure.kind": diagnostic.kind ?? "unknown",
       error: sanitizedError(error, (text) =>
-        redactSecrets(redactSensitiveText(text), [
-          query,
-          ...(host.request.secrets ?? []),
-          target.apiKey ?? "",
-          target.credentials?.accessToken ?? "",
-        ]).slice(0, 2000),
+        redactSensitiveText(
+          redactSecrets(text, [
+            query,
+            ...(host.request.secrets ?? []),
+            target.apiKey ?? "",
+            target.credentials?.accessToken ?? "",
+          ]),
+        ).slice(0, 2000),
       ),
     });
     return { error: "Image search failed." };
