@@ -22,6 +22,7 @@ import {
   BYOK_TIERS,
   ByokTierSchema,
   ModelCreditAmountSchema,
+  RETIRED_MODEL_CREDIT_AMOUNTS,
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
@@ -198,7 +199,8 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createCreditCheckout(input: BillingCreditCheckoutRequest) {
-    if (!creditAmount(String(input.amountCents))) throw new Error("Invalid credit amount");
+    if (!ModelCreditAmountSchema.safeParse(input.amountCents).success)
+      throw new Error("Invalid credit amount");
     if (input.monthly) {
       await this.expireOpenCheckouts(input.customerId);
       // Credits include the own-key plan, which sync ends once credits start.
@@ -247,7 +249,8 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async setMonthlyCredits(customerId: string, amountCents: number) {
-    if (!creditAmount(String(amountCents))) throw new Error("Invalid credit amount");
+    if (!ModelCreditAmountSchema.safeParse(amountCents).success)
+      throw new Error("Invalid credit amount");
     const subscription = (await this.listSubscriptions(customerId)).find(
       (s) =>
         creditAmount(s.metadata?.rakazo_credit_cents) &&
@@ -1058,6 +1061,7 @@ function isByokPlan(subscription: StripeSubscription) {
 }
 
 function creditAmount(value: string | undefined): number | undefined {
-  const parsed = ModelCreditAmountSchema.safeParse(Number(value));
-  return parsed.success ? parsed.data : undefined;
+  const amount = Number(value);
+  if (ModelCreditAmountSchema.safeParse(amount).success) return amount;
+  return (RETIRED_MODEL_CREDIT_AMOUNTS as readonly number[]).includes(amount) ? amount : undefined;
 }
