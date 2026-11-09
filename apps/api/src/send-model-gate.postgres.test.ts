@@ -181,7 +181,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     expect((await send({ groupId: group.id, text: "@Alpha hello" })).status).toBe(200);
     await expectRefused(await send({ groupId: group.id, text: "@Beta hello" }));
     await expectRefused(await send({ groupId: group.id, text: "@everyone hello" }));
-    // A group "stop" is no stop, so a bot without a model still refuses it.
+    // A group "stop" with nothing working is no stop, so a bot without a model still refuses it.
     await expectRefused(
       await send({ groupId: group.id, text: "stop", mentions: [{ kind: "bot", id: beta.id }] }),
     );

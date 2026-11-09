@@ -886,6 +886,44 @@ export async function sendThreadMessage(
         replyQuote,
         clientNonce: input.clientNonce,
       });
+      // A bare "stop" while any member works is the Stop button, as in a bot's own chat.
+      const working =
+        !routineRuns.length && isStopMessage(input)
+          ? await tx.run.findFirst({
+              where: {
+                threadId: target.threadId,
+                botId: { in: memberBotIds },
+                status: { in: [...ACTIVE_RUN_STATUSES] },
+              },
+              select: { id: true, taskId: true, botId: true, status: true, userId: true },
+            })
+          : null;
+      if (working) {
+        await touchGroupUpdatedAt(tx, target.groupId);
+        const event = await appendEventInTransaction(tx, {
+          spaceId: actor.spaceId,
+          threadId: target.threadId,
+          botId: working.botId,
+          type: "thread.message.created",
+          payload: {
+            messageId: message.id,
+            seq: message.seq,
+            role: "user",
+            blocks,
+            author,
+            callId,
+            runIds: [],
+            replyToMessageId,
+            replyQuote,
+            replyPreview,
+          },
+        });
+        const stop = await cancelThreadRuns(actor, target, { botId: working.botId })(tx);
+        return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
+      }
+      if (input.noModel) {
+        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+      }
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
