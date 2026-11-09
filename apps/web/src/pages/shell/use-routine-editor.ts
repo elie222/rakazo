@@ -63,15 +63,25 @@ export function useRoutineEditor({
       return result.secret;
     });
   // A key on screen, new or read back, hides again after a while, as the Vault's values do.
-  const webhookHideTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(webhookHideTimer.current), []);
+  // Each bot has its own timer, so a late result for one bot never cancels another's.
+  const webhookHideTimers = useRef(new Map<string, number>());
+  useEffect(() => {
+    const timers = webhookHideTimers.current;
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer);
+    };
+  }, []);
   function showWebhookSecret(botId: string, secret: string) {
     setRevealedWebhookSecrets((current) => ({ ...current, [botId]: secret }));
-    window.clearTimeout(webhookHideTimer.current);
-    webhookHideTimer.current = window.setTimeout(() => hideWebhookSecret(botId, secret), REVEAL_MS);
+    window.clearTimeout(webhookHideTimers.current.get(botId));
+    webhookHideTimers.current.set(
+      botId,
+      window.setTimeout(() => hideWebhookSecret(botId, secret), REVEAL_MS),
+    );
   }
   function hideWebhookSecret(botId: string, secret?: string) {
-    window.clearTimeout(webhookHideTimer.current);
+    window.clearTimeout(webhookHideTimers.current.get(botId));
+    webhookHideTimers.current.delete(botId);
     setRevealedWebhookSecrets((current) => {
       if (!(botId in current) || (secret !== undefined && current[botId] !== secret))
         return current;
