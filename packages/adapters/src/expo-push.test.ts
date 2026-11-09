@@ -323,7 +323,9 @@ describe("expo push", () => {
     await expect(loadPushToken(tokens, "user-1")).resolves.toBe("ExponentPushToken[test]");
   });
 
-  it("throws when Expo rejects the request", async () => {
+  it("throws when Expo rejects the request, leaving the report to the caller", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     const tokens = new MemoryPushTokenStore();
     await tokens.save("user-1", "ExponentPushToken[test]");
     vi.stubGlobal(
@@ -337,6 +339,7 @@ describe("expo push", () => {
         notifyContext,
       ),
     ).rejects.toThrow("boom");
+    expect(sink.events).toEqual([]);
   });
 
   it("rejects and cancels a declared oversized response", async () => {
@@ -920,4 +923,68 @@ it("uses data-only delivery only for Android builds that registered sender suppo
     sender: { botId: "bot", name: "Marketing" },
   });
   expect(request).not.toHaveProperty("priority");
+});
+
+it("carries the larger avatar only to devices without Android's 96px limit", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[iphone]");
+  const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  await new ExpoPushProvider(tokens).send(
+    {
+      kind: "completion",
+      title: "Marketing",
+      body: "Draft ready",
+      botId: "bot",
+      threadId: "thread",
+      sender: { botId: "bot", name: "Marketing", avatar: "small", avatarLarge: "large" },
+    },
+    notifyContext,
+  );
+  const request = JSON.parse(
+    String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+  );
+  expect(request.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "large" });
+
+  const androidTokens = new MemoryPushTokenStore();
+  await androidTokens.save("user-2", "ExponentPushToken[droid]", "", "android_sender");
+  const androidFetch = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+  fetchMock.mockImplementation(androidFetch);
+  await new ExpoPushProvider(androidTokens).send(
+    {
+      kind: "completion",
+      title: "Marketing",
+      body: "Draft ready",
+      botId: "bot",
+      threadId: "thread",
+      sender: { botId: "bot", name: "Marketing", avatar: "small", avatarLarge: "large" },
+    },
+    { ...notifyContext, userId: "user-2" },
+  );
+  const androidRequest = JSON.parse(
+    String((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body),
+  );
+  expect(androidRequest.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "small" });
+});
+
+it("falls back to the small avatar when no larger one fit the payload", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-3", "ExponentPushToken[iphone]");
+  const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  await new ExpoPushProvider(tokens).send(
+    {
+      kind: "completion",
+      title: "Marketing",
+      body: "Draft ready",
+      botId: "bot",
+      threadId: "thread",
+      sender: { botId: "bot", name: "Marketing", avatar: "small" },
+    },
+    { ...notifyContext, userId: "user-3" },
+  );
+  const request = JSON.parse(
+    String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+  );
+  expect(request.data.sender).toEqual({ botId: "bot", name: "Marketing", avatar: "small" });
 });

@@ -34,7 +34,8 @@
     "@rakazo/page-kit": "workspace:*",
     "fflate": "0.8.3",
     "hono": "4.13.16",
-    "mermaid": "11.17.2"
+    "mermaid": "11.17.2",
+    "tsx": "4.23.15"
   },
   "devDependencies": {
     "typescript": "7.0.2",

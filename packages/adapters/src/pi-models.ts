@@ -60,6 +60,7 @@ export type PiCatalogEntry = {
  * without one preselects its first offered model, so set one where that model is a poor start.
  */
 const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
+  "cloudflare-workers-ai": "@cf/openai/gpt-oss-20b",
   "openai-codex": "gpt-6-luna",
   openai: "gpt-6-luna",
   openrouter: "anthropic/claude-haiku-5.5",

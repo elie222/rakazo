@@ -547,9 +547,17 @@ msgstr "**목요일**\n"
 msgid "/ month"
 msgstr "/ 월"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1시간"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "스페이스 1개"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3시간"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "{0} 작업 메뉴"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name} 작업"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "취소됨"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "취소된 체험판에는 컴퓨터 시간이 없습니다."
 
@@ -2239,6 +2249,10 @@ msgstr "스페이스를 만들 수 없습니다"
 msgid "Could not create the bot"
 msgstr "Bot을 만들지 못했습니다"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "웹훅 키를 만들지 못했습니다"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Bot을 만들지 못했습니다."
@@ -2543,6 +2557,7 @@ msgstr "루틴을 실행할 수 없습니다"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "저장하지 못했습니다."
@@ -2936,10 +2951,7 @@ msgid "Delete \"{0}\"?"
 msgstr "\"{0}\"을(를) 삭제할까요?"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "{0} 삭제"
 
@@ -4769,6 +4781,10 @@ msgstr "다음 페이지"
 msgid "Next settings sections"
 msgstr "다음 설정 섹션"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "다음 주"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "검색 결과가 없습니다."
@@ -5006,6 +5022,10 @@ msgstr "{codeHost}에서 보낸 코드만 입력하세요."
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "나만"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "봇을 만든 사람만 웹훅 키를 설정할 수 있습니다."
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5755,6 +5775,7 @@ msgid "Rename section"
 msgstr "섹션 이름 바꾸기"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "플랜 갱신"
 
@@ -5870,6 +5891,10 @@ msgstr "다시 시작하여 업데이트"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "복원"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "{name} 복원"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6511,6 +6536,14 @@ msgstr "Slack이 활성화되지 않음"
 msgid "Slide up to lock"
 msgstr "위로 밀어 잠그기"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "스누즈"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "스누즈됨"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6612,6 +6645,7 @@ msgid "Start plan"
 msgstr "요금제 시작"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "지금 요금제 시작"
 
@@ -7042,6 +7076,10 @@ msgstr "이 모델의 컨텍스트 창이 너무 작습니다. 다른 모델을 
 msgid "This month"
 msgstr "이번 달"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "이번 달 컴퓨터 시간을 모두 사용했습니다."
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "이 페이지를 표시할 수 없습니다."
@@ -7159,6 +7197,10 @@ msgstr "사이드바 표시/숨기기"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "토큰"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "내일"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7306,6 +7348,16 @@ msgstr "고정 해제"
 msgid "Unread"
 msgstr "읽지 않음"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "스누즈 해제"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "{0} 스누즈 해제"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7364,6 +7416,7 @@ msgstr "팀 컴퓨터 업데이트 중"
 msgid "Updating…"
 msgstr "업데이트 중…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7685,6 +7738,10 @@ msgstr "이 페이지를 열 수 있는 사람"
 msgid "Who can start it"
 msgstr "시작할 수 있는 사람"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "다시 표시됨"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "하지 않음"
@@ -7845,6 +7902,10 @@ msgstr "체험이 종료되고 오늘 카드로 {price}이(가) 결제됩니다.
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "체험이 종료되고 오늘 카드로 결제됩니다."
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "체험판 컴퓨터 시간을 모두 사용했습니다."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

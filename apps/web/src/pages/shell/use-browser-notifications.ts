@@ -21,6 +21,8 @@ type ChatAlertOptions = {
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
+  /** The signed-in person, whose own messages never notify them. */
+  meId: string | undefined;
 };
 
 // A click must not reach a shell that has gone, so the shell closes what it showed.
@@ -45,8 +47,10 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat }: ChatAlertOptions,
+  { rpc, activeBotId, activeGroupId, openChat, meId }: ChatAlertOptions,
 ) {
+  const meIdRef = useRef(meId);
+  meIdRef.current = meId;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
   const openChatRef = useRef(openChat);
   openChatRef.current = openChat;
@@ -178,6 +182,7 @@ export function useBrowserNotifications(
         windowFocused: document.hasFocus(),
         permission: "granted",
         notifiedEventIds: notifiedBrowserEvents.current,
+        meId: meIdRef.current,
       });
       if (!eligible || !enabled) return;
       const pending = {

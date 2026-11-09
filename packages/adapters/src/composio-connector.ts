@@ -37,6 +37,17 @@ export type ComposioClient = {
   create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession>;
   sessions: { use(sessionId: string): Promise<ComposioSession> };
   connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
+  toolkits: {
+    get(query: {
+      limit?: number;
+    }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
+  };
+  authConfigs: {
+    list(query: { limit?: number; cursor?: string }): Promise<{
+      items: Array<{ toolkit: { slug: string }; status: string }>;
+      nextCursor: string | null;
+    }>;
+  };
 };
 
 /** Account states the user can only leave by reconnecting. */
@@ -119,6 +130,14 @@ export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
   listConnectedSlugs(userId: string): Promise<string[]>;
+}
+
+type ToolkitConnection = Awaited<ReturnType<ComposioSession["toolkits"]>>["items"][number];
+
+function activeSlugs(toolkits: ToolkitConnection[]): string[] {
+  return toolkits
+    .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
+    .map((toolkit) => toolkit.slug);
 }
 
 function composioSlugKey(slug: string): string {
@@ -347,13 +366,15 @@ export function planLiveConnectionSync(
 export class ComposioConnector implements ComposioProvider {
   private client: ComposioClient | undefined;
   private readonly apiKey: string | undefined;
-  /** An injected client has its own catalog, so it must not share the process-wide cache. */
+  /** Only the keyless default connector shares the process-wide directory cache. */
   private readonly directoryCache: typeof composioToolkitDirectory;
 
   constructor(options: { apiKey?: string; client?: ComposioClient } = {}) {
     this.apiKey = options.apiKey;
     this.client = options.client;
-    this.directoryCache = options.client ? createToolkitDirectoryCache() : composioToolkitDirectory;
+    // The directory records which apps this project can sign in to, so each key needs its own.
+    this.directoryCache =
+      options.client || options.apiKey ? createToolkitDirectoryCache() : composioToolkitDirectory;
   }
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
@@ -466,13 +487,16 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
-    const [directory, connected] = await Promise.all([
+    const [directory, toolkits] = await Promise.all([
       this.directory(),
-      this.listConnectedSlugs(context.userId),
+      this.connectedToolkits(context.userId),
     ]);
-    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "").map(
-      (item) => ({ ...item, connectorId: "composio" }),
-    );
+    // An expired account keeps its app listed so the user can still reconnect or remove it.
+    const withAccount = toolkits.map((toolkit) => toolkit.slug);
+    return filterCatalog(
+      mergeCatalogWithConnected(directory, activeSlugs(toolkits), withAccount),
+      query ?? "",
+    ).map((item) => ({ ...item, connectorId: "composio" }));
   }
 
   async warmDirectory(): Promise<void> {
@@ -499,23 +523,61 @@ export class ComposioConnector implements ComposioProvider {
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
     const session = await this.sessionFor("__rakazo_catalog__");
-    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
+    const [toolkits, needsSetup] = await Promise.all([
+      collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
+      // Without this lookup every app stays listed, as before.
+      this.toolkitsNeedingSignInSetup().catch((error: unknown) => {
+        getLogger().warn("composio sign-in setup lookup failed", {
+          error: sanitizeIntegrationError(error),
+        });
+        return new Set<string>();
+      }),
+    ]);
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
       name: toolkit.name,
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
+      ...(!toolkit.isNoAuth && needsSetup.has(composioSlugKey(toolkit.slug))
+        ? { needsSignInSetup: true }
+        : {}),
     }));
   }
 
-  async listConnectedSlugs(userId: string): Promise<string[]> {
-    const session = await this.sessionFor(userId);
-    const connected = await collectPages((cursor) =>
-      session.toolkits({ isConnected: true, limit: 50, cursor }),
+  /**
+   * Apps Composio has no managed sign-in for (Shopify, Twitter) connect only
+   * once this project has its own auth config for them; until then hide them.
+   */
+  private async toolkitsNeedingSignInSetup(): Promise<Set<string>> {
+    const composio = await this.sdk();
+    const [toolkits, authConfigs] = await Promise.all([
+      composio.toolkits.get({ limit: 1000 }),
+      collectPages(async (cursor) => {
+        const page = await composio.authConfigs.list({ limit: 100, cursor });
+        return { items: page.items, cursor: page.nextCursor ?? undefined };
+      }),
+    ]);
+    const configured = new Set(
+      authConfigs
+        .filter((config) => config.status === "ENABLED")
+        .map((config) => composioSlugKey(config.toolkit.slug)),
     );
-    return connected
-      .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
-      .map((toolkit) => toolkit.slug);
+    return new Set(
+      toolkits
+        // A missing field is unknown, not "no managed sign-in".
+        .filter((toolkit) => !toolkit.noAuth && toolkit.composioManagedAuthSchemes?.length === 0)
+        .map((toolkit) => composioSlugKey(toolkit.slug))
+        .filter((slug) => !configured.has(slug)),
+    );
+  }
+
+  async listConnectedSlugs(userId: string): Promise<string[]> {
+    return activeSlugs(await this.connectedToolkits(userId));
+  }
+
+  private async connectedToolkits(userId: string): Promise<ToolkitConnection[]> {
+    const session = await this.sessionFor(userId);
+    return collectPages((cursor) => session.toolkits({ isConnected: true, limit: 50, cursor }));
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {

@@ -85,7 +85,7 @@ function isBlockedHostname(hostname: string): boolean {
 export type OpenAiCompatibleUrlPolicy = { allowPublic?: boolean; allowPrivate?: boolean };
 
 export const PRIVATE_MODEL_ENDPOINT_MESSAGE =
-  "Private model endpoints require operator authorization.";
+  "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
 
 export function assertAllowedOpenAiCompatibleUrl(
   raw: string,

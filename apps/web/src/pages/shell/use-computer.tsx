@@ -27,6 +27,7 @@ import {
   loadComputerScreen,
   probeScreen,
   probeScreenStatus,
+  proxiedScreenCapability,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
   sameEmbeddedComputerScreen,
   screenFrameError,
@@ -47,6 +48,8 @@ import { errorText } from "../../lib/user-error";
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
 const COMPUTER_CACHE_LIMIT = 20;
+// A remembered view shown on release must outlive the switch; an older one is read again.
+const VIEW_REUSE_MIN_REMAINING_MS = 60_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
 
@@ -111,6 +114,47 @@ export function useComputerState({
   const screenReconnects = useRef(createScreenReconnects());
   const screenReconnect = () => screenReconnects.current.for(computerBotIdRef.current ?? "");
   const [screenFrameKey, setScreenFrameKey] = useState(0);
+  // A new screen of the same bot loads in a new frame while the frame it replaces stays on top,
+  // so taking or releasing control never blanks the screen. The held frame goes once the new one
+  // reports back.
+  const [screenGeneration, setScreenGeneration] = useState(0);
+  const [heldScreen, setHeldScreen] = useState<{ url: string; key: string } | null>(null);
+  const [shownScreen, setShownScreen] = useState<{ botId?: string; url: string | null }>({
+    url: null,
+  });
+  const frameBotId = computerBotId ?? activeId;
+  if (shownScreen.url !== screenUrl || shownScreen.botId !== frameBotId) {
+    const before = embeddableScreenUrl(shownScreen.url);
+    const after = embeddableScreenUrl(screenUrl);
+    const replaced =
+      Boolean(screenFrame) &&
+      shownScreen.botId === frameBotId &&
+      before !== after &&
+      proxiedScreenCapability(before) !== null &&
+      proxiedScreenCapability(after) !== null;
+    // A frame that never connected shows nothing, so an earlier held frame stays instead.
+    setHeldScreen(
+      replaced
+        ? (heldScreen ?? { url: before!, key: `${screenFrameKey}:${screenGeneration}` })
+        : null,
+    );
+    if (replaced) setScreenGeneration((generation) => generation + 1);
+    setShownScreen({ botId: frameBotId, url: screenUrl });
+  }
+  useEffect(() => {
+    if (!heldScreen) return;
+    if (screenLoadError) {
+      setHeldScreen(null);
+      return;
+    }
+    const timer = setTimeout(() => setHeldScreen(null), SCREEN_FRAME_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [heldScreen, screenLoadError]);
+  useEffect(() => {
+    setHeldScreen(null);
+  }, [computerOpen, panel]);
+  // Each bot's last read-only screen, which a release shows at once instead of after its call.
+  const viewScreenUrls = useRef(new Map<string, string>());
   // The Wuying URL a mounted frame signed in with, until its session ends. Reads keep it rather
   // than replace it, since each fresh login code signs the frame's session out.
   const liveWuyingUrl = useRef<string | null>(null);
@@ -166,6 +210,9 @@ export function useComputerState({
       if (event.source !== screenFrame.contentWindow) return;
       const message = screenFrameMessage(event.data);
       if (!message) return;
+      if (message.rakazoScreen !== "loading" && message.rakazoScreen !== "connecting") {
+        setHeldScreen(null);
+      }
       if (screenFrameStarted(message)) screenFrameReported.current = true;
       if (message.rakazoScreen === "connected") screenConnected = true;
       else if (message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected")
@@ -403,9 +450,21 @@ export function useComputerState({
         }
         // A Wuying login code works once, so a cached one could only sign in as a spent code.
         cacheComputerFor(id, { screenUrl: screen.url?.startsWith("wuying:") ? null : screen.url });
+        if (proxiedScreenCapability(screen.url)?.policy === "view") {
+          viewScreenUrls.current.set(id, screen.url!);
+        }
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
+  }
+
+  /** The bot's last read-only screen, while its capability still has time left. */
+  function viewScreenUrlFor(botId: string) {
+    const url = viewScreenUrls.current.get(botId) ?? null;
+    const capability = proxiedScreenCapability(url);
+    return capability && capability.expiresAt - Date.now() > VIEW_REUSE_MIN_REMAINING_MS
+      ? url
+      : null;
   }
 
   /** A retry the user pressed starts the visible screen's reconnects over. */
@@ -443,13 +502,15 @@ export function useComputerState({
     // A fresh Wuying code changes only the URL fragment, which would not reload the frame.
     screenFrameKey: screenUrl?.startsWith("wuying:")
       ? `${screenFrameKey}:${screenUrl}`
-      : String(screenFrameKey),
+      : `${screenFrameKey}:${screenGeneration}`,
+    heldScreen,
     screenLoadError,
     setScreenLoadError,
     screenAwaitsRetry,
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    viewScreenUrlFor,
   };
 }
 
@@ -514,6 +575,7 @@ export function useComputerControls({
     resetScreenReconnect,
     computerVisible,
     refreshComputerScreen,
+    viewScreenUrlFor,
   } = state;
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
@@ -746,6 +808,15 @@ export function useComputerControls({
   async function releaseComputer(reason?: ComputerReleaseReason) {
     const botId = computerBotIdRef.current ?? activeBotId.current;
     if (!botId) return;
+    // The read-only screen is safe to show at once; the release itself takes a while.
+    const view = computerBotIdRef.current === botId ? viewScreenUrlFor(botId) : null;
+    let controlScreen: string | null = null;
+    if (view) {
+      setScreenUrl((current) => {
+        controlScreen = current;
+        return view;
+      });
+    }
     try {
       await rpc.computer.release({ botId, reason });
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
@@ -755,6 +826,8 @@ export function useComputerControls({
         await refreshGroupThread(groupId).catch(() => undefined);
       }
     } catch {
+      // Control stays with this person, so their screen goes back to it.
+      if (view) setScreenUrl((current) => (current === view ? controlScreen : current));
       if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
       setComputerError(t`Could not continue`);
       setComputerErrorFromScreen(false);

@@ -34,6 +34,7 @@ import {
   shellQuote,
   stopBrowserProfileCommand,
   stopExtraScreenCommand,
+  TERMINAL_MENU_COMMAND,
   terminalCommand,
 } from "./desktop-runtime.js";
 
@@ -362,6 +363,70 @@ describe("shared Linux desktop lifecycle", () => {
     // A relaunch keeps the bot's tabs and session cookies, matching rakazo-browser.
     expect(lines[execAt]).toContain("--restore-last-session");
   });
+
+  it.skipIf(process.platform !== "linux").each([
+    ["readable", false],
+    ["readable", true],
+    ["missing", false],
+    // An unreadable image menu falls back instead of failing the screen. Root reads any mode.
+    ...(process.getuid?.() === 0 ? [] : [["unreadable", false] as const]),
+  ] as const)(
+    "writes a screen's menu from the image menu with its own browser launcher (imageMenu=%s, managed=%s)",
+    (imageMenu, managed) => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-menu-test-"));
+      roots.push(root);
+      if (imageMenu !== "missing") {
+        writeFileSync(
+          path.join(root, "image-menu"),
+          [
+            "[begin] (Rakazo)",
+            "  [exec] (Browser) {rakazo-browser}",
+            "  [exec] (Docs) {rakazo-browser https://example.test}",
+            "  [exec] (Files) {pcmanfm}",
+            "  [exec] (Other) {rakazo-browser-beta}",
+            "[end]",
+            "",
+          ].join("\n"),
+          { mode: imageMenu === "readable" ? 0o644 : 0 },
+        );
+      }
+      const script = (
+        managed
+          ? managedDesktopCommand("bot", "run:1", env, "token")
+          : ensureScreenCommand(0, "bot", "token", env)
+      )
+        .replaceAll("/etc/rakazo/fluxbox/menu", path.join(root, "image-menu"))
+        .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root);
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          // Stop right after the menu is written; the managed path runs it in a child bash.
+          ["command() { :; }", "xdpyinfo() { exit 0; }", "export -f command xdpyinfo", script].join(
+            "\n",
+          ),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const launcher = path.join(root, "browser-launch-20");
+      expect(readFileSync(path.join(root, "flux-20/.fluxbox/menu"), "utf8")).toBe(
+        imageMenu === "readable"
+          ? [
+              "[begin] (Rakazo)",
+              `  [exec] (Browser) {${launcher}}`,
+              `  [exec] (Docs) {${launcher} https://example.test}`,
+              "  [exec] (Files) {pcmanfm}",
+              "  [exec] (Other) {rakazo-browser-beta}",
+              "[end]",
+              "",
+            ].join("\n")
+          : `[begin] (Desktop)\n[exec] (Browser) {${launcher}}\n[exec] (Terminal) {${TERMINAL_MENU_COMMAND}}\n[end]\n`,
+      );
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",

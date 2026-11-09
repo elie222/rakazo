@@ -1,6 +1,7 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
+import { readBoundedText } from "./connector-http.js";
 
 /** Attribution is restricted to OpenRouter inference endpoints, never compatible/custom hosts. */
 export function openRouterInferenceFetch(fetcher: typeof fetch, userId?: string): typeof fetch {
@@ -29,6 +30,24 @@ export function openRouterInferenceFetch(fetcher: typeof fetch, userId?: string)
 }
 
 const MAX_USAGE_RESPONSE_BYTES = 64 * 1024;
+// The lookup accepts only OpenRouter's own generation ids; an upstream message id is a 400.
+const GENERATION_ID = /^gen-[0-9A-Za-z-]{1,124}$/;
+
+/** The provider's error message, never echoed request data, so a failed lookup is diagnosable. */
+async function errorDetail(response: Response): Promise<string> {
+  const { text } = await readBoundedText(response, 2048).catch(() => ({ text: "" }));
+  let detail = text;
+  try {
+    const message = JSON.parse(text)?.error?.message;
+    if (typeof message === "string") detail = message;
+  } catch {
+    /* Not JSON: keep the raw prefix. */
+  }
+  return detail
+    .replace(/[^\x20-\x7e]+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
 const tokens = z.number().int().nonnegative().nullable().optional();
 const generationSchema = z.object({
   data: z.object({
@@ -50,6 +69,7 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
     private readonly fetcher: typeof fetch = globalThis.fetch,
   ) {}
   async lookupUsage(providerRequestId: string): Promise<AgentUsage | null> {
+    if (!GENERATION_ID.test(providerRequestId)) return null;
     const response = await this.fetcher(
       `https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(providerRequestId)}`,
       {
@@ -59,7 +79,12 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
       },
     );
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`OpenRouter usage lookup failed (${response.status})`);
+    if (!response.ok) {
+      const detail = await errorDetail(response);
+      throw new Error(
+        `OpenRouter usage lookup failed (${response.status})${detail ? `: ${detail}` : ""}`,
+      );
+    }
     const { data } = generationSchema.parse(
       await readBoundedJsonResponse(response, MAX_USAGE_RESPONSE_BYTES),
     );

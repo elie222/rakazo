@@ -32,6 +32,7 @@ import type { ThreadListScroll } from "./thread-list-scroll";
 import { previewMessageText } from "./thread-message-text";
 import { prepareUnsentSends } from "./unsent-sends";
 import { errorText } from "./user-error";
+import { startWorkActivity } from "./work-activity";
 
 /**
  * What the chat sends: composer messages with their reply and attachments, retries, stopping
@@ -235,6 +236,14 @@ export function useThreadSend({
   function afterDelivered(attempt: SendAttempt) {
     const { initialBotTarget, botTarget, groupTarget, reroutedToGroup, plan } = attempt.payload;
     if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    const target = groupTarget ? { groupId: groupTarget } : botTarget ? { botId: botTarget } : null;
+    if (attempt.acceptedRun && target && attempt.spaceId) {
+      startWorkActivity({
+        title: mentionBotsRef.current?.find((bot) => bot.id === botTarget)?.name ?? "",
+        spaceId: attempt.spaceId,
+        target,
+      });
+    }
     const generation = currentSessionGeneration();
     const apiBase = currentApiBase();
     const spaceId = selectedSpaceId();

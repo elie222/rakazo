@@ -426,6 +426,18 @@ export function accountRoutes(ctx: RouterContext) {
         await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
+      followWorkActivity: authed.notifications.followWorkActivity.handler(
+        async ({ context, input }) => {
+          // The card ends with the session that registered it.
+          if (!context.sessionId) throw new ORPCError("UNAUTHORIZED");
+          const following = await deps.workActivities?.register(
+            context.actor.userId,
+            context.sessionId,
+            input.token,
+          );
+          return { following: following ?? false };
+        },
+      ),
     },
     voice: {
       catalog: authed.voice.catalog.handler(async () =>

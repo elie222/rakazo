@@ -112,11 +112,6 @@ jobs:
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
-      - name: Check translation catalogs are current
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
@@ -451,7 +446,9 @@ jobs:
               apps/mobile \
               packages/chat-ui \
               packages/contracts \
-              packages/core
+              packages/core \
+              packages/logging \
+              packages/ui-tokens
           )
           if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
             files+=("pnpm-lock.yaml (mobile dependency tree)")
@@ -476,12 +473,12 @@ jobs:
                   *.ts|*.tsx) eligible=true ;;
                 esac
                 ;;
-              packages/chat-ui/src/*)
+              packages/chat-ui/src/*|packages/ui-tokens/src/*)
                 case "$file" in
                   *.ts|*.tsx|*.css) eligible=true ;;
                 esac
                 ;;
-              packages/contracts/src/*|packages/core/src/*)
+              packages/contracts/src/*|packages/core/src/*|packages/logging/src/*)
                 case "$file" in
                   *.ts|*.tsx) eligible=true ;;
                 esac

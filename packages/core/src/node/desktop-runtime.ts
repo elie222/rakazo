@@ -561,7 +561,8 @@ function renderEnsureScreenCommand(
           // branch below does not run. Rewrite the menu anyway; fluxbox rereads that file,
           // so leave the display and window manager running.
           `mkdir -p ${fluxHome}/.fluxbox`,
-          `printf '[begin] (Desktop)\\n[exec] (Browser) {%s}\\n[exec] (Terminal) {%s}\\n[end]\\n' ${browserLauncherPath(layout.displayNumber)} ${shellQuote(TERMINAL_MENU_COMMAND)} >${fluxHome}/.fluxbox/menu`,
+          // Keep apps a derived image adds to its menu; its browser entries open this screen's browser.
+          `{ [ -r /etc/rakazo/fluxbox/menu ] && sed "s#{rakazo-browser\\([ }]\\)#{${browserLauncherPath(layout.displayNumber)}\\1#g" /etc/rakazo/fluxbox/menu || printf '[begin] (Desktop)\\n[exec] (Browser) {%s}\\n[exec] (Terminal) {%s}\\n[end]\\n' ${browserLauncherPath(layout.displayNumber)} ${shellQuote(TERMINAL_MENU_COMMAND)}; } >${fluxHome}/.fluxbox/menu`,
           `if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then`,
           `  mkdir -p /tmp/rakazo ${fluxHome}/.fluxbox /tmp/.X11-unix`,
           `  rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,

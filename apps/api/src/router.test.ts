@@ -5856,6 +5856,19 @@ describe("model credential persistence", () => {
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
   });
 
+  it("answers a provider sign-in outage as a retryable 503", async () => {
+    const { deps, handler } = persistDeps();
+    Object.assign(deps.oauthLogins, {
+      begin: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Device code request failed with status 503: {"error":{"code":503}}'),
+        ),
+    });
+    const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
+    expect(response.status).toBe(503);
+  });
+
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {
     const { deps, handler } = persistDeps();
     const message = "Sign-in session not found. Start sign-in again.";
@@ -7233,7 +7246,7 @@ describe("bot model auth on save", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -8290,7 +8303,7 @@ describe("openai-compatible enabled models", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -9162,6 +9175,7 @@ describe("threads.endCall", () => {
     const events: { type: string; payload: Record<string, unknown> }[] = [];
     const tx = {
       $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
       message: {
         findUnique: vi.fn().mockResolvedValue(null),

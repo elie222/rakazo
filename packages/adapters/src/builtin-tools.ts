@@ -820,6 +820,39 @@ export const builtinAgentTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
+    name: "service_search",
+    description:
+      "Find a paid data service by the job it does: map places, search results, work emails, people and company profiles, social posts, SEO and backlink data. Returns service ids, prices in USD per call, and params. Then call one with service_call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The job, for example 'find a work email'." },
+      },
+      required: ["query"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "service_call",
+    description:
+      "Call a service from service_search. Charges what the service bills, about its listed price. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        service: { type: "string", description: "Service id from service_search." },
+        query: { type: "object", description: "Params listed under query." },
+        body: { type: "object", description: "Params listed under body." },
+        max_cost_usd: {
+          type: "number",
+          description:
+            "Most this call may cost in USD, at most 2. Shown to the person approving it.",
+        },
+      },
+      required: ["service", "max_cost_usd"],
+    },
+    readOnly: false,
+  },
+  {
     name: "cloud_agent_launch",
     description:
       "Launch a remote cloud coding agent on a connected repository. Returns immediately with a tracking id and status; the agent link appears when launched. Opens a PR when openPr is true. Not the bot computer.",
@@ -1780,7 +1813,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target bot when bot_id is omitted.",
         },
-        message: { type: "string", description: "What to send." },
+        message: {
+          type: "string",
+          description: "What to send. Send code, logs or other long content as files instead.",
+        },
         files: {
           type: "array",
           items: { type: "string" },
@@ -1814,7 +1850,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target member when bot_id is omitted.",
         },
-        message: { type: "string", description: "What the receiving bot should do next." },
+        message: {
+          type: "string",
+          description:
+            "What the receiving bot should do next. Send code, logs or other long content as files instead.",
+        },
         files: {
           type: "array",
           items: { type: "string" },

@@ -547,9 +547,17 @@ msgstr "**木曜日**\n"
 msgid "/ month"
 msgstr "/ 月"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1時間"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1個のスペース"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3時間"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "{0}の操作"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name}の操作"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "キャンセル済み"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "キャンセルしたトライアルにはコンピューター時間がありません。"
 
@@ -2239,6 +2249,10 @@ msgstr "スペースを作成できませんでした"
 msgid "Could not create the bot"
 msgstr "ボットを作成できませんでした"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "Webhookキーを作成できませんでした"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "ボットを作成できませんでした"
@@ -2543,6 +2557,7 @@ msgstr "ルーティンを実行できませんでした"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "保存できませんでした"
@@ -2936,10 +2951,7 @@ msgid "Delete \"{0}\"?"
 msgstr "「{0}」を削除しますか？"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "{0}を削除"
 
@@ -4769,6 +4781,10 @@ msgstr "次のページ"
 msgid "Next settings sections"
 msgstr "次の設定セクション"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "来週"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "検索に一致するアプリはありません。"
@@ -5006,6 +5022,10 @@ msgstr "{codeHost}から送られたコードのみを入力してください�
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "自分のみ"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "Webhookキーを設定できるのはボットの作成者のみです。"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5755,6 +5775,7 @@ msgid "Rename section"
 msgstr "セクション名を変更"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "プランを更新"
 
@@ -5870,6 +5891,10 @@ msgstr "再起動してアップデート"
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "復元"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "{name}を復元"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6511,6 +6536,14 @@ msgstr "Slackが有効になっていません"
 msgid "Slide up to lock"
 msgstr "上にスライドしてロック"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "スヌーズ"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "スヌーズ中"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6612,6 +6645,7 @@ msgid "Start plan"
 msgstr "プランを開始"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "今すぐプランを開始"
 
@@ -7042,6 +7076,10 @@ msgstr "このモデルのコンテキストウィンドウは小さすぎます
 msgid "This month"
 msgstr "今月"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "今月のコンピューター時間を使い切りました。"
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "このページを表示できませんでした。"
@@ -7159,6 +7197,10 @@ msgstr "サイドバーの表示切り替え"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "トークン"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "明日"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7306,6 +7348,16 @@ msgstr "ピン留めを解除"
 msgid "Unread"
 msgstr "未読"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "スヌーズを解除"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "{0}のスヌーズを解除"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7364,6 +7416,7 @@ msgstr "チームのコンピューターを更新中"
 msgid "Updating…"
 msgstr "更新中…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7685,6 +7738,10 @@ msgstr "このページを開けるユーザー"
 msgid "Who can start it"
 msgstr "開始できる人"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "再表示"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "対応しない"
@@ -7845,6 +7902,10 @@ msgstr "トライアルが終了し、本日カードに{price}が請求され�
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "トライアルが終了し、本日カードに請求されます。"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "トライアルのコンピューター時間を使い切りました。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
