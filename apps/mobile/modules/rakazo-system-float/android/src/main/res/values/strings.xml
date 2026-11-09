@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">Computer screen is floating</string>
+  <string name="rakazo_system_float_text">Tap to return to Rakazo</string>
+  <string name="rakazo_system_float_channel">Computer screen</string>
+  <string name="rakazo_system_float_open_app">Open app</string>
+  <string name="rakazo_system_float_close">Close</string>
+  <string name="rakazo_system_float_resize">Resize</string>
+</resources>

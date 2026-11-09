@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">Экран компьютера плавает поверх</string>
+  <string name="rakazo_system_float_text">Нажмите, чтобы вернуться в Rakazo</string>
+  <string name="rakazo_system_float_channel">Экран компьютера</string>
+  <string name="rakazo_system_float_open_app">Открыть приложение</string>
+  <string name="rakazo_system_float_close">Закрыть</string>
+  <string name="rakazo_system_float_resize">Изменить размер</string>
+</resources>

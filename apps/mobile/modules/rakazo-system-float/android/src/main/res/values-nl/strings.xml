@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">Computerscherm zweeft</string>
+  <string name="rakazo_system_float_text">Tik om terug te keren naar Rakazo</string>
+  <string name="rakazo_system_float_channel">Computerscherm</string>
+  <string name="rakazo_system_float_open_app">App openen</string>
+  <string name="rakazo_system_float_close">Sluiten</string>
+  <string name="rakazo_system_float_resize">Formaat wijzigen</string>
+</resources>

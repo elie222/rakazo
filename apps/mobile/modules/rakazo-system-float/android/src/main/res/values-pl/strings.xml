@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">Ekran komputera unosi się nad aplikacjami</string>
+  <string name="rakazo_system_float_text">Dotknij, aby wrócić do Rakazo</string>
+  <string name="rakazo_system_float_channel">Ekran komputera</string>
+  <string name="rakazo_system_float_open_app">Otwórz aplikację</string>
+  <string name="rakazo_system_float_close">Zamknij</string>
+  <string name="rakazo_system_float_resize">Zmień rozmiar</string>
+</resources>

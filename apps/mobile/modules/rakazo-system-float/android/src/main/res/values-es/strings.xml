@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">La pantalla del ordenador está flotando</string>
+  <string name="rakazo_system_float_text">Toca para volver a Rakazo</string>
+  <string name="rakazo_system_float_channel">Pantalla del ordenador</string>
+  <string name="rakazo_system_float_open_app">Abrir app</string>
+  <string name="rakazo_system_float_close">Cerrar</string>
+  <string name="rakazo_system_float_resize">Cambiar tamaño</string>
+</resources>

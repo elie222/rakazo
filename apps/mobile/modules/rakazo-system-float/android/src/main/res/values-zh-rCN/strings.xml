@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">电脑画面正在悬浮</string>
+  <string name="rakazo_system_float_text">点按回到 Rakazo</string>
+  <string name="rakazo_system_float_channel">电脑画面</string>
+  <string name="rakazo_system_float_open_app">打开应用</string>
+  <string name="rakazo_system_float_close">关闭</string>
+  <string name="rakazo_system_float_resize">调整大小</string>
+</resources>

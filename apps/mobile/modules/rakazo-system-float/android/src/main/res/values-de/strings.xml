@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">Computerbildschirm schwebt</string>
+  <string name="rakazo_system_float_text">Tippen, um zu Rakazo zurückzukehren</string>
+  <string name="rakazo_system_float_channel">Computerbildschirm</string>
+  <string name="rakazo_system_float_open_app">App öffnen</string>
+  <string name="rakazo_system_float_close">Schließen</string>
+  <string name="rakazo_system_float_resize">Größe ändern</string>
+</resources>

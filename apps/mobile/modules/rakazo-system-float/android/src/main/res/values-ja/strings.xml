@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_system_float_title">コンピューター画面をフローティング表示中</string>
+  <string name="rakazo_system_float_text">タップして Rakazo に戻る</string>
+  <string name="rakazo_system_float_channel">コンピューター画面</string>
+  <string name="rakazo_system_float_open_app">アプリを開く</string>
+  <string name="rakazo_system_float_close">閉じる</string>
+  <string name="rakazo_system_float_resize">サイズ変更</string>
+</resources>
