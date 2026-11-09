@@ -62,9 +62,9 @@ export function RoutineList({
   onEdit: (routine: Routine) => void;
   onStop: () => void;
 }) {
-  // An empty list is only "no routines" once the bot's routines have loaded.
-  if (routines.length === 0 && !loaded) return null;
-  if (routines.length === 0) {
+  // An empty list is only "no routines" once the bot's routines have loaded. Until then, or
+  // when that read fails, the plain list still offers Create routine.
+  if (routines.length === 0 && loaded) {
     return (
       <Empty>
         <EmptyHeader>
