@@ -72,21 +72,52 @@ describe("scripted eval computer", () => {
   }
   const script = {
     shell: [
-      { match: /extension/i, output: "extension listed" },
+      { match: /\bls\b.*extensions/i, output: "midnight" },
+      { match: /\bls\b/, output: "ls: cannot access 'x': No such file or directory", exitCode: 2 },
       { match: /\bdf\b/, output: "18G free" },
     ],
     screen: { title: "Example - Browser", dark: true },
   };
 
-  it("answers every check a command makes and refuses commands the script does not cover", async () => {
+  it("answers each command in a list with the first check it matches", async () => {
     const sandbox = new EvalSandboxProvider(script);
-    expect(await run(sandbox, "ls ~/extensions; df -h")).toEqual([
-      { type: "stdout", data: "extension listed\n18G free\n" },
+    expect(await run(sandbox, 'echo "--- ext"; ls ~/extensions; df -h')).toEqual([
+      { type: "stdout", data: "--- ext\nmidnight\n18G free\n" },
       { type: "exit", code: 0 },
     ]);
     expect(sandbox.harnessIssues).toEqual([]);
+  });
+
+  it("keeps a failing check's exit code and stderr, and follows && and ||", async () => {
+    const sandbox = new EvalSandboxProvider(script);
+    expect(await run(sandbox, "ls ~/missing")).toEqual([
+      { type: "stderr", data: "ls: cannot access 'x': No such file or directory\n" },
+      { type: "exit", code: 2 },
+    ]);
+    expect(await run(sandbox, "ls ~/missing 2>/dev/null && df -h || echo none")).toEqual([
+      { type: "stdout", data: "none\n" },
+      { type: "exit", code: 0 },
+    ]);
+  });
+
+  it("refuses a command list when any command in it is not scripted", async () => {
+    const sandbox = new EvalSandboxProvider(script);
     expect(await run(sandbox, "uptime")).toContainEqual({ type: "exit", code: 127 });
+    expect(await run(sandbox, "cat /etc/os-release; df -h")).toContainEqual({
+      type: "exit",
+      code: 127,
+    });
     expect(sandbox.harnessIssues).toHaveLength(1);
+  });
+
+  it("answers the checks a loop mentions, in the order it mentions them", async () => {
+    const sandbox = new EvalSandboxProvider(script);
+    expect(
+      await run(sandbox, 'for d in a b; do df -h "$d"; done; ls ~/extensions 2>/dev/null'),
+    ).toEqual([
+      { type: "stdout", data: "18G free\nmidnight\n" },
+      { type: "exit", code: 0 },
+    ]);
   });
 
   it("shows the scripted browser window in screenshots", async () => {
