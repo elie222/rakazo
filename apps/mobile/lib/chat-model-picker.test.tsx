@@ -2,7 +2,7 @@
 
 import { notifyManager } from "@tanstack/react-query";
 import type { ComponentType, CSSProperties, ReactNode, Ref } from "react";
-import { act, createElement, useEffect, useImperativeHandle } from "react";
+import { act, createElement, useEffect, useImperativeHandle, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,8 @@ import BotModelScreen from "../app/bot-model";
 import BotSettingsScreen from "../app/bot-settings";
 import { ModelPickerList } from "../components/model-picker-list";
 import { ThreadComposerChips } from "../components/thread/thread-composer-chips";
-import type { MobileBot } from "./mobile-types";
+import type { ThreadModelSave } from "../components/thread/thread-model-picker-sheet";
+import type { MobileBot, MobileModel } from "./mobile-types";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
@@ -1974,11 +1975,20 @@ const threadBot: MobileBot = {
 
 async function renderChips() {
   mocks.computerPrimary = { provider: "openrouter", modelId: "vendor/model-2" };
-  await act(async () =>
-    root.render(
-      <ThreadComposerChips botId="bot-fixture" currentBot={threadBot} userId="user-fixture" />,
-    ),
-  );
+  function Harness() {
+    const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
+    return (
+      <ThreadComposerChips
+        botId="bot-fixture"
+        currentBot={threadBot}
+        userId="user-fixture"
+        catalog={catalog as MobileModel[]}
+        mainOverride={mainOverride}
+        onMainOverride={setMainOverride}
+      />
+    );
+  }
+  await act(async () => root.render(<Harness />));
 }
 
 function chipCard(label: string) {

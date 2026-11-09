@@ -236,6 +236,7 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   agentSkills: [skill],
   composerMentionTargets: [bot],
   composerPrompt: "Message…",
+  thinkingLevel: { state: null, save: async () => {} },
   replyQuote: null,
   attachmentIds: [],
   botId: "bot-1",

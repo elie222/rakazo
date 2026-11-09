@@ -35,38 +35,33 @@ export function ThreadComposerChips({
   botId,
   currentBot,
   userId,
+  catalog,
+  mainOverride,
+  onMainOverride,
 }: {
   botId?: string;
   currentBot?: MobileBot;
   userId: string;
+  /** The model catalog, fetched by the screen and shared with the composer. */
+  catalog: MobileModel[] | null;
+  /** The model saved from the sheet, until the chat's bot list catches up with it. */
+  mainOverride: ThreadModelSave | null;
+  onMainOverride: (choice: ThreadModelSave) => void;
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
   const router = useRouter();
-  const [catalog, setCatalog] = useState<MobileModel[] | null>(null);
   const [computerChoice, setComputerChoice] = useState<ModelRoleChoice | null>(null);
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalogEntry[] | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [voices, setVoices] = useState<VoiceInfo[] | null>(null);
   const [computerStatus, setComputerStatus] = useState<ComputerStatus | null>(null);
   const [routines, setRoutines] = useState<Routine[] | null>(null);
-  // The model saved from the sheet, until the chat's bot list catches up with it.
-  const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
   const [sheetRole, setSheetRole] = useState<"main" | "computer" | null>(null);
-
-  useEffect(() => {
-    setMainOverride(null);
-  }, [currentBot?.modelProvider, currentBot?.modelId]);
 
   useEffect(() => {
     if (!botId) return;
     let cancelled = false;
-    void Promise.all([rpc("models/list"), rpc("models/credentials")])
-      .then(([list]) => {
-        if (cancelled) return;
-        setCatalog(list as MobileModel[]);
-      })
-      .catch(() => undefined);
     void rpc("models/role", { role: "computer", expectedUserId: userId, scope: "account" })
       .then((view: { primary?: ModelRoleChoice | null }) => {
         if (cancelled) return;
@@ -325,7 +320,7 @@ export function ThreadComposerChips({
           onClose={() => setSheetRole(null)}
           onSaved={(choice) => {
             if (sheetRole === "main") {
-              setMainOverride(choice);
+              onMainOverride(choice);
             } else {
               setComputerChoice(
                 choice.provider && choice.modelId

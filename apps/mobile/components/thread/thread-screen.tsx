@@ -27,9 +27,11 @@ import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
+import { useComposerThinkingLevel } from "../../lib/composer-thinking-level";
 import { useComputerFloatEnabled } from "../../lib/computer-float-settings";
 import { cronLabels } from "../../lib/cron";
 import { useI18n } from "../../lib/i18n";
+import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
 import { useInboxBot } from "../../lib/search-inbox";
@@ -77,6 +79,7 @@ import { ThreadComposerDock } from "./thread-composer-dock";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
+import type { ThreadModelSave } from "./thread-model-picker-sheet";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
 import { useThreadRunError } from "./thread-run-error";
 
@@ -108,6 +111,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ...headerClearance,
     padding: headerClearance.padding + heroHeight,
   };
+  // The model catalog and connections, shared by the shortcut row and the
+  // composer's reasoning control; the shortcut row used to fetch them itself.
+  const [modelCatalog, setModelCatalog] = useState<MobileModel[] | null>(null);
+  const [modelCredentials, setModelCredentials] = useState<MobileModelCredential[] | null>(null);
+  // The model saved from the sheet, until the chat's bot list catches up with it.
+  const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
@@ -253,6 +262,30 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
+  useEffect(() => {
+    setMainOverride(null);
+  }, [currentBot?.modelProvider, currentBot?.modelId]);
+  useEffect(() => {
+    if (!botId) return;
+    let cancelled = false;
+    void Promise.all([rpc("models/list"), rpc("models/credentials")])
+      .then(([list, credentials]) => {
+        if (cancelled) return;
+        setModelCatalog(list as MobileModel[]);
+        setModelCredentials(credentials as MobileModelCredential[]);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [botId]);
+  const thinkingLevel = useComposerThinkingLevel({
+    botId,
+    bot: currentBot,
+    mainOverride,
+    catalog: modelCatalog,
+    credentials: modelCredentials,
+  });
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
   const inboxBot = useInboxBot(botId);
   const titleBot = currentBot ?? inboxBot;
@@ -724,7 +757,14 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               )
             }
           >
-            <ThreadComposerChips botId={botId} currentBot={currentBot} userId={userId} />
+            <ThreadComposerChips
+              botId={botId}
+              currentBot={currentBot}
+              userId={userId}
+              catalog={modelCatalog}
+              mainOverride={mainOverride}
+              onMainOverride={setMainOverride}
+            />
             <ThreadComposer
               key={threadKey}
               ref={composer.composerRef}
@@ -733,6 +773,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               composerMentionTargets={composerMentionTargets}
               onMentionRequested={onMentionRequested}
               composerPrompt={composerPrompt}
+              thinkingLevel={thinkingLevel}
               replyTargetId={replyTarget?.id}
               replyQuote={replyQuote}
               attachmentIds={attachments.activePendingAttachments.map(

@@ -1,6 +1,6 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
-import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, ThinkingLevel } from "@rakazo/contracts";
 import type {
   buildComposerMentionOptions,
   ComposerMention,
@@ -24,12 +24,10 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
-import { useRouter } from "expo-router";
 import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
 import {
-  Alert,
   AppState,
   Pressable,
   ScrollView,
@@ -40,12 +38,10 @@ import {
 } from "react-native";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
-import {
-  productionComposerVoiceInputDeps,
-  useComposerVoiceInput,
-} from "../lib/composer-voice-input";
+import type { ComposerThinkingLevelControl } from "../lib/composer-thinking-level";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { thinkingLevelLabel } from "../lib/thinking-level";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { BotAvatar } from "./bot-avatar";
 import { GlassSurface } from "./glass-surface";
@@ -83,6 +79,8 @@ type ThreadComposerProps = {
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
   composerPrompt: string;
+  /** The reasoning-effort control for the current model; null state hides the button. */
+  thinkingLevel: ComposerThinkingLevelControl;
   replyTargetId?: string;
   replyQuote: string | null;
   attachmentIds: string[];
@@ -108,6 +106,7 @@ export function ThreadComposer({
   agentSkills,
   composerMentionTargets,
   composerPrompt,
+  thinkingLevel,
   replyTargetId,
   replyQuote,
   attachmentIds,
@@ -158,35 +157,6 @@ export function ThreadComposer({
     bindingsRef.current = next;
     setMentionBindings(next);
   }
-  /** Dictation replaces the draft: the recognizer reports the whole utterance. */
-  function replaceDraft(text: string) {
-    draftRef.current = text;
-    setDraft(text);
-    updateBindings([]);
-    nativeSelection.current = { start: text.length, end: text.length };
-    setSelection(nativeSelection.current);
-  }
-  const dictatedSendTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const router = useRouter();
-  const voiceInput = useComposerVoiceInput(productionComposerVoiceInputDeps, {
-    onFill: (text) => replaceDraft(text),
-    onSend: (text) => {
-      replaceDraft(text);
-      // The parent's send reads the draft from state, so it runs after this render lands.
-      clearTimeout(dictatedSendTimer.current);
-      dictatedSendTimer.current = setTimeout(() => void send(), 0);
-    },
-    onNotReady: () => {
-      Alert.alert(
-        t("Voice chat isn't ready yet."),
-        t("Allow speech recognition in Settings, or connect a voice provider in Voice settings."),
-        [
-          { text: t("Cancel"), style: "cancel" },
-          { text: t("Open Voice"), onPress: () => router.push("/voice") },
-        ],
-      );
-    },
-  });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
@@ -215,7 +185,6 @@ export function ThreadComposer({
     return () => {
       subscription.remove();
       flushDraftSave();
-      clearTimeout(dictatedSendTimer.current);
     };
   }, []);
   useImperativeHandle(ref, () => ({
@@ -425,6 +394,38 @@ export function ThreadComposer({
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
 
+  // The reasoning menu: the default, then the levels the current model offers, with the
+  // current one checked. Null when the model cannot think, so the button stays hidden.
+  const thinking = thinkingLevel.state;
+  const thinkingValueLabel = thinking
+    ? thinking.value === ""
+      ? t("Default")
+      : thinkingLevelLabel(thinking.value, t)
+    : t("Default");
+  const thinkingActions: MenuAction[] | null = thinking
+    ? [
+        {
+          id: "default",
+          title: t("Default"),
+          state: thinking.value === "" ? ("on" as const) : ("off" as const),
+        },
+        ...thinking.levels.map((level) => ({
+          id: level,
+          title: thinkingLevelLabel(level, t),
+          state: thinking.value === level ? ("on" as const) : ("off" as const),
+        })),
+      ]
+    : null;
+  function pickThinkingLevel(id: string) {
+    if (id === "default") {
+      void thinkingLevel.save("");
+      return;
+    }
+    if (thinking?.levels.includes(id as ThinkingLevel)) {
+      void thinkingLevel.save(id as ThinkingLevel);
+    }
+  }
+
   return (
     <>
       {mentionOptions.length ? (
@@ -579,32 +580,35 @@ export function ThreadComposer({
             </GlassSurface>
           </View>
         </MenuView>
-        <Pressable
-          testID="composer-mic"
-          accessibilityRole="button"
-          accessibilityLabel={t("Microphone")}
-          accessibilityState={{ selected: voiceInput.listening }}
-          hitSlop={8}
-          onPressIn={() => void voiceInput.pressIn()}
-          onPressOut={() => voiceInput.pressOut()}
-          style={{ width: 44, height: 44 }}
-        >
-          <GlassSurface
-            shape="circle"
-            tint={voiceInput.listening ? tokens.primary : undefined}
-            style={styles.circleButton}
-            fallbackStyle={
-              voiceInput.listening ? { backgroundColor: tokens.primary } : styles.composerFill
-            }
+        {thinkingActions ? (
+          <MenuView
+            actions={thinkingActions}
+            colorScheme={colorScheme}
+            onPressAction={(event) => pickThinkingLevel(event.nativeEvent.event)}
+            title={t("Reasoning effort")}
           >
-            <NativeSymbol
-              ios="mic.fill"
-              android="mic-outline"
-              size={18}
-              color={voiceInput.listening ? tokens.primaryForeground : tokens.mutedForeground}
-            />
-          </GlassSurface>
-        </Pressable>
+            <View
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={t("Reasoning effort")}
+              accessibilityValue={{ text: thinkingValueLabel }}
+              style={{ width: 44, height: 44 }}
+            >
+              <GlassSurface
+                shape="circle"
+                style={styles.circleButton}
+                fallbackStyle={styles.composerFill}
+              >
+                <NativeSymbol
+                  ios="brain"
+                  android="bulb-outline"
+                  size={18}
+                  color={thinking?.value === "" ? tokens.mutedForeground : tokens.primary}
+                />
+              </GlassSurface>
+            </View>
+          </MenuView>
+        ) : null}
         <GlassSurface
           shape="roundedRectangle"
           style={{
