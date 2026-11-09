@@ -24,10 +24,12 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
+import { useRouter } from "expo-router";
 import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
 import {
+  Alert,
   AppState,
   Pressable,
   ScrollView,
@@ -38,6 +40,10 @@ import {
 } from "react-native";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import {
+  productionComposerVoiceInputDeps,
+  useComposerVoiceInput,
+} from "../lib/composer-voice-input";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
@@ -152,6 +158,35 @@ export function ThreadComposer({
     bindingsRef.current = next;
     setMentionBindings(next);
   }
+  /** Dictation replaces the draft: the recognizer reports the whole utterance. */
+  function replaceDraft(text: string) {
+    draftRef.current = text;
+    setDraft(text);
+    updateBindings([]);
+    nativeSelection.current = { start: text.length, end: text.length };
+    setSelection(nativeSelection.current);
+  }
+  const dictatedSendTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const router = useRouter();
+  const voiceInput = useComposerVoiceInput(productionComposerVoiceInputDeps, {
+    onFill: (text) => replaceDraft(text),
+    onSend: (text) => {
+      replaceDraft(text);
+      // The parent's send reads the draft from state, so it runs after this render lands.
+      clearTimeout(dictatedSendTimer.current);
+      dictatedSendTimer.current = setTimeout(() => void send(), 0);
+    },
+    onNotReady: () => {
+      Alert.alert(
+        t("Voice chat isn't ready yet."),
+        t("Allow speech recognition in Settings, or connect a voice provider in Voice settings."),
+        [
+          { text: t("Cancel"), style: "cancel" },
+          { text: t("Open Voice"), onPress: () => router.push("/voice") },
+        ],
+      );
+    },
+  });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
@@ -180,6 +215,7 @@ export function ThreadComposer({
     return () => {
       subscription.remove();
       flushDraftSave();
+      clearTimeout(dictatedSendTimer.current);
     };
   }, []);
   useImperativeHandle(ref, () => ({
@@ -543,6 +579,32 @@ export function ThreadComposer({
             </GlassSurface>
           </View>
         </MenuView>
+        <Pressable
+          testID="composer-mic"
+          accessibilityRole="button"
+          accessibilityLabel={t("Microphone")}
+          accessibilityState={{ selected: voiceInput.listening }}
+          hitSlop={8}
+          onPressIn={() => void voiceInput.pressIn()}
+          onPressOut={() => voiceInput.pressOut()}
+          style={{ width: 44, height: 44 }}
+        >
+          <GlassSurface
+            shape="circle"
+            tint={voiceInput.listening ? tokens.primary : undefined}
+            style={styles.circleButton}
+            fallbackStyle={
+              voiceInput.listening ? { backgroundColor: tokens.primary } : styles.composerFill
+            }
+          >
+            <NativeSymbol
+              ios="mic.fill"
+              android="mic-outline"
+              size={18}
+              color={voiceInput.listening ? tokens.primaryForeground : tokens.mutedForeground}
+            />
+          </GlassSurface>
+        </Pressable>
         <GlassSurface
           shape="roundedRectangle"
           style={{

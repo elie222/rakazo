@@ -21,6 +21,8 @@ const input = vi.hoisted(() => ({
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
+const routerPush = vi.hoisted(() => vi.fn());
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: routerPush }) }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));

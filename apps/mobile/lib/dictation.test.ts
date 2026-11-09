@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
-import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictation";
+import { ENDPOINT_SILENCE_MS, finish, listen, setSpeechRecognizer, stop } from "./dictation";
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
@@ -296,6 +296,18 @@ describe("mobile dictation", () => {
 
     expect(fake.start).toHaveBeenCalledOnce();
     expect(onFinal).toHaveBeenCalledWith("still here");
+  });
+
+  it("delivers the words heard so far when the caller finishes early", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal });
+    fake.hear("hello there");
+
+    finish();
+    expect(onFinal).toHaveBeenCalledWith("hello there");
+    // The silence window must not deliver the same turn a second time.
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS);
+    expect(onFinal).toHaveBeenCalledOnce();
   });
 
   it("ends the turn on a permission error instead of hanging on the mic", async () => {

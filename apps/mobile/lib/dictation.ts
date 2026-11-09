@@ -123,6 +123,17 @@ export function stop(): void {
   }
 }
 
+/**
+ * Delivers the utterance heard so far as the finished turn, e.g. when the
+ * caller releases hold-to-talk instead of waiting out the quiet gap. A
+ * no-op when nothing is listening or nothing was heard.
+ */
+export function finish(): void {
+  const session = active;
+  if (!session) return;
+  finishSession(session);
+}
+
 /** Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it. */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
@@ -199,7 +210,7 @@ function onResult(session: Session, event: ResultEvent): void {
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
   clearTimeout(session.silence);
-  session.silence = setTimeout(() => finish(session), ENDPOINT_SILENCE_MS);
+  session.silence = setTimeout(() => finishSession(session), ENDPOINT_SILENCE_MS);
 }
 
 function onEnd(session: Session): void {
@@ -241,10 +252,10 @@ function giveUp(session: Session, reason: DictationGiveUp, code: string): void {
       source: "dictation",
     });
   }
-  finish(session, reason);
+  finishSession(session, reason);
 }
 
-function finish(session: Session, reason?: DictationGiveUp): void {
+function finishSession(session: Session, reason?: DictationGiveUp): void {
   if (active !== session) return;
   const text = join(session.carried, session.heard).trim();
   const { onFinal } = session;
