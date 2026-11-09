@@ -2,25 +2,49 @@ import * as z from "zod";
 
 export const BOT_EMAIL_NAME_TAKEN = "That address isn't available";
 
-/** Role and abuse-desk names (RFC 2142) and names people trust by reflex. */
+/** Role and abuse-desk names (RFC 2142), names people trust by reflex, and the project's own. */
 const RESERVED_BOT_EMAIL_NAMES = new Set([
   "abuse",
+  "accounts",
   "admin",
   "administrator",
   "billing",
+  "careers",
+  "contact",
+  "elie",
   "help",
+  "hello",
+  "hi",
   "hostmaster",
   "info",
+  "jobs",
+  "legal",
+  "mail",
   "mailer-daemon",
+  "marketing",
   "no-reply",
   "noc",
   "noreply",
+  "notifications",
+  "partners",
   "postmaster",
+  "press",
+  "privacy",
+  "rakazo",
   "root",
+  "sales",
   "security",
   "support",
+  "team",
+  "verify",
   "webmaster",
 ]);
+
+/** A reserved name, alone or before a separator (support-team, admin.bot), or anything rakazo*. */
+function isReservedBotEmailName(name: string): boolean {
+  const [first = name] = name.split(/[._-]/);
+  return RESERVED_BOT_EMAIL_NAMES.has(first) || name.startsWith("rakazo");
+}
 
 /** The part of a bot's address before the @, as its owner chose it. */
 export const BotEmailNameSchema = z
@@ -31,7 +55,7 @@ export const BotEmailNameSchema = z
   .max(64, "Use at most 64 characters")
   .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, "Use letters, numbers, dots, dashes or underscores")
   .refine((name) => !name.includes(".."), "Use letters, numbers, dots, dashes or underscores")
-  .refine((name) => !RESERVED_BOT_EMAIL_NAMES.has(name), BOT_EMAIL_NAME_TAKEN);
+  .refine((name) => !isReservedBotEmailName(name), BOT_EMAIL_NAME_TAKEN);
 
 /** Why a name can't be claimed, for each app to word in its own language. */
 export type BotEmailNameProblem = "length" | "taken" | "characters";

@@ -26,4 +26,13 @@ describe("parseBotEmailName", () => {
     expect(parseBotEmailName("postmaster")).toEqual({ problem: "taken" });
     expect(parseBotEmailName("not ok!")).toEqual({ problem: "characters" });
   });
+
+  it("keeps reserved names and their lookalikes for no bot", () => {
+    for (const name of ["hello", "elie", "support.ts", "admin-bot", "help_desk", "rakazo", "rakazobot"]) {
+      expect(parseBotEmailName(name)).toEqual({ problem: "taken" });
+    }
+    for (const name of ["helper", "admiral", "hiker", "scout-team", "my-support"]) {
+      expect(parseBotEmailName(name)).toEqual({ name });
+    }
+  });
 });
