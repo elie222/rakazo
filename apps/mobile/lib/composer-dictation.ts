@@ -107,7 +107,10 @@ export function useComposerDictation({
       onFinal: (text) => {
         if (end(mine)) onWordsRef.current(text);
       },
-      onGiveUp: () => end(mine),
+      // Hearing nothing is not an error; a recognizer that broke is.
+      onGiveUp: (reason) => {
+        if (end(mine) && reason === "failed") Alert.alert(t("Could not dictate"), t("Try again."));
+      },
     });
   }
 
