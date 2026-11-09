@@ -19,6 +19,16 @@ describe("tool step outcomes", () => {
     expect(toolCompletionOutcome({ ...base, paused: true })).toBeUndefined();
   });
 
+  it("fails a command that ran but exited non-zero", () => {
+    const shell = (code: number) => ({ ...base, result: { stdout: "", stderr: "x", code } });
+    expect(toolCompletionOutcome(shell(0))).toBe("succeeded");
+    expect(toolCompletionOutcome(shell(1))).toBe("failed");
+    expect(toolCompletionOutcome(shell(127))).toBe("failed");
+    expect(
+      toolCompletionOutcome({ ...base, result: { content: [], details: { exitCode: 2 } } }),
+    ).toBe("failed");
+  });
+
   it("saves each call's outcome on its step, and counts unfinished calls when stopped", () => {
     const reply = {
       messageSegments: appendToolCallSegment(appendToolCallSegment([], "shell"), "shell"),

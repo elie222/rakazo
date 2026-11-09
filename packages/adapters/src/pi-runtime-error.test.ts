@@ -39,7 +39,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import { PiAgentRuntime } from "./pi-runtime.js";
 
-function consume() {
+function consume(model = { provider: "openai-codex", id: "gpt-test" }) {
   const runtime = new PiAgentRuntime();
   return (async () => {
     for await (const _event of runtime.run(
@@ -51,7 +51,7 @@ function consume() {
         instructions: "test",
         history: [],
         tools: [],
-        model: { provider: "openai-codex", id: "gpt-test" },
+        model,
       },
       {
         operationId: "operation",
@@ -159,6 +159,27 @@ describe("Pi runtime errors", () => {
   });
 
   it.each([
+    ["openai-compatible", "example-model"],
+    ["local", "example-local"],
+  ])(
+    "marks a request the user's own %s endpoint rejects as theirs to fix",
+    async (endpoint, id) => {
+      provider.errorMessage = '400 "Invalid request parameters"';
+      const failure = consume({ provider: endpoint, id });
+      await expect(failure).rejects.toBeInstanceOf(ModelAccountError);
+      await expect(failure).rejects.toThrow("Invalid request parameters");
+    },
+  );
+
+  it("keeps a named provider's bare 400 a server error, since Rakazo may have built it wrong", async () => {
+    provider.errorMessage = '400 "Invalid request parameters"';
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+  });
+
+  it.each([
     "WebSocket closed 1006",
     // The Google SDK reports a stream that closed partway through an event this way.
     "Incomplete JSON segment at the end",
@@ -249,6 +270,18 @@ describe("Pi runtime errors after every backup failed", () => {
     const failure = consume();
     await expect(failure).rejects.toBeInstanceOf(kind);
     await expect(failure).rejects.toThrow(message);
+  });
+
+  it("credits a backup's bare 400 to its own endpoint, not to the primary's provider", async () => {
+    const rejected = '400 "Invalid request parameters"';
+    const chain = (backupProvider: string) =>
+      modelFallbackFailure(timedOut, [
+        { provider: backupProvider, modelId: "example", status: "failed", reason: rejected },
+      ]);
+    provider.errorMessage = chain("openai-compatible");
+    await expect(consume()).rejects.toBeInstanceOf(ModelAccountError);
+    provider.errorMessage = chain("fake-provider");
+    await expect(consume()).rejects.not.toBeInstanceOf(ModelAccountError);
   });
 
   it("keeps the chain a server error when any failure is unexplained", async () => {

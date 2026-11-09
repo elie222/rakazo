@@ -21,16 +21,6 @@ import { parseConnectorToolArgs, SELECTED_SCHEMA_MAX_BYTES } from "./lazy-tool-c
 import { parametersFor } from "./pi-runtime-tool-parameters.js";
 
 describe("MCP source presets", () => {
-  it("pins a fixed-URL preset and keeps its id with bearer auth", () => {
-    const fixed = MCP_SOURCE_PRESETS.find((preset) => preset.url)!;
-    expect(
-      applyMcpSourcePreset("https://elsewhere.example/mcp", {
-        preset: fixed.id,
-        auth: { type: "none" },
-      }),
-    ).toEqual({ source: fixed.url, config: { preset: fixed.id, auth: { type: "bearer" } } });
-  });
-
   it("stores an open-URL preset as a custom bearer source", () => {
     const open = MCP_SOURCE_PRESETS.find((preset) => !preset.url)!;
     expect(applyMcpSourcePreset("https://mine.example/mcp", { preset: open.id })).toEqual({

@@ -43,20 +43,20 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 2. Read the `VERDICT` line and act:
 
-   | verdict | do |
-   |---|---|
-   | `green` | Check the completion gate below, then report. |
-   | `failures` | Triage below. |
-   | `open-comments` | Answer them below. |
-   | `pending` | Checks are still running (you woke early, or one registered late). Back to 1. |
-   | `out-of-sync` | Push or reconcile, then back to 1. |
+   | verdict         | do                                                                            |
+   | --------------- | ----------------------------------------------------------------------------- |
+   | `green`         | Check the completion gate below, then report.                                 |
+   | `failures`      | Triage below.                                                                 |
+   | `open-comments` | Answer them below.                                                            |
+   | `pending`       | Checks are still running (you woke early, or one registered late). Back to 1. |
+   | `out-of-sync`   | Push or reconcile, then back to 1.                                            |
 
 3. After any push or reply, go back to 1 once. A verdict is only good for the
    SHA it was taken on; never mix observations from two commits.
 
 ## Failures
 
-Each `FAIL` line names the job and the step that broke. *"Later steps skipped"*
+Each `FAIL` line names the job and the step that broke. _"Later steps skipped"_
 does not establish whether tests ran: an assertion failure can skip subsequent
 steps too. Inspect `"$PRD" --logs <job-id>` before classifying the failure. Only
 rerun as infrastructure when the evidence establishes a setup/infrastructure
@@ -99,7 +99,7 @@ unanswered conversation comment the same as an open inline finding — both
 yield `VERDICT open-comments`. It skips known non-actionable noise (Vercel
 deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
 but keeps actionable bot conversation comments in the open set. A conversation
-comment is handled only once *you* have posted a later conversation comment
+comment is handled only once _you_ have posted a later conversation comment
 that quotes its permalink; bot follow-ups do not close it. Quote the complete
 URL as a Markdown link or on its own; sentence-ending punctuation is accepted.
 An edit to an inline or conversation root after your reply reopens the finding

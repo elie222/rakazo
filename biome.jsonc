@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -73,12 +73,44 @@
       "trailingCommas": "all"
     }
   },
+  "markdown": {
+    "parser": {
+      "frontmatter": true
+    }
+  },
   "css": {
     "parser": {
       "tailwindDirectives": true
     }
   },
   "overrides": [
+    {
+      "includes": ["apps/mobile/**", "packages/chat-ui/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noReactNativeRawText": {
+              "level": "error",
+              // Our components that render string children inside a Text.
+              "options": { "skip": ["SvgText", "ChatMarkdown", "LinkifiedText", "SettingsLabel"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      // Tests render mocked React Native through react-dom, so raw text there never reaches a
+      // native view, and harness components are created once per test, not on each render.
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noReactNativeRawText": "off",
+            "noComponentHookFactories": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["packages/ui-web/src/components/ui/**", "packages/ui-web/src/shadcn.css"],
       "linter": {

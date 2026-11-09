@@ -466,6 +466,15 @@ function LayoutContent() {
                       }}
                     />
                     <Stack.Screen
+                      name="new-bot"
+                      options={{
+                        title: t("New bot"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
+                    <Stack.Screen
                       name="new-group"
                       options={{
                         title: t("New group chat"),

@@ -1,14 +1,14 @@
 import type { Bot, BotAvatarSet, ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
 import {
-  BOT_AVATAR_SHAPE_COUNT,
-  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
+  botLookState,
   credentialForModel,
+  DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
   parseModelOptionKey,
@@ -18,9 +18,11 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
+import { BotLookPicker } from "../components/bot-look-picker";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { GrowingTextInput } from "../components/growing-text-input";
@@ -37,13 +39,6 @@ import {
   SettingsSwitch,
 } from "../components/settings-group";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
-import {
-  avatarColor,
-  avatarShape,
-  isAvatarPhoto,
-  withAvatarColor,
-  withAvatarShape,
-} from "../lib/bot-avatar-edit";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
@@ -70,14 +65,14 @@ export default function BotSettingsScreen() {
     model: pickedModel,
     focus,
   } = useLocalSearchParams<{ botId: string; model?: string; focus?: string }>();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
   const threadId = useRef<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [color, setColor] = useState<string>(BOT_COLORS[0]);
+  const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -844,10 +839,10 @@ export default function BotSettingsScreen() {
             style={{ backgroundColor: tokens.background }}
           >
             <NativeActionButton label={t("Done")} onPress={() => setAvatarOpen(false)} />
-            {bot && isAvatarPhoto(color) ? (
+            {bot && botLookState(color).photo ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setColor(avatarColor(bot.color))}
+                onPress={() => setColor(botLookState(bot.color).color)}
                 style={{ marginTop: 12 }}
               >
                 <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
@@ -864,97 +859,17 @@ export default function BotSettingsScreen() {
               value={avatarSet}
               onChange={(next) => {
                 setAvatarSet(resolveBotAvatarSet(next));
-                setColor((current) => avatarColor(current));
+                setColor((current) => botLookState(current).color);
               }}
               plain
             />
-            <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
-              {t("Color")}
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingVertical: 8, paddingHorizontal: 4 }}
-              accessibilityRole="radiogroup"
-            >
-              {BOT_COLORS.map((option, index) => (
-                <Pressable
-                  key={option}
-                  accessibilityRole="radio"
-                  accessibilityLabel={t("Color {number}", { number: index + 1 })}
-                  accessibilityState={{ checked: avatarColor(color) === option }}
-                  onPress={() => setColor((current) => withAvatarColor(current, option))}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: option,
-                    borderWidth: 3,
-                    borderColor: avatarColor(color) === option ? tokens.foreground : "transparent",
-                  }}
-                />
-              ))}
-            </ScrollView>
-            {bot && !isAvatarPhoto(color) ? (
-              <>
-                <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
-                  {t("Shape")}
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 10, paddingVertical: 8, paddingHorizontal: 4 }}
-                  accessibilityRole="radiogroup"
-                >
-                  <Pressable
-                    accessibilityRole="radio"
-                    accessibilityLabel={t("Default")}
-                    accessibilityState={{
-                      checked: avatarSet === "organic" && avatarShape(color) === null,
-                    }}
-                    onPress={() => {
-                      setAvatarSet("organic");
-                      setColor((current) => avatarColor(current));
-                    }}
-                    style={{
-                      padding: 4,
-                      borderRadius: 14,
-                      borderWidth: 2,
-                      borderColor:
-                        avatarSet === "organic" && avatarShape(color) === null
-                          ? tokens.foreground
-                          : "transparent",
-                    }}
-                  >
-                    <BotAvatar color={avatarColor(color)} identity={bot.id} size={36} />
-                  </Pressable>
-                  {Array.from({ length: BOT_AVATAR_SHAPE_COUNT }, (_, shape) => (
-                    <Pressable
-                      key={shape}
-                      accessibilityRole="radio"
-                      accessibilityLabel={t("Shape {number}", { number: shape + 1 })}
-                      accessibilityState={{ checked: avatarShape(color) === shape }}
-                      onPress={() => {
-                        setAvatarSet("organic");
-                        setColor((current) => withAvatarShape(current, shape));
-                      }}
-                      style={{
-                        padding: 4,
-                        borderRadius: 14,
-                        borderWidth: 2,
-                        borderColor:
-                          avatarShape(color) === shape ? tokens.foreground : "transparent",
-                      }}
-                    >
-                      <BotAvatar
-                        color={withAvatarShape(color, shape)}
-                        identity={bot.id}
-                        size={36}
-                      />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
+            {bot ? (
+              <BotLookPicker
+                value={color}
+                identity={bot.id}
+                avatarSet={avatarSet}
+                onChange={(next) => setColor(next)}
+              />
             ) : null}
           </ScrollView>
         </Modal>

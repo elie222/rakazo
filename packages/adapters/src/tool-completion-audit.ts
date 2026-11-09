@@ -29,14 +29,30 @@ export function toolCompletionFromResult(
   return { ...base, result, paused };
 }
 
-/** How a call ended, or undefined while it waits on an approval or answer. */
+/** A command's exit code, from the result itself or its details, when the tool reports one. */
+function exitCode(result: unknown): number | undefined {
+  for (const value of [result, (result as { details?: unknown } | null)?.details]) {
+    if (!value || typeof value !== "object") continue;
+    const { code, exitCode } = value as { code?: unknown; exitCode?: unknown };
+    if (typeof code === "number") return code;
+    if (typeof exitCode === "number") return exitCode;
+  }
+  return undefined;
+}
+
+/**
+ * How a call ended, or undefined while it waits on an approval or answer. A command that ran but
+ * exited non-zero failed, though the tool itself returned normally.
+ */
 export function toolCompletionOutcome(
   completion: AgentToolCompletion,
 ): "succeeded" | "failed" | undefined {
   if (completion.paused) return undefined;
   const error =
     completion.error === undefined ? toolResultError(completion.result) : completion.error;
-  return error === undefined ? "succeeded" : "failed";
+  if (error !== undefined) return "failed";
+  const code = exitCode(completion.result);
+  return code === undefined || code === 0 ? "succeeded" : "failed";
 }
 
 export function toolCompletionAuditPayload(

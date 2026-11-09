@@ -21,7 +21,7 @@ export function serverBuildOptions(entry, outfile) {
     bundle: true,
     platform: "node",
     format: "esm",
-    target: "node22",
+    target: "node24",
     sourcemap: true,
     // No "module" condition: resolve externals the way Node will.
     conditions: ["node"],

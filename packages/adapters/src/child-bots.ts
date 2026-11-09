@@ -31,6 +31,7 @@ import {
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   teamComputerUserId,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -427,6 +428,7 @@ export async function destroyBot(
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
+  // Deleting the bot deletes its thread, so this waits out snapshot reads holding that row.
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
@@ -495,7 +497,7 @@ export async function destroyBot(
         cancelledGroupRuns: groupCleanup.cancelledRuns,
         pageShareSecrets: [...pageShareSecrets, ...groupCleanup.pageShareSecrets],
       };
-    }),
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if (!deletion) return;
   await Promise.allSettled(

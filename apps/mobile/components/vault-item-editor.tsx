@@ -2,7 +2,7 @@ import type { ContactFields, VaultKind, VaultRevealed } from "@rakazo/contracts"
 import { commandVariableName } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { TextInputProps } from "react-native";
+import type { TextInputInstance, TextInputProps } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
@@ -59,7 +59,7 @@ export function VaultItemEditor({
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const inputs = useRef<(TextInput | null)[]>([]);
+  const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [draft, setDraft] = useState<VaultDraft>(() => {
     const fields: LoginFieldRow[] = [
       { id: 0, label: t("Username"), value: item?.preview?.username ?? "", hidden: false },

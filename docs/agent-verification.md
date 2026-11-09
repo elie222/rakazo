@@ -6,16 +6,16 @@ Rakazo separates deterministic execution regressions from real-model task qualit
 A scripted response can prove that a tool call executes correctly; only a real
 model can demonstrate that it chooses a useful action for a natural request.
 
-| Layer | Real components | Stand-ins | Command |
-| --- | --- | --- | --- |
-| Existing fast tests | Product functions and contracts | Scripted agent, services, sandbox | `pnpm test` |
-| Pi protocol regressions | Pi agent loop, HTTP/SSE parsing, tool dispatch | Loopback model endpoint, tool effects | `pnpm test:pi` |
-| Pi product journey | API, saved model connection, Postgres, executor, Pi | Model endpoint, sandbox, connectors | `pnpm test:integration` |
-| Computer replay | Pi, browser tool handlers, page state | Model endpoint, browser and sandbox | `pnpm test` |
-| Docker computer replay | Pi, supervisor, Chromium, page helper, downloads and files | Model endpoint, local fixture website | `pnpm test:computer-replay` |
-| Agent quality | Product API, Postgres, executor, Pi, real model | Sandbox and connected services | `pnpm test:evals --live ...` |
-| Vision acceptance | Product API, Pi, real vision model, Boat or E2B desktop | Fixture website | `pnpm test:computer` |
-| Live flows | Product API, Postgres, Pi, real model, Boat or E2B computer, demo website | The person (a simulated user model) | `pnpm test:flows` |
+| Layer                   | Real components                                                           | Stand-ins                             | Command                      |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------- | ---------------------------- |
+| Existing fast tests     | Product functions and contracts                                           | Scripted agent, services, sandbox     | `pnpm test`                  |
+| Pi protocol regressions | Pi agent loop, HTTP/SSE parsing, tool dispatch                            | Loopback model endpoint, tool effects | `pnpm test:pi`               |
+| Pi product journey      | API, saved model connection, Postgres, executor, Pi                       | Model endpoint, sandbox, connectors   | `pnpm test:integration`      |
+| Computer replay         | Pi, browser tool handlers, page state                                     | Model endpoint, browser and sandbox   | `pnpm test`                  |
+| Docker computer replay  | Pi, supervisor, Chromium, page helper, downloads and files                | Model endpoint, local fixture website | `pnpm test:computer-replay`  |
+| Agent quality           | Product API, Postgres, executor, Pi, real model                           | Sandbox and connected services        | `pnpm test:evals --live ...` |
+| Vision acceptance       | Product API, Pi, real vision model, Boat or E2B desktop                   | Fixture website                       | `pnpm test:computer`         |
+| Live flows              | Product API, Postgres, Pi, real model, Boat or E2B computer, demo website | The person (a simulated user model)   | `pnpm test:flows`            |
 
 Default and PR tests never require paid inference. Nightly runs only the web
 tests with emulated providers. Docker topology and browser replay have a manual
@@ -659,7 +659,6 @@ streamed; tool and activity events are excluded. Trial latency includes fixture
 setup and cleanup. Background due work is awaited before final accounting;
 cleanup must stop remaining scheduled and active work before further trials.
 
-
 Compare strategies in one process so all trials and concurrent calls share one
 spend cap. The order rotates deterministically within each case and trial; the
 provider's cache state is uncontrolled. `current` preserves the original history
@@ -710,7 +709,6 @@ test. `--cache-capabilities /tmp/cache-capabilities.json` supplies generic docum
 metadata independently of credentials. Predictions remain advisory because
 routing and eviction can prevent reuse. Separate invocations must receive only
 the remaining approved budget after earlier reservations and charges.
-
 
 Retention metadata describes the selector's prediction. In particular,
 `retentionMode: none` disables inferred warmth and does not promise that the

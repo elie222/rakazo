@@ -14,6 +14,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -417,8 +418,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  const onEmailError = (error: unknown) =>
-    getLogger().error("transactional email delivery failed", error);
+  const emailErrorLogger = (message: string) => (error: unknown) => {
+    if (error instanceof EmailRecipientRejectedError) {
+      getLogger().warn(message, { "error.message": error.message });
+    } else getLogger().error(message, error);
+  };
+  const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const billingProvider: BillingProvider | undefined =
     billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
@@ -517,7 +522,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
                 email,
                 origin: env.authUrl,
                 secret: env.authSecret,
-                onError: (error) => getLogger().error("welcome email delivery failed", error),
+                onError: emailErrorLogger("welcome email delivery failed"),
               },
               userId,
               headers,

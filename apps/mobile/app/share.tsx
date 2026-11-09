@@ -1,5 +1,5 @@
-import { useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useNavigation, usePreventRemove, useRouter } from "expo-router";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
@@ -19,51 +19,51 @@ export default function ShareRoute() {
   const router = useRouter();
   const navigation = useNavigation();
   const share = useSyncExternalStore(subscribeIncomingShare, getIncomingShare);
-  const selected = useRef(false);
-  const closing = useRef(false);
+  const leaving = useRef(false);
+  const [guarded, setGuarded] = useState(true);
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
-  const close = useCallback(() => {
-    closing.current = true;
+  const allowRemoval = usePreventRemove(guarded, ({ data, repeat }) => {
+    const payload = data.action.payload;
+    // Authentication temporarily replaces the picker; sign-in returns here with the share.
+    if (payload && "name" in payload && payload.name === "sign-in") {
+      leave();
+      repeat();
+      return;
+    }
+    close();
+  });
+  const leave = () => {
+    leaving.current = true;
+    setGuarded(false);
+    allowRemoval();
+  };
+  const close = () => {
+    leave();
     cancelIncomingShare();
     router.dismissTo("/");
-  }, [router]);
+  };
+  const closeOnce = useEffectEvent(() => {
+    if (!leaving.current) close();
+  });
 
-  useEffect(
-    () =>
-      navigation.addListener("beforeRemove", (event) => {
-        const payload = event.data.action.payload;
-        // Authentication temporarily replaces the picker; sign-in returns here with the share.
-        if (payload && "name" in payload && payload.name === "sign-in") return;
-        if (selected.current || closing.current) return;
-        event.preventDefault();
-        close();
-      }),
-    [navigation, close],
-  );
   useEffect(() => {
-    if (!share && !selected.current && !closing.current) close();
-  }, [share, close]);
+    if (!share) closeOnce();
+  }, [share]);
 
-  const open = useCallback(
-    (bot: Pick<MobileBot, "id" | "name">) => {
-      // Removal must preserve the share for thread.tsx to claim it.
-      if (!getIncomingShare()) return;
-      selected.current = true;
-      navigation.dispatch({
-        type: "RESET",
-        payload: {
-          index: 1,
-          routes: [
-            { name: "index" },
-            { name: "thread", params: { botId: bot.id, name: bot.name } },
-          ],
-        },
-      });
-    },
-    [navigation],
-  );
+  const open = (bot: Pick<MobileBot, "id" | "name">) => {
+    // Removal must preserve the share for thread.tsx to claim it.
+    if (!getIncomingShare()) return;
+    leave();
+    navigation.dispatch({
+      type: "RESET",
+      payload: {
+        index: 1,
+        routes: [{ name: "index" }, { name: "thread", params: { botId: bot.id, name: bot.name } }],
+      },
+    });
+  };
   const preview = share ? sharePreview(share) : null;
 
   return (

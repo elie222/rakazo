@@ -32,7 +32,7 @@ vi.mock("expo-file-system", () => {
     }
   }
   class File extends Node {
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
     textSync() {

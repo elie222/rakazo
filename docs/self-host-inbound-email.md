@@ -147,12 +147,26 @@ between them, each to at most 10 people, and never includes a secret the run has
 
 ## Who can start work
 
-Rakazo checks each message's DKIM signature itself and does not trust results a relay added. A
-message is verified only when it is signed by the domain in its **From** address and that
-signature covers its **To** and **Cc**. Many services sign with another domain, so their mail is
-saved as unverified: the bot can still read it but is told its sender could be forged. Signed
-mail that doesn't name the bot in **To** or **Cc**, such as a BCC or a message replayed from
-someone else's inbox, is saved as unverified too, without its files.
+Rakazo checks each message's DKIM signature itself. A message is verified only when it is signed
+by the domain in its **From** address and that signature covers its **To** and **Cc**. Many
+services sign with another domain, so their mail is saved as unverified: the bot can still read
+it but is told its sender could be forged. Signed mail that doesn't name the bot in **To** or
+**Cc**, such as a BCC or a message replayed from someone else's inbox, is saved as unverified
+too, without its files.
+
+Microsoft 365 never signs **To** or **Cc**, so on its own its signature can't show the message
+was meant for the bot: anyone the sender wrote to could resend it. Such mail is verified only
+when it is signed by the From domain with its **Date**, is less than a day old, and your relay
+saw it arrive straight from a server that domain's SPF record allows. Rakazo trusts that last
+result only from the relay you name by its ARC signing domain, and checks the relay's ARC seal
+itself:
+
+```bash
+INBOUND_EMAIL_RELAY_ARC_DOMAIN=cloudflare-email.net   # Cloudflare Email Routing
+```
+
+Without it, or when the relay doesn't seal its results (Postfix does not by default), mail whose
+signature leaves out **To** stays unverified. So does such mail that was forwarded on its way.
 
 Only verified mail that names the bot in **To** or **Cc** starts anything, and never an automatic
 reply or mailing-list mail. The owner's own mail sent **To** the bot starts it in its chat, once
@@ -162,7 +176,8 @@ starts its routine for the owner's own address, or for anyone at the owner's ema
 the routine allows it. Mail that claims the owner's address but fails the check posts a
 note in the bot's chat, at most once a day, without any of its content. That usually means the
 owner's domain does not sign its own mail: Google Workspace and Microsoft 365 need DKIM turned on
-for a custom domain.
+for a custom domain. For Microsoft 365 it can also mean `INBOUND_EMAIL_RELAY_ARC_DOMAIN` is not
+set.
 
 A routine's mail reaches the bot as outside data, never as instructions. In the owner's own mail,
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
