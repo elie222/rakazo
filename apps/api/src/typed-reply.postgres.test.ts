@@ -809,6 +809,45 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     expect(notify).toHaveBeenCalledWith(groupTarget.threadId, expect.any(Number));
   });
 
+  it("stops a background helper a group chat started when it is the only work left", async () => {
+    const source = await createThreadMessage(system, {
+      threadId: groupTarget.threadId,
+      botId,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Asking Beta to look it up." }],
+    });
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId: peerBotId,
+        threadId: peerThreadId,
+        userId: actor.userId,
+        prompt: "look it up",
+        status: "running",
+      },
+    });
+    const helper = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: peerBotId,
+        threadId: peerThreadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "helper",
+        sourceMessageId: source.id,
+      },
+    });
+
+    const result = await send(groupTarget, "stop");
+
+    expect(result.runId).toBe(helper.id);
+    expect(await system.run.findUniqueOrThrow({ where: { id: helper.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(await system.run.count({ where: { threadId: groupTarget.threadId } })).toBe(0);
+  });
+
   it("rolls back retirement if accepting the new run fails", async () => {
     const fixture = await waitingCard();
     await createThreadMessage(system, {

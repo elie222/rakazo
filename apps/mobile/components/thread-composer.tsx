@@ -775,6 +775,7 @@ export function ThreadComposer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={dictation.status === "idle" ? t("Dictate") : t("Stop dictating")}
+              disabled={dictation.status === "transcribing"}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={toggleDictation}
               style={{ marginBottom: 8 }}

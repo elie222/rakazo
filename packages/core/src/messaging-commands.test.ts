@@ -15,7 +15,20 @@ describe("parseMessagingCommand", () => {
   it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {
     for (const text of ["stop", "Stop now.", "STOP!", "  stop   now ", "stop…"])
       expect(parseMessagingCommand(text)).toBe("stop");
-    for (const text of ["Stopp!", "detente", "Стоп", "停止。", "停下！", "przestań"])
+    for (const text of [
+      "Stopp!",
+      "detente",
+      "Стоп",
+      "停止。",
+      "停下！",
+      "przestań",
+      "Arrête !",
+      "pare",
+      "멈춰",
+      "Dur.",
+      "रुको",
+      "עצור",
+    ])
       expect(parseMessagingCommand(text)).toBe("stop");
     for (const text of ["para", "¿Para?", "stop it", "stopper", "don't stop", "/stop", "stop, now"])
       expect(parseMessagingCommand(text)).toBeNull();

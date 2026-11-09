@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
   MODEL_REQUIRED_SEND_ERROR,
@@ -886,13 +887,19 @@ export async function sendThreadMessage(
         replyQuote,
         clientNonce: input.clientNonce,
       });
-      // A bare "stop" while any member works is the Stop button, as in a bot's own chat.
+      // A bare "stop" while any member, or a helper it started, works is the Stop button,
+      // as in a bot's own chat.
       const working =
         !routineRuns.length && isStopMessage(input)
           ? await tx.run.findFirst({
               where: {
-                threadId: target.threadId,
-                botId: { in: memberBotIds },
+                OR: [
+                  { threadId: target.threadId, botId: { in: memberBotIds } },
+                  {
+                    trigger: BACKGROUND_HELPER_TRIGGER,
+                    sourceMessage: { threadId: target.threadId },
+                  },
+                ],
                 status: { in: [...ACTIVE_RUN_STATUSES] },
               },
               select: { id: true, taskId: true, botId: true, status: true, userId: true },

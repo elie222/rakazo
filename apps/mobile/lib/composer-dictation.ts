@@ -121,8 +121,9 @@ export function useComposerDictation({
         return;
       }
       setStatus("transcribing");
-      // A tap while transcribing gives up on it, and so does a request that stalls.
-      mine.finish = cancel;
+      // The recording is already stopped; a second tap must not throw it away. A stalled
+      // request ends at the deadline below.
+      mine.finish = () => {};
       const deadline = requestDeadline(
         VOICE_RESPONSE_TIMEOUT_MS,
         t("Could not transcribe that."),

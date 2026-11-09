@@ -27,6 +27,20 @@ const STOP_WORDS = new Set([
   "止めて",
   // Chinese
   "停下",
+  // French
+  "ARRÊTE",
+  // Portuguese
+  "PARE",
+  // Korean
+  "멈춰",
+  "중지",
+  // Turkish
+  "DUR",
+  // Hindi
+  "रुको",
+  // Hebrew
+  "עצור",
+  "תפסיק",
 ]);
 
 export function parseMessagingCommand(text: string): MessagingCommand | null {
@@ -34,7 +48,10 @@ export function parseMessagingCommand(text: string): MessagingCommand | null {
   if (normalized === "YES") return "approve";
   if (normalized === "NO") return "decline";
   if (normalized === "LEAVE") return "leave";
-  const bare = normalized.replace(/\s+/g, " ").replace(/[.!?…。！？]+$/u, "");
+  const bare = normalized
+    .replace(/\s+/g, " ")
+    .replace(/[.!?…。！？।]+$/u, "")
+    .trim();
   if (STOP_WORDS.has(bare)) return "stop";
   return null;
 }
