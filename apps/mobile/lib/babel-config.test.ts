@@ -28,6 +28,15 @@ describe("async arrow rest pattern transform", () => {
     );
   });
 
+  it("keeps a body that redeclares a pattern name valid", async () => {
+    // `var` rather than `let`: a body may legally redeclare a parameter with `var` or `function`,
+    // which `let` would turn into a SyntaxError. The cost is a default that reads a later
+    // binding (`...[a = b, b]`) yields undefined instead of throwing.
+    const code = transform("f = async (...[a]) => { var a = a + 1; return a; };");
+    const f = new Function(`let f; ${code} return f;`)() as (value: number) => Promise<number>;
+    await expect(f(1)).resolves.toBe(2);
+  });
+
   it("leaves other functions alone", () => {
     for (const source of [
       "f = async (...args) => args;",

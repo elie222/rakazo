@@ -16,6 +16,7 @@ function asyncArrowRestPattern({ types: t }) {
         const body = t.isBlockStatement(node.body)
           ? node.body
           : t.blockStatement([t.returnStatement(node.body)]);
+        // `var`, not `let`: the body may legally redeclare a parameter name, which `let` would reject.
         body.body.unshift(
           t.variableDeclaration("var", [t.variableDeclarator(pattern, t.cloneNode(args))]),
         );
