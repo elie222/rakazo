@@ -85,6 +85,13 @@ function mapGroup(group: GroupRecord): Group {
   };
 }
 
+// The query orders by the group row; re-sort by the roster time the mappers expose so the two agree.
+function byRosterTime<T extends { pinned: boolean; updatedAt: string }>(groups: T[]): T[] {
+  return groups.sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt),
+  );
+}
+
 function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
   if (!group.thread) throw new IsolationError("Group is missing its thread");
   return {
@@ -333,9 +340,11 @@ export function createGroupRepos(prisma: PrismaClient) {
       }),
       1,
     );
-    return groups
-      .filter((group) => hasMinimumActiveMembers(group.members))
-      .map((group) => mapSpaceGroup(group));
+    return byRosterTime(
+      groups
+        .filter((group) => hasMinimumActiveMembers(group.members))
+        .map((group) => mapSpaceGroup(group)),
+    );
   }
 
   /**
@@ -358,13 +367,15 @@ export function createGroupRepos(prisma: PrismaClient) {
       }),
       1,
     );
-    return groups
-      .filter(
-        (group) =>
-          group.archivedAt !== null ||
-          !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
-      )
-      .map((group) => mapGroup(group as GroupRecord));
+    return byRosterTime(
+      groups
+        .filter(
+          (group) =>
+            group.archivedAt !== null ||
+            !hasMinimumActiveMembers(group.members.filter((member) => !member.bot.archivedAt)),
+        )
+        .map((group) => mapGroup(group as GroupRecord)),
+    );
   }
 
   return {
@@ -382,9 +393,11 @@ export function createGroupRepos(prisma: PrismaClient) {
         }),
         1,
       );
-      return groups
-        .filter((group) => hasMinimumActiveMembers(group.members))
-        .map((group) => mapGroup(group as GroupRecord));
+      return byRosterTime(
+        groups
+          .filter((group) => hasMinimumActiveMembers(group.members))
+          .map((group) => mapGroup(group as GroupRecord)),
+      );
     },
 
     listSpaceGroupsForSpaces,

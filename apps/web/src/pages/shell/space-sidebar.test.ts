@@ -157,7 +157,7 @@ describe("sidebarGroupsForSpaces", () => {
     const groups = sidebarGroupsForSpaces([input], "", undefined, Date.now(), "activity");
     expect(groups.map((group) => [group.key, group.bots.map((item) => item.chat.id)])).toEqual([
       ["pinned", ["pin", "pin2"]],
-      ["unassigned", ["new", "old"]],
+      ["recent", ["new", "old"]],
     ]);
   });
 });

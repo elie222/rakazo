@@ -103,10 +103,12 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ];
       grouped.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     }
+    // The activity list gets its own key, so a collapsed Unassigned in Sections order never hides it.
+    const groupKey = (key: string) => (byActivity && key === "unassigned" ? "recent" : key);
     const sections = grouped.map((group, index) => ({
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
-      key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
+      key: showSpaceNames ? `space:${space.id}:${groupKey(group.key)}` : groupKey(group.key),
       // A header holding the space menu is never blank, even for the only space.
       title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,
