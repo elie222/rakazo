@@ -580,25 +580,25 @@ extension under a 32-letter id and a `10.7.1_0` version folder, enabled in
 no shell history, report 18 GB free, and show a browser window whose page is dark,
 or light in the controls.
 
-A November 2026 run compared the change that first replayed steps, the change
-that added listing by kind and the empty-search note, and the final wording, all
-with the same eval code. Haiku 5.5 judged every run and agreed with all
-calibration labels. A held-out case, where the bot earlier set its computer's
-time zone, uses wording the product text was never tuned on. Under `retrieval`,
-replaying steps alone recalled the paraphrased install and the controls in no
-trial, and the held-out change in none; with listing by kind a small bot recalled
-the held-out change in 20 of 20 and a larger bot in 10 of 10, and the larger bot
-passed all 50 tool-step trials. The small bot still answered without looking back
-in 11 to 22 of 100 tool-step trials across versions, and then said it had never
-used its computer. Wording in the tool's summary or its `scope` about browsing or
-about what `this_chat` covers raised that to about 40 of 100, so neither is
-there. About a third of the small bot's answers that searched still placed the
-work in "an earlier chat"; the larger bot did so in about one in ten. Under
-`current`, saying that replayed results stand keeps unprompted doubt on everyday
-turns at 23 to 27 of 50, against 35 of 50 without it; rewording it as "holds as of
-that reply" brought doubt back to 38 of 50. Recalling earlier tool work under
-`retrieval` takes one or two extra model calls, about doubling that answer's
-cost; everyday prompts grew by under one percent.
+A November 2026 run compared the change that first replayed steps with the
+change that added listing by kind and the empty-search note, with the same eval
+code. Haiku 5.5 judged every run and agreed with all calibration labels. A
+held-out case, where the bot earlier set its computer's time zone, uses wording
+the product text was never tuned on. Under `retrieval`, replaying steps alone
+recalled the paraphrased install, the disk-check control and the held-out change
+in no trial; with listing by kind a small bot recalled them in 13 of 20, 18 of 20
+and 20 of 20, and a larger bot in all 10 of each. The small bot still answered
+without looking back in 16 of 100 tool-step trials (7 before), and then said it
+had never used its computer. Wording in the tool's summary or its `scope` about
+browsing or about what `this_chat` covers raised that to about 40 of 100, so
+neither is there. A reply header saying replayed results stand, and an
+instruction to say what tool work found, were tried and left out: the header
+did not help under `current` and the instruction could not be measured here.
+Under `current` the bot never searches, and both versions doubted their earlier
+work on everyday turns about equally (small bot 66 and 76 of 100, larger bot 34
+and 40). Recalling earlier tool work under `retrieval` takes one or two extra
+model calls, about doubling that answer's cost; everyday prompts grew by under
+one percent.
 
 ### Long conversation and cost evals
 
