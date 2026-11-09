@@ -15,8 +15,7 @@ import {
 import { countUnreadInboxChats } from "./unread-inbox-chats.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 // Ada owns a Space and shared it with Bea. Otto has a Space of his own and nothing to do with it.
 describePostgres("each member's own read state (PostgreSQL)", () => {
