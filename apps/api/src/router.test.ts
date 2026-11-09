@@ -5958,6 +5958,36 @@ describe("model disconnect", () => {
     expect(tx.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("refuses when the choice was saved under the other Azure provider id", async () => {
+    const { tx, call } = disconnectDeps();
+    tx.userBotModelConnection.findMany.mockResolvedValue([
+      {
+        provider: "azure-openai-responses",
+        modelId: "gpt-x",
+        bot: { name: "Ada", modelProvider: "azure", modelId: "gpt-x" },
+      },
+    ]);
+
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(response.status).toBe(400);
+    expect(tx.userModelCredential.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("only counts bots in Spaces the member still belongs to", async () => {
+    const { tx, call } = disconnectDeps();
+
+    await call({ provider: "openai-codex", credentialId: "work" });
+
+    expect(tx.userBotModelConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          bot: { archivedAt: null, space: { memberships: { some: { userId: actor.userId } } } },
+        }),
+      }),
+    );
+  });
+
   it("ignores a choice left behind by a bot that moved to another model", async () => {
     const { tx, call } = disconnectDeps();
     tx.userBotModelConnection.findMany.mockResolvedValue([pinnedBot("Ada", "gpt-y")]);
@@ -7283,6 +7313,7 @@ describe("bot model auth on save", () => {
         update: botUpdate,
       },
       userModelPreference: { findFirst: preferenceFindFirst },
+      userBotModelConnection: { findUnique: vi.fn(async () => null) },
       userModelCredential: { findFirst: vi.fn(async () => null) },
       secret: { findFirst: secretFindFirst },
       $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
@@ -8219,6 +8250,7 @@ describe("openai-compatible enabled models", () => {
   function pinStores(options: {
     bots?: Pin[];
     routines?: Pin[];
+    routineConnections?: { provider: string; modelId: string; credentialId: string }[];
     backups?: string[];
     roleChoices?: string[];
     mainPrimary?: string;
@@ -8246,7 +8278,10 @@ describe("openai-compatible enabled models", () => {
         matching(options.bots, where).map((row) => ({ modelConnections: [], ...row })),
       routine: {
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
-          matching(options.routines, where),
+          matching(options.routines, where).map((row) => ({
+            bot: { modelConnections: options.routineConnections ?? [] },
+            ...row,
+          })),
         ),
       },
       // The account's models; no Space overrides them.
@@ -8335,6 +8370,7 @@ describe("openai-compatible enabled models", () => {
     botModelId?: string;
     bots?: Pin[];
     routines?: Pin[];
+    routineConnections?: { provider: string; modelId: string; credentialId: string }[];
     backups?: string[];
     roleChoices?: string[];
     mainPrimary?: string;
@@ -8581,6 +8617,22 @@ describe("openai-compatible enabled models", () => {
       expect(result.status).toBe(200);
     },
   );
+
+  it("leaves a routine alone when its bot's chosen connection is another one", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      routines: [{ name: "Nightly digest", modelId: "m-b" }],
+      routineConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-other" }],
+    });
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result.status).toBe(200);
+  });
 
   it("ignores another user's bot in the same space", async () => {
     const { call } = fixture({

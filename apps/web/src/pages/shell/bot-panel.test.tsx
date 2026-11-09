@@ -494,6 +494,58 @@ describe("BotSettings thinking options", () => {
     vi.mocked(rpc.models.list).mockResolvedValue([]);
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
   });
+
+  it("clears a thinking level the newly picked connection does not offer", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const connection = { provider: "anthropic", hasKey: true, isDefault: false };
+    vi.mocked(rpc.models.credentials).mockResolvedValue([
+      { ...connection, id: "sub", label: "Claude subscription", thinkingLevels: ["off", "high"] },
+      { ...connection, id: "api", label: "Anthropic API key", thinkingLevels: ["off", "low"] },
+    ]);
+    vi.mocked(rpc.models.list).mockResolvedValue([
+      {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        id: "claude-opus",
+        label: "Claude Opus",
+        billing: "",
+      },
+    ]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: "sub", pinned: true });
+    await render("Billing", {
+      modelProvider: "anthropic",
+      modelId: "claude-opus",
+      thinkingLevel: "high",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
+        .click(),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const model = container.querySelector('[id$="-model"]') as HTMLSelectElement;
+    const thinking = () => container.querySelector('[id$="-thinking"]') as HTMLSelectElement;
+    expect([...thinking().options].map((option) => option.value)).toContain("high");
+
+    await act(async () => {
+      model.value = "api@@anthropic::claude-opus";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const offered = [...thinking().options].map((option) => option.value);
+    expect(offered).toContain("low");
+    expect(offered).not.toContain("high");
+    expect(thinking().value).not.toBe("high");
+    vi.mocked(rpc.models.credentials).mockResolvedValue([]);
+    vi.mocked(rpc.models.list).mockResolvedValue([]);
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
+  });
 });
 
 describe("BotSettings bot management saves", () => {

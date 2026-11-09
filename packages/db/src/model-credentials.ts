@@ -307,6 +307,15 @@ export async function findModelCredential(
   );
 }
 
+/** A member's connection choice applies only while the bot is on the model it was made for. */
+export function botModelConnectionApplies(
+  pin: { provider: string; modelId: string },
+  provider: string,
+  modelId: string | null | undefined,
+) {
+  return pin.modelId === modelId && storedPiProviderIds(provider).includes(pin.provider);
+}
+
 /** The connection a member chose for this bot's model, while the bot is still on that model. */
 export async function botModelConnectionId(
   prisma: Pick<PrismaClient, "userBotModelConnection">,
@@ -319,9 +328,7 @@ export async function botModelConnectionId(
     where: { userId_botId: { userId: scope.userId, botId } },
     select: { provider: true, modelId: true, credentialId: true },
   });
-  return pin && pin.modelId === modelId && storedPiProviderIds(provider).includes(pin.provider)
-    ? pin.credentialId
-    : undefined;
+  return pin && botModelConnectionApplies(pin, provider, modelId) ? pin.credentialId : undefined;
 }
 
 /** The connection that serves a bot's model for this member: their choice, or the usual one. */

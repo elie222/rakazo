@@ -626,18 +626,34 @@ export async function validateBotModelChange(
     model: string | null;
     thinkingLevel?: string | null;
     current?: { provider: string | null; model: string | null };
+    /** The connection the bot will run on, when its member chose one. */
+    credentialId?: string;
+    /** The member is choosing that connection now, so it is checked as a model change is. */
+    connectionChanging?: boolean;
   },
 ): Promise<BotModelChangeResult> {
   const scope = { userId: input.userId, spaceId: input.spaceId };
   const { provider, model } = input;
-  const changing = provider !== input.current?.provider || model !== input.current?.model;
+  const resolution = { credentialId: input.credentialId };
+  const changing =
+    Boolean(input.connectionChanging) ||
+    provider !== input.current?.provider ||
+    model !== input.current?.model;
   if (changing && provider && model) {
     const hosted =
+      !input.credentialId &&
       deps.hostedProvider === provider &&
       (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted
       ? null
-      : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
+      : await findConnectedModelCredential(
+          deps.prisma,
+          deps.secretStore,
+          scope,
+          provider,
+          model,
+          resolution,
+        );
     if (!credential) {
       if (hosted && isCatalogModelChoice(provider, model)) {
         const allowed = listPiCatalog().find(
@@ -671,6 +687,7 @@ export async function validateBotModelChange(
         scope,
         provider,
         model,
+        resolution,
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
@@ -703,6 +720,7 @@ export async function validateBotModelChange(
         scope,
         effectiveProvider,
         effectiveModelId,
+        resolution,
       );
       if (allowed && !allowed.includes(thinkingLevel)) {
         return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };

@@ -311,7 +311,13 @@ export function BotSettings({
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
+  // Thinking levels belong to the connection, so read them from the one the bot will run on.
+  const chosenCredential =
+    shownConnection && pickerValue === connectionKey
+      ? credentials.find((credential) => credential.id === shownConnection)
+      : undefined;
+  const effectiveCredential =
+    chosenCredential ?? credentialForModel(credentials, effectiveProvider, effectiveModelId);
   const thinkingOptions = (
     effectiveCredential?.thinkingLevels ??
     effectiveEntry?.thinkingLevels ??
@@ -610,7 +616,14 @@ export function BotSettings({
                 const { credentialId, modelKey: nextModelKey } = parseConnectionChoiceKey(key);
                 setPendingConnection(credentialId ?? null);
                 setModelKey(nextModelKey);
-                if (nextModelKey !== selectedModelKey) setThinkingLevel("");
+                const levels = credentials.find(
+                  (credential) => credential.id === credentialId,
+                )?.thinkingLevels;
+                if (
+                  nextModelKey !== selectedModelKey ||
+                  (levels && !levels.some((level) => level === thinkingLevel))
+                )
+                  setThinkingLevel("");
               }}
               thinkingOptions={thinkingOptions}
               thinkingLevel={thinkingLevel}

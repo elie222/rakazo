@@ -28,6 +28,7 @@ import { clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appliedModelRole,
+  botModelConnectionApplies,
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
@@ -634,7 +635,11 @@ export function modelsRoutes(ctx: RouterContext) {
                       where: {
                         userId: context.actor.userId,
                         credentialId: { in: ids },
-                        bot: { archivedAt: null },
+                        // Someone who left a Space can no longer run its bots or change them.
+                        bot: {
+                          archivedAt: null,
+                          space: { memberships: { some: { userId: context.actor.userId } } },
+                        },
                       },
                       select: {
                         provider: true,
@@ -646,7 +651,8 @@ export function modelsRoutes(ctx: RouterContext) {
                 const names = pinned
                   .filter(
                     (pin) =>
-                      pin.provider === pin.bot.modelProvider && pin.modelId === pin.bot.modelId,
+                      pin.bot.modelProvider &&
+                      botModelConnectionApplies(pin, pin.bot.modelProvider, pin.bot.modelId),
                   )
                   .map((pin) => pin.bot.name);
                 if (names.length > 0)

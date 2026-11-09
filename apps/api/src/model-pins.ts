@@ -3,7 +3,7 @@ import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import { botModelConnectionApplies, modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 
 /**
@@ -19,6 +19,10 @@ async function compatibleModelPins(
   const where = { userId: actor.userId, modelId };
   const pin = { spaceId: true, modelId: true } as const;
   const role = { modelId: true, role: true, position: true, credentialId: true } as const;
+  const chosenConnection = {
+    where: { userId: actor.userId },
+    select: { provider: true, modelId: true, credentialId: true },
+  } as const;
   // A connection is the account's, so its pins are checked in every Space it is used in.
   const [bots, routines, accountRoles, spaceRoles] = await runAsSystem(
     "model pins across the account's Spaces",
@@ -29,15 +33,16 @@ async function compatibleModelPins(
           select: {
             ...pin,
             name: true,
-            modelConnections: {
-              where: { userId: actor.userId },
-              select: { provider: true, modelId: true, credentialId: true },
-            },
+            modelConnections: chosenConnection,
           },
         }),
         deps.prisma.routine.findMany({
           where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
-          select: { ...pin, name: true },
+          select: {
+            ...pin,
+            name: true,
+            bot: { select: { modelConnections: chosenConnection } },
+          },
         }),
         deps.prisma.userModelRoleChoice.findMany({ where: { ...where, provider }, select: role }),
         deps.prisma.spaceModelRoleChoice.findMany({
@@ -50,16 +55,21 @@ async function compatibleModelPins(
         }),
       ]),
   );
+  const chosenConnectionId = (
+    rows: Array<{ provider: string; modelId: string; credentialId: string }>,
+    modelId: string | null,
+  ) => rows.find((row) => botModelConnectionApplies(row, provider, modelId))?.credentialId;
   return {
     named: [
-      // A bot's model runs on the connection its member chose for it.
+      // A bot's model, and a routine's on the same model, run on the connection chosen for the bot.
       ...bots.map(({ modelConnections, ...bot }) => ({
         ...bot,
-        credentialId: modelConnections.find(
-          (row) => row.provider === provider && row.modelId === bot.modelId,
-        )?.credentialId,
+        credentialId: chosenConnectionId(modelConnections, bot.modelId),
       })),
-      ...routines,
+      ...routines.map(({ bot, ...routine }) => ({
+        ...routine,
+        credentialId: chosenConnectionId(bot.modelConnections, routine.modelId),
+      })),
     ],
     backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
   };

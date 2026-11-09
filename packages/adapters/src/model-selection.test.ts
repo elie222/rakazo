@@ -1272,6 +1272,21 @@ describe("bot model change validation", () => {
     };
   }
 
+  it("checks a chosen connection even when the model stays the same", async () => {
+    const deps = changeDeps({});
+    const same = {
+      ...scope,
+      provider: "xai",
+      model: "grok-4.6",
+      current: { provider: "xai", model: "grok-4.6" },
+      credentialId: "chosen",
+    };
+    await expect(validateBotModelChange(deps, same)).resolves.toMatchObject({ ok: true });
+    await expect(
+      validateBotModelChange(deps, { ...same, connectionChanging: true }),
+    ).resolves.toEqual({ ok: false, error: "Connect that model provider first" });
+  });
+
   it("rejects a disconnected provider and an unknown model", async () => {
     const deps = changeDeps({ xai: credential("xai", "saved-model") });
     await expect(
