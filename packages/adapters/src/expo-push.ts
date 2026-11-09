@@ -33,11 +33,26 @@ const RESPONSE_TOO_LARGE = "Expo push response is too large.";
 
 /** Data a notification tap uses to open the bot or group thread in its space.
  * `deliveryId` distinguishes this send from another push for the same thread:
- * the Expo request identifier stays the thread id. */
-export function expoPushData(message: NotificationMessage, spaceId: string, deliveryId: string) {
+ * the Expo request identifier stays the thread id. The sender carries one avatar:
+ * the largest the registration's devices can draw. */
+export function expoPushData(
+  message: NotificationMessage,
+  spaceId: string,
+  deliveryId: string,
+  largeAvatar = false,
+) {
+  const sender = message.sender
+    ? {
+        botId: message.sender.botId,
+        name: message.sender.name,
+        avatar: largeAvatar
+          ? (message.sender.avatarLarge ?? message.sender.avatar)
+          : message.sender.avatar,
+      }
+    : undefined;
   return {
     kind: message.kind,
-    ...(message.sender ? { sender: message.sender } : {}),
+    ...(sender ? { sender } : {}),
     botId: message.botId,
     threadId: message.threadId,
     ...(message.runId ? { runId: message.runId } : {}),
@@ -310,7 +325,10 @@ export class ExpoPushProvider implements NotificationProvider {
     const title = capped(message.title, MAX_PUSH_TITLE_CHARS);
     let bodyChars = MAX_PUSH_BODY_CHARS;
     let text = capped(message.body, bodyChars);
-    const data = expoPushData(message, context.spaceId, randomUUID());
+    // Android's installed sender code drops an avatar over 96px; iOS and plain pushes have no
+    // pixel cap, so they carry the larger render when one fit.
+    const largeAvatar = registration.presentation !== "android_sender";
+    const data = expoPushData(message, context.spaceId, randomUUID(), largeAvatar);
     const shared = {
       to: token,
       collapseId: message.threadId,

@@ -21,18 +21,20 @@ supportedArchitectures:
     - arm64
 
 overrides:
-  react: 19.2.3
-  react-dom: 19.2.3
+  react: 19.2.9
+  react-dom: 19.2.9
   proxy-addr@<2.0.8: 2.0.8
   dompurify@<3.4.17: 3.4.17
   ws@>=8 <8.21.1: 8.22.0
   "@grpc/grpc-js@<1.14.5": 1.14.7
   "@opentelemetry/core@>=2 <2.8.0": 2.12.0
-  "@composio/core>undici": 7.30.1
   "@electron/get>undici": 7.30.1
-  e2b>undici: 7.30.1
-  e2b>undici8: npm:undici@8.12.3
   joi@>=18 <18.3.1: 18.3.2
+  qs@<6.16.2: 6.16.2
+  body-parser@>=2 <2.4.0: 2.4.0
+  follow-redirects@<1.16.2: 1.16.2
+  ip-address@<10.7.1: 10.7.1
+  react-server-dom-webpack@<19.2.9: 19.2.9
 
 patchedDependencies:
   app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch

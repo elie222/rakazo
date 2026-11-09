@@ -1,3 +1,4 @@
+import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
@@ -21,6 +22,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { useI18n } from "../lib/i18n";
+import { SNOOZE_LABELS } from "../lib/inbox-swipe";
 import type { MobileBot, MobileBotSection } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -42,6 +44,8 @@ export function BotOrganizeModal({
   onCreateSection,
   onRenameSection,
   onDeleteSection,
+  snoozed,
+  onSnooze,
 }: {
   bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> &
     Partial<Pick<MobileBot, "notifyOnFinish">>;
@@ -51,6 +55,10 @@ export function BotOrganizeModal({
   onCreateSection: (name: string) => Promise<void>;
   onRenameSection: (sectionId: string, name: string) => Promise<void>;
   onDeleteSection: (sectionId: string) => Promise<void>;
+  /** Snoozed until a time still ahead. */
+  snoozed?: boolean;
+  /** An ISO wake time, or null to unsnooze. */
+  onSnooze?: (until: string | null) => Promise<void>;
 }) {
   const Sheet = useNativeSheet();
   const styles = useThemedStyles(createBotOrganizeStyles);
@@ -140,6 +148,35 @@ export function BotOrganizeModal({
             {bot.notifyOnFinish ? t("Silence notifications") : t("Resume notifications")}
           </Text>
         </Pressable>
+      ) : null}
+      {onSnooze && snoozed ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={saving}
+          onPress={() => void save(() => onSnooze(null))}
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+        >
+          <NativeSymbol ios="moon.zzz" android="moon-outline" size={18} />
+          <Text style={styles.actionLabel}>{t("Unsnooze")}</Text>
+        </Pressable>
+      ) : null}
+      {onSnooze && !snoozed ? (
+        <>
+          <Text style={styles.sectionLabel}>{t("Snooze")}</Text>
+          {SNOOZE_PRESETS.map((preset) => (
+            <Pressable
+              key={preset}
+              accessibilityRole="button"
+              disabled={saving}
+              onPress={() =>
+                void save(() => onSnooze(snoozePresetTime(preset, new Date()).toISOString()))
+              }
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+            >
+              <Text style={styles.actionLabel}>{t(SNOOZE_LABELS[preset])}</Text>
+            </Pressable>
+          ))}
+        </>
       ) : null}
       <Text style={styles.sectionLabel}>{t("Move to")}</Text>
       <ScrollView

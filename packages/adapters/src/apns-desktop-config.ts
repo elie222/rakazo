@@ -1,4 +1,4 @@
-import type { ApnsConfig } from "./apns-http.js";
+import type { ApnsVoipConfig as ApnsConfig } from "./apns-voip.js";
 import { apnsVoipConfig } from "./apns-voip-config.js";
 
 /** The published desktop app's bundle id (apps/desktop/package.json); self-built apps set their own. */

@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { ApnsDesktopProvider } from "./apns-desktop.js";
 import { apnsDesktopConfig } from "./apns-desktop-config.js";
-import type { ApnsTransport } from "./apns-http.js";
+import type { ApnsTransport } from "./apns-voip.js";
 
 const keys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const config = {

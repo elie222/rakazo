@@ -115,6 +115,7 @@ import {
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
+import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
@@ -248,6 +249,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = executorDeps.web ?? createWebProvider();
   const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const paidServices = executorDeps.paidServices ?? createPaidServiceProvider();
   const browser =
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
   const cloudAgent = executorDeps.cloudAgent;
@@ -1269,6 +1271,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+            paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             paymentWalletEnabled,
             messagingChannelRun: nonOwnerChatRun,
@@ -1435,7 +1438,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         const ctx: RunContext = {
           deps,
-          providers: { web, mediaGeneration, browser, cloudAgent },
+          providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
           run,
           runId,
           workerId,
@@ -1558,9 +1561,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             savedComputerMode?.mode,
           );
           if (checkpointModelResolver && !turnCheckpoint)
-            throw new Error(
-              "Pinned computer mode checkpoint cannot resume with the available tools",
-            );
+            throw new Error("Pinned computer mode checkpoint cannot be restored");
         }
         const approvalContinuation = turnCheckpoint
           ? undefined

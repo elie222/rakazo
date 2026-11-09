@@ -380,17 +380,14 @@ export async function leaveInvitedSpaces(
     // A Space in an organization that goes with the account goes with it.
     if (owned.has(membership.space.organizationId)) continue;
     const { spaceId } = membership;
-    if (isOwnerRole(membership.role)) {
-      if (deactivated) continue;
-      // Under the Space's lock, so a member who is leaving meanwhile is never chosen.
-      if (!(await handOwnership(prisma, { spaceId, userId }))) continue;
-    }
+    if (deactivated && isOwnerRole(membership.role)) continue;
     // Someone who left or was removed meanwhile has already departed: nothing is left to do. A
-    // deactivated account made owner meanwhile keeps the Space.
+    // deactivated account made owner meanwhile keeps the Space. A deleted owner that cannot hand
+    // it over stays, so its things there go with the account.
     const departure = await departSpace(prisma, {
       spaceId,
       userId,
-      ...(deactivated ? { leaving: true, deactivated } : {}),
+      ...(deactivated ? { leaving: true, deactivated } : { handOver: true }),
     }).catch((error: unknown) => {
       if (error instanceof SpaceMemberNotFoundError) return null;
       if (error instanceof SpaceOwnerCannotLeaveError) return null;
@@ -406,31 +403,29 @@ export async function leaveInvitedSpaces(
 }
 
 /**
- * Whether the longest-standing full member was made the departing owner's Space's owner, so the
- * account can leave it like anyone else. False when another owner already keeps it, or when only
- * guests are left and the Space goes with the account (claimSpacesLeavingWithAccount): either way
- * the account's own things in it go with the account.
+ * Makes the longest-standing full member the departing owner's Space's owner, so the account can
+ * leave it like anyone else, and returns who. Null when another owner already keeps it, or when
+ * only guests are left and the Space goes with the account (claimSpacesLeavingWithAccount): either
+ * way the account's own things in it go with the account.
  */
-async function handOwnership(prisma: PrismaClient, input: SpaceRef): Promise<boolean> {
+async function handOwnership(
+  tx: Prisma.TransactionClient,
+  input: SpaceRef,
+): Promise<string | null> {
   const { spaceId, userId } = input;
-  return runAsSystem("hand a departing owner's Space to a teammate", () =>
-    prisma.$transaction(async (tx) => {
-      await lockSpaceDeletion(tx, spaceId);
-      const coOwner = await tx.spaceMember.findFirst({
-        where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
-        select: { id: true },
-      });
-      if (coOwner) return false;
-      const successor = await tx.spaceMember.findFirst({
-        where: { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { id: true },
-      });
-      if (!successor) return false;
-      await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
-      return true;
-    }),
-  );
+  const coOwner = await tx.spaceMember.findFirst({
+    where: { spaceId, userId: { not: userId }, role: { contains: "owner" } },
+    select: { id: true },
+  });
+  if (coOwner) return null;
+  const successor = await tx.spaceMember.findFirst({
+    where: { spaceId, userId: { not: userId }, member: { role: { not: GUEST_ROLE } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, userId: true },
+  });
+  if (!successor) return null;
+  await tx.spaceMember.update({ where: { id: successor.id }, data: { role: "owner" } });
+  return successor.userId;
 }
 
 /**
@@ -443,9 +438,16 @@ async function handOwnership(prisma: PrismaClient, input: SpaceRef): Promise<boo
  */
 async function departSpace(
   prisma: PrismaClient,
-  input: SpaceRef & { removedBy?: string; leaving?: boolean; deactivated?: boolean },
+  input: SpaceRef & {
+    removedBy?: string;
+    leaving?: boolean;
+    deactivated?: boolean;
+    /** A departing owner first hands the Space over, in the same transaction, so a failed
+     * departure never leaves it handed over without having left. */
+    handOver?: boolean;
+  },
 ): Promise<SpaceDeparture> {
-  const { spaceId, userId, removedBy, leaving, deactivated } = input;
+  const { spaceId, userId, removedBy, leaving, deactivated, handOver } = input;
   // Bots, routines and credentials are tenant rows; this moves them between people.
   return runAsSystem("move a departing member's Space content to its owner", () =>
     withTransactionRetry(() =>
@@ -478,7 +480,11 @@ async function departSpace(
           }
           // Someone made owner since they asked to leave stays: the Space is theirs now.
           if (leaving && isOwnerRole(departing.role)) throw new SpaceOwnerCannotLeaveError();
-          const ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
+          let ownerId = others.find((member) => isOwnerRole(member.role))?.userId;
+          if (handOver && isOwnerRole(departing.role)) {
+            ownerId = (await handOwnership(tx, { spaceId, userId })) ?? undefined;
+            if (!ownerId) throw new SpaceOwnerCannotLeaveError();
+          }
           if (!ownerId) throw new CannotRemoveSpaceOwnerError();
 
           const runs = await tx.run.findMany({

@@ -98,6 +98,7 @@ import {
   useTrustedLinkSites,
 } from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
+import { startWorkActivities } from "../lib/work-activity";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -345,6 +346,12 @@ function LayoutContent() {
     return startUnsentSends();
   }, [ready]);
 
+  // Only once the saved server is restored: the card's check sends the session to it.
+  useEffect(() => {
+    if (!ready) return;
+    return startWorkActivities();
+  }, [ready]);
+
   useEffect(() => watchForegroundUpdates(), []);
 
   useEffect(() => {
@@ -456,6 +463,15 @@ function LayoutContent() {
                         presentation: "formSheet",
                         sheetAllowedDetents: "fitToContents",
                         sheetGrabberVisible: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="new-bot"
+                      options={{
+                        title: t("New bot"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
                       }}
                     />
                     <Stack.Screen

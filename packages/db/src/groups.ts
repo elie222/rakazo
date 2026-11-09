@@ -15,7 +15,7 @@ import {
   previewFromBlocks,
   primaryActiveRun,
 } from "./thread-listing.js";
-import { readStateFor, unreadFor } from "./thread-reads.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -30,7 +30,7 @@ type GroupRecord = {
   updatedAt: Date;
   thread: {
     id: string;
-    reads: Array<{ unread: boolean }>;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
   members: Array<{
@@ -49,7 +49,7 @@ type SpaceGroupRecord = Pick<
   "id" | "spaceId" | "name" | "pinned" | "sectionId" | "updatedAt" | "members"
 > & {
   thread: {
-    reads: Array<{ unread: boolean }>;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
 };
@@ -78,6 +78,7 @@ function mapGroup(group: GroupRecord): Group {
     threadId: group.thread.id,
     preview,
     unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
     createdAt: group.createdAt.toISOString(),
   };
@@ -94,6 +95,7 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
     members: mapGroupMembers(group.members),
     preview: previewFromBlocks(group.thread.messages[0]?.blocks),
     unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
   };
 }

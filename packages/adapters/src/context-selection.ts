@@ -91,6 +91,11 @@ function imageBlocks(value: unknown): object[] {
   } else visitMessage(value);
   return found;
 }
+/** Deliberately low count, about five characters a token, for text that must never be overcharged. */
+export function lowTextTokens(text: string): number {
+  return Math.floor(text.length / 5);
+}
+
 /**
  * Provider-neutral token estimate for text, without a tokenizer. The weights were calibrated
  * against cl100k, o200k, Llama 3, Qwen 2.5 and Mistral's original tokenizer, landing at or a

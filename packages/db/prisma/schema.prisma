@@ -85,10 +85,12 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   callPushDevices             CallPushDevice[]
+  workActivityTokens          WorkActivityToken[]
   desktopPushDevices          DesktopPushDevice[]
   trustedLinkSites            TrustedLinkSite[]
   feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
+  botEmailSends               BotEmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
   devices                     UserDevice[]
@@ -157,6 +159,25 @@ model CallPushDevice {
 
   @@index([userId, sessionId])
   @@map("call_push_devices")
+}
+
+/// A phone's live status card for the user's bots at work. Rows go once no bot is working.
+model WorkActivityToken {
+  tokenDigest String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The session that registered the card; the card ends with it. No FK, as for push tokens.
+  sessionId String
+  ciphertext String
+  /// A keyed digest of the last state sent, so unchanged work sends nothing.
+  lastState String?
+  /// Bots waiting on the user in that state, so a new question shows at once.
+  lastWaiting Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("work_activity_tokens")
 }
 
 /// Desktop notification registrations, one per token; the id is the token's digest.
@@ -1107,7 +1128,8 @@ model Thread {
   @@map("threads")
 }
 
-/// One member's read state for a chat: a personal resource. No row means caught up.
+/// One member's personal state for a chat: how far they've read, and whether they've snoozed
+/// it. Named for its first use (reads). No row means caught up and not snoozed.
 /// Leaving the Space deletes it with the membership.
 model ThreadRead {
   threadId    String
@@ -1118,6 +1140,8 @@ model ThreadRead {
   unread      Boolean     @default(false)
   /// Highest message seq this member has read; the "New" divider goes after it. -1 = none read.
   lastReadSeq Int         @default(-1)
+  /// Hidden from this member's chat list until then; once past, the chat shows as woken until opened.
+  snoozedUntil DateTime?
 
   @@id([threadId, userId])
   @@index([spaceId, userId])
@@ -1257,6 +1281,7 @@ model Run {
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([threadId, createdAt, id])
+  @@index([userId, status, createdAt])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   // Partial index runs_helper_outcome_pending_idx (unreturned background-helper outcomes) is created in SQL.
@@ -1535,10 +1560,26 @@ model BotEmailMessage {
   /// Kept files ({ artifactId, name, mimeType, size }) and names of refused ones ({ name }).
   attachments Json      @default("[]")
   receivedAt  DateTime  @default(now())
+  /// Blind-index search tokens for the encrypted sender, subject and text; NULL until encrypted.
+  searchTokens Int[]
 
   @@unique([botId, key])
   @@index([botId, receivedAt])
   @@map("bot_email_messages")
+}
+
+/// One email a bot sent, for the daily send limits. Kept apart from the bot and its Space, so
+/// deleting a bot or spreading bots over Spaces never resets what its owner has sent.
+model BotEmailSend {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// No relation: a deleted bot's sends still count toward its owner's limit.
+  botId  String
+  sentAt DateTime @default(now())
+
+  @@index([userId, sentAt])
+  @@map("bot_email_sends")
 }
 
 model ScratchpadItem {
@@ -1898,6 +1939,8 @@ model Artifact {
   rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
   versions       Artifact[] @relation("ArtifactVersions")
   version        Int        @default(1)
+  // A file a stranger emailed: its own family, never one a later upload of that name joins.
+  standalone     Boolean    @default(false)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 
@@ -2504,6 +2547,8 @@ model BillingAuditEvent {
   createdAt         DateTime @default(now())
 
   @@index([organizationId, createdAt])
+  /// Balance verification sums an organization's journal from the index alone.
+  @@index([organizationId, amountMicros])
   @@index([callId, createdAt])
   @@map("billing_audit_events")
 }

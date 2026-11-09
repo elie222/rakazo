@@ -124,6 +124,9 @@ vi.mock("../components/native-action-button", async () => {
   };
 });
 
+vi.mock("../components/vault-tile", () => ({
+  VaultTile: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 
 vi.mock("../components/vault-item-editor", async () => {

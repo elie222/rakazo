@@ -1,8 +1,8 @@
 import type { RunErrorKind } from "@rakazo/contracts";
 import {
-  COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  isComputerAllowanceUsed,
   providerQuotaResetAt,
 } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
@@ -36,6 +36,10 @@ export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before runni
 /** A deployment model run while the organization has not chosen Rakazo credits. */
 export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
   "Connect your own API key in Models or choose Rakazo credits in Billing.";
+
+/** A metered model call the organization's Rakazo credits cannot cover. */
+export const MODEL_CREDITS_EXHAUSTED_ERROR =
+  "Not enough model credits. Add credits in Billing or connect your own API key.";
 
 /** A run in a billing organization without a paid plan, credits, or free period. */
 export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
@@ -109,13 +113,13 @@ const MODEL_OUTPUT_RUN_ERRORS = new Set([
 const MODEL_CONNECTION_RUN_ERRORS = new Set([
   MISSING_MODEL_RUN_ERROR,
   HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
 ]);
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
-  COMPUTER_ALLOWANCE_USED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
@@ -193,7 +197,7 @@ export function parseModelFallbackFailure(
  * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -208,14 +212,17 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model)\b|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support|requires the use of|requires [\w -]{1,30}\bregions?|is not a chat model|only supports (?:the )?(?:\/|[\w ./-]{1,40}\b(?:endpoint|API)\b))|\bnot supported (?:with|by|for) (?:this|the) model\b|^feature 'tool calls' is not (?:currently )?supported\b|^Invalid inference request\. Check the model's supported parameters\b/i;
+
+export type RunErrorRecovery = "connection" | "model" | "plan";
 
 /**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
  * is the one action that fixes the failure: "connection" opens the model connections (a
  * rejected or capped key, or no model at all) and "model" picks another model (a provider out
- * of quota or credits, refusing the model to the account, or unable to serve it). Transient
- * failures carry none: their summary already says to try again.
+ * of quota or credits, refusing the model to the account, or unable to serve it), and "plan"
+ * opens billing (computer hours spent). Transient failures carry none: their summary already
+ * says to try again.
  */
 export function normalizeRunError(
   details: string,
@@ -225,7 +232,7 @@ export function normalizeRunError(
 ): {
   summary: string;
   details: string;
-  recovery?: "connection" | "model";
+  recovery?: RunErrorRecovery;
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
@@ -275,6 +282,7 @@ export function normalizeRunError(
       ].join("\n"),
     };
   }
+  if (isComputerAllowanceUsed(trimmed)) return { summary: details, details, recovery: "plan" };
   // Preserve only known recovery advice: provider diagnostics can also be plain text.
   if (APP_RUN_ERRORS.has(trimmed)) {
     return MODEL_OUTPUT_RUN_ERRORS.has(trimmed)
@@ -282,6 +290,9 @@ export function normalizeRunError(
       : MODEL_CONNECTION_RUN_ERRORS.has(trimmed)
         ? { summary: translate(trimmed), details, recovery: "connection" }
         : { summary: details, details };
+  }
+  if (trimmed === INTERNAL_RUN_ERROR) {
+    return { summary: translate("Something went wrong. Try again."), details };
   }
   if (trimmed === MODEL_OUTPUT_CUT_ERROR) {
     return {
@@ -361,7 +372,7 @@ export function normalizeRunError(
   let resetAt: number | undefined;
   let kind: RunErrorKind | undefined;
   let period: "none" | "daily" | "weekly" | "monthly" | undefined;
-  let recovery: "connection" | "model" | undefined;
+  let recovery: RunErrorRecovery | undefined;
   let summary = translate("The model provider returned an error.");
   const financialQuota =
     /insufficient[_ ](?:quota|balance)|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(
@@ -384,7 +395,7 @@ export function normalizeRunError(
   } else if (
     status === 402 ||
     quotaResetAt !== undefined ||
-    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
+    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)|\blimit exceeded\b[\s\S]{0,120}\bupgrade to a paid account\b/i.test(
       signals,
     )
   ) {

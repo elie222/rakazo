@@ -520,13 +520,6 @@ vi.mock("../components/settings-group", () => ({
   },
 }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
-vi.mock("./bot-avatar-edit", () => ({
-  avatarColor: (value: string) => value,
-  avatarShape: () => null,
-  isAvatarPhoto: () => false,
-  withAvatarColor: (_value: string, color: string) => color,
-  withAvatarShape: (value: string) => value,
-}));
 vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({

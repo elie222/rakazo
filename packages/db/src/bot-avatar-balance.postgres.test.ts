@@ -99,7 +99,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     expect(
       created.every((bot) => organicAvatarFamily(bot.id) !== ORGANIC_AVATAR_HEART_FAMILY),
     ).toBe(true);
-    // The starter bot counts too: the first seven bots share no colour.
+    // The starter bot counts too: no colour repeats until the palette is used up.
     const firstColors = all.slice(0, BOT_COLORS.length).map((bot) => bot.color);
     expect(new Set(firstColors).size).toBe(firstColors.length);
     expect(created.every((bot) => /^c[a-z0-9]{24}$/.test(bot.id))).toBe(true);

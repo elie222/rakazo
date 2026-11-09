@@ -16,6 +16,10 @@ export type InboxSwipeRowProps = {
   onAction: (action: InboxRowAction) => void;
   onOrganize: (update: BotOrganizationUpdate) => void;
   onEditSection: (mode: "create" | "rename") => void;
+  /** Snoozed until a time still ahead. */
+  snoozed?: boolean;
+  /** An ISO wake time, or null to unsnooze. Without it the menu offers no snooze. */
+  onSnooze?: (until: string | null) => void;
   children: ReactElement;
 };
 

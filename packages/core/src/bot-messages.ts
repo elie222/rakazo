@@ -5,6 +5,9 @@ import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 
+/** Bots that hit the limit tend to resend the text in chunks; the error steers them to files. */
+export const BOT_MESSAGE_TOO_LONG = `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.`;
+
 /**
  * Default for how many bot-started deliveries may chain before the next one is
  * refused. Messaging is fire-and-forget, so nothing stops two bots replying to

@@ -450,7 +450,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           id: "thread-2",
-          reads: [{ unread: true }],
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running", threadId: "group-thread" }],
@@ -490,6 +490,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         pinned: true,
         sectionId: null,
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",

@@ -22,6 +22,7 @@ import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { VaultItemEditor } from "../../components/vault-item-editor";
 import { VaultItemSheet } from "../../components/vault-item-sheet";
+import { VaultTile } from "../../components/vault-tile";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
@@ -358,13 +359,16 @@ export default function Vault() {
                       detail={vaultItemSubtitle(item) || undefined}
                       chevron="right"
                       leading={
-                        <View style={styles.tile}>
+                        <VaultTile
+                          origin={readable?.auth.type === "login" ? item.origin : undefined}
+                          style={styles.tile}
+                        >
                           <NativeSymbol
                             ios={symbol.ios}
                             android={symbol.android as never}
                             size={17}
                           />
-                        </View>
+                        </VaultTile>
                       }
                     />
                   )}

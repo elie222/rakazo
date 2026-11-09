@@ -662,6 +662,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         ) : null}
         <RunErrorSheet
           details={detailsOpen ? runError : null}
+          summary={normalizedRunError?.summary}
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />

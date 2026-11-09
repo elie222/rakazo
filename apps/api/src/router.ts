@@ -29,6 +29,7 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   verifyModelServesAgents,
+  WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { NavLink } from "@rakazo/contracts";
@@ -65,6 +66,8 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   pushTokens: PushTokenStore;
+  /** Absent when the deployment cannot update a phone's live status card. */
+  workActivities?: Pick<WorkActivities, "register">;
   /** Stops a call's ring on the owner's other devices once it is settled. */
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;

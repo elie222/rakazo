@@ -1,5 +1,5 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import { accountDisplay, chatSnoozed } from "@rakazo/core";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -31,6 +31,7 @@ import { ActivitySection } from "../components/inbox-activity";
 import { InboxHeader } from "../components/inbox-header";
 import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
+import { NativeInboxList } from "../components/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/organization-menu";
 import { PickChatPane } from "../components/pick-chat-pane";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
@@ -44,11 +45,11 @@ import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import type { CreateAction } from "../lib/create-chooser";
-import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { t, useI18n } from "../lib/i18n";
+import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -96,6 +97,7 @@ import { useHomeInbox } from "../lib/use-home-inbox";
 import { chatRpc, useInboxChatActions } from "../lib/use-inbox-chat-actions";
 import { useInboxDay } from "../lib/use-inbox-day";
 import { usePublishSearchInbox } from "../lib/use-publish-search-inbox";
+import { useSnoozeClock } from "../lib/use-snooze-clock";
 import { useSpaceActivity } from "../lib/use-space-activity";
 import { errorText } from "../lib/user-error";
 
@@ -187,7 +189,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
-  const creatingBotRef = useRef(false);
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
@@ -262,6 +263,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // The embedded pane is visible beside the chat, so it keeps polling even when
   // the chat route owns focus.
   useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
+  useEffect(() => onInboxChanged(() => void refreshBots().catch(() => undefined)), [refreshBots]);
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);
   const {
@@ -275,6 +277,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeFromMenu,
     editSectionFromMenu,
     deleteSection,
+    snoozeChat,
   } = useInboxChatActions({ loadBots, setBots, setGroups, setSpaces });
 
   const { activity, setActivity, activityRequestId, loadActivity } = useSpaceActivity({
@@ -328,6 +331,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   usePublishSearchInbox(inboxSpaces, me !== null);
+  const snoozeNow = useSnoozeClock(
+    inboxSpaces.flatMap((space) => [...space.bots, ...space.groups]),
+  );
   // Rows read only each space's sections; keeping the list while they are unchanged keeps the row
   // renderer, so a new preview doesn't re-render every row.
   const [keptSections, setKeptSections] = useState<Pick<InboxSpace, "id" | "botSections">[]>([]);
@@ -344,23 +350,28 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           .filter((space) => space.bots.length > 0)
           .map((space) => ({ ...space, groups: [] })),
         collapsed,
+        undefined,
+        snoozeNow,
       );
     // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
     const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
-        .filter((bot) => bot.pinned)
+        .filter((bot) => bot.pinned && !chatSnoozed(bot, snoozeNow))
         .map((bot) => ({ kind: "bot" as const, bot })),
       ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
-        .filter((group) => group.pinned)
+        .filter((group) => group.pinned && !chatSnoozed(group, snoozeNow))
         .map((group) => ({ kind: "group" as const, group })),
     ];
+    // A snoozed pin waits under Snoozed rather than in the tiles.
     const sidebarSpaces = inboxSpaces.map((space) => ({
       ...space,
-      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned),
-      groups: space.groups.filter((group) => SWIPE_ROWS || !group.pinned),
+      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || chatSnoozed(bot, snoozeNow)),
+      groups: space.groups.filter(
+        (group) => SWIPE_ROWS || !group.pinned || chatSnoozed(group, snoozeNow),
+      ),
     }));
-    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId, snoozeNow);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     inboxSpaces,
@@ -371,8 +382,17 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     visibleGroups,
     locale,
     onShareSelect,
+    snoozeNow,
   ]);
-  const badgeCount = me ? unreadChatCount(inboxSpaces) : null;
+  // Snoozed chats stay off the icon until they wake.
+  const badgeCount = me
+    ? unreadChatCount(
+        inboxSpaces.map((space) => ({
+          bots: space.bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
+          groups: space.groups.filter((group) => !chatSnoozed(group, snoozeNow)),
+        })),
+      )
+    : null;
   useEffect(() => {
     if (badgeCount === null || badgeLoad === null) return;
     void syncInboxAppBadge(badgeCount, badgeLoad.generation);
@@ -451,6 +471,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       }
     },
     [embedded, pathname, router],
+  );
+  // The share sheet's inbox picks a chat to share into; only the real inbox opens chats.
+  useEffect(
+    () => (onShareSelect ? undefined : onOpenChatFromInbox(openChat)),
+    [openChat, onShareSelect],
   );
   // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
   const signingInAgain = useRef(false);
@@ -565,34 +590,37 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(
-    async (spaceId?: string) => {
-      if (
-        creatingBotRef.current ||
-        spaceActionRef.current.busy ||
-        spaceActionRef.current.recoveryId
-      )
+  // A create screen counts as open from the tap until the route changes, so a second tap
+  // before the push lands opens nothing.
+  const openingCreate = useRef(false);
+  useEffect(() => {
+    openingCreate.current = false;
+  }, [pathname]);
+  const openCreate = useCallback(
+    (href: Href) => {
+      if (openingCreate.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
         return;
-      creatingBotRef.current = true;
-      try {
-        await createInboxBot({ refreshBots, openChat, spaceId });
-      } catch (err) {
-        setError(errorText(err, t("Could not create bot")));
-      } finally {
-        creatingBotRef.current = false;
-      }
+      openingCreate.current = true;
+      router.push(href);
     },
-    [openChat, refreshBots, t],
+    [router],
+  );
+
+  const newBot = useCallback(
+    (spaceId?: string) =>
+      openCreate({
+        pathname: "/new-bot",
+        params: { avatarSet: me?.botAvatarSet, ...(spaceId ? { spaceId } : {}) },
+      }),
+    [me?.botAvatarSet, openCreate],
   );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
-      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      if (action === "bot") void createQuickBot();
-      else if (action === "group") router.push("/new-group");
-      else router.push("/new-space");
+      if (action === "bot") newBot();
+      else openCreate(action === "group" ? "/new-group" : "/new-space");
     },
-    [createQuickBot, router],
+    [newBot, openCreate],
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
@@ -682,8 +710,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botAction,
     chooseInboxSpace,
     confirmDeleteSpace,
-    createBotInSpace: createQuickBot,
+    createBotInSpace: newBot,
     day,
+    now: snoozeNow,
     deleteSection,
     editSectionFromMenu,
     groupAction,
@@ -693,6 +722,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     organizeBot,
     organizeFromMenu,
     organizeGroup,
+    snoozeChat,
     spaceBusy,
     spaceRecoveryId,
     sharing: !!onShareSelect,
@@ -713,6 +743,69 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const showLoadFailure = Boolean(loadFailure) && inboxHasNoChats(listData);
   const inlineError = error ?? (showLoadFailure ? null : (loadFailure?.message ?? null));
 
+  const hasListHeader = Boolean(
+    inlineError || spaceRecoveryId || (!onShareSelect && activityMode && userId),
+  );
+  const listHeader = (
+    <>
+      {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
+      {spaceRecoveryId ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={spaceBusy}
+          onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+          style={styles.recoveryAction}
+        >
+          <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+        </Pressable>
+      ) : null}
+      {/* Folds are saved per account, so wait for it before offering them. */}
+      {!onShareSelect && activityMode && userId ? (
+        <ActivitySection
+          activity={activity}
+          bots={visible}
+          groups={visibleGroups}
+          toggledSections={collapsed}
+          onToggleSection={toggleCollapsed}
+          openChat={openChat}
+          swipe={
+            SWIPE_ROWS
+              ? {
+                  botAction,
+                  groupAction,
+                  sections: botSections,
+                  onOrganize: organizeFromMenu,
+                  onEditSection: editSectionFromMenu,
+                  onSnooze: snoozeChat,
+                }
+              : undefined
+          }
+        />
+      ) : null}
+    </>
+  );
+  const listEmpty =
+    showLoadFailure && loadFailure ? (
+      <HomeErrorState
+        kind={loadFailure.kind}
+        message={loadFailure.message}
+        loading={inboxLoading && !refreshing}
+        onRetry={() => void refreshBots()}
+        onSignIn={() => void signInAgain()}
+      />
+    ) : (
+      <Text style={styles.empty}>{me && !onShareSelect ? t("Tap + to create a bot") : null}</Text>
+    );
+  const listFooter = (
+    <InboxListFooter
+      createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
+      archivedCount={onShareSelect ? 0 : archivedCount}
+    />
+  );
+  const refreshInbox = async () => {
+    await Promise.all([refreshBots(), loadActivity()]);
+  };
+
   return (
     <View style={styles.screen}>
       {nativeHeader || onShareSelect ? null : (
@@ -730,99 +823,73 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         <CompactRowsContext.Provider value={compactRows}>
           <View style={styles.listArea}>
             <AvatarViewportScope viewport={avatarViewport}>
-              <FlatList<InboxItem>
-                ref={listRef}
-                {...unreadJump.listProps}
-                style={{ flex: 1 }}
-                // Rows scrolled out of view freeze their avatars until they come back.
-                onViewableItemsChanged={onViewableItemsChanged}
-                viewabilityConfig={AVATAR_VIEWABILITY}
-                data={showLoadFailure ? [] : listData}
-                keyExtractor={inboxItemKey}
-                keyboardDismissMode="interactive"
-                keyboardShouldPersistTaps="handled"
-                indicatorStyle={appearance === "dark" ? "white" : "black"}
-                contentContainerStyle={[
-                  styles.list,
-                  { paddingLeft: columnInsets.left, paddingRight: columnInsets.right },
-                ]}
-                contentInsetAdjustmentBehavior="automatic"
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={() => {
-                      void refreshBots();
-                      void loadActivity();
-                    }}
-                    tintColor={native.secondaryLabel}
-                    colors={[tokens.mutedForeground]}
-                    progressBackgroundColor={tokens.muted}
-                  />
-                }
-                ListHeaderComponent={
-                  <>
-                    {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
-                    {spaceRecoveryId ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={spaceBusy}
-                        onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-                        style={styles.recoveryAction}
-                      >
-                        <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-                      </Pressable>
-                    ) : null}
-                    {/* Folds are saved per account, so wait for it before offering them. */}
-                    {!onShareSelect && activityMode && userId ? (
-                      <ActivitySection
-                        activity={activity}
-                        bots={visible}
-                        groups={visibleGroups}
-                        toggledSections={collapsed}
-                        onToggleSection={toggleCollapsed}
-                        openChat={openChat}
-                        swipe={
-                          SWIPE_ROWS
-                            ? {
-                                botAction,
-                                groupAction,
-                                sections: botSections,
-                                onOrganize: organizeFromMenu,
-                                onEditSection: editSectionFromMenu,
-                              }
-                            : undefined
-                        }
-                      />
-                    ) : null}
-                  </>
-                }
-                ListEmptyComponent={
-                  showLoadFailure && loadFailure ? (
-                    <HomeErrorState
-                      kind={loadFailure.kind}
-                      message={loadFailure.message}
-                      loading={inboxLoading && !refreshing}
-                      onRetry={() => void refreshBots()}
-                      onSignIn={() => void signInAgain()}
+              {/* iOS shows the inbox as one native list; other platforms keep the FlatList. */}
+              {SWIPE_ROWS ? (
+                <NativeInboxList<InboxItem>
+                  data={showLoadFailure ? [] : listData}
+                  keyExtractor={inboxItemKey}
+                  renderItem={renderItem}
+                  isNativeRow={(item) =>
+                    item.type === "heading" ||
+                    (!onShareSelect && (item.type === "bot" || item.type === "group"))
+                  }
+                  header={hasListHeader ? listHeader : null}
+                  empty={listEmpty}
+                  footer={listFooter}
+                  gutters={{
+                    left: columnInsets.left - insets.left,
+                    right: Math.max(0, columnInsets.right - insets.right),
+                  }}
+                  column={columnInsets}
+                  avatarViewport={avatarViewport}
+                  onRefresh={refreshInbox}
+                  signals={jumpSignals}
+                  showJumpPills={
+                    !onShareSelect && !refreshing && !showLoadFailure && !inboxHasNoChats(listData)
+                  }
+                />
+              ) : (
+                <FlatList<InboxItem>
+                  ref={listRef}
+                  {...unreadJump.listProps}
+                  style={{ flex: 1 }}
+                  // Rows scrolled out of view freeze their avatars until they come back.
+                  onViewableItemsChanged={onViewableItemsChanged}
+                  viewabilityConfig={AVATAR_VIEWABILITY}
+                  data={showLoadFailure ? [] : listData}
+                  keyExtractor={inboxItemKey}
+                  keyboardDismissMode="interactive"
+                  keyboardShouldPersistTaps="handled"
+                  indicatorStyle={appearance === "dark" ? "white" : "black"}
+                  contentContainerStyle={[
+                    styles.list,
+                    { paddingLeft: columnInsets.left, paddingRight: columnInsets.right },
+                  ]}
+                  contentInsetAdjustmentBehavior="automatic"
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={() => {
+                        void refreshBots();
+                        void loadActivity();
+                      }}
+                      tintColor={native.secondaryLabel}
+                      colors={[tokens.mutedForeground]}
+                      progressBackgroundColor={tokens.muted}
                     />
-                  ) : (
-                    <Text style={styles.empty}>
-                      {me && !onShareSelect ? t("Tap + to create a bot") : null}
-                    </Text>
-                  )
-                }
-                ListFooterComponent={
-                  <InboxListFooter
-                    createHint={
-                      !onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)
-                    }
-                    archivedCount={onShareSelect ? 0 : archivedCount}
-                  />
-                }
-                renderItem={renderItem}
-              />
+                  }
+                  ListHeaderComponent={listHeader}
+                  ListEmptyComponent={listEmpty}
+                  ListFooterComponent={listFooter}
+                  renderItem={renderItem}
+                />
+              )}
             </AvatarViewportScope>
-            {onShareSelect || refreshing || showLoadFailure || inboxHasNoChats(listData)
+            {SWIPE_ROWS ||
+            onShareSelect ||
+            refreshing ||
+            showLoadFailure ||
+            inboxHasNoChats(listData)
               ? null
               : unreadJump.overlay}
           </View>
@@ -837,6 +904,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
             setOrganizeTarget(null);
           }}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
+          snoozed={chatSnoozed(organizeChat, Date.now())}
+          onSnooze={async (until) => snoozeChat(organizeTarget.kind, organizeChat, until)}
           onCreateSection={(name) =>
             createSection(organizeTarget.kind, organizeChat.id, name, organizeTarget.spaceId)
           }

@@ -547,9 +547,17 @@ msgstr "**गुरुवार**\n"
 msgid "/ month"
 msgstr "/ महीना"
 
+#: src/pages/BotContextMenu.tsx
+msgid "1 hour"
+msgstr "1 घंटा"
+
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 स्पेस"
+
+#: src/pages/BotContextMenu.tsx
+msgid "3 hours"
+msgstr "3 घंटे"
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -630,6 +638,7 @@ msgid "Actions for {0}"
 msgstr "{0} के लिए कार्रवाइयां"
 
 #: src/components/SpaceMembersSettings.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name} के लिए कार्रवाइयाँ"
 
@@ -1449,6 +1458,7 @@ msgid "Cancelled"
 msgstr "रद्द किया गया"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "रद्द किए गए ट्रायल में कंप्यूटर घंटे नहीं होते।"
 
@@ -2239,6 +2249,10 @@ msgstr "स्पेस नहीं बनाया जा सका"
 msgid "Could not create the bot"
 msgstr "बॉट नहीं बनाया जा सका"
 
+#: src/pages/shell/use-routine-editor.ts
+msgid "Could not create the webhook key"
+msgstr "वेबहुक कुंजी नहीं बनाई जा सकी"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "आपका बॉट नहीं बनाया जा सका"
@@ -2543,6 +2557,7 @@ msgstr "रूटीन चलाया नहीं जा सका"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/use-chat-snooze.ts
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "सहेजा नहीं जा सका"
@@ -2936,10 +2951,7 @@ msgid "Delete \"{0}\"?"
 msgstr "\"{0}\" हटाएं?"
 
 #. placeholder {0}: artifact.name
-#. placeholder {0}: bot.name
-#. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "{0} डिलीट करें"
 
@@ -4761,6 +4773,10 @@ msgstr "अगला पृष्ठ"
 msgid "Next settings sections"
 msgstr "अगले सेटिंग्स अनुभाग"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Next week"
+msgstr "अगले हफ़्ते"
+
 #: src/pages/plugins/plugin-browse.tsx
 msgid "No apps match your search."
 msgstr "आपकी खोज से कोई ऐप मेल नहीं खाता।"
@@ -4998,6 +5014,10 @@ msgstr "केवल वही कोड दर्ज करें जो {codeH
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Only me"
 msgstr "सिर्फ़ मैं"
+
+#: src/pages/shell/use-routine-editor.ts
+msgid "Only the bot's creator can set its webhook key."
+msgstr "केवल बॉट बनाने वाला ही इसकी वेबहुक कुंजी सेट कर सकता है।"
 
 #: src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -5747,6 +5767,7 @@ msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Renew plan"
 msgstr "प्लान रिन्यू करें"
 
@@ -5862,6 +5883,10 @@ msgstr "अपडेट के लिए रीस्टार्ट करे�
 #: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "बहाल करें"
+
+#: src/pages/shell/archived-chats.tsx
+msgid "Restore {name}"
+msgstr "{name} बहाल करें"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace."
@@ -6503,6 +6528,14 @@ msgstr "Slack सक्षम नहीं है"
 msgid "Slide up to lock"
 msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
 
+#: src/pages/BotContextMenu.tsx
+msgid "Snooze"
+msgstr "स्नूज़ करें"
+
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Snoozed"
+msgstr "स्नूज़ किए गए"
+
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/plugins/plugin-browse.tsx
 msgid "Some plugins could not be loaded."
@@ -6604,6 +6637,7 @@ msgid "Start plan"
 msgstr "प्लान शुरू करें"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Start plan now"
 msgstr "प्लान अभी शुरू करें"
 
@@ -7033,6 +7067,10 @@ msgstr "इस मॉडल की कॉन्टेक्स्ट विं�
 msgid "This month"
 msgstr "इस महीने"
 
+#: src/pages/shell/composer-error.tsx
+msgid "This month's computer hours are used up."
+msgstr "इस महीने के कंप्यूटर घंटे खत्म हो गए।"
+
 #: src/lib/pages.ts
 msgid "This page couldn't be shown."
 msgstr "यह पेज दिखाया नहीं जा सका।"
@@ -7150,6 +7188,10 @@ msgstr "साइडबार दिखाएं या छिपाएं"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Tokens"
 msgstr "टोकन"
+
+#: src/pages/BotContextMenu.tsx
+msgid "Tomorrow"
+msgstr "कल"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -7297,6 +7339,16 @@ msgstr "पिन हटाएं"
 msgid "Unread"
 msgstr "अपठित"
 
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze"
+msgstr "स्नूज़ हटाएँ"
+
+#. placeholder {0}: chat.name
+#: src/pages/shell/snoozed-chats.tsx
+msgid "Unsnooze {0}"
+msgstr "{0} का स्नूज़ हटाएँ"
+
 #. placeholder {0}: pending.file.name
 #: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
@@ -7355,6 +7407,7 @@ msgstr "टीम कंप्यूटर अपडेट हो रहा ह�
 msgid "Updating…"
 msgstr "अपडेट हो रहा है…"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Upgrade"
@@ -7676,6 +7729,10 @@ msgstr "यह पेज कौन खोल सकता है"
 msgid "Who can start it"
 msgstr "कौन शुरू कर सकता है"
 
+#: src/pages/shell/sidebar-roster.tsx
+msgid "Woke"
+msgstr "स्नूज़ खत्म"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr "नहीं करेंगे"
@@ -7836,6 +7893,10 @@ msgstr "आपका ट्रायल खत्म होगा और आज 
 #: src/components/ModelCredits.tsx
 msgid "Your trial ends and your card is charged today."
 msgstr "आपका ट्रायल खत्म होगा और आज आपके कार्ड से भुगतान लिया जाएगा।"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Your trial's computer hours are used up."
+msgstr "आपके ट्रायल के कंप्यूटर घंटे खत्म हो गए।"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

@@ -38,7 +38,7 @@ import {
   threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
-import { readStateFor, unreadFor } from "./thread-reads.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
@@ -94,7 +94,7 @@ function mapBot(
     memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
-    thread: { id: string; reads: Array<{ unread: boolean }> } | null;
+    thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
@@ -135,6 +135,7 @@ function mapBot(
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: unreadFor(bot.thread),
+    snoozedUntil: snoozedUntilFor(bot.thread),
     parentBotId: bot.parentBotId,
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
@@ -223,6 +224,7 @@ export function createRepos(
         pinned: bot.pinned,
         sectionId: bot.sectionId,
         unread: unreadFor(bot.thread),
+        snoozedUntil: snoozedUntilFor(bot.thread),
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",
