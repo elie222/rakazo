@@ -69,6 +69,8 @@ MLX, list its model IDs and an endpoint that both the API and worker processes c
 ```env
 RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
+# Optional: key for a server that requires one, sent as the bearer token.
+RAKAZO_LOCAL_MODELS_API_KEY=
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).
@@ -76,6 +78,13 @@ RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 # Optional: model ids on this endpoint that accept OpenAI-style reasoning_effort.
 RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 ```
+
+Set `RAKAZO_LOCAL_MODELS_API_KEY` when the server requires a key, such as LiteLLM, vLLM started
+with `--api-key`, or a company gateway. Every request to `RAKAZO_LOCAL_MODELS_URL` then sends it as
+`Authorization: Bearer`; unset, requests carry the placeholder `local`. Like the other deployment
+keys, it stays on the API and worker and is redacted from run output. Use HTTPS unless the network
+is trusted. To make a local model the deployment model, set `PI_DEFAULT_PROVIDER=local`,
+`PI_DEFAULT_MODEL` to one of `RAKAZO_LOCAL_MODELS` and `PI_DEFAULT_CREDENTIALS=host`.
 
 A model in `RAKAZO_LOCAL_REASONING_MODELS` offers thinking levels and sends the chosen level as
 `reasoning_effort` (`medium` by default, `none` when thinking is off). Other local models never
