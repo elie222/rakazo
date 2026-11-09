@@ -552,11 +552,16 @@ export async function verifyOpenAiCompatibleApiKey(
 const LOOPBACK_UNREACHABLE_MESSAGE =
   "Could not reach the model server. If Rakazo runs in Docker, localhost is the container itself: use host.docker.internal or this computer's network address.";
 
-function connectionRefused(error: unknown): boolean {
-  return (
-    error instanceof TypeError &&
-    (error.cause as { code?: unknown } | undefined)?.code === "ECONNREFUSED"
-  );
+/** undici keeps the refusal in `cause`, or in each address's error of a happy-eyeballs AggregateError. */
+function connectionRefused(error: unknown, depth = 0): boolean {
+  if (depth > 4 || !(error instanceof Error)) return false;
+  if ((error as { code?: unknown }).code === "ECONNREFUSED") return true;
+  if (
+    error instanceof AggregateError &&
+    error.errors.some((inner) => connectionRefused(inner, depth + 1))
+  )
+    return true;
+  return connectionRefused(error.cause, depth + 1);
 }
 
 export async function probeOpenAiCompatibleModels(
@@ -624,7 +629,11 @@ export async function probeOpenAiCompatibleModels(
       if (signal?.aborted) throw error;
       throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
-    if (connectionRefused(error) && isLoopbackHost(baseUrl.hostname)) {
+    if (
+      error instanceof TypeError &&
+      connectionRefused(error) &&
+      isLoopbackHost(baseUrl.hostname)
+    ) {
       throw new Error(LOOPBACK_UNREACHABLE_MESSAGE);
     }
     throw error;
