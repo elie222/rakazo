@@ -4633,6 +4633,145 @@ it.each(["user", "webhook"])(
   },
 );
 
+it.each(
+  ["image_search", "web_search"].flatMap((name) =>
+    ["user", "webhook"].flatMap((trigger) =>
+      [false, true].map((claimRace) => ({ name, trigger, claimRace })),
+    ),
+  ),
+)(
+  "restores exact URLs after completed $name replay in $trigger runs, claim race: $claimRace",
+  async ({ name, trigger, claimRace }) => {
+    const f = fixture({ builtin: true, trigger, rules: [{ ...imageAskRule, matchValue: name }] });
+    const found = image("replayed");
+    const fetch = fixtureFetch([searchItem([found]), terminal]);
+    f.web.searchHits = [{ title: "Found", url: found.source_website_url, snippet: "" }];
+    const search = vi.spyOn(f.web, "search");
+    const args = { query: "harbor", maxResults: 2 };
+    const queueSearch = () => {
+      if (name === "image_search") driveImageSearch(f, fetch, { args });
+      else f.setCalls([{ name, args, executionId: "search-call" }]);
+    };
+    queueSearch();
+    await f.run();
+    f.effects[0]!.status = "approved";
+    queueSearch();
+    await f.run();
+    expect(f.effects[0]).toMatchObject({ status: "completed" });
+    const saved = f.effects[0]!.result;
+    if (claimRace) {
+      f.effects[0]!.status = "approved";
+      const update = f.prisma.externalEffect.updateMany;
+      const original = update.getMockImplementation()!;
+      update.mockImplementation(async (input) => {
+        if (input.where.status === "approved" && input.data.status === "executing") {
+          f.effects[0]!.status = "completed";
+          return { count: 0 };
+        }
+        return original(input);
+      });
+    }
+    const urls = [found.source_website_url, ...(name === "image_search" ? [found.image_url] : [])];
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      const { host } = hostFor(fetch, request);
+      const tool = toAgentTools(builtinAgentTools, host).find(
+        (entry) => entry.name === "image_search",
+      )!;
+      f.results.push(
+        name === "image_search"
+          ? await tool.execute("image-call", args)
+          : await request.executeTool!(name, args, "search-call"),
+      );
+      for (const [index, url] of [...urls, `${found.source_website_url}?q=changed`].entries()) {
+        f.results.push(await request.executeTool!("web_fetch", { url }, `replay-fetch-${index}`));
+      }
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    if (name === "image_search") expect(f.results[2]).toMatchObject({ details: saved });
+    else expect(f.results[2]).toEqual(saved);
+    expect(fetch).toHaveBeenCalledTimes(name === "image_search" ? 1 : 0);
+    expect(search).toHaveBeenCalledTimes(name === "web_search" ? 1 : 0);
+    expect(f.fetchedUrls).toEqual(urls);
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(trigger === "user");
+    if (trigger === "webhook")
+      expect(f.results.at(-1)).toMatchObject({ error: expect.stringContaining("cannot ask") });
+  },
+);
+
+it.each(
+  ["image_search", "web_search"].flatMap((name) =>
+    [
+      "failed result",
+      "uncertain result",
+      "uncertain effect",
+      "denied effect",
+      "malformed result",
+      "fetch denied",
+    ].map((kind) => ({ name, kind })),
+  ),
+)("keeps replayed $name URLs gated for $kind", async ({ name, kind }) => {
+  const f = fixture({
+    builtin: true,
+    rules: [
+      { ...imageAskRule, matchValue: name },
+      ...(kind === "fetch denied"
+        ? [
+            {
+              effect: "deny",
+              matchKind: "tool",
+              matchValue: "web_fetch",
+            } satisfies ActionApprovalRule,
+          ]
+        : []),
+    ],
+  });
+  const found = image("untrusted-replay");
+  const fetch = fixtureFetch([terminal]);
+  const search = vi.spyOn(f.web, "search");
+  const args = { query: "harbor", maxResults: 2 };
+  if (name === "image_search") driveImageSearch(f, fetch, { args });
+  else f.setCalls([{ name, args, executionId: "search-call" }]);
+  await f.run();
+  const results =
+    name === "image_search"
+      ? [{ imageUrl: found.image_url, sourceUrl: found.source_website_url }]
+      : [{ title: "Found", url: found.source_website_url, snippet: "" }];
+  f.effects[0]!.status =
+    kind === "uncertain effect" ? "uncertain" : kind === "denied effect" ? "denied" : "completed";
+  f.effects[0]!.result = {
+    results: kind === "malformed result" ? [{}] : results,
+    ...(kind === "failed result" ? { error: "Search failed." } : {}),
+    ...(kind === "uncertain result" ? { uncertain: true } : {}),
+  };
+  f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+    const { host } = hostFor(fetch, request);
+    const tool = toAgentTools(builtinAgentTools, host).find(
+      (entry) => entry.name === "image_search",
+    )!;
+    f.results.push(
+      name === "image_search"
+        ? await tool.execute("image-call", args)
+        : await request.executeTool!(name, args, "search-call"),
+    );
+    f.results.push(
+      await request.executeTool!("web_fetch", { url: found.source_website_url }, "replay-fetch"),
+    );
+    yield { type: "done" as const, text: "Done" };
+  });
+  await f.run();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(search).not.toHaveBeenCalled();
+  expect(f.fetchedUrls).toEqual([]);
+  if (kind === "fetch denied") {
+    expect(f.results.at(-1)).toMatchObject({ error: expect.stringContaining("blocked") });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  } else {
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+  }
+});
+
 it("keeps explicit fetch deny rules on exact image search URLs", async () => {
   const f = fixture({
     builtin: true,

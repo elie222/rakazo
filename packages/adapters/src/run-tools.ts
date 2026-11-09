@@ -165,12 +165,7 @@ async function dispatchTool(
   const handler: ToolHandler = run
     ? async (ctx, call) => {
         const found = await run(call.args);
-        return finishSearchResult(
-          ctx,
-          call,
-          found,
-          "results" in found ? found.results.flatMap((hit) => [hit.imageUrl, hit.sourceUrl]) : [],
-        );
+        return finishSearchResult(ctx, call, found);
       }
     : toolHandler(gate.call.name);
   if (!gate.call.applied) return handler(ctx, gate.call);
