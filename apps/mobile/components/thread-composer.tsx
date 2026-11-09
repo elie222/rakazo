@@ -155,9 +155,14 @@ export function ThreadComposer({
   // box meanwhile, later words are dropped instead of overwriting the edit.
   const dictatedBase = useRef<string | null>(null);
   const dictated = useRef("");
-  function showDictation(words: string) {
-    const base = dictatedBase.current;
-    if (base === null || draftRef.current !== dictated.current) return;
+  function showDictation(words: string, final = false) {
+    let base = dictatedBase.current;
+    if (base === null) return;
+    // Live words never overwrite an edit; a provider's one-off transcript joins the edited text.
+    if (draftRef.current !== dictated.current) {
+      if (!final) return;
+      base = draftRef.current;
+    }
     const next = !words ? base : base.trim() ? `${base.trimEnd()} ${words}` : words;
     dictated.current = next;
     draftRef.current = next;
@@ -168,6 +173,8 @@ export function ThreadComposer({
     selectionHistory.current = [nativeSelection.current];
     completedSelection.current = null;
     setSelection(nativeSelection.current);
+    setMentionQuery(null);
+    setSlashQuery(null);
   }
   const dictation = useComposerDictation({ disabled: onCall, onWords: showDictation });
   function toggleDictation() {
@@ -413,6 +420,8 @@ export function ThreadComposer({
   } as const;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
+  // Sending resets the box, which would drop words a provider is still transcribing.
+  const sendBlocked = sending || !canSend || dictation.status === "transcribing";
 
   return (
     <>
@@ -766,7 +775,6 @@ export function ThreadComposer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={dictation.status === "idle" ? t("Dictate") : t("Stop dictating")}
-              disabled={dictation.status === "transcribing"}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={toggleDictation}
               style={{ marginBottom: 8 }}
@@ -817,10 +825,10 @@ export function ThreadComposer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("Send")}
-              disabled={sending || !canSend}
+              disabled={sendBlocked}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void send()}
-              style={{ marginBottom: 8, opacity: sending || !canSend ? 0.5 : 1 }}
+              style={{ marginBottom: 8, opacity: sendBlocked ? 0.5 : 1 }}
             >
               <GlassSurface
                 tint={tokens.primary}

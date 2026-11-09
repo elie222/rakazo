@@ -901,7 +901,8 @@ export async function recordClip(
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
-    if (signal.aborted) return null;
+    // A dictation stopped before the microphone opened has nothing to send.
+    if (signal.aborted || until?.aborted) return null;
     recorder.record();
     let quietMs = 0;
     let metered = false;

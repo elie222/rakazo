@@ -225,10 +225,10 @@ const dictation = vi.hoisted(() => ({
   status: "idle",
   toggle: vi.fn(),
   cancel: vi.fn(),
-  onWords: (_text: string) => {},
+  onWords: (_text: string, _final?: boolean) => {},
 }));
 vi.mock("./composer-dictation", () => ({
-  useComposerDictation: (opts: { onWords: (text: string) => void }) => {
+  useComposerDictation: (opts: { onWords: (text: string, final?: boolean) => void }) => {
     dictation.onWords = opts.onWords;
     return dictation;
   },
@@ -1205,6 +1205,14 @@ describe("thread composer isolation", () => {
     type("Remind me to buy milk!");
     act(() => dictation.onWords("to buy milk and eggs"));
     expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  it("adds a provider's transcript after text typed while it recorded", () => {
+    type("Note");
+    press("Dictate");
+    type("Note:");
+    act(() => dictation.onWords("call the bank", true));
+    expect(container.querySelector("input")!.value).toBe("Note: call the bank");
   });
 
   it("hides the mic while a call has the microphone", () => {

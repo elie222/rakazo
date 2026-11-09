@@ -16,6 +16,9 @@ export type ComposerDictationStatus = "idle" | "listening" | "transcribing";
 
 type Session = { cancel: AbortController; finish: () => void };
 
+/** Matches the web client: a transcription that takes longer than this has stalled. */
+const TRANSCRIPTION_TIMEOUT_MS = 70_000;
+
 /**
  * Tap to dictate into the message box, tap again to stop. It takes the same path a call would:
  * the phone's own recognizer when device voice is on, otherwise the connected voice provider.
@@ -26,8 +29,11 @@ export function useComposerDictation({
 }: {
   /** Something else owns the microphone, such as a call. */
   disabled: boolean;
-  /** The words heard so far; called live on-device and once after a provider transcribes. */
-  onWords: (text: string) => void;
+  /**
+   * The words heard so far: called live on-device, and once with `final` after a provider
+   * transcribes, so those words are kept even if the box changed while recording.
+   */
+  onWords: (text: string, final?: boolean) => void;
 }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -109,8 +115,26 @@ export function useComposerDictation({
         return;
       }
       setStatus("transcribing");
-      const text = clip ? await transcribeClip(clip, mine.cancel.signal, requestContext) : "";
-      if (end(mine) && text.trim()) onWordsRef.current(text.trim());
+      // A tap while transcribing gives up on it, and so does a request that stalls.
+      mine.finish = cancel;
+      const request = new AbortController();
+      const forward = () => request.abort();
+      mine.cancel.signal.addEventListener("abort", forward, { once: true });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        request.abort();
+      }, TRANSCRIPTION_TIMEOUT_MS);
+      let text = "";
+      try {
+        text = clip ? await transcribeClip(clip, request.signal, requestContext) : "";
+      } catch (error) {
+        throw timedOut ? new Error(t("Could not transcribe that.")) : error;
+      } finally {
+        clearTimeout(timer);
+        mine.cancel.signal.removeEventListener("abort", forward);
+      }
+      if (end(mine) && text.trim()) onWordsRef.current(text.trim(), true);
       return;
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
