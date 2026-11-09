@@ -137,8 +137,9 @@ Integrations lists plugins from the public plugin registries. `PLUGIN_REGISTRIES
 leaves them out. `PLUGIN_ARCHIVES` lists your own plugins: `.tar.gz` URLs separated by commas, each
 ending `#sha256=<hex>` (the hash of the archive file). Each archive holds one plugin with its
 manifest at the root, as `tar czf plugin.tar.gz -C my-plugin .` makes it. The API downloads only
-the archives listed, from any address it can reach, including your own network, and refuses one
-whose hash differs.
+the archives listed, from any HTTP or HTTPS address it can reach, including your own network, and
+refuses one whose hash differs. List the address that serves the file itself: redirects are
+refused, and so are URLs with a query.
 
 ## Messaging apps
 

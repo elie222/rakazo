@@ -70,6 +70,7 @@ const MAX_BYTES = 4_000_000;
 const MAX_FILE_BYTES = 100_000;
 /** A git commit, or the SHA-256 of a plugin archive. */
 const FULL_SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+const COMMIT_SHA = /^[a-f0-9]{40}$/;
 const SCHEMAS = new Set([
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
@@ -144,12 +145,14 @@ export function parsePluginSource(source: string): PluginSourceRef {
   } catch {
     throw new Error("Plugin source must be an HTTPS git URL");
   }
-  if (url.protocol !== "https:") throw new Error("Plugin source must use HTTPS");
   if (url.username || url.password) throw new Error("Plugin source must not contain credentials");
-  if (url.search || url.port)
+  // An archive is fetched only when the deployment listed it, so it may be on its own network.
+  const archive = url.hostname === "github.com" ? null : ARCHIVE_PATH.exec(url.pathname);
+  if (url.protocol !== "https:" && !(archive && url.protocol === "http:"))
+    throw new Error("Plugin source must use HTTPS");
+  if (url.search || (url.port && !archive))
     throw new Error("Plugin source must not contain a query or custom port");
-  const archive = ARCHIVE_PATH.exec(url.pathname);
-  if (url.hostname !== "github.com" && archive) {
+  if (archive) {
     if (url.hash) throw new Error("Plugin archives have no subdirectories");
     url.pathname = archive[1]!;
     return { gitUrl: url.toString(), ref: archive[2] };
@@ -220,11 +223,11 @@ export async function fetchGitHubRepo(
     ),
   ) as { sha?: string; commit?: { tree?: { sha?: string } } };
   const sha = commit.sha;
-  if (!sha || !FULL_SHA.test(sha)) throw new Error("Could not resolve plugin commit SHA");
-  if (ref.ref && FULL_SHA.test(ref.ref) && ref.ref !== sha)
+  if (!sha || !COMMIT_SHA.test(sha)) throw new Error("Could not resolve plugin commit SHA");
+  if (ref.ref && COMMIT_SHA.test(ref.ref) && ref.ref !== sha)
     throw new Error("Plugin commit SHA did not match the requested pin");
   const treeSha = commit.commit?.tree?.sha;
-  if (!treeSha || !FULL_SHA.test(treeSha)) throw new Error("Could not resolve plugin tree");
+  if (!treeSha || !COMMIT_SHA.test(treeSha)) throw new Error("Could not resolve plugin tree");
   const tree = JSON.parse(
     await read(
       `https://api.github.com/repos${repo}/git/trees/${treeSha}?recursive=1`,
@@ -294,7 +297,8 @@ export type PluginArchive = { url: string; sha256: string };
 const ARCHIVE_PATH = /^(.+\.(?:tar\.gz|tgz))(?:@([a-f0-9]{64}))?$/;
 const MAX_ARCHIVE_BYTES = 32_000_000;
 
-/** Archives separated by commas or spaces, each `https://host/path/name.tar.gz#sha256=<hex>`. */
+/** Archives separated by commas or spaces, each `https://host/path/name.tar.gz#sha256=<hex>`
+ * (or `http://`, on any port; no query). */
 export function parsePluginArchives(value: string | undefined): PluginArchive[] {
   return (value ?? "")
     .split(/[\s,]+/)
@@ -304,7 +308,7 @@ export function parsePluginArchives(value: string | undefined): PluginArchive[] 
       const ref = pin ? parsePluginSource(pin[1]!) : undefined;
       if (!ref || ref.ref || !ARCHIVE_PATH.test(new URL(ref.gitUrl).pathname))
         throw new Error(
-          `Plugin archive must be an HTTPS .tar.gz URL ending #sha256=<hex>: ${item}`,
+          `Plugin archive must be an HTTP(S) .tar.gz URL ending #sha256=<hex>: ${item}`,
         );
       return { url: ref.gitUrl, sha256: pin![2]!.toLowerCase() };
     });
@@ -315,9 +319,11 @@ export function parsePluginArchives(value: string | undefined): PluginArchive[] 
 const loadArchive = async (url: string, signal: AbortSignal): Promise<Uint8Array> => {
   const dispatcher = new EnvHttpProxyAgent();
   try {
+    // A redirect would reach an address the deployment never listed, before the pin is checked.
     const response = await dispatcherFetch(url, {
       signal,
       dispatcher,
+      redirect: "error",
     } as RequestInit & { dispatcher: Dispatcher });
     if (!response.ok) {
       await withAbort(
@@ -347,21 +353,27 @@ export async function fetchPluginArchive(
   const bytes = await load(archive.url, deadline);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   if (sha256 !== archive.sha256) throw new Error("Plugin archive did not match its pinned SHA-256");
+  const entries = untar(gunzipSync(bytes, { maxOutputLength: MAX_ARCHIVE_BYTES }));
+  if (entries.length > MAX_TREE_ENTRIES) throw new Error("Plugin directory has too many files");
   const files: PluginRepoFile[] = [];
-  for (const entry of untar(gunzipSync(bytes, { maxOutputLength: MAX_ARCHIVE_BYTES }))) {
+  let fetched = 0;
+  let total = 0;
+  for (const entry of entries) {
     const path = entry.path.replace(/^(?:\.\/)+/, "").replace(/\/$/, "");
     if (entry.type === "dir" || !path) continue;
     safePath(path);
-    // The same reading rules as a repository: links unread, only component text kept.
-    const content =
-      entry.type === "other"
-        ? UNREADABLE_FILE
-        : !isFetchedComponent(path)
-          ? ""
-          : SKILL_COMPANION.test(path) && entry.body.length > MAX_FILE_BYTES
-            ? OVERSIZED_FILE
-            : entry.body.toString("utf8");
-    files.push({ path, content });
+    // The same reading rules and limits as a repository: links unread, only component text kept.
+    if (entry.type === "other") files.push({ path, content: UNREADABLE_FILE });
+    else if (!isFetchedComponent(path)) files.push({ path, content: "" });
+    else if (SKILL_COMPANION.test(path) && entry.body.length > MAX_FILE_BYTES)
+      files.push({ path, content: OVERSIZED_FILE });
+    else {
+      if (entry.body.length > MAX_FILE_BYTES) throw new Error("Plugin file is too large");
+      if (++fetched > MAX_FILES) throw new Error("Plugin directory has too many files");
+      total += entry.body.length;
+      if (total > MAX_BYTES) throw new Error("Plugin content is too large");
+      files.push({ path, content: entry.body.toString("utf8") });
+    }
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { files, resolvedSha: sha256 };
@@ -820,7 +832,13 @@ export async function previewPluginInstall(options: {
 }): Promise<ParsedPlugin & { source: PluginSourceRef }> {
   const source = parsePluginSource(options.source);
   const repo = await (options.fetcher ?? fetchGitHubRepo)(source, options.signal);
-  if (source.ref && FULL_SHA.test(source.ref) && source.ref !== repo.resolvedSha) {
+  // A pin is checked against what its kind resolves to, so a 64-hex branch name is not a pin.
+  if (
+    source.ref &&
+    FULL_SHA.test(source.ref) &&
+    source.ref.length === repo.resolvedSha.length &&
+    source.ref !== repo.resolvedSha
+  ) {
     throw new Error("Plugin commit SHA did not match the requested pin");
   }
   const prefix = source.subdir ? `${source.subdir}/` : "";

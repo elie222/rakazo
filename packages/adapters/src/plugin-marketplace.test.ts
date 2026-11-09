@@ -351,20 +351,36 @@ describe("deployment plugin sources", () => {
       }),
     ]);
   });
-  it("reports an unreadable archive and tries it again next time", async () => {
-    const fetcher = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("Request failed: HTTP 503"))
-      .mockResolvedValue({ files: pluginFiles, resolvedSha: pin });
+  it("reports an unreadable archive and tries it again a minute later", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Request failed: HTTP 503"))
+        .mockResolvedValue({ files: pluginFiles, resolvedSha: pin });
+      const market = createPluginMarketplace(vi.fn(), {
+        registries: false,
+        archives: [{ url, sha256: pin }],
+        fetcher,
+      });
+      const unavailable = { entries: [], unavailableRegistries: ["plugins.example.test"] };
+      expect(await market.catalog("")).toMatchObject(unavailable);
+      expect(await market.catalog("")).toMatchObject(unavailable);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect((await market.catalog("")).entries).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("gives an archive load a deadline, so a stalled host cannot hold browse", async () => {
+    const fetcher = vi.fn(async () => ({ files: pluginFiles, resolvedSha: pin }));
     const market = createPluginMarketplace(vi.fn(), {
       registries: false,
       archives: [{ url, sha256: pin }],
       fetcher,
     });
-    expect(await market.catalog("")).toMatchObject({
-      entries: [],
-      unavailableRegistries: ["plugins.example.test"],
-    });
-    expect((await market.catalog("")).entries).toHaveLength(1);
+    await market.catalog("");
+    expect(fetcher).toHaveBeenCalledWith(expect.anything(), expect.any(AbortSignal));
   });
 });

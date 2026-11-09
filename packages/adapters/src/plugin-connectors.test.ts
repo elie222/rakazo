@@ -547,6 +547,19 @@ describe("GitHub acquisition", () => {
       ),
     ).rejects.toThrow(/incomplete/);
   });
+  it("treats a 64-hex branch name as a branch, not a pin", async () => {
+    const branch = "d".repeat(64);
+    const read = reader();
+    const source = `https://github.com/example/plugin@${branch}`;
+    expect((await fetchGitHubRepo(parsePluginSource(source), undefined, read)).resolvedSha).toBe(
+      SHA,
+    );
+    const preview = await previewPluginInstall({
+      source,
+      fetcher: (ref, signal) => fetchGitHubRepo(ref, signal, read),
+    });
+    expect(preview.resolvedSha).toBe(SHA);
+  });
   it("scopes to a monorepo plugin subdirectory", async () => {
     const preview = await previewPluginInstall({
       source: "https://github.com/example/plugins@main#one",
@@ -612,10 +625,17 @@ describe("plugin archives", () => {
       listed,
     ]);
     expect(parsePluginArchives(undefined)).toEqual([]);
+    // The deployment's own network: plain HTTP and a custom port.
+    const internal = `http://plugins.internal:8080/example.tgz`;
+    expect(parsePluginArchives(`${internal}#sha256=${listed.sha256}`)).toEqual([
+      { url: internal, sha256: listed.sha256 },
+    ]);
     for (const value of [
       listed.url,
       `${listed.url}#sha256=abc`,
-      `http://plugins.example.test/example.tar.gz#sha256=${listed.sha256}`,
+      `ftp://plugins.example.test/example.tar.gz#sha256=${listed.sha256}`,
+      `https://plugins.example.test/example.tar.gz?token=x#sha256=${listed.sha256}`,
+      `https://user:pass@plugins.example.test/example.tar.gz#sha256=${listed.sha256}`,
       `https://plugins.example.test/example.zip#sha256=${listed.sha256}`,
     ])
       expect(() => parsePluginArchives(value)).toThrow();
@@ -670,6 +690,64 @@ describe("plugin archives", () => {
     await expect(
       fetchPluginArchive({ url: listed.url, sha256: sha256(bytes) }, undefined, async () => bytes),
     ).rejects.toThrow("inside the plugin directory");
+  });
+
+  it("allows HTTP and custom ports for archives only", () => {
+    expect(() => parsePluginSource("http://github.example.test/owner/repo")).toThrow("HTTPS");
+    expect(() => parsePluginSource("https://example.test:8443/owner/repo")).toThrow("custom port");
+    expect(() => parsePluginSource("http://github.com/owner/repo.tgz")).toThrow("HTTPS");
+  });
+
+  it("applies a repository's file limits to archives", async () => {
+    const read = (entries: Array<{ path: string; content?: string }>) => {
+      const bytes = tarGz([{ path: "plugin.json", content: JSON.stringify(manifest) }, ...entries]);
+      return fetchPluginArchive(
+        { url: listed.url, sha256: sha256(bytes) },
+        undefined,
+        async () => bytes,
+      );
+    };
+    await expect(
+      read([{ path: "skills/big/SKILL.md", content: "x".repeat(100_001) }]),
+    ).rejects.toThrow("too large");
+    await expect(
+      read(
+        Array.from({ length: 200 }, (_, i) => ({ path: `skills/s${i}/SKILL.md`, content: skill })),
+      ),
+    ).rejects.toThrow("too many files");
+    // An oversized reference refuses only its own skill.
+    const repo = await read([
+      { path: "skills/example-skill/SKILL.md", content: skill },
+      { path: "skills/example-skill/references/big.md", content: "x".repeat(100_001) },
+    ]);
+    expect(repo.files.find((f) => f.path.endsWith("big.md"))?.content).not.toMatch(/^x+$/);
+  });
+
+  it("refuses an archive host that redirects", async () => {
+    const elsewhere: string[] = [];
+    const target = createServer((request, response) => {
+      elsewhere.push(request.url ?? "");
+      response.end(archive);
+    });
+    await new Promise<void>((done) => target.listen(0, "127.0.0.1", done));
+    const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}/x.tar.gz`;
+    const origin = createServer((_request, response) => {
+      response.writeHead(302, { location: targetUrl }).end();
+    });
+    await new Promise<void>((done) => origin.listen(0, "127.0.0.1", done));
+    try {
+      vi.stubEnv("HTTP_PROXY", "");
+      vi.stubEnv("http_proxy", "");
+      const url = `http://127.0.0.1:${(origin.address() as AddressInfo).port}/example.tar.gz`;
+      await expect(fetchPluginArchive({ url, sha256: listed.sha256 })).rejects.toThrow();
+      expect(elsewhere).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+      for (const server of [origin, target]) {
+        server.closeAllConnections();
+        await new Promise((done) => server.close(done));
+      }
+    }
   });
 
   it("fetches only archives the deployment listed", async () => {

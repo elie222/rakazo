@@ -203,13 +203,18 @@ export function createPluginMarketplace(
   const registries = sources.registries === false ? [] : REGISTRIES;
   const archives = sources.archives ?? [];
   const fetcher = sources.fetcher ?? pluginSourceFetcher(archives);
-  /** A pinned archive never changes, so each is read once per process unless it fails. */
+  /** A pinned archive never changes, so each is read once per process. A failure is kept for a
+   * minute, so an unreachable host is reported unavailable without every browse waiting on it. */
   const archiveEntries = new Map<string, Promise<PluginMarketplaceEntry | null>>();
   const archiveEntry = (archive: PluginArchive) => {
     const source = `${archive.url}@${archive.sha256}`;
     let entry = archiveEntries.get(source);
     if (!entry) {
-      entry = previewPluginInstall({ source, fetcher }).then((plugin) =>
+      entry = previewPluginInstall({
+        source,
+        fetcher,
+        signal: AbortSignal.timeout(15_000),
+      }).then((plugin) =>
         // Like the registries, only a plugin that installs completely is listed.
         plugin.skipped.some((part) => part.kind !== "unsupported_field") ||
         (!plugin.skills.length && !plugin.mcpServers.length)
@@ -232,7 +237,7 @@ export function createPluginMarketplace(
             },
       );
       archiveEntries.set(source, entry);
-      entry.catch(() => archiveEntries.delete(source));
+      entry.catch(() => setTimeout(() => archiveEntries.delete(source), 60_000).unref());
     }
     return entry.then((listed) => ({ entries: listed ? [listed] : [], skipped: listed ? 0 : 1 }));
   };
