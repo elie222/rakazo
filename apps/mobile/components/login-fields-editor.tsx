@@ -1,6 +1,7 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { RefObject } from "react";
+import type { TextInputInstance } from "react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -38,7 +39,7 @@ export function LoginFieldsEditor({
   labels?: readonly string[];
   editable: boolean;
   /** The value inputs by position, for focus and for clearing before the sheet closes. */
-  inputs: RefObject<(TextInput | null)[]>;
+  inputs: RefObject<(TextInputInstance | null)[]>;
   onEndEditing: (text: string) => void;
   onSubmit: () => void;
 }) {
