@@ -122,6 +122,24 @@ describe("Pi image search through the installed provider", () => {
     },
   );
 
+  it.each(["a", "error", "png", "401"])(
+    "retains structured failure diagnostics when query %s is redacted",
+    async (query) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const { host, observer } = hostFor(fixtureFetch([terminal]));
+      observer.beforeCall.mockRejectedValue(
+        new Error(`401: authentication token expired query="${query}"`),
+      );
+      await expect(executeImageSearch(host, { query })).resolves.toEqual({
+        error: "Image search failed.",
+      });
+      const event = sink.events.find((entry) => entry.message === "image_search.failed");
+      expect(event).toMatchObject({ "provider.status": 401, "failure.kind": "auth" });
+      expect(event?.error?.message).toContain('query="[redacted]"');
+    },
+  );
+
   it("uses the active credential store and returns only completed structured images with retrieval accounting", async () => {
     vi.stubEnv("OPENAI_API_KEY", "unrelated-fake-key");
     const fetch = fixtureFetch([

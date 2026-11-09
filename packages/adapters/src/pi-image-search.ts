@@ -1,6 +1,6 @@
 import type { Context } from "@earendil-works/pi-ai";
 import type { ImageSearchHit, ImageSearchResult } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { normalizeRunError, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -79,10 +79,18 @@ export async function executeImageSearch(
   if (!query || query.length > MAX_QUERY_LENGTH)
     return { error: "query must contain between 1 and 2000 characters" };
   const reportFailure = (error: unknown) => {
+    const diagnostic = normalizeRunError(
+      (error instanceof Error ? error.message : typeof error === "string" ? error : "").slice(
+        0,
+        2000,
+      ),
+    );
     getLogger().warn("image_search.failed", {
       "run.id": host.request.runId,
       "model.id": target.model.id,
       "model.provider": target.model.provider,
+      "provider.status": diagnostic.status,
+      "failure.kind": diagnostic.kind ?? "unknown",
       error: sanitizedError(error, (text) =>
         redactSecrets(redactSensitiveText(text), [
           query,
