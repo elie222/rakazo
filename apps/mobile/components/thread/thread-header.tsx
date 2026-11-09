@@ -39,6 +39,7 @@ export function useThreadHeader({
   onToggleAutoSpeak,
   computerFloatEnabled,
   onOpenComputerFloat,
+  onOpenSearch,
 }: {
   botId?: string;
   groupId?: string;
@@ -64,6 +65,8 @@ export function useThreadHeader({
   computerFloatEnabled?: boolean;
   /** Opens the computer screen float; absent when there is no computer to watch. */
   onOpenComputerFloat?: () => void;
+  /** Opens the conversation search bar. */
+  onOpenSearch?: () => void;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -136,6 +139,7 @@ export function useThreadHeader({
         onToggleAutoSpeak,
         computerRunning,
         onOpenComputerFloat,
+        onOpenSearch,
         onOpenVoiceChat:
           !inGroup && !readOnly && botId
             ? () =>
@@ -167,6 +171,7 @@ export function useThreadHeader({
     onToggleAutoSpeak,
     computerRunning,
     onOpenComputerFloat,
+    onOpenSearch,
     botId,
   ]);
 

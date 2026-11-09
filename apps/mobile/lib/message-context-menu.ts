@@ -4,6 +4,7 @@ export const messageMenuSymbols = [
   "reply",
   "copy",
   "share",
+  "favorite",
   "react",
   "quote",
   "speak",
@@ -52,6 +53,8 @@ export function buildMessageContextMenu({
     select: boolean;
     unread?: boolean;
     share?: boolean;
+    /** A bot reply can be favorited from the menu, like from its action row. */
+    favorite?: boolean;
   };
 }): MessageMenuEntry[] {
   const secondary: MessageMenuEntry[] = [
@@ -64,6 +67,7 @@ export function buildMessageContextMenu({
     ...(include.unread ? [entry("unread", labels.unread)] : []),
     entry("copy", labels.copy),
     ...(include.share !== false ? [entry("share", labels.share)] : []),
+    ...(include.favorite ? [entry("favorite", labels.favorite)] : []),
     ...(include.react
       ? [
           {

@@ -23,7 +23,6 @@ import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppErrorBoundary } from "../components/app-error-boundary";
 import { CallCard } from "../components/CallCard";
 import { chatRouteHeader } from "../components/chat-route-header";
@@ -35,7 +34,6 @@ import { MermaidDiagram } from "../components/mermaid-diagram";
 import { MessageMenuHost } from "../components/message-action-menu";
 import { MessageActionSheetHost } from "../components/message-action-sheet-host";
 import { NativeSymbol } from "../components/native-symbol";
-import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
   rpc,
@@ -272,7 +270,6 @@ export const unstable_settings = { anchor: "index" };
 
 function LayoutContent() {
   const { t } = useI18n();
-  const insets = useSafeAreaInsets();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
   const canInvite = Boolean(useReferral());
@@ -561,7 +558,6 @@ function LayoutContent() {
                     />
                   </Stack>
                 </SplitFrame>
-                <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
               </View>
               <ComputerUpdateProgress />
               <MessageMenuHost />

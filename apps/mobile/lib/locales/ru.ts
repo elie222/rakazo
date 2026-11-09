@@ -1619,6 +1619,50 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not read that photo. Try another one.":
     "Не удалось прочитать это фото. Попробуйте другое.",
   "Couldn't update profile photo": "Не удалось обновить фото профиля",
+  Background: "Фон",
+  "Background opacity": "Прозрачность фона",
+  "Bot menu": "Меню бота",
+  "Bot settings": "Настройки бота",
+  "Chat background": "Фон чата",
+  "Choose a video": "Выбрать видео",
+  "Choose an image": "Выбрать изображение",
+  "Close search": "Закрыть поиск",
+  "Computer temporarily offline": "Компьютер временно офлайн",
+  "Could not load that file": "Не удалось загрузить этот файл",
+  "Current background: {name}": "Текущий фон: {name}",
+  "Enter an image URL to subscribe": "Сначала введите URL изображения для подписки",
+  Favorite: "В избранное",
+  Favorites: "Избранное",
+  "Loading computer screen": "Загрузка экрана компьютера",
+  "Local image": "Локальное изображение",
+  "Local video": "Локальное видео",
+  "My favorites": "Моё избранное",
+  "Name, avatar, bio, and reply style": "Имя, аватар, описание и стиль ответов",
+  "Next result": "Следующий результат",
+  "No favorites": "Нет избранного",
+  "Nothing saved yet. Favorite a useful reply and it will show up here.":
+    "Пока ничего не сохранено. Добавьте полезный ответ в избранное, и он появится здесь.",
+  "Paste an image URL": "Вставить URL изображения",
+  "Previous result": "Предыдущий результат",
+  "Reading aloud · Tap the speaker or message button to stop":
+    "Чтение ответа вслух · Нажмите на динамик сверху или кнопку у сообщения, чтобы остановить",
+  "Restore default background": "Восстановить фон по умолчанию",
+  "Result {current} of {total}": "Результат {current} из {total}",
+  "Search conversation": "Поиск по беседе",
+  "Search conversation…": "Поиск по беседе…",
+  "Stop reading replies aloud": "Остановить чтение ответов вслух",
+  "Subscribed: {url}": "Подписка оформлена: {url}",
+  "Tap a favorite to jump back to it in the conversation.":
+    "Нажмите на избранное, чтобы вернуться к нему в беседе.",
+  "Tap to jump back": "Нажмите, чтобы вернуться",
+  "Temporarily offline": "Временно офлайн",
+  "The connection dropped. The screen comes back on its own when it recovers, or reconnect now.":
+    "Соединение прервано. Экран вернётся сам, когда связь восстановится, или переподключитесь сейчас.",
+  "This image URL could not be loaded. Try a direct image link.":
+    "Не удалось загрузить этот URL изображения. Попробуйте прямую ссылку на изображение.",
+  "URL subscription": "Подписка по URL",
+  Unfavorite: "Убрать из избранного",
+  "{count} favorites": "{count} в избранном",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

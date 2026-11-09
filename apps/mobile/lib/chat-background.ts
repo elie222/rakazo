@@ -130,10 +130,7 @@ export function useChatBackground(threadKey: string | undefined): ChatBackground
 }
 
 /** Sets a thread's background; null restores the default. */
-export function setChatBackground(
-  threadKey: string,
-  background: ChatBackground | null,
-): void {
+export function setChatBackground(threadKey: string, background: ChatBackground | null): void {
   if (background) {
     backgrounds = {
       ...backgrounds,
@@ -162,7 +159,7 @@ export function setChatBackgroundOpacity(threadKey: string, opacity: number): vo
 function backgroundFileName(threadKey: string, name: string, kind: "image" | "video"): string {
   const safeKey = threadKey.replace(/[^A-Za-z0-9_-]/g, "_");
   const match = /\.([A-Za-z0-9]{2,5})$/.exec(name.trim());
-  const ext = match ? `.${match[1].toLowerCase()}` : kind === "video" ? ".mp4" : ".jpg";
+  const ext = match?.[1] ? `.${match[1].toLowerCase()}` : kind === "video" ? ".mp4" : ".jpg";
   return `${safeKey}-${kind}${ext}`;
 }
 

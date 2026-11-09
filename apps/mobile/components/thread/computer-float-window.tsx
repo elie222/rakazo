@@ -18,7 +18,6 @@ import type { ComputerStatus } from "../../lib/computer";
 import {
   embeddableScreenUrl,
   nextLoadedScreenUrl,
-  previewPlaceholder,
   readScreenUrl,
   SCREEN_URL_OPEN_ATTEMPTS,
   screenStreamKey,
@@ -48,6 +47,10 @@ const COMPUTER_FLOAT_TOP = 120;
 const COMPUTER_FLOAT_EDGE = 16;
 /** The resize grip's touch target in the float's bottom-right corner. */
 const COMPUTER_FLOAT_GRIP_SIZE = 28;
+/** How long the loading state shows when the window first opens, before the picture. */
+const COMPUTER_FLOAT_LOADING_MS = 1200;
+/** How long the loading state shows after a manual reconnect, before the picture. */
+const COMPUTER_FLOAT_RETRY_LOADING_MS = 1000;
 
 /** Keep a dragged float inside the window, with a margin at every edge. */
 export function clampFloatPosition(
@@ -110,10 +113,13 @@ function createComputerFloatStyles() {
       gap: 8,
     },
     title: {
-      flex: 1,
       fontSize: 13,
       fontWeight: "600",
       color: tokens.foreground,
+    },
+    statusLine: {
+      fontSize: 11,
+      color: tokens.mutedForeground,
     },
     body: {
       flex: 1,
@@ -123,15 +129,23 @@ function createComputerFloatStyles() {
       flex: 1,
       backgroundColor: tokens.background,
     },
-    fallback: {
-      flex: 1,
+    overlay: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: "#000",
       alignItems: "center",
       justifyContent: "center",
       padding: 16,
+      gap: 8,
     },
-    fallbackText: {
+    overlayTitle: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: "#fff",
+      textAlign: "center",
+    },
+    overlayText: {
       fontSize: 13,
-      color: tokens.mutedForeground,
+      color: "rgba(255,255,255,0.8)",
       textAlign: "center",
     },
     grip: {
@@ -151,23 +165,23 @@ function createComputerFloatStyles() {
  * opens only from its header entry, never on its own. Closing it stops its status poll and
  * screen: the refresh controller is disposed with the window. A run ending while it is open
  * closes it too; a manual close never reopens it, and a run that already ended before an
- * open leaves the window alone. A screen that fails to load shows only the computer's
- * status text, never an error popup.
+ * open leaves the window alone. Before the picture appears the screen is black with a
+ * spinner; a dropped connection turns it black with an offline message and a reconnect
+ * button. The title bar's dot follows the same state: green live, yellow connecting,
+ * grey offline.
  */
 export function ComputerFloatWindow({
   botId,
-  name,
   open,
   onClose,
 }: {
   botId: string | undefined;
-  /** The bot's name, for the status text when there is no screen to show. */
-  name?: string;
   /** Closed renders nothing, so nothing polls or refreshes while it is hidden. */
   open: boolean;
   onClose: () => void;
 }) {
   const { t, locale } = useI18n();
+  const tokens = mobileTokens();
   const styles = useThemedStyles(createComputerFloatStyles);
   const windowSize = useWindowDimensions();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -188,6 +202,18 @@ export function ComputerFloatWindow({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const wasRunningRef = useRef(false);
+  // The picture does not appear at once: the window flashes its loading state
+  // for about 1.2s when it opens, and 1s after a manual reconnect.
+  const [phase, setPhase] = useState<"loading" | "ready">("loading");
+  const loadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setPhase("loading");
+    loadingTimer.current = setTimeout(() => setPhase("ready"), COMPUTER_FLOAT_LOADING_MS);
+    return () => {
+      if (loadingTimer.current) clearTimeout(loadingTimer.current);
+    };
+  }, [open]);
 
   const refreshController = useMemo(
     () =>
@@ -440,6 +466,46 @@ export function ComputerFloatWindow({
   heldScreenUrl.current = loadedScreenUrl;
   floatScreenUrlRef.current = loadedScreenUrl;
 
+  // What the black screen shows: loading while the picture has not appeared, offline
+  // when the connection dropped or the computer stopped, live once the picture is up.
+  // The opening flash keeps loading on top even when the status already says offline.
+  const running = isComputerRunning(computer);
+  const offline = statusError || screenFailed || (computer !== null && !running);
+  const loading =
+    phase === "loading" ||
+    (computer === null && !statusError) ||
+    (running && !embeddedScreenUrl && !screenFailed);
+  const viewState: "loading" | "live" | "offline" = offline
+    ? loading
+      ? "loading"
+      : "offline"
+    : loading
+      ? "loading"
+      : "live";
+  const statusDot =
+    viewState === "live"
+      ? tokens.success
+      : viewState === "loading"
+        ? "#eab308"
+        : tokens.mutedForeground;
+  const statusLine =
+    viewState === "live"
+      ? t("Online")
+      : viewState === "loading"
+        ? t("Connecting…")
+        : t("Temporarily offline");
+
+  function retry() {
+    setScreenFailed(false);
+    setStatusError(false);
+    setPhase("loading");
+    if (loadingTimer.current) clearTimeout(loadingTimer.current);
+    loadingTimer.current = setTimeout(() => setPhase("ready"), COMPUTER_FLOAT_RETRY_LOADING_MS);
+    void refreshController
+      .refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS })
+      .catch(() => undefined);
+  }
+
   // A rotated capability re-points the system window at the new screen URL.
   // This effect stays above the early return, like every other hook here.
   useEffect(() => {
@@ -457,9 +523,22 @@ export function ComputerFloatWindow({
       ]}
     >
       <View style={styles.bar} {...panResponder.panHandlers}>
-        <Text numberOfLines={1} style={styles.title}>
-          {t("Computer screen")}
-        </Text>
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: statusDot,
+          }}
+        />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={styles.title}>
+            {t("Computer screen")}
+          </Text>
+          <Text numberOfLines={1} style={styles.statusLine}>
+            {statusLine}
+          </Text>
+        </View>
         {Platform.OS === "android" ? (
           <Pressable
             accessibilityRole="button"
@@ -498,19 +577,41 @@ export function ComputerFloatWindow({
             onError={() => setScreenFailed(true)}
             onHttpError={() => setScreenFailed(true)}
           />
-        ) : (
-          <View style={styles.fallback}>
-            {statusError ? (
-              <Text style={styles.fallbackText}>{t("Could not open computer")}</Text>
-            ) : !computer ? (
-              <ActivityIndicator />
-            ) : (
-              <Text style={styles.fallbackText}>
-                {previewPlaceholder(computer.state, false, name ?? t("Bot"), computer.mode)}
-              </Text>
-            )}
+        ) : null}
+        {viewState === "loading" ? (
+          <View style={styles.overlay}>
+            <ActivityIndicator color="#fff" />
+            <Text style={styles.overlayText}>{t("Loading computer screen")}</Text>
           </View>
-        )}
+        ) : null}
+        {viewState === "offline" ? (
+          <View style={styles.overlay}>
+            <Text style={styles.overlayTitle}>{t("Computer temporarily offline")}</Text>
+            <Text style={styles.overlayText}>
+              {t(
+                "The connection dropped. The screen comes back on its own when it recovers, or reconnect now.",
+              )}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Reconnect")}
+              hitSlop={8}
+              onPress={retry}
+              style={({ pressed }) => ({
+                marginTop: 8,
+                borderRadius: 10,
+                backgroundColor: "#fff",
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                ...(pressed ? { opacity: 0.7 } : null),
+              })}
+            >
+              <Text style={{ color: "#000", fontSize: 15, fontWeight: "600" }}>
+                {t("Reconnect")}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       <View
         accessible

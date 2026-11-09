@@ -13,7 +13,11 @@ import BotModelScreen from "../app/bot-model";
 import BotSettingsScreen from "../app/bot-settings";
 import { ModelPickerList } from "../components/model-picker-list";
 import { ThreadComposerChips } from "../components/thread/thread-composer-chips";
-import type { ThreadModelSave } from "../components/thread/thread-model-picker-sheet";
+import type {
+  ThreadModelPickerRole,
+  ThreadModelSave,
+} from "../components/thread/thread-model-picker-sheet";
+import { ThreadModelPickerSheet } from "../components/thread/thread-model-picker-sheet";
 import type { MobileBot, MobileModel } from "./mobile-types";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
@@ -1975,17 +1979,49 @@ const threadBot: MobileBot = {
 
 async function renderChips() {
   mocks.computerPrimary = { provider: "openrouter", modelId: "vendor/model-2" };
+  // The harness plays the screen: it owns the picker the chips open, like
+  // Thread does, so a save lands back in the chip values.
   function Harness() {
     const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
+    const [computerChoice, setComputerChoice] = useState(mocks.computerPrimary);
+    const [sheetRole, setSheetRole] = useState<ThreadModelPickerRole | null>(null);
     return (
-      <ThreadComposerChips
-        botId="bot-fixture"
-        currentBot={threadBot}
-        userId="user-fixture"
-        catalog={catalog as MobileModel[]}
-        mainOverride={mainOverride}
-        onMainOverride={setMainOverride}
-      />
+      <>
+        <ThreadComposerChips
+          botId="bot-fixture"
+          currentBot={threadBot}
+          userId="user-fixture"
+          catalog={catalog as MobileModel[]}
+          mainOverride={mainOverride}
+          computerChoice={computerChoice}
+          onPickModel={setSheetRole}
+          favoriteCount={0}
+          onOpenFavorites={() => undefined}
+          backgroundLabel="Default"
+          onOpenBackground={() => undefined}
+        />
+        {sheetRole ? (
+          <ThreadModelPickerSheet
+            visible
+            role={sheetRole}
+            botId="bot-fixture"
+            userId="user-fixture"
+            selectedKey=""
+            onClose={() => setSheetRole(null)}
+            onSaved={(choice) => {
+              if (sheetRole === "main") {
+                setMainOverride(choice);
+              } else {
+                setComputerChoice(
+                  choice.provider && choice.modelId
+                    ? { provider: choice.provider, modelId: choice.modelId }
+                    : null,
+                );
+              }
+            }}
+          />
+        ) : null}
+      </>
     );
   }
   await act(async () => root.render(<Harness />));
@@ -1999,7 +2035,7 @@ const FakeSheet = ({ children }: { children?: ReactNode }) =>
   createElement("div", { "data-native-sheet": true }, children);
 
 describe("thread composer quick cards", () => {
-  it("shows live values on five cards in the mockup's order", async () => {
+  it("shows live values on seven cards in the mockup's order", async () => {
     await renderChips();
     expect(
       [...container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
@@ -2009,6 +2045,8 @@ describe("thread composer quick cards", () => {
       "Voice model: 晓晓 · 女声",
       "Computer: Online",
       "Routines: 3 running",
+      "Favorites: No favorites",
+      "Background: Default",
     ]);
   });
 

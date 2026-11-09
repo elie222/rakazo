@@ -102,6 +102,7 @@ export function threadHeaderRight({
   computerRunning,
   onOpenComputerFloat,
   onOpenVoiceChat,
+  onOpenSearch,
 }: {
   /** The chat's bot; the auto-read speaker pulses only for its own playback. */
   botId?: string;
@@ -124,6 +125,8 @@ export function threadHeaderRight({
   onOpenComputerFloat?: () => void;
   /** Opens the full-screen voice chat; absent outside a one-to-one bot chat. */
   onOpenVoiceChat?: () => void;
+  /** Opens the conversation search bar; absent when search is unavailable. */
+  onOpenSearch?: () => void;
 }): NativeStackNavigationOptions {
   const label = inGroup ? t("Group settings") : t("Invite a friend");
   const onPress = inGroup ? onGroupSettings : onInvite;
@@ -134,14 +137,36 @@ export function threadHeaderRight({
   const computerLabel = t("Computer screen");
   const showVoiceChat = !inGroup && !readOnly && onOpenVoiceChat !== undefined;
   const voiceLabel = t("Voice chat");
+  const showSearch = onOpenSearch !== undefined;
+  const searchLabel = t("Search conversation");
   // Undefined, not an empty list, so an older iOS header keeps a Restore button set elsewhere.
-  if ((readOnly || !onPress) && !showAutoSpeak && !showComputerFloat && !showVoiceChat) {
+  if (
+    (readOnly || !onPress) &&
+    !showAutoSpeak &&
+    !showComputerFloat &&
+    !showVoiceChat &&
+    !showSearch
+  ) {
     return { headerRight: undefined, unstable_headerRightItems: undefined };
   }
   return {
     ...(iosAtLeast(26)
       ? {
           unstable_headerRightItems: () => [
+            ...(showSearch
+              ? [
+                  {
+                    type: "button" as const,
+                    label: searchLabel,
+                    accessibilityLabel: searchLabel,
+                    icon: {
+                      type: "sfSymbol",
+                      name: "magnifyingglass",
+                    } as const,
+                    onPress: onOpenSearch,
+                  },
+                ]
+              : []),
             ...(showAutoSpeak
               ? [
                   {
@@ -203,6 +228,16 @@ export function threadHeaderRight({
       : { unstable_headerRightItems: undefined }),
     headerRight: () => (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
+        {showSearch ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={searchLabel}
+            hitSlop={8}
+            onPress={onOpenSearch}
+          >
+            <NativeSymbol ios="magnifyingglass" android="search-outline" size={21} color={color} />
+          </Pressable>
+        ) : null}
         {showAutoSpeak ? (
           <AutoSpeakHeaderButton
             botId={botId}

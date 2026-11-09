@@ -14,6 +14,7 @@ const symbols = {
   quote: "text.quote",
   speak: "speaker.wave.2",
   share: "square.and.arrow.up",
+  favorite: "bookmark",
   select: "character.cursor.ibeam",
   unread: "message.badge",
 } as const satisfies Record<MessageMenuSymbol, Extract<NonNullable<MenuAction["image"]>, string>>;

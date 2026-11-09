@@ -1,4 +1,4 @@
-import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, ModelRoleChoice } from "@rakazo/contracts";
 import {
   buildComposerMentionOptions,
   channelMessageSender,
@@ -8,16 +8,18 @@ import {
   liveActivityLine,
   liveMessageComposing,
   memberName,
+  modelOptionKey,
   newClientId,
   newestPageCards,
   otherAuthor,
   displayName as safeDisplayName,
+  selectableMessageText,
   workingRoutineName,
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { I18nManager, Platform, View } from "react-native";
+import { I18nManager, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
@@ -26,6 +28,7 @@ import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
+import { useChatBackground } from "../../lib/chat-background";
 import { composerDraftScope } from "../../lib/composer-draft";
 import { useComposerThinkingLevel } from "../../lib/composer-thinking-level";
 import { useComputerFloatEnabled } from "../../lib/computer-float-settings";
@@ -43,6 +46,11 @@ import {
   threadHeaderClearance,
   threadHeaderFloats,
 } from "../../lib/thread-edges";
+import {
+  favoriteSnippet,
+  toggleThreadFavorite,
+  useThreadFavorites,
+} from "../../lib/thread-favorites";
 import { useThreadFeedback } from "../../lib/thread-feedback";
 import { useThreadFocus } from "../../lib/thread-focus";
 import { useThreadSnapshot } from "../../lib/thread-history";
@@ -57,29 +65,36 @@ import {
   latestArrivalMessage,
   latestThreadRowKey,
 } from "../../lib/thread-scroll";
+import { searchThreadMessages, stepSearchIndex } from "../../lib/thread-search";
 import { useThreadSend } from "../../lib/thread-send";
 import { threadGroupMembers } from "../../lib/thread-snapshot";
 import { useThreadSync } from "../../lib/thread-sync";
 import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
-import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice";
+import { getVoicePlaybackState, stopVoicePlayback, subscribeVoicePlayback } from "../../lib/voice";
 import { ChatTitleHero } from "../chat-title-hero";
 import { FailedSendBubble } from "../failed-send-bubble";
+import { NativeSymbol } from "../native-symbol";
 import { NewestPageCards } from "../pages/page-card";
 import { RunErrorSheet } from "../run-error-sheet";
 import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
 import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notice";
 import { createThreadHeaderStyles } from "../thread-header-styles";
+import { ChatBackgroundLayer } from "./chat-background-layer";
 import { ComputerFloatWindow } from "./computer-float-window";
 import { QuoteSheet } from "./quote-sheet";
+import { ThreadBackgroundSheet } from "./thread-background-sheet";
+import { ThreadBotMenuSheet } from "./thread-bot-menu-sheet";
 import { ThreadComposerChips } from "./thread-composer-chips";
 import { ThreadComposerDock } from "./thread-composer-dock";
+import { ThreadFavoritesSheet } from "./thread-favorites-sheet";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
-import type { ThreadModelSave } from "./thread-model-picker-sheet";
+import type { ThreadModelPickerRole, ThreadModelSave } from "./thread-model-picker-sheet";
+import { ThreadModelPickerSheet } from "./thread-model-picker-sheet";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
 import { useThreadRunError } from "./thread-run-error";
 
@@ -105,11 +120,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
   const headerClearance = threadHeaderClearance(headerHeight);
   const [heroHeight, setHeroHeight] = useState(0);
+  // The conversation search bar, a 48pt pill under the native header: the hero
+  // and the list's top clearance shift down while it is open.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
+  const searchBarHeight = searchOpen ? 48 : 0;
   // The floating hero's height, measured on layout, so the oldest message
   // starts below it instead of scrolling underneath it.
   const listClearance = {
     ...headerClearance,
-    padding: headerClearance.padding + heroHeight,
+    padding: headerClearance.padding + heroHeight + searchBarHeight,
   };
   // The model catalog and connections, shared by the shortcut row and the
   // composer's reasoning control; the shortcut row used to fetch them itself.
@@ -117,6 +138,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const [modelCredentials, setModelCredentials] = useState<MobileModelCredential[] | null>(null);
   // The model saved from the sheet, until the chat's bot list catches up with it.
   const [mainOverride, setMainOverride] = useState<ThreadModelSave | null>(null);
+  // The computer model, fetched here so the shortcut row and the bot menu share one picker.
+  const [computerChoice, setComputerChoice] = useState<ModelRoleChoice | null>(null);
+  const [sheetRole, setSheetRole] = useState<ThreadModelPickerRole | null>(null);
+  const [botMenuOpen, setBotMenuOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
@@ -234,6 +261,20 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
   const visibleMessages = transcript.visibleMessages;
+  // The thread's favorites and background, both local to the device; the
+  // search matches only the loaded window.
+  const favorites = useThreadFavorites(threadKey);
+  const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.messageId)), [favorites]);
+  const background = useChatBackground(threadKey);
+  const searchMatches = useMemo(
+    () => (searchQuery.trim() ? searchThreadMessages(visibleMessages, searchQuery) : []),
+    [visibleMessages, searchQuery],
+  );
+  const searchHitIds = useMemo(
+    () => new Set(searchMatches.map((message) => message.id)),
+    [searchMatches],
+  );
+  const searchCurrentId = searchMatches[searchIndex]?.id ?? null;
   const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
   const composerMentionTargets = useMemo(
@@ -279,6 +320,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       cancelled = true;
     };
   }, [botId]);
+  useEffect(() => {
+    if (!botId) return;
+    let cancelled = false;
+    void rpc("models/role", { role: "computer", expectedUserId: userId, scope: "account" })
+      .then((view: { primary?: ModelRoleChoice | null }) => {
+        if (cancelled) return;
+        setComputerChoice(view.primary ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, userId]);
   const thinkingLevel = useComposerThinkingLevel({
     botId,
     bot: currentBot,
@@ -359,10 +413,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
 
   // Header auto-read toggle: flips this bot's autoSpeak and refreshes the roster so the
-  // header re-renders. A failed save leaves the toggle where it was.
+  // header re-renders. A failed save leaves the toggle where it was. Turning auto-read
+  // off stops a reply that is being read aloud right now.
   const toggleAutoSpeak = useCallback(() => {
     if (!botId || !currentBot || inGroup || readOnly) return;
     const next = !currentBot.autoSpeak;
+    if (currentBot.autoSpeak) stopVoicePlayback();
     void rpc("bots/update", { botId, autoSpeak: next })
       .then(() => refreshMentionBots())
       .catch(() => undefined);
@@ -388,6 +444,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     onCleared: history.clear,
     autoSpeak: !inGroup ? currentBot?.autoSpeak : undefined,
     onToggleAutoSpeak: !inGroup && !readOnly && botId && currentBot ? toggleAutoSpeak : undefined,
+    onOpenSearch: () => setSearchOpen(true),
     computerFloatEnabled,
     onOpenComputerFloat:
       !inGroup && !readOnly && botId && computerFloatEnabled
@@ -423,6 +480,21 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     refreshMentionBots,
     markReadIfVisible,
   });
+
+  // The search steps only on an explicit prev/next tap, never per keystroke: a
+  // jump per keystroke would re-page the conversation on every character.
+  const stepSearch = (delta: 1 | -1) => {
+    const next = stepSearchIndex(searchIndex, searchMatches.length, delta);
+    setSearchIndex(next);
+    const hit = searchMatches[next];
+    if (hit) void applyMessageJump({ botId, groupId, messageId: hit.id }).catch(() => undefined);
+  };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchIndex(0);
+    showLatest();
+  };
 
   const paging = useThreadPaging({
     history,
@@ -509,6 +581,14 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     select: setSelectableText,
     speak,
     react: composer.react,
+    favorite: (message) => {
+      if (!threadKey) return;
+      toggleThreadFavorite(threadKey, {
+        messageId: message.id,
+        snippet: favoriteSnippet(selectableMessageText(message)),
+        createdAt: Date.now(),
+      });
+    },
     regenerate: (message) => {
       if (readOnly) return;
       const originThreadKey = groupId ?? botId;
@@ -591,6 +671,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     markedUnreadMessageId,
     highlightedMessageId: scroll.highlightedMessageId,
     speakingMessageId: playback.status === "playing" ? playback.messageId : undefined,
+    favoriteIds,
+    searchHitIds,
+    searchCurrentId,
   });
 
   const workingBots =
@@ -638,8 +721,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // The big title hero, at the top of a one-to-one chat: the 84pt state-linked avatar beside
   // the bot's name. Groups keep only their native title. It floats above the message list
   // instead of scrolling with it, so it stays visible; the list's top clearance makes room
-  // for it, and the capsule in the native bar stays as the title when scrolled.
+  // for it, and the capsule in the native bar stays as the title when scrolled. While this
+  // bot's reply is being read aloud the subtitle says so; tapping the avatar opens the
+  // bot menu.
   const titleComposing = Boolean(botId) && composingBots.split(",").includes(botId ?? "");
+  const isSpeakingThisBot = playback.status === "playing" && playback.botId === botId;
   const chatHero =
     !inGroup && botId ? (
       <ChatTitleHero
@@ -648,6 +734,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing={titleComposing}
         name={titleName}
         activityLine={activityLine}
+        speakingLine={
+          isSpeakingThisBot
+            ? t("Reading aloud · Tap the speaker or message button to stop")
+            : undefined
+        }
+        onAvatarPress={() => setBotMenuOpen(true)}
       />
     ) : null;
 
@@ -674,6 +766,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     />
   );
 
+  const mainProvider = mainOverride !== null ? mainOverride.provider : currentBot?.modelProvider;
+  const mainModelId = mainOverride !== null ? mainOverride.modelId : currentBot?.modelId;
+  const sheetKey =
+    sheetRole === "main"
+      ? mainProvider && mainModelId
+        ? modelOptionKey(mainProvider, mainModelId)
+        : ""
+      : computerChoice
+        ? modelOptionKey(computerChoice.provider, computerChoice.modelId)
+        : "";
+
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
@@ -692,6 +795,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
         <View style={{ flex: 1, position: "relative" }}>
+          <ChatBackgroundLayer threadKey={threadKey} />
           <NewestPageCards.Provider value={newestPages}>
             <ThreadMessageList
               scroll={scroll}
@@ -713,20 +817,108 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             />
           </NewestPageCards.Provider>
           {/* The title hero floats above the list, below the native header, and never
-              scrolls away; it is display-only, so touches pass through to the list. */}
+              scrolls away; only the avatar intercepts touches, so the list still
+              scrolls under the hero. */}
           {chatHero ? (
             <View
-              pointerEvents="none"
+              pointerEvents="box-none"
               onLayout={(event) => setHeroHeight(event.nativeEvent.layout.height)}
               style={{
                 position: "absolute",
-                top: headerClearance.padding,
+                top: headerClearance.padding + searchBarHeight,
                 left: 0,
                 right: 0,
                 backgroundColor: tokens.background,
               }}
             >
               {chatHero}
+            </View>
+          ) : null}
+          {searchOpen ? (
+            <View
+              style={{
+                position: "absolute",
+                top: headerClearance.padding,
+                left: 0,
+                right: 0,
+                height: 48,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                paddingHorizontal: 12,
+                backgroundColor: tokens.background,
+              }}
+            >
+              <NativeSymbol
+                ios="magnifyingglass"
+                android="search-outline"
+                size={18}
+                color={tokens.mutedForeground}
+              />
+              <TextInput
+                value={searchQuery}
+                onChangeText={(text) => {
+                  setSearchQuery(text);
+                  setSearchIndex(0);
+                }}
+                placeholder={t("Search conversation…")}
+                placeholderTextColor={tokens.mutedForeground}
+                autoFocus
+                returnKeyType="search"
+                onSubmitEditing={() => stepSearch(1)}
+                style={{ flex: 1, fontSize: 16, color: tokens.foreground }}
+              />
+              {searchQuery.trim() ? (
+                <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
+                  {searchMatches.length > 0
+                    ? t("Result {current} of {total}", {
+                        current: searchIndex + 1,
+                        total: searchMatches.length,
+                      })
+                    : t("No results")}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Previous result")}
+                disabled={searchMatches.length === 0}
+                hitSlop={8}
+                onPress={() => stepSearch(-1)}
+              >
+                <NativeSymbol
+                  ios="chevron.up"
+                  android="chevron-up-outline"
+                  size={18}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Next result")}
+                disabled={searchMatches.length === 0}
+                hitSlop={8}
+                onPress={() => stepSearch(1)}
+              >
+                <NativeSymbol
+                  ios="chevron.down"
+                  android="chevron-down-outline"
+                  size={18}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Close search")}
+                hitSlop={8}
+                onPress={closeSearch}
+              >
+                <NativeSymbol
+                  ios="xmark"
+                  android="close-outline"
+                  size={18}
+                  color={tokens.foreground}
+                />
+              </Pressable>
             </View>
           ) : null}
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
@@ -763,7 +955,20 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               userId={userId}
               catalog={modelCatalog}
               mainOverride={mainOverride}
-              onMainOverride={setMainOverride}
+              computerChoice={computerChoice}
+              onPickModel={setSheetRole}
+              favoriteCount={favorites.length}
+              onOpenFavorites={() => setFavoritesOpen(true)}
+              backgroundLabel={
+                !background
+                  ? t("Default")
+                  : background.kind === "image"
+                    ? t("Local image")
+                    : background.kind === "video"
+                      ? t("Video")
+                      : t("URL subscription")
+              }
+              onOpenBackground={() => setBackgroundOpen(true)}
             />
             <ThreadComposer
               key={threadKey}
@@ -797,6 +1002,46 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         {selectableText !== null ? (
           <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
         ) : null}
+        {sheetRole ? (
+          <ThreadModelPickerSheet
+            visible
+            role={sheetRole}
+            botId={botId ?? ""}
+            userId={userId}
+            selectedKey={sheetKey}
+            onClose={() => setSheetRole(null)}
+            onSaved={(choice) => {
+              if (sheetRole === "main") {
+                setMainOverride(choice);
+              } else {
+                setComputerChoice(
+                  choice.provider && choice.modelId
+                    ? { provider: choice.provider, modelId: choice.modelId }
+                    : null,
+                );
+              }
+            }}
+          />
+        ) : null}
+        <ThreadBotMenuSheet
+          visible={botMenuOpen}
+          botId={botId}
+          onClose={() => setBotMenuOpen(false)}
+          onPickModel={setSheetRole}
+        />
+        <ThreadFavoritesSheet
+          visible={favoritesOpen}
+          threadKey={threadKey}
+          onClose={() => setFavoritesOpen(false)}
+          onJump={(messageId) => {
+            void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
+          }}
+        />
+        <ThreadBackgroundSheet
+          visible={backgroundOpen}
+          threadKey={threadKey}
+          onClose={() => setBackgroundOpen(false)}
+        />
         <RunErrorSheet
           details={detailsOpen ? runError : null}
           onClose={() => setDetailsOpen(false)}
@@ -820,7 +1065,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       </KeyboardAvoidingView>
       <ComputerFloatWindow
         botId={botId}
-        name={displayName}
         open={computerFloatOpen && computerFloatEnabled}
         onClose={() => setComputerFloatOpen(false)}
       />

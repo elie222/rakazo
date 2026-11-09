@@ -1612,6 +1612,50 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not read that photo. Try another one.":
     "この写真を読み込めませんでした。別の写真を試してください。",
   "Couldn't update profile photo": "プロフィール写真を更新できませんでした",
+  Background: "背景",
+  "Background opacity": "背景の不透明度",
+  "Bot menu": "ボットメニュー",
+  "Bot settings": "ボット設定",
+  "Chat background": "チャットの背景",
+  "Choose a video": "動画を選択",
+  "Choose an image": "画像を選択",
+  "Close search": "検索を閉じる",
+  "Computer temporarily offline": "コンピューターが一時的にオフライン",
+  "Could not load that file": "そのファイルを読み込めませんでした",
+  "Current background: {name}": "現在の背景：{name}",
+  "Enter an image URL to subscribe": "購読する画像URLを先に入力してください",
+  Favorite: "お気に入り",
+  Favorites: "お気に入り",
+  "Loading computer screen": "コンピューター画面を読み込み中",
+  "Local image": "ローカル画像",
+  "Local video": "ローカル動画",
+  "My favorites": "マイお気に入り",
+  "Name, avatar, bio, and reply style": "名前、アバター、自己紹介と返信スタイル",
+  "Next result": "次の結果",
+  "No favorites": "お気に入りなし",
+  "Nothing saved yet. Favorite a useful reply and it will show up here.":
+    "まだ何も保存されていません。役立つ返信をお気に入りにすると、ここに表示されます。",
+  "Paste an image URL": "画像URLを貼り付け",
+  "Previous result": "前の結果",
+  "Reading aloud · Tap the speaker or message button to stop":
+    "返信を読み上げ中 · 停止するには上部のスピーカーかメッセージ横のボタンをタップ",
+  "Restore default background": "既定の背景に戻す",
+  "Result {current} of {total}": "{total}件中{current}件目",
+  "Search conversation": "会話を検索",
+  "Search conversation…": "会話を検索…",
+  "Stop reading replies aloud": "返信の読み上げを停止",
+  "Subscribed: {url}": "購読済み：{url}",
+  "Tap a favorite to jump back to it in the conversation.":
+    "お気に入りをタップすると、会話内のその場所へ戻ります。",
+  "Tap to jump back": "タップして戻る",
+  "Temporarily offline": "一時的にオフライン",
+  "The connection dropped. The screen comes back on its own when it recovers, or reconnect now.":
+    "接続が切れました。回復すると画面は自動で戻ります。今すぐ再接続することもできます。",
+  "This image URL could not be loaded. Try a direct image link.":
+    "この画像URLを読み込めませんでした。画像への直接リンクをお試しください。",
+  "URL subscription": "URL購読",
+  Unfavorite: "お気に入りを解除",
+  "{count} favorites": "{count}件のお気に入り",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

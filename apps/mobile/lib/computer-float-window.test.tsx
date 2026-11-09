@@ -450,7 +450,6 @@ describe("computer float window", () => {
     return render(
       <ComputerFloatWindow
         botId={props.botId ?? "bot-1"}
-        name="Chief"
         open={props.open}
         onClose={props.onClose ?? (() => undefined)}
       />,
@@ -552,39 +551,86 @@ describe("computer float window", () => {
     expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
     expect(screens.source).toBe("https://screen.example.test/embed");
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open={false} onClose={() => undefined} />);
     });
     expect(opened.querySelector('iframe[title="screen"]')).toBeNull();
     expect(opened.textContent).toBe("");
   });
 
-  it("shows only the status text when the screen fails to load, without throwing", async () => {
+  it("shows the offline state when the screen fails to load, without throwing", async () => {
+    vi.useFakeTimers();
     respond(runningStatus, "https://screen.example.test/embed");
     const opened = renderFloat({ open: true });
-    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
     act(() => {
       screens.onError?.();
     });
     expect(opened.querySelector('iframe[title="screen"]')).toBeNull();
-    expect(opened.textContent).toContain("Team Computer");
+    // The opening loading flash runs first; the offline state follows it.
+    expect(opened.textContent).toContain("Loading computer screen");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(opened.textContent).toContain("Computer temporarily offline");
+    expect(opened.textContent).toContain("Temporarily offline");
+    expect(opened.querySelector('button[aria-label="Reconnect"]')).not.toBeNull();
   });
 
-  it("shows the status text when there is no screen URL", async () => {
+  it("shows the loading state while the screen URL has not arrived", async () => {
+    vi.useFakeTimers();
     respond(runningStatus, null);
     const opened = renderFloat({ open: true });
-    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(opened.querySelector('iframe[title="screen"]')).toBeNull();
-    expect(opened.textContent).toContain("Team Computer");
+    expect(opened.textContent).toContain("Loading computer screen");
+    expect(opened.textContent).toContain("Connecting…");
   });
 
-  it("shows the stopped status when the computer is not running", async () => {
+  it("shows the offline state when the computer is not running", async () => {
+    vi.useFakeTimers();
     respond(stoppedStatus, null);
     const opened = renderFloat({ open: true });
-    await settle();
-    expect(opened.textContent).toContain("Computer is stopped");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(opened.textContent).toContain("Computer temporarily offline");
+    expect(opened.querySelector('button[aria-label="Reconnect"]')).not.toBeNull();
+  });
+
+  it("reconnects from the offline state and flashes loading again", async () => {
+    vi.useFakeTimers();
+    respond(stoppedStatus, null);
+    const opened = renderFloat({ open: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    const before = calls("computer/screenUrl").length;
+    const reconnect = opened.querySelector('button[aria-label="Reconnect"]') as HTMLButtonElement;
+    act(() => {
+      reconnect.click();
+    });
+    expect(opened.textContent).toContain("Loading computer screen");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(calls("computer/screenUrl").length).toBeGreaterThan(before);
+  });
+
+  it("shows a green Online status once the picture is up", async () => {
+    vi.useFakeTimers();
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    expect(opened.textContent).toContain("Online");
+    expect(opened.textContent).not.toContain("Loading computer screen");
   });
 
   it("closes from its Close button", async () => {
@@ -607,9 +653,7 @@ describe("computer float window", () => {
     expect(opened.querySelector('button[aria-label="Float outside the app"]')).not.toBeNull();
     platformBox.os = "ios";
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open onClose={() => undefined} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open onClose={() => undefined} />);
     });
     expect(opened.querySelector('button[aria-label="Float outside the app"]')).toBeNull();
   });
@@ -693,9 +737,7 @@ describe("computer float window", () => {
     await settle();
     expect(bubbleBox.show).toHaveBeenCalledTimes(1);
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open={false} onClose={() => undefined} />);
     });
     await settle();
     expect(bubbleBox.hide).toHaveBeenCalledTimes(1);
@@ -791,9 +833,7 @@ describe("computer float window", () => {
     await settle();
     expect(windowBox.show).toHaveBeenCalledTimes(1);
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open={false} onClose={() => undefined} />);
     });
     await settle();
     expect(windowBox.hide).toHaveBeenCalledTimes(1);
@@ -842,9 +882,7 @@ describe("computer float window", () => {
     // Close first, in its own act, so the dispose has run before time advances: a render
     // awaited inside the same async act as the timer advance would still be open for it.
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open={false} onClose={() => undefined} />);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
@@ -975,9 +1013,7 @@ describe("computer float window", () => {
     });
     expect(onClose).toHaveBeenCalledTimes(1);
     act(() => {
-      root?.render(
-        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={onClose} />,
-      );
+      root?.render(<ComputerFloatWindow botId="bot-1" open={false} onClose={onClose} />);
     });
     statusBox.current = stoppedStatus;
     await act(async () => {
@@ -988,13 +1024,16 @@ describe("computer float window", () => {
   });
 
   it("stays open when the run already ended before it opened", async () => {
+    vi.useFakeTimers();
     statusBox.current = stoppedStatus;
     respondLive(null);
     const onClose = vi.fn();
     const opened = renderFloat({ open: true, onClose });
-    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
     expect(onClose).not.toHaveBeenCalled();
-    expect(opened.textContent).toContain("Computer is stopped");
+    expect(opened.textContent).toContain("Computer temporarily offline");
   });
 
   it("treats only a running computer as running", () => {

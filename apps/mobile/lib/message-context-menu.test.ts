@@ -8,6 +8,7 @@ const labels: Record<MessageMenuSymbol, string> = {
   reply: "Reply",
   copy: "Copy",
   share: "Share",
+  favorite: "Favorite",
   react: "React",
   quote: "Quote",
   speak: "Speak message",
@@ -99,6 +100,31 @@ describe("message context menu", () => {
         }),
       ),
     ).not.toContain("unread");
+  });
+
+  it("offers Favorite right after Share for a bot reply, only when asked", () => {
+    const menu = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { quote: true, react: true, speak: true, select: true, favorite: true },
+    });
+    expect(menu.map((entry) => entry.id)).toEqual([
+      "reply",
+      "copy",
+      "share",
+      "favorite",
+      "react",
+      "secondary",
+    ]);
+    expect(
+      ids(
+        buildMessageContextMenu({
+          labels,
+          reactions,
+          include: { quote: true, react: true, speak: true, select: true },
+        }),
+      ),
+    ).not.toContain("favorite");
   });
 
   it("reads a reaction id back out of a menu event", () => {

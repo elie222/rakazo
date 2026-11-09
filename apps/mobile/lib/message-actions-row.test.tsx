@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   symbols: [] as { ios: string; android: string; size: number }[],
   markdownCodeBlocks: vi.fn((_markdown: string): string[] => []),
   reducedMotion: false,
+  stopVoicePlayback: vi.fn(),
 }));
 
 vi.mock("react-native", async () => {
@@ -77,6 +78,7 @@ vi.mock("react-native-reanimated", async () => {
 });
 vi.mock("expo-clipboard", () => ({ setStringAsync: mocks.setStringAsync }));
 vi.mock("expo-secure-store", () => ({}));
+vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("@rakazo/chat-ui/native", () => ({ markdownCodeBlocks: mocks.markdownCodeBlocks }));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
@@ -121,15 +123,18 @@ function renderRow({
   id = "m1",
   readOnly = false,
   speaking = false,
+  favorited = false,
 }: {
   role?: "bot" | "user";
   id?: string;
   readOnly?: boolean;
   speaking?: boolean;
+  favorited?: boolean;
 } = {}) {
   const actions = {
     speak: vi.fn(),
     react: vi.fn(async (_message: unknown, _reaction: unknown) => true),
+    favorite: vi.fn(),
     regenerate: vi.fn(),
     reply: vi.fn(),
     quote: vi.fn(),
@@ -170,6 +175,7 @@ function renderRow({
     replyAuthor: "",
     waitingForUser: false,
     speaking,
+    favorited,
     inGroup: false,
     columnWidth: 400,
     enableJump: false,
@@ -220,21 +226,15 @@ beforeEach(() => {
   mocks.reducedMotion = false;
   mocks.setStringAsync.mockClear();
   mocks.share.mockClear();
+  mocks.stopVoicePlayback.mockClear();
   mocks.symbols.length = 0;
   mocks.markdownCodeBlocks.mockClear();
 });
 
 describe("MessageRow action row", () => {
-  it("shows the six v3 mockup buttons in order under a bot reply", () => {
+  it("shows the five v12 buttons in order under a bot reply", () => {
     const { container } = renderRow();
-    expect(labels(container)).toEqual([
-      "Copy",
-      "Speak message",
-      "Like",
-      "Dislike",
-      "Share",
-      "Regenerate",
-    ]);
+    expect(labels(container)).toEqual(["Copy", "Speak message", "Share", "Favorite", "Regenerate"]);
   });
 
   it("lays the row out as the mockup does: 36×36 tiles, 6pt apart, regenerate pushed right", () => {
@@ -247,10 +247,10 @@ describe("MessageRow action row", () => {
       marginTop: 10,
       marginBottom: 20,
     });
-    // Five tiles, a flex spacer, then the regenerate tile.
-    expect(row.children).toHaveLength(7);
+    // Four tiles, a flex spacer, then the regenerate tile.
+    expect(row.children).toHaveLength(6);
     expect(
-      JSON.parse((row.children[5] as HTMLElement).getAttribute("data-style") ?? "{}"),
+      JSON.parse((row.children[4] as HTMLElement).getAttribute("data-style") ?? "{}"),
     ).toMatchObject({ flex: 1 });
     for (const button of buttons(container)) {
       const style = JSON.parse(button.getAttribute("data-style") ?? "{}");
@@ -259,9 +259,8 @@ describe("MessageRow action row", () => {
     expect(mocks.symbols).toEqual([
       { ios: "doc.on.doc", android: "copy-outline", size: 19 },
       { ios: "speaker.wave.2", android: "volume-high-outline", size: 19 },
-      { ios: "hand.thumbsup", android: "thumbs-up-outline", size: 19 },
-      { ios: "hand.thumbsdown", android: "thumbs-down-outline", size: 19 },
       { ios: "paperplane", android: "paper-plane-outline", size: 19 },
+      { ios: "bookmark", android: "bookmark-outline", size: 19 },
       { ios: "arrow.clockwise", android: "refresh-outline", size: 19 },
     ]);
   });
@@ -279,26 +278,39 @@ describe("MessageRow action row", () => {
     expect(message).toMatchObject({ id: "m1" });
   });
 
-  it("likes and dislikes through the reaction path", async () => {
+  it("favorites through the favorite action", async () => {
     const { container, actions } = renderRow();
-    await click(buttons(container)[2]!);
-    expect(actions.react).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ id: "m1" }),
-      "👍",
-    );
     await click(buttons(container)[3]!);
-    expect(actions.react).toHaveBeenCalledWith(expect.objectContaining({ id: "m1" }), "👎");
+    expect(actions.favorite).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: "m1" }));
+  });
+
+  it("fills the bookmark tile for a favorited reply", () => {
+    const { container } = renderRow({ favorited: true });
+    expect(labels(container)).toContain("Unfavorite");
+    expect(mocks.symbols).toContainEqual({ ios: "bookmark.fill", android: "bookmark", size: 19 });
+    const favoriteButton = buttons(container).find(
+      (button) => button.getAttribute("aria-label") === "Unfavorite",
+    )!;
+    const style = JSON.parse(favoriteButton.getAttribute("data-style") ?? "{}");
+    expect(style).toMatchObject({ backgroundColor: "#2f6bff" });
+  });
+
+  it("stops playback instead of speaking again while the reply is speaking", async () => {
+    const { container, actions } = renderRow({ speaking: true });
+    await click(buttons(container)[1]!);
+    expect(mocks.stopVoicePlayback).toHaveBeenCalledTimes(1);
+    expect(actions.speak).not.toHaveBeenCalled();
   });
 
   it("shares the message text", async () => {
     const { container } = renderRow();
-    await click(buttons(container)[4]!);
+    await click(buttons(container)[2]!);
     expect(mocks.share).toHaveBeenCalledExactlyOnceWith({ message: "Hello world" });
   });
 
   it("regenerates the reply", async () => {
     const { container, actions } = renderRow();
-    await click(buttons(container)[5]!);
+    await click(buttons(container)[4]!);
     expect(actions.regenerate).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ id: "m1" }),
     );
@@ -309,9 +321,9 @@ describe("MessageRow action row", () => {
     expect(labels(renderRow({ id: "progress:1" }).container)).toEqual([]);
   });
 
-  it("keeps copy, speak and share in read-only history without like, dislike or regenerate", () => {
+  it("keeps copy, speak, share and favorite in read-only history without regenerate", () => {
     const { container } = renderRow({ readOnly: true });
-    expect(labels(container)).toEqual(["Copy", "Speak message", "Share"]);
+    expect(labels(container)).toEqual(["Copy", "Speak message", "Share", "Favorite"]);
   });
 
   it("pulses only the speaking message's speaker icon", () => {

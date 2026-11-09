@@ -6,7 +6,6 @@ import type {
   VoiceInfo,
   VoiceStatus,
 } from "@rakazo/contracts";
-import { modelOptionKey } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -15,11 +14,17 @@ import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import type { MobileBot, MobileModel } from "../../lib/mobile-types";
 import { NativeSymbol } from "../native-symbol";
-import type { ThreadModelSave } from "./thread-model-picker-sheet";
-import { ThreadModelPickerSheet } from "./thread-model-picker-sheet";
+import type { ThreadModelPickerRole, ThreadModelSave } from "./thread-model-picker-sheet";
 
 export type ComposerChip = {
-  id: "mainModel" | "computerModel" | "voiceModel" | "computer" | "routines";
+  id:
+    | "mainModel"
+    | "computerModel"
+    | "voiceModel"
+    | "computer"
+    | "routines"
+    | "favorites"
+    | "background";
   label: string;
   value: string;
   active: boolean;
@@ -37,7 +42,12 @@ export function ThreadComposerChips({
   userId,
   catalog,
   mainOverride,
-  onMainOverride,
+  computerChoice,
+  onPickModel,
+  favoriteCount,
+  onOpenFavorites,
+  backgroundLabel,
+  onOpenBackground,
 }: {
   botId?: string;
   currentBot?: MobileBot;
@@ -46,29 +56,26 @@ export function ThreadComposerChips({
   catalog: MobileModel[] | null;
   /** The model saved from the sheet, until the chat's bot list catches up with it. */
   mainOverride: ThreadModelSave | null;
-  onMainOverride: (choice: ThreadModelSave) => void;
+  /** The computer model, fetched by the screen so the bot menu shares it. */
+  computerChoice: ModelRoleChoice | null;
+  onPickModel: (role: ThreadModelPickerRole) => void;
+  favoriteCount: number;
+  onOpenFavorites: () => void;
+  backgroundLabel: string;
+  onOpenBackground: () => void;
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
   const router = useRouter();
-  const [computerChoice, setComputerChoice] = useState<ModelRoleChoice | null>(null);
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceCatalogEntry[] | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [voices, setVoices] = useState<VoiceInfo[] | null>(null);
   const [computerStatus, setComputerStatus] = useState<ComputerStatus | null>(null);
   const [routines, setRoutines] = useState<Routine[] | null>(null);
-  const [sheetRole, setSheetRole] = useState<"main" | "computer" | null>(null);
 
   useEffect(() => {
     if (!botId) return;
     let cancelled = false;
-    void rpc("models/role", { role: "computer", expectedUserId: userId, scope: "account" })
-      .then((view: { primary?: ModelRoleChoice | null }) => {
-        if (cancelled) return;
-        const primary = view.primary ?? null;
-        setComputerChoice(primary);
-      })
-      .catch(() => undefined);
     void (async () => {
       try {
         const [entries, status] = await Promise.all([
@@ -151,14 +158,14 @@ export function ThreadComposerChips({
         label: t("Main model"),
         value: mainValue,
         active: Boolean(mainModelId),
-        onPress: () => setSheetRole("main"),
+        onPress: () => onPickModel("main"),
       },
       {
         id: "computerModel",
         label: t("Computer model"),
         value: computerModelValue,
         active: Boolean(computerChoice),
-        onPress: () => setSheetRole("computer"),
+        onPress: () => onPickModel("computer"),
       },
       {
         id: "voiceModel",
@@ -186,6 +193,21 @@ export function ThreadComposerChips({
           router.push({ pathname: "/routines", params: botId ? { botId } : {} });
         },
       },
+      {
+        id: "favorites",
+        label: t("Favorites"),
+        value:
+          favoriteCount > 0 ? t("{count} favorites", { count: favoriteCount }) : t("No favorites"),
+        active: favoriteCount > 0,
+        onPress: onOpenFavorites,
+      },
+      {
+        id: "background",
+        label: t("Background"),
+        value: backgroundLabel,
+        active: backgroundLabel !== t("Default"),
+        onPress: onOpenBackground,
+      },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -201,136 +223,115 @@ export function ThreadComposerChips({
     mainModelId,
     catalog,
     router,
+    favoriteCount,
+    backgroundLabel,
     t,
   ]);
 
   if (!botId || !currentBot) return null;
-  const sheetKey =
-    sheetRole === "main"
-      ? mainProvider && mainModelId
-        ? modelOptionKey(mainProvider, mainModelId)
-        : ""
-      : computerChoice
-        ? modelOptionKey(computerChoice.provider, computerChoice.modelId)
-        : "";
   // The quick row from the chat mockup (v3): five big cards in one horizontally
   // scrolling row, icon on top, name in the middle, live value underneath in
   // small grey type. Card width matches the v3 grid (412px phone, 12px insets,
-  // 7px gaps -> 72px a card); the row scrolls so all five stay reachable.
+  // 7px gaps -> 72px a card); the row scrolls so all seven stay reachable.
   return (
-    <>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 7, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}
-        style={{
-          flexShrink: 0,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: tokens.border,
-          backgroundColor: tokens.background,
-        }}
-      >
-        {chips.map((chip) => (
-          <Pressable
-            key={chip.id}
-            accessibilityRole="button"
-            accessibilityLabel={`${chip.label}: ${chip.value}`}
-            onPress={chip.onPress}
-            style={{
-              width: 72,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: tokens.border,
-              backgroundColor: tokens.card,
-              paddingHorizontal: 2,
-              paddingTop: 8,
-              paddingBottom: 7,
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            {chip.id === "computer" && computerStatus?.state === "running" ? (
-              <View
-                style={{
-                  position: "absolute",
-                  top: 7,
-                  right: 8,
-                  width: 7,
-                  height: 7,
-                  borderRadius: 3.5,
-                  backgroundColor: tokens.success,
-                }}
-              />
-            ) : null}
-            <View style={{ marginBottom: 2 }}>
-              <NativeSymbol
-                ios={
-                  chip.id === "mainModel"
-                    ? "cpu"
-                    : chip.id === "computerModel"
-                      ? "desktopcomputer"
-                      : chip.id === "voiceModel"
-                        ? "waveform"
-                        : chip.id === "computer"
-                          ? "macbook"
-                          : "clock.arrow.circlepath"
-                }
-                android={
-                  chip.id === "mainModel"
-                    ? "hardware-chip-outline"
-                    : chip.id === "computerModel"
-                      ? "desktop-outline"
-                      : chip.id === "voiceModel"
-                        ? "mic-outline"
-                        : chip.id === "computer"
-                          ? "laptop-outline"
-                          : "time-outline"
-                }
-                size={21}
-                color={tokens.link}
-              />
-            </View>
-            <Text
-              style={{
-                color: tokens.foreground,
-                fontSize: 12.5,
-                fontWeight: "700",
-                lineHeight: 15,
-              }}
-              numberOfLines={1}
-            >
-              {chip.label}
-            </Text>
-            <Text
-              style={{ color: tokens.mutedForeground, fontSize: 10, lineHeight: 12.5 }}
-              numberOfLines={1}
-            >
-              {chip.value}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      {sheetRole ? (
-        <ThreadModelPickerSheet
-          visible
-          role={sheetRole}
-          botId={botId}
-          userId={userId}
-          selectedKey={sheetKey}
-          onClose={() => setSheetRole(null)}
-          onSaved={(choice) => {
-            if (sheetRole === "main") {
-              onMainOverride(choice);
-            } else {
-              setComputerChoice(
-                choice.provider && choice.modelId
-                  ? { provider: choice.provider, modelId: choice.modelId }
-                  : null,
-              );
-            }
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 7, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}
+      style={{
+        flexShrink: 0,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: tokens.border,
+        backgroundColor: tokens.background,
+      }}
+    >
+      {chips.map((chip) => (
+        <Pressable
+          key={chip.id}
+          accessibilityRole="button"
+          accessibilityLabel={`${chip.label}: ${chip.value}`}
+          onPress={chip.onPress}
+          style={{
+            width: 72,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: tokens.border,
+            backgroundColor: tokens.card,
+            paddingHorizontal: 2,
+            paddingTop: 8,
+            paddingBottom: 7,
+            alignItems: "center",
+            gap: 1,
           }}
-        />
-      ) : null}
-    </>
+        >
+          {chip.id === "computer" && computerStatus?.state === "running" ? (
+            <View
+              style={{
+                position: "absolute",
+                top: 7,
+                right: 8,
+                width: 7,
+                height: 7,
+                borderRadius: 3.5,
+                backgroundColor: tokens.success,
+              }}
+            />
+          ) : null}
+          <View style={{ marginBottom: 2 }}>
+            <NativeSymbol
+              ios={
+                chip.id === "mainModel"
+                  ? "cpu"
+                  : chip.id === "computerModel"
+                    ? "desktopcomputer"
+                    : chip.id === "voiceModel"
+                      ? "waveform"
+                      : chip.id === "computer"
+                        ? "macbook"
+                        : chip.id === "routines"
+                          ? "clock.arrow.circlepath"
+                          : chip.id === "favorites"
+                            ? "bookmark"
+                            : "photo"
+              }
+              android={
+                chip.id === "mainModel"
+                  ? "hardware-chip-outline"
+                  : chip.id === "computerModel"
+                    ? "desktop-outline"
+                    : chip.id === "voiceModel"
+                      ? "mic-outline"
+                      : chip.id === "computer"
+                        ? "laptop-outline"
+                        : chip.id === "routines"
+                          ? "time-outline"
+                          : chip.id === "favorites"
+                            ? "bookmark-outline"
+                            : "image-outline"
+              }
+              size={21}
+              color={tokens.link}
+            />
+          </View>
+          <Text
+            style={{
+              color: tokens.foreground,
+              fontSize: 12.5,
+              fontWeight: "700",
+              lineHeight: 15,
+            }}
+            numberOfLines={1}
+          >
+            {chip.label}
+          </Text>
+          <Text
+            style={{ color: tokens.mutedForeground, fontSize: 10, lineHeight: 12.5 }}
+            numberOfLines={1}
+          >
+            {chip.value}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
   );
 }

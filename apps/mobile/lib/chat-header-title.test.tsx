@@ -35,11 +35,6 @@ vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../components/glass-surface", () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
 }));
-vi.mock("../components/chat-title-avatar", () => ({
-  CHAT_TITLE_AVATAR_SIZE: 28,
-  ChatTitleAvatar: ({ bot, status }: { bot?: { color: string }; status?: string }) =>
-    createElement("i", { "data-color": bot?.color ?? "slot", "data-status": status }),
-}));
 vi.mock("../components/group-seats", () => ({
   GroupSeats: ({ members, size }: { members: { botId: string }[]; size: number }) =>
     createElement("s", {
@@ -108,16 +103,16 @@ const button = () => container.querySelector("button")!;
 it("draws the inbox's bot from the route alone, before the chat publishes anything", () => {
   setSearchInbox(inbox([helper]));
   render({ botId: "bot-1" });
-  expect(avatar()?.getAttribute("data-color")).toBe(helper.color);
-  expect(avatar()?.getAttribute("data-status")).toBe("running");
+  // The capsule carries no avatar: the big avatar lives in the hero below the header.
+  expect(avatar()).toBeNull();
   expect(name()?.textContent).toBe("Helper");
   expect(name()?.getAttribute("data-placeholder")).toBe("false");
   expect(button().getAttribute("aria-label")).toBe("Profile");
 });
 
-it("reserves the avatar for an unknown bot and marks a missing name as a placeholder", () => {
+it("marks a missing name as a placeholder, still with no avatar", () => {
   render({ botId: "bot-1" });
-  expect(avatar()?.getAttribute("data-color")).toBe("slot");
+  expect(avatar()).toBeNull();
   expect(name()?.textContent).toBe("Bot");
   expect(name()?.getAttribute("data-placeholder")).toBe("true");
 });
@@ -126,16 +121,20 @@ it("shows what the open chat publishes, in the same title", () => {
   render({ botId: "bot-1", name: "Helper" });
   let clear = () => {};
   act(() => {
-    clear = publishChatTitle("thread-1", published("#FF781C"));
+    clear = publishChatTitle("thread-1", {
+      ...published("#FF781C"),
+      name: "Helper 2",
+      opens: { pathname: "/bot-profile", params: { botId: "bot-1", name: "Helper 2" } },
+    });
   });
-  expect(avatar()?.getAttribute("data-color")).toBe("#FF781C");
+  expect(name()?.textContent).toBe("Helper 2");
   act(() => button().click());
   expect(push).toHaveBeenCalledWith({
     pathname: "/bot-profile",
-    params: { botId: "bot-1", name: "Helper" },
+    params: { botId: "bot-1", name: "Helper 2" },
   });
   act(() => clear());
-  expect(avatar()?.getAttribute("data-color")).toBe("slot");
+  expect(name()?.textContent).toBe("Helper");
 });
 
 it("opens a one-to-one chat's bot profile from its title, not the chat's settings", () => {
@@ -173,23 +172,22 @@ it("keeps each screen's title its own, even for two screens of the same chat", (
       ),
     );
   both("thread-a", "thread-b");
-  const colors = () =>
-    Array.from(container.querySelectorAll("i"), (mark) => mark.getAttribute("data-color"));
+  const names = () => Array.from(container.querySelectorAll("b"), (mark) => mark.textContent);
   let clearA = () => {};
   let clearB = () => {};
   act(() => {
-    clearA = publishChatTitle("thread-a", published("#AAAAAA"));
+    clearA = publishChatTitle("thread-a", { ...published("#AAAAAA"), name: "Helper A" });
   });
-  expect(colors()).toEqual(["#AAAAAA", "slot"]);
+  expect(names()).toEqual(["Helper A", "Helper"]);
   act(() => {
-    clearB = publishChatTitle("thread-b", published("#BBBBBB"));
+    clearB = publishChatTitle("thread-b", { ...published("#BBBBBB"), name: "Helper B" });
   });
-  expect(colors()).toEqual(["#AAAAAA", "#BBBBBB"]);
+  expect(names()).toEqual(["Helper A", "Helper B"]);
   // The leaving screen withdraws only its own title.
   act(() => clearA());
-  expect(colors()).toEqual(["slot", "#BBBBBB"]);
+  expect(names()).toEqual(["Helper", "Helper B"]);
   act(() => clearB());
-  expect(colors()).toEqual(["slot", "slot"]);
+  expect(names()).toEqual(["Helper", "Helper"]);
 });
 
 it("seats a group's members from the inbox on the first frame, then from the open chat", () => {

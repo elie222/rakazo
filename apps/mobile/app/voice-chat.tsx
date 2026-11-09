@@ -5,8 +5,6 @@
  * heard and what the bot said, with the reply's action row underneath.
  */
 
-import type { MessageReaction } from "@rakazo/contracts";
-import { newClientId } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -19,10 +17,10 @@ import { NativeSymbol } from "../components/native-symbol";
 import { Checkmark } from "../components/row-accessories";
 import { MessageActionRow } from "../components/thread/message-row";
 import { VoiceChatOrb } from "../components/voice-chat-orb";
-import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { shareMessageText } from "../lib/message-context-menu";
 import { useMobileTokens } from "../lib/native";
+import { favoriteSnippet, toggleThreadFavorite, useThreadFavorites } from "../lib/thread-favorites";
 import type { VoiceChatPhase } from "../lib/voice-chat";
 import {
   createVoiceChatSession,
@@ -79,15 +77,17 @@ export default function VoiceChatScreen() {
   const variant = voiceChatOrbVariant(state.phase, state.heard);
   const scenario = voiceChatScenario(state.scenarioId);
   const lastBot = [...state.exchanges].reverse().find((exchange) => exchange.role === "bot");
-
-  const react = (reaction: MessageReaction) => {
+  const favorites = useThreadFavorites(botId ?? "");
+  const lastBotFavorited = lastBot?.messageId
+    ? favorites.some((item) => item.messageId === lastBot.messageId)
+    : false;
+  const favoriteLastBot = () => {
     if (!botId || !lastBot?.messageId) return;
-    void rpc("threads/react", {
-      botId,
+    toggleThreadFavorite(botId, {
       messageId: lastBot.messageId,
-      reaction,
-      clientNonce: newClientId(),
-    }).catch(() => undefined);
+      snippet: favoriteSnippet(lastBot.text),
+      createdAt: Date.now(),
+    });
   };
 
   return (
@@ -163,8 +163,7 @@ export default function VoiceChatScreen() {
                 labels={{
                   copy: t("Copy"),
                   speak: t("Speak message"),
-                  like: t("Like"),
-                  dislike: t("Dislike"),
+                  favorite: lastBotFavorited ? t("Unfavorite") : t("Favorite"),
                   share: t("Share"),
                   regenerate: t("Regenerate"),
                 }}
@@ -175,9 +174,9 @@ export default function VoiceChatScreen() {
                 canSpeak
                 speaking={state.phase === "speaking"}
                 reducedMotion={reducedMotion}
-                onLike={() => react("👍")}
-                onDislike={() => react("👎")}
                 onShare={() => shareMessageText(exchange.text)}
+                onFavorite={lastBot?.messageId ? favoriteLastBot : undefined}
+                favorited={lastBotFavorited}
                 onRegenerate={() => session.resendLastUserTurn()}
               />
             ) : null}

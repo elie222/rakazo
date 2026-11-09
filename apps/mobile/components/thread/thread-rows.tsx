@@ -43,6 +43,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       select: (text) => rowActionsRef.current.select(text),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
+      favorite: (message) => rowActionsRef.current.favorite?.(message),
       regenerate: (message) => rowActionsRef.current.regenerate?.(message),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
       answer: (message, answer, fields, dismiss, remember) =>
@@ -81,6 +82,9 @@ export function useThreadRows({
   markedUnreadMessageId,
   highlightedMessageId,
   speakingMessageId,
+  favoriteIds,
+  searchHitIds,
+  searchCurrentId,
 }: {
   snap: MobileSnapshot | null;
   userId: string;
@@ -103,6 +107,12 @@ export function useThreadRows({
   highlightedMessageId: string | null;
   /** The message being read aloud right now, if any. */
   speakingMessageId?: string;
+  /** Bot replies in the thread's favorites. */
+  favoriteIds?: ReadonlySet<string>;
+  /** Messages matching the open conversation search. */
+  searchHitIds?: ReadonlySet<string>;
+  /** The current search hit. */
+  searchCurrentId?: string | null;
 }) {
   const { t, locale } = useI18n();
   const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
@@ -178,6 +188,9 @@ export function useThreadRows({
               (run.status === "waiting_input" || run.status === "waiting_takeover"),
           )}
           speaking={speakingMessageId === message.id}
+          favorited={favoriteIds?.has(message.id) ?? false}
+          searchHit={searchHitIds?.has(message.id) ?? false}
+          searchCurrent={searchCurrentId === message.id}
           messageReactions={messageReactions}
           mentions={reactionView.mentions.get(message.id)}
           peerExchange={exchanges.lines.get(message.id)}
@@ -220,6 +233,9 @@ export function useThreadRows({
       unreadDividerId,
       markedUnreadMessageId,
       speakingMessageId,
+      favoriteIds,
+      searchHitIds,
+      searchCurrentId,
       columnWidth,
       userId,
       t,

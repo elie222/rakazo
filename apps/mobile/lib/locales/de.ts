@@ -1591,6 +1591,50 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not read that photo. Try another one.":
     "Dieses Foto konnte nicht gelesen werden. Versuche ein anderes.",
   "Couldn't update profile photo": "Profilbild konnte nicht aktualisiert werden",
+  Background: "Hintergrund",
+  "Background opacity": "Hintergrund-Deckkraft",
+  "Bot menu": "Bot-Menü",
+  "Bot settings": "Bot-Einstellungen",
+  "Chat background": "Chat-Hintergrund",
+  "Choose a video": "Video auswählen",
+  "Choose an image": "Bild auswählen",
+  "Close search": "Suche schließen",
+  "Computer temporarily offline": "Computer vorübergehend offline",
+  "Could not load that file": "Diese Datei konnte nicht geladen werden",
+  "Current background: {name}": "Aktueller Hintergrund: {name}",
+  "Enter an image URL to subscribe": "Gib zuerst eine Bild-URL zum Abonnieren ein",
+  Favorite: "Favorit",
+  Favorites: "Favoriten",
+  "Loading computer screen": "Computerbildschirm wird geladen",
+  "Local image": "Lokales Bild",
+  "Local video": "Lokales Video",
+  "My favorites": "Meine Favoriten",
+  "Name, avatar, bio, and reply style": "Name, Avatar, Bio und Antwortstil",
+  "Next result": "Nächster Treffer",
+  "No favorites": "Keine Favoriten",
+  "Nothing saved yet. Favorite a useful reply and it will show up here.":
+    "Noch nichts gespeichert. Markiere eine nützliche Antwort als Favorit, dann erscheint sie hier.",
+  "Paste an image URL": "Bild-URL einfügen",
+  "Previous result": "Vorheriger Treffer",
+  "Reading aloud · Tap the speaker or message button to stop":
+    "Antwort wird vorgelesen · Tippe auf den Lautsprecher oben oder den Button an der Nachricht, um zu stoppen",
+  "Restore default background": "Standardhintergrund wiederherstellen",
+  "Result {current} of {total}": "Treffer {current} von {total}",
+  "Search conversation": "Gespräch durchsuchen",
+  "Search conversation…": "Gespräch durchsuchen…",
+  "Stop reading replies aloud": "Vorlesen von Antworten stoppen",
+  "Subscribed: {url}": "Abonniert: {url}",
+  "Tap a favorite to jump back to it in the conversation.":
+    "Tippe auf einen Favoriten, um direkt dorthin im Gespräch zu springen.",
+  "Tap to jump back": "Tippen, um zurückzuspringen",
+  "Temporarily offline": "Vorübergehend offline",
+  "The connection dropped. The screen comes back on its own when it recovers, or reconnect now.":
+    "Die Verbindung ist abgebrochen. Der Bildschirm kehrt von selbst zurück, sobald er wiederhergestellt ist, oder verbinde jetzt neu.",
+  "This image URL could not be loaded. Try a direct image link.":
+    "Diese Bild-URL konnte nicht geladen werden. Versuche einen direkten Bildlink.",
+  "URL subscription": "URL-Abo",
+  Unfavorite: "Favorit entfernen",
+  "{count} favorites": "{count} Favoriten",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -11,7 +11,6 @@ import { useI18n } from "../lib/i18n";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { useInboxBot, useInboxGroup } from "../lib/search-inbox";
-import { ChatTitleAvatar } from "./chat-title-avatar";
 import { ChatTitleLabel } from "./chat-title-label";
 import { GlassSurface } from "./glass-surface";
 import { GroupSeats } from "./group-seats";
@@ -110,9 +109,6 @@ export function ChatHeaderTitle({
       }}
     >
       <GlassSurface style={styles.titleCapsule} fallbackStyle={styles.titleCapsuleFill}>
-        {!inGroup && params.botId ? (
-          <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
-        ) : null}
         {inGroup ? <GroupSeats members={members ?? []} size={GROUP_SEAT_SIZE} /> : null}
         <View style={styles.titleText}>
           {/* The mockup's title: the name with its chevron, opening the profile or settings. */}

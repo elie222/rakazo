@@ -1578,6 +1578,50 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not read that photo. Try another one.":
     "Die foto kon niet worden gelezen. Probeer een andere.",
   "Couldn't update profile photo": "Profielfoto kon niet worden bijgewerkt",
+  Background: "Achtergrond",
+  "Background opacity": "Dekking van de achtergrond",
+  "Bot menu": "Botmenu",
+  "Bot settings": "Botinstellingen",
+  "Chat background": "Chat-achtergrond",
+  "Choose a video": "Kies een video",
+  "Choose an image": "Kies een afbeelding",
+  "Close search": "Zoekopdracht sluiten",
+  "Computer temporarily offline": "Computer tijdelijk offline",
+  "Could not load that file": "Dat bestand kon niet worden geladen",
+  "Current background: {name}": "Huidige achtergrond: {name}",
+  "Enter an image URL to subscribe": "Voer eerst een afbeeldings-URL in om te abonneren",
+  Favorite: "Favoriet",
+  Favorites: "Favorieten",
+  "Loading computer screen": "Computerscherm laden",
+  "Local image": "Lokale afbeelding",
+  "Local video": "Lokale video",
+  "My favorites": "Mijn favorieten",
+  "Name, avatar, bio, and reply style": "Naam, avatar, bio en antwoordstijl",
+  "Next result": "Volgend resultaat",
+  "No favorites": "Geen favorieten",
+  "Nothing saved yet. Favorite a useful reply and it will show up here.":
+    "Nog niets opgeslagen. Markeer een nuttig antwoord als favoriet en het verschijnt hier.",
+  "Paste an image URL": "Plak een afbeeldings-URL",
+  "Previous result": "Vorig resultaat",
+  "Reading aloud · Tap the speaker or message button to stop":
+    "Antwoord wordt voorgelezen · Tik op de luidspreker bovenaan of de knop naast het bericht om te stoppen",
+  "Restore default background": "Standaardachtergrond herstellen",
+  "Result {current} of {total}": "Resultaat {current} van {total}",
+  "Search conversation": "Zoek in het gesprek",
+  "Search conversation…": "Zoek in het gesprek…",
+  "Stop reading replies aloud": "Voorlezen van antwoorden stoppen",
+  "Subscribed: {url}": "Geabonneerd: {url}",
+  "Tap a favorite to jump back to it in the conversation.":
+    "Tik op een favoriet om terug te springen naar die plek in het gesprek.",
+  "Tap to jump back": "Tik om terug te springen",
+  "Temporarily offline": "Tijdelijk offline",
+  "The connection dropped. The screen comes back on its own when it recovers, or reconnect now.":
+    "De verbinding is verbroken. Het scherm keert vanzelf terug zodra het herstelt, of maak nu opnieuw verbinding.",
+  "This image URL could not be loaded. Try a direct image link.":
+    "Deze afbeeldings-URL kon niet worden geladen. Probeer een directe afbeeldingslink.",
+  "URL subscription": "URL-abonnement",
+  Unfavorite: "Favoriet verwijderen",
+  "{count} favorites": "{count} favorieten",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

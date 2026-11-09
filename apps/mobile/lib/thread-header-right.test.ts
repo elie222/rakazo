@@ -101,3 +101,59 @@ describe("mobile voice chat header entry", () => {
     expect(readOnly.headerRight).toBeUndefined();
   });
 });
+
+describe("mobile conversation search header entry", () => {
+  it("shows a magnifier first that opens the search bar", () => {
+    const onOpenSearch = vi.fn();
+    const options = threadHeaderRight({
+      botId: "bot-1",
+      inGroup: false,
+      readOnly: false,
+      t,
+      color: "#000",
+      onGroupSettings: () => undefined,
+      onOpenSearch,
+    });
+    const buttons = headerButtons(options);
+    expect(buttons[0]?.props.accessibilityLabel).toBe("Search conversation");
+    expect(buttons[0]?.props.onPress).toBe(onOpenSearch);
+  });
+
+  it("lists the magnifier as a native header item on iOS 26", () => {
+    vi.mocked(iosAtLeast).mockReturnValueOnce(true);
+    const onOpenSearch = vi.fn();
+    const options = threadHeaderRight({
+      botId: "bot-1",
+      inGroup: false,
+      readOnly: false,
+      t,
+      color: "#000",
+      onGroupSettings: () => undefined,
+      onOpenSearch,
+    });
+    const renderItems = options.unstable_headerRightItems as unknown as (() => unknown) | undefined;
+    const items = renderItems?.() as
+      | Array<{ label: string; icon?: { name?: string }; onPress?: unknown }>
+      | undefined;
+    const search = items?.find((item) => item.icon?.name === "magnifyingglass");
+    expect(search?.label).toBe("Search conversation");
+    expect(search?.onPress).toBe(onOpenSearch);
+  });
+
+  it("keeps search in a read-only chat, where history is still searchable", () => {
+    const options = threadHeaderRight({
+      botId: "bot-1",
+      inGroup: false,
+      readOnly: true,
+      t,
+      color: "#000",
+      onGroupSettings: () => undefined,
+      onOpenSearch: () => undefined,
+    });
+    expect(
+      headerButtons(options).some(
+        (button) => button.props.accessibilityLabel === "Search conversation",
+      ),
+    ).toBe(true);
+  });
+});

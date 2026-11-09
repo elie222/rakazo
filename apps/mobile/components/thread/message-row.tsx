@@ -41,6 +41,7 @@ import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
 import { selectableTextFromMarkdown } from "../../lib/selectable-text";
 import { ThreadReadOnlyContext } from "../../lib/thread-read-only";
 import type { UserBubble } from "../../lib/user-bubble";
+import { stopVoicePlayback } from "../../lib/voice";
 import { BotAvatar } from "../bot-avatar";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { presentMessageMenu } from "../message-action-menu";
@@ -63,6 +64,8 @@ export type MessageRowActions = {
   select: (text: string) => void;
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => Promise<boolean>;
+  /** Toggles this bot reply in the thread's favorites. Absent where unsupported. */
+  favorite?: (message: MobileMessage) => void;
   /** Resends the user message this bot reply answers. Absent where unsupported. */
   regenerate?: (message: MobileMessage) => void;
   markUnread: (message: MobileMessage) => void;
@@ -109,6 +112,12 @@ type MessageRowProps = {
   waitingForUser: boolean;
   /** This message's reply is being read aloud right now. */
   speaking?: boolean;
+  /** This bot reply is in the thread's favorites. */
+  favorited?: boolean;
+  /** This message matches the open conversation search. */
+  searchHit?: boolean;
+  /** This message is the current search hit. */
+  searchCurrent?: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   mentions?: readonly ChildBotBlock[];
   /** The adjacent receipts represented by this peer line. */
@@ -150,6 +159,9 @@ export const MessageRow = memo(function MessageRow({
   mentions,
   waitingForUser,
   speaking,
+  favorited,
+  searchHit,
+  searchCurrent,
   peerExchange,
   activityBotId,
   activityColor,
@@ -183,7 +195,6 @@ export const MessageRow = memo(function MessageRow({
   const [optimisticLike, setOptimisticLike] = useState(false);
   const likeInFlight = useRef(false);
   const [optimisticDislike, setOptimisticDislike] = useState(false);
-  const dislikeInFlight = useRef(false);
   const reducedMotion = useReducedMotion();
   const hasLike = messageReactions?.has("👍") ?? false;
   const hasDislike = messageReactions?.has("👎") ?? false;
@@ -201,7 +212,6 @@ export const MessageRow = memo(function MessageRow({
     menu,
     onMenuAction,
     likeMessage,
-    dislikeMessage,
     shareMessage,
     copyMessage,
     regenerateMessage,
@@ -211,7 +221,6 @@ export const MessageRow = memo(function MessageRow({
     menu: ReturnType<typeof buildMessageContextMenu>;
     onMenuAction: (id: string) => void;
     likeMessage?: () => void;
-    dislikeMessage?: () => void;
     shareMessage: () => void;
     copyMessage: () => void;
     regenerateMessage?: () => void;
@@ -226,6 +235,15 @@ export const MessageRow = memo(function MessageRow({
     // The call already reads replies aloud; a second voice would talk over it.
     const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
     const includeSelect = messageText.trim().length > 0;
+    // A favorited reply stays favoritable from the row and the long-press menu;
+    // favorites are local, so they work in read-only history too.
+    const includeFavorite =
+      Boolean(actions.favorite) &&
+      message.role === "bot" &&
+      !message.id.startsWith("progress:") &&
+      Boolean(blockText(message).trim());
+    const favoriteLabel = favorited ? t("Unfavorite") : t("Favorite");
+    const toggleFavorite = () => actions.favorite?.(message);
     // Any sent message can be marked unread; the next open starts New at the first reply from it.
     const includeUnread = !readOnly && !markedUnread && canMarkMessageUnread(message);
     const reply = () => actions.reply(message);
@@ -276,6 +294,9 @@ export const MessageRow = memo(function MessageRow({
       ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
       { name: "copy", text: t("Copy"), onPress: copy },
       { name: "share", text: t("Share"), onPress: share },
+      ...(includeFavorite
+        ? [{ name: "favorite", text: favoriteLabel, onPress: toggleFavorite }]
+        : []),
       ...(codeBlocks.length === 1
         ? [{ name: "copyCode", text: t("Copy code"), onPress: copyCode }]
         : []),
@@ -285,6 +306,7 @@ export const MessageRow = memo(function MessageRow({
         reply: t("Reply"),
         copy: t("Copy"),
         share: t("Share"),
+        favorite: favoriteLabel,
         react: t("React"),
         quote: t("Quote"),
         speak: t("Speak message"),
@@ -300,6 +322,7 @@ export const MessageRow = memo(function MessageRow({
         select: includeSelect,
         unread: includeUnread,
         share: includeSelect,
+        favorite: includeFavorite,
       },
     });
     const openSheet = (event: GestureResponderEvent) =>
@@ -343,6 +366,16 @@ export const MessageRow = memo(function MessageRow({
           ],
           [
             { name: "copy", text: t("Copy"), icon: "copy-outline" as const, onPress: copy },
+            ...(includeFavorite
+              ? [
+                  {
+                    name: "favorite",
+                    text: favoriteLabel,
+                    icon: favorited ? ("bookmark" as const) : ("bookmark-outline" as const),
+                    onPress: toggleFavorite,
+                  },
+                ]
+              : []),
             ...(includeSelect
               ? [
                   {
@@ -392,20 +425,6 @@ export const MessageRow = memo(function MessageRow({
               });
           }
         : undefined,
-      dislikeMessage: includeReact
-        ? () => {
-            if (hasDislike || optimisticDislike || dislikeInFlight.current) return;
-            dislikeInFlight.current = true;
-            setOptimisticDislike(true);
-            void react("👎")
-              .then((success) => {
-                if (!success) setOptimisticDislike(false);
-              })
-              .finally(() => {
-                dislikeInFlight.current = false;
-              });
-          }
-        : undefined,
       shareMessage: share,
       copyMessage: copy,
       regenerateMessage,
@@ -419,6 +438,7 @@ export const MessageRow = memo(function MessageRow({
         if (id === "reply") reply();
         if (id === "copy") copy();
         if (id === "share") share();
+        if (id === "favorite") toggleFavorite();
         if (id === "quote") quote();
         if (id === "speak") speakMessage();
         if (id === "select") select();
@@ -449,14 +469,27 @@ export const MessageRow = memo(function MessageRow({
     optimisticLike,
     hasDislike,
     optimisticDislike,
+    favorited,
   ]);
   const layout = messageRowLayout(message.blocks, { activityBotId, inGroup, columnWidth });
+  // A search hit tints the row yellow; the current hit is stronger than a plain
+  // hit, and both outrank the jump highlight.
+  const rowHighlight =
+    searchCurrent || searchHit
+      ? colorScheme === "dark"
+        ? searchCurrent
+          ? "rgba(255, 223, 107, 0.28)"
+          : "rgba(255, 223, 107, 0.14)"
+        : searchCurrent
+          ? "#ffdf6b"
+          : "#fff3bf"
+      : undefined;
   return (
     <View
       key={message.id}
       onLayout={onLayout}
       style={{
-        backgroundColor: highlighted ? tokens.muted : undefined,
+        backgroundColor: rowHighlight ?? (highlighted ? tokens.muted : undefined),
         marginTop: headerAdjacent ? 0 : 12,
         width: "100%",
       }}
@@ -549,19 +582,19 @@ export const MessageRow = memo(function MessageRow({
               labels={{
                 copy: t("Copy"),
                 speak: t("Speak message"),
-                like: t("Like"),
-                dislike: t("Dislike"),
+                favorite: favorited ? t("Unfavorite") : t("Favorite"),
                 share: t("Share"),
                 regenerate: t("Regenerate"),
               }}
               onCopy={copyMessage}
-              onSpeak={() => actions.speak(message)}
+              // Tapping read-aloud while this reply is speaking stops it.
+              onSpeak={() => (speaking ? stopVoicePlayback() : actions.speak(message))}
               canSpeak={canSpeak}
               speaking={speaking ?? false}
               reducedMotion={reducedMotion}
-              onLike={likeMessage}
-              onDislike={dislikeMessage}
               onShare={shareMessage}
+              onFavorite={actions.favorite ? () => actions.favorite!(message) : undefined}
+              favorited={favorited ?? false}
               onRegenerate={readOnly ? undefined : regenerateMessage}
             />
           ) : null}
@@ -605,12 +638,11 @@ export const MessageRow = memo(function MessageRow({
 });
 
 /**
- * The six action buttons under an AI reply, laid out exactly as the approved
- * v3 chat mockup: 36×36 tiles with a 10pt radius, 6pt apart, 10pt below the
- * bubble and 20pt below the row; copy, speak, like, dislike and share on
- * blue-soft tiles, a spacer, then regenerate alone on a plain tile at the end.
- * The mockup has no pressed or voted state for these tiles, so there is none
- * here either; a vote still shows in the reactions row underneath.
+ * The five action buttons under an AI reply: 36×36 tiles with a 10pt radius,
+ * 6pt apart, 10pt below the bubble and 20pt below the row; copy, speak, share
+ * and favorite on blue-soft tiles, a spacer, then regenerate alone on a plain
+ * tile at the end. A favorited reply shows its bookmark tile filled in
+ * accent blue. The read-aloud tile pulses while this reply is speaking.
  * Light colors are the mockup's own palette; dark mode falls back to the
  * shared tokens, which the mockup does not define.
  */
@@ -621,16 +653,15 @@ export function MessageActionRow({
   canSpeak,
   speaking,
   reducedMotion,
-  onLike,
-  onDislike,
   onShare,
+  onFavorite,
+  favorited = false,
   onRegenerate,
 }: {
   labels: {
     copy: string;
     speak: string;
-    like: string;
-    dislike: string;
+    favorite: string;
     share: string;
     regenerate: string;
   };
@@ -640,9 +671,9 @@ export function MessageActionRow({
   /** This message is being read aloud; its speaker icon pulses. */
   speaking: boolean;
   reducedMotion: boolean;
-  onLike?: () => void;
-  onDislike?: () => void;
   onShare: () => void;
+  onFavorite?: () => void;
+  favorited?: boolean;
   onRegenerate?: () => void;
 }) {
   const tokens = useMobileTokens();
@@ -655,6 +686,9 @@ export function MessageActionRow({
     colorScheme === "dark"
       ? { background: tokens.muted, icon: tokens.mutedForeground }
       : { background: "#f4f5f7", icon: "#5b6470" };
+  const favoriteTile = favorited
+    ? { background: colorScheme === "dark" ? tokens.link : "#2f6bff", icon: "#fff" }
+    : tile;
   return (
     <View
       style={{
@@ -685,26 +719,6 @@ export function MessageActionRow({
           reducedMotion={reducedMotion}
         />
       ) : null}
-      {onLike ? (
-        <ActionTile
-          label={labels.like}
-          ios="hand.thumbsup"
-          android="thumbs-up-outline"
-          background={tile.background}
-          color={tile.icon}
-          onPress={onLike}
-        />
-      ) : null}
-      {onDislike ? (
-        <ActionTile
-          label={labels.dislike}
-          ios="hand.thumbsdown"
-          android="thumbs-down-outline"
-          background={tile.background}
-          color={tile.icon}
-          onPress={onDislike}
-        />
-      ) : null}
       <ActionTile
         label={labels.share}
         ios="paperplane"
@@ -713,6 +727,16 @@ export function MessageActionRow({
         color={tile.icon}
         onPress={onShare}
       />
+      {onFavorite ? (
+        <ActionTile
+          label={labels.favorite}
+          ios={favorited ? "bookmark.fill" : "bookmark"}
+          android={favorited ? "bookmark" : "bookmark-outline"}
+          background={favoriteTile.background}
+          color={favoriteTile.icon}
+          onPress={onFavorite}
+        />
+      ) : null}
       <View style={{ flex: 1 }} />
       {onRegenerate ? (
         <ActionTile
