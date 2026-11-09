@@ -39,7 +39,6 @@ overrides:
   ip-address@<10.7.1: 10.7.1
 
 patchedDependencies:
-  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
 
