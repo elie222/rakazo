@@ -148,8 +148,8 @@ bash install-images.sh
 
 ## 本地开发（从源码运行）
 
-需要 Node.js 22.x（至少 22.23.4）、Node.js 24.x 或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
-不支持 Node.js 23.x 和 25.x。
+需要 Node.js 24.x（至少 24.15.0）或 Node.js 26 及以上版本，以及 pnpm 12 和 Docker。
+不支持 Node.js 25.x。
 
 ```bash
 git clone https://github.com/elie222/rakazo.git

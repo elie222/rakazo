@@ -287,7 +287,7 @@ jobs:
         if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: ${{ inputs.publish_report && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
         if: inputs.publish_report
