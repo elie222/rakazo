@@ -57,8 +57,11 @@ const LINK_PAGE_SIZE = 5;
 /** An empty literal search rules out only those words, not what they were meant to find. */
 const NO_MATCH_NOTE = "No message matched these words, which does not show it never happened.";
 /** Only where earlier replies used tools, since tool work described in other words is hard to find. */
-const TOOL_WORK_HINT =
-  'Earlier replies that used tools may describe it in other words: list them with kinds ["tool_work"] and no query, newest first; nextSearch continues to older ones.';
+function toolWorkHint(myChats: boolean): string {
+  // A kinds-only search defaults to this chat, so a hint after an all-chats search keeps its scope.
+  const args = myChats ? 'scope "my_chats", kinds ["tool_work"]' : 'kinds ["tool_work"]';
+  return `Earlier replies that used tools may describe it in other words: list them with ${args} and no query, newest first; nextSearch continues to older ones.`;
+}
 const UNFINISHED_NOTE = "No match in the part searched so far; nextSearch continues the search.";
 const CAPPED_NOTE = "The search stopped early without a match; narrow it by date to continue.";
 function bounded<T extends { messages: ReturnType<typeof reference>[] }>(response: T): T {
@@ -465,7 +468,7 @@ export async function searchHistory(
         : hasMore
           ? UNFINISHED_NOTE
           : (await hasToolWork(prisma, scope, myChats))
-            ? `${NO_MATCH_NOTE} ${TOOL_WORK_HINT}`
+            ? `${NO_MATCH_NOTE} ${toolWorkHint(myChats)}`
             : NO_MATCH_NOTE;
   const nextBeforeSeq =
     byOffset || !hasMore ? null : rows.length > limit ? page.at(-1)!.seq : (cursor as number);

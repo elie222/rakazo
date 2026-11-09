@@ -437,6 +437,15 @@ describe("local history retrieval", () => {
       kinds: ["tool_work"],
     });
     expect(toolWorkOnly.note).toContain('kinds ["tool_work"] and no query');
+    expect(toolWorkOnly.note).not.toContain("my_chats");
+    // After an all-chats search, the hint keeps that scope, since kinds alone searches this chat.
+    mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
+    const allChats = await searchHistory(
+      prisma,
+      { ...scope, allowMyChats: true },
+      { query: "extension", scope: "my_chats" },
+    );
+    expect(allChats.note).toContain('scope "my_chats", kinds ["tool_work"] and no query');
   });
   it("does not say nothing matched when the scan stopped before the end", async () => {
     const { mock, prisma } = db();
