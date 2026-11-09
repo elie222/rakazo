@@ -929,13 +929,26 @@ describe("openai-compatible provider", () => {
 
   it("points an unreachable loopback server at host.docker.internal", async () => {
     const down: typeof fetch = async () => {
-      throw new TypeError("fetch failed");
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      });
+    };
+    const redirected: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
     };
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:11234/v1" }, down, undefined, OWNER),
     ).rejects.toThrow(/host\.docker\.internal/);
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://10.0.0.5:8000/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("fetch failed");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:11234/v1" },
+        redirected,
+        undefined,
+        OWNER,
+      ),
     ).rejects.toThrow("fetch failed");
   });
 
