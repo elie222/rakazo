@@ -26,7 +26,7 @@ class RakazoSystemFloatModule : Module() {
     }
 
     Function("requestOverlayPermission") {
-      val context = appContext.reactContext ?: return@Function
+      val context = appContext.reactContext ?: return@Function null
       val intent = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.parse("package:${context.packageName}"),
@@ -77,7 +77,7 @@ class RakazoSystemFloatModule : Module() {
 
     /** Takes the window down, if it is up. */
     AsyncFunction("hide") {
-      val context = appContext.reactContext ?: return@AsyncFunction
+      val context = appContext.reactContext ?: return@AsyncFunction null
       val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_HIDE
       }
