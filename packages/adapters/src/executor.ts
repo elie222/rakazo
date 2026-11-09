@@ -148,6 +148,7 @@ import {
   failRunBeforeTurn,
   finishRunAttempt,
   mayOpenModelStream,
+  PausedTurnToolsUnavailableError,
   renewRunLease,
   requeueComputerRun,
   retryRunSetup,
@@ -1561,9 +1562,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             savedComputerMode?.mode,
           );
           if (checkpointModelResolver && !turnCheckpoint)
-            throw new Error(
-              "Pinned computer mode checkpoint cannot resume with the available tools",
-            );
+            throw new PausedTurnToolsUnavailableError();
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
