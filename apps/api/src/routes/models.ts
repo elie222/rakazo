@@ -64,6 +64,7 @@ export function modelsRoutes(ctx: RouterContext) {
     connectModelCredential,
     refreshExpiredCredential,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,
@@ -72,7 +73,11 @@ export function modelsRoutes(ctx: RouterContext) {
   } = ctx;
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
+      list: authed.models.list.handler(async ({ context }) => {
+        const catalog = await chatCatalog(context.actor);
+        // Only narrows which connection lists a model; saving a bot still checks its connection.
+        return withServingConnections(context.actor, catalog).catch(() => catalog);
+      }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({

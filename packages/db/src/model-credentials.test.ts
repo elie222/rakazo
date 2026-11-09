@@ -335,7 +335,12 @@ it.each([
 });
 
 describe("a bot's chosen connection", () => {
-  const pin = { provider: "anthropic", modelId: "claude-opus", credentialId: "subscription" };
+  const pin = {
+    provider: "anthropic",
+    modelId: "claude-opus",
+    credentialId: "subscription",
+    bot: { modelProvider: "anthropic", modelId: "claude-opus" },
+  };
   const lookup = (row: typeof pin | null) =>
     ({ userBotModelConnection: { findUnique: vi.fn(async () => row) } }) as unknown as PrismaClient;
 
@@ -346,8 +351,20 @@ describe("a bot's chosen connection", () => {
     ).resolves.toBe("subscription");
     expect(prisma.userBotModelConnection.findUnique).toHaveBeenCalledWith({
       where: { userId_botId: { userId: "user", botId: "bot" } },
-      select: { provider: true, modelId: true, credentialId: true },
+      select: {
+        provider: true,
+        modelId: true,
+        credentialId: true,
+        bot: { select: { modelProvider: true, modelId: true } },
+      },
     });
+  });
+
+  it("does not apply to a routine still on the model its bot has left", async () => {
+    const moved = { ...pin, bot: { modelProvider: "anthropic", modelId: "claude-sonnet" } };
+    await expect(
+      botModelConnectionId(lookup(moved), { userId: "user" }, "bot", "anthropic", "claude-opus"),
+    ).resolves.toBeUndefined();
   });
 
   it.each([

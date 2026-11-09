@@ -24,7 +24,7 @@ async function compatibleModelPins(
     select: { provider: true, modelId: true, credentialId: true },
   } as const;
   // A connection is the account's, so its pins are checked in every Space it is used in.
-  const [bots, routines, accountRoles, spaceRoles] = await runAsSystem(
+  const [bots, routines, sharedBotChoices, accountRoles, spaceRoles] = await runAsSystem(
     "model pins across the account's Spaces",
     () =>
       Promise.all([
@@ -41,7 +41,29 @@ async function compatibleModelPins(
           select: {
             ...pin,
             name: true,
-            bot: { select: { modelConnections: chosenConnection } },
+            bot: {
+              select: { modelProvider: true, modelId: true, modelConnections: chosenConnection },
+            },
+          },
+        }),
+        // A member can choose this connection for a bot someone else owns.
+        deps.prisma.userBotModelConnection.findMany({
+          where: {
+            userId: actor.userId,
+            provider,
+            modelId,
+            bot: {
+              archivedAt: null,
+              userId: { not: actor.userId },
+              modelProvider: provider,
+              modelId,
+              space: { memberships: { some: { userId: actor.userId } } },
+            },
+          },
+          select: {
+            modelId: true,
+            credentialId: true,
+            bot: { select: { name: true, spaceId: true } },
           },
         }),
         deps.prisma.userModelRoleChoice.findMany({ where: { ...where, provider }, select: role }),
@@ -68,8 +90,12 @@ async function compatibleModelPins(
       })),
       ...routines.map(({ bot, ...routine }) => ({
         ...routine,
-        credentialId: chosenConnectionId(bot.modelConnections, routine.modelId),
+        credentialId:
+          bot.modelProvider === provider && bot.modelId === routine.modelId
+            ? chosenConnectionId(bot.modelConnections, routine.modelId)
+            : undefined,
       })),
+      ...sharedBotChoices.map(({ bot, ...choice }) => ({ ...bot, ...choice })),
     ],
     backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
   };

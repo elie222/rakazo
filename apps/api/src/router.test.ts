@@ -8279,7 +8279,11 @@ describe("openai-compatible enabled models", () => {
       routine: {
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
           matching(options.routines, where).map((row) => ({
-            bot: { modelConnections: options.routineConnections ?? [] },
+            bot: {
+              modelProvider: compatible,
+              modelId: row.modelId,
+              modelConnections: options.routineConnections ?? [],
+            },
             ...row,
           })),
         ),
@@ -8360,6 +8364,11 @@ describe("openai-compatible enabled models", () => {
   }
 
   function fixture(options: {
+    sharedBotChoices?: {
+      modelId: string;
+      credentialId: string;
+      bot: { name: string; spaceId: string };
+    }[];
     /** Stored plaintext; null makes the stored ciphertext unreadable. */
     plaintext: string | null;
     alternatePlaintext?: string;
@@ -8406,6 +8415,7 @@ describe("openai-compatible enabled models", () => {
     const pins = pinStores(options);
     const bot = botRow(options.botModelId ?? options.defaultModel);
     const botModelConnection = {
+      findMany: vi.fn(async () => options.sharedBotChoices ?? []),
       findUnique: vi.fn(async () => null),
       upsert: vi.fn(async () => ({})),
       deleteMany: vi.fn(async () => ({ count: 1 })),
@@ -8634,6 +8644,71 @@ describe("openai-compatible enabled models", () => {
     expect(result.status).toBe(200);
   });
 
+  it("refuses dropping a model this member chose the connection for on a shared bot", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      sharedBotChoices: [
+        {
+          modelId: "m-b",
+          credentialId: "cred-compat",
+          bot: { name: "Shared", spaceId: "space-2" },
+        },
+      ],
+    });
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result).toEqual({ status: 400, message: expect.stringContaining("Shared") });
+    expect(prisma.userBotModelConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: actor.userId,
+          bot: expect.objectContaining({
+            userId: { not: actor.userId },
+            space: { memberships: { some: { userId: actor.userId } } },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("ignores a routine's model once its bot has moved off the chosen connection's model", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      routines: [{ name: "Nightly digest", modelId: "m-b" }],
+      routineConnections: [{ provider: compatible, modelId: "m-b", credentialId: "cred-other" }],
+    });
+    prisma.routine.findMany.mockImplementation(
+      async () =>
+        [
+          {
+            name: "Nightly digest",
+            spaceId: "space-1",
+            modelId: "m-b",
+            bot: {
+              modelProvider: compatible,
+              modelId: "m-a",
+              modelConnections: [
+                { provider: compatible, modelId: "m-b", credentialId: "cred-other" },
+              ],
+            },
+          },
+        ] as never,
+    );
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+    expect(result.status).toBe(400);
+  });
+
   it("ignores another user's bot in the same space", async () => {
     const { call } = fixture({
       plaintext: secretText(["m-a", "m-b"]),
@@ -8776,6 +8851,7 @@ describe("openai-compatible enabled models", () => {
       provider: compatible,
       modelId: "X",
       credentialId: "cred-compat",
+      bot: { modelProvider: compatible, modelId: "X" },
     } as never);
 
     await expect(call("bots/modelConnection", { botId: "bot-1" })).resolves.toMatchObject({

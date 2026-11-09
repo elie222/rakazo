@@ -585,6 +585,18 @@ describe("connectionModelChoices", () => {
     ]);
   });
 
+  it("lists a model only under the connections that can run it", () => {
+    const keys = connectionModelChoices(
+      [anthropic("sub", "Subscription"), anthropic("api", "API key")],
+      [{ ...entry("anthropic", "opus"), credentialIds: ["sub"] }, entry("anthropic", "sonnet")],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual([
+      "sub@@anthropic::opus",
+      "sub@@anthropic::sonnet",
+      "api@@anthropic::sonnet",
+    ]);
+  });
+
   it("leaves a provider with one connection as it was", () => {
     const [choice, ...rest] = connectionModelChoices([anthropic("sub", "Claude")], catalog);
     expect(rest).toEqual([]);

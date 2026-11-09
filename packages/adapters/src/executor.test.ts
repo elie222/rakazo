@@ -3638,6 +3638,7 @@ description: Prepare standup notes
       provider: "xai",
       modelId: "grok-4.6",
       credentialId: "credential-chosen",
+      bot: { modelProvider: "xai", modelId: "grok-4.6" },
     }));
     const credentialFindFirst = vi.fn(async () => ({
       id: "credential-chosen",

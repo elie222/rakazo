@@ -159,6 +159,8 @@ export type ConnectedModelChoice = {
 };
 
 type CatalogModelRef = {
+  /** The provider's connections that can run it, when not all of them can. */
+  credentialIds?: readonly string[];
   managed?: boolean;
   provider: string;
   id: string;
@@ -380,7 +382,11 @@ export function connectionModelChoices(
   const separate = credentials.filter(several).flatMap((credential) =>
     connectedModelChoices(
       [credential],
-      catalog.filter((entry) => provider(entry) === provider(credential)),
+      catalog.filter(
+        (entry) =>
+          provider(entry) === provider(credential) &&
+          (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
+      ),
     ).map((choice) => ({
       ...choice,
       key: connectionChoiceKey(credential.id, choice.key),

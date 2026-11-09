@@ -326,9 +326,19 @@ export async function botModelConnectionId(
 ) {
   const pin = await prisma.userBotModelConnection.findUnique({
     where: { userId_botId: { userId: scope.userId, botId } },
-    select: { provider: true, modelId: true, credentialId: true },
+    select: {
+      provider: true,
+      modelId: true,
+      credentialId: true,
+      bot: { select: { modelProvider: true, modelId: true } },
+    },
   });
-  return pin && botModelConnectionApplies(pin, provider, modelId) ? pin.credentialId : undefined;
+  // A routine can stay on a model its bot has left; the choice went with the bot.
+  return pin?.bot.modelProvider &&
+    botModelConnectionApplies(pin, pin.bot.modelProvider, pin.bot.modelId) &&
+    botModelConnectionApplies(pin, provider, modelId)
+    ? pin.credentialId
+    : undefined;
 }
 
 /** The connection that serves a bot's model for this member: their choice, or the usual one. */
