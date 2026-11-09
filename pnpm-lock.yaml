@@ -170,7 +170,6 @@ overrides:
   ws@>=8 <8.21.1: 8.22.0
   '@grpc/grpc-js@<1.14.5': 1.14.7
   '@opentelemetry/core@>=2 <2.8.0': 2.12.0
-  '@composio/core>undici': 7.30.1
   '@electron/get>undici': 7.30.1
   joi@>=18 <18.3.1: 18.3.2
   qs@<6.16.2: 6.16.2
@@ -836,8 +835,8 @@ importers:
         specifier: 4.44.0
         version: 4.44.0(supports-color@8.1.1)(zod@4.6.7)
       '@composio/core':
-        specifier: 0.18.1
-        version: 0.18.1(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(ws@8.22.0)(zod@4.6.7)
+        specifier: 0.28.0
+        version: 0.28.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(effect@3.20.0)(google-auth-library@10.9.1(supports-color@8.1.1))(ws@8.22.0)(zod@4.6.7)
       '@darabonba/typescript':
         specifier: 1.0.6
         version: 1.0.6(supports-color@8.1.1)
@@ -2521,17 +2520,23 @@ packages:
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
     engines: {node: '>=0.1.90'}
 
-  '@composio/client@0.1.0-alpha.76':
-    resolution: {integrity: sha512-MXC5JGRVdiQ4EgLricy9o/mqBa1+1T7wHFZ6Q4ZJkrjzZqOMvxTgy21Zlb5J/1oGkB2bg9UDzpH8PkXCp/D4zA==}
+  '@composio/client@2.0.1':
+    resolution: {integrity: sha512-1+Azl8W/grinmXVt6KhDKy5UlvTiv7MCMgjqBDxd8TqndjM92/HotxLabnB63A285bvo5Lcu4kbOz413uaPmEQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      effect: '*'
+    peerDependenciesMeta:
+      effect:
+        optional: true
 
-  '@composio/core@0.18.1':
-    resolution: {integrity: sha512-VEg6F92cMG/4uhRfX6O4SRd+0Pnd4L67tF+Az/EXQ/+aPfDasW5GMTzkiSUSArGDyiMfEsLUYaTYizfnEw2usw==}
+  '@composio/core@0.28.0':
+    resolution: {integrity: sha512-OF2vC9Bc3uBmTPQKeq43QNWqmsVHHu0AKQJfNaQqM3h8fE8bvG3mUrisJ285mCkVSyY7tAr/dC+ONothQtQRDQ==}
     engines: {node: '>=22.22.3'}
     peerDependencies:
       zod: '>=3.25.76 <5'
 
-  '@composio/json-schema-to-zod@0.3.2':
-    resolution: {integrity: sha512-TUUzu4uQH6esokVd6LD0SK4oIz8WaYRtU0cnuj0rmxbiHS0VbhN1qdvj2gIvrIWDdNyvQUIalO63YT/lNx46Gw==}
+  '@composio/json-schema-to-zod@0.4.0':
+    resolution: {integrity: sha512-BwZXcGpiBFNStECzka7nyF8RogVIzK5kRrDGI5p9P9nlLbQqpCF6H/ILozQE5NoT3HDjbJF26aang+2hDduSNQ==}
     engines: {node: '>=22.22.3'}
     peerDependencies:
       zod: '>=3.25.76 <5'
@@ -9870,13 +9875,15 @@ packages:
       zod:
         optional: true
 
-  openai@7.4.0:
-    resolution: {integrity: sha512-+C9Muit5x8j9R8ej8ZzVgKcrVDtqFqTy9gxFdov0EItLgU68zrJtF9ZeT0cyqJQW9S3PCJkdFgADtRGquRBtew==}
+  openai@7.53.0:
+    resolution: {integrity: sha512-PXiIZraFYMb2QYgTtWqDA16Oszj4fWRZNn7qLIAddmiJxM5uQPWBFaxp9O8MhLfTUOQ+iQsnFSRJhLPecsGovQ==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
+      google-auth-library: '>=9.15.1 <12'
+      undici: '>=5 <9'
       ws: 8.22.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
@@ -9885,6 +9892,10 @@ packages:
       '@smithy/hash-node':
         optional: true
       '@smithy/signature-v4':
+        optional: true
+      google-auth-library:
+        optional: true
+      undici:
         optional: true
       ws:
         optional: true
@@ -10434,6 +10445,10 @@ packages:
 
   rc9@3.0.1:
     resolution: {integrity: sha512-gMDyleLWVE+i6Sgtc0QbbY6pEKqYs97NGi6isHQPqYlLemPoO8dxQ3uGi0f4NiP98c+jMW6cG1Kx9dDwfvqARQ==}
+
+  re2js@2.9.1:
+    resolution: {integrity: sha512-JIT3bEEUZTOR2YS1walNEIfH4cF/cQeZcBUFq7ldqO6lR6g0X5CBq/S8rsa9omzZcsNf8qc36jCkWpKKtncrZg==}
+    engines: {node: '>=20.0.0'}
 
   react-devtools-core@6.1.5:
     resolution: {integrity: sha512-ePrwPfxAnB+7hgnEr8vpKxL9cmnp7F322t8oqcPshbIQQhDKgFDW4tjhF2wjVbdXF9O/nyuy3sQWd9JGpiLPvA==}
@@ -13765,15 +13780,17 @@ snapshots:
   '@colors/colors@1.5.0':
     optional: true
 
-  '@composio/client@0.1.0-alpha.76': {}
+  '@composio/client@2.0.1(effect@3.20.0)':
+    optionalDependencies:
+      effect: 3.20.0
 
-  '@composio/core@0.18.1(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(ws@8.22.0)(zod@4.6.7)':
+  '@composio/core@0.28.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(effect@3.20.0)(google-auth-library@10.9.1(supports-color@8.1.1))(ws@8.22.0)(zod@4.6.7)':
     dependencies:
-      '@composio/client': 0.1.0-alpha.76
-      '@composio/json-schema-to-zod': 0.3.2(zod@4.6.7)
+      '@composio/client': 2.0.1(effect@3.20.0)
+      '@composio/json-schema-to-zod': 0.4.0(zod@4.6.7)
       '@types/json-schema': 7.0.15
       is-fs-case-sensitive: 2.0.0
-      openai: 7.4.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(ws@8.22.0)(zod@4.6.7)
+      openai: 7.53.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1(supports-color@8.1.1))(undici@7.30.1)(ws@8.22.0)(zod@4.6.7)
       picocolors: 1.1.1
       pusher-js: 8.6.0
       semver: 7.8.5
@@ -13784,12 +13801,15 @@ snapshots:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
       - '@smithy/signature-v4'
+      - effect
+      - google-auth-library
       - ws
 
-  '@composio/json-schema-to-zod@0.3.2(zod@4.6.7)':
+  '@composio/json-schema-to-zod@0.4.0(zod@4.6.7)':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       dequal: 2.0.3
+      re2js: 2.9.1
       zod: 4.6.7
 
   '@connectrpc/connect-web@2.0.0-rc.3(@bufbuild/protobuf@2.14.1)(@connectrpc/connect@2.0.0-rc.3(@bufbuild/protobuf@2.14.1))':
@@ -22329,10 +22349,12 @@ snapshots:
       ws: 8.22.0
       zod: 4.6.7
 
-  openai@7.4.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(ws@8.22.0)(zod@4.6.7):
+  openai@7.53.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1(supports-color@8.1.1))(undici@7.30.1)(ws@8.22.0)(zod@4.6.7):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.92
       '@smithy/signature-v4': 5.7.5
+      google-auth-library: 10.9.1(supports-color@8.1.1)
+      undici: 7.30.1
       ws: 8.22.0
       zod: 4.6.7
 
@@ -22903,6 +22925,8 @@ snapshots:
     dependencies:
       defu: 6.1.7
       destr: 2.0.5
+
+  re2js@2.9.1: {}
 
   react-devtools-core@6.1.5:
     dependencies:
