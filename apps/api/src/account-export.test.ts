@@ -7,6 +7,7 @@ import {
 } from "@rakazo/contracts";
 import type { AccountExportSource } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { Unzip, UnzipInflate } from "fflate";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
@@ -233,12 +234,31 @@ describe("account export archive", () => {
   });
 
   it("fails instead of writing an archive past the zip size limit", async () => {
-    const reader = zipStream(accountArchiveFiles(source(), stores()), 200).getReader();
+    const reader = zipStream(accountArchiveFiles(source(), stores()), {
+      maxBytes: 200,
+    }).getReader();
     await expect(
       (async () => {
         for (;;) if ((await reader.read()).done) return;
       })(),
     ).rejects.toThrow("zip size limit");
+  });
+
+  it("reports a size-limit failure as a failure even after the request aborts", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    const controller = new AbortController();
+    controller.abort();
+    const reader = zipStream(accountArchiveFiles(source(), stores()), {
+      maxBytes: 200,
+      signal: controller.signal,
+    }).getReader();
+    await expect(
+      (async () => {
+        for (;;) if ((await reader.read()).done) return;
+      })(),
+    ).rejects.toThrow("zip size limit");
+    expect(error).toHaveBeenCalledWith("account.export.failed", expect.anything());
+    error.mockRestore();
   });
 
   it("reads only as fast as it is consumed, and stops when cancelled", async () => {
@@ -266,6 +286,48 @@ describe("account export archive", () => {
     expect(produced).toBe(afterReads);
     await reader.cancel();
     expect(stopped).toBe(true);
+  });
+
+  it("ends quietly when the download is cancelled while a file is being read", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* slow(): AsyncGenerator<Uint8Array> {
+      yield new Uint8Array(1);
+      await waiting;
+      yield new Uint8Array(1);
+    }
+    const reader = zipStream(generate([{ path: "slow.bin", data: slow() }])).getReader();
+    const read = reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const cancelled = reader.cancel();
+    release();
+    await cancelled;
+    await expect(read).resolves.toEqual({ done: true, value: undefined });
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("reports an aborted request as a warning, not a failure", async () => {
+    const error = vi.spyOn(getLogger(), "error");
+    const warn = vi.spyOn(getLogger(), "warn");
+    const controller = new AbortController();
+    controller.abort("Client connection prematurely closed.");
+    const reader = zipStream(
+      accountArchiveFiles(source(), stores(), { signal: controller.signal }),
+      { signal: controller.signal },
+    ).getReader();
+    await expect(
+      (async () => {
+        for (;;) if ((await reader.read()).done) return;
+      })(),
+    ).rejects.toBe("Client connection prematurely closed.");
+    expect(error).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("account.export.aborted", expect.anything());
+    error.mockRestore();
+    warn.mockRestore();
   });
 });
 
