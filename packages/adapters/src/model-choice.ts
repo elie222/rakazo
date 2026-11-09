@@ -54,6 +54,8 @@ export function words(text: string): string[] {
 }
 
 const isVersion = (word: string) => /^\d/.test(word);
+/** The catalog's "(latest)" marker names the newest release, not a variant like "Lite". */
+const isMarker = (word: string) => word === "latest";
 
 function compareVersions(left: string | undefined, right: string | undefined): number {
   const a = (left ?? "").split(".").map(Number);
@@ -99,7 +101,9 @@ export function matchModelChoice(
       : [];
   const preferred = preferredProvider ? canonicalPiProviderId(preferredProvider) : undefined;
   const unsaid = (choice: ModelChoice) =>
-    words(choice.label).filter((word) => !isVersion(word) && !asked.includes(word)).length;
+    words(choice.label).filter(
+      (word) => !isVersion(word) && !isMarker(word) && !asked.includes(word),
+    ).length;
   const version = (choice: ModelChoice) => words(choice.label).find(isVersion);
   const order = (a: ModelChoice, b: ModelChoice) =>
     Number(b.provider === preferred) - Number(a.provider === preferred) ||

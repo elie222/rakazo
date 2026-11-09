@@ -13,7 +13,7 @@ const choice = (provider: string, providerName: string, id: string, label: strin
 const choices: ModelChoice[] = [
   choice("anthropic", "Anthropic", "claude-sonnet-4-5", "Claude Sonnet 4.5"),
   choice("anthropic", "Anthropic", "claude-sonnet-5", "Claude Sonnet 5"),
-  choice("anthropic", "Anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+  choice("anthropic", "Anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5 (latest)"),
   choice("openrouter", "OpenRouter", "anthropic/claude-sonnet-5.5", "Anthropic: Claude Sonnet 5.5"),
   choice("google", "Google", "gemini-3.7-flash", "Gemini 3.7 Flash"),
   choice("google", "Google", "gemini-3.8-flash", "Gemini 3.8 Flash"),
@@ -37,6 +37,17 @@ describe("matchModelChoice", () => {
     expect(matched("Claude Sonnet")).toBe("anthropic/claude-sonnet-5-5");
     expect(matched("gemini flash")).toBe("google/gemini-3.8-flash");
     expect(matched("Gemini Flash Lite")).toBe("google/gemini-3.8-flash-lite");
+  });
+
+  it('does not count the "(latest)" marker against a model', () => {
+    const marked = [
+      choice("anthropic", "Anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5 (latest)"),
+      choice("bedrock", "Amazon Bedrock", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+    ];
+    const { match, ranked } = matchModelChoice(marked, "Claude Sonnet");
+    expect(match).toBeUndefined();
+    expect(ranked).toHaveLength(2);
+    expect(matched("claude sonnet latest")).toBe("anthropic/claude-sonnet-5-5");
   });
 
   it("keeps a spoken version exact", () => {
