@@ -2,7 +2,9 @@ import * as z from "zod";
 import type { ComputerSize } from "./computer.js";
 import { ComputerSizeSchema } from "./computer.js";
 
-export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
+export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000] as const;
+/** Amounts no longer offered that existing purchases and subscriptions may still carry. */
+export const RETIRED_MODEL_CREDIT_AMOUNTS = [50000] as const;
 
 /**
  * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
