@@ -50,12 +50,15 @@ export function useRoutineEditor({
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
   const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
-  // Bumped by each rotation of a bot's key, so a reveal that started before it never shows the revoked key.
+  // Bumped when a bot's key rotates or the person hides it, so a reveal that started before
+  // never shows a revoked key or brings back one they hid.
   const webhookKeyGenerations = useRef(new Map<string, number>());
+  const bumpWebhookKeyGeneration = (botId: string) =>
+    webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
+      bumpWebhookKeyGeneration(botId);
       showWebhookSecret(botId, result.secret);
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
@@ -188,7 +191,10 @@ export function useRoutineEditor({
             );
           }
         },
-        onHideWebhook: () => hideWebhookSecret(active.id),
+        onHideWebhook: () => {
+          bumpWebhookKeyGeneration(active.id);
+          hideWebhookSecret(active.id);
+        },
         onSave: async () => {
           if (routineSavePending.current) return;
           const targetBotId = active.id;
