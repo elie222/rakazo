@@ -55,8 +55,12 @@ const MAX_SEARCH_OFFSET = 10_000;
 const MAX_RESPONSE_BYTES = 10_000;
 const LINK_PAGE_SIZE = 5;
 /** An empty literal search rules out only those words, not what they were meant to find. */
-const NO_MATCH_NOTE =
-  "No message has every word of this query. That rules out only these words, not that something was said or done: before saying it was not, try other words, or omit the query and list by kinds (tool_work lists every earlier reply that used tools).";
+const NO_MATCH_NOTE = "No message matched these words, which does not show it never happened.";
+/** Only where earlier replies used tools, since a paraphrase there is otherwise hard to find. */
+const TOOL_WORK_HINT =
+  'Before denying it, list earlier replies that used tools: kinds ["tool_work"] without a query, newest first.';
+const UNFINISHED_NOTE = "No match in the part searched so far; nextSearch continues the search.";
+const CAPPED_NOTE = "The search stopped early without a match; narrow it by date to continue.";
 function bounded<T extends { messages: ReturnType<typeof reference>[] }>(response: T): T {
   const refs = [...response.messages];
   if ("runs" in response) {
@@ -310,6 +314,18 @@ function withAttachments<T extends { messageId: string }>(
     : ref;
 }
 
+/** Whether any reply the search could reach used tools. */
+async function hasToolWork(prisma: PrismaClient, scope: HistoryScope, myChats: boolean) {
+  const rows = await prisma.$queryRaw<unknown[]>(Prisma.sql`
+    SELECT 1 FROM messages m JOIN threads t ON t.id = m."threadId"
+    WHERE ${visible(scope, myChats)}
+      AND m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')
+      ${scope.searchBeforeSeq !== undefined ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${scope.searchBeforeSeq})` : Prisma.empty}
+      ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}
+    LIMIT 1`);
+  return rows.length > 0;
+}
+
 /**
  * Blind-index (or full-text) search, at most five excerpts. A single query in
  * this chat pages by descending sequence; variants or my_chats page newest first
@@ -440,6 +456,17 @@ export async function searchHistory(
   const hasMore = rows.length > limit || unscanned;
   const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
   const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
+  // An empty page says what it covered: nothing matched, or the scan has more to go.
+  const note =
+    page.length || browsing
+      ? undefined
+      : capped
+        ? CAPPED_NOTE
+        : hasMore
+          ? UNFINISHED_NOTE
+          : input.kinds?.includes("tool_work") || !(await hasToolWork(prisma, scope, myChats))
+            ? NO_MATCH_NOTE
+            : `${NO_MATCH_NOTE} ${TOOL_WORK_HINT}`;
   const nextBeforeSeq =
     byOffset || !hasMore ? null : rows.length > limit ? page.at(-1)!.seq : (cursor as number);
   return bounded({
@@ -464,7 +491,7 @@ export async function searchHistory(
       status: hasMore ? ("partial" as const) : ("exhausted" as const),
       ...(capped ? { capped: true } : {}),
     },
-    ...(page.length || browsing ? {} : { note: NO_MATCH_NOTE }),
+    ...(note ? { note } : {}),
     messages: page.map((row) => ({
       ...withAttachments(reference(row, queries[row.matchedQueryIndexes[0] ?? 0]), attachments),
       ...(byOffset ? { threadId: row.threadId, matchedQueryIndexes: row.matchedQueryIndexes } : {}),

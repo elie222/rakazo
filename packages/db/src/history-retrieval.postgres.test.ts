@@ -227,7 +227,13 @@ postgres("history retrieval (PostgreSQL)", () => {
     const results = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
     expect(results.messages.map((message) => message.messageId)).toEqual(["browsed-steps"]);
     expect(results.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    // An empty search here points at that earlier tool work.
+    const empty = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(empty.messages).toEqual([]);
+    expect(empty.note).toContain('kinds ["tool_work"]');
     await pool.query(`DELETE FROM messages WHERE id = 'browsed-steps'`);
+    const plain = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(plain.note).not.toContain("tool_work");
   });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
