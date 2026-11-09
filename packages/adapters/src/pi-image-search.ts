@@ -8,6 +8,8 @@ import { observedPiStream } from "./pi-usage.js";
 import { clampMaxResults, MAX_WEB_SEARCH_RESULTS } from "./web-limits.js";
 import { isBlockedHostname } from "./web-ssrf.js";
 
+export const IMAGE_SEARCH_UNAVAILABLE = "Image search is unavailable for this model.";
+
 const MAX_URL_LENGTH = 4096;
 const MAX_TITLE_LENGTH = 500;
 const MAX_QUERY_LENGTH = 2000;
@@ -76,8 +78,7 @@ export async function executeImageSearch(
   args: Record<string, unknown>,
 ): Promise<ImageSearchResult> {
   const target = host.activeModel;
-  if (!supportsModelImageSearch(target.model.provider))
-    return { error: "Image search is unavailable for this model." };
+  if (!supportsModelImageSearch(target.model.provider)) return { error: IMAGE_SEARCH_UNAVAILABLE };
   const query = typeof args.query === "string" ? args.query.trim() : "";
   if (!query || query.length > MAX_QUERY_LENGTH)
     return { error: "query must contain between 1 and 2000 characters" };

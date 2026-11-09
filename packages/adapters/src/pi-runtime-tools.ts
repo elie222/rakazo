@@ -27,7 +27,11 @@ import {
 } from "./bot-secrets.js";
 import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
-import { executeImageSearch } from "./pi-image-search.js";
+import {
+  executeImageSearch,
+  IMAGE_SEARCH_UNAVAILABLE,
+  supportsModelImageSearch,
+} from "./pi-image-search.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -621,13 +625,6 @@ function toAgentTool(
                   details: found,
                 };
               }
-              if (tool.name === "image_search") {
-                const result = await executeImageSearch(host, args);
-                return {
-                  content: [{ type: "text", text: JSON.stringify(result) }],
-                  details: result,
-                };
-              }
               // A background helper is its own run, which the executor starts like any tool effect.
               if (tool.name === "run_subagent" && args.background !== true) {
                 const result = await executeSubagent(host, executionId, args);
@@ -636,18 +633,30 @@ function toAgentTool(
                   details: { result },
                 };
               }
-              if (host.request.executeTool) {
-                const result = await host.request.executeTool(
-                  tool.name,
-                  args,
-                  executionId,
-                  tool.route,
-                  {
-                    onShellStillRunning: (completion) => {
-                      host.pendingShells.push(completion);
-                    },
-                  },
-                );
+              if (
+                tool.name === "image_search" &&
+                !supportsModelImageSearch(host.activeModel.model.provider)
+              ) {
+                return {
+                  content: [{ type: "text", text: IMAGE_SEARCH_UNAVAILABLE }],
+                  details: { error: IMAGE_SEARCH_UNAVAILABLE },
+                };
+              }
+              const { gateRuntimeTool, executeTool } = host.request;
+              const execute =
+                tool.name === "image_search"
+                  ? gateRuntimeTool &&
+                    (() =>
+                      gateRuntimeTool(tool.name, args, executionId, (approved) =>
+                        executeImageSearch(host, approved),
+                      ))
+                  : executeTool &&
+                    (() =>
+                      executeTool(tool.name, args, executionId, tool.route, {
+                        onShellStillRunning: (completion) => host.pendingShells.push(completion),
+                      }));
+              if (execute) {
+                const result = await execute();
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
                   return keepToolResultWhole(tool.name, args)

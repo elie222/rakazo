@@ -1918,6 +1918,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 ? undefined
                 : (name, args, executionId, route, observer) =>
                     applyTool(ctx, name, args, executionId, route, observer),
+              gateRuntimeTool: scripted
+                ? undefined
+                : (name, args, executionId, run) =>
+                    applyTool(ctx, name, args, executionId, undefined, undefined, run),
               resolveModel: scripted
                 ? undefined
                 : (provider, modelId) =>
@@ -1925,7 +1929,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                       runSecrets.push(...values),
                     ),
               onToolCompleted: (completion) => {
-                if (completion.name === "image_search") state.tainted = true;
                 if (effects.restoredPending?.executionId === completion.executionId)
                   effects.restoredPending = undefined;
                 if (!completion.paused)

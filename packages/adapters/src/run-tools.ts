@@ -1,4 +1,4 @@
-import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
 import { isTerminatingReplyResult } from "./approval-effect.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
@@ -36,6 +36,10 @@ import {
 import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
+type RuntimeToolExecution = Parameters<NonNullable<AgentRunRequest["gateRuntimeTool"]>>[3];
+
+const RUNTIME_TOOL_NAMES: ReadonlySet<string> = new Set(["image_search"]);
+
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
@@ -68,8 +72,9 @@ export async function applyTool(
   name: string,
   args: Record<string, unknown>,
   executionId: string,
-  _route?: unknown,
+  route?: unknown,
   observer?: AgentToolExecutionObserver,
+  run?: RuntimeToolExecution,
 ) {
   // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
   // the own path everywhere: preparation, the stored approval, the handler and the check below.
@@ -82,7 +87,7 @@ export async function applyTool(
     args = own;
   }
   try {
-    return await dispatchTool(ctx, name, args, executionId, observer);
+    return await dispatchTool(ctx, name, args, executionId, observer, run, route);
   } finally {
     // Editing its own profile returns only what this run wrote; a child's profile is another bot's.
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
@@ -96,6 +101,8 @@ async function dispatchTool(
   args: Record<string, unknown>,
   executionId: string,
   observer: AgentToolExecutionObserver | undefined,
+  run: RuntimeToolExecution | undefined,
+  route: unknown,
 ) {
   ctx.context.signal.throwIfAborted();
   if (!strategicInitiativeToolAllowed(name, ctx.run)) {
@@ -120,6 +127,9 @@ async function dispatchTool(
       error: `${name} is not available to a background helper. Don't retry; say in your result what the bot should do.`,
     };
   }
+  if (RUNTIME_TOOL_NAMES.has(name) !== (run !== undefined)) {
+    return { error: `${name} is unavailable here.` };
+  }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return { error: "Page browser is unavailable on this computer." };
   }
@@ -128,6 +138,17 @@ async function dispatchTool(
   }
   const request = await resolveToolRequest(ctx, name, args, executionId);
   if ("error" in request) return request;
+  if (
+    run &&
+    (!BUILTIN_AGENT_TOOL_NAMES.has(name) ||
+      request.name !== name ||
+      request.catalogRemapped ||
+      request.connectorCall.route ||
+      request.resolvedTool ||
+      route)
+  ) {
+    return { error: `${name} is unavailable here.` };
+  }
   // A catalog call resolves to a connector tool after the checks above; one named like a local
   // tool (message_agent, cloud_agent_*, ...) would otherwise run that local handler instead.
   if (request.catalogRemapped && toolHandler(request.name) !== connectorTool) {
@@ -138,10 +159,13 @@ async function dispatchTool(
   noteComputerTaskStep(ctx.state.reply, request.name);
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) return gate.result;
-  if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
+  const handler: ToolHandler = run
+    ? async (_ctx, call) => call.finish(await run(call.args))
+    : toolHandler(gate.call.name);
+  if (!gate.call.applied) return handler(ctx, gate.call);
   let outcome: "success" | "failure" = "failure";
   try {
-    const result = await toolHandler(gate.call.name)(ctx, gate.call);
+    const result = await handler(ctx, gate.call);
     if (!isToolError(result)) outcome = "success";
     return result;
   } finally {

@@ -1,161 +1,22 @@
-import { zstdDecompressSync } from "node:zlib";
-import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { executeImageSearch, supportsModelImageSearch } from "./pi-image-search.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
-import { resolveRuntimeModel } from "./pi-runtime-models.js";
-import type { ToolHost } from "./pi-runtime-tools.js";
 import { describeToolActivity, toAgentTools } from "./pi-runtime-tools.js";
 import { READ_ONLY_AGENT_TOOLS, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
-const accountId = "image-search-test-account";
-function fakeToken(suffix = "fake-signature") {
-  const claims = {
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    "https://api.openai.com/auth": {
-      chatgpt_account_id: accountId,
-      chatgpt_compute_residency: "eu",
-    },
-  };
-  return `fake-header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.${suffix}`;
-}
-
-const image = (name: string) => ({
-  type: "image_result",
-  image_url: `https://images.example.com/${name}.jpg`,
-  source_website_url: `https://example.com/photos/${name}`,
-  caption: `Photo ${name}`,
-  thumbnail_url: `https://images.example.com/${name}-small.jpg`,
-});
-const searchItem = (results: unknown[], id = "search-1", status = "completed") => ({
-  type: "response.output_item.done",
-  output_index: 0,
-  item: { id, type: "web_search_call", status, results },
-});
-const terminal = {
-  type: "response.completed",
-  response: {
-    id: "response-test",
-    status: "completed",
-    output: [],
-    usage: {
-      input_tokens: 12,
-      output_tokens: 3,
-      total_tokens: 15,
-      input_tokens_details: { cached_tokens: 0 },
-      output_tokens_details: { reasoning_tokens: 1 },
-    },
-  },
-};
-const textItem = {
-  id: "text-1",
-  type: "message",
-  role: "assistant",
-  content: [{ type: "output_text", text: "Invented prose https://example.com/not-a-result.jpg" }],
-};
-const prose = [
-  { type: "response.output_item.added", output_index: 1, item: { ...textItem, content: [] } },
-  {
-    type: "response.content_part.added",
-    output_index: 1,
-    content_index: 0,
-    part: textItem.content[0],
-  },
-  {
-    type: "response.output_text.delta",
-    output_index: 1,
-    content_index: 0,
-    delta: "Invented prose",
-  },
-  { type: "response.output_item.done", output_index: 1, item: textItem },
-];
-const sse = (events: unknown[]) =>
-  events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
-
-function hostFor(fetch: typeof globalThis.fetch) {
-  const token = fakeToken();
-  const config = {
-    provider: "openai-codex",
-    id: "gpt-5.1-codex",
-    oauth: {
-      credential: {
-        type: "oauth" as const,
-        access: token,
-        refresh: "fake-refresh",
-        expires: Date.now() + 3_600_000,
-        accountId,
-      },
-      persist: vi.fn(async () => undefined),
-      retire: vi.fn(async () => false),
-    },
-  };
-  const resolved = resolveRuntimeModel(config);
-  if (!resolved.model) throw new Error("Installed Pi subscription model is missing");
-  const events: AgentRuntimeEvent[] = [];
-  const controller = new AbortController();
-  const observer = {
-    beforeCall: vi.fn(async () => "reservation-test"),
-    afterCall: vi.fn(async () => undefined),
-    onRequestId: vi.fn(async () => undefined),
-  };
-  const executeTool = vi.fn();
-  const onUsage = vi.fn(async () => undefined);
-  const host: ToolHost = {
-    request: {
-      botId: "bot-test",
-      threadId: "thread-test",
-      runId: "run-test",
-      model: config,
-      prompt: "Find existing photos",
-      instructions: "test",
-      history: [],
-      tools: builtinAgentTools,
-      executeTool,
-      onUsage,
-    },
-    activeModel: { ...resolved, model: resolved.model, config },
-    models: resolved.models,
-    model: resolved.model,
-    apiKey: undefined,
-    modelFetch: fetch,
-    modelCallObserver: observer,
-    context: { userId: "user-test" },
-    queue: {
-      push: (event) => events.push(event),
-      fail: () => undefined,
-      close: () => undefined,
-      async *iterate() {},
-    },
-    signal: controller.signal,
-    nestedAgents: new Set(),
-    subagentGate: { acquire: async () => undefined, release: () => undefined },
-    toolCallBudget: { count: 0, exceeded: false, limit: 0, inFlight: 0 },
-    toolCallSeq: { value: 0 },
-    abortTurn: () => undefined,
-    depth: 0,
-    pausePending: false,
-    pendingShells: [],
-  };
-  return { host, events, token, observer, controller, executeTool, onUsage };
-}
-
-function fixtureFetch(events: unknown[]) {
-  return vi.fn<typeof globalThis.fetch>(
-    async () =>
-      new Response(sse(events), {
-        headers: { "content-type": "text/event-stream", "x-request-id": "request-test" },
-      }),
-  );
-}
-
-async function requestBody(call: Parameters<typeof globalThis.fetch>) {
-  const request = new Request(...call);
-  const bytes = Buffer.from(await request.arrayBuffer());
-  const decoded =
-    request.headers.get("content-encoding") === "zstd" ? zstdDecompressSync(bytes) : bytes;
-  return JSON.parse(decoded.toString());
-}
+import {
+  accountId,
+  fakeToken,
+  fixtureFetch,
+  hostFor,
+  image,
+  prose,
+  requestBody,
+  searchItem,
+  sse,
+  terminal,
+} from "./testing/pi-image-search.js";
 
 describe("Pi image search through the installed provider", () => {
   afterEach(() => {
@@ -191,8 +52,17 @@ describe("Pi image search through the installed provider", () => {
         thumbnailUrl: image(name).thumbnail_url,
       })),
     });
-    expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.details) }]);
+    expect(result.content).toEqual([
+      { type: "text", text: expect.stringContaining(image("replacement").image_url) },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("Invented prose");
     expect(executeTool).not.toHaveBeenCalled();
+    expect(host.request.gateRuntimeTool).toHaveBeenCalledWith(
+      "image_search",
+      { query: "harbor photos", maxResults: 2 },
+      expect.any(String),
+      expect.any(Function),
+    );
     expect(fetch).toHaveBeenCalledOnce();
     const call = fetch.mock.calls[0];
     if (!call) throw new Error("Missing request");
@@ -439,6 +309,7 @@ describe("Pi image search through the installed provider", () => {
     });
     expect(fetch).not.toHaveBeenCalled();
     expect(executeTool).not.toHaveBeenCalled();
+    expect(host.request.gateRuntimeTool).not.toHaveBeenCalled();
   });
 });
 
@@ -465,3 +336,38 @@ it("offers image search only for a supported model and lets bots disable it inde
   expect(READ_ONLY_AGENT_TOOLS.has("image_search")).toBe(true);
   expect(builtinAgentTools.find((tool) => tool.name === "image_search")?.readOnly).toBe(true);
 });
+
+it("refuses runtime image search without its gate even when executeTool exists", async () => {
+  const fetch = fixtureFetch([terminal]);
+  const { host, executeTool } = hostFor(fetch);
+  host.request.gateRuntimeTool = undefined;
+  const tool = toAgentTools(builtinAgentTools, host).find((tool) => tool.name === "image_search")!;
+  await expect(tool.execute("missing-gate", { query: "harbor" })).resolves.toMatchObject({
+    content: [{ type: "text", text: "image_search is unavailable without an executor." }],
+    details: { error: "no executor" },
+  });
+  expect(fetch).not.toHaveBeenCalled();
+  expect(executeTool).not.toHaveBeenCalled();
+});
+
+it.each([true, false])(
+  "filters background image search by capability and disabled tools: %s",
+  (enabled) => {
+    const options = {
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "helper",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+      modelImageSearchEnabled: enabled,
+    };
+    expect(selectBuiltinToolsForRun(options).some((tool) => tool.name === "image_search")).toBe(
+      enabled,
+    );
+    expect(
+      selectBuiltinToolsForRun({ ...options, disabledBuiltinTools: ["image_search"] }).some(
+        (tool) => tool.name === "image_search",
+      ),
+    ).toBe(false);
+  },
+);

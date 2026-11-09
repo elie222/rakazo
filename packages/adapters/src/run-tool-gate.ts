@@ -442,6 +442,7 @@ export async function gateToolCall(
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
   const applied =
     READ_ONLY_AGENT_TOOLS.has(name) &&
+    !needsApprovalEarly &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
     !approvedEffectKey

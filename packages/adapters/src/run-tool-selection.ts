@@ -71,6 +71,7 @@ const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
  */
 export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
+  "image_search",
   "web_fetch",
   "recall_memory",
   "skill_read",

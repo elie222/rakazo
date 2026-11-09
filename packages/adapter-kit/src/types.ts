@@ -632,6 +632,13 @@ export interface AgentRunRequest {
     route?: ConnectorRoute,
     observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
+  /** Gate a registered runtime builtin, invoking run only with authorized, saved arguments. */
+  gateRuntimeTool?: (
+    name: string,
+    args: Record<string, unknown>,
+    executionId: string,
+    run: (approvedArgs: Record<string, unknown>) => Promise<unknown>,
+  ) => Promise<unknown>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */

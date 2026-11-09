@@ -1,5 +1,6 @@
 import type {
   AgentRunRequest,
+  AgentRuntimeEvent,
   AutoReviewProvider,
   BrowserProvider,
   ConnectorCall,
@@ -14,7 +15,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
-import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
+import { builtinAgentTools, MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { fakeSpendingPrisma } from "./fake-spending.js";
@@ -27,6 +28,17 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
+import { toAgentTools } from "./pi-runtime-tools.js";
+import {
+  fixtureFetch,
+  hostFor,
+  image,
+  prose,
+  requestBody,
+  searchItem,
+  terminal,
+} from "./testing/pi-image-search.js";
 import type { TurnCheckpoint } from "./turn-checkpoint.js";
 import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -512,7 +524,9 @@ function fixture({
     fetchedUrls.push(request.url);
     return fakeFetch(request, context);
   };
-  const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
+  const runtimeRun = vi.fn(async function* (
+    request: AgentRunRequest,
+  ): AsyncGenerator<AgentRuntimeEvent> {
     offeredTools = request.tools.map((tool) => tool.name);
     instructions = request.instructions ?? "";
     if (checkpointCapture) {
@@ -4255,19 +4269,14 @@ it.each([false, true])(
     const f = fixture({ autoReview: true });
     f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
       if (searched) {
-        await request.onToolCompleted?.({
-          name: "image_search",
-          executionId: "image-call",
-          durationMs: 1,
-          result: {
-            content: [{ type: "text", text: "External image caption" }],
-            details: {
-              results: [
-                { imageUrl: "https://example.com/image.jpg", sourceUrl: "https://example.com" },
-              ],
-            },
-          },
-        });
+        const { host } = hostFor(
+          fixtureFetch([searchItem([image("external")]), terminal]),
+          request,
+        );
+        const tool = toAgentTools(builtinAgentTools, host).find(
+          (tool) => tool.name === "image_search",
+        )!;
+        await tool.execute("image-call", { query: "harbor" });
       }
       f.results.push(await request.executeTool!("demo_get_item", { id: "item-1" }, "read-call"));
       yield { type: "done" as const, text: "Done" };
@@ -4276,5 +4285,326 @@ it.each([false, true])(
     expect(reviewMock).toHaveBeenCalledTimes(searched ? 1 : 0);
     expect(f.pauseRunForInput).toHaveBeenCalledTimes(searched ? 1 : 0);
     expect(f.execute).toHaveBeenCalledTimes(searched ? 0 : 1);
+  },
+);
+
+it.each([false, true])(
+  "pauses an explicit web_search approval in Auto mode: %s",
+  async (autoReview) => {
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+      autoReview,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "web_search" }],
+    });
+    f.setCalls([{ args: { query: "harbor" }, executionId: "web-call" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(f.effects[0]).toMatchObject({ kind: "web_search", status: "intended" });
+  },
+);
+
+function driveImageSearch(
+  f: ReturnType<typeof fixture>,
+  fetch: typeof globalThis.fetch,
+  {
+    args = { query: "harbor", maxResults: 2 },
+    executionId = "image-call",
+    missingGate = false,
+    unsupported = false,
+  }: {
+    args?: Record<string, unknown>;
+    executionId?: string;
+    missingGate?: boolean;
+    unsupported?: boolean;
+  } = {},
+) {
+  const hosts: ReturnType<typeof hostFor>[] = [];
+  f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+    const fixtureHost = hostFor(fetch, request);
+    hosts.push(fixtureHost);
+    const { host } = fixtureHost;
+    if (missingGate) host.request.gateRuntimeTool = undefined;
+    if (unsupported) host.activeModel.model = { ...host.activeModel.model, provider: "other" };
+    const tool = toAgentTools(builtinAgentTools, host).find(
+      (tool) => tool.name === "image_search",
+    )!;
+    f.results.push(await tool.execute(executionId, args));
+    if (host.pausePending) return;
+    yield { type: "done" as const, text: "Done" };
+  });
+  return { hosts };
+}
+
+const imageAskRule: ActionApprovalRule = {
+  effect: "require_approval",
+  matchKind: "tool",
+  matchValue: "image_search",
+};
+
+describe("runtime image search through the executor gate", () => {
+  it.each([false, true])(
+    "allows default and explicit allow reads without an effect: %s",
+    async (explicit) => {
+      const f = fixture({
+        builtin: true,
+        rules: explicit ? [{ ...imageAskRule, effect: "always_allow" }] : [],
+      });
+      const fetch = fixtureFetch([searchItem([image("photo")]), ...prose, terminal]);
+      const { hosts } = driveImageSearch(f, fetch);
+      await f.run();
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(f.effects).toEqual([]);
+      expect(f.results[0]).toMatchObject({
+        details: { results: [{ imageUrl: image("photo").image_url }] },
+      });
+      expect(JSON.stringify(f.results)).not.toContain("Invented prose");
+      expect(hosts[0]!.onUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ operationKind: "retrieval" }),
+      );
+      expect(hosts[0]!.observer.afterCall).toHaveBeenCalledOnce();
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "preserves the native ask pause before retrieval, Auto: %s",
+    async (autoReview) => {
+      const f = fixture({ builtin: true, autoReview, rules: [imageAskRule] });
+      const fetch = fixtureFetch([terminal]);
+      const { hosts } = driveImageSearch(f, fetch);
+      await f.run();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(hosts[0]!.host.abortTurn).toHaveBeenCalledOnce();
+      expect(hosts[0]!.observer.beforeCall).not.toHaveBeenCalled();
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(f.results[0]).toMatchObject({ terminate: true, details: { approval: "paused" } });
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(JSON.stringify(f.pauseRunForInput.mock.calls)).toContain("image_search");
+      expect(f.effects[0]).toMatchObject({
+        kind: "image_search",
+        status: "intended",
+        request: { query: "harbor", maxResults: 2 },
+      });
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "stops the installed Pi agent after an ask without a retrieval or second model request, Auto: %s",
+    async (autoReview) => {
+      const f = fixture({ builtin: true, autoReview, rules: [imageAskRule] });
+      const item = {
+        id: "fc-image",
+        call_id: "call-image",
+        type: "function_call",
+        name: "image_search",
+        arguments: JSON.stringify({ query: "harbor", maxResults: 2 }),
+        status: "completed",
+      };
+      const fetch = fixtureFetch([
+        { type: "response.output_item.added", output_index: 0, item: { ...item, arguments: "" } },
+        { type: "response.output_item.done", output_index: 0, item },
+        terminal,
+      ]);
+      const config = hostFor(fetch).host.activeModel.config;
+      const runtime = new PiAgentRuntime({ modelFetch: fetch });
+      f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+        yield* runtime.run({
+          ...request,
+          model: config,
+          claimSteering: undefined,
+          tools: builtinAgentTools.filter((tool) => tool.name === "image_search"),
+          onToolCompleted: async (completion) => {
+            f.results.push(completion.result);
+            await request.onToolCompleted?.(completion);
+          },
+        });
+      });
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(fetch).toHaveBeenCalledOnce();
+      const body = await requestBody(fetch.mock.calls[0]!);
+      expect(body.tools ?? []).not.toContainEqual(expect.objectContaining({ type: "web_search" }));
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["deny", "disabled", "missing gate", "unsupported"])(
+    "refuses %s before any fetch",
+    async (kind) => {
+      const f = fixture({
+        builtin: true,
+        rules: kind === "deny" ? [{ ...imageAskRule, effect: "deny" }] : [imageAskRule],
+        disabledBuiltinTools: kind === "disabled" ? ["image_search"] : [],
+      });
+      const fetch = fixtureFetch([terminal]);
+      driveImageSearch(f, fetch, {
+        missingGate: kind === "missing gate",
+        unsupported: kind === "unsupported",
+      });
+      await f.run();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(f.results[0]).toMatchObject({ details: { error: expect.any(String) } });
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.effects).toEqual([]);
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "uses saved approved args, settles and replays without retry, provider fails: %s",
+    async (fails) => {
+      const f = fixture({ builtin: true, rules: [imageAskRule] });
+      const fetch = fixtureFetch(
+        fails
+          ? [
+              {
+                type: "response.failed",
+                response: { error: { message: "Provider prose must not leak" } },
+              },
+            ]
+          : [searchItem([image("approved")]), terminal],
+      );
+      driveImageSearch(f, fetch);
+      await f.run();
+      expect(fetch).not.toHaveBeenCalled();
+      f.effects[0]!.status = "approved";
+      const fetchImpl = fetch.getMockImplementation()!;
+      fetch.mockImplementation(async (...args) => {
+        expect(f.effects[0]!.status).toBe("executing");
+        return fetchImpl(...args);
+      });
+      driveImageSearch(f, fetch, {
+        args: { query: "other", maxResults: 9 },
+        executionId: "re-emitted",
+      });
+      await f.run();
+      expect(fetch).toHaveBeenCalledOnce();
+      const body = await requestBody(fetch.mock.calls[0]!);
+      expect(body.tools[0].image_settings.max_results).toBe(2);
+      expect(body.input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: [{ type: "input_text", text: "harbor" }],
+          }),
+        ]),
+      );
+      const saved = fails
+        ? { error: "Image search failed." }
+        : expect.objectContaining({
+            results: [expect.objectContaining({ imageUrl: image("approved").image_url })],
+          });
+      expect(f.effects[0]).toMatchObject({ status: "completed", result: saved });
+      expect(f.results.at(-1)).toMatchObject({ details: saved });
+      driveImageSearch(f, fetch);
+      await f.run();
+      expect(f.results.at(-1)).toEqual(f.results.at(-2));
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(f.effects).toHaveLength(1);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns settlement uncertainty and never retries an already executing image search", async () => {
+    const f = fixture({ builtin: true, rules: [imageAskRule] });
+    const fetch = fixtureFetch([searchItem([image("approved")]), terminal]);
+    driveImageSearch(f, fetch);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    const update = f.prisma.externalEffect.updateMany;
+    const original = update.getMockImplementation()!;
+    update.mockImplementation(async (args) =>
+      args.data.status === "completed" ? { count: 0 } : original(args),
+    );
+    driveImageSearch(f, fetch);
+    await f.run();
+    expect(f.results.at(-1)).toMatchObject({ details: { uncertain: true } });
+    expect(f.effects[0]!.status).toBe("executing");
+    update.mockImplementation(original);
+    driveImageSearch(f, fetch);
+    await f.run();
+    expect(f.results.at(-1)).toMatchObject({ details: { uncertain: true } });
+    expect(f.effects[0]!.status).toBe("uncertain");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("refuses every later image search after a user denial regardless of query", async () => {
+    const f = fixture({ builtin: true, rules: [imageAskRule] });
+    const fetch = fixtureFetch([terminal]);
+    driveImageSearch(f, fetch);
+    await f.run();
+    f.effects[0]!.status = "denied";
+    for (const query of ["harbor", "other", "third"]) {
+      driveImageSearch(f, fetch, { args: { query }, executionId: query });
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ details: { error: DENIED_ACTION_ERROR } });
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it.each(["allow", "ask", "deny", "disabled"])("background helper honors %s", async (policy) => {
+    const f = fixture({
+      builtin: true,
+      trigger: "helper",
+      rules:
+        policy === "ask"
+          ? [imageAskRule]
+          : policy === "deny"
+            ? [{ ...imageAskRule, effect: "deny" }]
+            : [],
+      disabledBuiltinTools: policy === "disabled" ? ["image_search"] : [],
+    });
+    const fetch = fixtureFetch([searchItem([image("helper")]), terminal]);
+    driveImageSearch(f, fetch);
+    await f.run();
+    expect(fetch).toHaveBeenCalledTimes(policy === "allow" ? 1 : 0);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    if (policy === "ask") {
+      expect(f.results[0]).toMatchObject({
+        details: { error: expect.stringContaining("a background helper cannot ask") },
+      });
+      expect(f.effects[0]!.status).toBe("denied");
+    }
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(["image_search", "write_file", "demo_get_item", "demo_execute_tool"])(
+    "refuses callback mismatch for %s",
+    async (name) => {
+      const f = fixture();
+      const run = vi.fn(async () => ({ results: [] }));
+      f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+        f.results.push(
+          name === "image_search"
+            ? await request.executeTool!(name, { query: "harbor" }, "forged")
+            : await request.gateRuntimeTool!(name, {}, "forged", run),
+        );
+        yield { type: "done" as const, text: "Done" };
+      });
+      await f.run();
+      expect(f.results).toEqual([{ error: `${name} is unavailable here.` }]);
+      expect(run).not.toHaveBeenCalled();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.effects).toEqual([]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it.each(["read_history", "search_history", "board_tickets", "ticket_get"])(
+  "pauses webhook %s when policy requires approval",
+  async (name) => {
+    const f = fixture({ name, builtin: true, trigger: "webhook" });
+    f.setCalls([{ args: {}, executionId: "webhook-read" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(f.effects[0]).toMatchObject({ kind: name, status: "intended" });
   },
 );
