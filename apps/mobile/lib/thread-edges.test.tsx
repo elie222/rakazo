@@ -6,7 +6,6 @@ import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
   threadColumnPadding,
   threadEdgeOptions,
-  threadHeaderClearance,
   threadHeaderFloats,
   threadScrollEdgeEffects,
 } from "./thread-edges";
@@ -62,23 +61,6 @@ describe("thread scroll edges", () => {
       scrollEdgeEffects: threadScrollEdgeEffects,
     });
   });
-});
-
-it.each([64, 96, 116, 120])(
-  "rests content and jump targets below the pills at header height %s",
-  (height) => {
-    const clearance = threadHeaderClearance(height);
-    const pillBottom = height - 10;
-    expect(clearance.padding - pillBottom).toBe(14);
-    expect(clearance.minHeight).toBe(clearance.padding);
-    expect(clearance.anchor).toBe(clearance.padding + 20);
-    // The first date has a 12pt margin and about 4pt of font leading.
-    expect(clearance.padding + 16 - pillBottom).toBe(30);
-  },
-);
-
-it("preserves Android clearance without a floating header", () => {
-  expect(threadHeaderClearance(0)).toEqual({ padding: 8, anchor: 24, minHeight: 0 });
 });
 
 it("pads the chat column inside the screen, including a cutout and a wide gutter", () => {

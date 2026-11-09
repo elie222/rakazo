@@ -41,11 +41,7 @@ import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
-import {
-  threadColumnPadding,
-  threadHeaderClearance,
-  threadHeaderFloats,
-} from "../../lib/thread-edges";
+import { threadColumnPadding, threadHeaderFloats } from "../../lib/thread-edges";
 import {
   favoriteSnippet,
   toggleThreadFavorite,
@@ -73,7 +69,7 @@ import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
 import { getVoicePlaybackState, stopVoicePlayback, subscribeVoicePlayback } from "../../lib/voice";
-import { ChatTitleHero } from "../chat-title-hero";
+import { CHAT_TITLE_HERO_MAX_HEIGHT, ChatTitleHero } from "../chat-title-hero";
 import { FailedSendBubble } from "../failed-send-bubble";
 import { NativeSymbol } from "../native-symbol";
 import { NewestPageCards } from "../pages/page-card";
@@ -118,19 +114,26 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const { inboxShown, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
-  const headerClearance = threadHeaderClearance(headerHeight);
-  const [heroHeight, setHeroHeight] = useState(0);
+  // The hero sits flush against the native header's bottom edge, zero gap: on Android
+  // the screen content already starts below the solid header, so top 0 is flush; on iOS
+  // the header floats over the content, so the hero starts at the header's bottom edge.
+  // Any gap here lets the scrolling conversation show through above the avatar, and the
+  // hollowed-out hero (transparent, no white box) has nothing to hide it behind.
+  const heroTop = threadHeaderFloats() ? nativeHeaderHeight : 0;
   // The conversation search bar, a 48pt pill under the native header: the hero
   // and the list's top clearance shift down while it is open.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const searchBarHeight = searchOpen ? 48 : 0;
-  // The floating hero's height, measured on layout, so the oldest message
-  // starts below it instead of scrolling underneath it.
+  // The list's top clearance always reserves the hero's full height, subtitle or not, so
+  // the oldest message starts below the hero instead of scrolling underneath it. The
+  // height is a layout constant, never measured, so the clearance and the hero can never
+  // disagree and leave a gap for the conversation to show through.
   const listClearance = {
-    ...headerClearance,
-    padding: headerClearance.padding + heroHeight + searchBarHeight,
+    padding: heroTop + CHAT_TITLE_HERO_MAX_HEIGHT + searchBarHeight,
+    anchor: heroTop + 20,
+    minHeight: heroTop,
   };
   // The model catalog and connections, shared by the shortcut row and the
   // composer's reasoning control; the shortcut row used to fetch them itself.
@@ -403,7 +406,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     threadKey,
     botId,
     groupId,
-    anchor: headerClearance.anchor,
+    anchor: listClearance.anchor,
     visibleBottomInset: bottomInset,
     latestRowKey: latestThreadRowKey(
       latestMessage?.id ?? null,
@@ -502,7 +505,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     botId,
     groupId,
     visibleMessages,
-    anchor: headerClearance.anchor,
+    anchor: listClearance.anchor,
     setError,
     showLatest,
   });
@@ -816,19 +819,18 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               showLatest={showLatest}
             />
           </NewestPageCards.Provider>
-          {/* The title hero floats above the list, below the native header, and never
-              scrolls away; only the avatar intercepts touches, so the list still
-              scrolls under the hero. */}
+          {/* The title hero floats above the list, flush against the native header with
+              zero gap, and never scrolls away; it has no background, so only the avatar
+              and the process line are visible. Only the avatar intercepts touches, so
+              the list still scrolls under the hero. */}
           {chatHero ? (
             <View
               pointerEvents="box-none"
-              onLayout={(event) => setHeroHeight(event.nativeEvent.layout.height)}
               style={{
                 position: "absolute",
-                top: headerClearance.padding + searchBarHeight,
+                top: heroTop + searchBarHeight,
                 left: 0,
                 right: 0,
-                backgroundColor: tokens.background,
               }}
             >
               {chatHero}
@@ -838,7 +840,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             <View
               style={{
                 position: "absolute",
-                top: headerClearance.padding,
+                top: heroTop,
                 left: 0,
                 right: 0,
                 height: 48,

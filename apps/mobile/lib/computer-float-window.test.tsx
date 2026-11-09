@@ -7,7 +7,11 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAT_TITLE_AVATAR_SIZE, ChatTitleAvatar } from "../components/chat-title-avatar";
-import { CHAT_TITLE_HERO_AVATAR_SIZE, ChatTitleHero } from "../components/chat-title-hero";
+import {
+  CHAT_TITLE_HERO_AVATAR_SIZE,
+  CHAT_TITLE_HERO_MAX_HEIGHT,
+  ChatTitleHero,
+} from "../components/chat-title-hero";
 import {
   ComputerFloatWindow,
   clampFloatPosition,
@@ -504,7 +508,7 @@ describe("computer float window", () => {
     expect(avatarState.props).toMatchObject({ size: 88, status: "working", composing: false });
   });
 
-  it("renders the hero with the big avatar, the name and the live activity", () => {
+  it("renders the hero with the big avatar and the live activity, without a name row", () => {
     const bot = {
       id: "bot-1",
       name: "Chief",
@@ -522,8 +526,16 @@ describe("computer float window", () => {
       />,
     );
     expect(avatarState.props).toMatchObject({ size: 88 });
-    expect(rendered.textContent).toContain("Chief");
+    expect(rendered.textContent).not.toContain("Chief");
     expect(rendered.textContent).toContain("Thinking…");
+  });
+
+  it("reserves the hero's full height for the list clearance, subtitle or not", () => {
+    // Avatar 88 + subtitle gap 7 + one subtitle line 18 + bottom padding 16. The thread
+    // screen reserves this much top clearance so the oldest message never drifts into
+    // the hero area; if any part of the hero's layout changes, this must move with it.
+    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(CHAT_TITLE_HERO_AVATAR_SIZE + 7 + 18 + 16);
+    expect(CHAT_TITLE_HERO_MAX_HEIGHT).toBe(129);
   });
 
   it("shows the done badge only once a run finishes, with the done face", () => {
