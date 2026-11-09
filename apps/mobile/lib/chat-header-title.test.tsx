@@ -58,6 +58,8 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ currentApiBase: () => "http://api.test" }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({ mutedForeground: "#000" }) }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 1,
   subscribeSessionGeneration: () => () => undefined,

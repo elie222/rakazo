@@ -10,15 +10,29 @@ import {
   selectableMessageText,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
+import type { ComponentProps } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent, LayoutChangeEvent } from "react-native";
-import { Platform, View } from "react-native";
-import Animated, { useReducedMotion, ZoomIn } from "react-native-reanimated";
+import { Platform, Pressable, View } from "react-native";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+  ZoomIn,
+} from "react-native-reanimated";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { canDoubleTapReact } from "../../lib/double-tap";
 import { useI18n } from "../../lib/i18n";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
-import { buildMessageContextMenu, messageMenuReaction } from "../../lib/message-context-menu";
+import {
+  buildMessageContextMenu,
+  messageMenuReaction,
+  shareMessageText,
+} from "../../lib/message-context-menu";
 import { messageHasInlineControls, quotableMessageSegments } from "../../lib/message-presentation";
 import { messageRowLayout } from "../../lib/message-row-layout";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
@@ -31,6 +45,7 @@ import { BotAvatar } from "../bot-avatar";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { presentMessageMenu } from "../message-action-menu";
 import { MessageContextMenu } from "../message-context-menu";
+import { NativeSymbol } from "../native-symbol";
 import { ReplyLine } from "../reply-line";
 import { TimeSeparator } from "../time-separator";
 import { UnreadDivider } from "../unread-divider";
@@ -48,6 +63,8 @@ export type MessageRowActions = {
   select: (text: string) => void;
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => Promise<boolean>;
+  /** Resends the user message this bot reply answers. Absent where unsupported. */
+  regenerate?: (message: MobileMessage) => void;
   markUnread: (message: MobileMessage) => void;
   answer: (
     message: MobileMessage,
@@ -90,6 +107,8 @@ type MessageRowProps = {
   replyAuthor: string;
   replyFallbackText?: string;
   waitingForUser: boolean;
+  /** This message's reply is being read aloud right now. */
+  speaking?: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   mentions?: readonly ChildBotBlock[];
   /** The adjacent receipts represented by this peer line. */
@@ -130,6 +149,7 @@ export const MessageRow = memo(function MessageRow({
   messageReactions,
   mentions,
   waitingForUser,
+  speaking,
   peerExchange,
   activityBotId,
   activityColor,
@@ -162,18 +182,40 @@ export const MessageRow = memo(function MessageRow({
   );
   const [optimisticLike, setOptimisticLike] = useState(false);
   const likeInFlight = useRef(false);
+  const [optimisticDislike, setOptimisticDislike] = useState(false);
+  const dislikeInFlight = useRef(false);
   const reducedMotion = useReducedMotion();
   const hasLike = messageReactions?.has("👍") ?? false;
+  const hasDislike = messageReactions?.has("👎") ?? false;
   useEffect(() => {
     if (hasLike) setOptimisticLike(false);
   }, [hasLike]);
+  useEffect(() => {
+    if (hasDislike) setOptimisticDislike(false);
+  }, [hasDislike]);
   const displayedReactions = new Map(messageReactions);
   if (optimisticLike && !hasLike) displayedReactions.set("👍", 1);
-  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{
+  if (optimisticDislike && !hasDislike) displayedReactions.set("👎", 1);
+  const {
+    actionProps,
+    menu,
+    onMenuAction,
+    likeMessage,
+    dislikeMessage,
+    shareMessage,
+    copyMessage,
+    regenerateMessage,
+    canSpeak,
+  } = useMemo<{
     actionProps: MessageActionProps;
     menu: ReturnType<typeof buildMessageContextMenu>;
     onMenuAction: (id: string) => void;
     likeMessage?: () => void;
+    dislikeMessage?: () => void;
+    shareMessage: () => void;
+    copyMessage: () => void;
+    regenerateMessage?: () => void;
+    canSpeak: boolean;
   }>(() => {
     const messageText = selectableMessageText(message);
     const includeQuote =
@@ -198,6 +240,8 @@ export const MessageRow = memo(function MessageRow({
       if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
     };
     const react = (reaction: MessageReaction) => actions.react(message, reaction);
+    const share = () => shareMessageText(copyableMessageText(message));
+    const regenerateMessage = actions.regenerate ? () => actions.regenerate!(message) : undefined;
     const markUnread = () => actions.markUnread(message);
     // VoiceOver reads the bubble as one element and can't reach a code block's copy button.
     const codeBlocks = message.role === "user" ? [] : markdownCodeBlocks(blockText(message));
@@ -231,6 +275,7 @@ export const MessageRow = memo(function MessageRow({
       ...(includeSpeak ? [{ name: "speak", text: t("Speak message"), onPress: speakMessage }] : []),
       ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
       { name: "copy", text: t("Copy"), onPress: copy },
+      { name: "share", text: t("Share"), onPress: share },
       ...(codeBlocks.length === 1
         ? [{ name: "copyCode", text: t("Copy code"), onPress: copyCode }]
         : []),
@@ -239,6 +284,7 @@ export const MessageRow = memo(function MessageRow({
       labels: {
         reply: t("Reply"),
         copy: t("Copy"),
+        share: t("Share"),
         react: t("React"),
         quote: t("Quote"),
         speak: t("Speak message"),
@@ -253,6 +299,7 @@ export const MessageRow = memo(function MessageRow({
         speak: includeSpeak,
         select: includeSelect,
         unread: includeUnread,
+        share: includeSelect,
       },
     });
     const openSheet = (event: GestureResponderEvent) =>
@@ -299,6 +346,16 @@ export const MessageRow = memo(function MessageRow({
             ...(includeSelect
               ? [
                   {
+                    name: "share",
+                    text: t("Share"),
+                    icon: "share-outline" as const,
+                    onPress: share,
+                  },
+                ]
+              : []),
+            ...(includeSelect
+              ? [
+                  {
                     name: "select",
                     text: t("Select text"),
                     icon: "text-outline" as const,
@@ -335,6 +392,24 @@ export const MessageRow = memo(function MessageRow({
               });
           }
         : undefined,
+      dislikeMessage: includeReact
+        ? () => {
+            if (hasDislike || optimisticDislike || dislikeInFlight.current) return;
+            dislikeInFlight.current = true;
+            setOptimisticDislike(true);
+            void react("👎")
+              .then((success) => {
+                if (!success) setOptimisticDislike(false);
+              })
+              .finally(() => {
+                dislikeInFlight.current = false;
+              });
+          }
+        : undefined,
+      shareMessage: share,
+      copyMessage: copy,
+      regenerateMessage,
+      canSpeak: includeSpeak,
       onMenuAction: (id) => {
         const reaction = messageMenuReaction(id);
         if (reaction && (MESSAGE_REACTIONS as readonly string[]).includes(reaction)) {
@@ -343,6 +418,7 @@ export const MessageRow = memo(function MessageRow({
         }
         if (id === "reply") reply();
         if (id === "copy") copy();
+        if (id === "share") share();
         if (id === "quote") quote();
         if (id === "speak") speakMessage();
         if (id === "select") select();
@@ -371,6 +447,8 @@ export const MessageRow = memo(function MessageRow({
     waitingForUser,
     hasLike,
     optimisticLike,
+    hasDislike,
+    optimisticDislike,
   ]);
   const layout = messageRowLayout(message.blocks, { activityBotId, inGroup, columnWidth });
   return (
@@ -464,6 +542,29 @@ export const MessageRow = memo(function MessageRow({
               />
             </ThreadReadOnlyContext.Provider>
           </MessageContextMenu>
+          {message.role === "bot" &&
+          !message.id.startsWith("progress:") &&
+          blockText(message).trim() ? (
+            <MessageActionRow
+              labels={{
+                copy: t("Copy"),
+                speak: t("Speak message"),
+                like: t("Like"),
+                dislike: t("Dislike"),
+                share: t("Share"),
+                regenerate: t("Regenerate"),
+              }}
+              onCopy={copyMessage}
+              onSpeak={() => actions.speak(message)}
+              canSpeak={canSpeak}
+              speaking={speaking ?? false}
+              reducedMotion={reducedMotion}
+              onLike={likeMessage}
+              onDislike={dislikeMessage}
+              onShare={shareMessage}
+              onRegenerate={readOnly ? undefined : regenerateMessage}
+            />
+          ) : null}
           {displayedReactions.size > 0 ? (
             <View
               style={{
@@ -502,3 +603,187 @@ export const MessageRow = memo(function MessageRow({
     </View>
   );
 });
+
+/**
+ * The six action buttons under an AI reply, laid out exactly as the approved
+ * v3 chat mockup: 36×36 tiles with a 10pt radius, 6pt apart, 10pt below the
+ * bubble and 20pt below the row; copy, speak, like, dislike and share on
+ * blue-soft tiles, a spacer, then regenerate alone on a plain tile at the end.
+ * The mockup has no pressed or voted state for these tiles, so there is none
+ * here either; a vote still shows in the reactions row underneath.
+ * Light colors are the mockup's own palette; dark mode falls back to the
+ * shared tokens, which the mockup does not define.
+ */
+export function MessageActionRow({
+  labels,
+  onCopy,
+  onSpeak,
+  canSpeak,
+  speaking,
+  reducedMotion,
+  onLike,
+  onDislike,
+  onShare,
+  onRegenerate,
+}: {
+  labels: {
+    copy: string;
+    speak: string;
+    like: string;
+    dislike: string;
+    share: string;
+    regenerate: string;
+  };
+  onCopy: () => void;
+  onSpeak: () => void;
+  canSpeak: boolean;
+  /** This message is being read aloud; its speaker icon pulses. */
+  speaking: boolean;
+  reducedMotion: boolean;
+  onLike?: () => void;
+  onDislike?: () => void;
+  onShare: () => void;
+  onRegenerate?: () => void;
+}) {
+  const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
+  const tile =
+    colorScheme === "dark"
+      ? { background: tokens.accent, icon: tokens.link }
+      : { background: "#e8efff", icon: "#2f6bff" };
+  const plain =
+    colorScheme === "dark"
+      ? { background: tokens.muted, icon: tokens.mutedForeground }
+      : { background: "#f4f5f7", icon: "#5b6470" };
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 10,
+        marginBottom: 20,
+      }}
+    >
+      <ActionTile
+        label={labels.copy}
+        ios="doc.on.doc"
+        android="copy-outline"
+        background={tile.background}
+        color={tile.icon}
+        onPress={onCopy}
+      />
+      {canSpeak ? (
+        <ActionTile
+          label={labels.speak}
+          ios="speaker.wave.2"
+          android="volume-high-outline"
+          background={tile.background}
+          color={tile.icon}
+          onPress={onSpeak}
+          pulse={speaking}
+          reducedMotion={reducedMotion}
+        />
+      ) : null}
+      {onLike ? (
+        <ActionTile
+          label={labels.like}
+          ios="hand.thumbsup"
+          android="thumbs-up-outline"
+          background={tile.background}
+          color={tile.icon}
+          onPress={onLike}
+        />
+      ) : null}
+      {onDislike ? (
+        <ActionTile
+          label={labels.dislike}
+          ios="hand.thumbsdown"
+          android="thumbs-down-outline"
+          background={tile.background}
+          color={tile.icon}
+          onPress={onDislike}
+        />
+      ) : null}
+      <ActionTile
+        label={labels.share}
+        ios="paperplane"
+        android="paper-plane-outline"
+        background={tile.background}
+        color={tile.icon}
+        onPress={onShare}
+      />
+      <View style={{ flex: 1 }} />
+      {onRegenerate ? (
+        <ActionTile
+          label={labels.regenerate}
+          ios="arrow.clockwise"
+          android="refresh-outline"
+          background={plain.background}
+          color={plain.icon}
+          onPress={onRegenerate}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function ActionTile({
+  label,
+  ios,
+  android,
+  background,
+  color,
+  onPress,
+  pulse = false,
+  reducedMotion = false,
+}: {
+  label: string;
+  ios: string;
+  android: ComponentProps<typeof NativeSymbol>["android"];
+  background: string;
+  color: string;
+  onPress: () => void;
+  /** Loop the icon's opacity while this tile's action is live; static otherwise. */
+  pulse?: boolean;
+  reducedMotion?: boolean;
+}) {
+  // The loop starts and stops with the pulse, and always cleans up: ending,
+  // switching messages, and unmounting all restore the static icon.
+  const opacity = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  useEffect(() => {
+    if (!pulse || reducedMotion) {
+      opacity.value = 1;
+      return;
+    }
+    opacity.value = withRepeat(
+      withSequence(withTiming(0.5, { duration: 450 }), withTiming(1, { duration: 450 })),
+      -1,
+      true,
+    );
+    return () => {
+      cancelAnimation(opacity);
+      opacity.value = 1;
+    };
+  }, [pulse, reducedMotion, opacity]);
+  const icon = <NativeSymbol ios={ios} android={android} size={19} color={color} />;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: background,
+        alignItems: "center",
+        justifyContent: "center",
+        ...(pressed ? { transform: [{ scale: 0.94 }] } : null),
+      })}
+    >
+      {pulse && !reducedMotion ? <Animated.View style={animatedStyle}>{icon}</Animated.View> : icon}
+    </Pressable>
+  );
+}

@@ -43,6 +43,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       select: (text) => rowActionsRef.current.select(text),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
+      regenerate: (message) => rowActionsRef.current.regenerate?.(message),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
       answer: (message, answer, fields, dismiss, remember) =>
         rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
@@ -79,6 +80,7 @@ export function useThreadRows({
   readSeq,
   markedUnreadMessageId,
   highlightedMessageId,
+  speakingMessageId,
 }: {
   snap: MobileSnapshot | null;
   userId: string;
@@ -99,6 +101,8 @@ export function useThreadRows({
   readSeq: number | null;
   markedUnreadMessageId?: string;
   highlightedMessageId: string | null;
+  /** The message being read aloud right now, if any. */
+  speakingMessageId?: string;
 }) {
   const { t, locale } = useI18n();
   const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
@@ -173,6 +177,7 @@ export function useThreadRows({
               run.id === message.runId &&
               (run.status === "waiting_input" || run.status === "waiting_takeover"),
           )}
+          speaking={speakingMessageId === message.id}
           messageReactions={messageReactions}
           mentions={reactionView.mentions.get(message.id)}
           peerExchange={exchanges.lines.get(message.id)}
@@ -214,6 +219,7 @@ export function useThreadRows({
       visibleMessages[0]?.id,
       unreadDividerId,
       markedUnreadMessageId,
+      speakingMessageId,
       columnWidth,
       userId,
       t,

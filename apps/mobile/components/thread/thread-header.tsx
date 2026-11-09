@@ -11,6 +11,7 @@ import type { MobileBot } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
 import { useReferral } from "../../lib/referral";
 import { threadEdgeOptions } from "../../lib/thread-edges";
+import { useComputerRunning } from "../../lib/use-computer-running";
 import { errorText } from "../../lib/user-error";
 import type { ChatTitle } from "../chat-header-title";
 import { publishChatTitle } from "../chat-header-title";
@@ -36,6 +37,8 @@ export function useThreadHeader({
   onCleared,
   autoSpeak,
   onToggleAutoSpeak,
+  computerFloatEnabled,
+  onOpenComputerFloat,
 }: {
   botId?: string;
   groupId?: string;
@@ -57,6 +60,10 @@ export function useThreadHeader({
   autoSpeak?: boolean;
   /** Toggles the current bot's auto-read; absent outside a one-to-one bot chat. */
   onToggleAutoSpeak?: () => void;
+  /** Whether this bot's computer float is switched on in its settings; absent means on. */
+  computerFloatEnabled?: boolean;
+  /** Opens the computer screen float; absent when there is no computer to watch. */
+  onOpenComputerFloat?: () => void;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -67,6 +74,11 @@ export function useThreadHeader({
   const router = useRouter();
   const [restoring, setRestoring] = useState(false);
   const canInvite = Boolean(useReferral());
+  // The float entry shows only while this bot's computer runs; groups and archived chats
+  // have no computer to watch, and a switched-off float is never polled for.
+  const computerRunning = useComputerRunning(
+    !inGroup && !readOnly && computerFloatEnabled !== false ? botId : undefined,
+  );
 
   const cleared = useRef(onCleared);
   cleared.current = onCleared;
@@ -122,6 +134,17 @@ export function useThreadHeader({
         onInvite: canInvite && botId ? openInvite : undefined,
         autoSpeak,
         onToggleAutoSpeak,
+        computerRunning,
+        onOpenComputerFloat,
+        onOpenVoiceChat:
+          !inGroup && !readOnly && botId
+            ? () =>
+                router.push({
+                  pathname: "/voice-chat",
+                  params: { botId, name: displayName ?? "" },
+                })
+            : undefined,
+        botId,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
@@ -142,6 +165,9 @@ export function useThreadHeader({
     colorScheme,
     autoSpeak,
     onToggleAutoSpeak,
+    computerRunning,
+    onOpenComputerFloat,
+    botId,
   ]);
 
   async function restoreConversation() {

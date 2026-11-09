@@ -11,15 +11,31 @@ const mocks = vi.hoisted(() => ({
   actionProps: undefined as MessageActionProps | undefined,
 }));
 
-vi.mock("react-native", () => ({
-  ActionSheetIOS: {},
-  Alert: { alert: vi.fn() },
-  Platform: { OS: "ios", select: (options: { ios?: unknown }) => options.ios },
-  View: "div",
-}));
+vi.mock("react-native", async () => {
+  const { createElement } = await import("react");
+  return {
+    ActionSheetIOS: {},
+    Alert: { alert: vi.fn() },
+    Platform: { OS: "ios", select: (options: { ios?: unknown }) => options.ios },
+    Share: { share: async () => ({}) },
+    View: "div",
+    Pressable: ({ children, style }: { children?: unknown; style?: unknown }) =>
+      createElement(
+        "div",
+        { style: typeof style === "function" ? style({ pressed: false }) : style },
+        children as never,
+      ),
+  };
+});
 vi.mock("react-native-reanimated", () => ({
-  default: { Text: "span" },
+  default: { Text: "span", View: "div" },
   useReducedMotion: () => true,
+  useSharedValue: (value: unknown) => ({ value }),
+  useAnimatedStyle: (fn: () => unknown) => fn(),
+  withRepeat: (value: unknown) => value,
+  withSequence: (...values: unknown[]) => values[0],
+  withTiming: (value: unknown) => value,
+  cancelAnimation: () => undefined,
   ZoomIn: {},
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: mocks.setStringAsync }));
@@ -37,6 +53,7 @@ vi.mock("../components/message-context-menu", () => ({
   MessageContextMenu: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/reply-line", () => ({ ReplyLine: () => null }));
 vi.mock("../components/time-separator", () => ({ TimeSeparator: () => null }));
 vi.mock("../components/unread-divider", () => ({ UnreadDivider: () => null }));

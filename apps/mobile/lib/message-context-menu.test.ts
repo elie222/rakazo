@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MessageMenuEntry, MessageMenuSymbol } from "./message-context-menu";
 import { buildMessageContextMenu, messageMenuReaction } from "./message-context-menu";
+
+vi.mock("react-native", () => ({ Share: { share: vi.fn() } }));
 
 const labels: Record<MessageMenuSymbol, string> = {
   reply: "Reply",
   copy: "Copy",
+  share: "Share",
   react: "React",
   quote: "Quote",
   speak: "Speak message",
@@ -25,9 +28,15 @@ describe("message context menu", () => {
       reactions,
       include: { quote: true, react: true, speak: true, select: true },
     });
-    expect(menu.map((entry) => entry.id)).toEqual(["reply", "copy", "react", "secondary"]);
-    expect(menu.map((entry) => entry.symbol)).toEqual(["reply", "copy", "react", undefined]);
-    const secondary = menu[3]!;
+    expect(menu.map((entry) => entry.id)).toEqual(["reply", "copy", "share", "react", "secondary"]);
+    expect(menu.map((entry) => entry.symbol)).toEqual([
+      "reply",
+      "copy",
+      "share",
+      "react",
+      undefined,
+    ]);
+    const secondary = menu[4]!;
     expect(secondary).toMatchObject({ title: "", displayInline: true });
     expect(secondary.subactions?.map((entry) => entry.id)).toEqual(["quote", "speak", "select"]);
     expect(
@@ -42,7 +51,7 @@ describe("message context menu", () => {
       reactions,
       include: { reply: false, quote: false, react: false, speak: true, select: true },
     });
-    expect(ids(menu)).toEqual(["copy", "secondary", "speak", "select"]);
+    expect(ids(menu)).toEqual(["copy", "share", "secondary", "speak", "select"]);
   });
 
   it("omits actions the message cannot perform", () => {
@@ -51,7 +60,7 @@ describe("message context menu", () => {
       reactions,
       include: { quote: false, react: false, speak: false, select: true },
     });
-    expect(ids(menu)).toEqual(["reply", "copy", "secondary", "select"]);
+    expect(ids(menu)).toEqual(["reply", "copy", "share", "secondary", "select"]);
   });
 
   it("drops the inline section when every secondary action is absent", () => {
@@ -60,7 +69,7 @@ describe("message context menu", () => {
       reactions,
       include: { quote: false, react: true, speak: false, select: false },
     });
-    expect(menu.map((entry) => entry.id)).toEqual(["reply", "copy", "react"]);
+    expect(menu.map((entry) => entry.id)).toEqual(["reply", "copy", "share", "react"]);
   });
 
   it("offers Mark as unread right after Reply, only when asked", () => {
@@ -73,6 +82,7 @@ describe("message context menu", () => {
       ["reply", "Reply", "reply"],
       ["unread", "Mark as unread", "unread"],
       ["copy", "Copy", "copy"],
+      ["share", "Share", "share"],
       ["secondary", "", undefined],
     ]);
     expect(ids(menu.find((entry) => entry.id === "secondary")?.subactions ?? [])).toEqual([
@@ -94,5 +104,14 @@ describe("message context menu", () => {
   it("reads a reaction id back out of a menu event", () => {
     expect(messageMenuReaction("reaction:🎉")).toBe("🎉");
     expect(messageMenuReaction("reply")).toBeNull();
+  });
+
+  it("drops share for a message with no text to share", () => {
+    const menu = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { quote: true, react: true, speak: true, select: true, share: false },
+    });
+    expect(ids(menu)).not.toContain("share");
   });
 });

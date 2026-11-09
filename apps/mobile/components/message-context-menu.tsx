@@ -13,6 +13,7 @@ const symbols = {
   react: "face.smiling",
   quote: "text.quote",
   speak: "speaker.wave.2",
+  share: "square.and.arrow.up",
   select: "character.cursor.ibeam",
   unread: "message.badge",
 } as const satisfies Record<MessageMenuSymbol, Extract<NonNullable<MenuAction["image"]>, string>>;

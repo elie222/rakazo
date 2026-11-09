@@ -41,6 +41,7 @@ vi.mock("../components/bot-state-avatar", () => ({
 }));
 // These tests cover the inbox roster, not the expression pack, so the avatar stays regular.
 vi.mock("../lib/expression-avatar", () => ({ useExpressionPack: () => "off" }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useThemedStyles: <T,>(factory: () => T) => factory() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ secondary: "secondary-fill" }) }));
 vi.mock("./api-server", () => ({}));
@@ -90,7 +91,8 @@ function Title({ rosterBot }: { rosterBot?: MobileBot }) {
 }
 const render = (rosterBot?: MobileBot) => act(() => root.render(<Title rosterBot={rosterBot} />));
 const avatar = () => container.querySelector("i");
-const slot = () => container.querySelector("span");
+/** The placeholder circle: the only span carrying the shared grey fill. */
+const slot = () => container.querySelector('[data-fill="secondary-fill"]');
 
 it("draws the bot's avatar on the very first render when the inbox already loaded it", () => {
   setSearchInbox([space("space-1", [helper], true)]);

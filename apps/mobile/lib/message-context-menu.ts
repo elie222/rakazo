@@ -1,6 +1,9 @@
+import { Share } from "react-native";
+
 export const messageMenuSymbols = [
   "reply",
   "copy",
+  "share",
   "react",
   "quote",
   "speak",
@@ -9,6 +12,12 @@ export const messageMenuSymbols = [
 ] as const;
 
 export type MessageMenuSymbol = (typeof messageMenuSymbols)[number];
+
+/** Opens the system share sheet for a message's plain text. */
+export function shareMessageText(text: string): void {
+  if (!text.trim()) return;
+  void Share.share({ message: text }).catch(() => undefined);
+}
 
 export type MessageMenuEntry = {
   id: string;
@@ -42,6 +51,7 @@ export function buildMessageContextMenu({
     speak: boolean;
     select: boolean;
     unread?: boolean;
+    share?: boolean;
   };
 }): MessageMenuEntry[] {
   const secondary: MessageMenuEntry[] = [
@@ -53,6 +63,7 @@ export function buildMessageContextMenu({
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
     ...(include.unread ? [entry("unread", labels.unread)] : []),
     entry("copy", labels.copy),
+    ...(include.share !== false ? [entry("share", labels.share)] : []),
     ...(include.react
       ? [
           {

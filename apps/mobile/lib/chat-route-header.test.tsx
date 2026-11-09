@@ -16,6 +16,11 @@ vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./split-view", () => ({ setInboxHidden }));
 vi.mock("./thread-edges", () => ({ threadEdgeOptions: () => ({ headerTransparent: true }) }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => false }));
+vi.mock("../lib/voice", () => ({
+  getVoicePlaybackState: () => ({ status: "idle", botId: undefined }),
+  subscribeVoicePlayback: () => () => undefined,
+}));
 vi.mock("../components/chat-header-title", () => ({ ChatHeaderTitle: () => null }));
 vi.mock("../components/sheet-header", () => ({
   trailingHeaderOptions: (label: string) => ({

@@ -57,6 +57,7 @@ import {
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { setComputerFloatEnabled, useComputerFloatEnabled } from "../lib/computer-float-settings";
 import { notifyConversationCleared } from "../lib/conversation-cleared";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import {
@@ -103,6 +104,7 @@ export default function BotSettingsScreen() {
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const expressionPack = useExpressionPack(botId);
+  const computerFloatEnabled = useComputerFloatEnabled(botId);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
   const [packageOpen, setPackageOpen] = useState(false);
   const [modelKey, setModelKey] = useState("");
@@ -664,6 +666,14 @@ export default function BotSettingsScreen() {
               <View style={styles.cardContent}>
                 <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
               </View>
+              <SettingsSwitch
+                label={t("Computer operation float window")}
+                value={computerFloatEnabled}
+                onChange={(value) => {
+                  if (!botId) return;
+                  setComputerFloatEnabled(botId, value);
+                }}
+              />
             </SettingsGroup>
             <SettingsGroup label={t("Voice")}>
               <SettingsSwitch

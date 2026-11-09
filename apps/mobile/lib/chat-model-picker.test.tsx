@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { notifyManager } from "@tanstack/react-query";
-import type { CSSProperties, ReactNode, Ref } from "react";
+import type { ComponentType, CSSProperties, ReactNode, Ref } from "react";
 import { act, createElement, useEffect, useImperativeHandle } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -12,6 +12,8 @@ import Models from "../app/(settings)/models";
 import BotModelScreen from "../app/bot-model";
 import BotSettingsScreen from "../app/bot-settings";
 import { ModelPickerList } from "../components/model-picker-list";
+import { ThreadComposerChips } from "../components/thread/thread-composer-chips";
+import type { MobileBot } from "./mobile-types";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
@@ -54,6 +56,42 @@ const mocks = vi.hoisted(() => ({
   announce: vi.fn(),
   backups: [] as { provider: string; modelId: string }[] | Promise<unknown>,
   primary: null as { provider: string; modelId: string; thinkingLevel?: string | null } | null,
+  computerPrimary: null as {
+    provider: string;
+    modelId: string;
+  } | null,
+  voiceStatus: {
+    configured: true,
+    ready: true,
+    transcribe: false,
+    provider: "fish",
+    voiceId: "xiaoxiao",
+  },
+  voiceCatalog: [{ id: "fish", name: "Fish Audio", description: "", transcribe: false }],
+  voiceList: [{ id: "xiaoxiao", label: "晓晓 · 女声" }],
+  computerStatus: {
+    botId: "bot-fixture",
+    mode: "team",
+    kind: "docker",
+    state: "running",
+    controlHolder: "none",
+    controlBotId: null,
+    takeoverRequested: false,
+    screenAvailable: true,
+    screenWidth: 1024,
+    screenHeight: 768,
+    homeRevision: null,
+    busyBotName: null,
+    canUpdate: false,
+    terminalAvailable: false,
+  },
+  routines: [
+    { id: "routine-1", botId: "bot-fixture", active: true },
+    { id: "routine-2", botId: "bot-fixture", active: true },
+    { id: "routine-3", botId: "bot-fixture", active: true },
+    { id: "routine-4", botId: "bot-fixture", active: false },
+  ],
+  sheet: null as ComponentType<{ children?: ReactNode }> | null,
   menus: new Map<
     string,
     {
@@ -85,6 +123,40 @@ const catalog = Array.from({ length: 11 }, (_, index) => ({
   auth: "api-key",
   thinkingLevels: ["low", "medium", "high"],
 }));
+
+const defaultVoiceStatus = () => ({
+  configured: true,
+  ready: true,
+  transcribe: false,
+  provider: "fish",
+  voiceId: "xiaoxiao",
+});
+const defaultVoiceCatalog = () => [
+  { id: "fish", name: "Fish Audio", description: "", transcribe: false },
+];
+const defaultVoiceList = () => [{ id: "xiaoxiao", label: "晓晓 · 女声" }];
+const defaultComputerStatus = () => ({
+  botId: "bot-fixture",
+  mode: "team",
+  kind: "docker",
+  state: "running",
+  controlHolder: "none",
+  controlBotId: null,
+  takeoverRequested: false,
+  screenAvailable: true,
+  screenWidth: 1024,
+  screenHeight: 768,
+  homeRevision: null,
+  busyBotName: null,
+  canUpdate: false,
+  terminalAvailable: false,
+});
+const defaultRoutines = () => [
+  { id: "routine-1", botId: "bot-fixture", active: true },
+  { id: "routine-2", botId: "bot-fixture", active: true },
+  { id: "routine-3", botId: "bot-fixture", active: true },
+  { id: "routine-4", botId: "bot-fixture", active: false },
+];
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -149,9 +221,10 @@ vi.mock("./api", () => ({
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
     if (procedure === "bots/update") return mocks.update(input);
     if (procedure === "models/role") {
-      const main = (input as { role: string }).role === "main";
+      const role = (input as { role: string }).role;
+      const main = role === "main";
       return {
-        primary: main ? mocks.primary : null,
+        primary: main ? mocks.primary : role === "computer" ? mocks.computerPrimary : null,
         backups: main ? await mocks.backups : [],
         deploymentPrimary: main ? null : APPROVAL_DEFAULT,
       };
@@ -176,6 +249,11 @@ vi.mock("./api", () => ({
       return { primary: mocks.primary, backups: await mocks.backups };
     }
     if (procedure === "models/setDefault") return result;
+    if (procedure === "voice/status") return mocks.voiceStatus;
+    if (procedure === "voice/catalog") return mocks.voiceCatalog;
+    if (procedure === "voice/voices") return mocks.voiceList;
+    if (procedure === "computer/status") return mocks.computerStatus;
+    if (procedure === "routines/list") return mocks.routines;
     if (procedure === "bots/get")
       return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
     if (procedure === "me")
@@ -311,6 +389,8 @@ vi.mock("react-native", () => {
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
     Linking: { openURL: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+    Modal: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
+    useWindowDimensions: () => ({ height: 800, width: 400 }),
     ScrollView: view,
     View: view,
     Text: ({ children }: { children?: ReactNode }) => createElement("span", {}, children),
@@ -569,6 +649,16 @@ vi.mock("../components/text-only-mark", () => ({
   TextOnlyMark: () => createElement("i", { "data-text-only": true }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-sheet", () => ({
+  useNativeSheet: () => mocks.sheet,
+  NativeSheet: ({
+    Sheet,
+    children,
+  }: {
+    Sheet: ComponentType<{ children?: ReactNode }>;
+    children: ReactNode;
+  }) => createElement("div", {}, Sheet ? createElement(Sheet, {}, children) : children),
+}));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
     ref,
@@ -611,6 +701,13 @@ beforeEach(() => {
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
+  mocks.computerPrimary = null;
+  mocks.voiceStatus = defaultVoiceStatus();
+  mocks.voiceCatalog = defaultVoiceCatalog();
+  mocks.voiceList = defaultVoiceList();
+  mocks.computerStatus = defaultComputerStatus();
+  mocks.routines = defaultRoutines();
+  mocks.sheet = null;
   mocks.rpc.mockReset();
   mocks.menus.clear();
   mocks.rowAccessibilityActions.clear();
@@ -1850,6 +1947,133 @@ describe("connection screen targets", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",
       credentialId: CREDENTIAL_ID,
+    });
+  });
+});
+
+const threadBot: MobileBot = {
+  id: "bot-fixture",
+  name: "Fixture",
+  preview: "",
+  color: "#000000",
+  notifyOnFinish: false,
+  threadId: "thread-fixture",
+  pinned: false,
+  status: "idle",
+  sectionId: null,
+  archivedAt: null,
+  unread: false,
+  updatedAt: "2026-11-09T00:00:00Z",
+  computerMode: "team",
+  modelProvider: "openrouter",
+  modelId: "vendor/model-2",
+  thinkingLevel: null,
+  autoSpeak: false,
+  fleetManagement: false,
+};
+
+async function renderChips() {
+  mocks.computerPrimary = { provider: "openrouter", modelId: "vendor/model-2" };
+  await act(async () =>
+    root.render(
+      <ThreadComposerChips botId="bot-fixture" currentBot={threadBot} userId="user-fixture" />,
+    ),
+  );
+}
+
+function chipCard(label: string) {
+  return container.querySelector<HTMLButtonElement>(`button[aria-label^="${label}:"]`);
+}
+
+const FakeSheet = ({ children }: { children?: ReactNode }) =>
+  createElement("div", { "data-native-sheet": true }, children);
+
+describe("thread composer quick cards", () => {
+  it("shows live values on five cards in the mockup's order", async () => {
+    await renderChips();
+    expect(
+      [...container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Main model: Model 2",
+      "Computer model: Model 2",
+      "Voice model: 晓晓 · 女声",
+      "Computer: Online",
+      "Routines: 3 running",
+    ]);
+  });
+
+  it("falls back to the provider name when no voice name resolves", async () => {
+    mocks.voiceList = [];
+    await renderChips();
+    expect(chipCard("Voice model")?.getAttribute("aria-label")).toBe("Voice model: Fish Audio");
+  });
+
+  it("shows the stopped computer instead of online when it is not running", async () => {
+    mocks.computerStatus = { ...defaultComputerStatus(), state: "stopped" };
+    await renderChips();
+    expect(chipCard("Computer")?.getAttribute("aria-label")).toBe("Computer: Computer is stopped");
+  });
+
+  it("counts only enabled routines as running", async () => {
+    mocks.routines = defaultRoutines().map((routine) => ({ ...routine, active: false }));
+    await renderChips();
+    expect(chipCard("Routines")?.getAttribute("aria-label")).toBe("Routines: 0 running");
+  });
+});
+
+describe("thread model picker sheet", () => {
+  const sheetRows = () => [...container.querySelectorAll<HTMLButtonElement>("li button")];
+  const pickModel = async (cardLabel: string, modelLabel: string) => {
+    await renderChips();
+    await act(async () => chipCard(cardLabel)!.click());
+    await act(async () =>
+      sheetRows()
+        .find((row) => row.textContent === modelLabel)!
+        .click(),
+    );
+  };
+
+  it("saves the main model in place and closes without leaving the chat", async () => {
+    await pickModel("Main model", "Model 3");
+    expect(mocks.update).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      modelProvider: "openrouter",
+      modelId: "vendor/model-3",
+    });
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.dismissTo).not.toHaveBeenCalled();
+    expect(sheetRows()).toHaveLength(0);
+    expect(chipCard("Main model")?.getAttribute("aria-label")).toBe("Main model: Model 3");
+  });
+
+  it("saves the computer model through the role RPC", async () => {
+    await pickModel("Computer model", "Model 4");
+    expect(mocks.rpc).toHaveBeenCalledWith("models/setRole", {
+      role: "computer",
+      expectedUserId: "user-fixture",
+      scope: "account",
+      primary: { provider: "openrouter", modelId: "vendor/model-4" },
+    });
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(sheetRows()).toHaveLength(0);
+    expect(chipCard("Computer model")?.getAttribute("aria-label")).toBe("Computer model: Model 4");
+  });
+
+  it("opens the native sheet on Android", async () => {
+    mocks.sheet = FakeSheet;
+    await renderChips();
+    await act(async () => chipCard("Main model")!.click());
+    expect(container.querySelector("[data-native-sheet]")).not.toBeNull();
+    expect(sheetRows()).toHaveLength(12);
+    await act(async () =>
+      sheetRows()
+        .find((row) => row.textContent === "Model 3")!
+        .click(),
+    );
+    expect(mocks.update).toHaveBeenCalledWith({
+      botId: "bot-fixture",
+      modelProvider: "openrouter",
+      modelId: "vendor/model-3",
     });
   });
 });

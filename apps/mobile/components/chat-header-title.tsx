@@ -3,16 +3,19 @@ import { displayName as safeDisplayName } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
 import { Pressable, Text, View } from "react-native";
+import { mobileTokens } from "../lib/appearance";
 import type { ChatTitleRoute } from "../lib/chat-settings-route";
 import { chatTitleRoute } from "../lib/chat-settings-route";
+import { GROUP_SEAT_SIZE } from "../lib/group-seats";
 import { useI18n } from "../lib/i18n";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
 import { useInboxBot, useInboxGroup } from "../lib/search-inbox";
-import { CHAT_TITLE_AVATAR_SIZE, ChatTitleAvatar } from "./chat-title-avatar";
+import { ChatTitleAvatar } from "./chat-title-avatar";
 import { ChatTitleLabel } from "./chat-title-label";
 import { GlassSurface } from "./glass-surface";
 import { GroupSeats } from "./group-seats";
+import { NativeSymbol } from "./native-symbol";
 import { createThreadHeaderStyles } from "./thread-header-styles";
 
 /** What an open chat shows in its title, once it has loaded its own data. */
@@ -110,9 +113,20 @@ export function ChatHeaderTitle({
         {!inGroup && params.botId ? (
           <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
         ) : null}
-        {inGroup ? <GroupSeats members={members ?? []} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
+        {inGroup ? <GroupSeats members={members ?? []} size={GROUP_SEAT_SIZE} /> : null}
         <View style={styles.titleText}>
-          <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
+          {/* The mockup's title: the name with its chevron, opening the profile or settings. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 1 }}>
+            <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
+            {opens ? (
+              <NativeSymbol
+                ios="chevron.right"
+                android="chevron-forward-outline"
+                size={15}
+                color={mobileTokens().mutedForeground}
+              />
+            ) : null}
+          </View>
           {title.activityLine ? (
             <Text key={title.activityLine} numberOfLines={1} style={styles.subtitle}>
               {title.activityLine}

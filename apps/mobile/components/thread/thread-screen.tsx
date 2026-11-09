@@ -16,7 +16,7 @@ import {
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +27,7 @@ import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { composerDraftScope } from "../../lib/composer-draft";
+import { useComputerFloatEnabled } from "../../lib/computer-float-settings";
 import { cronLabels } from "../../lib/cron";
 import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
@@ -48,6 +49,7 @@ import { useThreadListScroll } from "../../lib/thread-list-scroll";
 import { useThreadMentionCatalog } from "../../lib/thread-mention-catalog";
 import { useThreadPaging } from "../../lib/thread-paging";
 import { useThreadRead } from "../../lib/thread-read";
+import { buildRegeneratePayload, previousUserMessageText } from "../../lib/thread-regenerate";
 import {
   isOwnThreadMessage,
   latestArrivalMessage,
@@ -59,6 +61,8 @@ import { useThreadSync } from "../../lib/thread-sync";
 import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice";
+import { ChatTitleHero } from "../chat-title-hero";
 import { FailedSendBubble } from "../failed-send-bubble";
 import { NewestPageCards } from "../pages/page-card";
 import { RunErrorSheet } from "../run-error-sheet";
@@ -66,6 +70,7 @@ import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
 import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notice";
 import { createThreadHeaderStyles } from "../thread-header-styles";
+import { ComputerFloatWindow } from "./computer-float-window";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerChips } from "./thread-composer-chips";
 import { ThreadComposerDock } from "./thread-composer-dock";
@@ -247,7 +252,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
   const displayName = safeDisplayName(titleName, inGroup ? t("Group") : t("Bot"));
-  const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
+  const composerPrompt = t("Message or hold to talk…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus =
@@ -323,6 +328,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       .catch(() => undefined);
   }, [botId, currentBot, inGroup, readOnly, refreshMentionBots]);
 
+  // The computer screen float opens only from its header entry, never on its own. The
+  // settings switch gates it per bot; off means no entry and no window, even mid-run.
+  const computerFloatEnabled = useComputerFloatEnabled(botId);
+  const [computerFloatOpen, setComputerFloatOpen] = useState(false);
+
   useThreadHeader({
     botId,
     groupId,
@@ -338,6 +348,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     onCleared: history.clear,
     autoSpeak: !inGroup ? currentBot?.autoSpeak : undefined,
     onToggleAutoSpeak: !inGroup && !readOnly && botId && currentBot ? toggleAutoSpeak : undefined,
+    computerFloatEnabled,
+    onOpenComputerFloat:
+      !inGroup && !readOnly && botId && computerFloatEnabled
+        ? () => setComputerFloatOpen(true)
+        : undefined,
   });
 
   useThreadFocus({
@@ -454,6 +469,28 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     select: setSelectableText,
     speak,
     react: composer.react,
+    regenerate: (message) => {
+      if (readOnly) return;
+      const originThreadKey = groupId ?? botId;
+      if (!originThreadKey) return;
+      const text = previousUserMessageText(history.snapRef.current?.messages ?? [], message.id);
+      if (!text) return;
+      try {
+        composer.retry(
+          feedback.sendAttempt(
+            buildRegeneratePayload({
+              text,
+              originThreadKey,
+              botTarget: botId,
+              groupTarget: groupId,
+            }),
+          ),
+        );
+      } catch {
+        feedback.setError(t("Failed to send message"));
+        return;
+      }
+    },
     markUnread: markUnreadFrom,
     answer: composer.answer,
     openBot,
@@ -490,6 +527,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     layout: scroll.layoutJumpRow,
   });
 
+  // The player bar reads the same state; a row's speaker icon pulses only
+  // while its own message is the one playing.
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
+
   const { liveItems, renderMessageRow, renderItem } = useThreadRows({
     snap,
     userId,
@@ -509,6 +550,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     readSeq: readBoundary?.visit === readVisit.current.visit ? readBoundary.seq : null,
     markedUnreadMessageId,
     highlightedMessageId: scroll.highlightedMessageId,
+    speakingMessageId: playback.status === "playing" ? playback.messageId : undefined,
   });
 
   const workingBots =
@@ -550,6 +592,20 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       <LoadEarlierButton
         loading={paging.loadingOlder}
         onPress={() => void paging.loadOlderMessages()}
+      />
+    ) : null;
+
+  // The big title hero, at the top of a one-to-one chat: the 84pt state-linked avatar beside
+  // the bot's name. Groups keep only their native title.
+  const titleComposing = Boolean(botId) && composingBots.split(",").includes(botId ?? "");
+  const chatHero =
+    !inGroup && botId ? (
+      <ChatTitleHero
+        bot={titleBot}
+        status={currentBotStatus}
+        composing={titleComposing}
+        name={titleName}
+        activityLine={activityLine}
       />
     ) : null;
 
@@ -610,6 +666,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               failedSendBubbles={failedSendBubbles}
               errorNotice={errorNotice}
               workingFooter={workingFooter}
+              chatHero={chatHero}
               loadingNewer={paging.loadingNewer}
               showLatest={showLatest}
             />
@@ -695,6 +752,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           <View pointerEvents="none" style={[styles.statusBarFade, { height: insets.top }]} />
         ) : null}
       </KeyboardAvoidingView>
+      <ComputerFloatWindow
+        botId={botId}
+        name={displayName}
+        open={computerFloatOpen && computerFloatEnabled}
+        onClose={() => setComputerFloatOpen(false)}
+      />
     </View>
   );
 }

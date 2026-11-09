@@ -42,6 +42,7 @@ export function ThreadMessageList({
   failedSendBubbles,
   errorNotice,
   workingFooter,
+  chatHero,
   loadingNewer,
   showLatest,
 }: {
@@ -64,6 +65,8 @@ export function ThreadMessageList({
   failedSendBubbles: ReactNode;
   errorNotice: ReactNode;
   workingFooter: ReactNode;
+  /** The chat's big title hero, at the very top of the live list; never on a pinned page. */
+  chatHero?: ReactNode;
   loadingNewer: boolean;
   showLatest: () => void;
 }) {
@@ -139,7 +142,12 @@ export function ThreadMessageList({
             maintainVisibleContentPosition={liveMessageListPosition}
             scrollEventThrottle={16}
             {...scroll.liveListHandlers}
-            ListFooterComponent={loadEarlierControl}
+            ListFooterComponent={
+              <>
+                {chatHero}
+                {loadEarlierControl}
+              </>
+            }
             ListHeaderComponent={
               <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
                 {errorNotice}
