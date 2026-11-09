@@ -235,10 +235,14 @@ export class MolaSandboxProvider implements SandboxProvider {
     if (this.apiMode === "cloud") {
       const response = await this.request(`/computers/${machineId}/viewers`, {
         method: "POST",
-        body: { type: "desktop", expires_in: 3600 },
+        body: {
+          origin: "https://rakazo.app",
+          mode: "desktop",
+          expires_in_minutes: 60,
+        },
       });
-      const result: { data: { url: string; expires_in?: number } } = await response.json();
-      return { url: result.data.url, expires_in: result.data.expires_in ?? 3600 };
+      const result: { data: { embed_url: string; expires_at?: string } } = await response.json();
+      return { url: result.data.embed_url, expires_in: 3600 };
     }
     const response = await this.request(`/machines/${machineId}/desktop`, {
       method: "POST",
@@ -309,11 +313,8 @@ export class MolaSandboxProvider implements SandboxProvider {
       this.apiMode === "cloud"
         ? {
             name,
-            profile: "default",
-            image: "ubuntu-24.04",
-            vcpus: sizeConfig.vcpus,
-            memory_mb: sizeConfig.memory_mb,
-            disk_gb: sizeConfig.disk_gb,
+            image: "ubuntu",
+            auto_stop_minutes: 120,
           }
         : {
             name,

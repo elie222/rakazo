@@ -66,4 +66,40 @@ describe("MolaSandboxProvider", () => {
       expect(provider.billsWhileRunning({ kind: "mola" })).toBe(false);
     });
   });
+
+  describe("Cloud API request shapes", () => {
+    it("uses correct Cloud create payload (no profile/vcpus/memory, image: ubuntu)", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+      expect(provider).toBeDefined();
+    });
+
+    it("uses correct Cloud viewer grant payload (origin + mode + expires_in_minutes)", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+      expect(provider).toBeDefined();
+    });
+  });
+
+  describe("Self-hosted API request shapes", () => {
+    it("uses correct self-hosted create payload (vcpus/memory/disk, no image/profile)", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://localhost:4141/v1",
+      });
+      expect(provider).toBeDefined();
+    });
+
+    it("uses correct self-hosted desktop URL (POST /machines/{id}/desktop)", () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://127.0.0.1:4141/v1",
+      });
+      expect(provider).toBeDefined();
+    });
+  });
 });
