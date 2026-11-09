@@ -251,3 +251,54 @@ it("anchors Load earlier on the first visible row, not the whole height delta", 
   expect(scroller.scrollTop).toBe(900);
   act(() => root.unmount());
 });
+
+it("snaps a remounted transcript to the end when the refresh lands", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // The reader is at the end of bot A when the refresh starts; the bot switch
+  // to A remounts the transcript before the response arrives, detaching the
+  // element the snap was queued against.
+  const detached = {
+    scrollTop: 900,
+    scrollHeight: 1000,
+    clientHeight: 100,
+    isConnected: true,
+  };
+  const mounted = {
+    scrollTop: 0,
+    scrollHeight: 1200,
+    clientHeight: 100,
+    isConnected: true,
+  };
+  const held = ref<HTMLDivElement | null>(detached as unknown as HTMLDivElement);
+  const snapshot = {
+    botId: "bot-1",
+    threadId: "thread-1",
+    messages: [],
+  } as unknown as ThreadSnapshot;
+  const input = syncInput({
+    inGroup: false,
+    get: () => Promise.resolve(snapshot),
+    commitSnapshot: vi.fn(),
+  });
+  input.thread = { ...input.thread, messageScroll: held } as never;
+  let controls!: ReturnType<typeof useThreadSync>;
+  function Probe() {
+    controls = useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+
+  // The switch remounts the transcript while the request is in flight: start
+  // the refresh, swap the scroller before its continuation runs.
+  const pending = controls.refreshThread("bot-1");
+  detached.isConnected = false;
+  held.current = mounted as unknown as HTMLDivElement;
+  await act(async () => void (await pending));
+  await act(async () => {
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+  });
+
+  expect(mounted.scrollTop).toBe(1200);
+  act(() => root.unmount());
+});

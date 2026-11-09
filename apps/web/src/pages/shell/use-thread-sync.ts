@@ -157,15 +157,21 @@ export function useThreadSync({
     const queuedScrollTop = queuedElement.scrollTop;
     window.requestAnimationFrame(() => {
       const element = messageScroll.current;
+      if (!element) return;
       if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
-        queuedElement.scrollTop = queuedElement.scrollHeight;
+        element.scrollTop = element.scrollHeight;
+      } else if (element !== queuedElement && !queuedElement.isConnected) {
+        // A bot switch remounts the transcript, so the queued element is the
+        // detached one. The reader has not scrolled the replacement: land it
+        // at the latest message instead of leaving the snap a no-op.
+        element.scrollTop = element.scrollHeight;
       }
     });
   }
 
   async function refreshGroupThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
     const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
@@ -177,6 +183,12 @@ export function useThreadSync({
       computerRef.current,
       expandedHistoryThread.current === snap.threadId,
     );
+    // Re-read the scroller: the await gave a chat switch time to remount the
+    // transcript, so the pre-request element may now be detached. A remounted
+    // transcript has no reader position yet, so the stick still applies even
+    // though the replacement does not test as near the end.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
     if (!computerOpenRef.current) commitComputer(null);
@@ -185,7 +197,7 @@ export function useThreadSync({
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();
@@ -194,8 +206,8 @@ export function useThreadSync({
   }
 
   async function refreshThread(id: string, signal?: AbortSignal) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    const preRequestElement = messageScroll.current;
+    const stickToEnd = !preRequestElement || transcriptIsNearEnd(preRequestElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
@@ -210,6 +222,12 @@ export function useThreadSync({
     ) {
       return snap;
     }
+    // Re-read the scroller: the await gave a bot switch time to remount the
+    // transcript, so the pre-request element may now be detached. A remounted
+    // transcript has no reader position yet, so the stick still applies even
+    // though the replacement does not test as near the end.
+    const scrollElement = messageScroll.current;
+    const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     const reconciled = reconcileRefreshedThread(
       snapshotRef.current,
       snap,
@@ -222,7 +240,7 @@ export function useThreadSync({
     cacheComputerFor(id, { computer: reconciled.computer });
     if (
       stickToEnd &&
-      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      (transcriptRemounted || !scrollElement || transcriptIsNearEnd(scrollElement)) &&
       expandedHistoryThread.current !== snap.threadId
     ) {
       snapTranscriptToEndAfterFrame();
