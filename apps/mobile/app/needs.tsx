@@ -27,7 +27,7 @@ import {
 } from "../lib/attention";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { useI18n } from "../lib/i18n";
-import { native, useThemedStyles } from "../lib/native";
+import { useThemedStyles } from "../lib/native";
 import { ATTENTION_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { queryClient, rpcQuery } from "../lib/query";
 import { useSideInsets } from "../lib/side-insets";
@@ -37,10 +37,10 @@ export default function NeedsYouScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const isFocused = useIsFocused();
-  const styles = useThemedStyles(createStyles);
+  const tokens = mobileTokens();
+  const styles = useThemedStyles(() => createStyles(tokens));
   const sideInsets = useSideInsets();
   const insets = useSafeAreaInsets();
-  const tokens = mobileTokens();
   // The thread route can switch Spaces under a mounted screen; follow it instead of
   // refetching the Space the screen was first painted in.
   const spaceId = useSyncExternalStore(
@@ -94,7 +94,7 @@ export default function NeedsYouScreen() {
   if (query.isPending) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
       </View>
     );
   }
@@ -120,7 +120,7 @@ export default function NeedsYouScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void refresh()}
-          tintColor={native.secondaryLabel}
+          tintColor={tokens.mutedForeground}
           colors={[tokens.mutedForeground]}
           progressBackgroundColor={tokens.muted}
         />
@@ -135,7 +135,7 @@ export default function NeedsYouScreen() {
             ios="checkmark.circle"
             android="checkmark-circle-outline"
             size={30}
-            color={native.tertiaryLabel}
+            color={tokens.faintForeground}
           />
           <Text style={styles.emptyTitle}>{t("Nothing needs you")}</Text>
         </View>
@@ -154,7 +154,7 @@ export default function NeedsYouScreen() {
                           ios={icon.ios}
                           android={icon.android}
                           size={16}
-                          color={native.secondaryLabel}
+                          color={tokens.mutedForeground}
                         />
                       </View>
                       <View style={styles.cardBody}>
@@ -201,11 +201,11 @@ export default function NeedsYouScreen() {
   );
 }
 
-const createStyles = () =>
+const createStyles = (tokens: ReturnType<typeof mobileTokens>) =>
   StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: native.page,
+      backgroundColor: tokens.background,
     },
     content: {
       paddingHorizontal: 16,
@@ -216,7 +216,7 @@ const createStyles = () =>
       gap: 8,
     },
     sectionTitle: {
-      color: native.secondaryLabel,
+      color: tokens.mutedForeground,
       fontSize: 15,
       lineHeight: 19,
     },
@@ -224,7 +224,7 @@ const createStyles = () =>
       gap: 8,
     },
     card: {
-      backgroundColor: native.fill,
+      backgroundColor: tokens.muted,
       borderRadius: 16,
       gap: 10,
       padding: 14,
@@ -236,7 +236,7 @@ const createStyles = () =>
     },
     iconCircle: {
       alignItems: "center",
-      backgroundColor: native.fillPressed,
+      backgroundColor: tokens.accent,
       borderRadius: 16,
       height: 32,
       justifyContent: "center",
@@ -247,18 +247,18 @@ const createStyles = () =>
       gap: 2,
     },
     title: {
-      color: native.label,
+      color: tokens.foreground,
       fontSize: 17,
       fontWeight: "500",
       lineHeight: 22,
     },
     detail: {
-      color: native.secondaryLabel,
+      color: tokens.mutedForeground,
       fontSize: 15,
       lineHeight: 19,
     },
     time: {
-      color: native.tertiaryLabel,
+      color: tokens.faintForeground,
       fontSize: 12,
       lineHeight: 16,
     },
@@ -277,14 +277,14 @@ const createStyles = () =>
       paddingVertical: 64,
     },
     emptyTitle: {
-      color: native.label,
+      color: tokens.foreground,
       fontSize: 17,
       fontWeight: "500",
       lineHeight: 22,
       textAlign: "center",
     },
     error: {
-      color: native.secondaryLabel,
+      color: tokens.mutedForeground,
       fontSize: 15,
       lineHeight: 19,
     },
