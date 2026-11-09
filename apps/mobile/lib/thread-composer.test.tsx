@@ -56,7 +56,7 @@ vi.mock("expo-file-system", () => {
     create() {
       files.set(this.uri, "");
     }
-    write(text: string) {
+    writeSync(text: string) {
       disk.writes += 1;
       // A full disk leaves the file empty, as a failed native write would.
       if (disk.full) throw new Error("No space left on device");

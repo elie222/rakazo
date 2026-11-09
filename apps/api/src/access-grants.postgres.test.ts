@@ -8,8 +8,7 @@ import { createBillingService } from "./billing.js";
 
 const DAY_MS = 86_400_000;
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("access grants", () => {
   const stamp = `${process.pid}-${Date.now()}`;
   const provider = new BillingEmulator({ modelCredits: true, namespace: `grants-${stamp}` });

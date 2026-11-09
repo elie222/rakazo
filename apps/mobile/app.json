@@ -90,11 +90,9 @@
         }
       ],
       "./plugins/with-worklets-headers",
-      "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext",
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
-      "./plugins/with-android-r8",
       "./plugins/with-app-intents"
     ],
     "locales": {

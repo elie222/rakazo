@@ -11,6 +11,12 @@ saveExact: true
 # pnpm 11+ reinstalls stale dependencies before `pnpm exec` and `pnpm run`. Tests that start
 # nested pnpm commands could then relink node_modules under the running suite.
 verifyDepsBeforeRun: false
+# astro2tsx pins @emnapi/core 1.x but takes @emnapi/runtime as a peer, which otherwise resolves to
+# the 2.0 beta that rolldown's wasm binding brings in and breaks `astro check`.
+packageExtensions:
+  "@astrojs/astro2tsx@0.1.3":
+    dependencies:
+      "@emnapi/runtime": 1.11.3
 
 supportedArchitectures:
   os:
@@ -21,21 +27,29 @@ supportedArchitectures:
     - arm64
 
 overrides:
-  react: 19.2.3
-  react-dom: 19.2.3
+  react: 19.3.1
+  react-dom: 19.3.1
   proxy-addr@<2.0.8: 2.0.8
   dompurify@<3.4.17: 3.4.17
   ws@>=8 <8.21.1: 8.22.0
   "@grpc/grpc-js@<1.14.5": 1.14.7
   "@opentelemetry/core@>=2 <2.8.0": 2.12.0
-  "@composio/core>undici": 7.30.1
+  # Vitest takes the API as an optional peer, so each API version installs its own vitest build.
+  # A test dependency that loads the second build (such as @chat-adapter/tests) breaks the
+  # runner's expect: rejections then report an empty message.
+  "vitest>@opentelemetry/api": 1.10.0
+  # Photon's telemetry still runs on the 2.x OpenTelemetry SDK, which needs api below 1.10.
+  "@photon-ai/otel>@opentelemetry/api": 1.9.1
   "@electron/get>undici": 7.30.1
-  e2b>undici: 7.30.1
-  e2b>undici8: npm:undici@8.12.3
+  undici@>=6 <6.29.1: 6.29.1
   joi@>=18 <18.3.1: 18.3.2
+  qs@<6.16.2: 6.16.2
+  body-parser@>=2 <2.4.0: 2.4.0
+  follow-redirects@<1.16.2: 1.16.2
+  ip-address@<10.7.1: 10.7.1
+  react-server-dom-webpack@<19.3.1: 19.3.1
 
 patchedDependencies:
-  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
 

@@ -1,7 +1,7 @@
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LoginSecretValue, loginCardFields } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
-import type { TextInput } from "react-native";
+import type { TextInputInstance } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
@@ -41,7 +41,7 @@ export function SecretAskSheet({
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const inputs = useRef<(TextInput | null)[]>([]);
+  const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [fields, setFields] = useState<LoginFieldRow[]>(() =>
     loginCardFields(loginFields).map((field, id) => ({ ...field, id })),
   );

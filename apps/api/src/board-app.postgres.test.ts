@@ -6,9 +6,7 @@ import { sessionCookieHeader } from "../../../packages/testkit/src/index.js";
 import { createApp } from "./app.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("ticket board app wiring", () => {
   it.each([false, true])("threads the environment flag through HTTP (%s)", async (enabled) => {

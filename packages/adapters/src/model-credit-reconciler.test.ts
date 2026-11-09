@@ -253,6 +253,15 @@ describe("model credit reconciler", () => {
     expect(charged()).toMatchObject({ costUsd: 0, inputTokens: null, outputTokens: null });
   });
 
+  it("flags an unfinished paid service call for review instead of releasing its hold", async () => {
+    const updateMany = await reconcile({ provider: "services", reconciliationAttempts: 5 });
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: { id: "entry-1", reconciliationState: "pending" },
+      data: { reconciliationState: "needs_review", nextReconcileAt: null },
+    });
+  });
+
   it("keeps holding a call without a receipt while its run is still live", async () => {
     const updateMany = await reconcile({ reconciliationAttempts: 5 }, undefined, {
       status: "running",

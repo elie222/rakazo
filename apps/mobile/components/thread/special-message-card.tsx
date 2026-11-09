@@ -3,6 +3,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
+import type { ViewInstance } from "react-native";
 import { Linking, Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -60,8 +61,8 @@ function HelperMessageCard({
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
-  const helperHeader = useRef<View>(null);
-  const helperCard = useRef<View>(null);
+  const helperHeader = useRef<ViewInstance>(null);
+  const helperCard = useRef<ViewInstance>(null);
   const helperReducedMotion = useReducedMotion();
   const [subagentOpen, setSubagentOpen] = useState(() => openHelpers.has(special.agentId));
   const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
