@@ -26,7 +26,8 @@
       }
       #mobile-paste,
       #mobile-keyboard,
-      #mobile-trackpad {
+      #mobile-trackpad,
+      #mobile-view-controls button {
         box-sizing: border-box;
         width: 48px;
         height: 48px;
@@ -44,12 +45,54 @@
       }
       #mobile-paste svg,
       #mobile-keyboard svg,
-      #mobile-trackpad svg {
+      #mobile-trackpad svg,
+      #mobile-view-controls svg {
         width: 100%;
         height: 100%;
       }
       #screen.trackpad-active {
         touch-action: none;
+      }
+      /* The trackpad's pointer: a large arrow whose tip is the click point. */
+      #mobile-pointer {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1;
+        width: 42px;
+        height: 42px;
+        pointer-events: none;
+        will-change: transform;
+        filter: drop-shadow(0 1px 2px rgb(0 0 0 / 50%));
+      }
+      #mobile-pointer[hidden] {
+        display: none;
+      }
+      /* Zoom and scroll buttons, on the right edge, centered in the visible area. */
+      #mobile-view-controls {
+        position: fixed;
+        right: calc(48px + env(safe-area-inset-right));
+        top: calc(var(--mobile-visual-top, 0px) + var(--mobile-visual-height, 100dvh) / 2);
+        transform: translateY(-50%);
+        display: grid;
+        grid-template-columns: repeat(3, 60px);
+        gap: 10px;
+      }
+      #mobile-view-controls:not([data-zoomed]) [data-view^="pan-"] {
+        visibility: hidden;
+      }
+      #mobile-view-controls[hidden] {
+        display: none;
+      }
+      #mobile-view-controls svg {
+        pointer-events: none;
+      }
+      /* Bigger than the corner buttons: they are pressed often, mid-gesture. */
+      #mobile-view-controls button {
+        width: 60px;
+        height: 60px;
+        padding: 14px;
+        border-radius: 16px;
       }
       #mobile-key-bar {
         position: fixed;
@@ -176,12 +219,17 @@
         attachMobileTrackpad(rfb, {
           button: document.getElementById("mobile-trackpad"),
           surface: document.getElementById("screen"),
+          pointer: document.getElementById("mobile-pointer"),
+          viewControls: document.getElementById("mobile-view-controls"),
         });
       }
     </script>
   </head>
   <body>
     <div id="screen"></div>
+    <svg id="mobile-pointer" aria-hidden="true" viewBox="0 0 28 28" hidden>
+      <path d="M1 1v22l6-6 4 9 4-2-4-9h8z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round" />
+    </svg>
     <div id="mobile-key-bar" hidden>
       <button type="button" data-key="Escape" aria-label="Escape">Esc</button>
       <button type="button" data-key="Tab" aria-label="Tab">Tab</button>
@@ -192,6 +240,26 @@
       <button type="button" data-key="ArrowRight" aria-label="Right">→</button>
     </div>
     <div id="mobile-controls">
+      <div id="mobile-view-controls" hidden>
+        <button type="button" data-view="zoom-in" aria-label="Zoom in" title="Zoom in">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <button type="button" data-view="scroll-up" aria-label="Scroll up" title="Scroll up">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6" /></svg>
+        </button>
+        <button type="button" data-view="zoom-out" aria-label="Zoom out" title="Zoom out">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14" /></svg>
+        </button>
+        <button type="button" data-view="pan-left" aria-label="Move view left" title="Move view left">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+        </button>
+        <button type="button" data-view="scroll-down" aria-label="Scroll down" title="Scroll down">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+        <button type="button" data-view="pan-right" aria-label="Move view right" title="Move view right">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+      </div>
       <button id="mobile-paste" type="button" aria-label="Paste" title="Paste" hidden>
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="8" y="2" width="8" height="4" rx="1" />
