@@ -83,6 +83,17 @@ export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
 );
+/** An amount a purchase or monthly plan may already carry, retired ones included. */
+export const HeldCreditAmountSchema = z.union(
+  [...MODEL_CREDIT_AMOUNTS, ...RETIRED_MODEL_CREDIT_AMOUNTS].map((amount) => z.literal(amount)),
+);
+export type HeldCreditAmount = z.infer<typeof HeldCreditAmountSchema>;
+
+/** The amounts to pick from, keeping a plan's retired amount so it still shows as chosen. */
+export function creditAmountChoices(current: HeldCreditAmount): HeldCreditAmount[] {
+  const offered: HeldCreditAmount[] = [...MODEL_CREDIT_AMOUNTS];
+  return offered.includes(current) ? offered : [...offered, current];
+}
 
 /** Where checkout returns: the mobile app's in-app browser instead of the web app. */
 export const BillingClientSchema = z.literal("mobile").optional();
