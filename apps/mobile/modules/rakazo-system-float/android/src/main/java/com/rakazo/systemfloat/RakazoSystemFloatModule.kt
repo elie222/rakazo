@@ -21,11 +21,12 @@ class RakazoSystemFloatModule : Module() {
     AsyncFunction("isSupported") { true }
 
     AsyncFunction("hasOverlayPermission") {
-      Settings.canDrawOverlays(appContext.reactContext)
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      Settings.canDrawOverlays(context)
     }
 
     Function("requestOverlayPermission") {
-      val context = appContext.reactContext
+      val context = appContext.reactContext ?: return@Function
       val intent = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.parse("package:${context.packageName}"),
@@ -39,7 +40,7 @@ class RakazoSystemFloatModule : Module() {
      * start — the caller falls back to the bubble or the in-app float.
      */
     AsyncFunction("show") { url: String, title: String, locale: String ->
-      val context = appContext.reactContext
+      val context = appContext.reactContext ?: return@AsyncFunction false
       if (!Settings.canDrawOverlays(context)) return@AsyncFunction false
       if (url.isBlank()) return@AsyncFunction false
       val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
@@ -62,7 +63,7 @@ class RakazoSystemFloatModule : Module() {
     /** Points a running window at a new screen URL, for capability rotation. */
     AsyncFunction("updateUrl") { url: String ->
       if (url.isBlank()) return@AsyncFunction
-      val context = appContext.reactContext
+      val context = appContext.reactContext ?: return@AsyncFunction
       val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_UPDATE_URL
         putExtra(RakazoSystemFloatService.EXTRA_URL, url)
@@ -76,7 +77,7 @@ class RakazoSystemFloatModule : Module() {
 
     /** Takes the window down, if it is up. */
     AsyncFunction("hide") {
-      val context = appContext.reactContext
+      val context = appContext.reactContext ?: return@AsyncFunction
       val intent = Intent(context, RakazoSystemFloatService::class.java).apply {
         action = RakazoSystemFloatService.ACTION_HIDE
       }
