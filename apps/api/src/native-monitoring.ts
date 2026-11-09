@@ -98,7 +98,7 @@ export function sanitizeNativeEvent(
     const memory = tags["renderer.memory_mb"];
     if (
       typeof route === "string" &&
-      /^(\/([a-z][a-z-]{0,23}|:id)?)+$|^[a-z-]{1,20}:$/.test(route) &&
+      /^(\/[a-z:-]{0,24})+$|^[a-z-]{1,20}:$|^unknown$/.test(route) &&
       route.length <= 100
     )
       safeTags["renderer.route"] = route;

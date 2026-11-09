@@ -51,10 +51,11 @@ describe("native error collector privacy boundary", () => {
     };
     expect(sanitizeNativeEvent({ tags }, "desktop").tags).toEqual({ surface: "desktop", ...tags });
     expect(sanitizeNativeEvent({ tags }, "mobile").tags).toEqual({ surface: "mobile" });
-    expect(sanitizeNativeEvent({ tags: { "renderer.route": "file:" } }, "desktop").tags).toEqual({
-      surface: "desktop",
-      "renderer.route": "file:",
-    });
+    for (const route of ["file:", "unknown", "/app/:id/:i"])
+      expect(sanitizeNativeEvent({ tags: { "renderer.route": route } }, "desktop").tags).toEqual({
+        surface: "desktop",
+        "renderer.route": route,
+      });
     expect(
       sanitizeNativeEvent(
         {
