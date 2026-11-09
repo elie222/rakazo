@@ -261,32 +261,38 @@ class Aborted extends Error {}
 const IDLE_TIMEOUT_MS = 10 * 60_000;
 
 /**
- * Reads the CLI's next stream-json event. The CLI prints something at least on every retry and
- * every streamed token, so a long silence means it is stuck.
+ * Waits for one exchange with the CLI: reading an event or writing a frame. The CLI prints
+ * something at least on every retry and every streamed token and reads its input as it comes, so
+ * a long silence means it is stuck.
  */
+function exchange<T>(step: Promise<T>, signal: AbortSignal | undefined, idleMs: number) {
+  let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
+  return Promise.race([
+    step,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("Claude Code stopped responding. Try again.")),
+        idleMs,
+      );
+      onAbort = () => reject(new Aborted("Request was aborted"));
+      if (signal?.aborted) onAbort();
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }),
+  ]).finally(() => {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  });
+}
+
+/** Reads the CLI's next stream-json event. */
 async function nextEvent(
   child: ClaudeCodeProcess,
   signal: AbortSignal | undefined,
   idleMs: number,
 ): Promise<Record<string, unknown> | undefined> {
   for (;;) {
-    let timer: NodeJS.Timeout | undefined;
-    let onAbort: (() => void) | undefined;
-    const line = await Promise.race([
-      child.nextLine(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Claude Code stopped responding. Try again.")),
-          idleMs,
-        );
-        onAbort = () => reject(new Aborted("Request was aborted"));
-        if (signal?.aborted) onAbort();
-        signal?.addEventListener("abort", onAbort, { once: true });
-      }),
-    ]).finally(() => {
-      clearTimeout(timer);
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
-    });
+    const line = await exchange(child.nextLine(), signal, idleMs);
     if (line === undefined) return undefined;
     if (!line.trim()) continue;
     try {
@@ -312,7 +318,10 @@ async function exitError(child: ClaudeCodeProcess, during: string): Promise<Erro
 /** Read-only helpers the CLI adds for any MCP server; Rakazo's server offers no resources. */
 const MCP_RESOURCE_TOOLS = new Set(["ListMcpResourcesTool", "ReadMcpResourceTool"]);
 
-/** The CLI must offer Rakazo's tools only: its own tools stay off and the tool server must load. */
+/**
+ * The CLI must offer Rakazo's tools only: its own tools stay off, and when the request has tools
+ * the tool server must be connected, so the model never answers without them.
+ */
 function checkInit(event: Record<string, unknown>, expectTools: boolean): void {
   if (event.subtype !== "init") return;
   const tools = Array.isArray(event.tools) ? event.tools : [];
@@ -326,7 +335,7 @@ function checkInit(event: Record<string, unknown>, expectTools: boolean): void {
   const server = (Array.isArray(event.mcp_servers) ? event.mcp_servers : []).find(
     (entry) => entry && typeof entry === "object" && entry.name === TOOL_SERVER,
   ) as { status?: unknown } | undefined;
-  if (expectTools && server?.status === "failed") {
+  if (expectTools && server?.status !== "connected") {
     throw new Error("Claude Code could not load Rakazo's tools.");
   }
 }
@@ -438,11 +447,13 @@ export function streamClaudeCode(
       const read = () => nextEvent(child!, options.signal, idleMs);
 
       for (const frame of frames) {
-        const sent = await child.write(`${JSON.stringify(frame)}\n`).then(
+        const write = child.write(`${JSON.stringify(frame)}\n`).then(
           () => true,
           () => false,
         );
-        if (!sent) throw await exitError(child, "while loading the conversation");
+        if (!(await exchange(write, options.signal, idleMs))) {
+          throw await exitError(child, "while loading the conversation");
+        }
         if (frame.shouldQuery !== false) continue;
         // A history turn is acknowledged with a result that used no model turn.
         for (;;) {

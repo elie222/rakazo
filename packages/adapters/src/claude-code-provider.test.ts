@@ -31,6 +31,7 @@ import {
 } from "./claude-code-provider.js";
 import { hostCredentialSource, resolveDeploymentModel } from "./deployment-model.js";
 import { listPiCatalog } from "./pi-models.js";
+import { normalizePiUsage } from "./pi-usage.js";
 
 const FAKE_CLI = fileURLToPath(new URL("./claude-code-fake-cli.test-support.mjs", import.meta.url));
 const MODEL_ID = "claude-sonnet-5";
@@ -153,6 +154,8 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       totalTokens: 26,
       cost: { total: 0 },
     });
+    // The plan pays, so the run records an unknown cost rather than a free one.
+    expect(normalizePiUsage(message.usage, model).costUsd).toBeNull();
     expect(events.map((event) => event.type)).toEqual([
       "start",
       "thinking_start",
@@ -408,11 +411,23 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     ["crash", /exit code 3/],
     ["old-version", /older than \d+\.\d+\.\d+\. Run `claude update`/],
     ["built-in-tools", /its own tools enabled: Bash, Read/],
+    ["no-tool-server", /could not load Rakazo's tools/],
   ])("fails clearly on %s", async (scenario, error) => {
     fakeClaude(scenario);
     const { message } = await run(hello);
     expect(message.stopReason).toBe("error");
     expect(message.errorMessage).toMatch(error);
+  });
+
+  it("gives up on a CLI that stops reading its input", async () => {
+    fakeClaude("deaf");
+    const long: Context = {
+      systemPrompt: "You are a helpful bot.",
+      messages: [{ role: "user", content: "x".repeat(4 * 1024 * 1024), timestamp: 1 }],
+    };
+    const message = await models.streamSimple(model, long, { timeoutMs: 500 }).result();
+    expect(message.stopReason).toBe("error");
+    expect(message.errorMessage).toMatch(/stopped responding/);
   });
 
   it("redacts secrets from the CLI's error output", async () => {
@@ -508,6 +523,14 @@ describe("claudeCodeAccessCheck", () => {
     expect(await claudeCodeAccessCheck({ prisma: prisma(2).client })()).toBe(
       CLAUDE_CODE_SHARED_REFUSAL,
     );
+  });
+
+  it("refuses at once when a second account appears", async () => {
+    const db = prisma(1);
+    const check = claudeCodeAccessCheck({ prisma: db.client });
+    expect(await check()).toBeUndefined();
+    db.count.mockResolvedValue(2);
+    expect(await check()).toBe(CLAUDE_CODE_SHARED_REFUSAL);
   });
 
   it("refuses a server that sells model usage", async () => {

@@ -52,8 +52,16 @@ async function chat() {
       scenario === "built-in-tools"
         ? ["Bash", "Read"]
         : tools.tools.map((tool) => `mcp__rakazo__${tool.name}`),
-    mcp_servers: tools.tools.length ? [{ name: "rakazo", status: "connected" }] : [],
+    mcp_servers:
+      tools.tools.length && scenario !== "no-tool-server"
+        ? [{ name: "rakazo", status: "connected" }]
+        : [],
   });
+  if (scenario === "deaf") {
+    // Stays up without reading its input, so a large write never completes.
+    setInterval(() => {}, 60_000);
+    return;
+  }
 
   const frames = [];
   for await (const line of createInterface({ input: process.stdin })) {

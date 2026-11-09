@@ -47,8 +47,8 @@ function claudeCodeModel(id: string, models: Models): Model<Api> {
     reasoning: card?.reasoning ?? true,
     ...(card?.thinkingLevelMap ? { thinkingLevelMap: card.thinkingLevelMap } : {}),
     input: card?.input ?? ["text", "image"],
-    // Usage counts against the operator's own Claude plan, so Rakazo prices nothing: zero
-    // rates make the usage cost unknown rather than free.
+    // Usage counts against the operator's own Claude plan, so Rakazo prices nothing: with no
+    // positive rate, normalizePiUsage records the cost as unknown (null) rather than free.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: card?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     maxTokens: card?.maxTokens ?? DEFAULT_MAX_TOKENS,
