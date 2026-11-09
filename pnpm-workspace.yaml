@@ -34,6 +34,10 @@ overrides:
   ws@>=8 <8.21.1: 8.22.0
   "@grpc/grpc-js@<1.14.5": 1.14.7
   "@opentelemetry/core@>=2 <2.8.0": 2.12.0
+  # Vitest takes the API as an optional peer, so each API version installs its own vitest build.
+  # A test dependency that loads the second build (such as @chat-adapter/tests) breaks the
+  # runner's expect: rejections then report an empty message.
+  "vitest>@opentelemetry/api": 1.10.0
   # Photon's telemetry still runs on the 2.x OpenTelemetry SDK, which needs api below 1.10.
   "@photon-ai/otel>@opentelemetry/api": 1.9.1
   "@electron/get>undici": 7.30.1
