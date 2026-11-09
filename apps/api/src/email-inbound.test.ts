@@ -27,6 +27,7 @@ function email(overrides: Partial<InboundEmail> = {}): InboundEmail {
     key: "<m-1@example.test>",
     from: { address: "owner@example.test", name: "Owner" },
     authenticated: true,
+    unauthenticatedReason: null,
     temporaryFailure: false,
     to: ["helper@bots.test"],
     cc: [],

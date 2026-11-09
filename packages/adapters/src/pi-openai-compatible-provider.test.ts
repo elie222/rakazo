@@ -286,6 +286,32 @@ describe("private model endpoints", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("sends loopback requests to the deployment's host address", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response("{}", { status: 200 });
+    });
+    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, OWNER);
+    try {
+      await safeFetch("http://localhost:11234/v1/models");
+      vi.stubEnv("RAKAZO_LOOPBACK_HOST", "host.docker.internal");
+      await safeFetch("http://127.0.0.1:11234/v1/models");
+      await safeFetch("http://10.0.0.5:8000/v1/models");
+      vi.stubEnv("RAKAZO_LOOPBACK_HOST", "169.254.169.254");
+      await expect(safeFetch("http://localhost:11234/v1/models")).rejects.toThrow(
+        "blocked metadata",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(urls).toEqual([
+      "http://localhost:11234/v1/models",
+      "http://host.docker.internal:11234/v1/models",
+      "http://10.0.0.5:8000/v1/models",
+    ]);
+  });
+
   it.each([undefined, true])(
     "refuses a public hostname that resolves to a private address (allowPrivate=%s)",
     async (allowPrivate) => {
@@ -925,6 +951,47 @@ describe("openai-compatible provider", () => {
       ),
     ).rejects.toThrow(/too large.*explicit model id/is);
     expect(cancelled).toBe(true);
+  });
+
+  it("says a refused model server is not running, and keeps other transport errors", async () => {
+    const down: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      });
+    };
+    const bothAddressesDown: typeof fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: new AggregateError([
+          Object.assign(new Error("connect ECONNREFUSED ::1"), { code: "ECONNREFUSED" }),
+          Object.assign(new Error("connect ECONNREFUSED 127.0.0.1"), { code: "ECONNREFUSED" }),
+        ]),
+      });
+    };
+    const redirected: typeof fetch = async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    };
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:11234/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://localhost:11234/v1" },
+        bothAddressesDown,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://10.0.0.5:8000/v1" }, down, undefined, OWNER),
+    ).rejects.toThrow("Check that it's running");
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:11234/v1" },
+        redirected,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow("fetch failed");
   });
 
   it("clarifies probe timeouts with hand-fill hint", async () => {
