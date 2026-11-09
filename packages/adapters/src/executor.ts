@@ -1561,9 +1561,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             savedComputerMode?.mode,
           );
           if (checkpointModelResolver && !turnCheckpoint)
-            throw new Error(
-              "Pinned computer mode checkpoint cannot resume with the available tools",
-            );
+            throw new Error("Pinned computer mode checkpoint cannot be restored");
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
