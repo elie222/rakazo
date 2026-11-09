@@ -282,7 +282,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
-  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReplyRef = useAutoSpeakReply({
     botId,
@@ -644,13 +643,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               )}
               botId={botId}
               onCall={onCall}
-              working={working}
-              sending={composer.sending || attachments.shareImporting}
+              sending={attachments.shareImporting}
               styles={styles}
               attachActions={attachments.attachActions}
               attachFrom={attachments.attachFrom}
               send={composer.send}
-              stop={composer.stop}
               startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
               onEmptied={composer.composerEmptied}

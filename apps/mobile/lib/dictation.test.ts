@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
-import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictation";
+import {
+  ENDPOINT_SILENCE_MS,
+  finishListening,
+  listen,
+  setSpeechRecognizer,
+  stop,
+} from "./dictation";
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
@@ -78,6 +84,18 @@ describe("mobile dictation", () => {
     };
     await listen({ lang: "es-CL", onFinal: vi.fn() });
     expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
+  });
+
+  it("keeps listening through pauses without an endpoint until finished", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: null });
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS * 5);
+    fake.hear("and eggs");
+    expect(onFinal).not.toHaveBeenCalled();
+    finishListening();
+    expect(onFinal).toHaveBeenCalledWith("buy milk and eggs");
+    expect(fake.abort).toHaveBeenCalled();
   });
 
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {

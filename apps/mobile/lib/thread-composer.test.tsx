@@ -221,6 +221,18 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+const dictation = vi.hoisted(() => ({
+  status: "idle",
+  toggle: vi.fn(),
+  cancel: vi.fn(),
+  onWords: (_text: string) => {},
+}));
+vi.mock("./composer-dictation", () => ({
+  useComposerDictation: (opts: { onWords: (text: string) => void }) => {
+    dictation.onWords = opts.onWords;
+    return dictation;
+  },
+}));
 
 const skill = {
   id: "skill-1",
@@ -238,13 +250,11 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   attachmentIds: [],
   botId: "bot-1",
   onCall: false,
-  working: false,
   sending: false,
   styles: { circleButton: {}, composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
-  stop: vi.fn(async () => {}),
   startVoiceCall: vi.fn(async () => {}),
   onSlashAction: vi.fn(),
 };
@@ -1183,6 +1193,23 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
     press("Call");
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
+  });
+
+  it("adds dictated words after the draft, and drops them once the draft is edited", () => {
+    type("Remind me");
+    press("Dictate");
+    expect(dictation.toggle).toHaveBeenCalledOnce();
+    act(() => dictation.onWords("to buy"));
+    act(() => dictation.onWords("to buy milk"));
+    expect(container.querySelector("input")!.value).toBe("Remind me to buy milk");
+    type("Remind me to buy milk!");
+    act(() => dictation.onWords("to buy milk and eggs"));
+    expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  it("hides the mic while a call has the microphone", () => {
+    render({ onCall: true });
+    expect(container.querySelector('button[aria-label="Dictate"]')).toBeNull();
   });
 
   it("focuses the input when its padding wrapper is pressed without adding an accessibility stop", () => {

@@ -1,5 +1,5 @@
 /**
- * On-device dictation for calls, mirroring the web store's endpoint mode: the recognizer
+ * On-device dictation for calls and the composer, mirroring the web store's endpoint mode: the recognizer
  * reports words, and only a quiet gap measured here ends a turn. The recognizer's own
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
@@ -51,6 +51,8 @@ type Session = {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
+  /** Quiet gap that ends the utterance; null waits for `finishListening`. */
+  endpointMs: number | null;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -123,13 +125,22 @@ export function stop(): void {
   }
 }
 
-/** Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it. */
+/** Ends the running session now and delivers what it heard. */
+export function finishListening(): void {
+  if (active) finish(active, "idle");
+}
+
+/**
+ * Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it.
+ * With `endpointMs: null` a pause never ends it; `finishListening` does.
+ */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
+  endpointMs?: number | null;
 }): Promise<void> {
   // A cancelled request can arrive after a newer session started; it must not stop that one.
   if (opts.signal?.aborted) return;
@@ -147,6 +158,7 @@ export async function listen(opts: {
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
+    endpointMs: opts.endpointMs === undefined ? ENDPOINT_SILENCE_MS : opts.endpointMs,
     subs: [],
     carried: "",
     heard: "",
@@ -199,7 +211,8 @@ function onResult(session: Session, event: ResultEvent): void {
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
   clearTimeout(session.silence);
-  session.silence = setTimeout(() => finish(session), ENDPOINT_SILENCE_MS);
+  if (session.endpointMs !== null)
+    session.silence = setTimeout(() => finish(session), session.endpointMs);
 }
 
 function onEnd(session: Session): void {

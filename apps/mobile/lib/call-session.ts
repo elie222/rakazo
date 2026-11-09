@@ -135,6 +135,8 @@ const METER_POLL_MS = 200;
 /** How long a starting recorder may go without a level (web reports one once it records). */
 const METER_START_MS = 1_000;
 const MAX_CLIP_MS = 30_000;
+/** A dictated message stays well inside the server's transcription size limit. */
+const MAX_DICTATION_MS = 5 * 60_000;
 
 let state: CallState | null = null;
 /** The session the call started in: a sign-out or an account or server change ends the call. */
@@ -869,17 +871,28 @@ async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Pr
 // late must not switch recording off under the next call's recorder.
 let recordingTurn: AbortSignal | undefined;
 
-/** Records one hands-free turn: wait for speech, stop once the speaker goes quiet. */
-async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
+/**
+ * Records one hands-free turn: wait for speech, stop once the speaker goes quiet. With `until`,
+ * a pause never ends the clip; `until` aborting does, keeping what was recorded.
+ */
+export async function recordClip(
+  signal: AbortSignal,
+  until?: AbortSignal,
+): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets, setAudioModeAsync } = await import("expo-audio");
   if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
   // The call can end while the microphone prompt is open.
   if (signal.aborted) return null;
   if (!permission.granted)
-    throw new ExpectedTurnFailure(t("Allow microphone access to call a bot."));
+    throw new ExpectedTurnFailure(
+      until
+        ? t("Allow microphone access to dictate.")
+        : t("Allow microphone access to call a bot."),
+    );
   let recorder: AudioRecorder | undefined;
   let heardSpeech = false;
+  const maxMs = until ? MAX_DICTATION_MS : MAX_CLIP_MS;
   try {
     recordingTurn = signal;
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -892,14 +905,23 @@ async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
     recorder.record();
     let quietMs = 0;
     let metered = false;
-    for (let elapsed = 0; elapsed < MAX_CLIP_MS && !signal.aborted; elapsed += METER_POLL_MS) {
+    for (
+      let elapsed = 0;
+      elapsed < maxMs && !signal.aborted && !until?.aborted;
+      elapsed += METER_POLL_MS
+    ) {
       await abortableDelay(METER_POLL_MS, signal);
-      if (signal.aborted) break;
+      if (signal.aborted || until?.aborted) break;
       // A missing level is unknown, not 0 dB: a stand-in that loud hears speech in
       // silence and holds the clip to the cap. A recorder may still be starting; once it
       // has reported a level, or never does, nothing is left to endpoint on, so stop.
+      // A dictated clip has `until` to end it, so it keeps recording and sends what it has.
       const level = recorder.getStatus().metering;
       if (level === undefined) {
+        if (until) {
+          heardSpeech = true;
+          continue;
+        }
         if (metered || elapsed + METER_POLL_MS >= METER_START_MS) break;
         continue;
       }
@@ -907,7 +929,7 @@ async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;
-      } else if (heardSpeech) {
+      } else if (heardSpeech && !until) {
         quietMs += METER_POLL_MS;
         if (quietMs >= SILENCE_HANG_MS) break;
       }
@@ -943,7 +965,7 @@ function deleteQuietly(uri: string | null): void {
 /** Matches the web client's cap on a transcription response. */
 const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 
-async function transcribeClip(
+export async function transcribeClip(
   clip: CallClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
