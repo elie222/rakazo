@@ -41,6 +41,7 @@ import {
 import {
   firstVisibleTranscriptRow,
   scheduleTranscriptSnapToEnd,
+  stillStickAfterRefresh,
   transcriptIsNearEnd,
 } from "../../lib/transcript-scroll";
 import type { useBrowserNotifications } from "./use-browser-notifications";
@@ -163,12 +164,7 @@ export function useThreadSync({
   ) {
     if (expandedHistoryThread.current !== snap.threadId) {
       const element = messageScroll.current;
-      const stillStick =
-        stickToEnd &&
-        (!scrollElement ||
-          !element ||
-          transcriptIsNearEnd(scrollElement) ||
-          transcriptIsNearEnd(element));
+      const stillStick = stillStickAfterRefresh(stickToEnd, scrollElement, element);
       snapTranscriptToEndAfterFrame(stillStick);
     }
   }

@@ -18,9 +18,12 @@ export function stillStickAfterRefresh(
   current: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight"> | null | undefined,
 ): boolean {
   if (!stickToEnd) return false;
-  if (current) return transcriptIsNearEnd(current);
-  if (!previous) return true;
-  return transcriptIsNearEnd(previous);
+  // missing scroller -> keep stick (same as inline !scrollElement / !element)
+  if (!previous || !current) return true;
+  // Remount-safe (#4007 / bot-switch): after threads.get the transcript node can
+  // remount scrolled up while the pre-refresh scroller was still near the end.
+  // Either near-end reading is enough to keep stick.
+  return transcriptIsNearEnd(previous) || transcriptIsNearEnd(current);
 }
 
 /** Tail snap after layout; reads the live scroller so a remounted transcript still sticks. */

@@ -39,19 +39,32 @@ describe("stillStickAfterRefresh", () => {
   const nearEnd = { scrollHeight: 1_000, scrollTop: 950, clientHeight: 500 };
   const scrolledUp = { scrollHeight: 1_000, scrollTop: 120, clientHeight: 500 };
 
-  it("prefers the current scroller when present", () => {
-    expect(stillStickAfterRefresh(true, nearEnd, scrolledUp)).toBe(false);
+  // #4007 remount-safe: bot-switch A->B->A can remount scrolled up while the
+  // pre-refresh scroller was still near the end — either near-end is enough.
+  it("keeps stick when the previous scroller was near end (bot-switch remount)", () => {
+    expect(stillStickAfterRefresh(true, nearEnd, scrolledUp)).toBe(true);
+  });
+
+  it("keeps stick when the current scroller is near end", () => {
     expect(stillStickAfterRefresh(true, scrolledUp, nearEnd)).toBe(true);
   });
 
-  it("falls back to the previous scroller only while the current one is missing", () => {
+  it("drops stick when both scrollers are scrolled up", () => {
+    expect(stillStickAfterRefresh(true, scrolledUp, scrolledUp)).toBe(false);
+  });
+
+  it("keeps stick when previous or current is missing", () => {
+    expect(stillStickAfterRefresh(true, null, nearEnd)).toBe(true);
     expect(stillStickAfterRefresh(true, nearEnd, null)).toBe(true);
-    expect(stillStickAfterRefresh(true, scrolledUp, null)).toBe(false);
     expect(stillStickAfterRefresh(true, null, null)).toBe(true);
+    expect(stillStickAfterRefresh(true, undefined, scrolledUp)).toBe(true);
+    expect(stillStickAfterRefresh(true, scrolledUp, undefined)).toBe(true);
   });
 
   it("never sticks when follow mode was already off", () => {
     expect(stillStickAfterRefresh(false, nearEnd, nearEnd)).toBe(false);
+    expect(stillStickAfterRefresh(false, nearEnd, scrolledUp)).toBe(false);
+    expect(stillStickAfterRefresh(false, null, null)).toBe(false);
   });
 });
 
