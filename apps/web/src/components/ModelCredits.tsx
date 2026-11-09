@@ -444,8 +444,13 @@ export function ModelCreditsSettings({
   client: RpcClient;
 }) {
   const { t, i18n } = useLingui();
+  const recurring =
+    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
+  // Only a live plan keeps a retired amount; a new checkout must pick an offered one.
   const [amount, setAmount] = useState<HeldCreditAmount>(
-    HeldCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
+    (recurring ? HeldCreditAmountSchema : ModelCreditAmountSchema)
+      .catch(DEFAULT_MONTHLY_CREDIT_AMOUNT)
+      .parse(status.monthlyAmountCents),
   );
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -475,8 +480,6 @@ export function ModelCreditsSettings({
       setPending(false);
     }
   }
-  const recurring =
-    status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
   const freeUntil = status.byokFreeUntil
     ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
     : null;
