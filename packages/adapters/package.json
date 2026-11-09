@@ -32,7 +32,7 @@
     "@composio/core": "0.18.1",
     "@darabonba/typescript": "1.0.6",
     "@daytona/sdk": "0.211.2",
-    "@e2b/desktop": "2.4.0",
+    "@e2b/desktop": "2.5.0",
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-telemetry": "1.5.0",
