@@ -953,7 +953,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries, or neither to list the newest of the given kinds (tool_work: replies that used tools). To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
+      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -975,7 +975,7 @@ export const builtinAgentTools: ConnectorTool[] = [
         botId: { type: "string" },
         kinds: {
           description:
-            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, bot text replies, or tool work.",
+            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, bot text replies, or replies that used tools (tool_work). Without query, lists the newest of them.",
           type: "array",
           items: {
             type: "string",
