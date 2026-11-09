@@ -265,6 +265,8 @@ export function describeToolActivity(
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
+  if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
+  if (toolName === "service_call") return `Using service: ${detail(record.service)}`;
   if (toolName === "skill_read")
     return record.file
       ? `Reading ${detail(record.file)} from ${detail(record.name)}`

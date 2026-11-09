@@ -10,8 +10,7 @@ import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBillingService } from "./billing.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** Records how many monthly checkouts are open at once and reads the database mid-call. */
 class SlowCheckoutEmulator extends BillingEmulator {

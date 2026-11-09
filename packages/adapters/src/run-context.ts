@@ -4,6 +4,7 @@ import type {
   ComputerRef,
   ConnectorTool,
   MediaGenerationProvider,
+  PaidServiceProvider,
   SandboxProvider,
   SemanticMemoryProvider,
   WebProvider,
@@ -35,6 +36,7 @@ import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
@@ -252,6 +254,7 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 export interface RunProviders {
   web: WebProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
+  paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;
   cloudAgent: ExecutorDeps["cloudAgent"];
 }
@@ -434,7 +437,8 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
 /**
  * Reserve the effect occurrences a saved turn already assigned, so its pending call claims the
  * same effect when it resumes. Returns undefined when the turn cannot resume with this run's
- * tools or transcript format.
+ * tools or transcript format. A pinned computer-mode turn whose pending tool is not offered
+ * right now throws PausedTurnToolsUnavailableError instead, so setup retries it quietly.
  */
 export function restoreTurnCheckpointEffects(
   ctx: RunContext,
@@ -460,19 +464,25 @@ export function restoreTurnCheckpointEffects(
         return undefined;
       available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
     }
-    if (
-      saved.messages.some(
-        (message) =>
-          message.role === "assistant" &&
-          message.content.some(
+    const missing = saved.messages.flatMap((message) =>
+      message.role === "assistant"
+        ? message.content.filter(
             (call) =>
               call.type === "toolCall" &&
               unresolved.has(call) &&
               (saved.executionMode === "sequential" || call.id === saved.pendingToolCallId) &&
               !available.has(call.name),
-          ),
-      )
-    ) {
+          )
+        : [],
+    );
+    if (missing.length) {
+      // A transition for the other mode is an invalid checkpoint, not a tool that went offline.
+      const transition = missing.some(
+        (call) =>
+          call.type === "toolCall" &&
+          (call.name === "enter_computer_mode" || call.name === "leave_computer_mode"),
+      );
+      if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;
     }
     if (saved.effectOccurrences) {
@@ -514,7 +524,8 @@ export function restoreTurnCheckpointEffects(
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
-  } catch {
+  } catch (error) {
+    if (error instanceof PausedTurnToolsUnavailableError) throw error;
     // Incompatible transcripts use the existing canonical approval replay.
     // Decryption happens earlier and must still fail closed.
     return undefined;

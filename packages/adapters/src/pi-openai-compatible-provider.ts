@@ -28,6 +28,7 @@ import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
   isPrivateOpenAiCompatibleHostname,
+  loopbackOnHost,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
@@ -251,7 +252,10 @@ export function createOpenAiCompatibleFetch(
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
-    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts);
+    const url = assertAllowedOpenAiCompatibleRequestUrl(
+      loopbackOnHost(assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts)).href,
+      opts,
+    );
     const customHeaders = opts?.headers === undefined ? undefined : parseModelHeaders(opts.headers);
     if (requestCarriesAuthorization(input, init) || Object.keys(customHeaders ?? {}).length > 0) {
       assertHttpsForKeyedOpenAiCompatibleUrl(
@@ -563,6 +567,20 @@ export async function verifyOpenAiCompatibleApiKey(
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
+const CONNECTION_REFUSED_MESSAGE = "Could not reach the model server. Check that it's running.";
+
+/** undici keeps the refusal in `cause`, or in each address's error of a happy-eyeballs AggregateError. */
+function connectionRefused(error: unknown, depth = 0): boolean {
+  if (depth > 4 || !(error instanceof Error)) return false;
+  if ((error as { code?: unknown }).code === "ECONNREFUSED") return true;
+  if (
+    error instanceof AggregateError &&
+    error.errors.some((inner) => connectionRefused(inner, depth + 1))
+  )
+    return true;
+  return connectionRefused(error.cause, depth + 1);
+}
+
 export async function probeOpenAiCompatibleModels(
   input: {
     baseUrl: string;
@@ -627,6 +645,9 @@ export async function probeOpenAiCompatibleModels(
       // Caller-cancelled probes keep the original AbortError; the 5s probe budget gets a hint.
       if (signal?.aborted) throw error;
       throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+    }
+    if (error instanceof TypeError && connectionRefused(error)) {
+      throw new Error(CONNECTION_REFUSED_MESSAGE);
     }
     throw error;
   } finally {

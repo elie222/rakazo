@@ -3,12 +3,12 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
-import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
+import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
 
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
- * The server is keyless, but `resolve` returns a placeholder because Models
- * hides providers with no resolvable auth.
+ * Without RAKAZO_LOCAL_MODELS_API_KEY the server is keyless, but `resolve` returns
+ * a placeholder because Models hides providers with no resolvable auth.
  */
 export { LOCAL_PROVIDER_ID };
 
@@ -85,7 +85,7 @@ export function localProvider(): Provider | undefined {
       apiKey: {
         name: "Local model server",
         resolve: async () => ({
-          auth: { apiKey: "local", baseUrl: localBaseUrl() },
+          auth: { apiKey: localModelsApiKey() ?? "local", baseUrl: localBaseUrl() },
           source: "local model server",
         }),
       },

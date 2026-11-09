@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { cancelResponseBody, readBoundedJsonResponse } from "@rakazo/core";
 
 const MAX_RESPONSE_BYTES = 4_096;
@@ -76,6 +77,7 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
     });
     for (let attempt = 0; ; attempt++) {
       let retry = true;
+      let recipientRejected = false;
       let failure = "Resend email request failed";
       try {
         const response = await this.request("https://api.resend.com/emails", {
@@ -102,13 +104,16 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
           failure = "Resend returned an invalid email response";
         } else {
           retry = response.status === 429 || response.status >= 500;
-          failure = `Resend email request failed (HTTP ${response.status}${await errorDetail(response)})`;
+          const error = await errorDetail(response);
+          recipientRejected = error.recipientRejected;
+          failure = `Resend email request failed (HTTP ${response.status}${error.detail})`;
         }
       } catch {
         // A lost response may already have sent the email; the same key makes retry safe.
       }
       if (signal.aborted) throw new Error("Resend email delivery timed out");
       const delay = this.retryDelaysMs[attempt];
+      if (recipientRejected) throw new EmailRecipientRejectedError(failure);
       if (!retry || delay === undefined) throw new Error(failure);
       try {
         await sleep(delay, undefined, { signal });
@@ -119,17 +124,26 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
   }
 }
 
-/** Resend's error name and message, without addresses: the message can quote a recipient. */
-async function errorDetail(response: Response): Promise<string> {
+/**
+ * Resend's error name and message, without addresses: the message can quote a recipient.
+ * A validation error naming a recipient field means the address itself was refused.
+ */
+async function errorDetail(
+  response: Response,
+): Promise<{ detail: string; recipientRejected: boolean }> {
   const body: unknown = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES).catch(() => {
     cancelResponseBody(response);
     return undefined;
   });
-  if (typeof body !== "object" || body === null) return "";
+  if (typeof body !== "object" || body === null) return { detail: "", recipientRejected: false };
   const { name, message } = body as { name?: unknown; message?: unknown };
-  const parts = [
-    typeof name === "string" && /^[a-z_]{1,64}$/.test(name) ? name : "",
-    typeof message === "string" ? message.replace(/\S+@\S+/g, "<address>").slice(0, 200) : "",
-  ].filter(Boolean);
-  return parts.length > 0 ? `: ${parts.join(": ")}` : "";
+  const errorName = typeof name === "string" && /^[a-z_]{1,64}$/.test(name) ? name : "";
+  const text =
+    typeof message === "string" ? message.replace(/\S+@\S+/g, "<address>").slice(0, 200) : "";
+  const parts = [errorName, text].filter(Boolean);
+  return {
+    detail: parts.length > 0 ? `: ${parts.join(": ")}` : "",
+    recipientRejected:
+      response.status < 500 && errorName === "validation_error" && /`(to|cc)`/.test(text),
+  };
 }

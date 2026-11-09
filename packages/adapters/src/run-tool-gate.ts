@@ -76,6 +76,7 @@ import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
+import { callPaidService } from "./run-tools-integrations.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
@@ -755,6 +756,16 @@ async function settleToolUncertainty(
     const recovered = await callMediaTool(ctx, call, true);
     if (
       recovered !== undefined &&
+      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+    )
+      return recovered;
+  }
+  if (call.name === "service_call") {
+    const recovered = await callPaidService(ctx, call).catch(() => undefined);
+    // Only an answer the provider settled carries a cost; anything else stays uncertain.
+    if (
+      recovered &&
+      "cost_usd" in recovered &&
       (await completeEffect(ctx.deps, effectId, "executing", recovered))
     )
       return recovered;
