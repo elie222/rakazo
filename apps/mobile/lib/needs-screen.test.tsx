@@ -71,6 +71,7 @@ vi.mock("./query", async () => {
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   useFocusEffect: () => {},
+  useIsFocused: () => true,
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock("react-native", () => ({
@@ -89,7 +90,9 @@ vi.mock("../components/native-action-button", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ mutedForeground: "#666" }) }));
-vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./api", () => ({ rpc: vi.fn(), selectedSpaceId: () => "space-1" }));
+vi.mock("./api-server", () => ({ subscribeConfirmedSpaceSwitch: () => () => {} }));
+vi.mock("./foreground-poll", () => ({ useForegroundPoll: () => {} }));
 vi.mock("./native", () => ({
   native: { label: "#000", page: "#fff", secondaryLabel: "#666", tertiaryLabel: "#999" },
   useThemedStyles: (factory: () => object) => factory(),

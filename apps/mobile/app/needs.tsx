@@ -1,7 +1,7 @@
 import type { AttentionItem } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { formatActivityRelativeTime } from "../lib/activity";
-import { rpc } from "../lib/api";
+import { rpc, selectedSpaceId } from "../lib/api";
+import { subscribeConfirmedSpaceSwitch } from "../lib/api-server";
 import { mobileTokens } from "../lib/appearance";
 import {
   attentionDetail,
@@ -24,8 +25,10 @@ import {
   attentionSections,
   attentionTitle,
 } from "../lib/attention";
+import { useForegroundPoll } from "../lib/foreground-poll";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { ATTENTION_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { queryClient, rpcQuery } from "../lib/query";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -33,11 +36,19 @@ import { errorText } from "../lib/user-error";
 export default function NeedsYouScreen() {
   const { t } = useI18n();
   const router = useRouter();
+  const isFocused = useIsFocused();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
   const insets = useSafeAreaInsets();
   const tokens = mobileTokens();
-  const attentionQuery = rpcQuery("attention/list");
+  // The thread route can switch Spaces under a mounted screen; follow it instead of
+  // refetching the Space the screen was first painted in.
+  const spaceId = useSyncExternalStore(
+    subscribeConfirmedSpaceSwitch,
+    selectedSpaceId,
+    selectedSpaceId,
+  );
+  const attentionQuery = rpcQuery("attention/list", undefined, spaceId ?? undefined);
   const query = useQuery(attentionQuery, queryClient);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,6 +60,8 @@ export default function NeedsYouScreen() {
       void query.refetch();
     }, [query.refetch]),
   );
+
+  useForegroundPoll(() => query.refetch(), ATTENTION_POLL_INTERVAL_MS, isFocused);
 
   async function answer(item: AttentionItem, actionId: string, answerValue: string) {
     if (!item.runId || !item.messageId || busy) return;

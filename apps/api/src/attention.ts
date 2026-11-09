@@ -116,6 +116,7 @@ export async function listAttentionItems(
         bot: { archivedAt: null },
         // A background run that waits on a person is conversation, whatever started it.
         status: { in: ["waiting_input", "waiting_takeover"] },
+        thread: { OR: [{ groupId: null }, { group: { archivedAt: null } }] },
       },
       select: {
         id: true,
@@ -143,6 +144,7 @@ export async function listAttentionItems(
         completedAt: { gte: new Date(now.getTime() - FAILED_WINDOW_MS) },
         thread: {
           reads: { some: { userId: actor.userId, spaceId: actor.spaceId, unread: true } },
+          OR: [{ groupId: null }, { group: { archivedAt: null } }],
         },
       },
       select: {

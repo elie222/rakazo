@@ -253,6 +253,50 @@ describeAttention("attention.list", () => {
     expect(routine?.groupName).toBe("Crew");
     expect(routine?.threadId).toBe(groupThread.id);
   });
+
+  it("hides failed work from an archived group", async () => {
+    const cookie = await signup(app, `attention-archive-${stamp}@rakazo.test`, "Archive User");
+    const bot = await createBot(app, cookie, "Archived Group Bot");
+    const botThread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const group = await prisma.chatGroup.create({
+      data: { spaceId: botThread.spaceId, userId: botThread.userId, name: "Old Crew" },
+    });
+    await prisma.chatGroupMember.create({ data: { groupId: group.id, botId: bot.id } });
+    const groupThread = await prisma.thread.create({
+      data: { spaceId: botThread.spaceId, userId: botThread.userId, groupId: group.id },
+    });
+    const task = await prisma.task.create({
+      data: {
+        spaceId: botThread.spaceId,
+        userId: botThread.userId,
+        botId: bot.id,
+        threadId: groupThread.id,
+        prompt: "fail in the group",
+        status: "failed",
+      },
+    });
+    await prisma.run.create({
+      data: {
+        spaceId: botThread.spaceId,
+        userId: botThread.userId,
+        botId: bot.id,
+        threadId: groupThread.id,
+        taskId: task.id,
+        status: "failed",
+        trigger: "user",
+        completedAt: new Date(),
+      },
+    });
+    await markUnread(prisma, groupThread.id);
+    await prisma.chatGroup.update({
+      where: { id: group.id },
+      data: { archivedAt: new Date() },
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+
+    expect(result.items.some((item) => item.kind === "failed")).toBe(false);
+  });
 });
 
 async function createBot(app: App, cookie: string, name: string) {
