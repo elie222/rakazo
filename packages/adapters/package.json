@@ -77,13 +77,13 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@chat-adapter/tests": "4.41.1",
+    "@chat-adapter/tests": "4.44.0",
     "@types/d3-dsv": "3.0.7",
     "@types/jsdom": "30.0.0",
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }
