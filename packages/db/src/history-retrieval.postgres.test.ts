@@ -213,6 +213,34 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(results.messages.map((message) => message.messageId)).toEqual(["steps-only-reply"]);
     await pool.query(`DELETE FROM messages WHERE id = 'steps-only-reply'`);
   });
+  it("lists only replies that used tools when browsing tool work without a keyword", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('browsed-steps', 'synthetic-thread', 10003, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+          { kind: "text", text: "Sites show dark now." },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["browsed-steps"]);
+    expect(results.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    // An empty search here points at that earlier tool work.
+    const empty = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(empty.messages).toEqual([]);
+    expect(empty.note).toContain('kinds ["tool_work"]');
+    const emptyToolWork = await searchHistory(prisma, scope, {
+      query: "quillfeather zebra",
+      kinds: ["tool_work"],
+    });
+    expect(emptyToolWork.messages).toEqual([]);
+    expect(emptyToolWork.note).toContain('kinds ["tool_work"] and no query');
+    await pool.query(`DELETE FROM messages WHERE id = 'browsed-steps'`);
+    const plain = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(plain.note).not.toContain("tool_work");
+  });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
       '2026-01-01T00:00:00Z'::timestamptz,

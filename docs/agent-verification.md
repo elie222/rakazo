@@ -514,7 +514,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v3` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v5` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong
@@ -530,18 +530,21 @@ and are not counted. The offline protocol fixture checks the seeding and
 the grading path for both a read and an unread lease.
 
 The `recall-tool-steps-*` cases check that a bot remembers work it did with
-tools. Early in a chat the user asks for dark web pages, and the bot installs an
-extension from the command line. The extension's name appears only in a note the
-bot wrote before a tool step, and the reply text says just "Done.". Unrelated,
-varied small talk follows. The bot is then asked whether it installed an
-extension, which one, and how. The stored steps record that each call
-succeeded. The `-intent` variant stores the same steps without outcomes, as
-older messages have them. The `-paraphrased` variant's notes share no
-distinctive word with the question. In the `-absent` controls the earlier tool
-reply only checked disk space. The `-compacted` cases use 100 messages and run
-the product's own compaction job before the question, so the tool reply
-survives only through the summary, which the report saves. Compaction runs only
-with the `current` context strategy.
+tools. Early in a chat the user, who will get screenshots of docs from the bot,
+asks it to make pages in its browser dark, and the bot installs an extension from
+the command line, opens a page and takes a screenshot. The extension's name
+appears only in a note the bot wrote before a tool step. The reply reports the
+result ("Done. Pages in my browser show dark now, so screenshots will too."); the
+`-bare` variant keeps the reply issue #3683 found, "Done." alone. The chat is
+dated earlier the same day. Unrelated, varied small talk follows. The bot is then
+asked whether it installed an extension, which one, and how. The stored steps
+record that each call succeeded. The `-intent` variant stores the same steps
+without outcomes, as older messages have them. The `-paraphrased` variant's notes
+share no distinctive word with the question. In the `-absent` controls the
+earlier tool reply only checked disk space. The `-compacted` cases use 100
+messages and run the product's own compaction job before the question, so the
+tool reply survives only through the summary, which the report saves.
+Compaction runs only with the `current` context strategy.
 
 The `recall-ordinary-*` cases reuse the 24-message chat for everyday turns: a
 sign-off, a question answered two messages earlier, a general knowledge
@@ -549,34 +552,53 @@ question, eye-strain tips close to the install's topic, and "did I ever tell
 you my sister's name?" (never). A deterministic check fails a history lookup on
 the first three.
 
-The `recall-meaning-v3` judge fails a reply laid out as a step log, a reply to
-an everyday turn that casts unprompted doubt on, corrects or retracts the bot's
-earlier work, and a control reply that says the bot never used its computer.
-The install rubric accepts a proportionate hedge only for the `-intent`
-variant. Each trial also records, without deciding it, whether the bot used a
+The `recall-meaning-v5` judge fails a reply laid out as a step log, any tool-work
+reply that says the bot never used tools or its computer, a reply to an everyday
+turn that casts unprompted doubt on, corrects or retracts the bot's earlier work
+(including saying it did not confirm or check it), and an install answer that
+doubts the install happened. After a fresh check, a hedge about the extension's
+current state ("its files are there, but I can't tell whether it's enabled") is
+not doubt. Each trial also records, without deciding it, whether the bot used a
 tool other than history lookups (re-verification), whether it looked back, and
-two judged behaviours: unprompted doubt and false confession (claiming it never
-used tools, never did the work, or made a mistake it did not make). An
-ungraded behaviour is recorded as unknown. The offline sandbox refuses shell
-commands; in these cases no outcome needs one, so a failure after the bot chose
-to run one counts as the agent's, not the harness's.
+four judged behaviours: unprompted doubt; false confession (claiming it never
+used tools, never did or checked the work its record shows, had not changed
+anything, or made a mistake it did not make, including calling its "Done"
+premature); placing the work in a different chat; and overclaiming. The overclaim
+judge sees the earlier exchange as the bot can read it back (times, steps and
+text) and every check the bot made in the graded reply with what it returned, so
+a version read just now is not an overclaim, and a denial is never one. An
+ungraded behaviour is recorded as unknown.
 
-A November 2026 run with ten trials per case compared main, the change before
-outcomes were recorded, and the change with outcomes, using a small model as bot
-and judge, plus a larger bot under `retrieval` on main and the final change.
-Under `retrieval`, the small model recalled the install in nine of ten trials
-with outcomes, against none on main and none without outcomes (where it said
-it could not confirm the install). The larger bot went from none to seven. Both
-models searched for "extension" or "install"; when the notes used other words,
-or the earlier work was the disk check, the search missed and both models
-mostly said they had never used the computer at all, on every version.
-Everyday turns stayed clean under `retrieval`. Under `current`, outcomes did not
-stop the small model doubting its own work: it still said it could not confirm
-the install, and added a correction to every sign-off. On main those
-corrections said it had never changed anything. With outcomes, after
-compaction it named the install in six of ten, against none before. Recalling
-the install under `retrieval` takes about two extra model calls, roughly
-doubling that answer's cost; everyday turns' prompts grew by under one percent.
+These cases give the eval computer a script (`computer` on the case). Each
+command in a plain list (`;`, `&&`, `||`) gets the answer of the first scripted
+check it matches, with that check's exit code and stderr, and `echo` prints its
+words; one unscripted command makes the whole list unavailable, which is recorded
+as a harness issue. Loops and inline scripts get the answers to the checks they
+mention, in order. The install computer has a Chromium profile with the
+extension under a 32-letter id and a `10.7.1_0` version folder, enabled in
+`Preferences`; the control has none. Both run Chromium (`ps`, `--version`), keep
+no shell history, report 18 GB free, and show a browser window whose page is dark,
+or light in the controls.
+
+A November 2026 run compared the change that first replayed steps with the
+change that added listing by kind and the empty-search note, with the same eval
+code. Haiku 5.5 judged every run and agreed with all calibration labels. A
+held-out case, where the bot earlier set its computer's time zone, uses wording
+the product text was never tuned on. Under `retrieval`, replaying steps alone
+recalled the paraphrased install, the disk-check control and the held-out change
+in no trial; with listing by kind a small bot recalled them in 13 of 20, 18 of 20
+and 20 of 20, and a larger bot in all 10 of each. The small bot still answered
+without looking back in 16 of 100 tool-step trials (7 before), and then said it
+had never used its computer. Wording in the tool's summary or its `scope` about
+browsing or about what `this_chat` covers raised that to about 40 of 100, so
+neither is there. A reply header saying replayed results stand, and an
+instruction to say what tool work found, were tried and left out: the header
+did not help under `current` and the instruction could not be measured here.
+Under `current` the bot never searches, and both versions doubted their earlier
+work on everyday turns about equally (small bot 66 and 76 of 100, larger bot 34
+and 40). Recalling earlier tool work under `retrieval` takes one or two extra
+model calls, about doubling that answer's cost; everyday prompts grew by under
+one percent.
 
 ### Long conversation and cost evals
 

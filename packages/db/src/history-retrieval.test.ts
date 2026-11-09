@@ -49,15 +49,17 @@ describe("local history retrieval", () => {
         messageId: "message-4",
         ...(crossChat ? { threadId: "peer-thread" } : {}),
       });
-      expect(mock.$queryRaw).toHaveBeenCalledTimes(4);
-      for (let call = 0; call < 4; call++) {
+      // The empty search also checks this chat (call 1) for earlier tool work, so that check
+      // never takes the cross-chat path.
+      expect(mock.$queryRaw).toHaveBeenCalledTimes(5);
+      for (let call = 0; call < 5; call++) {
         const query = sql(mock, call);
         expect(query.sql).toContain("NOT EXISTS (");
         expect(query.sql).toContain("FROM steering_messages pending");
         expect(query.sql).toContain('pending."messageId" = m.id AND pending."botId" =');
         expect(query.sql).toContain('pending."runId" IS NULL');
         expect(query.values).toContain(scope.botId);
-        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat);
+        expect(query.sql.includes('COALESCE(t."botId",')).toBe(crossChat && call !== 1);
       }
     },
   );
@@ -82,6 +84,7 @@ describe("local history retrieval", () => {
     mock.$queryRaw
       .mockResolvedValueOnce([row(7), row(6), row(5), row(4), row(3), row(2)])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]) // no earlier tool work
       .mockResolvedValueOnce([row(2), row(1, "Aurora original label ORBIT-731")]);
     const historicalScope = { ...scope, searchBeforeSeq: 50 };
     const broad = await searchHistory(prisma, historicalScope, {
@@ -114,8 +117,8 @@ describe("local history retrieval", () => {
     const older = await searchHistory(prisma, historicalScope, broad.nextSearch!);
     expect(older.messages.some((message) => message.text.includes("ORBIT-731"))).toBe(true);
     expect(older.coverage.status).toBe("exhausted");
-    expect(sql(mock, 2).values).toContain(3);
-    expect(mock.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(sql(mock, 3).values).toContain(3);
+    expect(mock.$queryRaw).toHaveBeenCalledTimes(4);
   });
   it("bounds Unicode search pages without discarding the continuation or original offsets", async () => {
     const { mock, prisma } = db();
@@ -393,6 +396,83 @@ describe("local history retrieval", () => {
     const result = await searchHistory(prisma, scope, { query: "quillfeather" });
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]!.text).toContain("reply made]\n- Shell: Installing Quillfeather.");
+  });
+  it("lists earlier replies that used tools by kind, without a keyword", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([
+      {
+        ...row(3, ""),
+        indexed: true,
+        blocks: [
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+          { kind: "text", text: "Done." },
+        ],
+      },
+    ]);
+    const result = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
+    expect(result.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    expect(result).not.toHaveProperty("note");
+    const sql = (mock.$queryRaw.mock.calls[0]![0] as Prisma.Sql).sql;
+    expect(sql).not.toContain("to_tsvector");
+    expect(sql).toContain('@.kind == "steps"');
+    await expect(searchHistory(prisma, scope, {})).rejects.toThrow();
+  });
+  it("says an empty search ruled out only the words it searched", async () => {
+    const { mock, prisma } = db();
+    mock.$queryRaw.mockResolvedValue([]);
+    const plain = await searchHistory(prisma, scope, { query: "sister" });
+    expect(plain.messages).toEqual([]);
+    expect(plain.coverage.status).toBe("exhausted");
+    expect(plain.note).toBe(
+      "No message matched these words, which does not show it never happened.",
+    );
+    // Only where earlier replies used tools does it point at listing them.
+    mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
+    const withTools = await searchHistory(prisma, scope, { query: "extension install" });
+    expect(withTools.note).toContain('list them with kinds ["tool_work"] and no query');
+    expect(sql(mock, 3).sql).toContain('@.kind == "steps"');
+    // A keyword search already limited to tool work still offers listing it without the keyword.
+    mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
+    const toolWorkOnly = await searchHistory(prisma, scope, {
+      query: "extension",
+      kinds: ["tool_work"],
+    });
+    expect(toolWorkOnly.note).toContain('kinds ["tool_work"] and no query');
+    expect(toolWorkOnly.note).not.toContain("my_chats");
+    // After an all-chats search, the hint keeps that scope, since kinds alone searches this chat.
+    mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
+    const allChats = await searchHistory(
+      prisma,
+      { ...scope, allowMyChats: true },
+      { query: "extension", scope: "my_chats" },
+    );
+    expect(allChats.note).toContain('scope "my_chats", kinds ["tool_work"] and no query');
+    // A continued search that ends empty says only that nothing more matched.
+    mock.$queryRaw.mockReset().mockResolvedValue([]);
+    const continued = await searchHistory(prisma, scope, { query: "extension", beforeSeq: 40 });
+    expect(continued.note).toBe("No further matches for these words.");
+    // A search narrowed by date offers no hint that would take the bot outside that range.
+    mock.$queryRaw.mockReset().mockResolvedValue([]);
+    const dated = await searchHistory(prisma, scope, { query: "extension", after: "2026-01-01" });
+    expect(dated.note).toBe(
+      "No message matched these words, which does not show it never happened.",
+    );
+  });
+  it("does not say nothing matched when the scan stopped before the end", async () => {
+    const { mock, prisma } = db();
+    // Indexed candidates that fail the exact word check keep the scan going until its budget ends.
+    mock.$queryRaw.mockImplementation(async () =>
+      Array.from({ length: 6 }, (_, index) => ({ ...row(500 - index, "other"), indexed: true })),
+    );
+    const result = await searchHistory(prisma, scope, { query: "quillfeather" });
+    expect(result.messages).toEqual([]);
+    expect(result.coverage.status).toBe("partial");
+    expect(result.nextSearch).not.toBeNull();
+    expect(result.note).toContain(
+      "No match in the part searched so far; nextSearch continues the search.",
+    );
+    // An unfinished search still points at listing earlier tool work without the keyword.
+    expect(result.note).toContain('kinds ["tool_work"] and no query');
   });
   it("validates dates, query size and pagination before accessing the database", async () => {
     const { mock, prisma } = db();
