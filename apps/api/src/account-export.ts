@@ -94,7 +94,7 @@ export function zipStream(
           }
           if (failure) throw failure;
         } catch (error) {
-          if (!cancelled && !options.signal?.aborted) {
+          if (error === failure || (!cancelled && !options.signal?.aborted)) {
             getLogger().error("account.export.failed", error);
             throw error;
           }
