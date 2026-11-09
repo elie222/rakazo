@@ -2024,6 +2024,14 @@ model UsageRecord {
   pricingVersion     String?
   pricingSnapshot    Json?
   usageSource        String?
+  /// Why a call produced no usable usage, when the provider said so.
+  failureReason      String?
+  /// Voice transcription only: audio length in seconds, when the provider reports it.
+  audioSeconds       Float?
+  /// Voice transcription only: exact audio size in bytes.
+  audioBytes         Int?
+  /// Voice transcription only: transcribed text length in characters.
+  transcribedChars   Int?
   callId             String?  @unique
   operationId        String?
   operationKind      String   @default("answer")

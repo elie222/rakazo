@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
@@ -33,6 +34,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  recordUsage,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,
@@ -557,16 +559,75 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return provider.transcribe(
-    {
-      audio: input.audio,
-      mimeType: input.mimeType || "audio/webm",
-      language: input.language,
-      apiKey: loaded.apiKey,
-      signal: input.signal,
-    },
-    voiceContext(actor, input.signal),
-  );
+  const owner = { spaceId: actor.spaceId, userId: actor.userId };
+  const audioBytes = input.audio.byteLength;
+  try {
+    const result = await provider.transcribe(
+      {
+        audio: input.audio,
+        mimeType: input.mimeType || "audio/webm",
+        language: input.language,
+        apiKey: loaded.apiKey,
+        signal: input.signal,
+      },
+      voiceContext(actor, input.signal),
+    );
+    await recordTranscriptionUsage(deps, owner, loaded.cred.provider, { audioBytes }, result);
+    return result;
+  } catch (error) {
+    await recordTranscriptionUsage(deps, owner, loaded.cred.provider, { audioBytes }, null, error);
+    throw error;
+  }
+}
+
+/**
+ * One usage row per transcription call: audio size and transcript volume are
+ * the billable measurements, so token counts stay null and the row never
+ * mixes into the dialogue token totals. Recording must never break delivery.
+ */
+async function recordTranscriptionUsage(
+  deps: VoiceDeps,
+  owner: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  input: { audioBytes: number },
+  result: { text: string; durationSeconds?: number; model?: string } | null,
+  failure?: unknown,
+) {
+  try {
+    await recordUsage(
+      deps.prisma,
+      {
+        type: "usage",
+        provider,
+        model: result?.model ?? "transcribe",
+        callId: randomUUID(),
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        usageSource: "transcription",
+        operationKind: "transcription",
+        ...(result
+          ? {
+              audioSeconds: result.durationSeconds ?? null,
+              audioBytes: input.audioBytes,
+              transcribedChars: result.text.length,
+            }
+          : {
+              audioBytes: input.audioBytes,
+              failureReason:
+                failure instanceof Error
+                  ? failure.message.slice(0, 500)
+                  : String(failure).slice(0, 500),
+            }),
+      },
+      { spaceId: owner.spaceId, userId: owner.userId, operationKind: "transcription" },
+    );
+  } catch (error) {
+    getLogger().warn("voice transcription usage could not be recorded", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**
@@ -585,11 +646,18 @@ export async function transcribeInboundVoice(
   if (!loaded) return null;
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await provider.transcribe(
-    { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
-    voiceContext(owner, input.signal),
-  );
-  return text;
+  const audioBytes = input.audio.byteLength;
+  try {
+    const result = await provider.transcribe(
+      { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
+      voiceContext(owner, input.signal),
+    );
+    await recordTranscriptionUsage(deps, owner, loaded.cred.provider, { audioBytes }, result);
+    return result.text;
+  } catch (error) {
+    await recordTranscriptionUsage(deps, owner, loaded.cred.provider, { audioBytes }, null, error);
+    throw error;
+  }
 }
 
 export function mountVoiceHttpRoutes(

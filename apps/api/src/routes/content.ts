@@ -19,6 +19,8 @@ import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import { listSpaceRuns } from "../runs.js";
 import { querySpaceSearch } from "../search.js";
 import { loadAllMessages } from "../thread-message-pages.js";
+import type { UsageRowLike, UsageSumCount } from "../usage-summary.js";
+import { usageTotals, usageTotalsFromRows } from "../usage-summary.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
@@ -135,6 +137,10 @@ export function contentRoutes(ctx: RouterContext) {
           costSource: row.costSource,
           pricingVersion: row.pricingVersion,
           usageSource: row.usageSource,
+          failureReason: row.failureReason,
+          audioSeconds: row.audioSeconds,
+          audioBytes: row.audioBytes,
+          transcribedChars: row.transcribedChars,
           callId: row.callId,
           operationId: row.operationId,
           operationKind: row.operationKind as UsageOperationKind,
@@ -160,8 +166,21 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, botGroups, runGroups, dayRows] = await Promise.all([
+        // The counted aggregates exclude transcription calls, which have no
+        // tokens by design; they feed only the unknown-usage counts.
+        const countedWhere = { ...where, operationKind: { not: "transcription" } };
+        const [
+          result,
+          countedResult,
+          modelGroups,
+          countedModelGroups,
+          botGroups,
+          countedBotGroups,
+          runGroups,
+          dayRows,
+        ] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
+          deps.prisma.usageRecord.aggregate({ where: countedWhere, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
             where,
@@ -169,8 +188,20 @@ export function contentRoutes(ctx: RouterContext) {
             _count: counts,
           }),
           deps.prisma.usageRecord.groupBy({
+            by: ["provider", "model"],
+            where: countedWhere,
+            _sum: sums,
+            _count: counts,
+          }),
+          deps.prisma.usageRecord.groupBy({
             by: ["botId"],
             where,
+            _sum: sums,
+            _count: counts,
+          }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["botId"],
+            where: countedWhere,
             _sum: sums,
             _count: counts,
           }),
@@ -188,27 +219,25 @@ export function contentRoutes(ctx: RouterContext) {
               outputTokens: true,
               totalTokens: true,
               costUsd: true,
+              operationKind: true,
             },
             orderBy: { createdAt: "asc" },
           }),
         ]);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
-        // A total that skips rows without a count would understate spend, so it reads as unknown.
-        const completeSums = (group: {
-          _sum: Record<keyof typeof sums, number | null>;
-          _count: Record<keyof typeof counts, number>;
-        }) => {
-          const complete = (field: keyof typeof sums) =>
-            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
-          return {
-            inputTokens: complete("inputTokens"),
-            outputTokens: complete("outputTokens"),
-            totalTokens: complete("totalTokens"),
-            costUsd: complete("costUsd"),
-            modelCalls: group._count._all,
-          };
+        // A group with only transcription calls has no counted aggregate; its
+        // unknown counts are zero, not missing.
+        const emptyCounted: UsageSumCount = {
+          _sum: { inputTokens: null, outputTokens: null, totalTokens: null, costUsd: null },
+          _count: { _all: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 },
         };
+        const countedModelByKey = new Map(
+          countedModelGroups.map((group) => [JSON.stringify([group.provider, group.model]), group]),
+        );
+        const countedBotByKey = new Map(
+          countedBotGroups.map((group) => [group.botId ?? "", group]),
+        );
         const botIds = botGroups.map((group) => group.botId).filter(Boolean) as string[];
         const bots = botIds.length
           ? await deps.prisma.bot.findMany({
@@ -217,43 +246,28 @@ export function contentRoutes(ctx: RouterContext) {
             })
           : [];
         const botNameById = new Map(bots.map((bot) => [bot.id, bot.name]));
-        const byDay = new Map<
-          string,
-          {
-            inputTokens: number;
-            outputTokens: number;
-            totalTokens: number;
-            costUsd: number;
-            modelCalls: number;
-          }
-        >();
+        const byDay = new Map<string, UsageRowLike[]>();
         for (const row of dayRows) {
           const date = row.createdAt.toISOString().slice(0, 10);
-          const day = byDay.get(date) ?? {
-            inputTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0,
-            costUsd: 0,
-            modelCalls: 0,
-          };
-          day.inputTokens += row.inputTokens ?? 0;
-          day.outputTokens += row.outputTokens ?? 0;
-          day.totalTokens += row.totalTokens ?? 0;
-          day.costUsd += row.costUsd ?? 0;
-          day.modelCalls += 1;
-          byDay.set(date, day);
+          const rows = byDay.get(date) ?? [];
+          rows.push(row);
+          byDay.set(date, rows);
         }
         const daily = [...byDay.entries()]
           .sort(([a], [b]) => (a < b ? -1 : 1))
-          .map(([date, totals]) => ({ date, ...totals }));
+          .map(([date, rows]) => ({ date, ...usageTotalsFromRows(rows) }));
         return {
-          ...completeSums(result),
+          ...usageTotals(result, countedResult),
           runs,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
               model: group.model,
-              ...completeSums(group),
+              ...usageTotals(
+                group,
+                countedModelByKey.get(JSON.stringify([group.provider, group.model])) ??
+                  emptyCounted,
+              ),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
@@ -262,7 +276,7 @@ export function contentRoutes(ctx: RouterContext) {
             .map((group) => ({
               botId: group.botId ?? "",
               botName: group.botId ? (botNameById.get(group.botId) ?? null) : null,
-              ...completeSums(group),
+              ...usageTotals(group, countedBotByKey.get(group.botId ?? "") ?? emptyCounted),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,

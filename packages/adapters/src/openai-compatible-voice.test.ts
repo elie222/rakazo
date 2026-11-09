@@ -393,7 +393,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       { audio: new Uint8Array([1]), mimeType: "audio/mp4", language: "en-US", apiKey: keyless },
       ctx,
     );
-    expect(result).toEqual({ text: "hello there" });
+    expect(result).toEqual({ text: "hello there", model: DEFAULT_COMPATIBLE_STT_MODEL });
     expect(calledInit(fetchMock).redirect).toBe("error");
     expect(calledUrl(fetchMock)).toBe("http://100.64.0.10:8810/v1/audio/transcriptions");
     const form = calledInit(fetchMock).body as FormData;
@@ -410,7 +410,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
         { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keyless },
         ctx,
       ),
-    ).resolves.toEqual({ text: "hello there" });
+    ).resolves.toEqual({ text: "hello there", model: DEFAULT_COMPATIBLE_STT_MODEL });
   });
 
   it.each(["1234", "true", "null", '"quoted"'])(
@@ -424,7 +424,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
           { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keyless },
           ctx,
         ),
-      ).resolves.toEqual({ text: spoken });
+      ).resolves.toEqual({ text: spoken, model: DEFAULT_COMPATIBLE_STT_MODEL });
     },
   );
 

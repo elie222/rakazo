@@ -1146,21 +1146,35 @@ export const UsageRecordSchema = z.object({
   costSource: z.string().nullable().optional(),
   pricingVersion: z.string().nullable().optional(),
   usageSource: z.string().nullable().optional(),
+  failureReason: z.string().nullable().optional(),
+  audioSeconds: z.number().nullable().optional(),
+  audioBytes: z.number().int().nullable().optional(),
+  transcribedChars: z.number().int().nullable().optional(),
   callId: z.string().nullable().optional(),
   operationId: z.string().nullable().optional(),
-  operationKind: z.enum(["answer", "setup", "retrieval", "subagent", "compaction"]).optional(),
+  operationKind: z
+    .enum(["answer", "setup", "retrieval", "subagent", "compaction", "transcription"])
+    .optional(),
   parentRunId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 
-/** Token and cost totals are null when any counted call lacks that figure. */
+/**
+ * Totals sum the counted calls that report that figure, and are null only when no
+ * counted call reports it. unknownTokensCalls / unknownCostCalls count the
+ * token-counted calls missing that figure (transcription calls are not token
+ * calls, so they are never counted here); those calls stay visible in the
+ * detail list instead of silently dragging the total to null.
+ */
 const UsageTotalsSchema = z.object({
   inputTokens: z.number().nullable(),
   outputTokens: z.number().nullable(),
   totalTokens: z.number().nullable().optional(),
   costUsd: z.number().nullable().optional(),
   modelCalls: z.number().optional(),
+  unknownTokensCalls: z.number().optional(),
+  unknownCostCalls: z.number().optional(),
 });
 export const UsageSummarySchema = UsageTotalsSchema.extend({
   runs: z.number(),

@@ -19,6 +19,8 @@ describe("UsageSummarySchema", () => {
           totalTokens: 150,
           costUsd: 0.01,
           modelCalls: 3,
+          unknownTokensCalls: 0,
+          unknownCostCalls: 0,
         },
       ],
       bots: [
@@ -30,6 +32,8 @@ describe("UsageSummarySchema", () => {
           totalTokens: 150,
           costUsd: 0.01,
           modelCalls: 3,
+          unknownTokensCalls: 0,
+          unknownCostCalls: 0,
         },
       ],
       daily: [
@@ -40,6 +44,8 @@ describe("UsageSummarySchema", () => {
           totalTokens: 150,
           costUsd: 0.01,
           modelCalls: 3,
+          unknownTokensCalls: 0,
+          unknownCostCalls: 0,
         },
       ],
     });

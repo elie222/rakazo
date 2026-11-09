@@ -365,6 +365,59 @@ describe("Pi usage accounting", () => {
       }),
     );
   });
+  it("derives the total from input and output when the provider reports no total", () => {
+    // Anthropic never sends total_tokens, and a provider without prompt caching
+    // sends no cache buckets either; Pi computes the same total from components.
+    expect(
+      normalizePiUsage(
+        {
+          input: 100,
+          output: 30,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 130,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        model,
+      ).totalTokens,
+    ).toBe(130);
+    expect(
+      normalizePiUsage(
+        {
+          input: 60,
+          output: 30,
+          cacheRead: 40,
+          cacheWrite: 0,
+          totalTokens: 130,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        model,
+        new Set(["inputTokens", "outputTokens", "cacheReadTokens"]),
+      ).totalTokens,
+    ).toBe(130);
+  });
+  it("records the failure reason on a thrown provider call", async () => {
+    const events: AgentRuntimeEvent[] = [];
+    const models = {
+      streamSimple: () => {
+        throw new Error("Synthetic provider exception");
+      },
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(models, model, { messages: [] }, undefined, (event) =>
+      events.push(event),
+    );
+    for await (const _event of stream) {
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "usage",
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      failureReason: "Synthetic provider exception",
+    });
+  });
   it("does not derive an unsafe integer total from valid component counts", () => {
     expect(
       normalizePiUsage(

@@ -398,7 +398,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; model?: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const form = new FormData();
     form.set("model", secret.sttModel);
@@ -427,13 +427,16 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     }
     const parsed = parseJson(raw);
     if (parsed && typeof parsed === "object") {
-      return { text: String((parsed as { text?: unknown }).text ?? "").trim() };
+      return {
+        text: String((parsed as { text?: unknown }).text ?? "").trim(),
+        model: secret.sttModel,
+      };
     }
     // Anything else that is not labelled JSON is the transcript itself, even "1234" or "null".
     if (type === "application/json" || raw === null) {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);
     }
-    return { text: raw.trim() };
+    return { text: raw.trim(), model: secret.sttModel };
   }
 }
 

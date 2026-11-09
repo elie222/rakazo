@@ -54,12 +54,16 @@ export function normalizePiUsage(
   const cacheReadTokens = token(usage?.cacheRead, "cacheReadTokens");
   const cacheWriteTokens = token(usage?.cacheWrite, "cacheWriteTokens");
   const rawTotal = reportedValues.get(reported)?.get("totalTokens");
-  const buckets = [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens];
-  const derivedTotal = buckets.every((value) => value !== null)
-    ? buckets.reduce<number>((sum, value) => sum + value!, 0)
-    : null;
-  // Pi synthesizes totals using zero placeholders for absent cache measurements.
-  // Trust a reported total, or derive one only from a complete measured breakdown.
+  // Anthropic and several other providers never report a total: Pi computes it as
+  // input + output + cache buckets with zero placeholders for absent cache
+  // measurements, and providers report cache usage whenever caching is billed, so
+  // an absent bucket is no cache usage rather than unknown usage. Derive the same
+  // total here: requiring a complete measured breakdown left every such call with
+  // a null total, which made the whole account total unreadable downstream.
+  const derivedTotal =
+    inputTokens !== null && outputTokens !== null
+      ? inputTokens + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0)
+      : null;
   const totalTokens = reported.has("totalTokens")
     ? token(rawTotal ?? usage?.totalTokens, "totalTokens")
     : derivedTotal !== null && Number.isSafeInteger(derivedTotal)
@@ -309,6 +313,12 @@ function usageOperationKind(
   return base;
 }
 
+/** Keep a provider failure readable in the usage detail without storing unbounded text. */
+function failureReasonOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 500 ? `${message.slice(0, 500)}…` : message;
+}
+
 /** Guard and account every actual model invocation, including tools, failures and subagents. */
 export function observedPiStream(
   models: Models,
@@ -474,6 +484,8 @@ export function observedPiStream(
           if (event.type === "done" || event.type === "error") {
             const message = event.type === "done" ? event.message : event.error;
             normalized = normalizePiUsage(message.usage, model, reported);
+            if (event.type === "error" && message.errorMessage)
+              normalized.failureReason = failureReasonOf(message.errorMessage);
             span?.setAttributes({
               "pi.ai.response.stop_reason": message.stopReason,
               "pi.ai.usage.input_tokens": normalized.inputTokens ?? undefined,
@@ -514,7 +526,10 @@ export function observedPiStream(
         let terminalError = error;
         if (started && normalized === null) {
           try {
-            await emitUsage(normalizePiUsage(undefined, model, reported));
+            await emitUsage({
+              ...normalizePiUsage(undefined, model, reported),
+              failureReason: failureReasonOf(terminalError),
+            });
           } catch (accountingError) {
             terminalError = accountingError;
           }
@@ -526,7 +541,10 @@ export function observedPiStream(
             await observer.afterCall(
               reservation,
               started
-                ? (normalized ?? normalizePiUsage(undefined, model, reported))
+                ? (normalized ?? {
+                    ...normalizePiUsage(undefined, model, reported),
+                    failureReason: failureReasonOf(terminalError),
+                  })
                 : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
             );
           } catch {

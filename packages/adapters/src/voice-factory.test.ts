@@ -749,7 +749,7 @@ describe("FishAudioVoiceProvider", () => {
         { audio: new Uint8Array([1]), mimeType: "audio/ogg;codecs=opus", apiKey: "sk-test" },
         ctx,
       ),
-    ).resolves.toEqual({ text: "hello" });
+    ).resolves.toEqual({ text: "hello", model: "transcribe-1-pro" });
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.fish.audio/v1/asr");
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -777,7 +777,7 @@ describe("FishAudioVoiceProvider", () => {
         { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk-test" },
         ctx,
       ),
-    ).resolves.toEqual({ text: expected });
+    ).resolves.toEqual({ text: expected, model: "transcribe-1-pro" });
   });
 
   it("reduces a spoken-language tag to the code Fish expects", async () => {

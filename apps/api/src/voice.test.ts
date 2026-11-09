@@ -1166,3 +1166,101 @@ describe("transcribeInboundVoice", () => {
     expect(transcribe).not.toHaveBeenCalled();
   });
 });
+
+describe("transcription usage recording", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const owner = { userId: "user-1", spaceId: "space-1" };
+
+  function recordingDeps() {
+    const createMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      usageRecord: { createMany },
+      modelCreditEntry: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    return {
+      createMany,
+      deps: {
+        prisma: {
+          spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
+          userVoicePreference: {
+            findFirst: vi.fn().mockResolvedValue({
+              isDefault: true,
+              voiceId: "voice-1",
+              speechModel: null,
+              credential: {
+                id: "cred-1",
+                userId: owner.userId,
+                provider: "openai",
+                secretId: "secret-1",
+                createdAt: new Date(0),
+                updatedAt: new Date(0),
+              },
+            }),
+          },
+          $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
+          secret: {
+            findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+          },
+        },
+        secrets: { load: vi.fn().mockResolvedValue("key"), put: vi.fn() },
+      } as unknown as VoiceDeps,
+    };
+  }
+
+  it("records one transcription row with the audio measurements, not tokens", async () => {
+    const { createMany, deps } = recordingDeps();
+    const transcribe = vi
+      .fn()
+      .mockResolvedValue({ text: "spoken words", durationSeconds: 42, model: "stt-model" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+
+    await expect(
+      transcribeInboundVoice(deps, owner, {
+        audio: new Uint8Array([1, 2]),
+        mimeType: "audio/ogg",
+      }),
+    ).resolves.toBe("spoken words");
+    expect(createMany).toHaveBeenCalledOnce();
+    const data = createMany.mock.calls[0]?.[0].data[0];
+    expect(data).toMatchObject({
+      provider: "openai",
+      model: "stt-model",
+      spaceId: "space-1",
+      userId: "user-1",
+      operationKind: "transcription",
+      usageSource: "transcription",
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costUsd: null,
+      audioSeconds: 42,
+      audioBytes: 2,
+      transcribedChars: 12,
+    });
+    expect(typeof data.callId).toBe("string");
+  });
+
+  it("records a failed transcription with its reason and no counts", async () => {
+    const { createMany, deps } = recordingDeps();
+    const transcribe = vi.fn().mockRejectedValue(new Error("provider down"));
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ transcribe } as never);
+
+    await expect(
+      transcribeInboundVoice(deps, owner, {
+        audio: new Uint8Array([1, 2]),
+        mimeType: "audio/ogg",
+      }),
+    ).rejects.toThrow("provider down");
+    expect(createMany).toHaveBeenCalledOnce();
+    expect(createMany.mock.calls[0]?.[0].data[0]).toMatchObject({
+      operationKind: "transcription",
+      failureReason: "provider down",
+      totalTokens: null,
+      audioBytes: 2,
+      transcribedChars: null,
+    });
+  });
+});

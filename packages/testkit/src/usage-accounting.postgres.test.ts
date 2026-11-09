@@ -275,15 +275,25 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         modelCalls: number;
         runs: number;
         costUsd: number | null;
+        unknownTokensCalls: number;
+        unknownCostCalls: number;
         models: {
           model: string;
           modelCalls: number;
           totalTokens: number;
           costUsd: number | null;
+          unknownTokensCalls: number;
+          unknownCostCalls: number;
         }[];
       };
       const summary = await rpc<Summary>("usage/summary");
-      expect(summary).toMatchObject({ totalTokens: 1040, modelCalls: 8, runs: 3 });
+      expect(summary).toMatchObject({
+        totalTokens: 1040,
+        modelCalls: 8,
+        runs: 3,
+        unknownTokensCalls: 0,
+        unknownCostCalls: 0,
+      });
       expect(summary.costUsd).toBeCloseTo(0.00096);
       expect(summary.models).toHaveLength(1);
       expect(summary.models[0]).toMatchObject({
@@ -292,7 +302,9 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         totalTokens: 1040,
       });
       expect(summary.models[0]?.costUsd).toBeCloseTo(0.00096);
-      // A call without a price makes its model's cost and the overall cost unknown, not zero.
+      // A call without a price leaves its own model's cost unknown, but the
+      // overall cost is the sum of the priced calls, with the gap flagged
+      // instead of turning the whole total unknown.
       const unpriced = await db.usageRecord.create({
         data: {
           spaceId: delivered.spaceId,
@@ -305,7 +317,14 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
       });
       const mixed = await rpc<Summary>("usage/summary");
-      expect(mixed).toMatchObject({ totalTokens: 1042, modelCalls: 9, runs: 3, costUsd: null });
+      expect(mixed).toMatchObject({
+        totalTokens: 1042,
+        modelCalls: 9,
+        runs: 3,
+        unknownTokensCalls: 0,
+        unknownCostCalls: 1,
+      });
+      expect(mixed.costUsd).toBeCloseTo(0.00096);
       expect(
         mixed.models.map(({ model, modelCalls, totalTokens }) => [model, modelCalls, totalTokens]),
       ).toEqual([
@@ -313,7 +332,9 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         ["unpriced-model", 1, 2],
       ]);
       expect(mixed.models[0]?.costUsd).toBeCloseTo(0.00096);
+      expect(mixed.models[0]).toMatchObject({ unknownTokensCalls: 0, unknownCostCalls: 0 });
       expect(mixed.models[1]?.costUsd).toBeNull();
+      expect(mixed.models[1]).toMatchObject({ unknownTokensCalls: 0, unknownCostCalls: 1 });
       await db.usageRecord.delete({ where: { id: unpriced.id } });
       for (const row of rows)
         expect(row).toMatchObject({

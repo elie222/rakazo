@@ -85,9 +85,12 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; durationSeconds?: number; model?: string }> {
     const form = new FormData();
     form.set("model", STT_MODEL);
+    // Verbose JSON is the only shape that reports the audio length, which the
+    // usage detail shows next to the transcript volume.
+    form.set("response_format", "verbose_json");
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
@@ -101,6 +104,13 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "OpenAI", "transcribing", body);
-    return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
+    const duration = (body as { duration?: unknown } | null)?.duration;
+    return {
+      text: String((body as { text?: unknown } | null)?.text ?? "").trim(),
+      ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+        ? { durationSeconds: duration }
+        : {}),
+      model: STT_MODEL,
+    };
   }
 }

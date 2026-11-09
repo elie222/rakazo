@@ -675,9 +675,23 @@ export interface AgentUsage {
   pricingVersion?: string | null;
   pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
+  /** Why a call produced no usable usage, when the provider said so. Null means unknown. */
+  failureReason?: string | null;
+  /** Voice transcription only: audio length in seconds, when the provider reports it. */
+  audioSeconds?: number | null;
+  /** Voice transcription only: exact audio size in bytes. */
+  audioBytes?: number | null;
+  /** Voice transcription only: transcribed text length in characters. */
+  transcribedChars?: number | null;
 }
 
-export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" | "compaction";
+export type UsageOperationKind =
+  | "answer"
+  | "setup"
+  | "retrieval"
+  | "subagent"
+  | "compaction"
+  | "transcription";
 
 export interface ModelCallObserver {
   beforeCall(call: {

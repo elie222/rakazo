@@ -11,6 +11,24 @@ const context = {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("reports the audio length and model from a verbose transcription", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify({ text: "hello", duration: 42.5 })));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await new OpenAIVoiceProvider().transcribe!(
+    { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk-test" },
+    context,
+  );
+  expect(result).toEqual({
+    text: "hello",
+    durationSeconds: 42.5,
+    model: "gpt-4o-mini-transcribe",
+  });
+  const form = fetchMock.mock.calls[0]?.[1]?.body as FormData;
+  expect(form.get("response_format")).toBe("verbose_json");
+});
+
 it.each(["marin"])("lists and sends the %s voice for speech", async (voiceId) => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);

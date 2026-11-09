@@ -123,7 +123,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; model?: string }> {
     const form = new FormData();
     form.set(
       "audio",
@@ -144,7 +144,10 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     });
     const body = await readFishResponse(res);
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
-    return { text: stripFishAsrTags(String((body as { text?: unknown } | null)?.text ?? "")) };
+    return {
+      text: stripFishAsrTags(String((body as { text?: unknown } | null)?.text ?? "")),
+      model,
+    };
   }
 }
 
