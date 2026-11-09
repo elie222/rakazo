@@ -28,9 +28,12 @@ import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import {
   hideSystemFloat,
+  hideSystemFloatWindow,
   requestSystemFloatPermission,
   showSystemFloat,
+  showSystemFloatWindow,
   systemFloatHasPermission,
+  updateSystemFloatWindowUrl,
 } from "../../lib/system-float";
 import { isComputerRunning } from "../../lib/use-computer-running";
 import { NativeSymbol } from "../native-symbol";
@@ -164,7 +167,7 @@ export function ComputerFloatWindow({
   open: boolean;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const styles = useThemedStyles(createComputerFloatStyles);
   const windowSize = useWindowDimensions();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -173,11 +176,15 @@ export function ComputerFloatWindow({
   const [statusError, setStatusError] = useState(false);
   const [size, setSize] = useState({ width: COMPUTER_FLOAT_WIDTH });
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  // The system bubble is up over other apps; tapping it brings the app back.
-  const [bubbleOn, setBubbleOn] = useState(false);
+  // The computer screen is floating outside the app, as a system window
+  // or — when the window module is not in the build — as a bubble.
+  const [systemFloatOn, setSystemFloatOn] = useState(false);
+  const systemFloatMode = useRef<"window" | "bubble" | null>(null);
   // The user was sent to system settings to grant the overlay permission.
   const pendingPermission = useRef(false);
   const heldScreenUrl = useRef<string | null>(null);
+  // The latest screen URL, for the pop-out button and the permission return.
+  const floatScreenUrlRef = useRef<string | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const wasRunningRef = useRef(false);
@@ -227,29 +234,53 @@ export function ComputerFloatWindow({
     if (open) setScreenFailed(false);
   }, [open]);
 
-  // Closing the window takes the system bubble with it: its return target is gone.
+  // Closing the window takes the system float with it: its return target is gone.
   useEffect(() => {
-    if (!open && bubbleOn) {
-      setBubbleOn(false);
+    if (!open && systemFloatOn) {
+      systemFloatMode.current = null;
+      setSystemFloatOn(false);
+      void hideSystemFloatWindow();
       void hideSystemFloat();
     }
-  }, [open, bubbleOn]);
+  }, [open, systemFloatOn]);
 
   // After the user opens the system settings to grant the overlay permission,
-  // the bubble goes up once they come back to the app.
+  // the screen floats once they come back to the app: the system window
+  // first, the bubble when the window module is not in the build.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active" || !pendingPermission.current) return;
       pendingPermission.current = false;
       void systemFloatHasPermission().then((granted) => {
         if (!granted) return;
+        const url = floatScreenUrlRef.current;
+        if (url) {
+          void showSystemFloatWindow(url, t("Computer screen"), locale).then((result) => {
+            if (result === "shown") {
+              systemFloatMode.current = "window";
+              setSystemFloatOn(true);
+              return;
+            }
+            if (result === "no-permission") return;
+            void showSystemFloat().then((bubbleResult) => {
+              if (bubbleResult === "shown") {
+                systemFloatMode.current = "bubble";
+                setSystemFloatOn(true);
+              }
+            });
+          });
+          return;
+        }
         void showSystemFloat().then((result) => {
-          if (result === "shown") setBubbleOn(true);
+          if (result === "shown") {
+            systemFloatMode.current = "bubble";
+            setSystemFloatOn(true);
+          }
         });
       });
     });
     return () => subscription.remove();
-  }, []);
+  }, [locale, t]);
   useEffect(() => {
     if (open) wasRunningRef.current = false;
   }, [open]);
@@ -333,49 +364,70 @@ export function ComputerFloatWindow({
   ).current;
 
   /**
-   * Floats the bubble over other apps. The in-app window stays open as the
-   * fallback: the bubble only shows once the app is in the background, and
-   * tapping it brings the app back to this window.
+   * Floats the computer screen outside the app: the system window carries
+   * the live screen over other apps, and the bubble is the fallback when
+   * the window module is not in the build. The in-app window stays open
+   * either way: the system float only shows once the app is in the
+   * background, and tapping it brings the app back to this window.
    */
   async function toggleSystemFloat() {
-    if (bubbleOn) {
-      setBubbleOn(false);
+    if (systemFloatOn) {
+      systemFloatMode.current = null;
+      setSystemFloatOn(false);
+      await hideSystemFloatWindow();
       await hideSystemFloat();
       return;
     }
+    const url = floatScreenUrlRef.current;
+    if (url) {
+      const result = await showSystemFloatWindow(url, t("Computer screen"), locale);
+      if (result === "shown") {
+        systemFloatMode.current = "window";
+        setSystemFloatOn(true);
+        return;
+      }
+      if (result === "no-permission") {
+        askOverlayPermission();
+        return;
+      }
+      // "unsupported": this build has no window module, so try the bubble.
+    }
     const result = await showSystemFloat();
     if (result === "shown") {
-      setBubbleOn(true);
+      systemFloatMode.current = "bubble";
+      setSystemFloatOn(true);
       return;
     }
     if (result === "no-permission") {
-      Alert.alert(
-        t("Allow floating over other apps"),
-        t(
-          "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.",
-        ),
-        [
-          { text: t("Cancel"), style: "cancel" },
-          {
-            text: t("Open Settings"),
-            onPress: () => {
-              pendingPermission.current = true;
-              void requestSystemFloatPermission();
-            },
-          },
-        ],
-      );
+      askOverlayPermission();
       return;
     }
     Alert.alert(
       t("Can't float outside the app"),
       t(
-        "The floating bubble isn't available in this build. The computer screen stays inside the app.",
+        "The system floating window isn't available in this build. The computer screen stays inside the app.",
       ),
     );
   }
 
-  if (!open || !botId) return null;
+  function askOverlayPermission() {
+    Alert.alert(
+      t("Allow floating over other apps"),
+      t(
+        "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the computer screen floats over other apps; tap the window or its notification to come back.",
+      ),
+      [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Open Settings"),
+          onPress: () => {
+            pendingPermission.current = true;
+            void requestSystemFloatPermission();
+          },
+        },
+      ],
+    );
+  }
 
   const screenVisible =
     computer?.state === "running" && Boolean(embeddedScreenUrl) && !screenFailed;
@@ -386,6 +438,16 @@ export function ComputerFloatWindow({
     screenVisible,
   );
   heldScreenUrl.current = loadedScreenUrl;
+  floatScreenUrlRef.current = loadedScreenUrl;
+
+  // A rotated capability re-points the system window at the new screen URL.
+  // This effect stays above the early return, like every other hook here.
+  useEffect(() => {
+    if (systemFloatMode.current !== "window" || !loadedScreenUrl) return;
+    void updateSystemFloatWindowUrl(loadedScreenUrl);
+  }, [loadedScreenUrl]);
+
+  if (!open || !botId) return null;
 
   return (
     <View
@@ -402,9 +464,9 @@ export function ComputerFloatWindow({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              bubbleOn ? t("Stop floating outside the app") : t("Float outside the app")
+              systemFloatOn ? t("Stop floating outside the app") : t("Float outside the app")
             }
-            accessibilityState={{ selected: bubbleOn }}
+            accessibilityState={{ selected: systemFloatOn }}
             hitSlop={8}
             onPress={() => void toggleSystemFloat()}
           >
@@ -412,7 +474,7 @@ export function ComputerFloatWindow({
               ios="arrow.up.forward.app"
               android="open-outline"
               size={18}
-              color={bubbleOn ? mobileTokens().primary : undefined}
+              color={systemFloatOn ? mobileTokens().primary : undefined}
             />
           </Pressable>
         ) : null}

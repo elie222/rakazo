@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import type { FloatingBubbleModule } from "./system-float";
+import type { FloatingBubbleModule, SystemFloatWindowModule } from "./system-float";
 import {
   hideSystemFloat,
+  hideSystemFloatWindow,
   requestSystemFloatPermission,
   setFloatingBubbleModule,
+  setSystemFloatWindowModule,
   showSystemFloat,
+  showSystemFloatWindow,
   systemFloatHasPermission,
+  systemFloatWindowSupported,
+  updateSystemFloatWindowUrl,
 } from "./system-float";
 
 vi.mock("react-native-android-floating-bubble", () => {
@@ -104,6 +109,100 @@ describe("system float", () => {
       await expect(showSystemFloat()).resolves.toBe("unsupported");
     } finally {
       setFloatingBubbleModule(null);
+    }
+  });
+});
+
+function fakeWindow(
+  options: { permitted?: boolean; supported?: boolean; showResult?: boolean } = {},
+) {
+  const show = vi.fn(async () => options.showResult ?? true);
+  const updateUrl = vi.fn(async () => undefined);
+  const hide = vi.fn(async () => undefined);
+  const windowModule: SystemFloatWindowModule = {
+    isSupported: async () => options.supported ?? true,
+    hasOverlayPermission: async () => options.permitted ?? true,
+    requestOverlayPermission: () => undefined,
+    show,
+    updateUrl,
+    hide,
+    isShowing: async () => false,
+  };
+  return { windowModule, show, updateUrl, hide };
+}
+
+describe("system float window", () => {
+  it("shows the live screen when supported and permitted", async () => {
+    const { windowModule, show } = fakeWindow();
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await expect(systemFloatWindowSupported()).resolves.toBe(true);
+      await expect(
+        showSystemFloatWindow("https://screen.example.test/embed", "Computer screen", "en"),
+      ).resolves.toBe("shown");
+      expect(show).toHaveBeenCalledWith(
+        "https://screen.example.test/embed",
+        "Computer screen",
+        "en",
+      );
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("reports no-permission without showing the window", async () => {
+    const { windowModule, show } = fakeWindow({ permitted: false });
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await expect(
+        showSystemFloatWindow("https://screen.example.test/embed", "Computer screen", "en"),
+      ).resolves.toBe("no-permission");
+      expect(show).not.toHaveBeenCalled();
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("reports unsupported when the window module is missing", async () => {
+    setSystemFloatWindowModule(null);
+    await expect(systemFloatWindowSupported()).resolves.toBe(false);
+    await expect(
+      showSystemFloatWindow("https://screen.example.test/embed", "Computer screen", "en"),
+    ).resolves.toBe("unsupported");
+  });
+
+  it("reports unsupported when showing fails", async () => {
+    const { windowModule, show } = fakeWindow({ showResult: false });
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await expect(
+        showSystemFloatWindow("https://screen.example.test/embed", "Computer screen", "en"),
+      ).resolves.toBe("unsupported");
+      expect(show).toHaveBeenCalled();
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("re-points a running window at a new screen URL", async () => {
+    const { windowModule, updateUrl } = fakeWindow();
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await updateSystemFloatWindowUrl("https://screen.example.test/embed-2");
+      expect(updateUrl).toHaveBeenCalledWith("https://screen.example.test/embed-2");
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("hides the window", async () => {
+    const { windowModule, hide } = fakeWindow();
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await hideSystemFloatWindow();
+      expect(hide).toHaveBeenCalled();
+    } finally {
+      setSystemFloatWindowModule(null);
     }
   });
 });

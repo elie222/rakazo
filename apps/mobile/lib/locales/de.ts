@@ -2,11 +2,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "Float outside the app": "Außerhalb der App schweben lassen",
   "Stop floating outside the app": "Schweben außerhalb der App beenden",
   "Can't float outside the app": "Schweben außerhalb der App nicht möglich",
-  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
-    "Diese Version hat keine schwebende Blase. Der Computerbildschirm bleibt in der App.",
+  "The system floating window isn't available in this build. The computer screen stays inside the app.":
+    "In diesem Build gibt es kein schwebendes Systemfenster. Der Computerbildschirm bleibt in der App.",
   "Allow floating over other apps": "Schweben über anderen Apps erlauben",
-  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
-    "Schalte in den Einstellungen für Rakazo „Über anderen Apps anzeigen“ ein. Verlasse dann die App: Die Blase schwebt auf dem Bildschirm; tippe darauf, um zurückzukehren.",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the computer screen floats over other apps; tap the window or its notification to come back.":
+    "Aktiviere in den Einstellungen für Rakazo „Über anderen Apps einblenden“. Verlasse dann die App: Der Computerbildschirm schwebt über anderen Apps; tippe auf das Fenster oder seine Benachrichtigung, um zurückzukehren.",
   "Open Settings": "Einstellungen öffnen",
   "No matches": "Keine Treffer",
   "Always ask": "Immer fragen",

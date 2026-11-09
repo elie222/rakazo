@@ -4,10 +4,10 @@
  * the library is a no-op there.
  *
  * What this is not: the bubble is an icon that reopens the app. It cannot
- * carry the live computer screen itself — that needs a custom native module
- * (a WindowManager overlay hosting a WebView, fed by a foreground service),
- * which does not exist in this codebase. Tapping the bubble brings the app
- * back, with the in-app float still where it was.
+ * carry the live computer screen itself. That is the system floating
+ * window below: a WindowManager overlay hosting the noVNC page, driven by
+ * the local RakazoSystemFloat module. The bubble stays as the fallback
+ * when the window module is not in the build.
  */
 
 /** The slice of react-native-android-floating-bubble this module needs. */
@@ -79,5 +79,84 @@ export async function hideSystemFloat(): Promise<void> {
     (await load())?.hide();
   } catch {
     // Already gone.
+  }
+}
+
+/** The slice of the local RakazoSystemFloat module this file needs. */
+export type SystemFloatWindowModule = {
+  isSupported: () => Promise<boolean>;
+  hasOverlayPermission: () => Promise<boolean>;
+  requestOverlayPermission: () => void;
+  show: (url: string, title: string, locale: string) => Promise<boolean>;
+  updateUrl: (url: string) => Promise<void>;
+  hide: () => Promise<void>;
+  isShowing: () => Promise<boolean>;
+};
+
+let injectedWindow: SystemFloatWindowModule | null = null;
+/** Test seam: an injected window module replaces the native one. */
+export function setSystemFloatWindowModule(module: SystemFloatWindowModule | null): void {
+  injectedWindow = module;
+}
+
+async function loadWindow(): Promise<SystemFloatWindowModule | null> {
+  if (injectedWindow) return injectedWindow;
+  // The native window loads on first use, not with every screen that imports this.
+  try {
+    const { requireOptionalNativeModule } = await import("expo-modules-core");
+    return requireOptionalNativeModule<SystemFloatWindowModule>("RakazoSystemFloat");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shows the live computer screen in a system floating window over other
+ * apps. "shown" when it is up; "no-permission" when the user has not
+ * allowed drawing over other apps yet; "unsupported" when this build has
+ * no window module. Either failure falls back to the bubble, then the
+ * in-app float.
+ */
+export async function showSystemFloatWindow(
+  url: string,
+  title: string,
+  locale: string,
+): Promise<"shown" | "no-permission" | "unsupported"> {
+  try {
+    const module = await loadWindow();
+    if (!module) return "unsupported";
+    if (!(await module.hasOverlayPermission())) return "no-permission";
+    const shown = await module.show(url, title, locale);
+    return shown ? "shown" : "unsupported";
+  } catch {
+    return "unsupported";
+  }
+}
+
+/** Points a running system window at a new screen URL, for capability rotation. */
+export async function updateSystemFloatWindowUrl(url: string): Promise<void> {
+  try {
+    await (await loadWindow())?.updateUrl(url);
+  } catch {
+    // The window is gone; the next show starts it again.
+  }
+}
+
+/** Hides the system floating window, if it is up. */
+export async function hideSystemFloatWindow(): Promise<void> {
+  try {
+    await (await loadWindow())?.hide();
+  } catch {
+    // Already gone.
+  }
+}
+
+/** True when this build can float the live computer screen over other apps. */
+export async function systemFloatWindowSupported(): Promise<boolean> {
+  try {
+    const module = await loadWindow();
+    return (await module?.isSupported()) ?? false;
+  } catch {
+    return false;
   }
 }

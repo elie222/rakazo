@@ -22,7 +22,7 @@ import {
   useComputerFloatEnabled,
 } from "./computer-float-settings";
 import { GROUP_SEAT_SIZE } from "./group-seats";
-import { setFloatingBubbleModule } from "./system-float";
+import { setFloatingBubbleModule, setSystemFloatWindowModule } from "./system-float";
 import { isComputerRunning, useComputerRunning } from "./use-computer-running";
 
 const rpc = vi.hoisted(() => vi.fn());
@@ -73,6 +73,12 @@ const bubbleBox = vi.hoisted(() => ({
   show: vi.fn(),
   hide: vi.fn(),
   requestOverlayPermission: vi.fn(),
+}));
+const windowBox = vi.hoisted(() => ({
+  permitted: true,
+  show: vi.fn(async (_url: string, _title: string, _locale: string) => true),
+  updateUrl: vi.fn(async (_url: string) => undefined),
+  hide: vi.fn(async () => undefined),
 }));
 const navBox = vi.hoisted(() => {
   const setOptions = vi.fn();
@@ -232,6 +238,9 @@ vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test", rpc 
 vi.mock("react-native-android-floating-bubble", () => {
   throw new Error("no native module in tests");
 });
+// No window module in this build: the pop-out falls back to the bubble,
+// and the window tests inject their module through the seam instead.
+vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
@@ -239,7 +248,7 @@ vi.mock("./api-live", () => ({}));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>
     text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }) };
+  return { t, useI18n: () => ({ t, locale: "en" }) };
 });
 
 vi.mock("./appearance", () => ({
@@ -394,6 +403,10 @@ describe("computer float window", () => {
     bubbleBox.show.mockClear();
     bubbleBox.hide.mockClear();
     bubbleBox.requestOverlayPermission.mockClear();
+    windowBox.permitted = true;
+    windowBox.show.mockClear();
+    windowBox.updateUrl.mockClear();
+    windowBox.hide.mockClear();
     setFloatingBubbleModule({
       isSupported: () => true,
       hasOverlayPermission: () => bubbleBox.permitted,
@@ -412,6 +425,7 @@ describe("computer float window", () => {
     root = undefined;
     container = undefined;
     setFloatingBubbleModule(null);
+    setSystemFloatWindowModule(null);
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -441,6 +455,18 @@ describe("computer float window", () => {
         onClose={props.onClose ?? (() => undefined)}
       />,
     );
+  }
+
+  function injectWindowModule() {
+    setSystemFloatWindowModule({
+      isSupported: async () => true,
+      hasOverlayPermission: async () => windowBox.permitted,
+      requestOverlayPermission: () => undefined,
+      show: (url: string, title: string, locale: string) => windowBox.show(url, title, locale),
+      updateUrl: (url: string) => windowBox.updateUrl(url),
+      hide: () => windowBox.hide(),
+      isShowing: async () => false,
+    });
   }
 
   it("sizes the title avatar to the mockup's 34pt and leaves group seats at 28", () => {
@@ -673,6 +699,135 @@ describe("computer float window", () => {
     });
     await settle();
     expect(bubbleBox.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("floats the live screen in a system window from the pop-out button", async () => {
+    injectWindowModule();
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    expect(windowBox.show).toHaveBeenCalledWith(
+      "https://screen.example.test/embed",
+      "Computer screen",
+      "en",
+    );
+    // The bubble stays down: the window carries the live screen itself.
+    expect(bubbleBox.show).not.toHaveBeenCalled();
+    // The in-app float stays open as the fallback.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    const stop = opened.querySelector(
+      'button[aria-label="Stop floating outside the app"]',
+    ) as HTMLButtonElement;
+    expect(stop).not.toBeNull();
+    act(() => {
+      stop.click();
+    });
+    await settle();
+    expect(windowBox.hide).toHaveBeenCalledTimes(1);
+    expect(opened.querySelector('button[aria-label="Float outside the app"]')).not.toBeNull();
+  });
+
+  it("asks for the overlay permission when it is missing, then floats the window once granted", async () => {
+    injectWindowModule();
+    windowBox.permitted = false;
+    bubbleBox.permitted = false;
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(windowBox.show).not.toHaveBeenCalled();
+    expect(alertBox.alert).toHaveBeenCalledWith(
+      "Allow floating over other apps",
+      expect.stringContaining("computer screen floats over other apps"),
+      expect.any(Array),
+    );
+    // The in-app float stays up: it is the fallback while permission is missing.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    // Grant it in Settings and come back to the app.
+    windowBox.permitted = true;
+    bubbleBox.permitted = true;
+    const buttons = alertBox.alert.mock.calls[0]![2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    act(() => {
+      buttons.find((button) => button.text === "Open Settings")?.onPress?.();
+    });
+    await settle();
+    expect(bubbleBox.requestOverlayPermission).toHaveBeenCalledTimes(1);
+    act(() => {
+      appStateBox.emit("active");
+    });
+    await settle();
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    expect(bubbleBox.show).not.toHaveBeenCalled();
+  });
+
+  it("hides the system window when the float closes", async () => {
+    injectWindowModule();
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true });
+    await settle();
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await settle();
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    act(() => {
+      root?.render(
+        <ComputerFloatWindow botId="bot-1" name="Chief" open={false} onClose={() => undefined} />,
+      );
+    });
+    await settle();
+    expect(windowBox.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-points the system window when the screen URL rotates", async () => {
+    vi.useFakeTimers();
+    injectWindowModule();
+    respondLive("https://screen.example.test/embed-1");
+    const opened = renderFloat({ open: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const popOut = opened.querySelector(
+      'button[aria-label="Float outside the app"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      popOut.click();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(windowBox.show).toHaveBeenCalledWith(
+      "https://screen.example.test/embed-1",
+      "Computer screen",
+      "en",
+    );
+    // A new status shape re-reads the screen URL; the window follows it.
+    statusBox.current = { ...runningStatus, homeRevision: "rev-2" };
+    respondLive("https://screen.example.test/embed-2");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(windowBox.updateUrl).toHaveBeenCalledWith("https://screen.example.test/embed-2");
   });
 
   it("stops polling once the float is closed", async () => {

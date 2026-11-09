@@ -2,11 +2,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "Float outside the app": "アプリの外にフローティング表示",
   "Stop floating outside the app": "アプリ外のフローティングを止める",
   "Can't float outside the app": "アプリの外にフローティングできません",
-  "The floating bubble isn't available in this build. The computer screen stays inside the app.":
-    "このビルドにはフローティングバブルがありません。コンピューター画面はアプリ内に留まります。",
+  "The system floating window isn't available in this build. The computer screen stays inside the app.":
+    "このビルドではシステムフローティングウィンドウを利用できません。コンピューター画面はアプリ内に留まります。",
   "Allow floating over other apps": "他のアプリの上に表示することを許可",
-  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the bubble floats on your screen; tap it to come back.":
-    "設定で Rakazo の「他のアプリの上に表示」をオンにしてください。その後アプリを離れると、バブルが画面にフローティング表示されます。タップすると戻れます。",
+  "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the computer screen floats over other apps; tap the window or its notification to come back.":
+    "設定で Rakazo の「他のアプリの上に表示」をオンにしてください。その後アプリを離れると、コンピューター画面が他のアプリの上にフローティング表示されます。ウィンドウまたは通知をタップすると戻れます。",
   "Open Settings": "設定を開く",
   "No matches": "一致するものはありません",
   "Always ask": "常に確認",
