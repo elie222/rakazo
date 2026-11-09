@@ -95,6 +95,17 @@ describe("mobile dictation", () => {
     expect(onGiveUp).toHaveBeenCalledWith("idle");
   });
 
+  it("does not count a repeated result as new words against its own endpoint", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk");
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      vi.advanceTimersByTime(10_000);
+      fake.hear("buy milk");
+    }
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
   it("restarts through a quiet pause until its own endpoint ends it", async () => {
     const onFinal = vi.fn();
     await listen({ onFinal, endpointMs: 30_000 });

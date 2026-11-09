@@ -22,7 +22,12 @@ const DICTATION_PAUSE_MS = 30_000;
 
 export type ComposerDictationStatus = "idle" | "listening" | "transcribing";
 
-type Session = { cancel: AbortController; finish: () => void };
+type Session = {
+  cancel: AbortController;
+  finish: () => void;
+  /** Permissions are settled and the microphone is in use. */
+  live: boolean;
+};
 
 /**
  * Tap to dictate into the message box, tap again to stop. It takes the same path a call would:
@@ -67,11 +72,12 @@ export function useComposerDictation({
   }, [disabled]);
   useEffect(() => cancel, []);
   // A hidden composer must not keep listening: leaving the chat or the app drops the session
-  // and its audio. Inactive is left alone, since a permission prompt makes the app inactive.
+  // and its audio.
   useEffect(() => {
     const unsubscribe = navigation.addListener("blur", cancel);
+    // Android reports a permission prompt as background, so only a live mic is dropped.
     const appState = AppState.addEventListener("change", (state) => {
-      if (state === "background") cancel();
+      if (state === "background" && session.current?.live) cancel();
     });
     return () => {
       unsubscribe();
@@ -107,7 +113,11 @@ export function useComposerDictation({
       const requestContext = await captureApiRequestContext();
       if (session.current !== mine) return;
       await ensureVoiceConsent(requestContext);
+      // Ask for the microphone first: on Android its prompt reads as leaving the app.
+      const { AudioModule } = await import("expo-audio");
+      await AudioModule.requestRecordingPermissionsAsync();
       if (session.current !== mine) return;
+      mine.live = true;
       const stopped = new AbortController();
       mine.finish = () => {
         stopped.abort();
@@ -146,6 +156,8 @@ export function useComposerDictation({
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
     if (session.current !== mine) return;
+    // The plan above already asked for speech recognition, so the microphone is next.
+    mine.live = true;
     // A stop tap while the recognizer is still loading lands once it has started.
     let stopRequested = false;
     mine.finish = () => {
@@ -177,7 +189,7 @@ export function useComposerDictation({
     }
     if (disabled) return;
     // Until the path is chosen, a second tap cancels.
-    const mine: Session = { cancel: new AbortController(), finish: () => cancel() };
+    const mine: Session = { cancel: new AbortController(), finish: () => cancel(), live: false };
     session.current = mine;
     setStatus("listening");
     start(mine).catch((error: unknown) => {

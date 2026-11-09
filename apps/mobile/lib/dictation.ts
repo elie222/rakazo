@@ -55,6 +55,8 @@ type Session = {
   endpointMs: number;
   /** The caller chose the gap, so the silence timer alone ends a quiet session. */
   ownEndpoint: boolean;
+  /** The words last reported, so a repeated result is not mistaken for new speech. */
+  reported: string;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -163,6 +165,7 @@ export async function listen(opts: {
     onGiveUp: opts.onGiveUp,
     endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
     ownEndpoint: opts.endpointMs !== undefined,
+    reported: "",
     subs: [],
     carried: "",
     heard: "",
@@ -219,6 +222,9 @@ function onResult(session: Session, event: ResultEvent): void {
   }
   const text = join(session.carried, session.heard);
   if (!text) return;
+  // With the caller's own pause limit, only new words count as being heard.
+  if (session.ownEndpoint && text === session.reported) return;
+  session.reported = text;
   session.onInterim?.(text);
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
