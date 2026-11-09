@@ -589,25 +589,37 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
+  // A create screen counts as open from the tap until the route changes, so a second tap
+  // before the push lands opens nothing.
+  const openingCreate = useRef(false);
+  useEffect(() => {
+    openingCreate.current = false;
+  }, [pathname]);
+  const openCreate = useCallback(
+    (href: Href) => {
+      if (openingCreate.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
+        return;
+      openingCreate.current = true;
+      router.push(href);
+    },
+    [router],
+  );
+
   const newBot = useCallback(
-    (spaceId?: string) => {
-      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      router.push({
+    (spaceId?: string) =>
+      openCreate({
         pathname: "/new-bot",
         params: { avatarSet: me?.botAvatarSet, ...(spaceId ? { spaceId } : {}) },
-      });
-    },
-    [me?.botAvatarSet, router],
+      }),
+    [me?.botAvatarSet, openCreate],
   );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
-      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       if (action === "bot") newBot();
-      else if (action === "group") router.push("/new-group");
-      else router.push("/new-space");
+      else openCreate(action === "group" ? "/new-group" : "/new-space");
     },
-    [newBot, router],
+    [newBot, openCreate],
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
