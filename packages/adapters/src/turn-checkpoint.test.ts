@@ -43,6 +43,32 @@ describe("turn checkpoint", () => {
       ).messages,
     ).toEqual(checkpoint.messages);
   });
+  it("round trips exact search grants without adding them to legacy checkpoints", () => {
+    const searchResultUrls = ["https://example.com/photo?q=one"];
+    expect(
+      restoreTurnCheckpoint(serializeTurnCheckpoint({ ...checkpoint, searchResultUrls }), {
+        provider: "fixture",
+        id: "first",
+      }).searchResultUrls,
+    ).toEqual(searchResultUrls);
+    expect(
+      restoreTurnCheckpoint(serializeTurnCheckpoint(checkpoint), {
+        provider: "fixture",
+        id: "first",
+      }).searchResultUrls,
+    ).toBeUndefined();
+  });
+  it.each([null, "https://example.com/photo", [42]])(
+    "rejects malformed search grants %s",
+    (searchResultUrls) => {
+      expect(() =>
+        restoreTurnCheckpoint(JSON.stringify({ ...checkpoint, searchResultUrls }), {
+          provider: "fixture",
+          id: "first",
+        }),
+      ).toThrow("Unsupported turn checkpoint");
+    },
+  );
   it("strips thinking when the model changes", () => {
     const restored = restoreTurnCheckpoint(serializeTurnCheckpoint(checkpoint), {
       provider: "fixture",

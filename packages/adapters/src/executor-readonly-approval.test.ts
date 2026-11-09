@@ -4772,6 +4772,146 @@ it.each(
   }
 });
 
+it.each(
+  ["image_search", "web_search"].flatMap((name) =>
+    [
+      "success",
+      "failure",
+      "uncertain",
+      "fetch denied",
+      "legacy checkpoint",
+      "incompatible checkpoint",
+    ].map((outcome) => ({ name, outcome })),
+  ),
+)(
+  "restores only settled $name grants from a checkpoint after $outcome",
+  async ({ name, outcome }) => {
+    const f = fixture({
+      builtin: true,
+      rules: [
+        { ...imageAskRule, matchValue: name },
+        { ...imageAskRule, matchValue: "schedule_list" },
+        ...(outcome === "fetch denied"
+          ? [
+              {
+                effect: "deny",
+                matchKind: "tool",
+                matchValue: "web_fetch",
+              } satisfies ActionApprovalRule,
+            ]
+          : []),
+      ],
+    });
+    const found = image("checkpoint");
+    const fetch = fixtureFetch(
+      outcome === "failure"
+        ? [{ type: "response.failed", response: { error: { message: "Search failed" } } }]
+        : [searchItem([found]), terminal],
+    );
+    f.web.searchHits = [{ title: "Found", url: found.source_website_url, snippet: "" }];
+    const search = vi.spyOn(f.web, "search");
+    if (outcome === "failure") search.mockRejectedValue(new Error("Search failed"));
+    const args = { query: "harbor", maxResults: 2 };
+    if (name === "image_search") driveImageSearch(f, fetch, { args });
+    else f.setCalls([{ name, args, executionId: "search-call" }]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    const update = f.prisma.externalEffect.updateMany;
+    const original = update.getMockImplementation()!;
+    if (outcome === "uncertain")
+      update.mockImplementation(async (input) =>
+        input.data.status === "completed" ? { count: 0 } : original(input),
+      );
+    const forgedUrl = "https://unrelated.test/forged";
+    const searchCallId = name === "image_search" ? "image-call" : "search-call";
+    const pausedAssistant: Extract<TurnCheckpoint["messages"][number], { role: "assistant" }> = {
+      role: "assistant",
+      api: "openai-responses",
+      provider: "fixture",
+      model: "fixture",
+      timestamp: 0,
+      stopReason: "toolUse",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      content: [
+        { type: "toolCall", id: searchCallId, name, arguments: args },
+        { type: "toolCall", id: "pause-call", name: "schedule_list", arguments: {} },
+      ],
+    };
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      const { host } = hostFor(fetch, request);
+      const tool = toAgentTools(builtinAgentTools, host).find(
+        (entry) => entry.name === "image_search",
+      )!;
+      const result =
+        name === "image_search"
+          ? await tool.execute("image-call", args)
+          : await request.executeTool!(name, args, "search-call");
+      await request.onCheckpoint?.(
+        () =>
+          serializeTurnCheckpoint({
+            version: 1,
+            provider: request.model.provider,
+            model: request.model.id,
+            systemPrompt: "Find photos and choose one.",
+            pendingToolCallId: "pause-call",
+            executionMode: "sequential",
+            searchResultUrls: [forgedUrl],
+            messages: [
+              pausedAssistant,
+              {
+                role: "toolResult",
+                toolCallId: searchCallId,
+                toolName: name,
+                isError: false,
+                timestamp: 0,
+                content: [{ type: "text", text: JSON.stringify(result) }],
+              },
+            ],
+          }),
+        "pause-call",
+      );
+      f.results.push(await request.executeTool!("schedule_list", {}, "pause-call"));
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    update.mockImplementation(original);
+    expect(f.turnCheckpoints).toHaveLength(1);
+    const saved = JSON.parse(f.turnCheckpoints[0]!.result);
+    const urls = [found.source_website_url, ...(name === "image_search" ? [found.image_url] : [])];
+    const settled = outcome !== "failure" && outcome !== "uncertain";
+    expect(new Set(saved.searchResultUrls)).toEqual(new Set(settled ? urls : []));
+    if (outcome === "legacy checkpoint") delete saved.searchResultUrls;
+    if (outcome === "incompatible checkpoint") saved.messages[0].content[1].name = "retired_tool";
+    f.turnCheckpoints[0]!.result = JSON.stringify(saved);
+    f.effects.find((effect) => effect.kind === "schedule_list")!.status = "approved";
+    f.runtimeRun.mockImplementationOnce(async function* (request: AgentRunRequest) {
+      expect(Boolean(request.turnCheckpoint)).toBe(outcome !== "incompatible checkpoint");
+      await request.executeTool!("schedule_list", {}, "pause-call");
+      for (const [index, url] of [
+        ...urls,
+        `${found.source_website_url}?changed=1`,
+        forgedUrl,
+      ].entries()) {
+        f.results.push(
+          await request.executeTool!("web_fetch", { url }, `checkpoint-fetch-${index}`),
+        );
+      }
+      yield { type: "done" as const, text: "Done" };
+    });
+    await f.run();
+    expect(f.fetchedUrls).toEqual(outcome === "success" ? urls : []);
+    expect(fetch).toHaveBeenCalledTimes(name === "image_search" ? 1 : 0);
+    expect(search).toHaveBeenCalledTimes(name === "web_search" ? 1 : 0);
+  },
+);
+
 it("keeps explicit fetch deny rules on exact image search URLs", async () => {
   const f = fixture({
     builtin: true,
