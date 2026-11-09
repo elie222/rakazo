@@ -1,6 +1,3 @@
-// Added Mola as a sandbox provider
-// Mola provides instant Linux computers (Ubuntu by default) via REST API
-// See https://github.com/obaid/mola-core and https://mola.sh for API documentation
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -47,6 +44,8 @@ const MOLA_API_TIMEOUT_MS = 30_000;
 const MOLA_HANDLE_PROBE_MS = 60_000;
 
 const log = getLogger();
+
+type MolaApiMode = "cloud" | "selfhosted";
 
 interface MolaMachine {
   id: string;
@@ -103,6 +102,7 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   private readonly apiKey: string;
   private readonly apiUrl: string;
+  private readonly apiMode: MolaApiMode;
   private readonly machines = new Map<string, MolaMachine>();
   private readonly checkedAt = new Map<string, number>();
   private readonly prepared = new Set<string>();
@@ -111,6 +111,22 @@ export class MolaSandboxProvider implements SandboxProvider {
   constructor(config: { apiKey: string; apiUrl?: string }) {
     this.apiKey = config.apiKey;
     this.apiUrl = config.apiUrl?.trim() || process.env.MOLA_API_URL?.trim() || MOLA_API_BASE;
+    this.apiMode = this.detectApiMode(this.apiUrl);
+  }
+
+  private detectApiMode(url: string): MolaApiMode {
+    const lower = url.toLowerCase();
+    if (lower.includes("cloud.mola.sh")) {
+      return "cloud";
+    }
+    if (lower.includes("localhost") || lower.includes("127.0.0.1") || lower.includes("0.0.0.0")) {
+      return "selfhosted";
+    }
+    return "cloud";
+  }
+
+  private resourcePath(resource: "machines" | "computers"): string {
+    return this.apiMode === "cloud" ? "computers" : "machines";
   }
 
   describe() {
@@ -190,7 +206,8 @@ export class MolaSandboxProvider implements SandboxProvider {
       return cached;
     }
 
-    const response = await this.request(`/machines/${machineId}`);
+    const resource = this.resourcePath("computers");
+    const response = await this.request(`/${resource}/${machineId}`);
     const result: { data: MolaMachine } = await response.json();
     const machine = result.data;
 
@@ -204,7 +221,8 @@ export class MolaSandboxProvider implements SandboxProvider {
     machineId: string,
     action: MolaActionRequest,
   ): Promise<MolaActionResponse> {
-    const response = await this.request(`/machines/${machineId}/actions`, {
+    const resource = this.resourcePath("computers");
+    const response = await this.request(`/${resource}/${machineId}/actions`, {
       method: "POST",
       body: action,
     });
@@ -214,6 +232,14 @@ export class MolaSandboxProvider implements SandboxProvider {
   private async getDesktopUrl(
     machineId: string,
   ): Promise<{ url: string; expires_in: number }> {
+    if (this.apiMode === "cloud") {
+      const response = await this.request(`/computers/${machineId}/viewers`, {
+        method: "POST",
+        body: { type: "desktop", expires_in: 3600 },
+      });
+      const result: { data: { url: string; expires_in?: number } } = await response.json();
+      return { url: result.data.url, expires_in: result.data.expires_in ?? 3600 };
+    }
     const response = await this.request(`/machines/${machineId}/desktop`, {
       method: "POST",
     });
@@ -261,12 +287,13 @@ export class MolaSandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
-    // Try to reconnect to existing machine
+    const resource = this.resourcePath("computers");
+
     if (request.providerRef && request.providerKind === "mola") {
       try {
         const machine = await withAbort(this.getMachine(request.providerRef), context.signal);
         if (machine.status === "stopped") {
-          await this.request(`/machines/${request.providerRef}/start`, { method: "POST" });
+          await this.request(`/${resource}/${request.providerRef}/start`, { method: "POST" });
           await this.waitForReady(request.providerRef, context);
         }
         return this.ref(machine, request.botId);
@@ -275,18 +302,29 @@ export class MolaSandboxProvider implements SandboxProvider {
       }
     }
 
-    // Create new machine - default to Ubuntu with reasonable resources
     const name = `rakazo-${randomUUID()}`;
     const sizeConfig = this.getSizeConfig(request.size);
 
-    const response = await this.request("/machines", {
+    const body =
+      this.apiMode === "cloud"
+        ? {
+            name,
+            profile: "default",
+            image: "ubuntu-24.04",
+            vcpus: sizeConfig.vcpus,
+            memory_mb: sizeConfig.memory_mb,
+            disk_gb: sizeConfig.disk_gb,
+          }
+        : {
+            name,
+            vcpus: sizeConfig.vcpus,
+            memory_mb: sizeConfig.memory_mb,
+            disk_gb: sizeConfig.disk_gb,
+          };
+
+    const response = await this.request(`/${resource}`, {
       method: "POST",
-      body: {
-        name,
-        vcpus: sizeConfig.vcpus,
-        memory_mb: sizeConfig.memory_mb,
-        disk_gb: sizeConfig.disk_gb,
-      },
+      body,
     });
 
     const result: { data: MolaMachine } = await response.json();
@@ -299,9 +337,8 @@ export class MolaSandboxProvider implements SandboxProvider {
       await this.waitForReady(machine.id, context);
       return this.ref(machine, request.botId, true);
     } catch (error) {
-      // Clean up on failure
       try {
-        await this.request(`/machines/${machine.id}`, { method: "DELETE" });
+        await this.request(`/${resource}/${machine.id}`, { method: "DELETE" });
       } catch (cleanupError) {
         log.warn("Failed to clean up machine after provision failure", { error: cleanupError });
       }
@@ -605,9 +642,10 @@ export class MolaSandboxProvider implements SandboxProvider {
     options?: { discardUnsaved?: boolean },
   ): Promise<void> {
     context.signal.throwIfAborted();
+    const resource = this.resourcePath("computers");
 
     try {
-      await this.request(`/machines/${computer.providerRef}/stop`, {
+      await this.request(`/${resource}/${computer.providerRef}/stop`, {
         method: "POST",
         body: { force: options?.discardUnsaved ?? false },
       });
@@ -618,9 +656,10 @@ export class MolaSandboxProvider implements SandboxProvider {
 
   async destroy(computer: ComputerRef, context: AdapterContext): Promise<void> {
     context.signal.throwIfAborted();
+    const resource = this.resourcePath("computers");
 
     try {
-      await this.request(`/machines/${computer.providerRef}`, {
+      await this.request(`/${resource}/${computer.providerRef}`, {
         method: "DELETE",
       });
       this.machines.delete(computer.providerRef);
