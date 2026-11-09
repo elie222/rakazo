@@ -156,11 +156,9 @@ const ServiceAuditEvent = AuditEventSchema.omit({ ip: true, userAgent: true });
 export const SERVICE_WAIT_MAX_SECONDS = 60;
 const wait = z
   .string()
-  .regex(/^(0|[1-9][0-9]?)$/)
-  .transform(Number)
-  .refine((seconds) => seconds <= SERVICE_WAIT_MAX_SECONDS, {
-    error: `wait is at most ${SERVICE_WAIT_MAX_SECONDS} seconds`,
-  });
+  // A bound in the pattern reaches the published OpenAPI document; a refine does not.
+  .regex(/^(60|[1-5]?[0-9])$/, `wait is whole seconds up to ${SERVICE_WAIT_MAX_SECONDS}`)
+  .transform(Number);
 
 /** A run with what the bot has said in it so far. */
 const ServiceRunDetail = z.object({
