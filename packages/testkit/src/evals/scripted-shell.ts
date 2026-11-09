@@ -68,9 +68,10 @@ export function scriptedShell(
     const part = parts[index]!.trim();
     const operator = parts[index - 1];
     if (!part || (operator === "&&" && code !== 0) || (operator === "||" && code === 0)) continue;
-    const echo = /^echo\s+(?:-[en]+\s+)?(.*)$/s.exec(part.replace(/\s*[|>].*$/s, ""));
+    const echo = /^echo\s+(?:-[en]+\s+)?(.*)$/s.exec(part.replace(/\s*(?:[0-9&]?>|\|).*$/s, ""));
     if (echo) {
-      out.push(echo[1]!.replace(/^(["'])(.*)\1$/s, "$2"));
+      // `echo … > file` writes to the file, so nothing reaches stdout.
+      if (!/(?<!2)>/.test(part)) out.push(echo[1]!.replace(/^(["'])(.*)\1$/s, "$2"));
       code = 0;
       continue;
     }

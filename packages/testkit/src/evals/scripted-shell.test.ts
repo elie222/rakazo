@@ -24,6 +24,13 @@ describe("scripted eval shell", () => {
     });
   });
 
+  it("prints echo only when its stdout is not redirected", () => {
+    expect(scriptedShell(script, "echo hi > /tmp/x")).toEqual({ stdout: "", stderr: "", code: 0 });
+    expect(scriptedShell(script, "echo hi >> /tmp/x")?.stdout).toBe("");
+    expect(scriptedShell(script, "echo hi &> /tmp/x")?.stdout).toBe("");
+    expect(scriptedShell(script, "echo hi 2>/dev/null")?.stdout).toBe("hi");
+  });
+
   it("covers no command list with an unscripted command in it", () => {
     expect(scriptedShell(script, "uptime")).toBeUndefined();
     expect(scriptedShell(script, "cat /etc/os-release; df -h")).toBeUndefined();
