@@ -53,15 +53,20 @@ export function useRoutineEditor({
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRevealedWebhookSecrets((current) => ({ ...current, [botId]: result.secret }));
+      showWebhookSecret(botId, result.secret);
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
       return result.secret;
     });
-  // A key read back on request hides again after a while, as the Vault's values do.
+  // A key on screen, new or read back, hides again after a while, as the Vault's values do.
   const webhookHideTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(webhookHideTimer.current), []);
+  function showWebhookSecret(botId: string, secret: string) {
+    setRevealedWebhookSecrets((current) => ({ ...current, [botId]: secret }));
+    window.clearTimeout(webhookHideTimer.current);
+    webhookHideTimer.current = window.setTimeout(() => hideWebhookSecret(botId, secret), REVEAL_MS);
+  }
   function hideWebhookSecret(botId: string, secret?: string) {
     window.clearTimeout(webhookHideTimer.current);
     setRevealedWebhookSecrets((current) => {
@@ -155,12 +160,7 @@ export function useRoutineEditor({
           try {
             const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
             if (stale()) return;
-            setRevealedWebhookSecrets((current) => ({ ...current, [targetBotId]: secret }));
-            window.clearTimeout(webhookHideTimer.current);
-            webhookHideTimer.current = window.setTimeout(
-              () => hideWebhookSecret(targetBotId, secret),
-              REVEAL_MS,
-            );
+            showWebhookSecret(targetBotId, secret);
           } catch (error) {
             // The editor asks the person to confirm it's them and tries again.
             if (isIdentityConfirmationRequired(error)) throw error;
