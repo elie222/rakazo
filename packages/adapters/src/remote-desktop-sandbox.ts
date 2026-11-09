@@ -106,7 +106,13 @@ export function remoteDesktopCreateOptions(botId: string, apiKey: string) {
 }
 
 // How the SDKs report a sandbox that is not running. Sandboxes pause on timeout, so this usually
-// means paused rather than deleted; only a failed resume proves the sandbox is gone.
+// means paused rather than deleted; only a failed resume proves the sandbox is gone. Newer SDKs
+// name the error instead, including one for a sandbox they could not reach to check.
+const SANDBOX_NOT_RUNNING_NAMES = new Set([
+  "SandboxNotFoundError",
+  "SandboxNotRunningError",
+  "SandboxUnreachableError",
+]);
 const SANDBOX_NOT_RUNNING =
   /likely due to sandbox timeout|killed or reached its end of life|probably not running anymore/i;
 
@@ -116,7 +122,7 @@ const COMMAND_DEADLINE = /^deadline_exceeded|exceeding 'timeoutMs'/;
 function isSandboxNotRunning(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.name === "SandboxNotFoundError" || SANDBOX_NOT_RUNNING.test(error.message))
+    (SANDBOX_NOT_RUNNING_NAMES.has(error.name) || SANDBOX_NOT_RUNNING.test(error.message))
   );
 }
 

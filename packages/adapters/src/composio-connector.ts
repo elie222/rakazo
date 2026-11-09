@@ -635,11 +635,14 @@ export class ComposioConnector implements ComposioProvider {
           item.args,
           item.account ? { account: item.account } : undefined,
         );
-        if (result.error) {
+        // A failed or hook-blocked call can come back with an empty error.
+        if (result.error || result.resultType !== "completed") {
           const logIds = collectLogIds(executed);
           yield {
             type: "error",
-            message: sanitizeIntegrationError(composioResultError(result.error, result.data)),
+            message: sanitizeIntegrationError(
+              composioResultError(result.error || `${item.tool} failed`, result.data),
+            ),
             ...(logIds.length > 0 ? { logIds } : {}),
           };
           return;
