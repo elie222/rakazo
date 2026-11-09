@@ -1,7 +1,7 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { serializeModelSecret } from "./pi-oauth.js";
+import { serializeModelSecret } from "./model-secret.js";
 import type { VoiceKeyDeps } from "./voice-model-connection.js";
 import { MODEL_CONNECTION_VOICE_SECRET, resolveVoiceKey } from "./voice-model-connection.js";
 

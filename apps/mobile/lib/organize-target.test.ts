@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSpace } from "./api";
 import { rpc } from "./api";
+import type { MobileSpace } from "./mobile-types";
 import { findOrganizeTarget } from "./organize-target";
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(async () => ({ headers: { authorization: "Bearer fake" } })),
   rpc: vi.fn(),

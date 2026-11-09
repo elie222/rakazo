@@ -106,17 +106,23 @@ it("keeps its controls clickable over the window's drag areas in the desktop app
 });
 
 it("starts its top row below the macOS window controls in the desktop app", async () => {
-  vi.stubGlobal("rakazoDesktop", { platform: "darwin" });
+  window.rakazoDesktop = { platform: "darwin" } as never;
   const mac = mount({ document: "<p>v1</p>" });
   await mac.render({ document: "<p>v1</p>" });
-  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[42px]");
+  const close = document.querySelector<HTMLElement>('[aria-label="Close page"]')!;
+  expect(close.className).toContain("top-[42px]");
+  // 72px traffic-light strip plus the 11px browser inset.
+  expect(close.style.left).toBe("83px");
   expect(document.querySelector(".app-drag")!.className).toContain("h-[70px]");
   await mac.unmount();
   document.body.replaceChildren();
+  delete window.rakazoDesktop;
   vi.unstubAllGlobals();
 
   const browser = mount({ document: "<p>v1</p>" });
   await browser.render({ document: "<p>v1</p>" });
-  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[6px]");
+  const browserClose = document.querySelector<HTMLElement>('[aria-label="Close page"]')!;
+  expect(browserClose.className).toContain("top-[6px]");
+  expect(browserClose.style.left).toBe("11px");
   await browser.unmount();
 });

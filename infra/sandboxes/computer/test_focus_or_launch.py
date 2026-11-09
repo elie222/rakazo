@@ -39,8 +39,17 @@ LISTING = """\
 
 class WmClassTest(unittest.TestCase):
     def test_known_launchers_have_fixed_classes(self):
-        self.assertEqual(helper.wm_class("rakazo-browser"), "chromium")
+        self.assertEqual(helper.wm_class("rakazo-browser"), helper.browser_wm_class())
         self.assertEqual(helper.wm_class("xterm"), "xterm")
+
+    def test_browser_class_follows_the_installed_browser(self):
+        def only(*names):
+            return lambda name: f"/usr/bin/{name}" if name in names else None
+
+        self.assertEqual(helper.browser_wm_class(only("chromium")), "chromium")
+        self.assertEqual(helper.browser_wm_class(only("google-chrome", "google-chrome-stable")), "google-chrome")
+        self.assertEqual(helper.browser_wm_class(only("brave-browser")), "brave-browser")
+        self.assertEqual(helper.browser_wm_class(only()), "chromium")
 
     def test_other_launchers_match_their_binary_basename(self):
         self.assertEqual(helper.wm_class("/usr/bin/xterm"), "xterm")
@@ -105,9 +114,10 @@ class MainTest(unittest.TestCase):
 
             return Child()
 
+        # The fixtures list Chromium windows; the host's own browsers must not matter.
         with patch.object(helper.subprocess, "run", side_effect=fake_run), patch.object(
             helper.subprocess, "Popen", side_effect=fake_popen
-        ):
+        ), patch.dict(helper.WM_CLASS, {"rakazo-browser": "chromium"}):
             try:
                 helper.main(argv)
             except SystemExit as error:
@@ -925,8 +935,12 @@ class ScriptTest(unittest.TestCase):
                 )
                 browser = bin_dir / "rakazo-browser"
                 browser.write_text('#!/bin/sh\nprintf "browser %s\\n" "$*" >> "$RAKAZO_TEST_ARGS"\n')
+                # The listed windows are Chromium's, whatever browser the host has.
+                chromium = bin_dir / "chromium"
+                chromium.write_text("#!/bin/sh\n")
                 wmctrl.chmod(0o755)
                 browser.chmod(0o755)
+                chromium.chmod(0o755)
                 env = {
                     **os.environ,
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",

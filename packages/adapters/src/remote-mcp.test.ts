@@ -34,14 +34,53 @@ describe("remote MCP URL policy", () => {
 
   it("blocks private hosts by default", async () => {
     await expect(assertSafeRemoteUrl("https://10.0.0.8/mcp", publicResolver)).rejects.toThrow(
-      /private host/i,
+      "Connector URL targets a private host. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
     );
     await expect(
       assertSafeRemoteUrl("http://192.168.1.20:3927/mcp", publicResolver),
-    ).rejects.toThrow(/HTTPS/i);
+    ).rejects.toThrow(
+      "Connector URL must use HTTPS. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
+    );
     await expect(
       assertSafeRemoteUrl("https://host.docker.internal/mcp", publicResolver),
     ).rejects.toThrow(/private host/i);
+    await expect(assertSafeRemoteUrl("http://203.0.113.10/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL must use HTTPS$/,
+    );
+  });
+
+  it("offers the private-endpoint setting only where it decides the outcome before DNS", async () => {
+    const hint = "Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.";
+    for (const raw of ["http://localhost:3927/mcp", "http://127.0.0.1:3927/mcp"]) {
+      await expect(assertSafeRemoteUrl(raw, publicResolver)).rejects.toThrow(hint);
+    }
+    // A private-looking name can still resolve to a public address, which the setting does not allow over HTTP.
+    await expect(assertSafeRemoteUrl("http://mcp.internal/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL must use HTTPS$/,
+    );
+    await expect(
+      assertSafeRemoteUrl("http://mcp.internal/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).rejects.toThrow("Connector URL must use HTTPS");
+    await expect(assertSafeRemoteUrl("https://mcp.internal/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL targets a private host$/,
+    );
+  });
+
+  it("does not offer the private-endpoint setting for link-local hosts it would not allow", async () => {
+    for (const raw of [
+      "https://169.254.10.20/mcp",
+      "https://[fe80::1]/mcp",
+      "http://169.254.10.20/mcp",
+    ]) {
+      await expect(assertSafeRemoteUrl(raw, publicResolver)).rejects.toThrow(
+        /^Connector URL (targets a private host|must use HTTPS)$/,
+      );
+      await expect(
+        assertSafeRemoteUrl(raw, publicResolver, { allowPrivateEndpoint: true }),
+      ).rejects.toThrow("Connector URL resolves to a private address");
+    }
   });
 
   it("allows private LAN hosts when the deployment-owner escape is enabled", async () => {

@@ -413,6 +413,32 @@ describe("thread event reduction", () => {
     expect(next?.messages[0]?.blocks).toEqual([completedBlock]);
   });
 
+  it("settles a saved helper card where it is, ahead of the reply that came after it", () => {
+    const helper = {
+      kind: "subagent" as const,
+      agentId: "helper-1",
+      name: "helper",
+      task: "Keep working",
+      status: "running" as const,
+    };
+    const initial = snapshot([
+      message("card", [helper]),
+      message("reply", [{ kind: "text", text: "On it" }]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.updated",
+        seq: 9,
+        payload: { messageId: "card", role: "bot", blocks: [{ ...helper, status: "stopped" }] },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["card", "reply"]);
+    expect(next?.messages[0]?.blocks).toEqual([{ ...helper, status: "stopped" }]);
+  });
+
   it("keeps a replayed bot-to-bot marker in its durable transcript position", () => {
     const peerBlock = {
       kind: "bot_message_received" as const,

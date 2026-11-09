@@ -15,7 +15,7 @@ describe("listSpaceGroupsForSpaces", () => {
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
           id: "thread-1",
-          unread: true,
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
         },
         members: [
           { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
@@ -49,7 +49,7 @@ describe("listSpaceGroupsForSpaces", () => {
       ]),
     } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceGroupsForSpaces(["workspace-2"])).resolves.toEqual([
+    await expect(repos.listSpaceGroupsForSpaces(["workspace-2"], "user-1")).resolves.toEqual([
       {
         id: "group-1",
         spaceId: "workspace-2",
@@ -68,6 +68,7 @@ describe("listSpaceGroupsForSpaces", () => {
         ],
         preview: "Escalation pending",
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         updatedAt: "2026-08-20T00:00:00.000Z",
       },
     ]);
@@ -450,7 +451,7 @@ describe("createGroup", () => {
       archivedAt: null,
       createdAt: new Date("2026-10-10T00:00:00.000Z"),
       updatedAt: new Date("2026-10-10T00:00:00.000Z"),
-      thread: { id: "thread-1", unread: false, messages: [] },
+      thread: { id: "thread-1", reads: [{ unread: false }], messages: [] },
       members: [
         { bot: { id: "lead", name: "Lead", color: "#111", runs: [] } },
         { bot: { id: "build", name: "Build", color: "#222", runs: [] } },
@@ -531,7 +532,7 @@ describe("listGroups archived", () => {
     archivedAt: archived ? new Date("2026-10-20T00:00:00.000Z") : null,
     createdAt: new Date("2026-10-01T00:00:00.000Z"),
     updatedAt: new Date("2026-10-20T00:00:00.000Z"),
-    thread: { id: `thread-${id}`, unread: false, messages: [] },
+    thread: { id: `thread-${id}`, reads: [{ unread: false }], messages: [] },
     members,
   });
 

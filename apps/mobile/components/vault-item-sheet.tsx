@@ -10,6 +10,7 @@ import { readableItem, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 import { SettingsGroup, SettingsRow } from "./settings-group";
+import { VaultTile } from "./vault-tile";
 
 type DetailRow = { label: string; value: string; hidden?: boolean };
 
@@ -118,9 +119,9 @@ export function VaultItemSheet({
         </View>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.heading}>
-            <View style={styles.tile}>
+            <VaultTile origin={kind === "login" ? item.origin : undefined} style={styles.tile}>
               <NativeSymbol ios={symbol.ios} android={symbol.android as never} size={20} />
-            </View>
+            </VaultTile>
             <View style={styles.headingText}>
               <Text accessibilityRole="header" style={styles.title} numberOfLines={2}>
                 {item.title}

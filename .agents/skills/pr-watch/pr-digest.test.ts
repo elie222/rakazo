@@ -233,10 +233,22 @@ describe("pr-digest", () => {
           body: "\n<h3>Qodo is busy working</h3>\n\nCheck back in a few minutes.",
         }),
         comment({ id: 48, user: "github-actions[bot]", kind: "Bot", body: "/agentic_review" }),
+        comment({
+          id: 51,
+          user: "qodo-free-for-open-source-projects[bot]",
+          kind: "Bot",
+          body: "[Code review](https://github.com/o/r/pull/1#issuecomment-1) by qodo was updated up to the latest commit https://github.com/o/r/commit/abc",
+        }),
+        comment({
+          id: 50,
+          user: "github-actions[bot]",
+          kind: "Bot",
+          body: "<!-- rakazo-preview -->\n**Preview:** https://example.fly.dev",
+        }),
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(9 noise)");
+    expect(result.stdout).toContain("(11 noise)");
   });
 
   it("only blocks effective change requests", () => {

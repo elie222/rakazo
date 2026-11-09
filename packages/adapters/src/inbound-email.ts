@@ -30,7 +30,7 @@ export type InboundEmail = {
   references: string[];
   /**
    * A DKIM signature that passed, was made by the From address's own domain and covers the one
-   * From, To and Cc field, so that domain vouches for the From address and the recipients.
+   * From, To, Cc and Subject field, so that domain vouches for the sender, recipients and subject.
    */
   authenticated: boolean;
   /** Not authenticated only because a DKIM key lookup failed for now; worth trying again later. */
@@ -88,8 +88,8 @@ export async function readInboundEmail(
   const sender = fromAddress ?? (dkim ? null : parsedFrom);
   const to = addresses(email.to);
   const cc = addresses(email.cc);
-  // An extra To or Cc added above the signed one would be read but not verified.
-  const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1;
+  // An extra To, Cc or Subject added above the signed one would be read but not verified.
+  const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1 && fieldCount("subject") <= 1;
   const fromDomain = fromAddress?.slice(fromAddress.lastIndexOf("@") + 1);
   const signature =
     fromAddress === null || !singleFields
@@ -108,7 +108,9 @@ export async function readInboundEmail(
           return (
             signed.has("from") &&
             (fieldCount("to") === 0 || signed.has("to")) &&
-            (fieldCount("cc") === 0 || signed.has("cc"))
+            (fieldCount("cc") === 0 || signed.has("cc")) &&
+            // The owner's mail is taken as instructions, subject included.
+            (fieldCount("subject") === 0 || signed.has("subject"))
           );
         });
 

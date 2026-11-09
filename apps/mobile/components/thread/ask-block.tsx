@@ -4,9 +4,9 @@ import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import type { MobileMessage } from "../../lib/api";
 import { plainAskTitle } from "../../lib/ask-title";
 import { useI18n } from "../../lib/i18n";
+import type { MobileMessage } from "../../lib/mobile-types";
 import { useMobileTokens } from "../../lib/native";
 import { secretDestinationLabel, siteHost } from "../../lib/secret-destination";
 import { secretFieldTraits } from "../../lib/secret-field-traits";
@@ -16,6 +16,7 @@ import { NativeActionButton } from "../native-action-button";
 import { NativeSymbol } from "../native-symbol";
 import { SecretAskSheet } from "../secret-ask-sheet";
 import { VaultItemEditor } from "../vault-item-editor";
+import { VaultTile } from "../vault-tile";
 import type { MessageActionProps } from "./message-bubble";
 
 export function AskBlock({
@@ -130,9 +131,12 @@ export function AskBlock({
     return (
       <View style={[askRowStyles.card, { backgroundColor: tokens.card }]}>
         <View style={askRowStyles.row}>
-          <View style={[askRowStyles.tile, { backgroundColor: tokens.muted }]}>
+          <VaultTile
+            origin={itemType === "login" ? ask.credential.origin : undefined}
+            style={[askRowStyles.tile, { backgroundColor: tokens.muted }]}
+          >
             <NativeSymbol ios={symbol.ios} android={symbol.android as never} size={17} />
-          </View>
+          </VaultTile>
           <View style={askRowStyles.text}>
             <Text
               {...actionProps}

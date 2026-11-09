@@ -31,6 +31,8 @@ the installer secret list, non-reuse rules, and recovery, see
 [Self-host secrets checklist](./self-host-secrets.md). To customize the public URL, image tag, or
 optional providers before startup, run `bash install-images.sh --prepare-only`, edit `.env`, then
 run `bash install-images.sh`. Flags may be combined in either order: `--prepare-only`, `--local`.
+When `RAKAZO_IMAGE_TAG` is a release such as `v0.8.0`, the installer downloads the Compose files
+from that release instead of `main`.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
@@ -52,6 +54,10 @@ there. Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:31
 `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin, and set
 `RAKAZO_HOST` to its hostname (for example, `app.example.com`). Cookies and CORS follow those
 origins.
+
+To also reach the web app by other hostnames (a LAN IP or a tailnet name, for example), list
+them comma-separated in `RAKAZO_ALLOWED_HOSTS`. Vite preview rejects any other `Host` header, and
+the computer screen then stays blank.
 
 ```Caddyfile
 app.example.com {

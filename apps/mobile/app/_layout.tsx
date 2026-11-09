@@ -38,13 +38,12 @@ import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
-  loadApiBase,
-  loadSessionToken,
   rpc,
   selectedSpaceId,
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
+import { loadApiBase } from "../lib/api-server";
 import { clearAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
@@ -74,6 +73,7 @@ import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import {
   currentReadySessionGeneration,
+  loadSessionToken,
   registerSessionDiskCache,
   subscribeSessionGeneration,
 } from "../lib/session";
@@ -98,6 +98,7 @@ import {
   useTrustedLinkSites,
 } from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
+import { startWorkActivities } from "../lib/work-activity";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -345,6 +346,12 @@ function LayoutContent() {
     return startUnsentSends();
   }, [ready]);
 
+  // Only once the saved server is restored: the card's check sends the session to it.
+  useEffect(() => {
+    if (!ready) return;
+    return startWorkActivities();
+  }, [ready]);
+
   useEffect(() => watchForegroundUpdates(), []);
 
   useEffect(() => {
@@ -456,6 +463,15 @@ function LayoutContent() {
                         presentation: "formSheet",
                         sheetAllowedDetents: "fitToContents",
                         sheetGrabberVisible: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="new-bot"
+                      options={{
+                        title: t("New bot"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
                       }}
                     />
                     <Stack.Screen

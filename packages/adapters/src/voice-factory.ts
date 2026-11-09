@@ -44,6 +44,7 @@ export const VOICE_CATALOG = [
     description: "Voice models, cloning, and expressive speech with optional transcription.",
     transcribe: true,
     speechModel: true,
+    languages: true,
   },
   {
     id: XAI_VOICE_PROVIDER_ID,

@@ -49,14 +49,26 @@ export function confirmDeleteBot(
   );
 }
 
-export function confirmDeleteGroup(group: { id: string; name: string }, onDeleted: () => void) {
+export function confirmDeleteGroup(
+  group: { id: string; name: string },
+  onDeleted: () => void,
+  requestContext?: ApiRequestContext,
+) {
   Alert.alert(t("Delete {name}?", { name: group.name }), t("Bots and their own chats stay."), [
     { text: t("Cancel"), style: "cancel" },
     {
       text: t("Delete"),
       style: "destructive",
       onPress: () =>
-        void rpc("groups/remove", { groupId: group.id })
+        void (
+          requestContext
+            ? rpc(
+                "groups/remove",
+                { groupId: group.id },
+                { requestContext, skipSpaceAuthRecovery: true },
+              )
+            : rpc("groups/remove", { groupId: group.id })
+        )
           .then(() => {
             removeFromSearchInbox(group.id);
             onDeleted();

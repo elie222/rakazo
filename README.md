@@ -9,53 +9,95 @@
 
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
-Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant you
-can run on your own machine. It is available on the web, as an Electron desktop app, and on
-[iPhone](https://apps.apple.com/app/rakazo/id6801531099) and [Android](https://play.google.com/store/apps/details?id=com.rakazo.app). Bring your own model
-and computer provider, or run the complete stack locally.
+Rakazo is an open source, self-hosted alternative to Grok Bot.
 
-It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
-OpenClaw, Hermes Agent, and Claude Duet.
+Persistent AI teammates with their own memory, routines, apps, and computer. Run it on your own
+machine, with your own model.
 
-Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
+Use it on the [web](https://app.rakazo.com), [desktop](https://rakazo.com/download/), [iPhone](https://apps.apple.com/app/rakazo/id6801531099), and
+[Android](https://play.google.com/store/apps/details?id=com.rakazo.app).
+
+It is also an alternative to Meta Muse, OpenAI Dots, Instinct, OpenClaw, Hermes Agent, and Claude
+Duet.
+
+Learn more at [rakazo.com](https://rakazo.com).
 
 ## Features
 
-- Persistent bots with their own conversations, memory, routines, and history
-- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, Cartesia, Fish Audio, or xAI key, or use a Mac server's installed voices
-- Shared Team Computers and isolated Private computers
-- Browser, terminal, file, and graphical desktop access
-- Bots that can delegate to peer bots or short-lived subagents
-- Bring-your-own model credentials through Pi
-- App integrations through Composio or Pipedream Connect, plus user-installed Treg, remote MCP, and OpenAPI tool sources
-- Docker, E2B, Daytona, CreateOS, Boat, and trusted local-computer support
+- Routines
+- Memory
+- Computer and browser use
+- Private or shared team computers
+- Sandboxes in Docker, the cloud, or on your own machine
+- Group chats
+- Delegation and subagents
+- Builds dashboards and docs you can share by link
+- Voice chat and calls
+- Any model, with your own keys
+- Thousands of app integrations, plus MCP
 
-## Demo
+<table>
+<tr>
+<td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
+### Every bot gets a computer
 
-## Thanks
+A browser, terminal, files, and a full desktop. Watch it work, take control to sign in, and hand it back.
 
-- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+<img src="./docs/screenshots/readme/computer.png" alt="A bot's Team Computer with a browser open" width="100%">
 
-## Stack
+</td>
+<td width="50%" valign="top">
 
-- TypeScript
-- React 19, Vite, and Tailwind CSS
-- Electron and Expo
-- Hono and oRPC
-- PostgreSQL and Prisma
-- Better Auth
-- Graphile Worker
-- Pi
-- Docker, E2B, Daytona, CreateOS, and Boat
-- Composio, Pipedream Connect, MCP, and OpenAPI integrations
+### Bots that work together
+
+Put bots in a group and @mention them. They split the work, check each other, and report back.
+
+<img src="./docs/screenshots/readme/groups.png" alt="A group chat where three bots answer a request together" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Routines
+
+Run a bot on a schedule, from an email, or from a webhook, and see every run.
+
+<img src="./docs/screenshots/readme/routines.png" alt="An active weekday routine with its run history beside the bot's chat" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### Pages
+
+Bots build live dashboards and documents you can open full screen, share, and ask about.
+
+<img src="./docs/screenshots/readme/pages.png" alt="A full-screen growth dashboard a bot built" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Connected apps
+
+Gmail, Slack, GitHub, Notion, Linear and thousands more, plus your own MCP servers and OpenAPI tools.
+
+<img src="./docs/screenshots/readme/integrations.png" alt="The integrations catalog" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+### On every device
+
+Web, desktop, iPhone, and Android, all talking to the same server.
+
+<img src="./docs/screenshots/readme/mobile.png" alt="The bot list and a chat on iPhone" width="100%">
+
+</td>
+</tr>
+</table>
 
 ## Quick start (published images)
 
@@ -126,13 +168,15 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
-Connect. Users can add an HTTPS MCP server, Treg endpoint, or OpenAPI JSON document from
-**Integrations** without enabling either managed catalog. Connector credentials are encrypted on the
-server and are never returned by the API.
+Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
+enabling either managed catalog. Connector credentials are encrypted on the server and are never
+returned by the API.
 
-Treg is usage-metered. Self-hosters supply their own Treg token; operators embedding Treg in a
-hosted product should review [Treg's integration terms](https://treg.to/integrate.md), which require
-a written agreement for hosted resale.
+Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.
+Set `PAID_SERVICES_PROVIDER=treg` and `PAID_SERVICES_API_KEY` to an org-scoped
+[Treg](https://treg.to) token, and bots can find and call them on the deployment's account. When
+model credits are on, each call is charged to the organization's credits at the provider's cost
+plus 20%.
 
 ```bash
 pnpm install
@@ -318,6 +362,29 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
 - [Hermes Agent](https://rakazo.com/hermes-alternative/)
 - [All comparisons](https://rakazo.com/alternatives/)
+
+## Thanks
+
+- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+
+## Stack
+
+- TypeScript
+- React 19, Vite, and Tailwind CSS
+- Electron and Expo
+- Hono and oRPC
+- PostgreSQL and Prisma
+- Better Auth
+- Graphile Worker
+- Pi
+- Docker, E2B, Daytona, CreateOS, and Boat
+- Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
 ## Contributing
 

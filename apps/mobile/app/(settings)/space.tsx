@@ -1,4 +1,5 @@
 import type { SpaceSetting } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text } from "react-native";
@@ -11,6 +12,7 @@ import { mobileTokens } from "../../lib/appearance";
 import { useApprovalSettings } from "../../lib/approval-settings";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -28,32 +30,30 @@ export default function SpaceSettings() {
   const { t } = useI18n();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [overrides, setOverrides] = useState<SpaceSetting[] | null>(null);
+  const isSpace = target.scope === "space";
+  const overridesRead = rpcQuery(
+    "spaceSettings/overrides",
+    undefined,
+    isSpace ? target.spaceId : undefined,
+  );
+  const overridesQuery = useQuery({ ...overridesRead, enabled: isSpace }, queryClient);
+  const overrides = overridesQuery.data ?? null;
+  const loadError = overridesQuery.error
+    ? errorText(overridesQuery.error, t("Something went wrong. Try again."))
+    : null;
+  const setOverrides = (next: SpaceSetting[]) =>
+    queryClient.setQueryData(overridesRead.queryKey, next);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
   // A native switch shows the flip it reported, so keeping a setting on remounts its switch.
   const [kept, setKept] = useState(0);
   const approvals = useApprovalSettings(target, overrides?.includes("confirmations") ?? false);
 
+  const { refetch } = overridesQuery;
   useFocusEffect(
     useCallback(() => {
-      if (target.scope !== "space") return;
-      let current = true;
-      void rpc("spaceSettings/overrides")
-        .then((next) => {
-          if (!current) return;
-          setOverrides(next);
-          setLoadError(null);
-        })
-        .catch((err: unknown) => {
-          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
-        });
-      return () => {
-        current = false;
-      };
-    }, [attempt, rpc, t, target.scope]),
+      if (isSpace) void refetch();
+    }, [isSpace, refetch]),
   );
 
   if (target.scope !== "space") return null;
@@ -64,7 +64,8 @@ export default function SpaceSettings() {
   async function customize(setting: SpaceSetting, enabled: boolean) {
     setPending(true);
     setError(null);
-    setLoadError(null);
+    // Keeping the overrides shown clears a failed refresh's error while this saves.
+    if (overrides) setOverrides(overrides);
     try {
       setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled && setting !== "confirmations") open(setting);
@@ -130,8 +131,7 @@ export default function SpaceSettings() {
             message={failure}
             onRetry={() => {
               setError(null);
-              setLoadError(null);
-              setAttempt((count) => count + 1);
+              void queryClient.resetQueries({ queryKey: overridesRead.queryKey });
             }}
           />
         ) : shownError ? (

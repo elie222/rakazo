@@ -2,6 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
@@ -91,10 +92,7 @@ export async function messageBot(
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
-    return {
-      ok: false as const,
-      error: `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit`,
-    };
+    return { ok: false as const, error: BOT_MESSAGE_TOO_LONG };
   }
 
   const sourceContext = await loadBotMessageContext(deps.prisma, run.sourceMessageId);

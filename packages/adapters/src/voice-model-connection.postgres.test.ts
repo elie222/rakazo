@@ -3,7 +3,7 @@ import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { serializeModelSecret } from "./pi-oauth.js";
+import { serializeModelSecret } from "./model-secret.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { MODEL_CONNECTION_VOICE_SECRET, resolveVoiceKey } from "./voice-model-connection.js";
 

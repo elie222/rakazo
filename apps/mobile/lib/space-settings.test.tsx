@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SpaceSettings from "../app/(settings)/space";
+import { queryClient } from "./query";
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),
@@ -49,13 +50,19 @@ vi.mock("./i18n", () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-selected",
   captureApiRequestContext: async (spaceId: string) => ({
     apiBase: "https://app.example.test",
     headers: { "x-rakazo-space-id": spaceId },
   }),
 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => undefined | (() => void)) =>
     useEffect(effect, [effect, state.focusCount]),
@@ -133,11 +140,16 @@ const spaceContext = {
 };
 let root: Root;
 let container: HTMLDivElement;
+async function render() {
+  await act(async () => root.render(createElement(SpaceSettings)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+}
 const control = (label: string) =>
   container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   state.overrides = [];
   state.focusCount = 0;
   state.rules = [];
@@ -162,7 +174,7 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(createElement(SpaceSettings)));
+  await render();
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -171,7 +183,10 @@ afterEach(() => {
 });
 
 it("follows the account until a setting is customized, then opens the same screen for the Space", async () => {
-  expect(state.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, spaceContext);
+  expect(state.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, {
+    ...spaceContext,
+    signal: expect.any(AbortSignal),
+  });
   for (const name of ["Models", "Voice", "Approvals", "Vault"])
     expect(control(`Customize ${name}`)?.checked).toBe(false);
   expect(container.querySelector("button")).toBeNull();
@@ -307,7 +322,7 @@ it("opens the Vault for the Space, and deletes its credentials only once confirm
 it("turns other settings off without asking", async () => {
   state.overrides = ["voice"];
   state.focusCount += 1;
-  await act(async () => root.render(createElement(SpaceSettings)));
+  await render();
   await act(async () => control("Customize Voice")!.click());
   expect(state.alert).not.toHaveBeenCalled();
   expect(control("Customize Voice")?.checked).toBe(false);
@@ -320,15 +335,18 @@ function retry() {
 it("offers a retry when the overrides fail to load, then enables the switches", async () => {
   state.overrides = ["voice"];
   await act(async () => root.unmount());
+  // A first open: nothing loaded yet.
+  queryClient.clear();
   root = createRoot(container);
   state.rpc.mockImplementationOnce(async () => {
     throw new Error("offline");
   });
-  await act(async () => root.render(createElement(SpaceSettings)));
+  await render();
   expect(container.textContent).toContain("Something went wrong. Try again.");
   expect(control("Customize Voice")?.disabled).toBe(true);
 
   await act(async () => retry()!.click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   expect(control("Customize Voice")?.disabled).toBe(false);
   expect(control("Customize Voice")?.checked).toBe(true);
   expect(retry()).toBeUndefined();
@@ -348,7 +366,7 @@ it("keeps a failed save's error when a read that was pending then succeeds", asy
     return base(proc, input);
   });
   state.focusCount += 1;
-  await act(async () => root.render(createElement(SpaceSettings)));
+  await render();
 
   await act(async () => control("Customize Models")!.click());
   expect(container.textContent).toContain("Could not save that preference");

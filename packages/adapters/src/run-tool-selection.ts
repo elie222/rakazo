@@ -3,7 +3,7 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -35,6 +35,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "service_search",
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
@@ -43,6 +44,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
 
 /** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
 const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
+const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
@@ -61,6 +63,38 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
+/**
+ * A background helper works while the bot keeps talking, so it only reads and looks things up:
+ * no computer (the bot's own turns keep it), no questions to the user, and no changes to
+ * memory, skills or routines, which the bot makes itself when the result comes back.
+ */
+export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "web_search",
+  "web_fetch",
+  "recall_memory",
+  "skill_read",
+  "task_catalog",
+  "scratchpad_list",
+  "board_tickets",
+  "ticket_get",
+  "cloud_agent_status",
+]);
+
+/** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
+export function offersAgentConnectionTools(options: {
+  hasMessagingIdentity: boolean;
+  crossSpaceCommunication: boolean;
+  trigger: string;
+}): boolean {
+  return (
+    options.hasMessagingIdentity &&
+    options.crossSpaceCommunication &&
+    !isBackgroundRunTrigger(options.trigger) &&
+    options.trigger !== "created" &&
+    options.trigger !== BACKGROUND_HELPER_TRIGGER
+  );
+}
+
 export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
@@ -78,6 +112,8 @@ export function selectBuiltinToolsForRun(options: {
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
+  /** The deployment configured paid data services. */
+  paidServicesEnabled?: boolean;
   messagingChannelRun: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
@@ -127,12 +163,15 @@ export function selectBuiltinToolsForRun(options: {
     (tool) =>
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
+      (options.trigger !== BACKGROUND_HELPER_TRIGGER ||
+        BACKGROUND_HELPER_TOOL_NAMES.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && ownerStartedRun)) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
+      (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||

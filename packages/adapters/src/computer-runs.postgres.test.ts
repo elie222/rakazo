@@ -192,6 +192,58 @@ describePostgres("computer runs (PostgreSQL)", () => {
     );
   });
 
+  it("sleeps past a background helper, which never uses the computer", async () => {
+    const o = await owner();
+    await o.start();
+    const bot = await system.bot.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        name: "Delegating",
+        color: "ink",
+        computerId: o.id,
+        thread: { create: { spaceId: o.id, userId: o.id } },
+      },
+    });
+    const helperThread = await system.thread.create({
+      data: { spaceId: o.id, userId: o.id, helperBotId: bot.id },
+    });
+    const task = await system.task.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId: helperThread.id,
+        prompt: "Compare venues",
+        status: "running",
+      },
+    });
+    const helper = await system.run.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId: helperThread.id,
+        taskId: task.id,
+        status: "running",
+        trigger: "helper",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "suspended",
+    );
+    // The same run as the bot's own turn keeps the computer up.
+    await o.start();
+    await system.run.update({ where: { id: helper.id }, data: { trigger: "user" } });
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "running",
+    );
+  });
+
   it("ends the run when the provider has already lost the sandbox", async () => {
     const o = await owner();
     await o.start();

@@ -231,7 +231,14 @@ public class RakazoNotificationsModule: Module {
   private var observer: NSObjectProtocol?
   public func definition() -> ModuleDefinition {
     Name("RakazoNotifications")
-    Events("onIncomingCallChanged")
+    Events("onIncomingCallChanged", "onWorkActivityToken")
+    OnCreate {
+      if #available(iOS 18.0, *) {
+        WorkActivities.shared.onToken = { [weak self] token in
+          self?.sendEvent("onWorkActivityToken", ["token": token])
+        }
+      }
+    }
     OnStartObserving {
       self.observer = NotificationCenter.default.addObserver(forName: IncomingCalls.changed, object: nil, queue: .main) { [weak self] _ in
         self?.sendEvent("onIncomingCallChanged", [:])
@@ -249,5 +256,21 @@ public class RakazoNotificationsModule: Module {
       if let uuid = UUID(uuidString: id) { IncomingCalls.shared.end(uuid, reason: .remoteEnded) }
     }.runOnQueue(.main)
     AsyncFunction("clearIncomingCalls") { IncomingCalls.shared.clear() }.runOnQueue(.main)
+    AsyncFunction("startWorkActivity") { (title: String, spaceId: String, botId: String?, groupId: String?) in
+      if #available(iOS 18.0, *) {
+        // A group's bot is known only once the server's first update names it.
+        let name = title.isEmpty
+          ? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? ""
+          : title
+        WorkActivities.shared.start(.init(
+          status: .working, title: name, line: "", spaceId: spaceId, botId: botId, groupId: groupId))
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("refreshWorkActivity") {
+      if #available(iOS 18.0, *) { WorkActivities.shared.refresh() }
+    }.runOnQueue(.main)
+    AsyncFunction("endWorkActivity") {
+      if #available(iOS 18.0, *) { WorkActivities.shared.end() }
+    }.runOnQueue(.main)
   }
 }

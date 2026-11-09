@@ -122,6 +122,9 @@ x-app-environment: &app-environment
   MEDIA_GENERATION_API_KEY: ${MEDIA_GENERATION_API_KEY:-}
   MEDIA_GENERATION_IMAGE_MODEL: ${MEDIA_GENERATION_IMAGE_MODEL:-}
   MEDIA_GENERATION_VIDEO_MODEL: ${MEDIA_GENERATION_VIDEO_MODEL:-}
+  PAID_SERVICES_PROVIDER: ${PAID_SERVICES_PROVIDER:-disabled}
+  PAID_SERVICES_API_KEY: ${PAID_SERVICES_API_KEY:-}
+  PAID_SERVICES_BASE_URL: ${PAID_SERVICES_BASE_URL:-}
   # Provider keys Pi reads itself when a model has no stored credential
   AI_GATEWAY_API_KEY:
   ANTHROPIC_AUTH_TOKEN:
@@ -363,7 +366,9 @@ services:
 
   data-init:
     image: ${BUSYBOX_IMAGE:-busybox:1}
-    command: ["chown", "-R", "1000:1000", "/data"]
+    # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
+    # in the volume; -h changes a symlink itself, never its target.
+    command: ["find", "/data", "!", "(", "-user", "1000", "-group", "1000", ")", "-exec", "chown", "-h", "1000:1000", "{}", "+"]
     restart: "no"
     volumes:
       - ../../data:/data
@@ -401,6 +406,7 @@ services:
       BETTER_AUTH_SECRET:
       BETTER_AUTH_URL:
       WEB_ORIGIN:
+      RAKAZO_EXTRA_AUTH_ORIGINS:
       AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
@@ -505,6 +511,7 @@ services:
       API_PROXY_TARGET: http://api:3100
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      RAKAZO_ALLOWED_HOSTS: ${RAKAZO_ALLOWED_HOSTS:-}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
       RAKAZO_THEME: ${RAKAZO_THEME:-}
