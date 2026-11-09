@@ -1,6 +1,7 @@
 import type { Context } from "@earendil-works/pi-ai";
 import type { ImageSearchHit, ImageSearchResult } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import * as z from "zod";
@@ -42,20 +43,11 @@ export function supportsModelImageSearch(provider: string): boolean {
 
 function screenedResultUrl(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > MAX_URL_LENGTH) return undefined;
-  try {
-    const url = new URL(value);
-    if (
-      (url.protocol !== "https:" && url.protocol !== "http:") ||
-      url.username ||
-      url.password ||
-      isBlockedHostname(url.hostname) ||
-      url.href.length > MAX_URL_LENGTH
-    )
-      return undefined;
-    return url.href;
-  } catch {
-    return undefined;
-  }
+  const normalized = normalizedHttpUrl(value);
+  if (!normalized || normalized.length > MAX_URL_LENGTH) return undefined;
+  const url = new URL(normalized);
+  if (url.username || url.password || isBlockedHostname(url.hostname)) return undefined;
+  return normalized;
 }
 
 function imageSearchHit(value: unknown): ImageSearchHit | undefined {
