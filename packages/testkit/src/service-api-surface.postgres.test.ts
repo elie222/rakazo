@@ -1152,9 +1152,28 @@ describeWithDatabase("service API surface", () => {
     const { token } = await newKey(cookie, ["bots:read"]);
     const document = await ok<{
       openapi: string;
-      paths: Record<string, Record<string, { "x-required-scope": string | null }>>;
+      paths: Record<
+        string,
+        Record<
+          string,
+          {
+            "x-required-scope": string | null;
+            parameters?: { name: string; schema: { pattern?: string } }[];
+          }
+        >
+      >;
     }>(token, "GET", "/openapi.json");
     expect(document.openapi).toBe("3.1.0");
+    const waitParameter = document.paths["/bots/{botId}/prompts"]?.post?.parameters?.find(
+      (parameter) => parameter.name === "wait",
+    );
+    const published = new RegExp(waitParameter?.schema.pattern ?? "(?!)");
+    expect(["0", "60", "61", "99"].map((value) => published.test(value))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
     for (const [id, definition] of ROUTES) {
       const path = definition.path.replace(/:([A-Za-z]+)/g, "{$1}");
       expect([
