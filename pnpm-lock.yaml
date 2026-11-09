@@ -932,8 +932,8 @@ importers:
         specifier: 8.0.4
         version: 8.0.4
       mppx:
-        specifier: 0.13.6
-        version: 0.13.6(@modelcontextprotocol/sdk@1.32.2(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.6.7))(express@5.2.1(supports-color@8.1.1))(hono@4.13.17)(typescript@7.0.2)(viem@2.57.12(typescript@7.0.2)(zod@4.6.7))
+        specifier: 0.17.5
+        version: 0.17.5(@modelcontextprotocol/sdk@1.32.2(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.6.7))(express@5.2.1(supports-color@8.1.1))(hono@4.13.17)(typescript@7.0.2)(viem@2.57.12(typescript@7.0.2)(zod@4.6.7))
       nodemailer:
         specifier: 10.4.0
         version: 10.4.0
@@ -5587,10 +5587,6 @@ packages:
     resolution: {integrity: sha512-EbTPhou4bGZvsNOqOFMXDqgV6H7f7iDIgcZ/NJMvTSzmqw9/I0vQpIk+nHfbDNGm6yo4rY0uqb3zYT4GOLLLqQ==}
     engines: {node: '>=20'}
 
-  '@stripe/stripe-js@9.17.0':
-    resolution: {integrity: sha512-uidL4OJum5kivsOAQnVfQmYLJ2zdgirtmT0zWgskASZ4TPXxpXQ0MNrzW4NsXB90uEqmPHpSEtciLFbF1QQvNA==}
-    engines: {node: '>=12.16'}
-
   '@swc/counter@0.1.3':
     resolution: {integrity: sha512-e2BR4lsJkkRlKZ/qCHPw9ZaSxc0MVUd7gtbtaB7aMvHeJVYe8sOB8DBZkP2DtISHGSku9sCK6T6cnY0CtXrOCQ==}
 
@@ -7954,10 +7950,6 @@ packages:
     resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
     engines: {node: '>=18.0.0'}
 
-  eventsource-parser@4.1.1:
-    resolution: {integrity: sha512-zaWNqeSLeyzEAAt2Q6aDBRDRk/VnPmsKqvToyGvv6aahvLv71A4Jw7jG93Hckf11zXurbqgsffvpSgKPoeU1Qw==}
-    engines: {node: '>=22.12'}
-
   eventsource@3.0.7:
     resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
     engines: {node: '>=18.0.0'}
@@ -9720,8 +9712,8 @@ packages:
   moo@0.5.3:
     resolution: {integrity: sha512-m2fmM2dDm7GZQsY7KK2cme8agi+AAljILjQnof7p1ZMDe6dQ4bdnSMx0cPppudoeNv5hEFQirN6u+O4fDE0IWA==}
 
-  mppx@0.13.6:
-    resolution: {integrity: sha512-iQHXcb5+4bhOS3cO6M+JDjrOIMBJRji1PQYswMEsbcQeYfl53whzKPN+Awz6YIknbD3z5tUMY4DWAFewvOqbAg==}
+  mppx@0.17.5:
+    resolution: {integrity: sha512-tackWUFP2ntl/MQgR90fKbWY3pPsxpjp3eyjNlILd7D6wr0zLWO1rn7RIiIbZjUW6GxbndpFLSTOQE/2EqXrEg==}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
@@ -17373,8 +17365,6 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
-  '@stripe/stripe-js@9.17.0': {}
-
   '@swc/counter@0.1.3': {}
 
   '@swc/types@0.1.28':
@@ -19997,8 +19987,6 @@ snapshots:
 
   eventsource-parser@3.1.1: {}
 
-  eventsource-parser@4.1.1: {}
-
   eventsource@3.0.7:
     dependencies:
       eventsource-parser: 3.1.1
@@ -22234,10 +22222,8 @@ snapshots:
 
   moo@0.5.3: {}
 
-  mppx@0.13.6(@modelcontextprotocol/sdk@1.32.2(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.6.7))(express@5.2.1(supports-color@8.1.1))(hono@4.13.17)(typescript@7.0.2)(viem@2.57.12(typescript@7.0.2)(zod@4.6.7)):
+  mppx@0.17.5(@modelcontextprotocol/sdk@1.32.2(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.6.7))(express@5.2.1(supports-color@8.1.1))(hono@4.13.17)(typescript@7.0.2)(viem@2.57.12(typescript@7.0.2)(zod@4.6.7)):
     dependencies:
-      '@stripe/stripe-js': 9.17.0
-      eventsource-parser: 4.1.1
       ox: 0.14.45(typescript@7.0.2)(zod@4.6.7)
       structured-headers: 2.1.0
       viem: 2.57.12(typescript@7.0.2)(zod@4.6.7)
