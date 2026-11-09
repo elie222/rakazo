@@ -71,6 +71,25 @@ describe("Stripe prepaid model credits", () => {
       "2000",
     );
   });
+  it("asks the bank to confirm the buyer of every credit purchase", async () => {
+    const { provider, requests } = fixture();
+    for (const [amountCents, monthly] of [
+      [1000, true],
+      [1000, false],
+    ] as const)
+      await provider.createCreditCheckout({
+        customerId: "cus_fixture",
+        amountCents,
+        monthly,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      });
+    expect(
+      requests
+        .filter((r) => r.path === "/v1/checkout/sessions" && r.params.has("mode"))
+        .map((r) => r.params.get("payment_method_options[card][request_three_d_secure]")),
+    ).toEqual(["any", "any"]);
+  });
   it("looks up a monthly price once, not on every checkout", async () => {
     const { provider, requests } = fixture();
     const checkout = () =>

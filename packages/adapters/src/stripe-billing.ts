@@ -217,6 +217,8 @@ export class StripeBillingProvider implements BillingProvider {
         customer: input.customerId,
         mode: input.monthly ? "subscription" : "payment",
         allowed_payment_method_types: ["card"],
+        // Credits are spent like cash; a bank-confirmed buyer moves fraud losses to the bank.
+        payment_method_options: { card: { request_three_d_secure: "any" } },
         adaptive_pricing: { enabled: false },
         line_items: [
           input.monthly
