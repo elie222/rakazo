@@ -157,29 +157,96 @@ async function sendPrompt(
   const saved = () =>
     prisma.message.findUnique({
       where: { threadId_clientNonce: { threadId, clientNonce } },
-      select: { blocks: true },
+      select: {
+        id: true,
+        seq: true,
+        runId: true,
+        blocks: true,
+        sourceRuns: { select: { id: true }, take: 1 },
+      },
     });
-  const replayed = Boolean(await saved());
-  const sent = await client.threads.send({ ...target, text, clientNonce });
+  const existing = await saved();
+  const replayed = Boolean(existing);
+  // A message still waiting for its run has nothing for the native send to replay, and that send
+  // would go on to save it a second time.
+  const sent =
+    existing && existing.sourceRuns.length === 0 && !existing.runId
+      ? { runId: null, seq: existing.seq }
+      : await client.threads.send({ ...target, text, clientNonce });
   // After the send, so a concurrent retry that lost the unique nonce is checked as well.
-  const blocks = MessageBlockSchema.array().safeParse((await saved())?.blocks);
+  const message = await saved();
+  if (!message) throw new ServiceRejection("idempotency_conflict");
+  const blocks = MessageBlockSchema.array().safeParse(message.blocks);
   const savedText = blocks.success && blocks.data[0]?.kind === "text" ? blocks.data[0].text : null;
   if (savedText !== text) throw new ServiceRejection("idempotency_conflict");
+  const placement = await placementOf(prisma, message.id, sent.runId);
   if (!replayed) {
     await recordAuditEvent({
       action: "service_api.prompt",
       actor: { type: "service", id: credential.id, label: credential.name },
       spaceId: actor.spaceId,
       target: { type: label.type, id: label.id, label: label.name },
-      runId: sent.runId,
+      runId: placement.runId ?? undefined,
       threadId,
       metadata: { onBehalfOf: actor.userId, seq: sent.seq },
     });
   }
-  return { taskId: sent.taskId, runId: sent.runId, seq: sent.seq, idempotencyKey };
+  return { ...placement, messageId: message.id, seq: sent.seq, idempotencyKey };
 }
 
 const WAIT_POLL_MS = 400;
+
+/**
+ * The run that will answer this message. While a bot is busy, the send reports the busy run, which
+ * is not this message's: it waits in the queue and gets a run of its own once the bot is free.
+ */
+async function placementOf(
+  prisma: ServiceContext<ServiceRouteId>["prisma"],
+  messageId: string,
+  preferredRunId?: string | null,
+) {
+  const [started, waiting] = await Promise.all([
+    prisma.run.findMany({
+      where: { sourceMessageId: messageId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, taskId: true },
+    }),
+    prisma.steeringMessage.findMany({
+      where: { messageId, originTrigger: "service" },
+      select: { runId: true, run: { select: { id: true, taskId: true } } },
+    }),
+  ]);
+  // Several held messages share one follow-up run, whose source is only the newest of them.
+  const run =
+    started.find(({ id }) => id === preferredRunId) ??
+    started[0] ??
+    waiting.find((row) => row.run)?.run ??
+    null;
+  return {
+    taskId: run?.taskId ?? null,
+    runId: run?.id ?? null,
+    held: waiting.some((row) => row.runId === null),
+  };
+}
+
+function pause(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+}
+
+/** Follows a held message until it has a run of its own, is dropped by a stop, or time is up. */
+async function awaitPlacement(
+  context: Pick<ServiceContext<ServiceRouteId>, "prisma" | "abort">,
+  messageId: string,
+  placement: Awaited<ReturnType<typeof placementOf>>,
+  deadline: number,
+) {
+  let current = placement;
+  while (!current.runId && current.held && Date.now() < deadline && !context.abort.signal.aborted) {
+    await pause();
+    current = await placementOf(context.prisma, messageId);
+  }
+  return current;
+}
 
 /** One of the creator's own runs that this key may reach, with the bot's replies in it. */
 async function runDetail(
@@ -232,7 +299,7 @@ async function runDetail(
         }),
       };
     }
-    await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+    await pause();
   }
 }
 
@@ -439,12 +506,15 @@ export const SERVICE_HANDLERS: Handlers = {
       { type: "bot", id: context.bot.id, name: context.bot.name },
     );
     const waitSeconds = context.query?.wait;
+    if (waitSeconds === undefined) return { botId: context.bot.id, ...sent };
+    const deadline = Date.now() + waitSeconds * 1000;
+    const placement = await awaitPlacement(context, sent.messageId, sent, deadline);
+    const remaining = Math.max(0, (deadline - Date.now()) / 1000);
     return {
       botId: context.bot.id,
       ...sent,
-      ...(waitSeconds === undefined
-        ? {}
-        : { run: await runDetail(context, sent.runId, waitSeconds) }),
+      ...placement,
+      ...(placement.runId ? { run: await runDetail(context, placement.runId, remaining) } : {}),
     };
   },
   async stopBot(context) {

@@ -155,6 +155,23 @@ describeWithDatabase("service API surface", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  const threadOf = async (cookie: string, botId: string) =>
+    (await rpc<{ threadId: string }>(cookie, "threads/head", { botId })).threadId;
+
+  /** Work with no worker behind it, so the bot stays busy for as long as a test needs. */
+  const busyRun = async (threadId: string) => {
+    const thread = await db.thread.findUniqueOrThrow({ where: { id: threadId } });
+    if (!thread.botId) throw new Error("expected a bot's thread");
+    const owner = { spaceId: thread.spaceId, userId: thread.userId, botId: thread.botId, threadId };
+    const task = await db.task.create({
+      data: { ...owner, prompt: "the owner's work", status: "running" },
+    });
+    const run = await db.run.create({
+      data: { ...owner, taskId: task.id, status: "running", trigger: "user" },
+    });
+    return { runId: run.id };
+  };
+
   describe("every route", () => {
     it("refuses a call with no key", async () => {
       for (const [id, definition] of ROUTES) {
@@ -565,9 +582,6 @@ describeWithDatabase("service API surface", () => {
   });
 
   describe("how far a key's message is trusted", () => {
-    const threadOf = async (cookie: string, botId: string) =>
-      (await rpc<{ threadId: string }>(cookie, "threads/head", { botId })).threadId;
-
     it("starts a run that is not the owner's", async () => {
       const { cookie } = await person();
       const bot = await newBot(cookie, "Untrusted");
@@ -586,16 +600,19 @@ describeWithDatabase("service API surface", () => {
       const bot = await newBot(cookie, "Busy");
       const { token, credential } = await newKey(cookie);
       const threadId = await threadOf(cookie, bot.id);
-      const first = await rpc<{ runId: string }>(cookie, "threads/send", {
-        botId: bot.id,
-        text: "the owner's work",
-      });
-      await ok(token, "POST", `/bots/${bot.id}/prompts`, {
+      const first = await busyRun(threadId);
+      const accepted = await ok<Record<string, unknown>>(token, "POST", `/bots/${bot.id}/prompts`, {
         body: { text: "from a key" },
         key: "held",
       });
       const message = await db.message.findFirstOrThrow({
         where: { threadId, clientNonce: `service:${credential.id}:held` },
+      });
+      expect(accepted).toMatchObject({
+        runId: null,
+        taskId: null,
+        held: true,
+        messageId: message.id,
       });
       const held = await db.steeringMessage.findFirstOrThrow({
         where: { messageId: message.id },
@@ -614,6 +631,64 @@ describeWithDatabase("service API surface", () => {
       expect(run.trigger).toBe("service");
       expect(run.task.prompt).toContain("from a key");
       expect(run.task.prompt).toContain(`[sent with the API key "${credential.name}"`);
+
+      const retried = await ok<Record<string, unknown>>(token, "POST", `/bots/${bot.id}/prompts`, {
+        body: { text: "from a key" },
+        key: "held",
+      });
+      expect(retried).toMatchObject({ runId: run.id, taskId: run.taskId, held: false });
+    });
+
+    it("names the shared run for every message that waited", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Shared");
+      const { token } = await newKey(cookie);
+      const threadId = await threadOf(cookie, bot.id);
+      const first = await busyRun(threadId);
+      const send = (key: string, text: string) =>
+        ok<{ runId: string | null; held: boolean; messageId: string }>(
+          token,
+          "POST",
+          `/bots/${bot.id}/prompts`,
+          { body: { text }, key },
+        );
+      const earlier = await send("one", "first waiting");
+      const later = await send("two", "second waiting");
+      expect([earlier.held, later.held]).toEqual([true, true]);
+
+      await db.run.update({ where: { id: first.runId }, data: { status: "completed" } });
+      await db.$transaction((tx) =>
+        createPendingSteeringRun(tx, { spaceId: bot.spaceId, threadId, botId: bot.id }),
+      );
+      const shared = await db.run.findFirstOrThrow({ where: { sourceMessageId: later.messageId } });
+      await expect(send("one", "first waiting")).resolves.toMatchObject({
+        runId: shared.id,
+        held: false,
+      });
+      await expect(send("two", "second waiting")).resolves.toMatchObject({
+        runId: shared.id,
+        held: false,
+      });
+    });
+
+    it("says so when a stop dropped the waiting message", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Stopped");
+      const { token } = await newKey(cookie);
+      await busyRun(await threadOf(cookie, bot.id));
+      const send = (wait = "") =>
+        ok<Record<string, unknown>>(token, "POST", `/bots/${bot.id}/prompts${wait}`, {
+          body: { text: "from a key" },
+          key: "dropped",
+        });
+      await expect(send()).resolves.toMatchObject({ runId: null, held: true });
+      await ok(token, "POST", `/bots/${bot.id}/stop`);
+
+      const started = Date.now();
+      const after = await send("?wait=30");
+      expect(after).toMatchObject({ runId: null, taskId: null, held: false });
+      expect(after).not.toHaveProperty("run");
+      expect(Date.now() - started).toBeLessThan(5_000);
     });
 
     it("does not answer a question the bot is waiting on", async () => {
@@ -691,6 +766,55 @@ describeWithDatabase("service API surface", () => {
       const theirs = await newKey(stranger.cookie);
       expect((await api(theirs.token, "GET", `/runs/${sent.runId}`)).status).toBe(404);
       expect((await api(token, "GET", `/runs/${sent.runId}?wait=61`)).status).toBe(400);
+    });
+
+    it("follows a waiting message into its own run, not the one under way", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Queued");
+      const { token, credential } = await newKey(cookie);
+      const threadId = await threadOf(cookie, bot.id);
+      const first = await busyRun(threadId);
+      const waiting = ok<{ runId: string; held: boolean; run: { runId: string } }>(
+        token,
+        "POST",
+        `/bots/${bot.id}/prompts?wait=30`,
+        { body: { text: "from a key" }, key: "own-run" },
+      );
+      const message = await vi.waitFor(
+        async () => {
+          const found = await db.message.findFirstOrThrow({
+            where: { threadId, clientNonce: `service:${credential.id}:own-run` },
+            include: { steeringMessages: true },
+          });
+          expect(found.steeringMessages).toHaveLength(1);
+          return found;
+        },
+        { timeout: 10_000 },
+      );
+
+      await db.run.update({ where: { id: first.runId }, data: { status: "completed" } });
+      await db.$transaction((tx) =>
+        createPendingSteeringRun(tx, { spaceId: bot.spaceId, threadId, botId: bot.id }),
+      );
+      const own = await db.run.findFirstOrThrow({ where: { sourceMessageId: message.id } });
+      const sent = await waiting;
+      expect(own.id).not.toBe(first.runId);
+      expect(sent).toMatchObject({ runId: own.id, held: false, run: { runId: own.id } });
+    });
+
+    it("reports a message still waiting when the time is up", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Long queue");
+      const { token } = await newKey(cookie);
+      await busyRun(await threadOf(cookie, bot.id));
+      const sent = await ok<Record<string, unknown>>(
+        token,
+        "POST",
+        `/bots/${bot.id}/prompts?wait=1`,
+        { body: { text: "from a key" }, key: "out-of-time" },
+      );
+      expect(sent).toMatchObject({ runId: null, taskId: null, held: true });
+      expect(sent).not.toHaveProperty("run");
     });
 
     it("gives up at the wait and says the run is not settled", async () => {
