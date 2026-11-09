@@ -35,14 +35,28 @@ async function firstBotModelGate(spaceId: string | undefined, options?: RequestO
   return { isFirstBot, needsModel, modelSpaceId };
 }
 
+/** Where a request was asked from; it must not act after any account, server or Space switch. */
+function askedHere() {
+  const session = searchInboxSession();
+  const space = selectedSpaceId();
+  const selection = spaceSelectionSeq();
+  return {
+    session,
+    unchanged: () =>
+      isSearchInboxSession(session) &&
+      spaceSelectionSeq() === selection &&
+      selectedSpaceId() === space,
+  };
+}
+
 /**
  * Asks for a model before the New bot screen is filled in, when the first bot would need one.
  * True when it asked; the screen then closes.
  */
 export async function askForModelBeforeFirstBot(spaceId?: string): Promise<boolean> {
-  const askedIn = searchInboxSession();
+  const asked = askedHere();
   const gate = await firstBotModelGate(spaceId, await requestOptions(spaceId)).catch(() => null);
-  if (!gate?.needsModel || !isSearchInboxSession(askedIn)) return false;
+  if (!gate?.needsModel || !asked.unchanged()) return false;
   askToAddModel(gate.modelSpaceId);
   return true;
 }
@@ -66,14 +80,12 @@ export async function createInboxBot({
   spaceId?: string;
 }): Promise<InboxBotOutcome> {
   // Taken before the requests, so a bot that lands after a session switch is dropped.
-  const askedIn = searchInboxSession();
-  const selectedSpace = selectedSpaceId();
-  const spaceSelection = spaceSelectionSeq();
+  const asked = askedHere();
+  const askedIn = asked.session;
   const options = await requestOptions(spaceId);
   const { isFirstBot, needsModel, modelSpaceId } = await firstBotModelGate(spaceId, options);
   // Create was asked for here; after any account, server or Space switch, even back, it does nothing.
-  const moved = spaceSelectionSeq() !== spaceSelection || selectedSpaceId() !== selectedSpace;
-  if (!isSearchInboxSession(askedIn) || moved) return "stale";
+  if (!asked.unchanged()) return "stale";
   if (needsModel) {
     askToAddModel(modelSpaceId);
     return "needsModel";

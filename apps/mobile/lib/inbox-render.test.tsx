@@ -1074,6 +1074,20 @@ it("asks for a model as the New bot screen opens, only for a first bot without o
   expect(ui.rpc.mock.calls.filter(([method]) => method === "bots/create")).toHaveLength(1);
 });
 
+it("does not ask for a model after the space changes during the opening check", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/list") {
+      ui.spaceSeq++;
+      return [];
+    }
+    return method === "me" ? { needsModel: true } : [];
+  });
+  expect(await askForModelBeforeFirstBot("space-work")).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
 it("tells the inbox to reload once the bot exists", async () => {
   ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.rpc

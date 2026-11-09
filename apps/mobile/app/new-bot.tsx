@@ -39,6 +39,8 @@ export default function NewBot() {
   const creating = useRef(false);
   // Once the screen is gone, a creation still in flight must not open the chat.
   const gone = useRef(false);
+  // Create waits for the check made as the screen opened, so the model prompt shows once.
+  const modelCheck = useRef<Promise<boolean>>(Promise.resolve(false));
   const trimmed = name.trim();
   const identity = newBotPreviewIdentity(avatarSet, look);
 
@@ -55,7 +57,8 @@ export default function NewBot() {
       })
       .catch(() => undefined);
     // A first bot needs a model; ask before the form is filled in rather than after.
-    void askForModelBeforeFirstBot(params.spaceId).then((asked) => {
+    modelCheck.current = askForModelBeforeFirstBot(params.spaceId);
+    void modelCheck.current.then((asked) => {
       if (asked && !gone.current) router.back();
     });
     return () => {
@@ -76,6 +79,8 @@ export default function NewBot() {
     setPending(true);
     setError(null);
     try {
+      // That check is asking for a model and closing the screen.
+      if (await modelCheck.current) return;
       const outcome = await createInboxBot({
         input: { name: trimmed, ...newBotLookInput(avatarSet, look) },
         openChat: (href) => {
