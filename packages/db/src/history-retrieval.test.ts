@@ -370,7 +370,7 @@ describe("local history retrieval", () => {
       { kind: "text", text: "Done." },
     ];
     expect(historyReadText(blocks)).toBe(
-      "[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
+      "[tool calls this reply made]\n- Shell ×2: Installing Quillfeather into Chromium.\n- Computer screenshot\nDone.",
     );
     expect(historyMessageText(blocks)).toBe("Done.");
     expect(historySearchText(blocks)).toContain("Quillfeather");
@@ -394,7 +394,7 @@ describe("local history retrieval", () => {
     ]);
     const result = await searchHistory(prisma, scope, { query: "quillfeather" });
     expect(result.messages).toHaveLength(1);
-    expect(result.messages[0]!.text).toContain("contradict it]\n- Shell: Installing Quillfeather.");
+    expect(result.messages[0]!.text).toContain("reply made]\n- Shell: Installing Quillfeather.");
   });
   it("lists earlier replies that used tools by kind, without a keyword", async () => {
     const { mock, prisma } = db();
@@ -428,10 +428,15 @@ describe("local history retrieval", () => {
     // Only where earlier replies used tools does it point at listing them.
     mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
     const withTools = await searchHistory(prisma, scope, { query: "extension install" });
-    expect(withTools.note).toContain(
-      'Before denying it, list earlier replies that used tools: kinds ["tool_work"] without a query',
-    );
+    expect(withTools.note).toContain('list them with kinds ["tool_work"] and no query');
     expect(sql(mock, 3).sql).toContain('@.kind == "steps"');
+    // A keyword search already limited to tool work still offers listing it without the keyword.
+    mock.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ "?column?": 1 }]);
+    const toolWorkOnly = await searchHistory(prisma, scope, {
+      query: "extension",
+      kinds: ["tool_work"],
+    });
+    expect(toolWorkOnly.note).toContain('kinds ["tool_work"] and no query');
   });
   it("does not say nothing matched when the scan stopped before the end", async () => {
     const { mock, prisma } = db();

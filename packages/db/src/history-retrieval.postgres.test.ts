@@ -231,6 +231,12 @@ postgres("history retrieval (PostgreSQL)", () => {
     const empty = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
     expect(empty.messages).toEqual([]);
     expect(empty.note).toContain('kinds ["tool_work"]');
+    const emptyToolWork = await searchHistory(prisma, scope, {
+      query: "quillfeather zebra",
+      kinds: ["tool_work"],
+    });
+    expect(emptyToolWork.messages).toEqual([]);
+    expect(emptyToolWork.note).toContain('kinds ["tool_work"] and no query');
     await pool.query(`DELETE FROM messages WHERE id = 'browsed-steps'`);
     const plain = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
     expect(plain.note).not.toContain("tool_work");

@@ -466,7 +466,7 @@ describe("tool step history", () => {
         { kind: "text", text: "Installed." },
       ]),
     ).toBe(
-      "[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
+      "[tool calls this reply made]\n- Searched the web ×2\n- Shell: Installing the extension.\nInstalled.",
     );
   });
 
@@ -482,9 +482,7 @@ describe("tool step history", () => {
       { kind: "steps", steps: "nope" },
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: 42 }, { count: 1 }] },
     ] as unknown as MessageBlock[];
-    expect(blocksToAgentHistoryText(blocks)).toBe(
-      "[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- Shell",
-    );
+    expect(blocksToAgentHistoryText(blocks)).toBe("[tool calls this reply made]\n- Shell");
   });
 
   it("keeps full notes and every step when asked", () => {
@@ -501,9 +499,7 @@ describe("tool step history", () => {
 
   it("shortens an oversized imported label in the replayed list only", () => {
     const steps = [{ label: "x".repeat(5_000), count: 1 }];
-    expect(toolStepsHistoryText(steps)).toBe(
-      `[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- ${"x".repeat(80)}…`,
-    );
+    expect(toolStepsHistoryText(steps)).toBe(`[tool calls this reply made]\n- ${"x".repeat(80)}…`);
     expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
   });
 
@@ -511,9 +507,7 @@ describe("tool step history", () => {
     const text = blocksToAgentHistoryText([
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
     ]);
-    expect(text).toBe(
-      `[tool calls this reply made; what it reported from them stands unless later messages contradict it]\n- Shell: ${"a".repeat(300)}…`,
-    );
+    expect(text).toBe(`[tool calls this reply made]\n- Shell: ${"a".repeat(300)}…`);
   });
 
   it("says how each step's calls ended, and leaves steps without outcomes as they were", () => {
@@ -531,23 +525,13 @@ describe("tool step history", () => {
       ]),
     ).toBe(
       [
-        "[tool calls this reply made; some failed or were stopped, so what it reported from those may not hold]",
+        "[tool calls this reply made]",
         "- Shell ×2 (succeeded): Installing it.",
         "- Computer ×3 (1 succeeded, 1 failed, 1 stopped)",
         "- Read file ×2 (1 failed)",
         "- Web search",
       ].join("\n"),
     );
-  });
-
-  it("keeps the settled header only when every recorded call succeeded", () => {
-    const header = (outcomes: Record<string, number>) =>
-      blocksToAgentHistoryText([
-        { kind: "steps", steps: [{ label: "Shell", count: 1, outcomes, note: "Done." }] },
-      ]).split("\n")[0];
-    expect(header({ succeeded: 1 })).toContain("stands unless later messages contradict it");
-    expect(header({ failed: 1 })).toContain("may not hold");
-    expect(header({ stopped: 1 })).toContain("may not hold");
   });
 
   it("renders nothing for an empty steps block", () => {
