@@ -514,7 +514,7 @@ message 30, far outside the messages a run loads. The bot is asked for the
 lease's notice period once with the upload captioned and once with a bare file,
 and a third case asks about a contract that was never shared. Deterministic
 checks require a history lookup in the graded step and, for the lease, a read of
-the file at its `attachments/` path. The `recall-meaning-v3` judge then checks
+the file at its `attachments/` path. The `recall-meaning-v4` judge then checks
 that the answer gives the lease's period and names the file it came from, or
 that a never-shared contract is admitted rather than invented. Calibration
 labels cover a sourced answer, a request to resend, a generic guess, a wrong
@@ -532,8 +532,9 @@ the grading path for both a read and an unread lease.
 The `recall-tool-steps-*` cases check that a bot remembers work it did with
 tools. Early in a chat the user asks for dark web pages, and the bot installs an
 extension from the command line. The extension's name appears only in a note the
-bot wrote before a tool step, and the reply text says just "Done.". Unrelated,
-varied small talk follows. The bot is then asked whether it installed an
+bot wrote before a tool step, and the reply text reports only the result
+("Done. Pages in my browser show dark now."). The chat is dated earlier the same
+day. Unrelated, varied small talk follows. The bot is then asked whether it installed an
 extension, which one, and how. The stored steps record that each call
 succeeded. The `-intent` variant stores the same steps without outcomes, as
 older messages have them. The `-paraphrased` variant's notes share no
@@ -549,34 +550,51 @@ question, eye-strain tips close to the install's topic, and "did I ever tell
 you my sister's name?" (never). A deterministic check fails a history lookup on
 the first three.
 
-The `recall-meaning-v3` judge fails a reply laid out as a step log, a reply to
+The `recall-meaning-v4` judge fails a reply laid out as a step log, a reply to
 an everyday turn that casts unprompted doubt on, corrects or retracts the bot's
-earlier work, and a control reply that says the bot never used its computer.
-The install rubric accepts a proportionate hedge only for the `-intent`
-variant. Each trial also records, without deciding it, whether the bot used a
-tool other than history lookups (re-verification), whether it looked back, and
-two judged behaviours: unprompted doubt and false confession (claiming it never
-used tools, never did the work, or made a mistake it did not make). An
-ungraded behaviour is recorded as unknown. The offline sandbox refuses shell
-commands; in these cases no outcome needs one, so a failure after the bot chose
-to run one counts as the agent's, not the harness's.
+earlier work (including saying it did not confirm or check it), and a control
+reply that says the bot never used its computer. It applies only the rules it
+states. The install rubric accepts a reply that says its record shows every step
+succeeded, or that it just checked; it accepts a proportionate hedge only for
+the `-intent` variant. Each trial also records, without deciding it, whether the
+bot used a tool other than history lookups (re-verification), whether it looked
+back, and three judged behaviours: unprompted doubt, false confession (claiming
+it never used tools, never did the work, had not changed anything, or made a
+mistake it did not make) and overclaiming (stating a detail of the earlier work,
+such as a version or setting, that its record does not show and it did not just
+check). An ungraded behaviour is recorded as unknown.
 
-A November 2026 run with ten trials per case compared main, the change before
-outcomes were recorded, and the change with outcomes, using a small model as bot
-and judge, plus a larger bot under `retrieval` on main and the final change.
-Under `retrieval`, the small model recalled the install in nine of ten trials
-with outcomes, against none on main and none without outcomes (where it said
-it could not confirm the install). The larger bot went from none to seven. Both
-models searched for "extension" or "install"; when the notes used other words,
-or the earlier work was the disk check, the search missed and both models
-mostly said they had never used the computer at all, on every version.
-Everyday turns stayed clean under `retrieval`. Under `current`, outcomes did not
-stop the small model doubting its own work: it still said it could not confirm
-the install, and added a correction to every sign-off. On main those
-corrections said it had never changed anything. With outcomes, after
-compaction it named the install in six of ten, against none before. Recalling
-the install under `retrieval` takes about two extra model calls, roughly
-doubling that answer's cost; everyday turns' prompts grew by under one percent.
+These cases give the eval computer a script (`computer` on the case), so a bot
+that re-checks its work gets answers consistent with the chat: shell commands
+that look at the browser's extensions list the extension, or, in the controls,
+find none; a disk check reports 18 GB free; a screenshot shows a browser window
+with a dark page, or a light one in the controls. A command the script does not
+cover is still refused and recorded as a harness issue.
+
+A November 2026 run compared main, the change that first replayed steps, a
+change that lets search list earlier tool work by kind without a keyword and says
+what an empty search ruled out, and a change that says replayed results stand
+and asks replies to say what tool work found. A small model was bot and judge,
+with ten or twenty trials per case; the judge agreed with all 53 calibration
+labels on every run. A larger bot ran under `retrieval` on the final version.
+Under `retrieval`, main never looked back and failed every tool case. Replaying
+steps recalled the install in 18 of 20 trials but failed all 20 paraphrased and
+all 20 control trials: the bot searched one or two words, found nothing and said
+it had never used the computer. With listing by kind, the final version recalled
+the install in 20 of 20, the paraphrased install in 12 of 20 and the controls in
+15 of 20, mostly in trials that listed tool work after an empty search; the
+larger bot got 10, 8 and 5 of 10 on those cases. An earlier wording
+that described browsing in the tool's summary made the small model skip the
+lookup more often, so the hint lives on `kinds`. Under `current`, replaying
+steps removed the false confessions that main made on almost every everyday
+turn, but the small model still added "I never confirmed it worked" to 38 of 50
+everyday turns. Saying that replayed results stand lowered that to 19, 22 and 23
+of 50 in three runs; sign-offs and eye-strain tips still carry it most times.
+Asked directly, the small model still re-checks its computer in most trials and,
+even when the check finds the extension, often adds that it has not confirmed
+it is switched on. Overclaimed details stayed at or below three in ten. Recalling
+earlier tool work under `retrieval` takes one or two extra model calls, about
+doubling that answer's cost; everyday prompts grew by under one percent.
 
 ### Long conversation and cost evals
 
