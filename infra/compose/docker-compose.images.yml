@@ -133,6 +133,9 @@ x-app-environment: &app-environment
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  PAID_SERVICES_PROVIDER:
+  PAID_SERVICES_API_KEY:
+  PAID_SERVICES_BASE_URL:
   # Provider keys Pi reads itself when a model has no stored credential
   AI_GATEWAY_API_KEY:
   ANTHROPIC_AUTH_TOKEN:

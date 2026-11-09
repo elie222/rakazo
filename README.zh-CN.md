@@ -169,12 +169,13 @@ Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 
 托管应用目录是可选功能。使用 Composio 时设置 `COMPOSIO_API_KEY`；
 使用 Pipedream Connect 时设置 `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET` 和 `PIPEDREAM_PROJECT_ID`。
-即使不启用这两个托管目录，用户也可以在 **Integrations**（集成）中添加 HTTPS MCP 服务器、
-Treg 端点或 OpenAPI JSON 文档。连接器凭据在服务器上加密存储，API 不会返回这些凭据。
+即使不启用这两个托管目录，用户也可以在 **Integrations**（集成）中添加 HTTPS MCP 服务器或
+OpenAPI JSON 文档。连接器凭据在服务器上加密存储，API 不会返回这些凭据。
 
-Treg 按用量计费。自托管用户需提供自己的 Treg 令牌；
-将 Treg 嵌入托管产品的运营方应查阅 [Treg 集成条款](https://treg.to/integrate.md)，
-其中要求托管转售须签订书面协议。
+付费数据服务（地图地点、搜索结果、工作邮箱、个人资料、SEO 数据）同样是可选的。
+设置 `PAID_SERVICES_PROVIDER=treg`，并在 `PAID_SERVICES_API_KEY` 中填入组织级 [Treg](https://treg.to) 令牌，
+机器人即可使用部署方的账户查找并调用这些服务。启用模型额度时，每次调用按服务商成本加 20%
+从组织的额度中扣除。
 
 ```bash
 pnpm install

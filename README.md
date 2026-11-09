@@ -168,13 +168,15 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
-Connect. Users can add an HTTPS MCP server, Treg endpoint, or OpenAPI JSON document from
-**Integrations** without enabling either managed catalog. Connector credentials are encrypted on the
-server and are never returned by the API.
+Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
+enabling either managed catalog. Connector credentials are encrypted on the server and are never
+returned by the API.
 
-Treg is usage-metered. Self-hosters supply their own Treg token; operators embedding Treg in a
-hosted product should review [Treg's integration terms](https://treg.to/integrate.md), which require
-a written agreement for hosted resale.
+Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.
+Set `PAID_SERVICES_PROVIDER=treg` and `PAID_SERVICES_API_KEY` to an org-scoped
+[Treg](https://treg.to) token, and bots can find and call them on the deployment's account. When
+model credits are on, each call is charged to the organization's credits at the provider's cost
+plus 20%.
 
 ```bash
 pnpm install

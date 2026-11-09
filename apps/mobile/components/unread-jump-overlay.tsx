@@ -51,7 +51,6 @@ export function useUnreadJumpPills<Item>({
   topInset: number;
   bottomInset: number;
 }) {
-  const { t } = useI18n();
   // Measured rows by key, so a row keeps its layout when rows above it come or go.
   const layouts = useRef(new Map<string, RowLayout>());
   // A jump to a row not measured yet scrolls to an estimate, then lands once the row lays out.
@@ -228,6 +227,35 @@ export function useUnreadJumpPills<Item>({
     );
   };
 
+  return {
+    listProps,
+    overlay: (
+      <UnreadJumpOverlay
+        pills={pills}
+        topInset={topInset}
+        bottomInset={bottomInset}
+        animateEntering={animateEntering}
+        onJump={jump}
+      />
+    ),
+  };
+}
+
+/** The pills themselves, over a list that counts its unread rows out of view above and below. */
+export function UnreadJumpOverlay({
+  pills,
+  topInset,
+  bottomInset,
+  animateEntering,
+  onJump,
+}: {
+  pills: { above?: JumpPill; below?: JumpPill };
+  topInset: number;
+  bottomInset: number;
+  animateEntering: boolean;
+  onJump: (direction: JumpDirection, pill: JumpPill) => void;
+}) {
+  const { t } = useI18n();
   const edge = (direction: JumpDirection, pill: JumpPill | undefined): ReactNode => {
     if (!pill) return null;
     const one = pill.count === 1;
@@ -257,21 +285,18 @@ export function useUnreadJumpPills<Item>({
           accessibilityLabel={
             direction === "above" ? t("{label}, above", { label }) : t("{label}, below", { label })
           }
-          onPress={() => jump(direction, pill)}
+          onPress={() => onJump(direction, pill)}
         />
       </Animated.View>
     );
   };
 
-  return {
-    listProps,
-    overlay: (
-      <>
-        {edge("above", pills.above)}
-        {edge("below", pills.below)}
-      </>
-    ),
-  };
+  return (
+    <>
+      {edge("above", pills.above)}
+      {edge("below", pills.below)}
+    </>
+  );
 }
 
 const styles = StyleSheet.create({
