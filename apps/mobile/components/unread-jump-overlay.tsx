@@ -152,6 +152,7 @@ export function useUnreadJumpPills<Item>({
   // Replace FlatList's cell container to measure variable-height rows without extra wrappers.
   const CellRendererComponent = useMemo(
     () =>
+      // biome-ignore lint/correctness/noComponentHookFactories: memoized once and reads only refs, so cells never remount.
       function InboxCell({ cellKey, onLayout, style, children }: CellRendererProps<Item>) {
         return (
           <View

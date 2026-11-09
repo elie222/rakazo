@@ -33,11 +33,11 @@ Linux 默认不提供相同的 `host.docker.internal` 行为。
 
 未连接个人模型的用户使用部署默认模型。`PI_DEFAULT_PROVIDER` 选择提供商，`PI_DEFAULT_MODEL` 选择模型。
 
-| `PI_DEFAULT_PROVIDER` | 密钥 | 默认模型 |
-| --- | --- | --- |
-| `openrouter`（默认） | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` |
+| `PI_DEFAULT_PROVIDER` | 密钥                 | 默认模型                     |
+| --------------------- | -------------------- | ---------------------------- |
+| `openrouter`（默认）  | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
+| `anthropic`           | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
+| `deepseek`            | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
 
 需要截图计算机工具时，选择支持视觉的模型。
 Compose 也会将运行时支持的标准提供商密钥（例如 `OPENAI_API_KEY`、`GEMINI_API_KEY`）传给 API 和 worker，
