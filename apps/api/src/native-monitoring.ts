@@ -88,8 +88,13 @@ export function sanitizeNativeEvent(
   if (surface === "mobile" && tags["startup.previous_launch"] === "true")
     safeTags["startup.previous_launch"] = "true";
   // The app sets a coarse screen name, never a route param; this rejects anything else.
-  const screen = AnalyticsScreen.safeParse(tags.screen);
-  if (surface === "mobile" && screen.success) safeTags.screen = screen.data;
+  // A replayed startup error carries the current launch's screen, not the one it happened on.
+  if (
+    surface === "mobile" &&
+    tags["startup.previous_launch"] !== "true" &&
+    (tags.screen === "other" || AnalyticsScreen.safeParse(tags.screen).success)
+  )
+    safeTags.screen = tags.screen as string;
   if (surface === "desktop") {
     const name = tags["process.name"];
     const exitCode = tags["process.exit_code"];

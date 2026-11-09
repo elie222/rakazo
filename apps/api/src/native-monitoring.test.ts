@@ -40,9 +40,20 @@ describe("native error collector privacy boundary", () => {
       expect(sanitizeNativeEvent({ tags: { screen } }, "mobile").tags).toEqual({
         surface: "mobile",
       });
+    expect(sanitizeNativeEvent({ tags: { screen: "other" } }, "mobile").tags).toEqual({
+      surface: "mobile",
+      screen: "other",
+    });
     expect(sanitizeNativeEvent({ tags: { screen: "chat" } }, "desktop").tags).toEqual({
       surface: "desktop",
     });
+  });
+
+  it("drops the screen from a startup error replayed from the previous launch", () => {
+    expect(
+      sanitizeNativeEvent({ tags: { screen: "chat", "startup.previous_launch": "true" } }, "mobile")
+        .tags,
+    ).toEqual({ surface: "mobile", "startup.previous_launch": "true" });
   });
 
   it("keeps which desktop child process stopped", () => {
