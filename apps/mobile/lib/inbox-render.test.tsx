@@ -31,6 +31,7 @@ const ui = vi.hoisted(() => ({
   push: vi.fn(),
   menus: [] as MenuProps[],
   rowMenus: [] as NativeRowMenu[],
+  a11yActions: new Map<string, (event: { nativeEvent: { actionName: string } }) => void>(),
   swipeRows: [] as string[],
   avatars: [] as string[],
   chevronStarts: [] as number[],
@@ -72,9 +73,13 @@ vi.mock("react-native", () => {
       accessibilityValue,
       onPress,
       onLongPress,
+      accessibilityActions,
+      onAccessibilityAction,
       style,
     }: {
       children?: ReactNode;
+      accessibilityActions?: Array<{ name: string }>;
+      onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
       accessibilityLabel?: string;
       accessibilityState?: { expanded?: boolean };
       accessibilityValue?: { text?: string };
@@ -88,6 +93,11 @@ vi.mock("react-native", () => {
         aria-expanded={accessibilityState?.expanded}
         data-value={accessibilityValue?.text}
         data-long-press={onLongPress ? "true" : undefined}
+        data-actions={accessibilityActions?.map((action) => action.name).join(" ")}
+        ref={() => {
+          if (accessibilityLabel && onAccessibilityAction)
+            ui.a11yActions.set(accessibilityLabel, onAccessibilityAction);
+        }}
         data-min-height={
           flatten(typeof style === "function" ? style({ pressed: false }) : style).minHeight
         }
@@ -1048,4 +1058,41 @@ it.each([
   finish({ id: "bot-new", name: "New Bot" });
   await creating;
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
+});
+
+it("lets screen readers reach a heading's long-press menu through the heading", () => {
+  const deleteSection = vi.fn();
+  const confirmDeleteSpace = vi.fn();
+  render(
+    <List
+      items={[
+        {
+          type: "heading",
+          key: "space-work",
+          title: "Work",
+          space: {
+            id: "space-work",
+            name: "Work",
+            isDefault: false,
+            canDelete: true,
+            bots: [],
+            groups: [],
+            botSections: [],
+          },
+        } as unknown as InboxItem,
+        { type: "heading", key: "section:s1", title: "Ideas", sectionId: "s1" } as InboxItem,
+      ]}
+      spaceId="space-home"
+      options={{ deleteSection, confirmDeleteSpace }}
+    />,
+  );
+  const space = container.querySelector<HTMLElement>('button[aria-label="Work"]')!;
+  // A disabled item is left out; here none is.
+  expect(space.dataset.actions).toBe("new-bot members settings delete");
+  const section = container.querySelector<HTMLElement>('button[aria-label="Collapse Ideas"]')!;
+  expect(section.dataset.actions).toBe("delete");
+  act(() => ui.a11yActions.get("Collapse Ideas")!({ nativeEvent: { actionName: "delete" } }));
+  expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
+  act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));
+  expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });

@@ -38,6 +38,13 @@ it("presses on a tap and not on a release after the finger travelled, as when it
   props.onPressIn?.(at(100, 200));
   props.onPress?.(at(100, 450));
   expect(onPress).toHaveBeenCalledTimes(1);
+  // Nor after one that scrolled away and came back near where it started.
+  act(() => {
+    props.onPressIn?.(at(100, 200));
+    props.onTouchMove?.(at(100, 320));
+    props.onPress?.(at(101, 203));
+  });
+  expect(onPress).toHaveBeenCalledTimes(1);
   act(() => root.unmount());
 });
 

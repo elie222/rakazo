@@ -242,3 +242,21 @@ it("draws no rows until it knows a row's width, so none keeps a wrong first layo
   expect(container.querySelector('[data-row="bot:1"]')).not.toBeNull();
   act(() => root.unmount());
 });
+
+it("counts every chat as below while only the rows above the chats are on screen", () => {
+  const read = { unread: 0, attention: 0 };
+  const root = render(
+    [
+      { key: "bot:1", swipe: true },
+      { key: "bot:2", swipe: true },
+    ],
+    {
+      header: <span data-header />,
+      signals: [read, { unread: 1, attention: 0 }],
+      // A tall activity strip fills the screen.
+      viewport: { update: vi.fn(), subscribe: () => () => {}, has: (key) => key === "header" },
+    },
+  );
+  expect(swift.overlay?.pills.below?.index).toBe(1);
+  act(() => root.unmount());
+});

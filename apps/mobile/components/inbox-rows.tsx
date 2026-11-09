@@ -3,6 +3,7 @@ import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactElement, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
+import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -151,13 +152,14 @@ export function SectionToggle({
   collapsed,
   onPress,
   onLongPress,
+  accessibilityActions,
+  onAccessibilityAction,
 }: {
   title: string;
   count?: number;
   collapsed: boolean;
   onPress: () => void;
-  onLongPress?: () => void;
-}) {
+} & Pick<PressableProps, "onLongPress" | "accessibilityActions" | "onAccessibilityAction">) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   return (
@@ -170,6 +172,8 @@ export function SectionToggle({
       accessibilityValue={count === undefined ? undefined : { text: String(count) }}
       onPress={onPress}
       onLongPress={onLongPress}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
     >
       <Text style={styles.sectionTitle}>{title}</Text>

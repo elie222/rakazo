@@ -4,6 +4,7 @@ import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback } from "react";
+import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import type { ResolvedAppearance } from "../lib/appearance";
 import { AvatarRow } from "../lib/avatar-life";
@@ -66,17 +67,26 @@ function HeadingWithMenu({
   space?: boolean;
   menu?: HeadingMenu;
   appearance: ResolvedAppearance;
-  children: (onLongPress: (() => void) | undefined) => ReactNode;
+  children: (press: HeadingPress) => ReactNode;
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const row = space ? styles.spaceHeading : styles.sectionHeadingRow;
-  const plain = <View style={row}>{children(undefined)}</View>;
+  const plain = <View style={row}>{children({})}</View>;
   if (!menu) return Platform.OS === "ios" ? <NativeRow>{plain}</NativeRow> : plain;
   if (Platform.OS === "ios")
     return (
       <NativeRow menu={menu}>
-        {/* Holding for the menu must not also count as a tap when the finger lifts. */}
-        <View style={row}>{children(holdForMenu)}</View>
+        <View style={row}>
+          {children({
+            // Holding for the menu must not also count as a tap when the finger lifts.
+            onLongPress: holdForMenu,
+            // Screen readers reach the long-press menu's items through the heading.
+            accessibilityActions: menu.actions
+              .filter((action) => !action.disabled)
+              .map((action) => ({ name: action.id, label: action.title })),
+            onAccessibilityAction: (event) => menu.onAction(event.nativeEvent.actionName),
+          })}
+        </View>
       </NativeRow>
     );
   const actions: MenuAction[] = menu.actions.map((action) => ({
@@ -87,7 +97,7 @@ function HeadingWithMenu({
   }));
   return (
     <View style={row}>
-      {children(undefined)}
+      {children({})}
       {actions.length === 1 ? (
         <Pressable
           accessibilityLabel={menu.actions[0]!.title}
@@ -118,6 +128,12 @@ function HeadingWithMenu({
 
 const holdForMenu = () => undefined;
 
+/** What a heading's own pressable takes from its menu. */
+type HeadingPress = Pick<
+  PressableProps,
+  "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
+>;
+
 function SpaceHeading({
   title,
   selected,
@@ -136,14 +152,14 @@ function SpaceHeading({
   const styles = useThemedStyles(createHomeStyles);
   return (
     <HeadingWithMenu space menu={menu} appearance={appearance}>
-      {(onLongPress) => (
+      {(press) => (
         <DragSafePressable
           accessibilityRole="button"
           accessibilityLabel={title}
           accessibilityState={{ selected, disabled: busy }}
           disabled={busy}
           onPress={onPress}
-          onLongPress={onLongPress}
+          {...press}
           style={({ pressed }) => [styles.spaceSelect, pressed && styles.rowPressed]}
         >
           <Text style={styles.spaceTitle}>{title}</Text>
@@ -184,13 +200,13 @@ function SectionHeading({
       }
       appearance={appearance}
     >
-      {(onLongPress) => (
+      {(press) => (
         <SectionToggle
           title={title}
           count={count}
           collapsed={collapsed}
           onPress={onPress}
-          onLongPress={onLongPress}
+          {...press}
         />
       )}
     </HeadingWithMenu>

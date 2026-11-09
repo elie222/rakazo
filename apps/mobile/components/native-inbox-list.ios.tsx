@@ -43,6 +43,10 @@ function useVisibleRows(viewport: AvatarViewport) {
   ];
 }
 
+// Keys of the rows around the chats, which say which end of the list is on screen.
+const HEADER_KEY = "header";
+const FOOTER_KEY = "footer";
+
 /**
  * Pills for unread rows out of view, from the rows the list reports on screen. Its own component,
  * so rows coming and going redraw the pills and not the list.
@@ -64,7 +68,11 @@ function NativeJumpPills({
 }) {
   const visible = useSyncExternalStore(viewport.subscribe, () => {
     const shown = keys.flatMap((key, index) => (viewport.has(key) ? [index] : []));
-    return shown.length > 0 ? `${shown[0]}:${shown[shown.length - 1]}` : "";
+    if (shown.length > 0) return `${shown[0]}:${shown[shown.length - 1]}`;
+    // No chat on screen: an empty range at the edge in view, so every chat counts above or below.
+    if (viewport.has(HEADER_KEY)) return "0:-1";
+    if (viewport.has(FOOTER_KEY)) return `${keys.length}:${keys.length - 1}`;
+    return "";
   });
   const pills = useMemo(() => {
     if (!visible) return {};
@@ -162,7 +170,7 @@ export function NativeInboxList<Item>({
       {/* Rows wait for the measured width: one laid out before it keeps its first size. */}
       {rowWidth === undefined ? null : (
         <>
-          {header ? hosted("header", header) : null}
+          {header ? hosted(HEADER_KEY, header) : null}
           {showEmpty ? hosted("empty", empty) : null}
           {data.map((item) => {
             const key = keyExtractor(item);
@@ -174,7 +182,7 @@ export function NativeInboxList<Item>({
               hosted(key, renderItem({ item }))
             );
           })}
-          {footer ? hosted("footer", footer) : null}
+          {footer ? hosted(FOOTER_KEY, footer) : null}
         </>
       )}
       {spacer(

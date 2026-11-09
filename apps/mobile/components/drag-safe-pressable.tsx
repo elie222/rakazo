@@ -15,25 +15,39 @@ const ANYWHERE = { top: 100_000, bottom: 100_000, left: 100_000, right: 100_000 
  * Inside a native iOS list a scroll does not cancel a React Native press: the content moves with
  * the finger, so the release still lands on the row that was touched and would open it.
  */
-export function DragSafePressable({ onPressIn, onPress, ...props }: PressableProps) {
-  const start = useRef<{ x: number; y: number } | null>(null);
+export function DragSafePressable({ onPressIn, onPress, onTouchMove, ...props }: PressableProps) {
+  // Where the press started, and whether the finger has since gone further than a tap allows.
+  const press = useRef<{ x: number; y: number; travelled: boolean } | null>(null);
+  const beyondSlop = (event: GestureResponderEvent) => {
+    const from = press.current;
+    return (
+      !!from &&
+      Math.hypot(event.nativeEvent.pageX - from.x, event.nativeEvent.pageY - from.y) > TAP_SLOP
+    );
+  };
   return (
     <Pressable
       pressRetentionOffset={ANYWHERE}
       {...props}
       onPressIn={(event: GestureResponderEvent) => {
-        start.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+        press.current = {
+          x: event.nativeEvent.pageX,
+          y: event.nativeEvent.pageY,
+          travelled: false,
+        };
         onPressIn?.(event);
+      }}
+      // A scroll that comes back near where it started still travelled.
+      onTouchMove={(event) => {
+        if (press.current && beyondSlop(event)) press.current.travelled = true;
+        onTouchMove?.(event);
       }}
       onPress={
         onPress
           ? (event: GestureResponderEvent) => {
-              const from = start.current;
-              start.current = null;
-              const travel = from
-                ? Math.hypot(event.nativeEvent.pageX - from.x, event.nativeEvent.pageY - from.y)
-                : 0;
-              if (travel <= TAP_SLOP) onPress(event);
+              const travelled = press.current?.travelled || beyondSlop(event);
+              press.current = null;
+              if (!travelled) onPress(event);
             }
           : undefined
       }
