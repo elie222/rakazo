@@ -119,16 +119,17 @@ export class Speaker {
         (error: unknown) => ({ error }),
       );
     let next: Promise<Rendered> | null = render(utterances[0] ?? "");
+    let playedAny = false;
+    let lastFailure: string | undefined;
     for (let i = 0; i < utterances.length; i += 1) {
       const current = next;
       next = i + 1 < utterances.length ? render(utterances[i + 1] ?? "") : null;
       if (!current) break;
       const rendered = await current;
+      // One bad clip must not end the whole read-aloud; skip it and keep going.
       if ("error" in rendered) {
-        const failure = live() ? errorText(rendered.error) : undefined;
-        if (failure) this.set({ ...IDLE, error: failure });
-        if (this.request === controller) this.request = null;
-        return failure;
+        if (live()) lastFailure = errorText(rendered.error);
+        continue;
       }
       if (!live()) return;
       this.set({
@@ -138,14 +139,22 @@ export class Speaker {
         caption: utterances[i],
       });
       const finished = await this.play(rendered.blob, live);
-      if (!finished || !live()) {
-        if (live()) this.set(IDLE);
-        if (this.request === controller) this.request = null;
-        return;
+      if (!finished) {
+        if (!live()) return;
+        // A clip that will not play must not end the read-aloud either.
+        continue;
       }
+      playedAny = true;
     }
-    if (live()) this.set(IDLE);
+    if (!playedAny && live() && lastFailure) {
+      this.set({ ...IDLE, error: lastFailure });
+    } else if (live()) {
+      this.set(IDLE);
+    }
     if (this.request === controller) this.request = null;
+    // Nothing played and nothing stopped it: report the failure so the caller can
+    // show it, instead of silently swallowing it.
+    if (!playedAny && live()) return lastFailure;
   }
 
   private async prepare(

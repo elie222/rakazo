@@ -361,7 +361,7 @@ describe("hosted voice playback controls", () => {
     expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
   });
 
-  it("surfaces a prefetched clip's failure when playback reaches it, with no unhandled rejection", async () => {
+  it("skips a prefetched clip that fails and finishes the read-aloud, with no unhandled rejection", async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
@@ -391,13 +391,62 @@ describe("hosted voice playback controls", () => {
       expect(unhandled).toEqual([]);
 
       firstAudio.onended?.();
-      await expect(outcome).resolves.toBe("Offline.");
+      await expect(outcome).resolves.toBe("spoken");
+      await expect(spoken).resolves.toBe(true);
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(unhandled).toEqual([]);
+      expect(ControllableAudio.instances).toHaveLength(1);
+      expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
     } finally {
       process.off("unhandledRejection", onUnhandled);
       stopVoicePlayback();
     }
+  });
+
+  it("keeps reading after a middle utterance fails to render", async () => {
+    vi.mocked(rpc).mockImplementation(async (proc) => {
+      if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+      return { ready: true, utterances: ["First", "Second", "Third"] } as never;
+    });
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: unknown }) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        if (body.text === "Second") throw new Error("Offline.");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    const spoken = speakText("Read this", { botId: "bot-1" });
+    await waitFor(() => ControllableAudio.instances.length === 1);
+    const firstAudio = ControllableAudio.instances[0]!;
+    await waitFor(() => firstAudio.paused === false);
+    firstAudio.onended?.();
+
+    await waitFor(() => ControllableAudio.instances.length === 2);
+    const thirdAudio = ControllableAudio.instances[1]!;
+    await waitFor(() => thirdAudio.paused === false);
+    thirdAudio.onended?.();
+
+    await expect(spoken).resolves.toBe(true);
+    expect(requested).toEqual(["First", "Second", "Third"]);
+    expect(ControllableAudio.instances).toHaveLength(2);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
+
+  it("reports that nothing was spoken when every clip fails to render", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Offline.");
+      }),
+    );
+
+    await expect(speakText("Read this", { botId: "bot-1" })).resolves.toBe(false);
+    expect(ControllableAudio.instances).toHaveLength(0);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
   });
 
   it("stops immediately and resolves the call without playing further utterances", async () => {
@@ -795,6 +844,11 @@ describe("hosted voice playback controls", () => {
     vi.mocked(createAudioPlayer).mockImplementation(
       () => new NativePlayer() as unknown as ReturnType<typeof createAudioPlayer>,
     );
+    // One utterance, so a watchdog failure leaves nothing else to fall back to.
+    vi.mocked(rpc).mockImplementation(async (proc) => {
+      if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+      return { ready: true, utterances: ["First"] } as never;
+    });
 
     let spoken: Promise<boolean> | undefined;
     try {
@@ -824,11 +878,13 @@ describe("hosted voice playback controls", () => {
 
       resumeVoicePlayback();
       expect(player.playing).toBe(true);
-      const rejected = expect(spoken).rejects.toThrow("Could not play that clip.");
+      // A stuck clip still fails its watchdog, but the read-aloud skips it instead of
+      // rejecting; with only one utterance, nothing is spoken.
       await vi.advanceTimersByTimeAsync(14_000);
       expect(getVoicePlaybackState().status).toBe("playing");
       await vi.advanceTimersByTimeAsync(1_000);
-      await rejected;
+      await expect(spoken).resolves.toBe(false);
+      expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
     } finally {
       stopVoicePlayback();
       await spoken?.catch(() => undefined);

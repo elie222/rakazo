@@ -305,6 +305,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
         (error: unknown) => ({ error }),
       );
     let finished = false;
+    let playedAny = false;
     try {
       let next: Promise<Rendered> | null =
         utterances.length > 0 ? render(utterances[0] ?? "") : null;
@@ -314,13 +315,24 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
         next = i + 1 < utterances.length ? render(utterances[i + 1] ?? "") : null;
         if (!current) break;
         const rendered = await current;
-        if ("error" in rendered) throw rendered.error;
+        // One bad clip must not end the whole read-aloud; skip it and keep going.
+        if ("error" in rendered) continue;
         if (session.isStopped || !isCurrentSpeech(epoch)) break;
-        await playSpeechClip(rendered.audio, session);
+        try {
+          await playSpeechClip(rendered.audio, session);
+          playedAny = true;
+        } catch {
+          // A clip that will not play must not end the read-aloud; the loop moves on.
+        }
       }
       finished = !session.isStopped && isCurrentSpeech(epoch);
     } finally {
       releasePlayback(epoch, isCurrentHostedSpeechSession(generation), finished);
+    }
+    // Nothing played and nothing stopped it: the voice is unavailable, so say so
+    // instead of silently swallowing the failure.
+    if (utterances.length > 0 && !playedAny && !session.isStopped && isCurrentSpeech(epoch)) {
+      return false;
     }
     return true;
   } finally {

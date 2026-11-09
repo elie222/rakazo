@@ -65,6 +65,65 @@ describe("Speaker", () => {
     expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
   });
 
+  it("keeps reading after a middle utterance fails to render", async () => {
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["First.", "Second.", "Third."]);
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        if (body.text === "Second.") throw new Error("Offline.");
+        return new Response(new Blob(["audio"]), { status: 200 });
+      }),
+    );
+    const played: Array<unknown> = [];
+    vi.stubGlobal(
+      "Audio",
+      class {
+        src = "";
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        constructor() {
+          played.push(this);
+        }
+        play() {
+          queueMicrotask(() => this.onended?.());
+          return Promise.resolve();
+        }
+        pause() {}
+      },
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:voice");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    await expect(speaker.speak("Read this.", { messageId: "m1" })).resolves.toBeUndefined();
+    expect(requested).toEqual(["First.", "Second.", "Third."]);
+    expect(played).toHaveLength(2);
+    expect(speaker.state.status).toBe("idle");
+  });
+
+  it("reports the failure when every utterance fails to render", async () => {
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["First.", "Second."]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Offline.");
+      }),
+    );
+
+    await expect(speaker.speak("Read this.", { messageId: "m1" })).resolves.toBe("Offline.");
+    expect(speaker.state.status).toBe("idle");
+  });
+
   it.each([
     { spaceId: undefined, expectedSpaceId: "space-support" },
     { spaceId: "space-edited", expectedSpaceId: "space-edited" },
