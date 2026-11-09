@@ -11,6 +11,7 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@ra
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
+import { SignInOrDivider, SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -231,21 +232,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     }
   }
 
-  function providerLinks(list: typeof linkProviders) {
-    return list.map((provider) => (
-      <Button
-        key={provider.id}
-        type="button"
-        variant="link"
-        size="sm"
-        disabled={pending}
-        className="mt-3 text-muted-foreground"
-        onClick={() => void signInWithProvider(provider.id)}
-      >
-        <Trans>Continue with {provider.name}</Trans>
-      </Button>
-    ));
-  }
+  const socialAboveForm = Boolean(reset?.passwordAuth && mode !== "forgot" && !codeStep);
 
   if (!sent && !reset && !capabilityError) {
     return <div className="h-full bg-background" />;
@@ -285,7 +272,13 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               <Trans>Continue with {primaryProvider.name}</Trans>
             </Button>
           ) : null}
-          {!reset?.passwordAuth && mode !== "forgot" ? providerLinks(linkProviders) : null}
+          {!reset?.passwordAuth && mode !== "forgot" ? (
+            <SocialSignInButtons
+              providers={linkProviders}
+              disabled={pending}
+              onPress={(providerId) => void signInWithProvider(providerId)}
+            />
+          ) : null}
           {error && !reset?.passwordAuth ? (
             <p role="alert" className="mt-3 text-body text-destructive">
               {error}
@@ -293,6 +286,18 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           ) : null}
           {reset?.passwordAuth ? (
             <>
+              {socialAboveForm && linkProviders.length > 0 ? (
+                <>
+                  <SocialSignInButtons
+                    providers={linkProviders}
+                    disabled={pending}
+                    onPress={(providerId) => void signInWithProvider(providerId)}
+                  />
+                  <div className="my-6 w-full">
+                    <SignInOrDivider />
+                  </div>
+                </>
+              ) : null}
               {mode === "up" && !codeStep ? (
                 <div className="mb-4 w-full">
                   <Label htmlFor="name" className="text-muted-foreground">
@@ -440,7 +445,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {mode !== "forgot" && !codeStep ? providerLinks(linkProviders) : null}
               {codeStep ? null : (
                 <p className="mt-8 text-muted-foreground">
                   {mode === "in" ? (

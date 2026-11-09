@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import { SignInOrDivider, SocialSignInButtons } from "../components/social-sign-in-buttons";
 import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
 import { currentApiBase, rpc } from "../lib/api";
 import type { PasswordResetCapabilities } from "../lib/api-auth";
@@ -325,18 +326,16 @@ export default function SignIn() {
                       style={{ marginTop: 16 }}
                     />
                   ) : null}
-                  {!reset?.passwordAuth && mode !== "forgot"
-                    ? linkProviders.map((provider) => (
-                        <NativeActionButton
-                          key={provider.id}
-                          label={t("Continue with {name}", { name: provider.name })}
-                          prominence="quiet"
-                          disabled={pending}
-                          onPress={() => void startProvider(provider)}
-                          style={{ alignSelf: "center", marginTop: 16 }}
-                        />
-                      ))
-                    : null}
+                  {!reset?.passwordAuth && mode !== "forgot" ? (
+                    <SocialSignInButtons
+                      providers={linkProviders}
+                      disabled={pending}
+                      onPress={(providerId) => {
+                        const provider = linkProviders.find((item) => item.id === providerId);
+                        if (provider) void startProvider(provider);
+                      }}
+                    />
+                  ) : null}
                   {error && !reset?.passwordAuth ? (
                     <Text
                       accessibilityRole="alert"
@@ -395,6 +394,19 @@ export default function SignIn() {
                     </>
                   ) : reset?.passwordAuth ? (
                     <>
+                      {mode !== "forgot" && linkProviders.length > 0 ? (
+                        <>
+                          <SocialSignInButtons
+                            providers={linkProviders}
+                            disabled={pending}
+                            onPress={(providerId) => {
+                              const provider = linkProviders.find((item) => item.id === providerId);
+                              if (provider) void startProvider(provider);
+                            }}
+                          />
+                          <SignInOrDivider />
+                        </>
+                      ) : null}
                       {mode === "up" ? (
                         <TextInput
                           autoComplete="name"
@@ -403,7 +415,7 @@ export default function SignIn() {
                           value={name}
                           onChangeText={setName}
                           style={{
-                            marginTop: 28,
+                            marginTop: linkProviders.length > 0 ? 12 : 28,
                             backgroundColor: tokens.muted,
                             borderRadius: 13,
                             padding: 16,
@@ -424,7 +436,10 @@ export default function SignIn() {
                         }}
                         onBlur={() => setEmailBlurred(true)}
                         style={{
-                          marginTop: mode === "up" ? 12 : 28,
+                          marginTop:
+                            mode === "up" || (mode !== "forgot" && linkProviders.length > 0)
+                              ? 12
+                              : 28,
                           backgroundColor: tokens.muted,
                           borderRadius: 13,
                           padding: 16,
@@ -523,18 +538,6 @@ export default function SignIn() {
                           style={{ marginTop: 12 }}
                         />
                       ) : null}
-                      {mode !== "forgot" && !codeStep
-                        ? linkProviders.map((provider) => (
-                            <NativeActionButton
-                              key={provider.id}
-                              label={t("Continue with {name}", { name: provider.name })}
-                              prominence="quiet"
-                              disabled={pending}
-                              onPress={() => void startProvider(provider)}
-                              style={{ alignSelf: "center", marginTop: 16 }}
-                            />
-                          ))
-                        : null}
                       {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"

@@ -145,25 +145,27 @@ it("retries failed capabilities without exposing a password form", async () => {
   expect(fetchAuthCapabilities).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Continue with Example");
 });
-it.each(["in", "up"] as const)("puts quiet SSO below the primary action on %s", async (mode) => {
+it.each(["in", "up"] as const)("puts SSO above the email form on %s", async (mode) => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
   await render(mode);
   const email = host.querySelector('input[name="email"]')!;
   const password = host.querySelector('input[type="password"]')!;
   const submit = host.querySelector('button[type="submit"]')!;
-  const sso = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Continue with Example",
+  const sso = button("Continue with Example");
+  const divider = [...host.querySelectorAll("span, div")].find(
+    (node) => node.textContent === "or",
   )!;
+  expect(sso.className).toContain("w-full");
+  expect(sso.dataset.variant).toBe("outline");
+  expect(submit.getAttribute("data-variant")).toBe("default");
   for (const [first, second] of [
+    [sso, divider],
+    [divider, email],
     [email, password],
     [password, submit],
-    [submit, sso],
   ] as const) {
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
-  expect(submit.getAttribute("data-variant")).toBe("default");
-  expect(sso.dataset.variant).toBe("link");
-  expect(sso.dataset.size).toBe("sm");
 });
 
 it("shows a configured provider beside the password form and hides the rest", async () => {
@@ -180,11 +182,16 @@ it("shows a configured provider beside the password form and hides the rest", as
   expect(host.querySelector('input[name="email"]')).not.toBeNull();
   const google = button("Continue with Google");
   const apple = button("Continue with Apple");
-  expect(google.dataset.variant).toBe("link");
-  expect(apple.dataset.variant).toBe("link");
-  expect(host.querySelector('button[type="submit"]')!.compareDocumentPosition(google)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
+  const email = host.querySelector('input[name="email"]')!;
+  expect(google.dataset.variant).toBe("outline");
+  expect(google.className).toContain("w-full");
+  expect(apple.className).toContain("bg-black");
+  expect(apple.className).toContain("dark:bg-white");
+  expect(google.querySelector("svg")).not.toBeNull();
+  expect(apple.querySelector("svg")).not.toBeNull();
+  expect(google.compareDocumentPosition(apple) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(apple.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(host.textContent).toContain("or");
   await act(async () => google.click());
   expect(authClient.signIn.social).toHaveBeenCalledWith(
     expect.objectContaining({ provider: "google" }),

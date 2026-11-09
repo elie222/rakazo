@@ -116,7 +116,29 @@ vi.mock("../components/native-action-button", () => ({
     </button>
   ),
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => tokensForAppearance("light") }));
+vi.mock("./native", () => ({
+  useMobileTokens: () => tokensForAppearance("light"),
+  useResolvedAppearance: () => "light",
+}));
+vi.mock("expo-apple-authentication", () => ({
+  AppleAuthenticationButton: ({
+    onPress,
+    accessibilityLabel,
+  }: {
+    onPress: () => void;
+    accessibilityLabel?: string;
+  }) => (
+    <button type="button" onClick={onPress}>
+      {accessibilityLabel}
+    </button>
+  ),
+  AppleAuthenticationButtonType: { CONTINUE: 1, SIGN_IN: 0, SIGN_UP: 2 },
+  AppleAuthenticationButtonStyle: { WHITE: 0, WHITE_OUTLINE: 1, BLACK: 2 },
+}));
+vi.mock("react-native-svg", () => ({
+  default: () => null,
+  Path: () => null,
+}));
 vi.mock("./i18n", () => ({
   useI18n: () => ({
     t: (text: string, values?: Record<string, string>) =>
@@ -206,30 +228,22 @@ function expectBefore(first: Element, second: Element) {
   expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 
-it.each(["in", "up"])(
-  "places a single quiet SSO action below the password form in %s mode",
-  async (mode) => {
-    route.mode = mode;
-    await render();
-    const email = host.querySelector('input[aria-label="Email"]')!;
-    const password = host.querySelector('input[type="password"]')!;
-    const submit = host.querySelector('button[data-prominence="primary"]')!;
-    const buttons = ssoButtons();
-    expect(buttons).toHaveLength(1);
-    const sso = buttons[0]!;
-    const prompt = [...host.querySelectorAll("span")].find(
-      (span) =>
-        span.textContent ===
-        (mode === "in" ? "Don’t have an account?" : "Already have an account?"),
-    )!;
-    expect(submit.textContent).toBe(mode === "in" ? "Sign in" : "Sign up");
-    expect(sso.dataset.prominence).toBe("quiet");
-    expectBefore(email, password);
-    expectBefore(password, submit);
-    expectBefore(submit, sso);
-    expectBefore(sso, prompt);
-  },
-);
+it.each(["in", "up"])("places SSO above the email form in %s mode", async (mode) => {
+  route.mode = mode;
+  await render();
+  const email = host.querySelector('input[aria-label="Email"]')!;
+  const password = host.querySelector('input[type="password"]')!;
+  const submit = host.querySelector('button[data-prominence="primary"]')!;
+  const buttons = ssoButtons();
+  expect(buttons).toHaveLength(1);
+  const sso = buttons[0]!;
+  const divider = [...host.querySelectorAll("span")].find((span) => span.textContent === "or")!;
+  expect(submit.textContent).toBe(mode === "in" ? "Sign in" : "Sign up");
+  expectBefore(sso, divider);
+  expectBefore(divider, email);
+  expectBefore(email, password);
+  expectBefore(password, submit);
+});
 
 it.each(["in", "up"])(
   "shows one primary SSO action without credentials in SSO-only %s mode",
@@ -260,8 +274,9 @@ it("offers each configured provider and uses native Apple on iOS", async () => {
   vi.mocked(continueWithNativeSignIn).mockResolvedValue(false);
   await render();
   expect(input("Email")).not.toBeNull();
-  expect(button("Continue with Google")!.dataset.prominence).toBe("quiet");
-  expect(button("Continue with Apple")!.dataset.prominence).toBe("quiet");
+  expectBefore(button("Continue with Google")!, button("Continue with Apple")!);
+  expectBefore(button("Continue with Apple")!, input("Email")!);
+  expect(host.textContent).toContain("or");
   await press("Continue with Google");
   expect(continueWithSso).toHaveBeenCalledWith("sign-in", "google");
   expect(continueWithNativeSignIn).not.toHaveBeenCalled();
