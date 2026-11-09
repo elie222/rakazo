@@ -548,9 +548,9 @@ export async function verifyOpenAiCompatibleApiKey(
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
-/** Inside a container, localhost is the container itself rather than the computer running it. */
+/** Docker Desktop forwards host.docker.internal to host loopback; Linux needs a reachable host address. */
 const LOOPBACK_UNREACHABLE_MESSAGE =
-  "Could not reach the model server. If Rakazo runs in Docker, use host.docker.internal instead of localhost.";
+  "Could not reach the model server. If Rakazo runs in Docker, localhost is the container itself: use host.docker.internal or this computer's network address.";
 
 function connectionRefused(error: unknown): boolean {
   return (
