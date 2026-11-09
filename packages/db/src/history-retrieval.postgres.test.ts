@@ -9,7 +9,7 @@ import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
 const enabled = process.env.VERIFY_DATABASE && process.env.DATABASE_URL;
-const postgres = enabled ? describe.sequential : describe.skip;
+const postgres = enabled ? describe : describe.skip;
 postgres("history retrieval (PostgreSQL)", () => {
   let pool: Pool;
   let prisma: PrismaClient;

@@ -150,6 +150,7 @@ export * from "./openai-voice.js";
 export * from "./openrouter-usage.js";
 export * from "./page-browser-session.js";
 export * from "./page-share-secrets.js";
+export * from "./paid-services-factory.js";
 export * from "./parallel-web.js";
 export * from "./payment-wallet-factory.js";
 export * from "./payment-wallets.js";

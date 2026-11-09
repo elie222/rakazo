@@ -8,7 +8,7 @@
       "distribution": "internal",
       "environment": "preview",
       "channel": "preview",
-      "node": "24.22.1",
+      "node": "24.22.2",
       "pnpm": "12.18.0",
       "ios": {
         "image": "macos-tahoe-26.6-xcode-27.1"
@@ -18,7 +18,7 @@
       "autoIncrement": true,
       "environment": "production",
       "channel": "production",
-      "node": "24.22.1",
+      "node": "24.22.2",
       "pnpm": "12.18.0",
       "ios": {
         "image": "macos-tahoe-26.6-xcode-27.1"

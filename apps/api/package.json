@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",
-    "@orpc/server": "1.16.1",
+    "@orpc/server": "1.16.2",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/auth": "workspace:*",
@@ -33,11 +33,12 @@
     "@rakazo/memory": "workspace:*",
     "@rakazo/page-kit": "workspace:*",
     "fflate": "0.8.3",
-    "hono": "4.13.16",
-    "mermaid": "11.17.2"
+    "hono": "4.13.17",
+    "mermaid": "11.17.2",
+    "tsx": "4.23.15"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

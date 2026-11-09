@@ -102,6 +102,13 @@ const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
 const BOAT_GONE_CHECK_TIMEOUT_MS = 10_000;
+/**
+ * Without these, a call Boat never answers waits out Node's five-minute header timeout. Resumes
+ * usually answer within seconds; a slow one that is cut off keeps going, and the next resume
+ * waits on it.
+ */
+const BOAT_GET_TIMEOUT_MS = 60_000;
+const BOAT_RESUME_TIMEOUT_MS = 2 * 60_000;
 /** Archiving runs detached: Node's fetch drops a response with no headers after 300 seconds. */
 const BOAT_ARCHIVE_TIMEOUT_MS = 9 * 60_000;
 /** A whole workspace downloads as one archive, so it gets longer than a single file. */
@@ -1463,13 +1470,15 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
   const boatCall = <Args extends unknown[], Result>(
     call: (...args: Args) => Promise<Result>,
     idempotent = false,
-  ) => wrapBoatCall(call, apiKey, idempotent, gate);
-  const get = boatCall(api.get.bind(api), true);
+    timeoutMs?: number,
+  ) => wrapBoatCall(call, apiKey, idempotent, gate, timeoutMs);
+  const get = boatCall(api.get.bind(api), true, BOAT_GET_TIMEOUT_MS);
   const sandboxCall = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
     call: (...args: Args) => Promise<Result>,
     idempotent = false,
+    timeoutMs?: number,
   ) => {
-    const wrapped = boatCall(call, idempotent);
+    const wrapped = boatCall(call, idempotent, timeoutMs);
     return async (...args: Args): Promise<Result> => {
       try {
         return await wrapped(...args);
@@ -1527,11 +1536,11 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
     create: startCall("create", boatCall(api.create.bind(api))),
     createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
     createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
-    get: sandboxCall(api.get.bind(api), true),
+    get: sandboxCall(api.get.bind(api), true, BOAT_GET_TIMEOUT_MS),
     getSavedSnapshot: boatCall(api.getSavedSnapshot.bind(api), true),
     hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
-    resume: startCall("resume", sandboxCall(api.resume.bind(api), true)),
+    resume: startCall("resume", sandboxCall(api.resume.bind(api), true, BOAT_RESUME_TIMEOUT_MS)),
     saveSavedSnapshot: boatCall(api.saveSavedSnapshot.bind(api)),
     stop: sandboxCall(api.stop.bind(api)),
     update: sandboxCall(api.update.bind(api), true),

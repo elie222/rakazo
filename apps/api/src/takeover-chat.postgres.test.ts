@@ -40,9 +40,7 @@ import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
-    ? describe.sequential
-    : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

@@ -12,8 +12,7 @@ x-logging: &logging
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
@@ -113,6 +112,8 @@ x-app-environment: &app-environment
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
+  RAKAZO_LOCAL_MODELS_API_KEY:
+  RAKAZO_LOOPBACK_HOST:
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
@@ -132,6 +133,9 @@ x-app-environment: &app-environment
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  PAID_SERVICES_PROVIDER:
+  PAID_SERVICES_API_KEY:
+  PAID_SERVICES_BASE_URL:
   # Provider keys Pi reads itself when a model has no stored credential
   AI_GATEWAY_API_KEY:
   ANTHROPIC_AUTH_TOKEN:
@@ -495,6 +499,7 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
+      INBOUND_EMAIL_RELAY_ARC_DOMAIN:
       WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
@@ -609,6 +614,7 @@ services:
       RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+      RAKAZO_ALLOWED_HOSTS: ${RAKAZO_ALLOWED_HOSTS:-}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}

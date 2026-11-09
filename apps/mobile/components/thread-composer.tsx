@@ -26,7 +26,7 @@ import {
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { ViewStyle } from "react-native";
+import type { TextInputInstance, ViewStyle } from "react-native";
 import {
   AppState,
   Pressable,
@@ -129,7 +129,7 @@ export function ThreadComposer({
   const textScale = Math.min(fontScale, MAX_FONT_SCALE);
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
   const draftRef = useRef(saved.text);

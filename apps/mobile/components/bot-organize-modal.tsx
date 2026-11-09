@@ -1,5 +1,5 @@
 import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
-import type { ReactNode } from "react";
+import type { ComponentRef, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
 import {
@@ -323,11 +323,12 @@ function FormSheetKeyboardAvoidingView({
   style: ViewStyle;
   children: ReactNode;
 }) {
-  const ref = useRef<View>(null);
+  // The library still types its ref as the View component, not the host instance it holds.
+  const ref = useRef<ComponentRef<typeof SheetKeyboardAvoidingView>>(null);
   const [offset, setOffset] = useState(0);
   const measure = useCallback(() => {
     const tag = findNodeHandle(ref.current);
-    if (tag === null) return;
+    if (tag == null) return;
     KeyboardControllerNative.viewPositionInWindow(tag).then(
       ({ y }) => setOffset(y),
       () => {},

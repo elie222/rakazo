@@ -9,8 +9,7 @@ import { ComposedSecretStore } from "./secret-store-factory.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const ISSUER = "https://auth.example.test";
 
