@@ -51,8 +51,8 @@ type Session = {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
-  /** Quiet gap that ends the utterance; null waits for `finishListening`. */
-  endpointMs: number | null;
+  /** Quiet gap that ends the utterance. */
+  endpointMs: number;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -132,7 +132,8 @@ export function finishListening(): void {
 
 /**
  * Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it.
- * With `endpointMs: null` a pause never ends it; `finishListening` does.
+ * A caller's own `endpointMs` also counts from the start, so a mic that never hears
+ * anything closes too.
  */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
@@ -140,7 +141,7 @@ export async function listen(opts: {
   onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
-  endpointMs?: number | null;
+  endpointMs?: number;
 }): Promise<void> {
   // A cancelled request can arrive after a newer session started; it must not stop that one.
   if (opts.signal?.aborted) return;
@@ -158,7 +159,7 @@ export async function listen(opts: {
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
-    endpointMs: opts.endpointMs === undefined ? ENDPOINT_SILENCE_MS : opts.endpointMs,
+    endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
     subs: [],
     carried: "",
     heard: "",
@@ -183,7 +184,15 @@ export async function listen(opts: {
     start(session);
   } catch {
     giveUp(session, "failed", "start-failed");
+    return;
   }
+  if (opts.endpointMs !== undefined) armSilence(session);
+}
+
+/** Ends the utterance once nothing new is heard for the session's quiet gap. */
+function armSilence(session: Session): void {
+  clearTimeout(session.silence);
+  session.silence = setTimeout(() => finish(session, "idle"), session.endpointMs);
 }
 
 function start(session: Session): void {
@@ -210,9 +219,7 @@ function onResult(session: Session, event: ResultEvent): void {
   session.onInterim?.(text);
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
-  clearTimeout(session.silence);
-  if (session.endpointMs !== null)
-    session.silence = setTimeout(() => finish(session), session.endpointMs);
+  armSilence(session);
 }
 
 function onEnd(session: Session): void {

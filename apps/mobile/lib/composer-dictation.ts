@@ -17,6 +17,9 @@ import { errorText } from "./user-error";
 import { ensureVoiceConsent } from "./voice";
 import { resolveVoiceCallPlan } from "./voice-call-entry";
 
+/** A pause long enough to think in; one this long, or a mic that never hears anything, ends it. */
+const DICTATION_PAUSE_MS = 30_000;
+
 export type ComposerDictationStatus = "idle" | "listening" | "transcribing";
 
 type Session = { cancel: AbortController; finish: () => void };
@@ -150,7 +153,7 @@ export function useComposerDictation({
     };
     await dictation.listen({
       lang,
-      endpointMs: null,
+      endpointMs: DICTATION_PAUSE_MS,
       signal: mine.cancel.signal,
       onInterim: (text) => {
         if (session.current === mine) onWordsRef.current(text);

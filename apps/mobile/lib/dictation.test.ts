@@ -86,9 +86,18 @@ describe("mobile dictation", () => {
     expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
   });
 
-  it("keeps listening through pauses without an endpoint until finished", async () => {
+  it("closes a mic that hears nothing within its own endpoint", async () => {
+    const onGiveUp = vi.fn();
+    await listen({ onFinal: vi.fn(), onGiveUp, endpointMs: 30_000 });
+    vi.advanceTimersByTime(29_999);
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onGiveUp).toHaveBeenCalledWith("idle");
+  });
+
+  it("keeps listening through pauses shorter than its endpoint until finished", async () => {
     const onFinal = vi.fn();
-    await listen({ onFinal, endpointMs: null });
+    await listen({ onFinal, endpointMs: 30_000 });
     fake.hear("buy milk", true);
     vi.advanceTimersByTime(ENDPOINT_SILENCE_MS * 5);
     fake.hear("and eggs");
