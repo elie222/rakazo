@@ -148,9 +148,13 @@ export function useRoutineEditor({
         },
         onRevealWebhook: async () => {
           const targetBotId = active.id;
+          const request = routineSaveRequest.current;
+          // A reveal that lands after the person left this routine shows nothing there.
+          const stale = () =>
+            routineSaveRequest.current !== request || activeBotId.current !== targetBotId;
           try {
             const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
-            if (activeBotId.current !== targetBotId) return;
+            if (stale()) return;
             setRevealedWebhookSecrets((current) => ({ ...current, [targetBotId]: secret }));
             window.clearTimeout(webhookHideTimer.current);
             webhookHideTimer.current = window.setTimeout(
@@ -160,6 +164,7 @@ export function useRoutineEditor({
           } catch (error) {
             // The editor asks the person to confirm it's them and tries again.
             if (isIdentityConfirmationRequired(error)) throw error;
+            if (stale()) return;
             setRoutineError(webhookErrorText(error, t`Could not show the webhook key`));
           }
         },

@@ -461,24 +461,27 @@ function RoutineEditor({
           fontSize={17}
         />
       </View>
-      {locked ? null : (
+      {/* A one-shot's schedule is fixed, but web triggers on it can still be removed. */}
+      {locked && !webTriggers.length ? null : (
         <View style={{ gap: 12 }}>
           <SettingsLabel>{t("When to run")}</SettingsLabel>
-          {draft.schedules.map((schedule, index) => (
-            <RoutineScheduleEditor
-              // Schedules have no id. The rows keep no state of their own, so a position will do.
-              key={index}
-              value={schedule}
-              onChange={(next) =>
-                update({
-                  schedules: draft.schedules.map((item, at) => (at === index ? next : item)),
-                })
-              }
-              onRemove={() =>
-                update({ schedules: draft.schedules.filter((_, at) => at !== index) })
-              }
-            />
-          ))}
+          {locked
+            ? null
+            : draft.schedules.map((schedule, index) => (
+                <RoutineScheduleEditor
+                  // Schedules have no id. The rows keep no state of their own, so a position will do.
+                  key={index}
+                  value={schedule}
+                  onChange={(next) =>
+                    update({
+                      schedules: draft.schedules.map((item, at) => (at === index ? next : item)),
+                    })
+                  }
+                  onRemove={() =>
+                    update({ schedules: draft.schedules.filter((_, at) => at !== index) })
+                  }
+                />
+              ))}
           {webTriggers.length ? (
             <SettingsGroup>
               {webTriggers.map((trigger) => (
@@ -506,27 +509,29 @@ function RoutineEditor({
               ))}
             </SettingsGroup>
           ) : null}
-          <SettingsGroup>
-            {/* A change trigger checks on its own interval, so it never shares a schedule. */}
-            {kept?.watch ? null : (
-              <SettingsRow
-                key="add"
-                accessibilityRole="button"
-                tinted
-                title={t("Add schedule")}
-                onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
-              />
-            )}
-            {email.address && !draft.emailSenders ? (
-              <SettingsRow
-                key="email"
-                accessibilityRole="button"
-                tinted
-                title={t("Add email trigger")}
-                onPress={() => update({ emailSenders: "owner" })}
-              />
-            ) : null}
-          </SettingsGroup>
+          {locked ? null : (
+            <SettingsGroup>
+              {/* A change trigger checks on its own interval, so it never shares a schedule. */}
+              {kept?.watch ? null : (
+                <SettingsRow
+                  key="add"
+                  accessibilityRole="button"
+                  tinted
+                  title={t("Add schedule")}
+                  onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
+                />
+              )}
+              {email.address && !draft.emailSenders ? (
+                <SettingsRow
+                  key="email"
+                  accessibilityRole="button"
+                  tinted
+                  title={t("Add email trigger")}
+                  onPress={() => update({ emailSenders: "owner" })}
+                />
+              ) : null}
+            </SettingsGroup>
+          )}
         </View>
       )}
       {draft.emailSenders ? (
