@@ -1,8 +1,8 @@
-import type { ReactNode, RefObject } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
-  CellRendererProps,
   FlatList,
+  FlatListProps,
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -25,6 +25,10 @@ import {
   visibleRange,
 } from "../lib/offscreen-unreads";
 import { UNREAD_JUMP_PILL_HEIGHT, UnreadJumpPill } from "./unread-jump-pill";
+
+type CellRendererProps<Item> = ComponentProps<
+  NonNullable<FlatListProps<Item>["CellRendererComponent"]>
+>;
 
 const entering = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 const exiting = FadeOut.duration(160).reduceMotion(ReduceMotion.System);

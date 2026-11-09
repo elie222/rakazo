@@ -18,6 +18,7 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
@@ -64,7 +65,7 @@ export default function BotSettingsScreen() {
     model: pickedModel,
     focus,
   } = useLocalSearchParams<{ botId: string; model?: string; focus?: string }>();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
   const threadId = useRef<string | undefined>(undefined);

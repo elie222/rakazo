@@ -1,6 +1,7 @@
 import { botColors, typeScale } from "@rakazo/ui-tokens";
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { TextInputInstance } from "react-native";
 import {
   Alert,
   FlatList,
@@ -42,13 +43,12 @@ const kindIcons = {
 export default function SearchSheet() {
   const { t, locale } = useI18n();
   const router = useRouter();
-  const navigation = useNavigation();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const insets = useSafeAreaInsets();
   const gutters = readableGutters(useWindowDimensions().width, insets);
-  const field = useRef<TextInput>(null);
+  const field = useRef<TextInputInstance>(null);
   const opening = useRef(false);
   const attempt = useRef(0);
   const focused = useRef(false);
@@ -67,12 +67,9 @@ export default function SearchSheet() {
     useCallback(() => {
       focused.current = true;
       opening.current = false;
-      const unsubscribe = navigation.addListener("beforeRemove", cancelOpen);
-      return () => {
-        cancelOpen();
-        unsubscribe();
-      };
-    }, [navigation, cancelOpen]),
+      // Removal blurs the sheet first, so this also cancels an open that is still pending.
+      return cancelOpen;
+    }, [cancelOpen]),
   );
 
   useEffect(() => {
@@ -218,7 +215,7 @@ export default function SearchSheet() {
           paddingBottom: insets.bottom + 16,
         }}
         ListEmptyComponent={
-          error ? null : (
+          error ? undefined : (
             <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
           )
         }
@@ -235,7 +232,7 @@ export default function SearchSheet() {
                 onPress={retry}
               />
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <Pressable

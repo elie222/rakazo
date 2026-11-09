@@ -13,7 +13,6 @@ const state = vi.hoisted(() => ({
   search: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
-  addListener: vi.fn(),
   lifecycle: new Map<string, () => void>(),
   selectSpace: vi.fn(),
   selectionSeq: 0,
@@ -56,7 +55,6 @@ const message = {
 };
 vi.mock("expo-router", () => ({
   useRouter: () => state,
-  useNavigation: () => state,
   useFocusEffect: (effect: () => () => void) =>
     useEffect(() => {
       const cleanup = effect();
@@ -183,10 +181,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   state.lifecycle.clear();
-  state.addListener.mockImplementation((event: string, listener: () => void) => {
-    state.lifecycle.set(event, listener);
-    return () => state.lifecycle.delete(event);
-  });
   state.platform.OS = "ios";
   state.search.mockResolvedValue([]);
   state.spaceId = "space-a";
@@ -425,7 +419,7 @@ it.each(["space switch", "keyboard dismiss"] as const)(
 );
 
 it.each(
-  ["beforeRemove", "blur", "unmount"].flatMap((event) =>
+  ["blur", "unmount"].flatMap((event) =>
     ["space switch", "keyboard dismiss"].map((stage) => ({ event, stage })),
   ),
 )("cancels pending $stage on $event and restores the space", async ({ event, stage }) => {
@@ -455,7 +449,7 @@ it.each(
 });
 
 it("keeps the selected space when successful navigation removes the sheet", async () => {
-  state.replace.mockImplementationOnce(() => state.lifecycle.get("beforeRemove")!());
+  state.replace.mockImplementationOnce(() => state.lifecycle.get("blur")!());
   await act(async () => row("Team, Group").click());
   expect(state.replace).toHaveBeenCalledOnce();
   expect(state.spaceId).toBe("space-b");
