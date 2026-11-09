@@ -20,7 +20,7 @@ import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import { switchOrganization, useOrganizations } from "../../lib/organizations";
-import { useQueryUserId, useSpaceQueries } from "../../lib/query";
+import { ATTENTION_REFETCH_MS, useQueryUserId, useSpaceQueries } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
@@ -117,8 +117,7 @@ export function ShellSidebar({
   const queries = useSpaceQueries();
   const attention = useQuery({
     ...queries.attention.list.queryOptions(),
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: ATTENTION_REFETCH_MS,
   });
   const attentionCount = attention.data?.items.length ?? 0;
   const {

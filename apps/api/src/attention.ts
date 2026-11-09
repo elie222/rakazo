@@ -16,6 +16,8 @@ const MAX_WAITING_RUNS = 50;
 const MAX_FAILED_RUNS = 20;
 const MAX_ROUTINES = 50;
 const MAX_DETAIL = 280;
+/** How far back from a waiting run's last message a pending card can sit. */
+const MESSAGES_PER_RUN = 8;
 
 type WaitingRun = {
   id: string;
@@ -34,6 +36,37 @@ type FailedRun = Omit<WaitingRun, "status" | "updatedAt"> & {
   completedAt: Date | null;
   updatedAt: Date;
 };
+
+type RoutineThread = {
+  id: string;
+  botId: string | null;
+  groupId: string | null;
+  group: { name: string; archivedAt: Date | null; members: { botId: string | null }[] } | null;
+};
+
+type RoutineRow = {
+  id: string;
+  botId: string;
+  name: string;
+  nextRunAt: Date | null;
+  thread: RoutineThread | null;
+  bot: { name: string; thread: RoutineThread | null };
+};
+
+/** The thread a routine runs in, matching dispatch: its own target when valid, else the bot's. */
+function routineThread(routine: RoutineRow): RoutineThread | null {
+  const candidate = routine.thread;
+  if (
+    candidate &&
+    (candidate.botId === routine.botId ||
+      (candidate.group &&
+        !candidate.group.archivedAt &&
+        candidate.group.members.some((member) => member.botId === routine.botId)))
+  ) {
+    return candidate;
+  }
+  return routine.bot.thread;
+}
 
 function detailText(value: string | undefined): string {
   return truncatePlainText(value?.replace(/\s+/g, " ").trim() ?? "", MAX_DETAIL);
@@ -81,7 +114,7 @@ export async function listAttentionItems(
         spaceId: actor.spaceId,
         userId: actor.userId,
         bot: { archivedAt: null },
-        trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
+        // A background run that waits on a person is conversation, whatever started it.
         status: { in: ["waiting_input", "waiting_takeover"] },
       },
       select: {
@@ -105,10 +138,12 @@ export async function listAttentionItems(
         spaceId: actor.spaceId,
         userId: actor.userId,
         bot: { archivedAt: null },
-        trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
-        status: "failed",
+        trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+        status: { in: ["failed", "completed", "cancelled"] },
         completedAt: { gte: new Date(now.getTime() - FAILED_WINDOW_MS) },
-        thread: { unread: true },
+        thread: {
+          reads: { some: { userId: actor.userId, spaceId: actor.spaceId, unread: true } },
+        },
       },
       select: {
         id: true,
@@ -124,7 +159,10 @@ export async function listAttentionItems(
           select: { groupId: true, group: { select: { name: true } } },
         },
       },
-      orderBy: [{ completedAt: "asc" }, { id: "asc" }],
+      // The newest terminal run owns the chat's failure state; an older failure that a
+      // successful retry superseded must not reappear while the chat stays unread.
+      orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      distinct: ["threadId"],
       take: MAX_FAILED_RUNS,
     }),
     prisma.routine.findMany({
@@ -141,14 +179,35 @@ export async function listAttentionItems(
         botId: true,
         name: true,
         nextRunAt: true,
+        thread: {
+          select: {
+            id: true,
+            botId: true,
+            groupId: true,
+            group: {
+              select: {
+                name: true,
+                archivedAt: true,
+                members: { select: { botId: true } },
+              },
+            },
+          },
+        },
         bot: {
           select: {
             name: true,
             thread: {
               select: {
                 id: true,
+                botId: true,
                 groupId: true,
-                group: { select: { name: true } },
+                group: {
+                  select: {
+                    name: true,
+                    archivedAt: true,
+                    members: { select: { botId: true } },
+                  },
+                },
               },
             },
           },
@@ -160,12 +219,18 @@ export async function listAttentionItems(
   ]);
 
   const messages = waitingRuns.length
-    ? await prisma.message.findMany({
-        where: { runId: { in: waitingRuns.map((run) => run.id) } },
-        select: { id: true, runId: true, blocks: true },
-        orderBy: [{ runId: "asc" }, { seq: "desc" }],
-        take: MAX_WAITING_RUNS * 8,
-      })
+    ? (
+        await Promise.all(
+          waitingRuns.map((run) =>
+            prisma.message.findMany({
+              where: { runId: run.id },
+              select: { id: true, runId: true, blocks: true },
+              orderBy: { seq: "desc" },
+              take: MESSAGES_PER_RUN,
+            }),
+          ),
+        )
+      ).flat()
     : [];
 
   const pendingCardByRun = new Map<string, { messageId: string; block: MessageBlock }>();
@@ -225,6 +290,7 @@ export async function listAttentionItems(
   }
 
   for (const run of failedRuns as FailedRun[]) {
+    if (run.status !== "failed") continue;
     if (busyBots.has(run.botId)) continue;
     busyBots.add(run.botId);
     items.push(
@@ -236,12 +302,12 @@ export async function listAttentionItems(
     );
   }
 
-  for (const routine of routines) {
+  for (const routine of routines as RoutineRow[]) {
     if (busyBots.has(routine.botId)) continue;
-    const thread = routine.bot.thread;
-    if (!thread) continue;
     const nextRunAt = routine.nextRunAt?.getTime() ?? null;
     if (!routineScheduleDelayed({ active: true, nextRunAt }, now.getTime())) continue;
+    const thread = routineThread(routine);
+    if (!thread) continue;
     busyBots.add(routine.botId);
     items.push({
       id: `routine:${routine.id}`,

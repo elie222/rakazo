@@ -4,11 +4,10 @@ import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
 export type AttentionBlockKind = "question" | "approval" | "secret";
 
 /**
- * What a pending card is asking for. Approval wins over a secret, and a card with answer
- * choices is a question even when it carries detail the user is deciding about.
+ * What a pending ask is asking for. Approval wins over a secret. Choice cards belong to
+ * onboarding and are answered by that flow, not by `threads.answer`.
  */
 export function attentionKindForBlock(block: MessageBlock): AttentionBlockKind | null {
-  if (block.kind === "choice") return block.answerId ? null : "question";
   if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return null;
   if (isApprovalAskBlock(block)) return "approval";
   if (isSecretAskBlock(block)) return "secret";
@@ -23,16 +22,6 @@ function actionTone(id: string): AttentionAction["tone"] {
 
 /** Inline answers the inbox can send through `threads.answer`. Secret cards have none. */
 export function attentionActionsForBlock(block: MessageBlock): AttentionAction[] {
-  if (block.kind === "choice") {
-    if (block.answerId) return [];
-    return block.options.map((option) => ({
-      id: option.id,
-      label: option.label,
-      answer: option.id,
-      // A question's choices are equally valid; none is the app's recommendation.
-      tone: "secondary" as const,
-    }));
-  }
   if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return [];
   if (isSecretAskBlock(block)) return [];
   const approval = isApprovalAskBlock(block);
@@ -43,6 +32,22 @@ export function attentionActionsForBlock(block: MessageBlock): AttentionAction[]
     // Only an approval has a recommended answer; a question's choices are equal.
     tone: approval ? actionTone(action.id) : ("secondary" as const),
   }));
+}
+
+export type AttentionSectionKey = "waiting" | "failed" | "routines";
+
+const SECTION_BY_KIND: Record<AttentionItem["kind"], AttentionSectionKey> = {
+  takeover: "waiting",
+  question: "waiting",
+  approval: "waiting",
+  secret: "waiting",
+  failed: "failed",
+  routine_delayed: "routines",
+};
+
+/** The section an item belongs to in the inbox. */
+export function attentionSectionKey(kind: AttentionItem["kind"]): AttentionSectionKey {
+  return SECTION_BY_KIND[kind];
 }
 
 const KIND_RANK: Record<AttentionItem["kind"], number> = {

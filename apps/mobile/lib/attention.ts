@@ -1,4 +1,5 @@
 import type { AttentionItem } from "@rakazo/contracts";
+import { attentionSectionKey } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { rpc } from "./api";
 
@@ -23,19 +24,17 @@ export function attentionSections(
     {
       key: "waiting",
       title: translate("Waiting on you"),
-      items: items.filter((item) =>
-        ["question", "approval", "secret", "takeover"].includes(item.kind),
-      ),
+      items: items.filter((item) => attentionSectionKey(item.kind) === "waiting"),
     },
     {
       key: "failed",
       title: translate("Failed"),
-      items: items.filter((item) => item.kind === "failed"),
+      items: items.filter((item) => attentionSectionKey(item.kind) === "failed"),
     },
     {
       key: "routines",
       title: translate("Routines behind"),
-      items: items.filter((item) => item.kind === "routine_delayed"),
+      items: items.filter((item) => attentionSectionKey(item.kind) === "routines"),
     },
   ].filter((section) => section.items.length > 0) as AttentionSection[];
 }

@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AttentionItem } from "@rakazo/contracts";
+import { attentionSectionKey } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -26,7 +27,7 @@ import {
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { desktopBridge } from "../lib/desktop";
-import { useSpaceQueries } from "../lib/query";
+import { ATTENTION_REFETCH_MS, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
@@ -103,7 +104,7 @@ export function NeedsYouPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const query = useQuery({
     ...queries.attention.list.queryOptions(),
-    refetchInterval: 15_000,
+    refetchInterval: ATTENTION_REFETCH_MS,
   });
   const bootstrap = useQuery(queries.bootstrap.queryOptions({ input: {} })).data;
   const bots = bootstrap?.bots ?? [];
@@ -114,15 +115,17 @@ export function NeedsYouPage() {
       {
         key: "waiting",
         title: t`Waiting on you`,
-        items: items.filter((item) =>
-          ["question", "approval", "secret", "takeover"].includes(item.kind),
-        ),
+        items: items.filter((item) => attentionSectionKey(item.kind) === "waiting"),
       },
-      { key: "failed", title: t`Failed`, items: items.filter((item) => item.kind === "failed") },
+      {
+        key: "failed",
+        title: t`Failed`,
+        items: items.filter((item) => attentionSectionKey(item.kind) === "failed"),
+      },
       {
         key: "routines",
         title: t`Routines behind`,
-        items: items.filter((item) => item.kind === "routine_delayed"),
+        items: items.filter((item) => attentionSectionKey(item.kind) === "routines"),
       },
     ] satisfies Section[]
   ).filter((section) => section.items.length > 0);
@@ -168,9 +171,6 @@ export function NeedsYouPage() {
         <h1 className="font-medium text-foreground">
           <Trans>Needs you</Trans>
         </h1>
-        {items.length > 0 ? (
-          <span className="text-body-sm text-muted-foreground">{items.length}</span>
-        ) : null}
         {query.isFetching && !query.isPending ? (
           <Spinner aria-label={t`Refreshing`} className="ms-auto size-4 text-muted-foreground" />
         ) : null}

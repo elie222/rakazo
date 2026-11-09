@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   attentionActionsForBlock,
   attentionKindForBlock,
+  attentionSectionKey,
   sortAttentionItems,
 } from "./attention.js";
 
@@ -39,7 +40,7 @@ describe("attention cards", () => {
   it("classifies approvals, secrets and questions", () => {
     expect(attentionKindForBlock(approval)).toBe("approval");
     expect(attentionKindForBlock(secret)).toBe("secret");
-    expect(attentionKindForBlock(choice)).toBe("question");
+    expect(attentionKindForBlock(choice)).toBeNull();
     expect(
       attentionKindForBlock({
         kind: "ask",
@@ -51,7 +52,6 @@ describe("attention cards", () => {
 
   it("ignores cards that are already answered or dismissed", () => {
     expect(attentionKindForBlock({ ...approval, status: "answered" })).toBeNull();
-    expect(attentionKindForBlock({ ...choice, answerId: "choice-1" })).toBeNull();
     expect(attentionKindForBlock({ ...secret, dismissed: true })).toBeNull();
   });
 
@@ -66,10 +66,7 @@ describe("attention cards", () => {
       },
       { id: "deny", label: "Deny", answer: "deny", tone: "danger" },
     ]);
-    expect(attentionActionsForBlock(choice)).toEqual([
-      { id: "choice-1", label: "Berlin", answer: "choice-1", tone: "secondary" },
-      { id: "choice-2", label: "Seoul", answer: "choice-2", tone: "secondary" },
-    ]);
+    expect(attentionActionsForBlock(choice)).toEqual([]);
     expect(
       attentionActionsForBlock({
         kind: "ask",
@@ -78,6 +75,14 @@ describe("attention cards", () => {
       }),
     ).toEqual([{ id: "choice-1", label: "Berlin", answer: "choice-1", tone: "secondary" }]);
     expect(attentionActionsForBlock(secret)).toEqual([]);
+  });
+
+  it("groups kinds into the three inbox sections", () => {
+    for (const kind of ["question", "approval", "secret", "takeover"] as const) {
+      expect(attentionSectionKey(kind)).toBe("waiting");
+    }
+    expect(attentionSectionKey("failed")).toBe("failed");
+    expect(attentionSectionKey("routine_delayed")).toBe("routines");
   });
 
   it("puts takeovers first, then cards, failures and delayed routines, oldest first", () => {

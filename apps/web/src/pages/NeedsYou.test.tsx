@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -16,6 +17,7 @@ vi.mock("../lib/rpc", () => ({
   rpc: { threads: { answer: api.answer } },
 }));
 vi.mock("../lib/query", () => ({
+  ATTENTION_REFETCH_MS: 30_000,
   useSpaceQueries: () => ({
     attention: {
       list: { queryOptions: () => ({ queryKey: ["attention"], queryFn: api.attention.list }) },
@@ -40,7 +42,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
   return {
     BotAvatar: () => <i data-avatar="bot" />,
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
-    buttonVariants: (await importOriginal<typeof import("@rakazo/ui-web")>()).buttonVariants,
+    buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
     Empty: Container,
     EmptyDescription: Container,
     EmptyHeader: Container,

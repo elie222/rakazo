@@ -59,11 +59,12 @@ describeAttention("attention.list", () => {
       runId: question.id,
       blocks: [
         {
-          kind: "choice",
-          question: "Which city should I use?",
-          options: [
-            { id: "choice-1", letter: "A", label: "Berlin" },
-            { id: "choice-2", letter: "B", label: "Seoul" },
+          kind: "ask",
+          text: "Which city should I use?",
+          status: "pending",
+          actions: [
+            { id: "choice-1", label: "Berlin" },
+            { id: "choice-2", label: "Seoul" },
           ],
         },
       ],
@@ -108,7 +109,7 @@ describeAttention("attention.list", () => {
       ],
     });
     const failed = await seedRun(prisma, failedBot.id, "failed", "fail this run");
-    await prisma.thread.update({ where: { id: failed.threadId }, data: { unread: true } });
+    await markUnread(prisma, failed.threadId);
 
     const routineThread = await prisma.thread.findUniqueOrThrow({
       where: { botId: routineBot.id },
@@ -178,6 +179,80 @@ describeAttention("attention.list", () => {
     expect(JSON.stringify(result)).not.toContain("Not yours");
     expect(takeover.id).toBeTruthy();
   });
+
+  it("includes a background run that waits on a person", async () => {
+    const cookie = await signup(app, `attention-ticket-${stamp}@rakazo.test`, "Ticket User");
+    const bot = await createBot(app, cookie, "Ticket Bot");
+    const run = await seedRun(prisma, bot.id, "waiting_input", "work the ticket", "tickets");
+    await createThreadMessage(prisma, {
+      threadId: run.threadId,
+      role: "bot",
+      botId: bot.id,
+      runId: run.id,
+      blocks: [
+        {
+          kind: "ask",
+          text: "Which ticket should I take?",
+          status: "pending",
+          actions: [{ id: "one", label: "One" }],
+        },
+      ],
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+
+    expect(result.items.map((item) => [item.kind, item.botName])).toContainEqual([
+      "question",
+      "Ticket Bot",
+    ]);
+  });
+
+  it("drops a failure that a later run superseded", async () => {
+    const cookie = await signup(app, `attention-retry-${stamp}@rakazo.test`, "Retry User");
+    const bot = await createBot(app, cookie, "Retry Bot");
+    const failed = await seedRun(prisma, bot.id, "failed", "fail this run");
+    await markUnread(prisma, failed.threadId);
+    await seedRun(prisma, bot.id, "completed", "try again");
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+
+    expect(result.items.some((item) => item.kind === "failed")).toBe(false);
+  });
+
+  it("opens a delayed routine in the group it targets", async () => {
+    const cookie = await signup(app, `attention-group-${stamp}@rakazo.test`, "Group User");
+    const bot = await createBot(app, cookie, "Group Bot");
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const group = await prisma.chatGroup.create({
+      data: { spaceId: thread.spaceId, userId: thread.userId, name: "Crew" },
+    });
+    await prisma.chatGroupMember.create({ data: { groupId: group.id, botId: bot.id } });
+    const groupThread = await prisma.thread.create({
+      data: { spaceId: thread.spaceId, userId: thread.userId, groupId: group.id },
+    });
+    await prisma.routine.create({
+      data: {
+        spaceId: thread.spaceId,
+        botId: bot.id,
+        userId: thread.userId,
+        threadId: groupThread.id,
+        name: "Group brief",
+        prompt: "Send the brief",
+        crons: ["30 7 * * *"],
+        timezone: "UTC",
+        active: true,
+        notify: true,
+        nextRunAt: new Date(Date.now() - 60 * 60_000),
+      },
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+    const routine = result.items.find((item) => item.kind === "routine_delayed");
+
+    expect(routine?.groupId).toBe(group.id);
+    expect(routine?.groupName).toBe("Crew");
+    expect(routine?.threadId).toBe(groupThread.id);
+  });
 });
 
 async function createBot(app: App, cookie: string, name: string) {
@@ -190,11 +265,22 @@ async function createBot(app: App, cookie: string, name: string) {
   });
 }
 
+async function markUnread(prisma: PrismaClient, threadId: string) {
+  const thread = await prisma.thread.findUniqueOrThrow({
+    where: { id: threadId },
+    select: { spaceId: true, userId: true },
+  });
+  await prisma.threadRead.create({
+    data: { threadId, spaceId: thread.spaceId, userId: thread.userId, unread: true },
+  });
+}
+
 async function seedRun(
   prisma: PrismaClient,
   botId: string,
-  status: "waiting_input" | "waiting_takeover" | "failed",
+  status: "waiting_input" | "waiting_takeover" | "failed" | "completed",
   prompt: string,
+  trigger = "user",
 ) {
   const thread = await prisma.thread.findUniqueOrThrow({ where: { botId } });
   const task = await prisma.task.create({
@@ -207,6 +293,7 @@ async function seedRun(
       status,
     },
   });
+  const terminal = status === "failed" || status === "completed";
   return prisma.run.create({
     data: {
       spaceId: thread.spaceId,
@@ -215,8 +302,8 @@ async function seedRun(
       threadId: thread.id,
       taskId: task.id,
       status,
-      trigger: "user",
-      completedAt: status === "failed" ? new Date() : null,
+      trigger,
+      completedAt: terminal ? new Date() : null,
     },
   });
 }
