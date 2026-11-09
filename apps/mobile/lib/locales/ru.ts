@@ -699,6 +699,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Models: "Модели",
   "Move to": "Переместить в",
   Name: "Имя",
+  "Name your Bot": "Назовите бота",
   "Needs attention": "Требует внимания",
   Unread: "Непрочитанные",
   "Needs input": "Требуется ввод данных",

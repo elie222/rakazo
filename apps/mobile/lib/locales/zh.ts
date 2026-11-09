@@ -675,6 +675,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Models: "模型",
   "Move to": "移动到",
   Name: "名称",
+  "Name your Bot": "给 Bot 命名",
   "Needs attention": "需要处理",
   Unread: "未读",
   "Needs input": "等待输入",

@@ -490,6 +490,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Minimal: "最小",
   Model: "モデル",
   Name: "名前",
+  "Name your Bot": "ボットに名前を付ける",
   "Name this bot": "ボットに名前を付ける",
   "Read replies aloud": "返信を読み上げる",
   Save: "保存",

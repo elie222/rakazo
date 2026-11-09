@@ -45,11 +45,11 @@ import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import type { CreateAction } from "../lib/create-chooser";
-import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { hapticImpact, hapticSelection } from "../lib/haptics";
 import { t, useI18n } from "../lib/i18n";
+import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
 import {
@@ -189,7 +189,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
-  const creatingBotRef = useRef(false);
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
@@ -264,6 +263,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // The embedded pane is visible beside the chat, so it keeps polling even when
   // the chat route owns focus.
   useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
+  useEffect(() => onInboxChanged(() => void refreshBots().catch(() => undefined)), [refreshBots]);
 
   const archivedCount = useArchivedCount(me?.spaceId, hasSession);
   const {
@@ -472,6 +472,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     },
     [embedded, pathname, router],
   );
+  // The share sheet's inbox picks a chat to share into; only the real inbox opens chats.
+  useEffect(
+    () => (onShareSelect ? undefined : onOpenChatFromInbox(openChat)),
+    [openChat, onShareSelect],
+  );
   // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
   const signingInAgain = useRef(false);
   const signInAgain = useCallback(async () => {
@@ -585,34 +590,37 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [deleteInboxSpace, t],
   );
 
-  const createQuickBot = useCallback(
-    async (spaceId?: string) => {
-      if (
-        creatingBotRef.current ||
-        spaceActionRef.current.busy ||
-        spaceActionRef.current.recoveryId
-      )
+  // A create screen counts as open from the tap until the route changes, so a second tap
+  // before the push lands opens nothing.
+  const openingCreate = useRef(false);
+  useEffect(() => {
+    openingCreate.current = false;
+  }, [pathname]);
+  const openCreate = useCallback(
+    (href: Href) => {
+      if (openingCreate.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
         return;
-      creatingBotRef.current = true;
-      try {
-        await createInboxBot({ refreshBots, openChat, spaceId });
-      } catch (err) {
-        setError(errorText(err, t("Could not create bot")));
-      } finally {
-        creatingBotRef.current = false;
-      }
+      openingCreate.current = true;
+      router.push(href);
     },
-    [openChat, refreshBots, t],
+    [router],
+  );
+
+  const newBot = useCallback(
+    (spaceId?: string) =>
+      openCreate({
+        pathname: "/new-bot",
+        params: { avatarSet: me?.botAvatarSet, ...(spaceId ? { spaceId } : {}) },
+      }),
+    [me?.botAvatarSet, openCreate],
   );
 
   const runCreateAction = useCallback(
     (action: CreateAction) => {
-      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      if (action === "bot") void createQuickBot();
-      else if (action === "group") router.push("/new-group");
-      else router.push("/new-space");
+      if (action === "bot") newBot();
+      else openCreate(action === "group" ? "/new-group" : "/new-space");
     },
-    [createQuickBot, router],
+    [newBot, openCreate],
   );
 
   const organizations = useOrganizations(hasSession && !onShareSelect).data;
@@ -702,7 +710,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     botAction,
     chooseInboxSpace,
     confirmDeleteSpace,
-    createBotInSpace: createQuickBot,
+    createBotInSpace: newBot,
     day,
     now: snoozeNow,
     deleteSection,

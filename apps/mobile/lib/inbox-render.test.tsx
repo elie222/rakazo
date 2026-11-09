@@ -8,9 +8,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useInboxRenderItem } from "../components/inbox-render-item";
 import { BotRow } from "../components/inbox-rows";
 import type { NativeRowMenu } from "../components/native-row";
-import { createInboxBot } from "./create-inbox-bot";
+import { askForModelBeforeFirstBot, createInboxBot } from "./create-inbox-bot";
 import { scheduleFocusPrompt } from "./focus-prompt";
 import { formatThreadTime } from "./inbox";
+import { onInboxChanged } from "./inbox-changes";
 import { retainInboxValue } from "./inbox-retention";
 import type { InboxItem, InboxSpace } from "./inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
@@ -771,7 +772,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   ui.searchInboxSession.mockReset().mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.addToSearchInbox.mockReset();
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: vi.fn(),
     spaceId: "space-work",
   });
@@ -789,7 +790,7 @@ it("pins a bot made for a space to that space while another is selected", async 
   );
   // The Create menu's bot sends no pin, so it follows the selected space as before.
   ui.rpc.mockClear();
-  await createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() => expect(ui.rpc).toHaveBeenCalledTimes(4));
   expect(spaces()).toEqual([
     ["bots/list", undefined],
@@ -810,7 +811,7 @@ it.each(["session", "space"])(
       );
     const openChat = vi.fn();
     const creating = createInboxBot({
-      refreshBots: async () => undefined,
+      input: { name: "Scout" },
       openChat,
       spaceId: "space-work",
     });
@@ -836,7 +837,7 @@ it("does not open a created bot after its account or server changes", async () =
     );
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -857,7 +858,7 @@ it("opens a heading-created bot in its space after the selection changes during 
   });
   const openChat = vi.fn();
   const creating = createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat,
     spaceId: "space-work",
   });
@@ -883,7 +884,7 @@ it.each([true, false])(
       return [];
     });
     const openChat = vi.fn();
-    await createInboxBot({ refreshBots: async () => undefined, openChat, spaceId: "space-work" });
+    await createInboxBot({ input: { name: "Scout" }, openChat, spaceId: "space-work" });
     expect(ui.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, {
       requestContext: { headers: { "x-rakazo-space-id": "space-work" } },
     });
@@ -909,7 +910,7 @@ it("asks for a model instead of making the first bot when the account has none",
     return method === "bots/list" ? bots : { id: "bot-new", name: "New Bot" };
   });
   const openChat = vi.fn();
-  const create = () => createInboxBot({ refreshBots: async () => undefined, openChat });
+  const create = () => createInboxBot({ input: { name: "Scout" }, openChat });
   const buttons = () =>
     ui.alert.mock.lastCall?.[2] as { text: string; onPress?: () => void }[] | undefined;
   const select = (spaceId: string) => {
@@ -1026,13 +1027,18 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
       calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(session)}`),
     );
   await createInboxBot({
-    refreshBots: async () => undefined,
+    input: { name: "Scout" },
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
   // The server gives the bot the account's set, so the inbox sends none.
   expect(ui.rpc).toHaveBeenCalledWith(
     "bots/create",
     expect.not.objectContaining({ avatarSet: expect.anything() }),
+    undefined,
+  );
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ name: "Scout" }),
     undefined,
   );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
@@ -1049,15 +1055,72 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
   expect(ui.hapticSuccess).toHaveBeenCalledOnce();
 });
 
+it("asks for a model as the New bot screen opens, only for a first bot without one", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  let bots: unknown[] = [];
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "me") return { needsModel: true };
+    if (method === "bots/create") return { id: "bot-new", name: "Scout" };
+    return method === "bots/list" ? bots : [];
+  });
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(true);
+  expect(ui.alert).toHaveBeenCalledOnce();
+  bots = [{ id: "bot-existing" }];
+  expect(await askForModelBeforeFirstBot(undefined, () => true)).toBe(false);
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("created");
+  bots = [];
+  expect(await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).toBe("needsModel");
+  expect(ui.rpc.mock.calls.filter(([method]) => method === "bots/create")).toHaveLength(1);
+});
+
+it("does not ask for a model after the space changes during the opening check", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    if (method === "bots/list") {
+      ui.spaceSeq++;
+      return [];
+    }
+    return method === "me" ? { needsModel: true } : [];
+  });
+  expect(await askForModelBeforeFirstBot("space-work", () => true)).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
+it("does not ask for a model once the New bot screen has closed", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.alert.mockReset();
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) => (method === "me" ? { needsModel: true } : []));
+  expect(await askForModelBeforeFirstBot(undefined, () => false)).toBe(false);
+  expect(ui.alert).not.toHaveBeenCalled();
+});
+
+it("tells the inbox to reload once the bot exists", async () => {
+  ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
+  ui.rpc
+    .mockReset()
+    .mockImplementation(async (method: string) =>
+      method === "bots/create" ? { id: "bot-new", name: "Scout" } : [{ id: "bot-existing" }],
+    );
+  const changed = vi.fn();
+  const stop = onInboxChanged(changed);
+  await createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
+  stop();
+  expect(changed).toHaveBeenCalledOnce();
+});
+
 it("does not confirm a failed inbox bot creation with success feedback", async () => {
   ui.searchInboxSession.mockReturnValue({ generation: 7, apiBase: "http://api.test" });
   ui.rpc.mockReset().mockImplementation(async (method: string) => {
     if (method === "bots/create") throw new Error("Creation failed");
     return [];
   });
-  await expect(
-    createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() }),
-  ).rejects.toThrow("Creation failed");
+  await expect(createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() })).rejects.toThrow(
+    "Creation failed",
+  );
   expect(ui.hapticSuccess).not.toHaveBeenCalled();
 });
 
@@ -1075,7 +1138,7 @@ it.each([
         })
       : [],
   );
-  const creating = createInboxBot({ refreshBots: async () => undefined, openChat: vi.fn() });
+  const creating = createInboxBot({ input: { name: "Scout" }, openChat: vi.fn() });
   await vi.waitFor(() =>
     expect(ui.rpc).toHaveBeenCalledWith("bots/create", expect.anything(), undefined),
   );

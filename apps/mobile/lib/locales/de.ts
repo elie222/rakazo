@@ -508,6 +508,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Minimal: "Minimal",
   Model: "Modell",
   Name: "Name",
+  "Name your Bot": "Benenne deinen Bot",
   "Read replies aloud": "Antworten vorlesen",
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",

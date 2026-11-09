@@ -35,7 +35,10 @@ export function useHomeInbox(
   const [groups, setGroups] = useState<MobileGroup[]>([]);
   const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
   const [spaces, setSpaces] = useState<MobileSpace[]>([]);
-  const [me, setMe] = useState<Pick<MobileMe, "userId" | "spaceId" | "name"> | null>(null);
+  // A cached inbox has no avatar set; the live load fills it in for the New bot preview.
+  const [me, setMe] = useState<
+    (Pick<MobileMe, "userId" | "spaceId" | "name"> & Partial<Pick<MobileMe, "botAvatarSet">>) | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   // Kept apart from action errors so a failed action never borrows the load's title.
   const [inboxLoading, setInboxLoading] = useState(false);

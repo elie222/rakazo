@@ -6,6 +6,7 @@ import {
   ORGANIC_AVATAR_LOOKS,
   organicAvatarFamily,
   organicAvatarLook,
+  resolvePersonaColorDef,
   seededLogoAvatarColor,
 } from "@rakazo/core";
 
@@ -109,7 +110,11 @@ export function chooseBotAvatar(
         avatar.kind === "color" || avatar.kind === "other"
           ? organicAvatarLook(organicAvatarFamily(bot.id))
           : null,
-      color: avatar.kind === "color" || avatar.kind === "shape" ? avatar.color.toUpperCase() : null,
+      // A color saved as its earlier value is shown as, and so counts as, its palette color.
+      color:
+        avatar.kind === "color" || avatar.kind === "shape"
+          ? resolvePersonaColorDef(bot.id, avatar.color).hex.toUpperCase()
+          : null,
     };
   });
   const lookOf = (botId: string) => organicAvatarLook(organicAvatarFamily(botId));

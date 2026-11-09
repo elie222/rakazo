@@ -645,6 +645,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Models: "模型",
   "Move to": "移動到",
   Name: "名稱",
+  "Name your Bot": "為你的機器人命名",
   "Needs attention": "需要處理",
   Unread: "未讀",
   "Needs input": "等待輸入",
