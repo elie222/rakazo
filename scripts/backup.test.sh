@@ -137,8 +137,10 @@ chmod +x "$STUB/bin/docker"
 # ---------------------------------------------------------------- helpers
 setup_repo() {
   local repo="$1"
-  mkdir -p "$repo/scripts" "$repo/infra/compose" "$repo/.state"
+  mkdir -p "$repo/scripts/lib" "$repo/infra/compose" "$repo/.state"
   cp "$SCRIPT" "$repo/scripts/backup.sh"
+  # backup.sh sources the shared resolver, so the fake repo needs it too.
+  cp "$ROOT/scripts/lib/data-source.sh" "$repo/scripts/lib/data-source.sh"
   chmod +x "$repo/scripts/backup.sh"
   : > "$repo/infra/compose/docker-compose.yml"
   printf 'FAKE\n' > "$repo/.env"

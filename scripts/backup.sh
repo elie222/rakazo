@@ -43,56 +43,13 @@ log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die() { printf 'backup failed: %s\n' "$*" >&2; exit 1; }
 
 # ------------------------------------------------------- data source lookup
-# Prints "<kind> <path>" where kind is "dir" (a host directory) or "volume"
-# (a docker volume name). Prints nothing when no data source can be found.
-resolve_data_source() {
-  if [[ -n "$DATA_SOURCE" ]]; then
-    if [[ -d "$DATA_SOURCE" ]]; then printf 'dir %s\n' "$DATA_SOURCE"; return 0; fi
-    if docker volume inspect "$DATA_SOURCE" >/dev/null 2>&1; then
-      printf 'volume %s\n' "$DATA_SOURCE"
-      return 0
-    fi
-    die "RAKAZO_BACKUP_DATA_SOURCE='$DATA_SOURCE' is neither a directory nor a docker volume"
-  fi
-  # A source checkout binds $ROOT/data into the containers.
-  if [[ -d "$ROOT/data" && ! -L "$ROOT/data" ]]; then printf 'dir %s\n' "$ROOT/data"; return 0; fi
-  # A compose deployment keeps the data in a named volume mounted at /data.
-  # Ask the running compose project first, then any other running container.
-  #
-  # Only the mount AT /data is the data directory. Any other volume on the
-  # container (web assets, a database, a cache) is not, and picking one of
-  # those would archive the wrong thing and report success.
-  local container source type destination
-  local -a candidates=()
-  if command -v docker >/dev/null 2>&1; then
-    while IFS= read -r container; do
-      [[ -n "$container" ]] && candidates+=("$container")
-    done < <("${compose[@]}" ps -q 2>/dev/null || true)
-    if [[ -n "$COMPOSE_PROJECT" ]]; then
-      while IFS= read -r container; do
-        [[ -n "$container" ]] && candidates+=("$container")
-      done < <(docker ps -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT}" 2>/dev/null || true)
-    fi
-    while IFS= read -r container; do
-      [[ -n "$container" ]] && candidates+=("$container")
-    done < <(docker ps -q --filter "label=com.docker.compose.service=api" 2>/dev/null || true)
-    for container in "${candidates[@]}"; do
-      while IFS=$'\t' read -r type source destination; do
-        [[ -z "$source" ]] && continue
-        [[ "$destination" == "/data" ]] || continue
-        if [[ "$type" == "volume" ]]; then
-          printf 'volume %s\n' "$source"
-          return 0
-        fi
-        if [[ "$type" == "bind" && -d "$source" ]]; then
-          printf 'dir %s\n' "$source"
-          return 0
-        fi
-      done < <(docker inspect --format '{{range .Mounts}}{{.Type}}{{"\t"}}{{.Source}}{{"\t"}}{{.Destination}}{{"\n"}}{{end}}' "$container" 2>/dev/null || true)
-    done
-  fi
-  return 0
-}
+# The resolver lives in scripts/lib/data-source.sh so that backup.sh and
+# restore.sh always agree on where the data is. Only the mount AT /data is the
+# data directory: any other volume on the container (web assets, a database, a
+# cache) is not, and picking one of those would archive the wrong thing and
+# report success.
+# shellcheck source=scripts/lib/data-source.sh
+source "$ROOT/scripts/lib/data-source.sh"
 
 # ---------------------------------------------------------------- preflight
 if [[ -d "$OUT" && -n "$(ls -A "$OUT" 2>/dev/null)" ]]; then
