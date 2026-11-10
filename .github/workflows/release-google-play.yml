@@ -35,11 +35,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
-      - uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
-        with:
-          eas-version: latest
-          packager: npm
-          token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify mobile project
@@ -48,9 +43,11 @@ jobs:
           pnpm --filter @rakazo/mobile check
       - name: Require Firebase config
         working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          vars="$(eas env:list production --format short)"
+          vars="$(pnpm exec eas env:list production --format short)"
           if ! grep -q '^GOOGLE_SERVICES_JSON=' <<< "$vars"; then
             echo "Set the GOOGLE_SERVICES_JSON file variable in the EAS production environment." >&2
             exit 1
@@ -58,9 +55,11 @@ jobs:
       - name: Build production bundle on EAS
         id: build
         working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          eas build --platform android --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          pnpm exec eas build --platform android --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
           id="$(jq -er '.[0].id' "$RUNNER_TEMP/build.json")"
           url="$(jq -er '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
           [[ "$url" == https://* ]]
@@ -72,5 +71,6 @@ jobs:
       - name: Submit to Google Play production
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.build.outputs.id }}
-        run: eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+        run: pnpm exec eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
