@@ -1,6 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { emailDisplayText, isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
-import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
+import {
+  MAX_QUOTABLE_SOURCE_LENGTH,
+  messageQuoteSources,
+  visibleTextFromMarkdown,
+} from "@rakazo/core/message-quote";
 
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
@@ -117,18 +121,15 @@ export function quotableMessageSegments(
   if (cached) return cached;
   const segments: string[] = [];
   let sourceLength = 0;
-  for (const block of blocks) {
-    // An owner's email quotes as shown: plain text, like the server's quote source for it.
-    const source =
-      block.kind === "text" ? block.text : block.kind === "email" ? emailDisplayText(block) : "";
-    if (!source) continue;
-    sourceLength += source.length;
+  // The server's own quote sources, so a selection here is one it accepts.
+  for (const source of messageQuoteSources(blocks, role === "user" ? "plain-text" : "markdown")) {
+    if (!source.text) continue;
+    sourceLength += source.text.length;
     if (sourceLength > MAX_QUOTABLE_SOURCE_LENGTH) {
       segments.length = 0;
       break;
     }
-    const text =
-      role === "user" || block.kind === "email" ? source : visibleTextFromMarkdown(source);
+    const text = source.markdown ? visibleTextFromMarkdown(source.text) : source.text;
     if (text.trim()) segments.push(text);
   }
   let byRole = quotableSegmentsCache.get(blocks);

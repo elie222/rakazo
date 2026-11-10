@@ -84,6 +84,24 @@ function cleanVisibleExcerpt(value: string): string {
 }
 
 /**
+ * The text a message offers for quoting, in block order, and whether each part renders as
+ * markdown. Clients build their quote selection from it, so it matches what the server accepts.
+ */
+export function messageQuoteSources(
+  blocks: readonly MessageBlock[],
+  format: "markdown" | "plain-text",
+): Array<{ text: string; markdown: boolean }> {
+  // An owner's email is shown as plain text, whatever the format of the message's text blocks.
+  return blocks.flatMap((block) =>
+    block.kind === "text"
+      ? [{ text: block.text, markdown: format === "markdown" }]
+      : block.kind === "email"
+        ? [{ text: emailDisplayText(block), markdown: false }]
+        : [],
+  );
+}
+
+/**
  * Resolve an untrusted selected-text hint to an authoritative parent excerpt.
  * Only persisted text blocks are quotable; the format must match their renderer.
  * Punctuation and case stay significant.
@@ -98,14 +116,7 @@ export function deriveMessageQuote(
   const hint = normalizeWithOffsets(truncateReplyQuote(quoteHint.trim())).text;
   if (!hint) return undefined;
 
-  // An owner's email is shown as plain text, whatever the format of the message's text blocks.
-  const sources = blocks.flatMap((block) =>
-    block.kind === "text"
-      ? [{ text: block.text, markdown: format === "markdown" }]
-      : block.kind === "email"
-        ? [{ text: emailDisplayText(block), markdown: false }]
-        : [],
-  );
+  const sources = messageQuoteSources(blocks, format);
   let sourceLength = 0;
   for (const source of sources) {
     sourceLength += source.text.length;
