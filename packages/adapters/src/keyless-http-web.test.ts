@@ -238,6 +238,10 @@ describe("keyless HTTP web provider", () => {
     ["unclosed titles", "<title>".repeat(40_000)],
     ["unclosed styles", "<style>".repeat(40_000)],
     ["whitespace runs", `<p>a${" ".repeat(60_000)}b</p>`],
+    [
+      "nested elements",
+      '<div><div><span><i></i></span><a href="/">x</a></div></div>'.repeat(5_000),
+    ],
   ])("extracts a page full of %s in linear time", (_name, html) => {
     const started = performance.now();
     extractReadableText(html, "https://example.test/");
