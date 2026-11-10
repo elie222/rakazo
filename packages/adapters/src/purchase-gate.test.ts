@@ -174,6 +174,38 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
+  it("keeps desktop recovery available without clearing unverified presses", async () => {
+    const check = vi.fn(async () => ({
+      purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" as const },
+    }));
+    const ctx = contextWith(check);
+    const prepare = async (actions: unknown[]) => {
+      const request = { name: "computer_act", args: { actions } } as unknown as ToolRequest;
+      const result = await prepareToolRequest(ctx, request);
+      expect(request.purchase).toBeUndefined();
+      expect(request.fleetSummary).toBeUndefined();
+      return result;
+    };
+    // Escape can dismiss a blocking dialog; focus and scrolling can restore an inspectable page.
+    for (const action of [
+      { kind: "key", key: "Escape" },
+      { kind: "focus" },
+      { kind: "scroll", direction: "up", amount: 100 },
+    ]) {
+      expect(await prepare([action])).toBeUndefined();
+    }
+    expect(check).not.toHaveBeenCalled();
+    for (const action of [
+      { kind: "click", x: 10, y: 10 },
+      { kind: "key", key: "Return" },
+    ]) {
+      expect(await prepare([action])).toEqual({
+        error: expect.stringContaining("nothing was pressed"),
+      });
+    }
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
   it("presses an approved desktop purchase only while the page still shows what the card did", async () => {
     let now: typeof found | null = found;
     const ctx = contextWith(vi.fn(async () => ({ purchase: now })));
