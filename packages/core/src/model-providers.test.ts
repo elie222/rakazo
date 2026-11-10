@@ -633,6 +633,7 @@ describe("connectionModelChoices", () => {
     expect(botConnectionChanged(undefined, pinned)).toBe(false);
     expect(botConnectionChanged(null, pinned)).toBe(true);
     expect(botConnectionChanged(null, usual)).toBe(false);
+    expect(botConnectionChanged(null, undefined)).toBe(true);
     expect(botConnectionChanged("sub", pinned)).toBe(false);
     expect(botConnectionChanged("sub", usual)).toBe(true);
     expect(botConnectionChanged("api", pinned)).toBe(true);

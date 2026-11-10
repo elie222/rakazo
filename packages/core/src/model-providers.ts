@@ -412,7 +412,8 @@ export function botConnectionChanged(
   saved: { credentialId: string | null; pinned: boolean } | null | undefined,
 ): boolean {
   if (pending === undefined) return false;
-  if (pending === null) return Boolean(saved?.pinned);
+  // With the saved choice still unknown, a picked row with no connection has to be sent.
+  if (pending === null) return saved ? saved.pinned : true;
   return pending !== saved?.credentialId || !saved?.pinned;
 }
 

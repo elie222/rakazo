@@ -7302,6 +7302,7 @@ describe("bot model auth on save", () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       bot: { update: botUpdate },
+      userBotModelConnection: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
@@ -8852,6 +8853,33 @@ describe("openai-compatible enabled models", () => {
       create: { userId: actor.userId, botId: "bot-1", ...pin },
       update: pin,
     });
+  });
+
+  it("removes a member's chosen connection when the bot's model changes", async () => {
+    const { call, prisma, state } = fixture({
+      plaintext: secretText(["X", "Y"]),
+      defaultModel: "X",
+    });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "Y" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, botId: "bot-1" },
+    });
+  });
+
+  it("keeps a member's chosen connection when the bot's model stays", async () => {
+    const { call, prisma, state } = fixture({ plaintext: secretText(["X"]), defaultModel: "X" });
+    state.credential.userPreferences = [];
+
+    await expect(
+      call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "X" }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    expect(prisma.userBotModelConnection.deleteMany).not.toHaveBeenCalled();
   });
 
   it("removes a member's chosen connection when asked to", async () => {

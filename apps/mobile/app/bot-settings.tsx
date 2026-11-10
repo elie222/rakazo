@@ -332,6 +332,7 @@ export default function BotSettingsScreen() {
       thinkingLevel,
       credentials,
     });
+    if (key === pickerValue && !pick.credentialId) return;
     setPendingConnection(pick.credentialId);
     setModelKey(pick.modelKey);
     if (pick.resetThinking) setThinkingLevel("");

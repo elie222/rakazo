@@ -34,6 +34,7 @@ import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, displayName } from "@rakazo/c
 import type { Prisma } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
+  botModelConnectionApplies,
   botModelConnectionId,
   botProfileLabelsChanged,
   ComputerLimitError,
@@ -450,6 +451,13 @@ export function botsRoutes(ctx: RouterContext) {
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
+        const modelMoved =
+          !existing.modelProvider ||
+          !botModelConnectionApplies(
+            { provider: existing.modelProvider, modelId: existing.modelId ?? "" },
+            provider ?? "",
+            modelId,
+          );
         const modelConnection =
           input.modelConnectionId && provider && modelId
             ? {
@@ -484,8 +492,12 @@ export function botsRoutes(ctx: RouterContext) {
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
           modelConnection,
+          // A choice made for the old model must not come back unchecked if the bot returns to it.
           clearModelConnectionFor:
-            input.modelConnectionId === null ? context.actor.userId : undefined,
+            input.modelConnectionId === null ||
+            (input.modelConnectionId === undefined && modelMoved)
+              ? context.actor.userId
+              : undefined,
           data: {
             name: input.name,
             description: input.description,
