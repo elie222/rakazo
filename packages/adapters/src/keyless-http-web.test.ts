@@ -248,6 +248,14 @@ describe("keyless HTTP web provider", () => {
     expect(performance.now() - started).toBeLessThan(1_500);
   });
 
+  it("keeps the text of a page too large for article extraction", () => {
+    const html = `<html><head><title>Big</title></head><body><nav>Menu</nav>${"<div><span>row</span></div>".repeat(6_000)}<p>Closing paragraph</p></body></html>`;
+    const page = extractReadableText(html, "https://example.test/");
+    expect(page.title).toBe("Big");
+    expect(page.text).toContain("Menu");
+    expect(page.text).toContain("Closing paragraph");
+  });
+
   it("parses HTML search results with a cap", () => {
     const html = Array.from({ length: 12 }, (_, i) => {
       return `<div class="result"><a class="result__a" href="https://example.test/${i}">T${i}</a><div class="result__snippet">S${i}</div></div>`;
