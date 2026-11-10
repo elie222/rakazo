@@ -7,10 +7,11 @@ import {
   botMessageContext,
   displayName,
   HELPER_RESULT_TRIGGER,
+  isRunWaitingOnUser,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { hiddenFor, mutedFor, Prisma } from "@rakazo/db";
+import { chatMutedByDefault, hiddenFor, mutedFor, ownerHearsChat, Prisma } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -58,12 +59,18 @@ export function activityPreview(
   };
 }
 
-/** Whether the viewer hears from the run's chat: not when they muted or hid it. */
+/**
+ * Whether the viewer hears from the run's chat: not when they muted or hid it. Their own run that
+ * waits on them still reaches them there, as its push does.
+ */
 export function activityNotificationsEnabled(
   thread: { groupId: string | null; reads: Array<{ muted: boolean | null; hidden: boolean }> },
   bot: { notifyOnFinish: boolean },
+  ownWait = false,
 ): boolean {
-  return !hiddenFor(thread) && !mutedFor(thread, thread.groupId === null ? bot : null);
+  const chatBot = thread.groupId === null ? bot : null;
+  if (ownWait) return ownerHearsChat(thread.reads[0]?.muted, chatMutedByDefault(chatBot));
+  return !hiddenFor(thread) && !mutedFor(thread, chatBot);
 }
 
 export async function listSpaceRuns(
@@ -108,7 +115,11 @@ export async function listSpaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
-    notificationsEnabled: activityNotificationsEnabled(row.thread, row.bot),
+    notificationsEnabled: activityNotificationsEnabled(
+      row.thread,
+      row.bot,
+      row.userId === actor.userId && isRunWaitingOnUser(row.status),
+    ),
     ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,

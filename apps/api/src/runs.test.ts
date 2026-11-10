@@ -140,6 +140,19 @@ describe("run activity notification preference", () => {
       activityNotificationsEnabled({ groupId: null, reads: [{ muted: null, hidden: true }] }, on),
     ).toBe(false);
   });
+
+  it("lets the viewer's own run that waits on them through a chat they muted or hid", () => {
+    const own = (
+      reads: Array<{ muted: boolean | null; hidden: boolean }>,
+      groupId: string | null = null,
+    ) => activityNotificationsEnabled({ groupId, reads }, off, true);
+    expect(own([{ muted: true, hidden: false }])).toBe(true);
+    expect(own([{ muted: false, hidden: true }])).toBe(true);
+    // A bot silent by its own switch stays silent until the viewer chooses, as its push does.
+    expect(own([])).toBe(false);
+    expect(own([{ muted: null, hidden: true }])).toBe(false);
+    expect(own([], "group-1")).toBe(true);
+  });
 });
 
 it("hides opaque sender names in Activity previews", () => {

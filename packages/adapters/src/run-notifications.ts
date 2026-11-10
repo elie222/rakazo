@@ -10,7 +10,13 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { ChatHold, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { chatHoldsFor, chatMutedByDefault, countUnreadInboxChats, unhideChatFor } from "@rakazo/db";
+import {
+  chatHoldsFor,
+  chatMutedByDefault,
+  countUnreadInboxChats,
+  ownerHearsChat,
+  unhideChatFor,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notificationIdentity } from "./notification-identity.js";
@@ -69,7 +75,7 @@ export async function ownerHearsRun(
 ): Promise<boolean> {
   const hold = (await chatHoldsFor(prisma, run.threadId, [run.userId])).get(run.userId);
   if (hold?.hidden) await unhideChatFor(prisma, run.threadId, run.userId);
-  return (hold?.muted ?? null) !== null || !mutedByDefault;
+  return ownerHearsChat(hold?.muted, mutedByDefault);
 }
 
 export async function notifyRun(

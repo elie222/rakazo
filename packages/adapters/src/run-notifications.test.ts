@@ -17,6 +17,8 @@ vi.mock("@rakazo/db", () => ({
     new Map(userIds.flatMap((userId) => (holds.has(userId) ? [[userId, holds.get(userId)]] : []))),
   chatMutedByDefault: (bot?: { notifyOnFinish: boolean } | null) =>
     bot ? !bot.notifyOnFinish : false,
+  ownerHearsChat: (muted: boolean | null | undefined, mutedByDefault: boolean) =>
+    (muted ?? null) !== null || !mutedByDefault,
   unhideChatFor: async (_: unknown, _threadId: string, userId: string) => {
     unhidden.push(userId);
   },

@@ -45,6 +45,18 @@ export function chatMutedByDefault(bot?: { notifyOnFinish: boolean } | null): bo
   return bot ? !bot.notifyOnFinish : false;
 }
 
+/**
+ * Whether the person whose run it is hears its question, takeover or failure: even in a chat they
+ * muted or hid, since only they can answer. Until they mute or unmute the chat themselves, a chat
+ * muted by default stays as silent as it always was.
+ */
+export function ownerHearsChat(
+  muted: boolean | null | undefined,
+  mutedByDefault: boolean,
+): boolean {
+  return (muted ?? null) !== null || !mutedByDefault;
+}
+
 /** Whether this person muted the chat, its default deciding until they choose. */
 export function mutedFor(
   thread: { reads: Array<{ muted: boolean | null }> },
