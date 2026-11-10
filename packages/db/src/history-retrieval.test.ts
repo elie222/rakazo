@@ -358,6 +358,23 @@ describe("local history retrieval", () => {
       ]),
     ).toBe("visible");
   });
+  it("keeps an owner email's subject and body in message, read, and search text", () => {
+    const blocks = [
+      {
+        kind: "email",
+        emailId: "e1",
+        from: "owner@example.com",
+        to: ["bot@example.com"],
+        subject: "Book the Lisbon flights",
+        text: "",
+      },
+    ];
+    expect(historyMessageText(blocks)).toBe("Book the Lisbon flights");
+    expect(historyReadText(blocks)).toBe("Book the Lisbon flights");
+    expect(historySearchText([{ ...blocks[0], text: "Window seats." }])).toBe(
+      "Book the Lisbon flights\nWindow seats.",
+    );
+  });
   it("returns an earlier reply's tool steps to the bot but keeps them out of message text", () => {
     const blocks = [
       {

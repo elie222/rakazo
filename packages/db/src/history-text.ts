@@ -64,7 +64,7 @@ export function historyAttachmentBlocks(
 
 /**
  * What history search matches: the message text, its tool steps' labels and notes, and the
- * names of its attachments. Mirrors the expression of messages_history_search_steps_idx.
+ * names of its attachments. Mirrors the expression of messages_history_search_email_idx.
  */
 export function historySearchText(blocks: Prisma.JsonValue): string {
   const steps = objectBlocks(blocks).flatMap(toolSteps);
