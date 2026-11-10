@@ -340,6 +340,42 @@ describeAttention("attention.list", () => {
     expect(routines[0]!.detail).toContain("Weekly report");
   });
 
+  it("keeps a payment approval in the chat where the receipt is visible", async () => {
+    const cookie = await signup(app, `attention-payment-${stamp}@rakazo.test`, "Payment User");
+    const bot = await createBot(app, cookie, "Payment Bot");
+    const run = await seedRun(prisma, bot.id, "waiting_input", "pay for the order");
+    await createThreadMessage(prisma, {
+      threadId: run.threadId,
+      role: "bot",
+      botId: bot.id,
+      runId: run.id,
+      blocks: [
+        {
+          kind: "ask",
+          text: "Pay on example.test?",
+          status: "pending",
+          approvalEffectId: "effect-payment",
+          site: "example.test",
+          receipt: {
+            items: [{ name: "Coffee", amount: "$4" }],
+            amountSource: "page",
+            amount: "$4",
+          },
+          actions: [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ],
+        },
+      ],
+    });
+
+    const result = await rpc<AttentionListOutput>(app, cookie, "attention/list");
+    const payment = result.items.find((item) => item.kind === "approval");
+
+    expect(payment?.actions).toEqual([]);
+    expect(payment?.messageId).toBeTruthy();
+  });
+
   it("hides a group that fell below its minimum active bots", async () => {
     const cookie = await signup(app, `attention-hidden-${stamp}@rakazo.test`, "Hidden User");
     const bot = await createBot(app, cookie, "Hidden Group Bot");
