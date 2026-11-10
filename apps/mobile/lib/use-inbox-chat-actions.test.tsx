@@ -33,10 +33,6 @@ vi.mock("./api", () => ({
 vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
 vi.mock("./bot-lifecycle", () => ({ confirmDeleteBot: vi.fn(), confirmDeleteGroup: vi.fn() }));
 vi.mock("./confirm-delete-section", () => ({ confirmDeleteSection: vi.fn() }));
-vi.mock("./i18n", () => {
-  const i18n = { t: (text: string) => text };
-  return { useI18n: () => i18n };
-});
 vi.mock("./live-notifications", () => ({
   afterChatNotifyChange: vi.fn(async () => {}),
   dismissThreadNotifications: vi.fn(async () => {}),

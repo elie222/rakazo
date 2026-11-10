@@ -7,7 +7,6 @@ import { unsentSendsRestored } from "./unsent-sends";
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 vi.mock("./thread-feedback", () => ({ hasUnsentSends: vi.fn() }));
 vi.mock("./unsent-sends", () => ({ unsentSendsRestored: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -10,6 +10,7 @@ import {
   routineRunAt,
   routineRunLateness,
 } from "@rakazo/core";
+import { translateRunError } from "@rakazo/i18n/run-error";
 import {
   Button,
   Collapsible,
@@ -23,7 +24,6 @@ import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
 import { useSpaceQueries } from "../lib/query";
-import { translateRunError } from "../lib/run-error";
 import { toolStepCount } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
 

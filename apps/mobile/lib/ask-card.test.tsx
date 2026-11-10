@@ -86,11 +86,6 @@ vi.mock("./native", () => ({
 
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
-
 vi.mock("../components/native-action-button", async () => {
   const { createElement } = await import("react");
   return {

@@ -27,13 +27,6 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({ foreground: "ink", mutedForeground: "muted", border: "line" }),
 }));
 
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values: Record<string, string> = {}) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? ""),
-  }),
-}));
-
 import { AskReceiptView } from "../components/ask-receipt";
 
 let container: HTMLDivElement;

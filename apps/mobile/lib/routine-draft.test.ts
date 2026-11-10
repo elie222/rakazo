@@ -1,9 +1,7 @@
 import type { Routine } from "@rakazo/contracts";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { routineDraftChanged, routineSaveRequest } from "./routine-draft";
-
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 const routine: Routine = {
   id: "routine-1",

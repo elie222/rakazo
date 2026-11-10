@@ -57,9 +57,8 @@ async function loadComponents(gate: Promise<void> = Promise.resolve()) {
   ({ BotOrganizeModal } = await import("../components/bot-organize-modal"));
   ({ RunErrorSheetContainer } = await import("../components/run-error-sheet-container"));
 }
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./confirm-delete-section", () => ({
-  confirmDeleteSection: (_section: unknown, _t: unknown, confirm: () => void) => {
+  confirmDeleteSection: (_section: unknown, confirm: () => void) => {
     mocks.confirmDelete();
     confirm();
   },

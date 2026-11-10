@@ -1,14 +1,14 @@
+import { useLingui } from "@lingui/react/macro";
 import { useMemo, useState } from "react";
 import { rpc } from "./api";
 import type { ComputerStatus } from "./computer";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS, readScreenUrl, SCREEN_URL_OPEN_ATTEMPTS } from "./computer";
 import { createComputerRefresh } from "./computer-refresh";
-import { useI18n } from "./i18n";
 import { computerBootErrorDetail, errorText } from "./user-error";
 
 /** A bot's computer status and screen link, kept fresh, and the boot that starts it. */
 export function useComputerBoot(botId: string | undefined) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +86,8 @@ export function useComputerBoot(botId: string | undefined) {
         starting
           ? computerBootErrorDetail(err)
           : err instanceof Error && err.name === "TimeoutError"
-            ? t("Request timed out")
-            : errorText(err, t("Could not open computer")),
+            ? t`Request timed out`
+            : errorText(err, t`Could not open computer`),
       );
       setBootFailed(starting);
       throw err;

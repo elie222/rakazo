@@ -97,11 +97,6 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
-  return { t, useI18n: () => ({ t }), dateLocaleForUi: () => "en-US" };
-});
 vi.mock("./user-error", () => ({ errorText: () => "failure" }));
 vi.mock("./search-inbox", () => ({ removeFromSearchInbox: mocks.removeFromSearchInbox }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
