@@ -316,7 +316,10 @@ test("activity groups what needs you, what is working, and unread chats", async 
   await rpc(page, "threads/markUnread", { botId: writer });
   await page.getByPlaceholder("Message Head of Marketing").fill("ask me which city to use");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Which city should I use?", { exact: true })).toBeVisible();
+  // The sidebar row shows the same text as its preview once the run ends, so read the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Which city should I use?", { exact: true }),
+  ).toBeVisible();
   const researcher = await createNamedBot(page, "Researcher");
   await page.getByPlaceholder("Message Researcher").fill("keep working until I stop you");
   await page.keyboard.press("Enter");
