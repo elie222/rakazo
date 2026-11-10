@@ -3699,7 +3699,7 @@ msgstr "Cuelga y luego ingresa el código en pantalla."
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr "Encabezado"
+msgstr "Cabecera"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""

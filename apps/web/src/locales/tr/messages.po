@@ -6219,7 +6219,7 @@ msgstr "Aranıyor…"
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Secret"
-msgstr "Gizli anahtar"
+msgstr "Sır"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"

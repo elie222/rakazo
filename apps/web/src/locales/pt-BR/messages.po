@@ -3699,7 +3699,7 @@ msgstr "Desligue e depois digite o código na tela."
 
 #: src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
-msgstr "Cabeçalho"
+msgstr "Header"
 
 #: src/components/vault/VaultItemDetail.tsx
 msgid "Header \"{header}\""
