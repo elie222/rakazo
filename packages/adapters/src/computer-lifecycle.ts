@@ -220,7 +220,8 @@ export async function provisionComputer(
   const busy = (reason: string) => {
     log.warn("computer.busy", {
       reason,
-      state: existing.state,
+      // As last read; a refused conditional claim means the row has since changed.
+      "computer.observed_state": existing.state,
       "bot.id": context.botId,
       durationMs: Math.round(performance.now() - started),
     });
