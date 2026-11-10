@@ -84,6 +84,8 @@ vi.mock("expo-audio", () => ({
 }));
 const fsState = vi.hoisted(() => ({
   files: new Set<string>(),
+  dirs: new Set<string>(),
+  fileSizes: new Map<string, number>(),
   copies: [] as Array<{ from: string; to: string }>,
   downloads: [] as Array<{ url: string; to: string }>,
   createdDirs: [] as string[],
@@ -108,8 +110,17 @@ vi.mock("expo-file-system", () => {
     constructor(...parts: unknown[]) {
       this.uri = joinUri(...parts);
     }
+    get name() {
+      return this.uri.replace(/\/+$/, "").split("/").pop() ?? "";
+    }
     get exists() {
       return fsState.files.has(this.uri);
+    }
+    info() {
+      return {
+        exists: fsState.files.has(this.uri),
+        size: fsState.files.has(this.uri) ? (fsState.fileSizes.get(this.uri) ?? 1) : 0,
+      };
     }
     create() {
       fsState.files.add(this.uri);
@@ -117,7 +128,12 @@ vi.mock("expo-file-system", () => {
     write() {
       fsState.files.add(this.uri);
     }
-    async copy(target: FakeFile) {
+    async copy(target: FakeFile, options?: { overwrite?: boolean }) {
+      // Mirror the real File.copy: it rejects when the destination
+      // already exists unless overwrite is passed.
+      if (fsState.files.has(target.uri) && options?.overwrite !== true) {
+        throw new Error("Destination already exists");
+      }
       fsState.copies.push({ from: this.uri, to: target.uri });
       fsState.files.add(target.uri);
     }
@@ -141,12 +157,33 @@ vi.mock("expo-file-system", () => {
     constructor(...parts: unknown[]) {
       this.uri = joinUri(...parts);
     }
+    get name() {
+      return this.uri.replace(/\/+$/, "").split("/").pop() ?? "";
+    }
     get exists() {
-      return fsState.files.has(this.uri);
+      return fsState.files.has(this.uri) || fsState.dirs.has(this.uri);
     }
     create() {
       fsState.files.add(this.uri);
+      fsState.dirs.add(this.uri);
       fsState.createdDirs.push(this.uri);
+    }
+    list() {
+      const prefix = `${this.uri.replace(/\/+$/, "")}/`;
+      const children = new Map<string, "file" | "dir">();
+      for (const uri of fsState.dirs) {
+        if (!uri.startsWith(prefix)) continue;
+        const rest = uri.slice(prefix.length);
+        if (rest && !rest.includes("/")) children.set(rest, "dir");
+      }
+      for (const uri of fsState.files) {
+        if (!uri.startsWith(prefix)) continue;
+        const rest = uri.slice(prefix.length);
+        if (rest && !rest.includes("/")) children.set(rest, children.get(rest) ?? "file");
+      }
+      return [...children.entries()].map(([name, kind]) =>
+        kind === "dir" ? new FakeDirectory(this.uri, name) : new FakeFile(this.uri, name),
+      );
     }
   }
   return {
@@ -248,10 +285,35 @@ function fakeNative(
 
 let fake: ReturnType<typeof fakeNative>;
 
+// Both models fully on disk, matching the fake engine's downloaded
+// state: the recognizer's encoder, decoder and joiner plus its token
+// list, and the voice model's file, voice table, token list and
+// pronunciation data directory.
+function seedModelFiles() {
+  for (const name of [
+    "encoder-epoch-99-avg-1.int8.onnx",
+    "decoder-epoch-99-avg-1.int8.onnx",
+    "joiner-epoch-99-avg-1.int8.onnx",
+    "tokens.txt",
+  ]) {
+    fsState.files.add(`file:///models/stt/${name}`);
+  }
+  for (const name of ["model.int8.onnx", "voices.bin", "tokens.txt"]) {
+    fsState.files.add(`file:///models/tts/${name}`);
+  }
+  fsState.dirs.add("file:///models/stt");
+  fsState.dirs.add("file:///models/tts");
+  fsState.dirs.add("file:///models/tts/espeak-ng-data");
+  fsState.files.add("file:///models/stt");
+  fsState.files.add("file:///models/tts");
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   store.clear();
   fsState.files.clear();
+  fsState.dirs.clear();
+  fsState.fileSizes.clear();
   fsState.copies.length = 0;
   fsState.downloads.length = 0;
   fsState.createdDirs.length = 0;
@@ -260,6 +322,7 @@ beforeEach(() => {
   sessionUser.id = "user-1";
   fake = fakeNative();
   setOnDeviceSpeechNative(fake.native);
+  seedModelFiles();
 });
 
 afterEach(() => {
@@ -304,6 +367,20 @@ describe("on-device speech availability", () => {
     expect(await onDeviceSpeechAvailable()).toBe(true);
     expect(fake.native.isModelDownloaded).toHaveBeenCalledWith("stt", expect.any(String));
     expect(fake.native.isModelDownloaded).toHaveBeenCalledWith("tts", expect.any(String));
+  });
+
+  it("is false when a model's files are incomplete", async () => {
+    await saveOnDeviceSpeechEnabled(true);
+    // The download manager still reports the model downloaded, but the
+    // token list is missing, so the engine could not load it.
+    fsState.files.delete("file:///models/stt/tokens.txt");
+    expect(await onDeviceSpeechAvailable()).toBe(false);
+  });
+
+  it("is false when a required file is empty", async () => {
+    await saveOnDeviceSpeechEnabled(true);
+    fsState.fileSizes.set("file:///models/tts/voices.bin", 0);
+    expect(await onDeviceSpeechAvailable()).toBe(false);
   });
 });
 
@@ -359,6 +436,14 @@ describe("on-device speech dictation", () => {
     expect(fake.native.createStreamingStt).not.toHaveBeenCalled();
   });
 
+  it("gives up when the recognition model's files are incomplete", async () => {
+    fsState.files.delete("file:///models/stt/tokens.txt");
+    const onGiveUp = vi.fn();
+    await listenOnDeviceSpeech({ onFinal: vi.fn(), onGiveUp });
+    expect(onGiveUp).toHaveBeenCalledWith("failed");
+    expect(fake.native.createStreamingStt).not.toHaveBeenCalled();
+  });
+
   it("gives up when the recognizer cannot start", async () => {
     fake.native.createStreamingStt = vi.fn(async () => {
       throw new Error("no engine");
@@ -399,6 +484,13 @@ describe("on-device speech read-aloud", () => {
     expect(await speakOnDeviceSpeech("你好")).toBe(false);
     expect(fake.ttsEngine.generateSpeech).not.toHaveBeenCalled();
   });
+
+  it("is silent when the voice model's files are incomplete", async () => {
+    fsState.files.delete("file:///models/tts/voices.bin");
+    expect(await speakOnDeviceSpeech("你好")).toBe(false);
+    expect(fake.native.createTts).not.toHaveBeenCalled();
+    expect(fake.ttsEngine.generateSpeech).not.toHaveBeenCalled();
+  });
 });
 
 describe("on-device speech models", () => {
@@ -412,6 +504,15 @@ describe("on-device speech models", () => {
     setOnDeviceSpeechNative(fake.native);
     expect(await onDeviceSpeechModelsStatus()).toEqual({
       stt: "missing",
+      tts: "missing",
+      progress: null,
+    });
+  });
+
+  it("reports a model missing when its files are incomplete", async () => {
+    fsState.files.delete("file:///models/tts/voices.bin");
+    expect(await onDeviceSpeechModelsStatus()).toEqual({
+      stt: "ready",
       tts: "missing",
       progress: null,
     });
@@ -437,6 +538,14 @@ describe("on-device speech models", () => {
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[seen.length - 1]).toBe(1);
+  });
+
+  it("clears a model that is marked ready but incomplete before downloading", async () => {
+    fsState.files.delete("file:///models/stt/tokens.txt");
+    await downloadOnDeviceSpeechModels();
+    expect(fake.native.deleteModel).toHaveBeenCalledWith("stt", expect.any(String));
+    expect(fake.native.deleteModel).not.toHaveBeenCalledWith("tts", expect.any(String));
+    expect(fake.native.ensureModel).toHaveBeenCalledTimes(2);
   });
 
   it("refreshes the model lists before downloading", async () => {
@@ -490,6 +599,30 @@ describe("on-device speech model import", () => {
     );
   });
 
+  it("replaces an archive that is already at the fixed path", async () => {
+    // A previous download or import may already have left an archive
+    // there; the import must replace it instead of failing.
+    fsState.files.add(`file:///doc/sherpa-onnx/models/stt/${STT_ARCHIVE}`);
+    await importOnDeviceSpeechModel("stt", `file:///picked/${STT_ARCHIVE}`, STT_ARCHIVE);
+    expect(fsState.copies).toContainEqual({
+      from: `file:///picked/${STT_ARCHIVE}`,
+      to: `file:///doc/sherpa-onnx/models/stt/${STT_ARCHIVE}`,
+    });
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "stt",
+      expect.any(String),
+      expect.objectContaining({ verifyChecksum: true }),
+    );
+  });
+
+  it("refuses an import whose extracted files are incomplete", async () => {
+    fsState.files.delete("file:///models/stt/tokens.txt");
+    await expect(
+      importOnDeviceSpeechModel("stt", `file:///picked/${STT_ARCHIVE}`, STT_ARCHIVE),
+    ).rejects.toThrow("Could not import the voice models.");
+    expect(fake.native.deleteModel).toHaveBeenCalledWith("stt", expect.any(String));
+  });
+
   it("refuses a picked file with the wrong name", async () => {
     await expect(
       importOnDeviceSpeechModel("stt", `file:///picked/${TTS_ARCHIVE}`, TTS_ARCHIVE),
@@ -513,6 +646,28 @@ describe("on-device speech model import", () => {
       expect.any(String),
       expect.objectContaining({ verifyChecksum: false }),
     );
+  });
+
+  it("replaces an archive that is already at the fixed path when downloading from a custom address", async () => {
+    fsState.files.add(`file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}`);
+    await downloadOnDeviceSpeechModelFromAddress("tts", "https://example.com/models/");
+    expect(fsState.copies).toContainEqual({
+      from: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}.tmp`,
+      to: `file:///doc/sherpa-onnx/models/tts/${TTS_ARCHIVE}`,
+    });
+    expect(fake.native.extractModel).toHaveBeenCalledWith(
+      "tts",
+      expect.any(String),
+      expect.objectContaining({ verifyChecksum: false }),
+    );
+  });
+
+  it("refuses a download from a custom address whose extracted files are incomplete", async () => {
+    fsState.files.delete("file:///models/tts/voices.bin");
+    await expect(
+      downloadOnDeviceSpeechModelFromAddress("tts", "https://example.com/models/"),
+    ).rejects.toThrow("Could not download the voice models.");
+    expect(fake.native.deleteModel).toHaveBeenCalledWith("tts", expect.any(String));
   });
 
   it("refuses an empty custom address", async () => {

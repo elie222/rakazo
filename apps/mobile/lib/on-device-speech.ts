@@ -226,8 +226,8 @@ export async function onDeviceSpeechModelsStatus(): Promise<OnDeviceSpeechModels
   const native = await loadNative().catch(() => null);
   if (!native) return { stt: "missing", tts: "missing", progress: null };
   const [stt, tts] = await Promise.all([
-    native.isModelDownloaded("stt", STT_MODEL_ID).catch(() => false),
-    native.isModelDownloaded("tts", TTS_MODEL_ID).catch(() => false),
+    onDeviceSpeechModelReady("stt"),
+    onDeviceSpeechModelReady("tts"),
   ]).catch(() => [false, false] as const);
   if (downloading) {
     return {
@@ -268,6 +268,17 @@ export async function downloadOnDeviceSpeechModels(
     // returns the cached list when it is under a day old.
     await native.refreshModels("stt");
     await native.refreshModels("tts");
+    // A model the manager marked ready can still be missing the files
+    // the engine loads; ensureModel would skip it as already downloaded,
+    // so clear it here and let the download below repair it.
+    for (const category of ["stt", "tts"] as const) {
+      const downloaded = await native
+        .isModelDownloaded(category, onDeviceSpeechModelId(category))
+        .catch(() => false);
+      if (downloaded && !(await onDeviceSpeechModelReady(category))) {
+        await native.deleteModel(category, onDeviceSpeechModelId(category)).catch(() => undefined);
+      }
+    }
     // The two downloads run one after the other so the progress bar reads
     // as one download: STT first, then TTS.
     downloadProgress = 0;
@@ -317,6 +328,86 @@ function onDeviceSpeechModelId(category: OnDeviceSpeechModelCategory): string {
 /** The archive filename for a model, as the download manager names it. */
 function onDeviceSpeechArchiveName(category: OnDeviceSpeechModelCategory): string {
   return `${onDeviceSpeechModelId(category)}.tar.bz2`;
+}
+
+/**
+ * The files the engine needs inside a model's directory. The download
+ * manager marks a model ready when any model-like file survived
+ * extraction, so a partial extraction can look ready while the native
+ * loader has nothing to load — and a native load of a missing file can
+ * kill the app instead of failing. Check the exact files each engine
+ * looks for before trusting or loading a model.
+ */
+const ON_DEVICE_SPEECH_MODEL_FILES: Record<
+  OnDeviceSpeechModelCategory,
+  { onnxPrefixes: string[]; files: string[]; dirs: string[] }
+> = {
+  // Streaming transducer: encoder, decoder and joiner plus the token list.
+  stt: { onnxPrefixes: ["encoder", "decoder", "joiner"], files: ["tokens.txt"], dirs: [] },
+  // Kokoro: one model file, the voice table, the token list and the
+  // pronunciation data directory.
+  tts: { onnxPrefixes: ["model"], files: ["voices.bin", "tokens.txt"], dirs: ["espeak-ng-data"] },
+};
+
+/**
+ * True when every file the engine needs is in the model's directory and
+ * non-empty. False when the directory is missing, unreadable, or any
+ * required file is missing or empty. Never throws: an unverifiable model
+ * is treated as unusable, never loaded.
+ */
+async function onDeviceSpeechModelFilesComplete(
+  category: OnDeviceSpeechModelCategory,
+  modelPath: string,
+): Promise<boolean> {
+  try {
+    const { Directory, File } = await loadFileSystem();
+    const dir = new Directory(toFileUri(modelPath));
+    if (!dir.exists) return false;
+    const required = ON_DEVICE_SPEECH_MODEL_FILES[category];
+    const files = new Map<string, number>();
+    const dirs = new Set<string>();
+    for (const entry of dir.list()) {
+      if (entry instanceof Directory) dirs.add(entry.name);
+      else if (entry instanceof File) {
+        const size = entry.info().size;
+        files.set(entry.name, typeof size === "number" ? size : 0);
+      }
+    }
+    for (const prefix of required.onnxPrefixes) {
+      const found = [...files].some(
+        ([name, size]) => name.startsWith(prefix) && name.endsWith(".onnx") && size > 0,
+      );
+      if (!found) return false;
+    }
+    for (const name of required.files) {
+      const size = files.get(name);
+      if (size === undefined || size <= 0) return false;
+    }
+    for (const name of required.dirs) {
+      if (!dirs.has(name)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the download manager marked the model ready and the files
+ * the engine needs are actually in its directory. The marker alone is
+ * not enough: a partial extraction can leave it behind.
+ */
+async function onDeviceSpeechModelReady(category: OnDeviceSpeechModelCategory): Promise<boolean> {
+  try {
+    const native = await loadNative();
+    const id = onDeviceSpeechModelId(category);
+    if (!(await native.isModelDownloaded(category, id))) return false;
+    const path = await native.getModelPath(category, id);
+    if (!path) return false;
+    return onDeviceSpeechModelFilesComplete(category, path);
+  } catch {
+    return false;
+  }
 }
 
 /** Where the download manager expects a model's archive. */
@@ -371,8 +462,22 @@ export async function importOnDeviceSpeechModel(
   const { File } = await loadFileSystem();
   const archivePath = await onDeviceSpeechArchivePath(category);
   await ensureArchiveDirectory(archivePath);
-  await new File(sourceUri).copy(new File(toFileUri(archivePath)));
+  // The archive path is reused: a previous download or import may already
+  // have left an archive there, and copy refuses to replace one by
+  // default, so overwrite it.
+  await new File(sourceUri).copy(new File(toFileUri(archivePath)), { overwrite: true });
   await extractPlacedModel(category);
+  // Extraction marks the model ready even when a file is missing; an
+  // incomplete model would crash the native loader on first use, so
+  // refuse it here and clear the marker instead of leaving it ready.
+  // The marker is known to exist after extraction, so only the files
+  // need checking.
+  const native = await loadNative();
+  const modelPath = await native.getModelPath(category, onDeviceSpeechModelId(category));
+  if (!modelPath || !(await onDeviceSpeechModelFilesComplete(category, modelPath))) {
+    await native.deleteModel(category, onDeviceSpeechModelId(category)).catch(() => undefined);
+    throw new Error(t("Could not import the voice models."));
+  }
 }
 
 /**
@@ -404,13 +509,23 @@ export async function downloadOnDeviceSpeechModelFromAddress(
   if (!downloaded || !new File(downloaded.uri).exists) {
     throw new Error(t("Could not download the voice models."));
   }
-  await new File(downloaded.uri).copy(target);
+  // Same as the local import: a previous download or import may already
+  // have left an archive at the target, and copy refuses to replace one.
+  await new File(downloaded.uri).copy(target, { overwrite: true });
   try {
     new File(downloaded.uri).delete();
   } catch {
     // A leftover temp file is harmless; the archive is already in place.
   }
   await extractPlacedModel(category);
+  // Same as the local import: refuse an incomplete model instead of
+  // leaving it marked ready for the native loader to crash on.
+  const native = await loadNative();
+  const modelPath = await native.getModelPath(category, onDeviceSpeechModelId(category));
+  if (!modelPath || !(await onDeviceSpeechModelFilesComplete(category, modelPath))) {
+    await native.deleteModel(category, onDeviceSpeechModelId(category)).catch(() => undefined);
+    throw new Error(t("Could not download the voice models."));
+  }
 }
 
 async function reportModelsStatus(
@@ -489,10 +604,9 @@ export async function saveOnDeviceSpeechModelBaseUrl(url: string): Promise<void>
 export async function onDeviceSpeechAvailable(): Promise<boolean> {
   try {
     if (!(await loadOnDeviceSpeechEnabled())) return false;
-    const native = await loadNative();
     const [stt, tts] = await Promise.all([
-      native.isModelDownloaded("stt", STT_MODEL_ID),
-      native.isModelDownloaded("tts", TTS_MODEL_ID),
+      onDeviceSpeechModelReady("stt"),
+      onDeviceSpeechModelReady("tts"),
     ]);
     return stt && tts;
   } catch {
@@ -587,6 +701,14 @@ export async function listenOnDeviceSpeech(opts: {
   const sttPath = await native.getModelPath("stt", STT_MODEL_ID);
   if (token !== mine) return;
   if (!sttPath) {
+    opts.onGiveUp?.("failed");
+    return;
+  }
+  // A model marked ready can still be missing the files the native
+  // loader needs; give up the same way as a missing model instead of
+  // handing a broken directory to the engine.
+  if (!(await onDeviceSpeechModelFilesComplete("stt", sttPath))) {
+    if (token !== mine) return;
     opts.onGiveUp?.("failed");
     return;
   }
@@ -720,6 +842,11 @@ async function loadTtsEngine(): Promise<Awaited<ReturnType<OnDeviceSpeechNative[
     const native = await loadNative();
     const path = await native.getModelPath("tts", TTS_MODEL_ID);
     if (!path) throw new Error(t("Voice models are not downloaded yet."));
+    // Same as dictation: never hand a broken model directory to the
+    // native loader; the caller treats this as no voice, not a crash.
+    if (!(await onDeviceSpeechModelFilesComplete("tts", path))) {
+      throw new Error(t("Voice models are not downloaded yet."));
+    }
     const engine = await native.createTts({
       modelPath: { type: "file", path },
       modelType: "kokoro",
