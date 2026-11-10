@@ -10,7 +10,7 @@ import {
 } from "./helpers";
 
 test(
-  "Korean webhook routine keeps technical field labels in English",
+  "Korean webhook routine keeps its URL and header value in English",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     const stamp = Date.now();
@@ -35,9 +35,14 @@ test(
     await page.getByRole("menuitem", { name: "웹훅", exact: true }).click();
 
     await expect(page.getByText("웹훅이 실행될 때", { exact: true })).toBeVisible();
-    await expect(page.getByText("POST 대상")).toBeVisible();
-    await expect(page.getByText("key", { exact: true })).toBeVisible();
-    await expect(page.getByText("header")).toBeVisible();
+    await expect(page.getByText("저장 후 사용 가능", { exact: true })).toBeVisible();
+    const saved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+    );
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await saved;
+    await expect(page.getByRole("button", { name: "URL 복사", exact: true })).toBeVisible();
+    await expect(page.getByText(/^Authorization: Bearer /)).toBeVisible();
     await captureScreenshot(page, testInfo, "routine-webhook-ko");
   },
 );
