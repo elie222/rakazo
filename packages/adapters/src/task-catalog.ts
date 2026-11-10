@@ -12,7 +12,8 @@ type TaskCatalogInput = {
   spaceId: string;
   botId: string;
   userId: string;
-  threadId?: string;
+  /** In a group run, marks which routines post in the group. */
+  groupThreadId?: string;
   tools: readonly Pick<ConnectorTool, "name" | "description" | "readOnly">[];
 };
 
@@ -38,7 +39,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     listSchedulesFromTool(deps, {
       spaceId: input.spaceId,
       botId: input.botId,
-      ...(input.threadId ? { threadId: input.threadId } : {}),
+      ...(input.groupThreadId ? { groupThreadId: input.groupThreadId } : {}),
     }),
     deps.prisma.taughtSkill.findMany({
       where: {
@@ -78,6 +79,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       source: "scratchpad",
     })),
     routines: schedules.routines,
+    ...(schedules.note ? { routinesNote: schedules.note } : {}),
     taughtSkills: taughtSkills.map((skill) => ({
       id: skill.id,
       name: skill.name,

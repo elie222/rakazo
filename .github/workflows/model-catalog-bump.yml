@@ -34,10 +34,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: 24
       - run: pnpm install --frozen-lockfile
       - name: Record current catalog versions
         id: before
@@ -62,7 +62,10 @@ jobs:
           fi
       - name: Typecheck and test adapters
         if: steps.changed.outputs.changed == 'true'
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
         run: |
+          pnpm db:generate
           pnpm --filter @rakazo/adapters check
           pnpm --filter @rakazo/adapters test
       - name: Record bump patch
@@ -85,8 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -111,7 +113,8 @@ jobs:
           done
       - name: Push branch and open PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The workflow token can neither open PRs nor start CI on what it pushes.
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
           OLD_AI: ${{ needs.update.outputs.old_ai_version }}
           NEW_AI: ${{ needs.update.outputs.ai_version }}
           OLD_CORE: ${{ needs.update.outputs.old_core_version }}
@@ -159,8 +162,5 @@ jobs:
           \`pnpm --filter @rakazo/adapters check\` and \`pnpm --filter @rakazo/adapters test\`
           pass in the update job. Review the pi release notes for renamed or removed
           models before merging.
-
-          Note: this PR is opened by GITHUB_TOKEN, so its checks do not start on
-          their own. Close and reopen the PR (or push a commit) to trigger CI.
           EOF
           )"

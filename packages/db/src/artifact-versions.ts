@@ -1,6 +1,7 @@
 import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 
 /** Files people and bots see: an MCP app's HTML is kept as an artifact only for its chat card. */
 export const LISTED_ARTIFACT = {
@@ -22,6 +23,7 @@ export async function resolveNextArtifactVersion(
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
+      standalone: false,
       // An MCP app's hidden HTML never starts or joins a file's version history.
       ...LISTED_ARTIFACT,
     },
@@ -53,6 +55,7 @@ export async function withResolvedArtifactVersion<T>(
     name: string;
   },
   attempt: (db: Prisma.TransactionClient, version: ArtifactVersionWrite) => Promise<T>,
+  options?: { timeout?: number },
 ): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < MAX_VERSION_ALLOCATION_ATTEMPTS; i++) {
@@ -63,9 +66,9 @@ export async function withResolvedArtifactVersion<T>(
         `);
         const version = await resolveNextArtifactVersion(tx, params);
         return await attempt(tx, version);
-      });
+      }, options);
     } catch (error) {
-      if (!isArtifactVersionConflict(error)) throw error;
+      if (!isUniqueViolation(error)) throw error;
       lastError = error;
     }
   }
@@ -82,8 +85,4 @@ function artifactVersionLockKey(params: {
   return [params.spaceId, params.botId, params.groupId ?? "", params.name.toLowerCase()].join(
     "\u001f",
   );
-}
-
-function isArtifactVersionConflict(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }

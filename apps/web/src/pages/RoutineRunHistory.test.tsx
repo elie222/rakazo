@@ -131,14 +131,14 @@ it("shows loading, then the latest runs as rows that open their chat", async () 
   }
 });
 
-it("shows a genuine empty state and picks up a new run on the next poll", async () => {
+it("stays hidden until the first run and picks it up on the next poll", async () => {
   vi.useFakeTimers();
   routines.history
     .mockResolvedValueOnce(page([]))
     .mockResolvedValue(page([{ ...run, messageId: null }]));
   const view = await mounted();
   try {
-    expect(view.container.textContent).toContain("No runs yet");
+    expect(view.container.querySelector('[data-testid="routine-run-history"]')).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(view.rows()).toHaveLength(1);
     expect(view.container.querySelector("a")).toBeNull();

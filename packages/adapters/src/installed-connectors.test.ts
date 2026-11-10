@@ -10,13 +10,39 @@ import {
   createApprovedEffectReplayQueue,
 } from "./approval-effect.js";
 import {
+  applyMcpSourcePreset,
   InstalledConnectorProvider,
   importOpenApiDocument,
+  MCP_SOURCE_PRESETS,
   prepareApiInstall,
   verifyMcpInstall,
 } from "./installed-connectors.js";
 import { parseConnectorToolArgs, SELECTED_SCHEMA_MAX_BYTES } from "./lazy-tool-catalog.js";
 import { parametersFor } from "./pi-runtime-tool-parameters.js";
+
+describe("MCP source presets", () => {
+  it("stores an open-URL preset as a custom bearer source", () => {
+    const open = MCP_SOURCE_PRESETS.find((preset) => !preset.url)!;
+    expect(applyMcpSourcePreset("https://mine.example/mcp", { preset: open.id })).toEqual({
+      source: "https://mine.example/mcp",
+      config: { preset: "custom", auth: { type: "bearer" } },
+    });
+  });
+
+  it("stores an unknown preset id as custom", () => {
+    expect(
+      applyMcpSourcePreset("https://mine.example/mcp", { preset: "not-offered" }).config,
+    ).toEqual({ preset: "custom" });
+  });
+
+  it("leaves custom sources untouched", () => {
+    const config = { preset: "custom", auth: { type: "header", name: "x-api-key" } };
+    expect(applyMcpSourcePreset("https://mine.example/mcp", config)).toEqual({
+      source: "https://mine.example/mcp",
+      config,
+    });
+  });
+});
 
 describe("OpenAPI connector import", () => {
   it("uses the bounded catalog for a real large installed OpenAPI source", async () => {
@@ -1947,7 +1973,11 @@ describe("private installed connectors", () => {
 
     await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
     await expect(execute("member-1")).resolves.toEqual([
-      { type: "error", message: "Connector URL must use HTTPS" },
+      {
+        type: "error",
+        message:
+          "Connector URL must use HTTPS. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
+      },
     ]);
     await expect(execute("member-1", true)).resolves.toMatchObject([{ type: "result" }]);
     // Installed while this user owned the deployment: no longer reachable after the change.

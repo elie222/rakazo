@@ -2,6 +2,7 @@ import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCatalogModelId } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import {
   catalogModelLabel,
   catalogModelServesAgents,
@@ -359,7 +360,11 @@ describe("Pi model catalog", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
-    expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+    expect(openAiCompatible).toMatchObject({
+      id: "custom",
+      placeholder: true,
+      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS,
+    });
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 
@@ -379,6 +384,12 @@ describe("Pi model catalog", () => {
     expect(
       listPiCatalog().find((entry) => entry.provider === "cloudflare-workers-ai")?.catalogProbe,
     ).toBeUndefined();
+
+    const routing = (provider: string) =>
+      listPiCatalog().find((entry) => entry.provider === provider)?.routingFields;
+    expect(routing("cloudflare-workers-ai")).toEqual(["accountId"]);
+    expect(routing("cloudflare-ai-gateway")).toEqual(["accountId", "gatewayId"]);
+    expect(routing("anthropic")).toBeUndefined();
 
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";

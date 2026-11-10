@@ -46,6 +46,12 @@ describe("history search arguments", () => {
     ])
       expect(HistorySearchInputSchema.safeParse(input).success).toBe(false);
   });
+
+  it("lists messages by kind when neither query nor queries is given", () => {
+    expect(HistorySearchInputSchema.parse({ kinds: ["tool_work"] })).toEqual({
+      kinds: ["tool_work"],
+    });
+  });
 });
 
 describe("history query byte budget", () => {
@@ -71,6 +77,9 @@ describe("history query folding", () => {
     ).toEqual({ queries: ["Aurora", "orbit"] });
     expect(
       HistorySearchInputSchema.parse({ query: "a", queries: ["b", "c", "d", "e", "f"] }).queries,
+    ).toEqual(["a", "b", "c", "d", "e"]);
+    expect(
+      HistorySearchInputSchema.parse({ query: "a", queries: ["A", "b", "c", "d", "e"] }).queries,
     ).toEqual(["a", "b", "c", "d", "e"]);
   });
   it("reads a bare string as one query variant", () => {

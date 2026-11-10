@@ -1,6 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
@@ -213,6 +220,9 @@ export function SettingsOverlay({
       : (navItems.find((item) => item.id === section)?.label ??
         (section === "general" ? t`General` : t`Settings`));
 
+  const sectionDescription =
+    section === "space" ? undefined : navItems.find((item) => item.id === section)?.description;
+
   const closeLabel =
     section === "models"
       ? t`Close model settings`
@@ -332,9 +342,16 @@ export function SettingsOverlay({
                     <ChevronLeft className="rtl:rotate-180" />
                   </Button>
                 ) : null}
-                <DialogTitle className="min-w-0 break-words text-heading2 font-medium text-foreground">
-                  {sectionTitle}
-                </DialogTitle>
+                <div className="min-w-0">
+                  <DialogTitle className="break-words text-heading2 font-medium text-foreground">
+                    {sectionTitle}
+                  </DialogTitle>
+                  {sectionDescription ? (
+                    <DialogDescription className="mt-1 text-body text-muted-foreground">
+                      {sectionDescription}
+                    </DialogDescription>
+                  ) : null}
+                </div>
               </div>
               <DialogClose
                 aria-label={closeLabel}

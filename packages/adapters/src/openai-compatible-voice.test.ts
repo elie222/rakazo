@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -55,14 +56,14 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
   it("refuses a private speech server unless private endpoints are allowed", async () => {
     expect(() =>
       serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
-    ).toThrow("Private model endpoints require operator authorization.");
+    ).toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
     const fetchMock = vi.fn();
     const denied = new OpenAiCompatibleVoiceProvider({
       fetch: fetchMock as unknown as typeof fetch,
     });
     await expect(
       denied.synthesize({ text: "hi", voiceId: "af_heart", apiKey: keyed }, ctx),
-    ).rejects.toThrow("Private model endpoints require operator authorization.");
+    ).rejects.toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -240,6 +241,18 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       label: "Heart",
       description: "American English, female",
     });
+  });
+
+  it("falls back to the standard OpenAI voices when the speech model is not Kokoro", async () => {
+    const hosted = serializeAsOwner({
+      baseUrl: "https://speech.example.test/api/v1",
+      apiKey: "test-key-123",
+      ttsModel: "openai/gpt-4o-mini-tts",
+    });
+    const missing = vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 }));
+    const voices = await provider(missing).listVoices(hosted, ctx);
+    expect(voices[0]?.id).toBe("alloy");
+    expect(voices.some((voice) => voice.id === "af_heart")).toBe(false);
   });
 
   it("speaks MP3 with the saved model and the voice's Kokoro language", async () => {

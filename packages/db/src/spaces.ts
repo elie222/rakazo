@@ -257,6 +257,24 @@ export async function lockSpaceForContentCreation(
   return { organizationId: membership.organizationId };
 }
 
+/**
+ * Whether a Space takes new work: a run, a retry, maintenance. One being deleted takes none; its
+ * work resumes if the deletion is called off. Holds the Space's lock shared until the transaction
+ * ends, so a deletion claim, which takes it exclusively, either committed first and is seen here
+ * or waits for this work. Call it in a read-committed transaction before locking thread, run or
+ * computer rows, which deleting the Space locks after this lock.
+ */
+export async function spaceTakesWork(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<boolean> {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock_shared(hashtextextended(${spaceId}, 0))::text AS "lock"
+  `);
+  const space = await tx.space.findUnique({ where: { id: spaceId }, select: { deletingAt: true } });
+  return !space?.deletingAt;
+}
+
 /** Serializes creating a Space in an organization with claiming the organization for deletion. */
 export async function lockOrganizationSpaces(
   tx: Prisma.TransactionClient,
@@ -443,19 +461,42 @@ export async function releaseSpaceDeletionClaim(
 }
 
 /**
- * Restores the claim state an account-deletion attempt took over, leaving untouched every claim
- * an earlier attempt of that deletion left, and markers other deletions still need.
+ * Restores the claim state an account-deletion attempt took over: an earlier attempt's claim,
+ * another deletion's stale marker, or none. Every attempt claims under the same token, so only a
+ * row still carrying this attempt's id is its own; a later attempt may have taken the rest over.
  */
 export async function restoreSpaceDeletionClaims(
   prisma: PrismaClient,
-  claimId: string,
+  claim: { claimId: string; attemptId: string },
   takenOver: SpaceDeletionTakeover[],
 ): Promise<void> {
   for (const space of takenOver)
     await prisma.space.updateMany({
-      where: { id: space.spaceId, deletionClaimId: claimId },
-      data: { deletionClaimId: space.deletionClaimId, deletingAt: space.deletingAt },
+      where: {
+        id: space.spaceId,
+        deletionClaimId: claim.claimId,
+        deletionAttemptId: claim.attemptId,
+      },
+      data: {
+        deletionClaimId: space.deletionClaimId,
+        deletingAt: space.deletingAt,
+        deletionAttemptId: space.deletionAttemptId,
+      },
     });
+}
+
+/**
+ * Hands an attempt's claims to the next attempt at once, once nothing of it is left running. Like
+ * the restore, it leaves claims a later attempt took over.
+ */
+export async function expireSpaceDeletionClaims(
+  prisma: PrismaClient,
+  claim: { claimId: string; attemptId: string },
+): Promise<void> {
+  await prisma.space.updateMany({
+    where: { deletionClaimId: claim.claimId, deletionAttemptId: claim.attemptId },
+    data: { deletingAt: new Date(0) },
+  });
 }
 
 /**
@@ -649,16 +690,25 @@ export async function personalOrganizationIds(
  * Claim the spaces that go with this account: every space of its own organizations, shared ones
  * included, and spaces elsewhere where it is the only member. A claimed space refuses new
  * content, so nobody who joins later can lose a bot to the teardown. A retry after a failed
- * deletion keeps every space this account already claimed, even one someone has since joined,
- * so the last step can release it. A space another deletion is still working on fails the
- * account deletion until that claim finishes or goes stale.
+ * deletion takes over every space an earlier attempt claimed, even one someone has since joined,
+ * so the last step can release it. A space another deletion is still working on, an earlier
+ * attempt of this one included, fails the account deletion until that claim is handed over or
+ * goes stale; the claims taken before it are given back. Every attempt writes the same token, so
+ * the previous release still finds an attempt's claims during a deploy.
  */
 export async function claimSpacesLeavingWithAccount(
   prisma: PrismaClient,
   userId: string,
-): Promise<{ claimId: string; spaceIds: string[]; takenOver: SpaceDeletionTakeover[] }> {
+): Promise<{
+  claimId: string;
+  attemptId: string;
+  spaceIds: string[];
+  takenOver: SpaceDeletionTakeover[];
+}> {
   const organizationIds = await personalOrganizationIds(prisma, userId);
   const claimId = `account-deletion:${userId}`;
+  // Marks every Space this attempt claims, so its rollback and handover touch only those.
+  const attemptId = randomUUID();
   const candidates = await prisma.space.findMany({
     where: {
       OR: [
@@ -675,19 +725,23 @@ export async function claimSpacesLeavingWithAccount(
   });
   const spaceIds: string[] = [];
   const takenOver: SpaceDeletionTakeover[] = [];
-  for (const { id } of candidates) {
-    const outcome = await withTransactionRetry(() =>
-      prisma.$transaction((tx) => claimSpaceForDeletion(tx, id, claimId, userId), {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      }),
-    );
-    if (!outcome.claimed) continue;
-    spaceIds.push(id);
-    // Only what this attempt claimed may a rollback restore; claims an earlier attempt of
-    // this deletion left stay, so a retry keeps its place in the teardown.
-    if (outcome.tookOver) takenOver.push({ spaceId: id, ...outcome.tookOver });
+  try {
+    for (const { id } of candidates) {
+      const outcome = await withTransactionRetry(() =>
+        prisma.$transaction(
+          (tx) => claimSpaceForDeletion(tx, id, claimId, userId, { resume: true, attemptId }),
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        ),
+      );
+      if (!outcome.claimed) continue;
+      spaceIds.push(id);
+      if (outcome.tookOver) takenOver.push({ spaceId: id, ...outcome.tookOver });
+    }
+  } catch (error) {
+    await restoreSpaceDeletionClaims(prisma, { claimId, attemptId }, takenOver);
+    throw error;
   }
-  return { claimId, spaceIds, takenOver };
+  return { claimId, attemptId, spaceIds, takenOver };
 }
 
 /** What claiming one space did, with what a takeover replaced, so a rollback can restore it. */
@@ -696,7 +750,11 @@ export type SpaceDeletionClaimOutcome =
   | {
       claimed: true;
       /** Null when the claim was already ours; otherwise the state the claim replaced. */
-      tookOver: { deletionClaimId: string | null; deletingAt: Date | null } | null;
+      tookOver: {
+        deletionClaimId: string | null;
+        deletingAt: Date | null;
+        deletionAttemptId: string | null;
+      } | null;
     };
 
 /** A space this attempt claimed, with the claim state to restore on rollback. */
@@ -704,6 +762,7 @@ export type SpaceDeletionTakeover = {
   spaceId: string;
   deletionClaimId: string | null;
   deletingAt: Date | null;
+  deletionAttemptId: string | null;
 };
 
 /** Guests joined through an invite and leave with the Space, so they never keep it alive. */
@@ -714,21 +773,27 @@ function otherNonGuests(spaceId: string, userId: string): Prisma.SpaceMemberWher
 /**
  * Claims a Space for a whole-account or whole-organization deletion, keeping a claim it already
  * holds. Not claimed when the Space is gone or, with `soleMemberId`, someone else belongs to it.
+ * With `resume`, the claim token names the deletion, not the attempt: a claim under it is an
+ * earlier attempt's, kept even when someone joined since, and taken over only once that attempt
+ * handed it over or it went stale. `attemptId` names the attempt on the row; without it the row
+ * carries none.
  */
 export async function claimSpaceForDeletion(
   tx: Prisma.TransactionClient,
   spaceId: string,
   claimId: string,
   soleMemberId?: string,
+  options: { resume?: boolean; attemptId?: string } = {},
 ): Promise<SpaceDeletionClaimOutcome> {
   await lockSpaceDeletion(tx, spaceId);
   const space = await tx.space.findUnique({
     where: { id: spaceId },
-    select: { deletingAt: true, deletionClaimId: true },
+    select: { deletingAt: true, deletionClaimId: true, deletionAttemptId: true },
   });
   if (!space) return { claimed: false };
-  if (space.deletionClaimId === claimId) return { claimed: true, tookOver: null };
-  if (soleMemberId) {
+  const earlier = space.deletionClaimId === claimId;
+  if (earlier && !options.resume) return { claimed: true, tookOver: null };
+  if (soleMemberId && !earlier) {
     const others = await tx.spaceMember.count({ where: otherNonGuests(spaceId, soleMemberId) });
     if (others > 0) return { claimed: false };
   }
@@ -737,11 +802,19 @@ export async function claimSpaceForDeletion(
     throw new SpaceDeletionInProgressError();
   await tx.space.update({
     where: { id: spaceId },
-    data: { deletingAt: new Date(), deletionClaimId: claimId },
+    data: {
+      deletingAt: new Date(),
+      deletionClaimId: claimId,
+      deletionAttemptId: options.attemptId ?? null,
+    },
   });
   return {
     claimed: true,
-    tookOver: { deletionClaimId: space.deletionClaimId, deletingAt: space.deletingAt },
+    tookOver: {
+      deletionClaimId: space.deletionClaimId,
+      deletingAt: space.deletingAt,
+      deletionAttemptId: space.deletionAttemptId,
+    },
   };
 }
 

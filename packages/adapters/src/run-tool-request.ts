@@ -44,6 +44,7 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
+import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
@@ -352,6 +353,11 @@ export async function prepareToolRequest(
         error:
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
       };
+  }
+  if (name === "save_page") {
+    const refused = await holdSharedPageSave(ctx, request);
+    if (refused) return refused;
+    args = request.args;
   }
   if (name === "update_bot" && !argumentGiven(args.bot_id)) {
     const refused = await prepareOwnBotUpdate(ctx, request);

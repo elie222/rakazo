@@ -56,13 +56,13 @@ Keys**, create a key with **Apple Push Notifications service (APNs)** enabled fo
 and download its `.p8` file. Configure these server secrets through your deployment's
 normal environment/secret manager:
 
-| Setting | Value |
-| --- | --- |
-| `APNS_VOIP_KEY_ID` | `<APNS_KEY_ID>` |
-| `APNS_VOIP_TEAM_ID` | `<APPLE_TEAM_ID>` |
-| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted |
+| Setting                 | Value                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `APNS_VOIP_KEY_ID`      | `<APNS_KEY_ID>`                                                                    |
+| `APNS_VOIP_TEAM_ID`     | `<APPLE_TEAM_ID>`                                                                  |
+| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted                      |
 | `APNS_VOIP_ENVIRONMENT` | `sandbox` for development signing, `production` for TestFlight/App Store (default) |
-| `APNS_VOIP_BUNDLE_ID` | Your iOS bundle identifier; defaults to `com.rakazo.app` |
+| `APNS_VOIP_BUNDLE_ID`   | Your iOS bundle identifier; defaults to `com.rakazo.app`                           |
 
 The adapter uses the `<bundle identifier>.voip` topic. Keep keys on the server; never put
 them in the app or repository. Enable Push Notifications and Background Modes (Voice over

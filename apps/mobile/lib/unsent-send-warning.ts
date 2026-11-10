@@ -1,5 +1,5 @@
+import { t } from "@lingui/core/macro";
 import { Alert } from "react-native";
-import { t } from "./i18n";
 import { hasUnsentSends } from "./thread-feedback";
 import { unsentSendsRestored } from "./unsent-sends";
 
@@ -16,22 +16,22 @@ export async function confirmUnsentSendLoss(action: UnsentSendLossAction): Promi
   if ((await unsentSendsRestored()) && !hasUnsentSends()) return true;
   const copy = {
     "sign-out": {
-      message: t("Signing out deletes unsent messages."),
-      confirmLabel: t("Sign out anyway"),
+      message: t`Signing out deletes unsent messages.`,
+      confirmLabel: t`Sign out anyway`,
     },
     "sign-in": {
-      message: t("Signing in deletes unsent messages."),
-      confirmLabel: t("Sign in anyway"),
+      message: t`Signing in deletes unsent messages.`,
+      confirmLabel: t`Sign in anyway`,
     },
     "server-switch": {
-      message: t("Switching servers deletes unsent messages."),
-      confirmLabel: t("Switch anyway"),
+      message: t`Switching servers deletes unsent messages.`,
+      confirmLabel: t`Switch anyway`,
     },
   }[action];
   const { message, confirmLabel } = copy;
   return new Promise((resolve) => {
-    Alert.alert(t("Unsent messages"), message, [
-      { text: t("Cancel"), style: "cancel", onPress: () => resolve(false) },
+    Alert.alert(t`Unsent messages`, message, [
+      { text: t`Cancel`, style: "cancel", onPress: () => resolve(false) },
       { text: confirmLabel, style: "destructive", onPress: () => resolve(true) },
     ]);
   });

@@ -101,14 +101,59 @@ jobs:
         # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
         # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
         run: pnpm --filter @rakazo/web exec playwright install chromium
+      # Chinese, Japanese, and Korean pages render as boxes in screenshots without these fonts. The
+      # .deb is cached so a hit needs no network; no assertion depends on the glyphs, so a failed
+      # download only warns instead of failing the shard.
+      - name: CJK fonts cache key
+        if: steps.areas.outputs.e2e != 'false'
+        id: cjk-key
+        # The package is frozen within an Ubuntu release, so the release alone names it.
+        run: echo "key=fonts-noto-cjk-$(. /etc/os-release && echo "$VERSION_CODENAME")-$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
+      - name: Restore CJK fonts cache
+        if: steps.areas.outputs.e2e != 'false'
+        id: cjk-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/fonts-noto-cjk
+          key: ${{ steps.cjk-key.outputs.key }}
       - name: Install CJK fonts
         if: steps.areas.outputs.e2e != 'false'
-        timeout-minutes: 6
-        # Chromium needs CJK fallback fonts; the runner's Azure mirror can stall on this package.
+        id: cjk-fonts
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          DEB_DIR: ${{ runner.temp }}/fonts-noto-cjk
+          CACHE_HIT: ${{ steps.cjk-cache.outputs.cache-hit }}
+        # The runner's Azure mirror can stall on this 61 MB package, so a miss uses the main archive.
         run: |
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
-          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          sudo timeout 240s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
+          if [ "$CACHE_HIT" != "true" ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+            rm -rf "$DEB_DIR" && mkdir -p "$DEB_DIR" && cd "$DEB_DIR"
+            apt_opts=(-o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+            for attempt in 1 2; do
+              if sudo timeout 60s apt-get "${apt_opts[@]}" update &&
+                timeout 150s apt-get "${apt_opts[@]}" download fonts-noto-cjk; then
+                break
+              fi
+              rm -f ./*.deb
+              if [ "$attempt" = 2 ]; then
+                echo "::warning::Could not download fonts-noto-cjk; screenshots will show CJK text as boxes."
+                exit 1
+              fi
+            done
+          fi
+          if ! sudo dpkg -i "$DEB_DIR"/*.deb; then
+            echo "::warning::Could not install fonts-noto-cjk; screenshots will show CJK text as boxes."
+            exit 1
+          fi
+      - name: Save CJK fonts cache
+        if: steps.areas.outputs.e2e != 'false' && steps.cjk-cache.outputs.cache-hit != 'true' && steps.cjk-fonts.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/fonts-noto-cjk
+          key: ${{ steps.cjk-key.outputs.key }}
       - name: Wait for Postgres
         if: steps.areas.outputs.e2e != 'false'
         run: |
@@ -283,11 +328,11 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: inputs.publish_report
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: ${{ inputs.publish_report && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
         if: inputs.publish_report

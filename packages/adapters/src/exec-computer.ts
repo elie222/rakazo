@@ -11,8 +11,14 @@ import type {
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
@@ -85,8 +91,7 @@ export class ExecComputer {
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     if (context.signal.aborted) {
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
       return;
     }
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
@@ -380,7 +385,7 @@ export class ExecComputer {
 }
 
 function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {
-  const cwd = commandCwd(request.cwd);
+  const cwd = workspaceCwd(WORKSPACE, request.cwd);
   const environment = Object.entries({ ...COMPUTER_CACHE_ENV, ...request.env }).map(
     ([name, value]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
@@ -407,14 +412,6 @@ function withTimeout(command: string[], timeoutMs: number): string[] {
     `${Math.max(1, Math.ceil(timeoutMs / 1_000))}s`,
     ...command,
   ];
-}
-
-function commandCwd(cwd: string | undefined): string {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === WORKSPACE) return WORKSPACE;
-  return workspacePath(
-    WORKSPACE,
-    cwd.startsWith(`${WORKSPACE}/`) ? cwd.slice(WORKSPACE.length + 1) : cwd,
-  );
 }
 
 const TAR_BLOCK = 512;

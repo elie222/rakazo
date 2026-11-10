@@ -15,6 +15,7 @@ import {
   previewFromBlocks,
   primaryActiveRun,
 } from "./thread-listing.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -29,7 +30,7 @@ type GroupRecord = {
   updatedAt: Date;
   thread: {
     id: string;
-    unread: boolean;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
   members: Array<{
@@ -48,7 +49,7 @@ type SpaceGroupRecord = Pick<
   "id" | "spaceId" | "name" | "pinned" | "sectionId" | "updatedAt" | "members"
 > & {
   thread: {
-    unread: boolean;
+    reads: Array<{ unread: boolean; snoozedUntil: Date | null }>;
     messages: Array<{ blocks: unknown }>;
   } | null;
 };
@@ -76,7 +77,8 @@ function mapGroup(group: GroupRecord): Group {
     members: mapGroupMembers(group.members),
     threadId: group.thread.id,
     preview,
-    unread: group.thread.unread,
+    unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
     createdAt: group.createdAt.toISOString(),
   };
@@ -92,7 +94,8 @@ function mapSpaceGroup(group: SpaceGroupRecord): SpaceGroup {
     sectionId: group.sectionId,
     members: mapGroupMembers(group.members),
     preview: previewFromBlocks(group.thread.messages[0]?.blocks),
-    unread: group.thread.unread,
+    unread: unreadFor(group.thread),
+    snoozedUntil: snoozedUntilFor(group.thread),
     updatedAt: group.updatedAt.toISOString(),
   };
 }
@@ -150,35 +153,42 @@ function memberRowsInOrder(groupId: string, botIds: string[], base = Date.now())
 
 const groupMemberOrder = [{ createdAt: "asc" as const }, { botId: "asc" as const }];
 
-const groupInclude = {
-  thread: true,
-  members: {
-    where: { bot: { archivedAt: null } },
-    include: {
-      bot: {
-        select: {
-          id: true,
-          name: true,
-          color: true,
-          avatarSet: true,
-          runs: activeRunSelection,
-        },
+const groupMembersInclude = {
+  where: { bot: { archivedAt: null } },
+  include: {
+    bot: {
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        avatarSet: true,
+        runs: activeRunSelection,
       },
     },
-    orderBy: groupMemberOrder,
   },
+  orderBy: groupMemberOrder,
 } as const;
 
+/** A group as `userId` sees it: their own read state. */
+function groupInclude(userId: string) {
+  return {
+    thread: { include: { reads: readStateFor(userId) } },
+    members: groupMembersInclude,
+  } as const;
+}
+
 // Every member, archived bots included, so a group that can't be opened still names its bots.
-const archivedGroupInclude = {
-  thread: groupInclude.thread,
-  members: {
-    include: {
-      bot: { select: { ...groupInclude.members.include.bot.select, archivedAt: true } },
+function archivedGroupInclude(userId: string) {
+  return {
+    thread: groupInclude(userId).thread,
+    members: {
+      include: {
+        bot: { select: { ...groupMembersInclude.include.bot.select, archivedAt: true } },
+      },
+      orderBy: groupMemberOrder,
     },
-    orderBy: groupMemberOrder,
-  },
-} as const;
+  } as const;
+}
 
 const groupTargetInclude = {
   thread: { select: { id: true } },
@@ -296,7 +306,10 @@ async function attachNewestGroupMessage<T extends { thread: { id: string } | nul
 }
 
 export function createGroupRepos(prisma: PrismaClient) {
-  async function listSpaceGroupsForSpaces(spaceIds: string[]): Promise<SpaceGroup[]> {
+  async function listSpaceGroupsForSpaces(
+    spaceIds: string[],
+    userId: string,
+  ): Promise<SpaceGroup[]> {
     if (spaceIds.length === 0) return [];
     const groups = await withNewestThreadMessages(
       prisma,
@@ -312,13 +325,8 @@ export function createGroupRepos(prisma: PrismaClient) {
           pinned: true,
           sectionId: true,
           updatedAt: true,
-          thread: {
-            select: {
-              id: true,
-              unread: true,
-            },
-          },
-          members: groupInclude.members,
+          thread: { select: { id: true, reads: readStateFor(userId) } },
+          members: groupMembersInclude,
         },
         orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
       }),
@@ -344,7 +352,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             { members: { some: { bot: { archivedAt: { not: null } } } } },
           ],
         },
-        include: archivedGroupInclude,
+        include: archivedGroupInclude(actor.userId),
         orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
       }),
       1,
@@ -368,7 +376,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             spaceId: actor.spaceId,
             archivedAt: null,
           },
-          include: groupInclude,
+          include: groupInclude(actor.userId),
           orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
         }),
         1,
@@ -387,7 +395,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           spaceId: actor.spaceId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
-        include: groupInclude,
+        include: groupInclude(actor.userId),
       });
       if (!group || !hasMinimumActiveMembers(group.members)) throw new IsolationError();
       return (await attachNewestGroupMessage(prisma, group)) as GroupRecord;
@@ -435,7 +443,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         const loaded = await tx.chatGroup.findFirstOrThrow({
           where: { id: group.id },
-          include: groupInclude,
+          include: groupInclude(actor.userId),
         });
         return attachNewestGroupMessage(tx, loaded);
       });
@@ -535,7 +543,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         const loaded = await tx.chatGroup.findFirstOrThrow({
           where: { id: input.groupId },
-          include: groupInclude,
+          include: groupInclude(actor.userId),
         });
         return {
           group: await attachNewestGroupMessage(tx, loaded),

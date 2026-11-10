@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
-import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictation";
+import {
+  ENDPOINT_SILENCE_MS,
+  finishListening,
+  listen,
+  setSpeechRecognizer,
+  stop,
+} from "./dictation";
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
@@ -78,6 +84,52 @@ describe("mobile dictation", () => {
     };
     await listen({ lang: "es-CL", onFinal: vi.fn() });
     expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
+  });
+
+  it("closes a mic that hears nothing within its own endpoint", async () => {
+    const onGiveUp = vi.fn();
+    await listen({ onFinal: vi.fn(), onGiveUp, endpointMs: 30_000 });
+    vi.advanceTimersByTime(29_999);
+    expect(onGiveUp).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onGiveUp).toHaveBeenCalledWith("idle");
+  });
+
+  it("does not count a repeated result as new words against its own endpoint", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk");
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      vi.advanceTimersByTime(10_000);
+      fake.hear("buy milk");
+    }
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
+  it("restarts through a quiet pause until its own endpoint ends it", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk", true);
+    // The recognizer ends on its own again and again while nothing is said.
+    for (let ended = 0; ended < 8; ended += 1) {
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+    }
+    expect(onFinal).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(30_000);
+    expect(onFinal).toHaveBeenCalledWith("buy milk");
+  });
+
+  it("keeps listening through pauses shorter than its endpoint until finished", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, endpointMs: 30_000 });
+    fake.hear("buy milk", true);
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS * 5);
+    fake.hear("and eggs");
+    expect(onFinal).not.toHaveBeenCalled();
+    finishListening();
+    expect(onFinal).toHaveBeenCalledWith("buy milk and eggs");
+    expect(fake.abort).toHaveBeenCalled();
   });
 
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {

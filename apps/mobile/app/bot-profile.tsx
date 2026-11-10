@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -15,19 +17,19 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../components/settings-group";
-import type { MobileBot } from "../lib/api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
-import { useI18n } from "../lib/i18n";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
 import { afterChatNotifyChange } from "../lib/live-notifications";
+import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useBotRoutines } from "../lib/routine-store";
+import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function BotProfile() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
@@ -35,7 +37,7 @@ export default function BotProfile() {
   const { botId = "", name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const [bot, setBot] = useState<MobileBot | null>(null);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
-  const name = displayName(bot?.name ?? nameParam, t("Bot"));
+  const name = displayName(bot?.name ?? nameParam, t`Bot`);
   const { routines } = useBotRoutines(botId);
   const actions = useBotProfileActions(botId, name);
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
@@ -98,7 +100,7 @@ export default function BotProfile() {
         }
       },
       onError: (error) =>
-        Alert.alert(t("Could not update notifications"), errorText(error, t("Try again."))),
+        Alert.alert(t`Could not update notifications`, errorText(error, t`Try again.`)),
     });
     notifyQueue.current.update(notifyOnFinish);
   };
@@ -114,7 +116,7 @@ export default function BotProfile() {
           ...glassHeaderOptions(name),
           // The avatar and name below name the page; the bar title stays for the back menu.
           ...(Platform.OS === "ios" ? { headerTitle: "" } : null),
-          ...(botId ? botProfileMenuOptions(actions, t("Bot actions"), tokens.foreground) : null),
+          ...(botId ? botProfileMenuOptions(actions, t`Bot actions`, tokens.foreground) : null),
         }}
       />
       <View style={styles.identity}>
@@ -133,7 +135,7 @@ export default function BotProfile() {
           {name}
         </Text>
         <NativeActionButton
-          label={t("Edit")}
+          label={t`Edit`}
           prominence="secondary"
           style={styles.edit}
           onPress={() => router.push({ pathname: "/bot-settings", params: { botId } })}
@@ -144,14 +146,14 @@ export default function BotProfile() {
           key="routines"
           accessibilityRole="button"
           chevron="right"
-          title={t("Routines")}
+          title={t`Routines`}
           leading={
             <NativeSymbol ios="clock" android="time-outline" color={tokens.mutedForeground} />
           }
           // Counts the routines that are switched on; nothing until the first read lands.
           value={
             routines
-              ? t("{count} on", { count: routines.filter((routine) => routine.active).length })
+              ? t`${ph({ count: routines.filter((routine) => routine.active).length })} on`
               : undefined
           }
           onPress={() => router.push({ pathname: "/routines", params: { botId, name } })}
@@ -160,7 +162,7 @@ export default function BotProfile() {
           key="pages"
           accessibilityRole="button"
           chevron="right"
-          title={t("Pages")}
+          title={t`Pages`}
           leading={
             <NativeSymbol
               ios="doc.richtext"
@@ -174,7 +176,7 @@ export default function BotProfile() {
           key="artifacts"
           accessibilityRole="button"
           chevron="right"
-          title={t("Artifacts")}
+          title={t`Artifacts`}
           leading={
             <NativeSymbol ios="folder" android="folder-outline" color={tokens.mutedForeground} />
           }
@@ -184,7 +186,7 @@ export default function BotProfile() {
           key="computer"
           accessibilityRole="button"
           chevron="right"
-          title={t("Computer")}
+          title={t`Computer`}
           leading={
             <NativeSymbol
               ios="desktopcomputer"
@@ -194,9 +196,9 @@ export default function BotProfile() {
           }
           value={
             computer?.state === "running"
-              ? t("Running")
+              ? t`Running`
               : computer?.state === "suspended"
-                ? t("Asleep")
+                ? t`Asleep`
                 : undefined
           }
           onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
@@ -204,10 +206,10 @@ export default function BotProfile() {
       </SettingsGroup>
       <BotEmailGroup botId={botId} botName={name} />
       {bot ? (
-        <SettingsGroup footer={t("Get notified when this Bot finishes or needs input")}>
+        <SettingsGroup footer={t`Get notified when this Bot finishes or needs input`}>
           <SettingsSwitch
             key="notifications"
-            label={t("Notifications")}
+            label={t`Notifications`}
             value={bot.notifyOnFinish}
             onChange={setNotifyOnFinish}
           />
@@ -231,21 +233,21 @@ function createStyles() {
 
 /** The bot's address; on a server that receives email, offered until claimed. */
 function BotEmailGroup({ botId, botName }: { botId: string; botName: string }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const email = useBotEmail(botId);
   const rows = useBotEmailRows({ botId, botName, email });
   const [claiming, setClaiming] = useState(false);
   if (!email.address) return null;
   return (
-    <SettingsGroup label={t("Email")}>
+    <SettingsGroup label={t`Email`}>
       {email.address.address || claiming
         ? rows
         : [
             <SettingsRow
               key="offer"
               accessibilityRole="button"
-              title={t("Get an email address")}
+              title={t`Get an email address`}
               leading={
                 <NativeSymbol
                   ios="envelope"

@@ -6,14 +6,6 @@ import { artifactPreviewKind } from "@rakazo/contracts";
 import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   BotAvatar,
   Button,
   buttonVariants,
@@ -56,6 +48,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { VideoPreview } from "../components/ArtifactFileCard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -65,34 +58,23 @@ import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
+import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";
-const VIEW_MODE_STORAGE_KEY = "rakazo:artifacts-view-mode";
+const viewModePreference = createStoredPreference<ViewMode>({
+  key: "rakazo:artifacts-view-mode",
+  parse: (raw) => (raw === "list" ? "list" : "grid"),
+  serialize: (mode) => mode,
+});
 const LIST_PAGE_SIZE = 60;
 
 type ArtifactSummary = Artifact & { versionCount: number };
 
 const NO_BOTS: Bot[] = [];
-
-function readViewMode(): ViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
-  } catch {
-    return "grid";
-  }
-}
-
-function writeViewMode(mode: ViewMode): void {
-  try {
-    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-  } catch {
-    // Preference only; ignore storage failures.
-  }
-}
 
 function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
   if (filter === "all") return true;
@@ -112,7 +94,7 @@ export function ArtifactsPage() {
   const navigate = useNavigate();
   const { t } = useLingui();
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
+  const viewMode = viewModePreference.use();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [madeByBots, setMadeByBots] = useState(false);
@@ -195,11 +177,6 @@ export function ArtifactsPage() {
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
   }, [clientFilterActive, nextCursor, loadingMore, items, filteredItems]);
-
-  function setMode(mode: ViewMode) {
-    setViewMode(mode);
-    writeViewMode(mode);
-  }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -305,7 +282,7 @@ export function ArtifactsPage() {
               <ToggleGroup
                 value={[viewMode]}
                 onValueChange={([next]) => {
-                  if (next) setMode(next as ViewMode);
+                  if (next) viewModePreference.set(next as ViewMode);
                 }}
                 spacing={1}
                 className="h-8 rounded-lg border border-input p-0.5"
@@ -378,43 +355,24 @@ export function ArtifactsPage() {
       </div>
 
       {pendingDelete ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) setPendingDelete(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                <Trans>Delete "{pendingDelete.name}"?</Trans>
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {pendingDelete.versionCount > 1 ? (
-                  <Trans>
-                    This deletes all {pendingDelete.versionCount} versions of this artifact. This
-                    can't be undone.
-                  </Trans>
-                ) : (
-                  <Trans>This can't be undone.</Trans>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {deleteError ? <p className="text-body text-destructive">{deleteError}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
-              >
-                {deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setPendingDelete(null)}
+          title={<Trans>Delete "{pendingDelete.name}"?</Trans>}
+          description={
+            pendingDelete.versionCount > 1 ? (
+              <Trans>
+                This deletes all {pendingDelete.versionCount} versions of this artifact. This can't
+                be undone.
+              </Trans>
+            ) : (
+              <Trans>This can't be undone.</Trans>
+            )
+          }
+          error={deleteError}
+          busy={deleteBusy}
+          onConfirm={() => void confirmDelete()}
+          confirmLabel={deleteBusy ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

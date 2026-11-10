@@ -6,17 +6,18 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
+import { rpc } from "./api";
 import {
-  loadSessionToken,
   passwordResetCapabilities,
-  rpc,
   sendSignInCode,
   signIn,
   signInWithCode,
   signUp,
-} from "./api";
+} from "./api-auth";
+import type * as Endpoint from "./endpoint";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
+import { loadSessionToken } from "./session";
 import { continueWithSso } from "./sso";
 import { confirmUnsentSendLoss } from "./unsent-send-warning";
 
@@ -116,20 +117,23 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => tokensForAppearance("light") }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (text: string, values?: Record<string, string>) =>
-      text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
-  }),
-}));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => server.base,
+  rpc: vi.fn(),
+}));
+vi.mock("./endpoint", async (importOriginal) => ({
+  ...(await importOriginal<typeof Endpoint>()),
   displayApiHost: () => "example.invalid",
   usesCustomApiBase: () => false,
+}));
+vi.mock("./session", () => ({
   loadSessionToken: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("./api-auth", () => ({
   passwordResetCapabilities: vi.fn(),
   requestPasswordReset: vi.fn(),
-  rpc: vi.fn(),
   sendSignInCode: vi.fn(),
   signIn: vi.fn(),
   signInWithCode: vi.fn(),

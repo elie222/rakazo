@@ -1,8 +1,8 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { useSyncExternalStore } from "react";
-import type { MobileBot, MobileGroup } from "./api";
 import { currentApiBase } from "./api";
 import type { InboxSpace } from "./inbox-spaces";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
 
 const empty: readonly InboxSpace[] = [];

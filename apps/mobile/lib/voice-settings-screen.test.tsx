@@ -42,6 +42,9 @@ vi.mock("./call-sounds", () => ({
   saveWaitSoundEnabled: mocks.saveWaiting,
   playCallCue: mocks.cue,
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
@@ -61,7 +64,6 @@ vi.mock("./device-voice", () => ({
   saveDeviceVoiceEnabled: vi.fn(),
 }));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
 vi.mock("../components/row-accessories", () => ({ Checkmark: () => null, Chevron: () => null }));

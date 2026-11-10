@@ -98,7 +98,7 @@ vi.mock("expo-file-system", () => {
       if (fails("delete", this.uri)) throw new Error("Delete failed");
       files.delete(this.uri);
     }
-    write(text: string) {
+    writeSync(text: string) {
       if (fails("write", this.uri)) throw new Error("No space left on device");
       files.set(this.uri, text);
     }

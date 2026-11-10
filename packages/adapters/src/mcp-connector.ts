@@ -31,7 +31,6 @@ import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { composioToolBatch } from "./composio-batch.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -52,6 +51,7 @@ import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
+  launchArgSecrets,
   looksLikeSecretValue,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
@@ -69,7 +69,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -514,9 +514,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              inputSchema: tool.inputSchema as Record<string, unknown>,
-              readOnly: tool.annotations?.readOnlyHint,
-              batch: composioToolBatch(tool.name),
+              ...mcpToolFields(tool),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -1085,6 +1083,7 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       // Rows saved before arguments moved into the secret still hold them in plaintext.
       const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
+      launchSecrets.push(...launchArgSecrets(args));
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;

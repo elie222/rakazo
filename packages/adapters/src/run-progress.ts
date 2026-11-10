@@ -1,4 +1,6 @@
+import { messagingProgressJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import {
   appendTextSegment,
   appendToolCallSegment,
@@ -9,13 +11,19 @@ import {
   noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
+  withToolStepOutcomes,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
-import { runAllowsSilentEmpty, runPromotesMidTurnNarration } from "./run-replies.js";
+import {
+  messageBlocksText,
+  runAllowsSilentEmpty,
+  runPromotesMidTurnNarration,
+} from "./run-replies.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { couldBecomeNoResponse, isExactNoResponse, isPlaceholderText } from "./silent-reply.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
@@ -58,6 +66,8 @@ export async function createReplyState(
     narrationSoFar: "",
     narrationStatusShowing: false,
     pendingToolNames: [],
+    toolCalls: [],
+    toolOutcomes: new Map(),
     pendingProgress: "",
     lastProgressAt: 0,
     hasStreamedText: false,
@@ -72,11 +82,7 @@ export async function createReplyState(
   for (const message of priorProgress) {
     if (!isUserProgressClientNonce(message.clientNonce)) continue;
     const blocks = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
-    const text = blocks
-      .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-      .map((block) => block.text)
-      .join("")
-      .trim();
+    const text = messageBlocksText(blocks).trim();
     if (!text) continue;
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;
@@ -126,10 +132,34 @@ export function progressSinceBudgetStart(reply: ReplyState) {
 }
 
 /** The next interim message's nonce; it uses up the allowance for answering the person. */
-export function nextProgressNonce(ctx: RunContext) {
+function nextProgressNonce(ctx: RunContext) {
   const { reply } = ctx.state;
   reply.steeringReplyPending = false;
   return userProgressClientNonce(ctx.run.id, reply.midTurnProgressCount++);
+}
+
+/**
+ * Posts an interim message. A chat app gets a run's messages when the run ends, so a 1:1 run it
+ * started sends this one on at once. A group run posts once, when it ends.
+ */
+export async function publishInterimMessage(ctx: RunContext, text: string, markUnread?: boolean) {
+  const { deps, run } = ctx;
+  const { reply } = ctx.state;
+  await publishMessage(
+    deps,
+    run,
+    "bot",
+    [{ kind: "text", text }],
+    markUnread,
+    nextProgressNonce(ctx),
+  );
+  reply.midTurnUserTexts.push(text);
+  reply.publishedMidTurnUserMessage = true;
+  if (run.trigger === "messaging" && !ctx.source.channelId) {
+    await deps.jobs.enqueue(messagingProgressJob(run.id)).catch((error) => {
+      getLogger().error("messaging progress enqueue error", error);
+    });
+  }
 }
 
 /** Whether text written before a step may be posted as an interim message at all. */
@@ -150,6 +180,23 @@ export function flushPendingTools(reply: ReplyState) {
     reply.messageSegments = appendToolCallSegment(reply.messageSegments, name);
   }
   reply.pendingToolNames = [];
+}
+
+/**
+ * The reply's steps with how each call ended. Calls with no result yet count as `unfinished`
+ * when given (a stopped run), otherwise they carry no outcome.
+ */
+export function withReplyToolOutcomes(
+  reply: ReplyState,
+  unfinished?: ToolStepOutcome,
+): MessageBlock[] {
+  return withToolStepOutcomes(
+    reply.messageSegments,
+    reply.toolCalls.map(({ label, executionId }) => ({
+      label,
+      outcome: reply.toolOutcomes.get(executionId) ?? unfinished,
+    })),
+  );
 }
 
 export function tryFlushPendingTools(reply: ReplyState) {
@@ -208,7 +255,7 @@ export async function flushProgress(ctx: RunContext) {
  * the caller can show it as the working line.
  */
 export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard = false) {
-  const { deps, run } = ctx;
+  const { run } = ctx;
   const { reply } = ctx.state;
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   reply.messageSegments = extracted.remaining;
@@ -228,16 +275,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   ) {
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
-    await publishMessage(
-      deps,
-      run,
-      "bot",
-      [{ kind: "text", text }],
-      undefined,
-      nextProgressNonce(ctx),
-    );
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    await publishInterimMessage(ctx, text);
     return undefined;
   }
   reply.discardedMidTurnNarration = true;
@@ -256,7 +294,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
  * the question.
  */
 export async function publishNarrationBeforeAsk(ctx: RunContext) {
-  const { deps, run } = ctx;
+  const { run } = ctx;
   const { reply } = ctx.state;
   if (!runPromotesMidTurnNarration(run.trigger)) return;
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
@@ -276,16 +314,7 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
   reply.hasStreamedText = false;
   reply.pendingProgress = "";
   reply.redactor.skip();
-  await publishMessage(
-    deps,
-    run,
-    "bot",
-    [{ kind: "text", text }],
-    undefined,
-    nextProgressNonce(ctx),
-  );
-  reply.midTurnUserTexts.push(text);
-  reply.publishedMidTurnUserMessage = true;
+  await publishInterimMessage(ctx, text);
 }
 
 /**

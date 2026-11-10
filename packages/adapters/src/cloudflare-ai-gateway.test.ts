@@ -1,12 +1,13 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { describe, expect, it } from "vitest";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-} from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
-import { cloudflareProviderEnv, withCloudflareAuth } from "./cloudflare-ai-gateway.js";
+  cloudflareProviderEnv,
+  withCloudflareAuth,
+} from "./cloudflare-ai-gateway.js";
 import { buildModelConnectPlaintext } from "./model-connect.js";
-import { parseModelSecret } from "./pi-oauth.js";
+import { parseModelSecret } from "./model-secret.js";
 
 const ACCOUNT_ID = "acct1234";
 const GATEWAY_ID = "gateway-1";

@@ -45,7 +45,7 @@ export function SandboxedHtmlPreview({
   /** A message the document posted; `answer` posts a reply back into the document. */
   onMessage?: (data: string, answer: (message: object) => void) => void;
 }) {
-  const view = useRef<WebView>(null);
+  const view = useRef<WebView<object>>(null);
   // JSON is a valid script literal for any message, so nothing in it can break out of the call.
   const answer = (message: object) =>
     view.current?.injectJavaScript(`window.postMessage(${JSON.stringify(message)}, "*");true;`);

@@ -10,6 +10,7 @@ import {
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
+  webhookDeliveryResponse,
 } from "./webhook-inbound.js";
 
 export {
@@ -95,8 +96,9 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       (typeof payload.id === "string" || typeof payload.event_id === "string" ? raw : "") ||
       undefined;
 
-    return c.json(
-      await deliverWebhookEvent(deps, target, {
+    return webhookDeliveryResponse(
+      c,
+      deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
         routines: webhookRoutines,
         source: "webhook",

@@ -95,6 +95,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine,
   voiceReady,
   speakingMessageId,
+  callHoldsSpeaker,
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
@@ -147,6 +148,7 @@ export const Transcript = memo(function Transcript({
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
+  callHoldsSpeaker: boolean;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
@@ -235,7 +237,7 @@ export const Transcript = memo(function Transcript({
     (message) => !exchanges.lineOf.has(message.id) || exchanges.lines.has(message.id),
   );
   const separatorIds = timeSeparatorIds(shownMessages);
-  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
+  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -573,7 +575,7 @@ export const Transcript = memo(function Transcript({
               ) : null}
               <div
                 data-message-id={message.id}
-                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-[1]"}
+                className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
               >
                 <div
                   className={
@@ -628,6 +630,7 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
+                      callHoldsSpeaker={callHoldsSpeaker}
                       onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}

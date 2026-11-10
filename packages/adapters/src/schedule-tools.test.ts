@@ -767,8 +767,12 @@ describe("schedule tool persistence", () => {
     ).rejects.toThrow("deactivate failed");
   });
 
-  it("scopes group list and cancel to the current thread without narrowing DMs", async () => {
-    const findMany = vi.fn(async () => []);
+  it("lists a group's routines from every chat but cancels only the group's own", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "routine-dm", name: "Daily check", crons: ["0 8 * * *"], threadId: "dm-thread-1" },
+      { id: "routine-group", name: "Digest", crons: ["0 9 * * *"], threadId: "group-thread-1" },
+      { id: "routine-default", name: "Weekly", crons: ["0 9 * * 1"], threadId: null },
+    ]);
     const findFirst = vi.fn(async () => null);
     const deps = {
       prisma: {
@@ -779,19 +783,21 @@ describe("schedule tool persistence", () => {
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
 
-    await listSchedulesFromTool(deps, {
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      threadId: "group-thread-1",
+      groupThreadId: "group-thread-1",
     });
     expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          spaceId: "ws-1",
-          botId: "bot-1",
-          threadId: "group-thread-1",
-        },
-      }),
+      expect.objectContaining({ where: { spaceId: "ws-1", botId: "bot-1" } }),
+    );
+    expect(listed.routines.map(({ routineId, inThisChat }) => [routineId, inThisChat])).toEqual([
+      ["routine-dm", false],
+      ["routine-group", true],
+      ["routine-default", false],
+    ]);
+    expect(listed.note).toBe(
+      "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.",
     );
 
     const cancelled = await cancelScheduleFromTool(deps, {
@@ -813,12 +819,14 @@ describe("schedule tool persistence", () => {
     );
 
     findMany.mockClear();
-    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
+    const direct = await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { spaceId: "ws-1", botId: "bot-1" },
       }),
     );
+    expect(direct.routines[0]).not.toHaveProperty("inThisChat");
+    expect(direct).not.toHaveProperty("note");
 
     findFirst.mockClear();
     await cancelScheduleFromTool(deps, {
@@ -1315,6 +1323,19 @@ describe("updateScheduleFromTool", () => {
         id: "routine-1",
         bot: { archivedAt: null },
       },
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("tells a group run that a routine from another chat is changed there", async () => {
+    const { findFirst, updateMany, update } = setup(null);
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "routine-1" } as never);
+    await expect(update({ prompt: "x", scopeThreadId: "group-thread-1" })).resolves.toEqual({
+      error: "That routine is not this group chat's. Change it from the bot's own chat.",
+    });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
+      select: { id: true },
     });
     expect(updateMany).not.toHaveBeenCalled();
   });

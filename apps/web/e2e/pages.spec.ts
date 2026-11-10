@@ -376,6 +376,15 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     page,
     `call save_page with ${JSON.stringify({ pageId, title: "Signups dashboard", source: dashboard("1.9%") })}\nthen say Updated [Signups dashboard](page:${pageId}) with the new churn figure.`,
   );
+  // Anyone with the link would see the change at once, so the bot asks first. The sidebar's
+  // unread preview can show the same words, so look for the card in the transcript.
+  await expect(
+    page.getByTestId("transcript").getByText("Update shared page “Signups dashboard”?"),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await captureScreenshot(page, testInfo, "page-shared-update-approval");
+  await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(card).toHaveCount(2, { timeout: 30_000 });
   await expect(card.first()).toContainText("Updated below");
   await expect(card.last()).not.toContainText("Updated below");
@@ -480,6 +489,63 @@ async function closePage(page: Page) {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("page-view")).toBeHidden();
 }
+
+test("in the macOS app a page's top row sits below the window controls and its close button clicks", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-mac-${Date.now()}@rakazo.test`, "password12", "Page Owner");
+  await completeOnboarding(page);
+  const title = "Test dashboard (example data)";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say done.`,
+  );
+  await expect(page.getByTestId("page-card")).toHaveCount(1, { timeout: 30_000 });
+  // The desktop app's bridge on macOS, whose traffic lights sit 16px in from the top left.
+  await page.addInitScript(() => {
+    (window as unknown as { rakazoDesktop: { platform: string } }).rakazoDesktop = {
+      platform: "darwin",
+    };
+  });
+  await page.reload();
+  await page
+    .getByTestId("page-card")
+    .getByRole("button", { name: `Open ${title}` })
+    .click();
+  const view = page.getByTestId("page-view");
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
+  ).toBeVisible();
+  const close = view.getByRole("button", { name: "Close page" });
+  // Below the 12px traffic lights at y 16, and outside the window's drag areas, which Electron
+  // applies through anything drawn over them. macOS draws the lights from x=16 to about x=68.
+  const box = await close.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(36);
+  // Close page must clear the 72px traffic-light strip (#3450).
+  expect(box!.x).toBeGreaterThanOrEqual(72);
+  for (const control of [
+    close,
+    view.getByRole("button", { name: title }),
+    view.getByRole("button", { name: "Share" }),
+  ]) {
+    expect(
+      await control.evaluate((el) => getComputedStyle(el).getPropertyValue("app-region")),
+    ).not.toBe("drag");
+  }
+  await captureScreenshot(page, testInfo, "page-full-screen-macos");
+  await close.click();
+  await expect(view).toBeHidden();
+
+  // #3757: on a narrow window the nav hamburger must clear the same traffic-light strip.
+  await page.setViewportSize({ width: 500, height: 860 });
+  const openNav = page.getByRole("button", { name: "Open navigation" });
+  await expect(openNav).toBeVisible();
+  const navBox = await openNav.boundingBox();
+  expect(navBox!.x).toBeGreaterThanOrEqual(72);
+  await captureScreenshot(page, testInfo, "open-navigation-macos");
+});
 
 test("a page's failures, a deleted page's card, and the Library's Share, search and rename", async ({
   page,

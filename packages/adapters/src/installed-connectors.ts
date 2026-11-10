@@ -7,6 +7,7 @@ import type {
   ConnectorTool,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import type { McpSourcePreset } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
@@ -66,8 +67,29 @@ const McpAuthSchema = z
   })
   .default({ type: "none" });
 
+/** MCP services offered as one-step sources. A preset with a URL always connects there. */
+export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
+  { id: "executor", name: "Executor", urlPlaceholder: "https://executor.example/mcp" },
+];
+
+/** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send
+ * only the id. Stored configs keep only fixed-URL preset ids; the rest store as custom. */
+export function applyMcpSourcePreset(
+  source: string,
+  config: Record<string, unknown>,
+): { source: string; config: Record<string, unknown> } {
+  const preset = MCP_SOURCE_PRESETS.find((entry) => entry.id === config.preset);
+  if (!preset) return { source, config: { ...config, preset: "custom" } };
+  return {
+    source: preset.url ?? source,
+    config: { ...config, preset: preset.url ? preset.id : "custom", auth: { type: "bearer" } },
+  };
+}
+
 const McpConfigSchema = z.object({
-  preset: z.enum(["treg", "custom"]).default("custom"),
+  // Installs keep the preset id they were made with, even after it leaves MCP_SOURCE_PRESETS;
+  // nothing reads it back, so any stored id stays valid.
+  preset: z.string().min(1).max(64).default("custom"),
   auth: McpAuthSchema,
   headers: PublicHeadersSchema,
 });

@@ -321,6 +321,10 @@ function fixture({
     | undefined;
   const spending = fakeSpendingPrisma(spendingLimit);
   const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => 0),
+    $queryRaw: vi.fn(async () => []),
+    space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
@@ -484,6 +488,7 @@ function fixture({
     externalEffect,
   };
   const transactionalPrisma = Object.assign(prisma, {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (action: (tx: typeof prisma) => unknown, _options?: unknown) =>
       action(prisma),
@@ -684,7 +689,9 @@ function fixture({
         blocks: [{ kind: "text", text: promptText }],
       };
       const tx = {
+        $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn(async () => null) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
         message: {
           create: vi.fn(async () => inboundMessage),
@@ -750,6 +757,11 @@ function fixture({
   };
 }
 
+function askDetail(f: ReturnType<typeof fixture>): string {
+  const calls = f.pauseRunForInput.mock.calls as unknown as [{ blocks: { detail?: string }[] }][];
+  return calls[0]?.[0].blocks[0]?.detail ?? "";
+}
+
 it("enqueues pending work when an approval pauses its current run", async () => {
   const f = fixture({ name: "shell", trigger: "webhook" });
   f.pauseRunForInput.mockResolvedValueOnce({ continuationRunId: "pending-run" });
@@ -788,20 +800,32 @@ describe("connector read-only metadata and approval enforcement", () => {
     reviewMock.mockReset();
   });
 
-  it.each(["shell", "write_file"])(
-    "forces owner approval for webhook-triggered %s despite an allow rule",
-    async (name) => {
+  // Only an Always allow the webhook overrode gets the line; the owner's own Require approval
+  // asks in every run.
+  it.each([
+    ["shell", "always_allow", true],
+    ["write_file", "require_approval", false],
+  ] as const)(
+    "forces owner approval for webhook-triggered %s despite a %s rule",
+    async (name, effect, explained) => {
       const f = fixture({
         name,
         trigger: "webhook",
-        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: name }],
+        rules: [{ effect, matchKind: "tool", matchValue: name }],
       });
       await f.run();
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(askDetail(f).startsWith("Asked because a webhook started this run.")).toBe(explained);
+      if (explained)
+        expect(askDetail(f)).toMatch(
+          /^Asked because a webhook started this run\. Always allow doesn't skip this\.(\n|$)/,
+        );
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(reviewMock).not.toHaveBeenCalled();
-      // The rule still covers this tool outside webhook runs.
-      expect(pausedActionIds(f)).toEqual(["allow", "always", "deny"]);
+      // Always allow can't skip a webhook card, so one that already has the rule doesn't offer it.
+      expect(pausedActionIds(f)).toEqual(
+        explained ? ["allow", "deny"] : ["allow", "always", "deny"],
+      );
     },
   );
 
@@ -1123,12 +1147,17 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(JSON.stringify(f.results[0])).toContain("blocked");
     });
 
-    it("asks before an unlisted write in Ask mode", async () => {
-      const f = fixture({ catalog, name: "demo_send_message" });
-      await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    });
+    // Without an allow rule this write asks in any run, so a webhook card does not blame the webhook.
+    it.each(["user", "webhook"])(
+      "asks before an unlisted write in Ask mode (%s)",
+      async (trigger) => {
+        const f = fixture({ catalog, name: "demo_send_message", trigger });
+        await f.run();
+        expect(f.execute).not.toHaveBeenCalled();
+        expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+        expect(askDetail(f)).not.toContain("webhook");
+      },
+    );
 
     it("forces owner approval for webhook-triggered writes despite an allow rule", async () => {
       const f = fixture({
@@ -2084,6 +2113,46 @@ describe("own settings through update_bot", () => {
     await f.run();
     expect(f.results[0]).toMatchObject({ error: expect.stringContaining("outside content") });
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("treats its own id in bot_id as its own settings", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: " bot-1 ", name: "Scout" }, executionId: "call-1" },
+      { args: { bot_id: "bot-1", readAloud: true }, executionId: "call-2" },
+    ]);
+    await f.run();
+    // Not refused as bot management (off here), and its own edit counts as no outside content.
+    expect(f.results).toEqual([
+      expect.objectContaining({ ok: true, name: "Scout" }),
+      { ok: true, readAloud: true },
+    ]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", autoSpeak: false },
+        data: { autoSpeak: true },
+      }),
+    );
+    for (const effect of f.effects) expect(effect.request).not.toHaveProperty("bot_id");
+  });
+  it("holds instructions sent with its own id in bot_id like any own change", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { bot_id: "bot-1", instructions: "Reply in short notes." }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toEqual([
+      expect.objectContaining({
+        kind: "update_bot",
+        status: "intended",
+        request: {
+          instructions: "Reply in short notes.",
+          reason: "Set in chat",
+          previousInstructions: "Draft only",
+          previousInstructionsFromBaseline: true,
+        },
+      }),
+    ]);
   });
   it("reads its settings when called with no fields", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
@@ -3684,6 +3753,78 @@ describe("user computer screen control", () => {
   });
 });
 
+describe("background helpers only read", () => {
+  it.each([
+    ["remember", { content: "Must not be saved" }],
+    ["update_bot", { instructions: "Never ask" }],
+  ])("refuses %s, which it was not offered, before anything is written", async (name, args) => {
+    const f = fixture({ name, builtin: true, trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
+  it("refuses a read-only connector tool that a local tool's handler would run", async () => {
+    const f = fixture({ name: "message_agent", trigger: "helper", skipApprovals: true });
+    f.setCalls([{ args: { connection_id: "c1", text: "hi" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+    expect(JSON.stringify(f.results[0])).toContain("not available to a background helper");
+  });
+
+  it("runs a declared read in Never ask", async () => {
+    const f = fixture({ trigger: "helper", skipApprovals: true });
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a declared write whatever the mode or rules", async () => {
+    for (const options of [
+      { skipApprovals: true },
+      { rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_get_item" }] },
+    ] as Parameters<typeof fixture>[0][]) {
+      const f = fixture({ trigger: "helper", readOnly: false, ...options });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("a background helper may only read");
+    }
+  });
+
+  it("runs a batch of declared reads, but not one naming no action or an undeclared one", async () => {
+    const batchOf = (...slugs: Array<string | undefined>) => ({
+      id: "batch",
+      tools: slugs.map((slug) => (slug ? { tool_slug: slug, arguments: {} } : { arguments: {} })),
+    });
+    const helperBatch = () =>
+      fixture({
+        name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        readOnly: true,
+        secondResource: true,
+        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+        trigger: "helper",
+        skipApprovals: true,
+      });
+    const named = helperBatch();
+    named.setCalls([{ args: batchOf("demo_get_other"), executionId: "call-1" }]);
+    await named.run();
+    expect(named.execute).toHaveBeenCalledOnce();
+    const unnamed = helperBatch();
+    unnamed.setCalls([{ args: batchOf("demo_get_other", undefined), executionId: "call-1" }]);
+    await unnamed.run();
+    expect(unnamed.execute).not.toHaveBeenCalled();
+    // An action no tool declares read-only is not a read either.
+    const undeclared = helperBatch();
+    undeclared.setCalls([{ args: batchOf("gmail_archive_thread"), executionId: "call-1" }]);
+    await undeclared.run();
+    expect(undeclared.execute).not.toHaveBeenCalled();
+  });
+});
+
 describe("a click that completes a purchase on a website", () => {
   const purchase = { steps: [1], site: "shop.example.test", label: "Pay $113", amount: "$113" };
   const approval = { steps: [1], site: "shop.example.test", label: "Pay $113", amount: "$113" };
@@ -4072,4 +4213,35 @@ describe("a click that completes a purchase on a website", () => {
     await f.run();
     expect(f.spending.payments).toEqual([expect.objectContaining({ amount: 11_300 })]);
   });
+});
+
+it("does not blame the webhook on cards every run shows", async () => {
+  const space = fixture({ name: "create_space", builtin: true, trigger: "webhook" });
+  space.setCalls([{ args: { name: "Relay" }, executionId: "call-1" }]);
+  await space.run();
+  expect(space.pauseRunForInput).toHaveBeenCalledOnce();
+  expect(askDetail(space)).toMatch(/^Bots, groups, chats/);
+
+  const connection = fixture({
+    name: "respond_agent_connection",
+    builtin: true,
+    trigger: "webhook",
+  });
+  connection.prisma.bot.findUnique.mockResolvedValue({ name: "Other bot" } as never);
+  Object.assign(connection.prisma, {
+    agentConnection: {
+      findFirst: vi.fn(async () => ({
+        id: "connection-1",
+        requestVersion: 1,
+        requesterBotId: "bot-other",
+      })),
+    },
+    messagingIdentity: {
+      findUnique: vi.fn(async () => ({ address: "fake", provider: "telegram" })),
+    },
+  });
+  connection.setCalls([{ args: { accept: true }, executionId: "call-1" }]);
+  await connection.run();
+  expect(connection.pauseRunForInput).toHaveBeenCalledOnce();
+  expect(askDetail(connection)).toBe("Telegram: fake");
 });

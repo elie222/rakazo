@@ -8,7 +8,7 @@ import {
   extendByokFreePeriod,
   FREE_MONTH_DAYS,
   hasBillingAccess,
-  Prisma,
+  isUniqueViolation,
   reconcileCreditPurchase,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -177,10 +177,6 @@ export function createReferrals(deps: {
       }
     },
   };
-}
-
-function isUniqueViolation(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 function newCode() {

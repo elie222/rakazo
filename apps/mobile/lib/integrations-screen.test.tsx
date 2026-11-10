@@ -33,6 +33,9 @@ vi.mock("expo-router", () => ({
   },
 }));
 // The plugin catalog has its own seam so app-catalog tests keep their own rpc fakes.
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: (proc: string, ...args: unknown[]) =>
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
@@ -85,10 +88,6 @@ vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios, color }: { ios: string; color: string }) => (
     <span data-symbol={ios} data-color={color} />
   ),
-}));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
 }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("react-native-safe-area-context", () => ({

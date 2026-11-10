@@ -1,16 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Input,
-} from "@rakazo/ui-web";
+import { Button, Input } from "@rakazo/ui-web";
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "../lib/auth";
@@ -21,6 +10,7 @@ import {
   usePasskeysVersion,
 } from "../lib/passkeys";
 import { formatRelativeTime } from "../lib/relative-time";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SettingsRow } from "./SettingsRows";
 
 type PasskeyRow = {
@@ -198,37 +188,18 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
         </ul>
       ) : null}
       {deleting ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) {
-              setDeleting(null);
-              setError(null);
-            }
+        <ConfirmDialog
+          onCancel={() => {
+            setDeleting(null);
+            setError(null);
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}</AlertDialogTitle>
-              <AlertDialogDescription>
-                <Trans>This can't be undone.</Trans>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            {error ? <p className="text-body text-destructive">{error}</p> : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>
-                <Trans>Cancel</Trans>
-              </AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending}
-                onClick={() => void remove()}
-              >
-                {pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title={t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}
+          description={<Trans>This can't be undone.</Trans>}
+          error={error}
+          busy={pending}
+          onConfirm={() => void remove()}
+          confirmLabel={pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+        />
       ) : null}
     </div>
   );

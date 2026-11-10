@@ -18,7 +18,14 @@ const state = vi.hoisted(() => ({
   session: { generation: 4, apiBase: "http://api.test" },
 }));
 
-vi.mock("./api", () => ({ rpc: state.rpc, selectSpace: state.selectSpace }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
+  rpc: state.rpc,
+}));
+vi.mock("./api-server", () => ({
+  selectSpace: state.selectSpace,
+}));
 vi.mock("./haptics", () => ({ hapticSuccess: state.hapticSuccess }));
 vi.mock("./search-inbox", () => ({
   searchInboxSession: () => ({ ...state.session }),
@@ -28,10 +35,6 @@ vi.mock("./search-inbox", () => ({
 vi.mock("./organizations", () => ({ refreshOrganizations: state.refreshOrganizations }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 vi.mock("../components/sheet-header", () => ({ cancelHeaderOptions: () => ({}) }));
 vi.mock("expo-router", () => ({
   useNavigation: () => ({ isFocused: () => state.focused }),

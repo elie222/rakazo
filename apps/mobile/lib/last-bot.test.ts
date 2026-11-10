@@ -31,9 +31,10 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("./live-notifications", () => ({ stopLiveNotifications: vi.fn(async () => undefined) }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./thread-feedback", () => ({ clearFailedSends: vi.fn() }));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: async () => ({ authorization: "Bearer session-a" }),
-  clearSpace: async () => true,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => selectedSpace.id,
   captureApiRequestContext: async () => ({
@@ -43,7 +44,9 @@ vi.mock("./api", () => ({
   }),
   fetchMobileJson: vi.fn(),
 }));
-vi.mock("./i18n", () => ({ t: (text: string) => text }));
+vi.mock("./api-server", () => ({
+  clearSpace: async () => true,
+}));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: vi.fn() }));
 
 registerSessionDiskCache((sameAccount?: boolean) => {
