@@ -10,6 +10,7 @@ import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import {
@@ -234,7 +235,12 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connectKey() {
     if (!selected || !canConnect) return;
@@ -450,7 +456,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless ? null : (
+              {keyless || linked ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -462,7 +468,7 @@ export function VoiceSettingsOverlay({
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={
-                      selfHosted
+                      selfHosted || keyOptional
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -509,7 +515,7 @@ export function VoiceSettingsOverlay({
                   </Field>
                 </>
               ) : null}
-              {keyless && credential ? null : (
+              {(keyless && credential) || linked ? null : (
                 <Button
                   type="button"
                   className="mt-3"

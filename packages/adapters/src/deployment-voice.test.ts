@@ -43,7 +43,11 @@ function prismaWith(
   } as unknown as PrismaClient;
 }
 
-const secrets = { load: vi.fn(async (ciphertext: string) => `plain:${ciphertext}`) };
+const secrets = {
+  load: vi.fn(async (ciphertext: string) => `plain:${ciphertext}`),
+  put: vi.fn(),
+  delete: vi.fn(),
+};
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -109,6 +113,7 @@ describe("resolveDeploymentVoiceEnv", () => {
       "openai",
       "cartesia",
       "fish-audio",
+      "xai",
     ]);
   });
 });

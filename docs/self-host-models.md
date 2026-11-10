@@ -278,7 +278,7 @@ native file flow on mobile. No new mobile player or settings screen is required.
 
 ### A default voice for everyone
 
-Set `VOICE_DEFAULT_PROVIDER` (`elevenlabs`, `openai`, `cartesia` or `fish-audio`) and
+Set `VOICE_DEFAULT_PROVIDER` (`elevenlabs`, `openai`, `cartesia`, `fish-audio` or `xai`) and
 `VOICE_DEFAULT_API_KEY` on the API and worker to give everyone without their own connection in
 **Settings → Voice** a working voice, billed to that key. `VOICE_DEFAULT_VOICE_ID` picks the voice
 (default: the provider's first) and `VOICE_DEFAULT_SPEECH_MODEL` the speech model for providers

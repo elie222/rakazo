@@ -19,6 +19,7 @@ import {
   VOICE_CATALOG,
 } from "./voice-factory.js";
 import { MAX_SYNTHESIZED_AUDIO_BYTES, MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+import { XaiVoiceProvider } from "./xai-voice.js";
 
 const ctx = {
   operationId: "voice",
@@ -54,6 +55,7 @@ describe("createVoiceProvider", () => {
       "openai",
       "cartesia",
       "fish-audio",
+      "xai",
       "openai-compatible",
     ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
@@ -61,6 +63,7 @@ describe("createVoiceProvider", () => {
       "openai",
       "cartesia",
       "fish-audio",
+      "xai",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
@@ -199,7 +202,7 @@ describe("ElevenLabsVoiceProvider", () => {
       provider.synthesize({ text: "Hi", voiceId: "abc", apiKey: "sk_test_key" }, ctx),
     ).rejects.toThrow(speaking);
     if (status === 401)
-      await expect(provider.verify("sk_test_key", ctx)).resolves.toEqual({
+      await expect(provider.verify("sk_test_key", ctx)).resolves.toMatchObject({
         ok: false,
         message: speaking,
       });
@@ -826,6 +829,7 @@ describe("hosted voice response limits", () => {
     ["OpenAI", () => new OpenAIVoiceProvider(), "alloy"],
     ["Cartesia", () => new CartesiaVoiceProvider(), "sonic"],
     ["Fish Audio", () => new FishAudioVoiceProvider(), "voice"],
+    ["xAI", () => new XaiVoiceProvider(), "eve"],
   ])(
     "rejects an oversized %s speech response before buffering it",
     async (_name, create, voiceId) => {
