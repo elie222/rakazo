@@ -22,10 +22,14 @@ import {
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ArtifactFileCard } from "../components/ArtifactFileCard";
+import { PageBlockCard } from "../components/pages/PageBlockCard";
 import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
+import type { ArtifactTarget } from "../lib/artifact-open";
 import { useSpaceQueries } from "../lib/query";
 import { toolStepCount } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
+import { ArtifactImage, ChartBlockView } from "./shell/message-cards";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const { t } = useLingui();
@@ -132,7 +136,10 @@ function RunRow({ run }: { run: RoutineRun }) {
             {line}
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <RunReply blocks={reply} />
+            <RunReply
+              blocks={reply}
+              target={run.groupId ? { groupId: run.groupId } : { botId: run.botId }}
+            />
           </CollapsibleContent>
         </Collapsible>
       ) : chatTo ? (
@@ -155,8 +162,11 @@ function RunRow({ run }: { run: RoutineRun }) {
   );
 }
 
-/** What a silent run would have posted: its steps and its reply, as the chat shows them. */
-function RunReply({ blocks }: { blocks: readonly MessageBlock[] }) {
+/**
+ * What a silent run would have posted: its steps, files, charts, pages and reply, as the chat
+ * shows them.
+ */
+function RunReply({ blocks, target }: { blocks: readonly MessageBlock[]; target: ArtifactTarget }) {
   return (
     <div
       data-testid="routine-run-reply"
@@ -175,6 +185,26 @@ function RunReply({ blocks }: { blocks: readonly MessageBlock[] }) {
           </ToolActivityDisclosure>
         ) : block.kind === "text" ? (
           <ChatMarkdown key={index}>{block.text}</ChatMarkdown>
+        ) : block.kind === "page" ? (
+          <PageBlockCard key={index} block={block} updated={false} />
+        ) : block.kind === "chart" ? (
+          <ChartBlockView key={index} name={block.name} spec={block.spec} data={block.data} />
+        ) : block.kind === "image" ? (
+          <ArtifactImage
+            key={index}
+            target={target}
+            artifactId={block.artifactId}
+            name={block.name}
+          />
+        ) : block.kind === "file" ? (
+          <ArtifactFileCard
+            key={index}
+            target={target}
+            artifactId={block.artifactId}
+            name={block.name}
+            mimeType={block.mimeType}
+            size={block.size}
+          />
         ) : null,
       )}
     </div>

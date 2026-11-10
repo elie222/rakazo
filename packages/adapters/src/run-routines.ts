@@ -133,6 +133,8 @@ export async function notifyFailedRoutineRun(
         text: `${routine.name} routine: failed`,
         // One line per failed run, however often a notice that did not reach anyone is retried.
         clientNonce: `routine-failed:${failed.id}`,
+        // With the routine's notifications off, the unread chat is how the person finds out.
+        markUnread: true,
       });
     }
   }
@@ -425,6 +427,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     where: { id: failed.routineId },
     select: {
       active: true,
+      silent: true,
       crons: true,
       nextRunAt: true,
       userId: true,
@@ -520,7 +523,8 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           taskId: retryTask.id,
           userId: failed.userId,
           status: "queued",
-          trigger: failed.trigger,
+          // Silent as the routine is now, as a fresh tick would be.
+          trigger: routine ? routineRunTrigger(routine) : failed.trigger,
           routineId: failed.routineId,
           retryOfRunId: failed.id,
           ...(failed.modelPinned

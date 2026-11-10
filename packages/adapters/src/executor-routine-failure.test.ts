@@ -378,6 +378,7 @@ describe("silent routine failures", () => {
     role: "system",
     text: "Inbox sweep routine: failed",
     clientNonce: "routine-failed:run-1",
+    markUnread: true,
   };
 
   it("say so in the chat the run kept quiet in, and notify as any routine does", async () => {
@@ -631,6 +632,8 @@ describe("backing off a routine after its model connection refuses it", () => {
 
 interface RetryScenario {
   trigger?: string;
+  /** The routine's Silent setting now; by default what the failed run's trigger says. */
+  silent?: boolean;
   status?: string;
   retryOfRunId?: string | null;
   active?: boolean;
@@ -728,6 +731,7 @@ function retryHarness(scenario: RetryScenario = {}) {
           : {
               name: "Inbox sweep",
               notify: scenario.routineNotify ?? true,
+              silent: scenario.silent ?? scenario.trigger === "silent_routine",
               active: scenario.active ?? true,
               userId: scenario.routineOwner ?? "user-1",
               crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
@@ -767,6 +771,7 @@ describe("running a routine retry", () => {
         prisma.routine.findUnique.mockResolvedValueOnce({
           name: "Inbox sweep",
           notify: true,
+          silent: false,
           active: false,
           userId: "user-1",
           crons: ["0 9 * * *"],
@@ -928,6 +933,19 @@ describe("running a routine retry", () => {
     expect(postRoutineMessage).not.toHaveBeenCalled();
   });
 
+  it("retries as the routine is now, after Silent was turned off or on", async () => {
+    const quieted = retryHarness({ trigger: "routine", silent: true });
+    await quieted.executor.retryRoutineRun("run-1");
+    expect(quieted.tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ trigger: "silent_routine" }),
+    });
+    const loud = retryHarness({ trigger: "silent_routine", silent: false });
+    await loud.executor.retryRoutineRun("run-1");
+    expect(loud.tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ trigger: "routine" }),
+    });
+  });
+
   it("says in the chat when a silent routine's retry is abandoned", async () => {
     const { executor, send } = retryHarness({ trigger: "silent_routine", active: false });
 
@@ -940,6 +958,7 @@ describe("running a routine retry", () => {
       role: "system",
       text: "Inbox sweep routine: failed",
       clientNonce: "routine-failed:run-1",
+      markUnread: true,
     });
     expect(send).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ kind: "failure" }),

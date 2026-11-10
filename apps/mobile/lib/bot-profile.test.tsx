@@ -1294,7 +1294,8 @@ describe("routine detail", () => {
     await act(async () => row!.click());
     expect(alert).toHaveBeenLastCalledWith(
       expect.stringContaining("Jan 2,"),
-      "Archived 3 done tickets.\n\n✓ Read the board ×2",
+      // In the run's own order: the steps it took, then what it wrote.
+      "✓ Read the board ×2\n\nArchived 3 done tickets.",
     );
     expect(push).not.toHaveBeenCalled();
   });

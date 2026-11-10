@@ -99,21 +99,33 @@ describe("routine history", () => {
         completedAt: at,
       })),
     );
+    // What it made during the turn comes first, then its reply, in the order they were kept.
+    const made = [
+      {
+        kind: "file",
+        artifactId: "artifact-1",
+        name: "board.csv",
+        mimeType: "text/csv",
+        size: 10,
+      },
+    ];
     const reply = [
       { kind: "steps", steps: [{ label: "Read the board", count: 1 }] },
       { kind: "text", text: "Archived 3 done tickets." },
     ];
     replies.mockResolvedValue([
+      { runId: "silent", payload: { blocks: made } },
       { runId: "silent", payload: { blocks: reply } },
       // A reply that no longer parses is left out rather than failing the page.
       { runId: "loud", payload: { blocks: [{ kind: "nonsense" }] } },
     ]);
     const history = await listRoutineRuns(prisma, actor, "routine-1");
     expect(RoutineHistorySchema.parse(history)).toEqual(history);
-    expect(history.runs.map((row) => row.reply)).toEqual([reply, undefined]);
+    expect(history.runs.map((row) => row.reply)).toEqual([[...made, ...reply], undefined]);
     expect(replies).toHaveBeenCalledWith({
       where: { spaceId: actor.spaceId, type: "run.reply", runId: { in: ["silent", "loud"] } },
       select: { runId: true, payload: true },
+      orderBy: { seq: "asc" },
     });
   });
   it("returns a shorter page with a cursor when asked for fewer runs", async () => {

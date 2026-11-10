@@ -2,6 +2,7 @@
 import { i18n } from "@lingui/core";
 import type { ProductEvent, RoutineHistory, RoutineRun, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import type * as CollapsibleModule from "@rakazo/ui-web/components/ui/collapsible";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -33,10 +34,12 @@ vi.mock("@lingui/react/macro", () => ({
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
     (value === 1 ? one : other).replace("#", String(value)),
 }));
+// The chat's file card, as the history shows a file a silent run kept.
+vi.mock("../components/ArtifactFileCard", () => ({
+  ArtifactFileCard: ({ name }: { name: string }) => <span data-testid="file-card">{name}</span>,
+}));
 vi.mock("@rakazo/ui-web", async () => ({
-  ...(await vi.importActual<typeof import("@rakazo/ui-web/components/ui/collapsible")>(
-    "@rakazo/ui-web/components/ui/collapsible",
-  )),
+  ...(await vi.importActual<typeof CollapsibleModule>("@rakazo/ui-web/components/ui/collapsible")),
   Button: ({
     size: _size,
     variant: _variant,
@@ -254,6 +257,14 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
         messageId: "ask-1",
         reply: [
           { kind: "steps", steps: [{ label: "Read the board", count: 2 }], durationMs: 4_000 },
+          // A file it made on the way is kept with the reply, as the chat would have shown it.
+          {
+            kind: "file",
+            artifactId: "artifact-1",
+            name: "board.csv",
+            mimeType: "text/csv",
+            size: 10,
+          },
           { kind: "text", text: "Archived **3** done tickets." },
         ],
       },
@@ -272,6 +283,7 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
     const reply = view.container.querySelector('[data-testid="routine-run-reply"]');
     expect(reply?.textContent).toContain("Archived 3 done tickets.");
     expect(reply?.textContent).toContain("2 tools");
+    expect(reply?.textContent).toContain("board.csv");
   } finally {
     await view.close();
   }

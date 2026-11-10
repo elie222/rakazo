@@ -79,16 +79,18 @@ export async function listRoutineRuns(
           runId: { in: runs.map((run) => run.id) },
         },
         select: { runId: true, payload: true },
+        // A run keeps what it would have posted as it goes, then its reply: shown in that order.
+        orderBy: { seq: "asc" },
       })
     : [];
-  const heldReplyByRun = new Map(
-    heldReplies.flatMap((event) => {
-      const blocks = MessageBlock.array().safeParse(
-        (event.payload as { blocks?: unknown } | null)?.blocks,
-      );
-      return event.runId && blocks.success ? [[event.runId, blocks.data] as const] : [];
-    }),
-  );
+  const heldReplyByRun = new Map<string, MessageBlock[]>();
+  for (const event of heldReplies) {
+    const blocks = MessageBlock.array().safeParse(
+      (event.payload as { blocks?: unknown } | null)?.blocks,
+    );
+    if (!event.runId || !blocks.success) continue;
+    heldReplyByRun.set(event.runId, [...(heldReplyByRun.get(event.runId) ?? []), ...blocks.data]);
+  }
   return {
     nextCursor,
     runs: runs.map((run) => ({

@@ -816,6 +816,8 @@ export async function postRoutineMessage(
     text: string;
     /** Makes the line idempotent: a second post with it adds nothing to the thread. */
     clientNonce?: string;
+    /** Marks the chat unread, which a status line otherwise does not. */
+    markUnread?: boolean;
   },
 ): Promise<void> {
   const blocks =
@@ -830,6 +832,7 @@ export async function postRoutineMessage(
         role: input.role,
         blocks,
         clientNonce: input.clientNonce,
+        ...(input.markUnread === undefined ? {} : { markUnread: input.markUnread }),
       });
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,

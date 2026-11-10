@@ -55,6 +55,10 @@ export function routineRunReplyText(blocks: readonly MessageBlock[] | undefined)
             .map((step) => `✓ ${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
             .join("\n"),
         ];
+      // What it made goes by its name.
+      if (block.kind === "page") return [block.title];
+      if (block.kind === "file" || block.kind === "image" || block.kind === "chart")
+        return [block.name];
       return [];
     })
     .map((part) => part.trim())

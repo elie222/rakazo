@@ -1,5 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { callIdFromClientNonce, isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
+import {
+  callIdFromClientNonce,
+  isBackgroundRunTrigger,
+  RUN_REPLY_EVENT,
+  redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import type { Prisma, RunLease } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -68,7 +74,21 @@ export async function publishMessage(
   },
 ) {
   if (isBackgroundRunTrigger(run.trigger)) {
-    blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
+    const reachesChat = (block: MessageBlock) => block.kind === "ask" || block.kind === "computer";
+    // What a silent routine would have posted, its files, charts and pages included, goes to its
+    // run history instead; ticket work reports on the board.
+    const held = blocks.filter((block) => !reachesChat(block));
+    if (run.trigger === SILENT_ROUTINE_TRIGGER && role === "bot" && held.length) {
+      await deps.events.append({
+        spaceId: run.spaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        runId: run.id,
+        type: RUN_REPLY_EVENT,
+        payload: { blocks: held },
+      });
+    }
+    blocks = blocks.filter(reachesChat);
     if (blocks.length === 0 && !stoppedHelper) return null;
   }
   const lease = runLeaseFor(deps, run.id);
