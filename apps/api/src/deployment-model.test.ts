@@ -10,6 +10,8 @@ import {
   probeDeploymentModels,
   updateDeploymentModelSettings,
 } from "./deployment-model.js";
+import { assertNoDanglingModelPins } from "./model-pins.js";
+import { createRouterContext } from "./routes/context.js";
 
 const actor = { userId: "user-1", spaceId: "space-1", email: "admin@example.com" } as never;
 // A public HTTPS endpoint, such as a provider's in-region API. No real key is used.
@@ -39,8 +41,17 @@ function makeDeps(options: { admin?: boolean; env?: NodeJS.ProcessEnv; keyStatus
         return state.settings;
       }),
       updateMany: vi.fn(
-        async ({ where, data }: { where: Record<string, unknown>; data: object }) => {
-          if (state.settings.defaultModelProvider !== where.defaultModelProvider)
+        async ({
+          where,
+          data,
+        }: {
+          where: { defaultModelProvider: string; defaultModelId?: { notIn: string[] } };
+          data: object;
+        }) => {
+          if (
+            state.settings.defaultModelProvider !== where.defaultModelProvider ||
+            where.defaultModelId?.notIn.includes(String(state.settings.defaultModelId))
+          )
             return { count: 0 };
           state.settings = { ...state.settings, ...data };
           return { count: 1 };
@@ -236,6 +247,53 @@ describe("deployment model settings", () => {
     expect(JSON.stringify(view)).not.toContain("fixture-endpoint-key");
   });
 
+  it("drops a saved default the endpoint no longer lists", async () => {
+    const { deps } = makeDeps({ env: { OPENROUTER_API_KEY: "fixture-openrouter-key" } });
+    const endpoint = (models: string[]) =>
+      connectDeploymentModel(deps, actor, {
+        provider: "openai-compatible",
+        apiKey: "",
+        baseUrl: ENDPOINT,
+        enabledModelIds: models,
+      });
+    await endpoint(["fixture/first", "fixture/second"]);
+    await updateDeploymentModelSettings(deps, actor, {
+      defaultModel: { provider: "openai-compatible", modelId: "fixture/first" },
+    });
+    // Keeping the default's model keeps the default.
+    expect((await endpoint(["fixture/first"])).defaultModel).toEqual({
+      provider: "openai-compatible",
+      modelId: "fixture/first",
+    });
+    const dropped = await endpoint(["fixture/second"]);
+    expect(dropped.defaultModel).toBeNull();
+    expect(dropped.effectiveDefault).toEqual({
+      provider: "openrouter",
+      modelId: "anthropic/claude-haiku-5.5",
+    });
+  });
+
+  it("opens and closes one connection's models on the server", async () => {
+    const { deps, state } = makeDeps({
+      env: { DEEPSEEK_API_KEY: "fixture-key", ANTHROPIC_API_KEY: "fixture-key" },
+    });
+    const opened = await updateDeploymentModelSettings(deps, actor, {
+      open: { provider: "deepseek", open: true },
+    });
+    expect(opened.effectiveAllowedModels).toEqual(["deepseek:*"]);
+    expect(opened.connections).toEqual([
+      expect.objectContaining({ provider: "anthropic", open: false }),
+      expect.objectContaining({ provider: "deepseek", open: true }),
+    ]);
+    await updateDeploymentModelSettings(deps, actor, { allowedModels: ["*"] });
+    // Closing one connection of "every model" keeps the others open.
+    const closed = await updateDeploymentModelSettings(deps, actor, {
+      open: { provider: "anthropic", open: false },
+    });
+    expect(state.settings.allowedModels).toBe("deepseek:*");
+    expect(closed.connections.map((connection) => connection.open)).toEqual([false, true]);
+  });
+
   it("refuses limits that leave no room for input", async () => {
     const { deps } = makeDeps();
     await expect(
@@ -268,6 +326,7 @@ describe("deployment model settings", () => {
 });
 
 describe("the member catalog", () => {
+  let lastLoad = vi.fn();
   async function contextFor(
     connections: { provider: string }[],
     options: {
@@ -277,7 +336,6 @@ describe("the member catalog", () => {
       settings?: Record<string, unknown>;
     } = {},
   ) {
-    const { createRouterContext } = await import("./routes/context.js");
     const rows = connections.map((connection) => ({
       id: `own-${connection.provider}`,
       secretId: `secret-${connection.provider}`,
@@ -309,18 +367,18 @@ describe("the member catalog", () => {
         })),
       },
     };
+    // The member's own endpoint lists only its own model.
+    const load = vi.fn(async () =>
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://own.example.test/v1",
+        enabledModelIds: ["own"],
+      }),
+    );
+    lastLoad = load;
     return createRouterContext({
       prisma,
-      // The member's own endpoint lists only its own model.
-      secrets: {
-        load: vi.fn(async () =>
-          JSON.stringify({
-            kind: "openai_compatible",
-            baseUrl: "https://own.example.test/v1",
-            enabledModelIds: ["own"],
-          }),
-        ),
-      },
+      secrets: { load },
       ...(options.billing ? { billing: { modelCreditsEnabled: true } } : {}),
       env: {
         agentRuntime: "pi",
@@ -377,7 +435,7 @@ describe("the member catalog", () => {
           {
             provider: "openai-compatible",
             ciphertext: "admin-fixture",
-            models: ["fixture/endpoint-model"],
+            models: ["fixture/endpoint-model", "own"],
           },
         ],
       },
@@ -386,12 +444,32 @@ describe("the member catalog", () => {
       managed: true,
       label: "fixture/endpoint-model",
     });
+    // The member's own endpoint runs the id it lists.
+    expect(find(catalog, "openai-compatible", "own")?.managed).toBeUndefined();
+    // Their endpoint is read once, not once per served model.
+    expect(lastLoad).toHaveBeenCalledOnce();
+  });
+
+  it("keeps hosted credits on the environment's provider whatever default an admin saves", async () => {
+    const ctx = await contextFor([], {
+      billing: true,
+      settings: {
+        defaultModelProvider: "anthropic",
+        defaultModelId: "claude-opus-4-5",
+        modelConnections: [{ provider: "anthropic", ciphertext: "admin-fixture", models: [] }],
+      },
+    });
+    const validation = await ctx.botModelValidation(user);
+    expect(validation.hostedProvider).toBe("deepseek");
+    expect(validation.deployment.default).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-flash",
+    });
   });
 });
 
 describe("pins on a member's own endpoint", () => {
   async function save(settings: Record<string, unknown> | null) {
-    const { assertNoDanglingModelPins } = await import("./model-pins.js");
     const deps = {
       prisma: {
         bot: {

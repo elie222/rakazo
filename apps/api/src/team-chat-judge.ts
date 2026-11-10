@@ -269,7 +269,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
-    const fallback = deploymentModelRole("main", { settings, deployment: models.default }).primary;
+    const fallback = deploymentModelRole("main", { deployment: models.default }).primary;
     const credential = useOverride ? overrideCredential : (main?.credential ?? null);
     const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
     const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;

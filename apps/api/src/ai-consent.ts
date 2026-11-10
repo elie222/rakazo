@@ -7,6 +7,7 @@ import {
   deploymentConnection,
   deploymentConnectionSecret,
   deploymentServes,
+  deploymentStandIn,
   findDeploymentVoice,
   parseModelSecret,
   resolveMemberMainModel,
@@ -129,7 +130,7 @@ export async function aiConsentStatus(
   };
   if (modelsEnabled) {
     const deploymentModels = await currentDeploymentModels(deps, settings);
-    const deployment = deploymentModels.default.configured ? deploymentModels.default : null;
+    const deployment = deploymentStandIn(deploymentModels);
     const selected = await Promise.all(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
@@ -149,7 +150,7 @@ export async function aiConsentStatus(
             ? deploymentModels.default.provider
             : undefined,
           deploymentModels,
-          defaults: { settings, deployment },
+          defaults: { deployment },
         });
       }),
     );

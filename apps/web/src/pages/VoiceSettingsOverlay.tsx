@@ -644,7 +644,16 @@ export function VoiceSettingsOverlay({
           ) : null}
         </>
       ) : null}
-      {canConfigureDeployment && scope === "account" ? <DeploymentVoiceSettings /> : null}
+      {canConfigureDeployment && scope === "account" ? (
+        <DeploymentVoiceSettings
+          // An admin without a voice of their own speaks with the one just saved.
+          onSaved={() =>
+            void refresh(undefined, { keepForm: true }).catch((err: unknown) =>
+              setError(errorText(err, t`Could not load voice settings`)),
+            )
+          }
+        />
+      ) : null}
     </>
   );
 

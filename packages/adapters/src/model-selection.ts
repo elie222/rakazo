@@ -19,6 +19,7 @@ import {
   deploymentServedModels,
   deploymentServes,
   loadDeploymentModels,
+  resolveDeploymentModel,
 } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import type { StoredModelSecret } from "./model-secret.js";
@@ -262,28 +263,26 @@ export async function modelCredentialAuthKindsForSpace(
   };
   if (hosted && hostedProvider) empty.byProvider[hostedProvider] = "api_key";
   // A member's own connection for the provider wins; only the rest run on the deployment's.
-  // Compatible endpoints share one provider id, so theirs is decided model by model.
-  for (const served of deployment ? deploymentServedModels(deployment) : []) {
+  // Compatible endpoints share one provider id, so the member's keep only the ids they list.
+  const served = deployment ? deploymentServedModels(deployment) : [];
+  const ownCompatible =
+    connectedProviders.has(OPENAI_COMPATIBLE_PROVIDER_ID) &&
+    served.some((model) => model.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+      ? await compatibleModelIds(prisma, secretStore, scope.userId, credentials, preferences)
+      : undefined;
+  for (const model of served) {
     if (
-      connectedProviders.has(served.provider) &&
-      (served.provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
-        (await findConnectedModelCredential(
-          prisma,
-          secretStore,
-          scope,
-          served.provider,
-          served.id,
-          {
-            deployment: async () => deployment,
-          },
-        )))
+      connectedProviders.has(model.provider) &&
+      (model.provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
+        ownCompatible === "all" ||
+        ownCompatible?.has(model.id))
     )
       continue;
-    const models = empty.byModel[served.provider] ?? {};
-    models[served.id] = "api_key";
-    empty.byModel[served.provider] = models;
+    const models = empty.byModel[model.provider] ?? {};
+    models[model.id] = "api_key";
+    empty.byModel[model.provider] = models;
     empty.deploymentModels ??= new Set();
-    empty.deploymentModels.add(`${served.provider}:${served.id}`);
+    empty.deploymentModels.add(`${model.provider}:${model.id}`);
   }
   if (selections.length === 0) return empty;
 
@@ -331,6 +330,34 @@ export async function modelCredentialAuthKindsForSpace(
   if (hosted && hostedProvider && !auth.byProvider[hostedProvider])
     auth.byProvider[hostedProvider] = "api_key";
   return auth;
+}
+
+/**
+ * The ids the member's own compatible endpoints run, read once: each one's listed ids and the
+ * models its preferences name. "all" when a legacy endpoint without a list serves any id.
+ */
+async function compatibleModelIds(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<SecretStore, "load">,
+  userId: string,
+  credentials: readonly { provider: string; secretId: string }[],
+  preferences: readonly { modelId: string | null; credential: { provider: string } }[],
+): Promise<Set<string> | "all"> {
+  const ids = new Set<string>();
+  for (const preference of preferences)
+    if (
+      preference.modelId &&
+      canonicalPiProviderId(preference.credential.provider) === OPENAI_COMPATIBLE_PROVIDER_ID
+    )
+      ids.add(preference.modelId);
+  for (const credential of credentials) {
+    if (canonicalPiProviderId(credential.provider) !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    const secret = await loadModelSecret(prisma, secretStore, userId, credential.secretId);
+    if (secret?.kind !== "openai_compatible") continue;
+    if (secret.enabledModelIds === undefined) return "all";
+    for (const id of secret.enabledModelIds) ids.add(id);
+  }
+  return ids;
 }
 
 export function validateModelAuthAvailability(
@@ -981,7 +1008,8 @@ export async function hasHostedModelCredits(
   scope: { userId: string; spaceId: string },
   provider: string,
 ): Promise<boolean> {
-  const deployment = (await loadDeploymentModels(prisma)).default;
+  // Credits pay for the environment's provider only; an admin's settings never change which.
+  const deployment = resolveDeploymentModel();
   if (!deployment.configured || deployment.provider !== provider) return false;
   const space = await prisma.space.findFirst({
     where: {

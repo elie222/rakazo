@@ -2,6 +2,8 @@ import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { DeploymentModels, SavedDeploymentModels } from "@rakazo/adapters";
 import {
+  allowlistOpens,
+  allowlistWithProvider,
   buildModelConnectPlaintext,
   DEPLOYMENT_MODEL_SETTINGS,
   defaultCatalogModelId,
@@ -67,7 +69,7 @@ function environmentModels(env: ModelEnv): DeploymentModels {
  * time so every instance follows a change without a restart. Pass the settings row when it is
  * already loaded. The API never needs a key itself.
  */
-export async function currentDeploymentModels(
+export function currentDeploymentModels(
   deps: {
     prisma: PrismaClient;
     env: ModelEnv;
@@ -75,9 +77,10 @@ export async function currentDeploymentModels(
   },
   saved?: SavedDeploymentModels | null,
 ): Promise<DeploymentModels> {
-  const models = await loadDeploymentModels(deps.prisma, environmentModels(deps.env), saved);
   // Hosted credits keep serving members exactly as before deployment models.
-  return deps.billing?.modelCreditsEnabled ? { ...models, creditsOnly: true } : models;
+  return loadDeploymentModels(deps.prisma, environmentModels(deps.env), saved, {
+    creditsOnly: deps.billing?.modelCreditsEnabled || undefined,
+  });
 }
 
 const VERIFY_TIMEOUT_MS = 20_000;
@@ -126,6 +129,7 @@ async function view(deps: DeploymentModelDeps): Promise<DeploymentModelSettings>
       provider: connection.provider,
       ...describeDeploymentConnection(connection),
       saved: savedProviders.has(connection.provider),
+      open: allowlistOpens(models.allowed, connection.provider),
       ...(connection.provider === OPENAI_COMPATIBLE_PROVIDER_ID && endpoint
         ? {
             baseUrl: endpoint.baseUrl,
@@ -173,6 +177,20 @@ export async function updateDeploymentModelSettings(
       input.allowedModels === null
         ? null
         : parseModelAllowlist(input.allowedModels.join(",")).join(",");
+  if (input.open) {
+    // A switch opens or closes one connection; the list it edits is the one in effect.
+    const models = await currentDeploymentModels(deps);
+    const allowed =
+      typeof data.allowedModels === "string"
+        ? parseModelAllowlist(data.allowedModels)
+        : models.allowed;
+    data.allowedModels = allowlistWithProvider(
+      allowed,
+      models.connections.map((connection) => connection.provider),
+      input.open.provider,
+      input.open.open,
+    ).join(",");
+  }
   await runAsSystem("an admin sets the deployment's models", () =>
     deps.prisma.deploymentSettings.upsert({
       where: { id: "default" },
@@ -306,6 +324,16 @@ export async function connectDeploymentModel(
               create: { provider, ciphertext: stored.ciphertext, models },
               update: { ciphertext: stored.ciphertext, models },
             });
+            // A saved default the endpoint no longer lists goes, so the environment's applies.
+            if (models.length)
+              await tx.deploymentSettings.updateMany({
+                where: {
+                  id: "default",
+                  defaultModelProvider: provider,
+                  defaultModelId: { notIn: models },
+                },
+                data: { defaultModelProvider: null, defaultModelId: null },
+              });
             return current?.ciphertext;
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },

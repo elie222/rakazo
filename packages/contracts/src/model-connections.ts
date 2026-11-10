@@ -364,6 +364,8 @@ export const DeploymentModelSettingsSchema = z.object({
       name: z.string(),
       /** Saved in Settings, so an admin can replace or remove it. */
       saved: z.boolean(),
+      /** Members may use its models besides the default: all of them, or ones the list names. */
+      open: z.boolean(),
       /** The models it runs. */
       models: z.array(z.object({ id: z.string(), label: z.string() })),
       /** An OpenAI-compatible endpoint's URL and limits. */
@@ -388,6 +390,8 @@ export type DeploymentModelSettings = z.infer<typeof DeploymentModelSettingsSche
 export const DeploymentModelUpdateSchema = z.object({
   defaultModel: DeploymentModelChoiceSchema.nullable().optional(),
   allowedModels: z.array(z.string().trim().min(1).max(600)).max(500).nullable().optional(),
+  /** Opens all of one connection's models to members, or closes every one of them. */
+  open: z.object({ provider: z.string().trim().min(1).max(64), open: z.boolean() }).optional(),
 });
 export type DeploymentModelUpdate = z.infer<typeof DeploymentModelUpdateSchema>;
 

@@ -78,6 +78,7 @@ const settings = {
       provider: "deepseek",
       name: "DeepSeek",
       saved: false,
+      open: true,
       models: [
         { id: "deepseek-flash", label: "DeepSeek Flash" },
         { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
@@ -87,6 +88,7 @@ const settings = {
       provider: "anthropic",
       name: "Anthropic",
       saved: true,
+      open: false,
       models: [{ id: "claude-opus-4-5", label: "Claude Opus 4.5" }],
     },
   ],
@@ -146,19 +148,21 @@ it("shows the environment's default and saves an admin's choice", async () => {
   });
 });
 
-it("opens or closes a connection's models to members, keeping the rest of the list", async () => {
+it("asks the server to open or close a connection's models", async () => {
   await render();
   const deepseek = byLabel<HTMLInputElement>("DeepSeek");
   const anthropic = byLabel<HTMLInputElement>("Anthropic");
   expect(deepseek.checked).toBe(true);
   expect(anthropic.checked).toBe(false);
   await act(async () => anthropic.click());
-  expect(deployment.update).toHaveBeenCalledWith({
-    allowedModels: ["deepseek:*", "anthropic:*"],
+  expect(deployment.update).toHaveBeenCalledWith({ open: { provider: "anthropic", open: true } });
+  await act(async () => deepseek.click());
+  expect(deployment.update).toHaveBeenLastCalledWith({
+    open: { provider: "deepseek", open: false },
   });
 });
 
-it("shows a connection whose models the list names as open, and resets a saved list", async () => {
+it("resets a list saved in Settings", async () => {
   const named = {
     ...settings,
     allowedModels: ["anthropic:claude-opus-4-5"],
@@ -167,10 +171,6 @@ it("shows a connection whose models the list names as open, and resets a saved l
   deployment.get.mockResolvedValue(named);
   deployment.update.mockResolvedValue(named);
   await render();
-  const anthropic = byLabel<HTMLInputElement>("Anthropic");
-  expect(anthropic.checked).toBe(true);
-  await act(async () => anthropic.click());
-  expect(deployment.update).toHaveBeenLastCalledWith({ allowedModels: [] });
   const reset = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Reset",
   )!;

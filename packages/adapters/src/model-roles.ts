@@ -16,9 +16,11 @@ import { findConnectedModelCredential } from "./model-selection.js";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
-  /** The deployment's saved default, ahead of the environment's. */
-  settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
-  /** The deployment model in effect (an admin's, else the environment's), when it can run. */
+  /**
+   * The deployment's default model in effect (an admin's, else the environment's), when it can
+   * run. Pass DeploymentModels.default, never the raw settings row, so a saved default no
+   * connection runs never stands in for anyone.
+   */
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
 };
@@ -37,9 +39,8 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
-  const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
-  const modelId =
-    usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+  const provider = defaults.deployment?.provider;
+  const modelId = usableModelId(defaults.deployment?.model);
   return { primary: provider && modelId ? { provider, modelId } : null, backups: [] };
 }
 

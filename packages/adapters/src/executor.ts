@@ -85,7 +85,11 @@ import {
   selectRunConnections,
 } from "./connection-context.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
-import { DEPLOYMENT_MODEL_SETTINGS, deploymentServes } from "./deployment-model.js";
+import {
+  DEPLOYMENT_MODEL_SETTINGS,
+  deploymentServes,
+  deploymentStandIn,
+} from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
@@ -895,7 +899,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           );
         }
         const deploymentModels = await runDeploymentModels(deps, settings);
-        const runDeployment = deploymentModels.default.configured ? deploymentModels.default : null;
+        const runDeployment = deploymentStandIn(deploymentModels);
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const pinError =
           !pinnedComputerModels &&
@@ -925,7 +929,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 ? deploymentModels.default.provider
                 : undefined,
               deploymentModels,
-              defaults: { settings, deployment: runDeployment },
+              defaults: { deployment: runDeployment },
             });
         const selectedProvider = selected.provider ?? runtimeFallback?.provider;
         const selectedModelId = selected.id ?? runtimeFallback?.id;
@@ -966,7 +970,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const backups = runModelBackups(
           deps,
           run,
-          { settings, deployment: runDeployment },
+          { deployment: runDeployment },
           scripted,
           registerRunSecrets,
         );

@@ -37,27 +37,6 @@ const EMPTY_DRAFT: Draft = {
 
 const choiceKey = (provider: string, modelId: string) => `${provider}\n${modelId}`;
 
-/** Whether members may use any of a connection's models: all of them, or ones the list names. */
-function allows(allowed: readonly string[], provider: string) {
-  return allowed.some((entry) => entry === "*" || entry.startsWith(`${provider}:`));
-}
-
-/** The allowlist with one connection's models opened or closed, other entries kept. */
-function withProvider(
-  allowed: readonly string[],
-  providers: readonly string[],
-  provider: string,
-  open: boolean,
-) {
-  // "Every connection" becomes one entry per connection, so one of them can close.
-  const expanded = allowed.includes("*")
-    ? [...allowed.filter((entry) => entry !== "*"), ...providers.map((id) => `${id}:*`)]
-    : [...allowed];
-  // Opening a connection opens all of its models; closing it closes the ones the list named too.
-  const rest = expanded.filter((entry) => !entry.startsWith(`${provider}:`));
-  return open ? [...rest, `${provider}:*`] : rest;
-}
-
 const positive = (value: string) => {
   const number = Number(value.trim());
   return value.trim() && Number.isSafeInteger(number) && number > 0 ? number : undefined;
@@ -128,7 +107,6 @@ export function DeploymentModelSettings() {
     : settings.connections
         .find((connection) => connection.provider === effective?.provider)
         ?.models.find((model) => model.id === effective?.modelId)?.label;
-  const connectionProviders = settings.connections.map((connection) => connection.provider);
   const adding = draft
     ? settings.providers.find((provider) => provider.id === draft.provider)
     : undefined;
@@ -255,16 +233,11 @@ export function DeploymentModelSettings() {
                     ) : null}
                     <Switch
                       id={`${defaultId}-${connection.provider}`}
-                      checked={allows(settings.effectiveAllowedModels, connection.provider)}
+                      checked={connection.open}
                       onCheckedChange={(open) =>
                         void run(() =>
                           rpc.models.deployment.update({
-                            allowedModels: withProvider(
-                              settings.effectiveAllowedModels,
-                              connectionProviders,
-                              connection.provider,
-                              open,
-                            ),
+                            open: { provider: connection.provider, open },
                           }),
                         )
                       }

@@ -18,8 +18,12 @@ const voice = vi.hoisted(() => ({
 }));
 
 const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
+const deploymentVoice = vi.hoisted(() => ({ onSaved: undefined as (() => void) | undefined }));
 vi.mock("../components/DeploymentVoiceSettings", () => ({
-  DeploymentVoiceSettings: () => <div data-testid="deployment-voice-settings" />,
+  DeploymentVoiceSettings: ({ onSaved }: { onSaved?: () => void }) => {
+    deploymentVoice.onSaved = onSaved;
+    return <div data-testid="deployment-voice-settings" />;
+  },
 }));
 vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
 vi.mock("../lib/rpc", () => ({
@@ -945,6 +949,22 @@ it("shows admins the deployment's voice on the account page only", async () => {
       });
       expect(Boolean(block())).toBe(shown);
     }
+    // A saved deployment voice refreshes what this page says can speak.
+    await act(async () => {
+      root.render(
+        withQueries(
+          <VoiceSettingsOverlay
+            embedded
+            onClose={() => undefined}
+            scope="account"
+            canConfigureDeployment
+          />,
+        ),
+      );
+    });
+    const reads = voice.status.mock.calls.length;
+    await act(async () => deploymentVoice.onSaved?.());
+    expect(voice.status.mock.calls.length).toBeGreaterThan(reads);
   } finally {
     await act(async () => root.unmount());
     container.remove();

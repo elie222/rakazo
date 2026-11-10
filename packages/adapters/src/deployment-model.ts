@@ -116,7 +116,10 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-export type DeploymentModel = ReturnType<typeof resolveDeploymentModel>;
+export type DeploymentModel = ReturnType<typeof resolveDeploymentModel> & {
+  /** An admin's saved choice, which stands in for members even where only a run can key it. */
+  chosen?: boolean;
+};
 
 /** A model connection the deployment owns. */
 export type DeploymentConnection = {
@@ -178,6 +181,33 @@ export function parseModelAllowlist(value: string | null | undefined): string[] 
   return [...new Set(entries)];
 }
 
+/** Whether the allowlist opens any of a provider's models: all of them, or ones it names. */
+export function allowlistOpens(allowed: readonly string[], provider: string): boolean {
+  const canonical = canonicalPiProviderId(provider);
+  return allowed.some((entry) => entry === "*" || entry.startsWith(`${canonical}:`));
+}
+
+/**
+ * The allowlist with all of one provider's models opened, or every one of them closed, and
+ * other entries kept. `*` becomes one entry per connected provider, so one of them can close.
+ */
+export function allowlistWithProvider(
+  allowed: readonly string[],
+  providers: readonly string[],
+  provider: string,
+  open: boolean,
+): string[] {
+  const canonical = canonicalPiProviderId(provider);
+  const expanded = allowed.includes("*")
+    ? [
+        ...allowed.filter((entry) => entry !== "*"),
+        ...providers.map((id) => `${canonicalPiProviderId(id)}:*`),
+      ]
+    : [...allowed];
+  const rest = expanded.filter((entry) => !entry.startsWith(`${canonical}:`));
+  return [...new Set(open ? [...rest, `${canonical}:*`] : rest)];
+}
+
 /** The deployment's models as its environment configures them. Read once per process. */
 export function environmentDeploymentModels(
   env: NodeJS.ProcessEnv = process.env,
@@ -225,11 +255,14 @@ export function defaultOnlyDeploymentModels(fallback: DeploymentModel): Deployme
 /**
  * Applies an admin's settings over the environment's: their connections replace the
  * environment's for the same provider, and their default model and allowlist replace the
- * environment's when set.
+ * environment's when set. A saved default an admin's connection no longer lists, as after an
+ * endpoint edit, gives way to the environment's. While model credits bill, the default stays the
+ * environment's, the provider credits pay for.
  */
 export function applyDeploymentModelSettings(
   environment: DeploymentModels,
   saved: SavedDeploymentModels | null | undefined,
+  options: { creditsOnly?: boolean } = {},
 ): DeploymentModels {
   const adminConnections = saved?.modelConnections ?? [];
   const byProvider = new Map(environment.connections.map((entry) => [entry.provider, entry]));
@@ -241,40 +274,63 @@ export function applyDeploymentModelSettings(
       ...(row.models?.length ? { models: row.models } : {}),
     });
   const connections = [...byProvider.values()];
+  const creditsOnly = options.creditsOnly ?? saved?.modelCreditsEnabled === true;
   const env = environment.default;
-  const provider = saved?.defaultModelProvider?.trim() || env.provider;
-  const model = usableModelId(saved?.defaultModelId) ?? env.model;
-  const connection = byProvider.get(provider);
-  const own = connection?.source === "settings";
+  const keyFor = (provider: string) => {
+    const connection = byProvider.get(provider);
+    const environmentKey = provider === env.provider && connection?.source !== "settings";
+    return {
+      key: environmentKey ? env.key : connection?.key,
+      hostCredentials: environmentKey && env.hostCredentials,
+    };
+  };
   // The environment's own default keeps exactly the rules it has always had.
+  const environmentDefault: DeploymentModel = {
+    ...env,
+    ...keyFor(env.provider),
+    configured: env.configured || byProvider.get(env.provider)?.source === "settings",
+  };
+  const provider = saved?.defaultModelProvider?.trim();
+  const model = usableModelId(saved?.defaultModelId) ?? env.model;
+  const connection = provider ? byProvider.get(provider) : undefined;
+  const dropped =
+    connection?.source === "settings" &&
+    Boolean(connection.models) &&
+    !connection.models!.includes(model);
   const configured =
     provider === env.provider && model === env.model
-      ? env.configured || own
-      : Boolean(connection && (!connection.models || connection.models.includes(model)));
-  const environmentKey = provider === env.provider && !own;
+      ? environmentDefault.configured
+      : Boolean(connection && !dropped);
   return {
-    default: {
-      provider,
-      model,
-      key: environmentKey ? env.key : connection?.key,
-      configured,
-      hostCredentials: environmentKey && env.hostCredentials,
-    },
+    default:
+      provider && !dropped && !creditsOnly
+        ? { provider, model, ...keyFor(provider), configured, chosen: true }
+        : environmentDefault,
     connections,
     allowed:
       saved?.allowedModels != null ? parseModelAllowlist(saved.allowedModels) : environment.allowed,
-    ...(saved?.modelCreditsEnabled ? { creditsOnly: true } : {}),
+    ...(creditsOnly ? { creditsOnly: true } : {}),
   };
 }
 
 /**
+ * The default that stands in for a member who chose nothing: one the deployment can run, or an
+ * admin's saved choice, which the run then keys or refuses as it always has.
+ */
+export function deploymentStandIn(models: DeploymentModels): DeploymentModel | null {
+  return models.default.configured || models.default.chosen ? models.default : null;
+}
+
+/**
  * Reads an admin's settings at use time, so every process follows a change without a restart.
- * Pass the settings row when it is already loaded, with DEPLOYMENT_MODEL_SETTINGS included.
+ * Pass the settings row when it is already loaded, with DEPLOYMENT_MODEL_SETTINGS included, and
+ * whether model credits bill when the caller knows better than that row.
  */
 export async function loadDeploymentModels(
   prisma: PrismaClient,
   environment: DeploymentModels = environmentDeploymentModels(),
   saved?: SavedDeploymentModels | null,
+  options: { creditsOnly?: boolean } = {},
 ): Promise<DeploymentModels> {
   const settings =
     saved !== undefined
@@ -285,7 +341,7 @@ export async function loadDeploymentModels(
             include: DEPLOYMENT_MODEL_SETTINGS,
           }),
         );
-  return applyDeploymentModelSettings(environment, settings);
+  return applyDeploymentModelSettings(environment, settings, options);
 }
 
 /** The deployment's connection for a provider. */

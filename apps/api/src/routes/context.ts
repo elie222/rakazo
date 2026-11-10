@@ -8,9 +8,9 @@ import {
   connectedModelSeesImages,
   connectionServesModel,
   createFaviconResolver,
-  DEPLOYMENT_MODEL_SETTINGS,
   decisionModelCatalog,
   deploymentModelRole,
+  deploymentStandIn,
   findConnectedModelCredential,
   hiddenCatalogModel,
   kickModelCredentialRefresh,
@@ -226,22 +226,11 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
-    const saved =
-      role === "main"
-        ? await deps.prisma.deploymentSettings.findUnique({
-            where: { id: "default" },
-            include: DEPLOYMENT_MODEL_SETTINGS,
-          })
-        : undefined;
-    const fallback = (await currentDeploymentModels(deps, saved)).default;
+    const models = await currentDeploymentModels(deps);
     const defaults =
       role === "main"
-        ? {
-            settings: saved,
-            // Only a model the deployment can run stands in for the member's choice.
-            deployment: fallback.configured ? fallback : null,
-          }
-        : { env: process.env, deployment: fallback };
+        ? { deployment: deploymentStandIn(models) }
+        : { env: process.env, deployment: models.default };
     return { ...settings, deploymentPrimary: deploymentModelRole(role, defaults).primary };
   };
   /**

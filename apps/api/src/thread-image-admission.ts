@@ -73,10 +73,7 @@ export async function assertThreadImageInput(
     main: configuration
       ? await resolveMemberMainModel({ prisma, secretStore: configuration.secrets }, actor)
       : await mainModelWithoutSecrets(prisma, actor),
-    defaults: {
-      settings: await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-      deployment: configuration?.deployment ?? null,
-    },
+    defaults: { deployment: configuration?.deployment ?? null },
     hostedProvider: configuration?.hostedProvider,
     deploymentModels: configuration?.deploymentModels,
   });

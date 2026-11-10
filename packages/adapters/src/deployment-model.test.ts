@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  allowlistOpens,
+  allowlistWithProvider,
   applyDeploymentModelSettings,
   defaultOnlyDeploymentModels,
   deploymentConnection,
@@ -325,6 +327,50 @@ describe("deployment models", () => {
         keyless: false,
       },
     ]);
+  });
+
+  it("gives a saved default no connection runs way to the environment's", () => {
+    const environment = environmentDeploymentModels(keys);
+    const models = applyDeploymentModelSettings(environment, {
+      defaultModelProvider: "openai-compatible",
+      defaultModelId: "dropped",
+      modelConnections: [
+        { provider: "openai-compatible", ciphertext: "fixture", models: ["kept"] },
+      ],
+    });
+    expect(models.default).toEqual(environment.default);
+  });
+
+  it("keeps the environment's default while model credits bill", () => {
+    const environment = environmentDeploymentModels(keys);
+    const saved = {
+      defaultModelProvider: "anthropic",
+      defaultModelId: "claude-opus-4-5",
+      modelCreditsEnabled: true,
+    };
+    expect(applyDeploymentModelSettings(environment, saved).default).toEqual(environment.default);
+    expect(
+      applyDeploymentModelSettings(environment, saved, { creditsOnly: false }).default,
+    ).toMatchObject({ provider: "anthropic", model: "claude-opus-4-5" });
+  });
+
+  it("opens or closes one provider's models in the list", () => {
+    expect(allowlistOpens(["anthropic:claude-opus-4-5"], "anthropic")).toBe(true);
+    expect(allowlistOpens(["*"], "deepseek")).toBe(true);
+    expect(allowlistOpens(["deepseek:*"], "anthropic")).toBe(false);
+    const providers = ["anthropic", "deepseek"];
+    expect(
+      allowlistWithProvider(["anthropic:claude-opus-4-5"], providers, "anthropic", true),
+    ).toEqual(["anthropic:*"]);
+    expect(allowlistWithProvider(["*"], providers, "anthropic", false)).toEqual(["deepseek:*"]);
+    expect(
+      allowlistWithProvider(
+        ["deepseek:*", "anthropic:claude-opus-4-5"],
+        providers,
+        "anthropic",
+        false,
+      ),
+    ).toEqual(["deepseek:*"]);
   });
 
   it("parses allowlist entries with canonical providers", () => {

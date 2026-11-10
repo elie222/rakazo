@@ -20,6 +20,7 @@ import {
   deploymentConnection,
   deploymentConnectionSecret,
   deploymentServes,
+  deploymentStandIn,
   loadDeploymentModels,
   resolveDeploymentModel,
 } from "./deployment-model.js";
@@ -75,7 +76,7 @@ export function isTerminalModelSetupError(error: unknown): boolean {
  * The deployment's models now: the environment's as this process read it, with an admin's
  * settings applied. Pass the settings row when it is already loaded.
  */
-export async function runDeploymentModels(
+export function runDeploymentModels(
   deps: Pick<
     ExecutorDeps,
     | "prisma"
@@ -93,11 +94,10 @@ export async function runDeploymentModels(
       key: deps.deploymentModelKey,
       configured: Boolean(deps.deploymentModelConfigured),
     });
-  const models = await loadDeploymentModels(deps.prisma, environment, saved);
   // A process told whether model credits bill knows better than the settings row it was given.
-  return deps.billingEnabled === undefined
-    ? models
-    : { ...models, creditsOnly: deps.billingEnabled };
+  return loadDeploymentModels(deps.prisma, environment, saved, {
+    creditsOnly: deps.billingEnabled,
+  });
 }
 
 /** The default model's provider while hosted credits pay for it. */
@@ -145,10 +145,7 @@ export async function fleetPrepareDeps(
           main,
           hostedProvider,
           deploymentModels: models,
-          defaults: {
-            settings,
-            deployment: models.default.configured ? models.default : null,
-          },
+          defaults: { deployment: deploymentStandIn(models) },
         });
         return { provider: selected.provider ?? null, model: selected.id ?? null };
       },
@@ -156,23 +153,32 @@ export async function fleetPrepareDeps(
   };
 }
 
+/** The default model the environment configures, before any admin setting. */
+function environmentDefault(deps: Pick<ExecutorDeps, "deploymentModels">) {
+  return deps.deploymentModels?.default ?? resolveDeploymentModel();
+}
+
 /**
- * A deployment key is a bearer credential for exactly one vendor, so it is handed out only
- * for the provider the default model runs on, or a model the deployment serves members, and
- * only that provider's own. A provider named by a bot override gets no key rather than
- * another vendor's.
+ * A deployment key is a bearer credential for exactly one vendor, so it is handed out only for
+ * that vendor's models a member may run on it: the default model or one the allowlist names.
+ * Hosted credits, checked by the caller, fund their provider's models. The environment's own key
+ * for its default provider keeps serving any of that provider's models, as it always has.
  */
 async function deploymentKeyFor(
   deps: ExecutorDeps,
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
+  hostedCredits = false,
 ) {
   const models = await runDeploymentModels(deps);
-  const serves =
-    canonicalPiProviderId(provider) === canonicalPiProviderId(models.default.provider) ||
-    deploymentServes(models, provider, modelId);
-  const connection = serves ? deploymentConnection(models, provider) : undefined;
+  const environmentProvider =
+    canonicalPiProviderId(provider) === canonicalPiProviderId(environmentDefault(deps).provider);
+  const candidate = deploymentConnection(models, provider);
+  const entitled =
+    deploymentServes(models, provider, modelId) ||
+    (environmentProvider && (hostedCredits || candidate?.source === "environment"));
+  const connection = entitled ? candidate : undefined;
   const secret = await deploymentConnectionSecret(deps.secretStore, connection);
   if (!secret || secret.kind === "oauth") {
     cloudflareProviderEnv({ provider });
@@ -240,7 +246,7 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   if (billingEnabled && (await hasHostedModelCredits(deps.prisma, scope, provider))) {
     args[3] = null;
     // Funded managed backups use deployment credentials just like the primary.
-    args[7] = { ...args[7], requireStoredSecret: false };
+    args[7] = { ...args[7], requireStoredSecret: false, hostedCredits: true };
   } else if (
     !args[3] &&
     args[7]?.requireStoredSecret &&
@@ -263,8 +269,9 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     if (credential) return false;
     const models = await runDeploymentModels(deps);
     if (!deploymentConnection(models, provider)?.keyless) return false;
+    const environment = environmentDefault(deps);
     return (
-      (models.default.hostCredentials && models.default.provider === provider) ||
+      (environment.hostCredentials && environment.provider === provider) ||
       deploymentServes(models, provider, args[5])
     );
   };
@@ -295,7 +302,10 @@ async function resolveModelKeyMaterial(
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
-  { requireStoredSecret = false }: { requireStoredSecret?: boolean } = {},
+  {
+    requireStoredSecret = false,
+    hostedCredits = false,
+  }: { requireStoredSecret?: boolean; hostedCredits?: boolean } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -335,7 +345,7 @@ async function resolveModelKeyMaterial(
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
-        return deploymentKeyFor(deps, provider, modelId, registerSecrets);
+        return deploymentKeyFor(deps, provider, modelId, registerSecrets, hostedCredits);
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -452,7 +462,7 @@ async function resolveModelKeyMaterial(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  return deploymentKeyFor(deps, provider, modelId, registerSecrets);
+  return deploymentKeyFor(deps, provider, modelId, registerSecrets, hostedCredits);
 }
 
 /** Translate resolved credentials and capabilities consistently for every run path. */
@@ -619,7 +629,7 @@ export async function resolveRunModel(
     main,
     hostedProvider: await hostedDeploymentProvider(deps, models),
     deploymentModels: models,
-    defaults: { settings, deployment: models.default.configured ? models.default : null },
+    defaults: { deployment: deploymentStandIn(models) },
   });
   const { credential, thinkingLevel } = selected;
   let { provider, id } = selected;

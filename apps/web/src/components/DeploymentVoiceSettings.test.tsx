@@ -134,7 +134,8 @@ it("changes the voice keeping the saved key, and clears back to the default", as
   deployment.get.mockResolvedValue(saved);
   deployment.update.mockResolvedValueOnce({ ...saved, voiceId: "voice-b" });
   deployment.update.mockResolvedValueOnce(unset);
-  await act(async () => root.render(<DeploymentVoiceSettings />));
+  const onSaved = vi.fn();
+  await act(async () => root.render(<DeploymentVoiceSettings onSaved={onSaved} />));
 
   await act(async () => enter("Voice", "voice-b"));
   await act(async () => host.querySelector("form")?.requestSubmit());
@@ -149,6 +150,8 @@ it("changes the voice keeping the saved key, and clears back to the default", as
   expect(deployment.update).toHaveBeenLastCalledWith({ provider: null, apiKey: "" });
   expect(field("API key")).toBeNull();
   expect(field("Voice")).toBeNull();
+  // The page around it hears about the save and the reset.
+  expect(onSaved).toHaveBeenCalledTimes(2);
 });
 
 it("shows why a save failed", async () => {

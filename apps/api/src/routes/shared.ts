@@ -129,7 +129,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
     deployment.configured && (!funding?.creditPurchasesEnabled || creditsAvailable);
   return {
     main,
-    model: main ?? deploymentModelRole("main", { settings, deployment }).primary,
+    model: main ?? deploymentModelRole("main", { deployment }).primary,
     settings,
     /** The default model in effect: an admin's choice, else the environment's. */
     deployment,

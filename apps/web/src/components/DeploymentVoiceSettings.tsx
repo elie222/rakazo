@@ -21,7 +21,12 @@ function draftFrom(settings: Settings): Draft {
 }
 
 /** Admins choose the voice everyone without their own connection uses. The key never returns. */
-export function DeploymentVoiceSettings() {
+export function DeploymentVoiceSettings({
+  onSaved,
+}: {
+  /** After a save or reset, so the rest of Voice settings shows what now speaks. */
+  onSaved?: () => void;
+} = {}) {
   const { t } = useLingui();
   const providerId = useId();
   const apiKeyId = useId();
@@ -86,6 +91,7 @@ export function DeploymentVoiceSettings() {
       if (!alive.current) return;
       show(next);
       setSaved(true);
+      onSaved?.();
     } catch (caught) {
       if (alive.current) setError(errorText(caught, t`Could not connect this voice provider`));
     } finally {
