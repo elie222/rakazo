@@ -64,7 +64,6 @@ vi.mock("./device-voice", () => ({
   saveDeviceVoiceEnabled: vi.fn(),
 }));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
 vi.mock("../components/row-accessories", () => ({ Checkmark: () => null, Chevron: () => null }));

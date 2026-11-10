@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
 import { activitySections } from "@rakazo/core";
 import type { Href } from "expo-router";
@@ -5,7 +6,6 @@ import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { activityPreview, activityStatusLabel, formatActivityRelativeTime } from "../lib/activity";
-import { useI18n } from "../lib/i18n";
 import type { InboxRowAction } from "../lib/inbox-swipe";
 import { inboxRowActionList } from "../lib/inbox-swipe";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
@@ -43,7 +43,7 @@ export function ActivitySection({
   swipe?: ActivitySwipe;
 }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const groupsById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
   // Only chats in the inbox, so a chat archived from here leaves at once, like its inbox row.
@@ -87,7 +87,7 @@ export function ActivitySection({
     if (run.groupId) {
       openChat({
         pathname: "/group-thread",
-        params: { groupId: run.groupId, name: run.groupName ?? t("Group") },
+        params: { groupId: run.groupId, name: run.groupName ?? t`Group` },
       });
       return;
     }
@@ -122,17 +122,17 @@ export function ActivitySection({
   return (
     <View style={styles.activitySection}>
       {sections.attention.length > 0 ? (
-        <Fold {...fold("attention", t("Needs attention"), sections.attention.length, true)}>
+        <Fold {...fold("attention", t`Needs attention`, sections.attention.length, true)}>
           {runRows(sections.attention)}
         </Fold>
       ) : null}
       {sections.working.length > 0 ? (
-        <Fold {...fold("working", t("Working"), sections.working.length, false)}>
+        <Fold {...fold("working", t`Working`, sections.working.length, false)}>
           {runRows(sections.working)}
         </Fold>
       ) : null}
       {unreadCount > 0 ? (
-        <Fold {...fold("unread", t("Unread"), unreadCount, false)}>
+        <Fold {...fold("unread", t`Unread`, unreadCount, false)}>
           {sections.unreadGroups.map((group) =>
             swipeable({ kind: "group", chat: group }, (actions) => (
               <ConversationRow
@@ -178,7 +178,7 @@ export function ActivitySection({
         </Fold>
       ) : null}
       {sections.recent.length > 0 ? (
-        <Fold {...fold("recent", t("Recent"), sections.recent.length, true)}>
+        <Fold {...fold("recent", t`Recent`, sections.recent.length, true)}>
           {runRows(sections.recent, true)}
         </Fold>
       ) : null}

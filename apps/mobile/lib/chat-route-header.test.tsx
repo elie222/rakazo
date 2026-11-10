@@ -27,10 +27,9 @@ beforeEach(() => {
   push.mockClear();
   setInboxHidden.mockClear();
 });
-const t = (text: string) => text;
 const alone: ChatSplit = { split: false, inboxHidden: false };
 const header = (params: object, split = alone, canInvite = false) =>
-  chatRouteHeader({ key: "thread-1", params }, t, split, canInvite);
+  chatRouteHeader({ key: "thread-1", params }, split, canInvite);
 const rightItems = (options: ReturnType<typeof chatRouteHeader>) =>
   options.unstable_headerRightItems?.({ tintColor: undefined } as never) ?? [];
 const leftItems = (options: ReturnType<typeof chatRouteHeader>) =>

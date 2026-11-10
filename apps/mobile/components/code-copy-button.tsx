@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
@@ -9,7 +9,7 @@ const COPIED_MS = 2000;
 
 /** Copies a chat code block. The icon turns into a check for a moment once the code is copied. */
 export function CodeCopyButton({ code }: { code: string }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -28,7 +28,7 @@ export function CodeCopyButton({ code }: { code: string }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={copied ? t("Copied") : t("Copy code")}
+      accessibilityLabel={copied ? t`Copied` : t`Copy code`}
       onPress={copy}
       style={({ pressed }) => [styles.button, { opacity: pressed ? 0.6 : 1 }]}
     >

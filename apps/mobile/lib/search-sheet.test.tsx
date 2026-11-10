@@ -96,10 +96,6 @@ vi.mock("./appearance", () => ({
   resolveMobileAppearance: () => "dark",
 }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text, locale: "en" }),
-}));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { dismiss: state.dismiss },
 }));

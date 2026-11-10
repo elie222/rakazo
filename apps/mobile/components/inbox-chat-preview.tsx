@@ -8,8 +8,8 @@ import {
   padding,
   shapes,
 } from "@expo/ui/swift-ui/modifiers";
+import { useLingui } from "@lingui/react/macro";
 import type { ReactElement } from "react";
-import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 
 export type InboxChatPreviewProps = {
@@ -21,7 +21,7 @@ export type InboxChatPreviewProps = {
 
 /** The card the system context menu lifts above an inbox row: the chat and its last message. */
 export function InboxChatPreview({ title, message, avatar }: InboxChatPreviewProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const text = message?.trim() ?? "";
   return (
     <VStack
@@ -53,7 +53,7 @@ export function InboxChatPreview({ title, message, avatar }: InboxChatPreviewPro
             padding({ all: 16 }),
           ]}
         >
-          {t("No messages yet")}
+          {t`No messages yet`}
         </Text>
       )}
     </VStack>

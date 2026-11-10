@@ -220,7 +220,6 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({ link: "token-link" }),
   useResolvedAppearance: () => "light",
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 const dictation = vi.hoisted(() => ({
   status: "idle",
   toggle: vi.fn(),
@@ -315,8 +314,15 @@ describe("thread composer isolation", () => {
   function type(value: string) {
     act(() => input.change(value));
   }
+  /** A button by its label; `{name}` in it stands for any filled-in name. */
+  function labelled(label: string) {
+    const [before, after] = label.split("{name}");
+    if (after === undefined) return `button[aria-label="${label}"]`;
+    // An empty prefix or suffix matches nothing in CSS, so only a non-empty one is checked.
+    return `button[aria-label]${before ? `[aria-label^="${before}"]` : ""}${after ? `[aria-label$="${after}"]` : ""}`;
+  }
   function press(label: string) {
-    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    const button = container.querySelector<HTMLButtonElement>(labelled(label))!;
     expect(button).not.toBeNull();
     act(() => button.click());
   }
@@ -363,7 +369,7 @@ describe("thread composer isolation", () => {
     expect(field().value).toBe("ask @Helper now");
     expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
     expect(container.querySelector('[data-testid="mention-chip"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Remove mention {name}"]')).toBeNull();
+    expect(container.querySelector('button[aria-label^="Remove mention "]')).toBeNull();
   });
 
   it("tints a mention in the link color without a background", () => {
@@ -443,7 +449,7 @@ describe("thread composer isolation", () => {
   });
 
   function pickerRows() {
-    return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]')];
+    return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]')];
   }
 
   it("lists one row per bot with its avatar and name, at most five", () => {
@@ -570,7 +576,7 @@ describe("thread composer isolation", () => {
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
     select(10);
-    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]');
     expect(options).toHaveLength(2);
     act(() => options[1]!.click());
     expect(container.querySelector("input")!.value).toBe("before @HelperOther ");
@@ -578,7 +584,7 @@ describe("thread composer isolation", () => {
   });
 
   function pickMentionAt(index: number) {
-    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]');
     expect(options.length).toBeGreaterThan(index);
     act(() => options[index]!.click());
   }

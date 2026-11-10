@@ -1,5 +1,7 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type {
   buildComposerMentionOptions,
@@ -40,7 +42,6 @@ import {
 import { useComposerDictation } from "../lib/composer-dictation";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { BotAvatar } from "./bot-avatar";
@@ -126,7 +127,7 @@ export function ThreadComposer({
   // The input text stops growing at MAX_FONT_SCALE, so its height limits stop there too.
   const textScale = Math.min(fontScale, MAX_FONT_SCALE);
   const colorScheme = useResolvedAppearance();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const inputRef = useRef<TextInputInstance>(null);
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
@@ -278,11 +279,21 @@ export function ThreadComposer({
           })
           .slice(0, 8)
       : [];
+  function slashActionLabel(id: SlashActionId) {
+    switch (id) {
+      case "chat-settings":
+        return t`Chat Settings`;
+      case "settings-general":
+        return t`Settings: General`;
+      case "settings-usage":
+        return t`Settings: Usage`;
+    }
+  }
   const slashActionOptions =
     slashQuery !== null && mentionQuery === null
       ? SLASH_ACTIONS.filter((action) => {
           if (!slashQueryNormalized) return true;
-          const label = t(action.label);
+          const label = slashActionLabel(action.id);
           return (
             action.label.toLowerCase().includes(slashQueryNormalized) ||
             label.toLowerCase().includes(slashQueryNormalized)
@@ -452,7 +463,7 @@ export function ThreadComposer({
                 />
               ) : null}
               <Pressable
-                accessibilityLabel={t("@{name}", { name: mention.name })}
+                accessibilityLabel={t`@${ph({ name: mention.name })}`}
                 onPress={() => insertMention(mention)}
                 style={{
                   flexDirection: "row",
@@ -505,7 +516,7 @@ export function ThreadComposer({
           {slashSkillOptions.map((skill) => (
             <Pressable
               key={skill.id}
-              accessibilityLabel={t("Skill {name}", { name: skill.name })}
+              accessibilityLabel={t`Skill ${ph({ name: skill.name })}`}
               onPress={() => insertSkill(skill)}
               style={{
                 flexDirection: "row",
@@ -535,7 +546,7 @@ export function ThreadComposer({
           {slashActionOptions.map((action) => (
             <Pressable
               key={action.id}
-              accessibilityLabel={t(action.label)}
+              accessibilityLabel={slashActionLabel(action.id)}
               onPress={() => runSlashAction(action.id)}
               style={{
                 flexDirection: "row",
@@ -551,7 +562,9 @@ export function ThreadComposer({
                 size={16}
                 color={tokens.mutedForeground}
               />
-              <Text style={{ color: tokens.foreground, fontSize: 14 }}>{t(action.label)}</Text>
+              <Text style={{ color: tokens.foreground, fontSize: 14 }}>
+                {slashActionLabel(action.id)}
+              </Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -565,7 +578,7 @@ export function ThreadComposer({
           <View
             accessible
             accessibilityRole="button"
-            accessibilityLabel={t("Attach file")}
+            accessibilityLabel={t`Attach file`}
             style={{ width: 44, height: 44 }}
           >
             <GlassSurface
@@ -628,7 +641,7 @@ export function ThreadComposer({
                   {selectedSkill.name}
                 </Text>
                 <Pressable
-                  accessibilityLabel={t("Remove skill {name}", { name: selectedSkill.name })}
+                  accessibilityLabel={t`Remove skill ${ph({ name: selectedSkill.name })}`}
                   hitSlop={8}
                   onPress={() => setSelectedSkill(null)}
                 >
@@ -774,7 +787,7 @@ export function ThreadComposer({
           {onCall ? null : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={dictation.status === "idle" ? t("Dictate") : t("Stop dictating")}
+              accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
               disabled={dictation.status === "transcribing"}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={toggleDictation}
@@ -804,7 +817,7 @@ export function ThreadComposer({
           {!canSend && botId && !onCall && dictation.status === "idle" ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("Call")}
+              accessibilityLabel={t`Call`}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void startVoiceCall()}
               style={{ marginBottom: 8 }}
@@ -825,7 +838,7 @@ export function ThreadComposer({
           ) : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("Send")}
+              accessibilityLabel={t`Send`}
               disabled={sendBlocked}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void send()}
