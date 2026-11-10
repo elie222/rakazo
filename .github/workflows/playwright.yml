@@ -107,9 +107,8 @@ jobs:
       - name: CJK fonts cache key
         if: steps.areas.outputs.e2e != 'false'
         id: cjk-key
-        run: |
-          version=$(apt-cache policy fonts-noto-cjk | awk '/Candidate:/ {print $2}' | tr -c 'A-Za-z0-9.+~-' '_')
-          echo "key=fonts-noto-cjk-$ImageOS-${version:-unknown}" >> "$GITHUB_OUTPUT"
+        # The package is frozen within an Ubuntu release, so the release alone names it.
+        run: echo "key=fonts-noto-cjk-$(. /etc/os-release && echo "$VERSION_CODENAME")-$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
       - name: Restore CJK fonts cache
         if: steps.areas.outputs.e2e != 'false'
         id: cjk-cache
