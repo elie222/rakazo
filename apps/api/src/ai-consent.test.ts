@@ -19,7 +19,10 @@ function setup() {
       userModelRoleChoice: { findMany: vi.fn(async () => []) },
       spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
       userModelCredential: { findMany: vi.fn(async () => []) },
-      secret: { findMany: vi.fn(async () => []) },
+      secret: {
+        findMany: vi.fn(async () => []),
+        findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "voice-secret" })),
+      },
       bot: { findMany: vi.fn(async () => []) },
       routine: { findMany: vi.fn(async () => []) },
       userVoicePreference: {
@@ -246,6 +249,22 @@ it("does not disclose the deployment's voice while the account's own applies", a
     const status = await aiConsentStatus(deps, actor, query);
     expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);
   }
+});
+
+it("discloses the deployment's voice when the account's own default lost its key", async () => {
+  const { deps, actor } = setup();
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([
+    { isDefault: true, credential: { provider: "openai", secretId: "gone" } },
+  ] as never);
+  // Speaking skips a connection whose secret is gone and uses the deployment's voice.
+  vi.mocked(deps.prisma.secret.findFirst).mockResolvedValue(null);
+  vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+    defaultVoiceProvider: "elevenlabs",
+    defaultVoiceId: "voice-a",
+    defaultVoiceCredentialCipher: "encrypted-fixture",
+  } as never);
+  const status = await aiConsentStatus(deps, actor, {});
+  expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI", "ElevenLabs"]);
 });
 
 it("discloses the Space's own voices where it overrides voice", async () => {

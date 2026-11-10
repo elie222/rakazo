@@ -178,26 +178,41 @@ export async function updateDeploymentModelSettings(
       input.allowedModels === null
         ? null
         : parseModelAllowlist(input.allowedModels.join(",")).join(",");
-  if (input.open) {
-    // A switch opens or closes one connection; the list it edits is the one in effect.
-    const models = await currentDeploymentModels(deps);
-    const allowed =
-      typeof data.allowedModels === "string"
-        ? parseModelAllowlist(data.allowedModels)
-        : models.allowed;
-    data.allowedModels = allowlistWithProvider(
-      allowed,
-      models.connections.map((connection) => connection.provider),
-      input.open.provider,
-      input.open.open,
-    ).join(",");
-  }
-  await runAsSystem("an admin sets the deployment's models", () =>
-    deps.prisma.deploymentSettings.upsert({
-      where: { id: "default" },
-      create: { id: "default", ...data },
-      update: data,
-    }),
+  const open = input.open;
+  // Serializable and retried, as a connection is: a switch edits the list it reads, so two at
+  // once each keep the other's.
+  await withTransactionRetry(() =>
+    runAsSystem("an admin sets the deployment's models", () =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          const next = { ...data };
+          if (open) {
+            // A switch opens or closes one connection; the list it edits is the one in effect.
+            const saved = await tx.deploymentSettings.findUnique({
+              where: { id: "default" },
+              include: DEPLOYMENT_MODEL_SETTINGS,
+            });
+            const models = await currentDeploymentModels(deps, saved);
+            const allowed =
+              typeof next.allowedModels === "string"
+                ? parseModelAllowlist(next.allowedModels)
+                : models.allowed;
+            next.allowedModels = allowlistWithProvider(
+              allowed,
+              models.connections.map((connection) => connection.provider),
+              open.provider,
+              open.open,
+            ).join(",");
+          }
+          await tx.deploymentSettings.upsert({
+            where: { id: "default" },
+            create: { id: "default", ...next },
+            update: next,
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    ),
   );
   return view(deps);
 }
@@ -363,17 +378,24 @@ export async function disconnectDeploymentModel(
   const keepsDefault = environmentModels(deps.env).connections.some(
     (connection) => canonicalPiProviderId(connection.provider) === provider,
   );
-  const removed = await runAsSystem("an admin removes a deployment model provider", () =>
-    deps.prisma.$transaction(async (tx) => {
-      const current = await tx.deploymentModelConnection.findUnique({ where: { provider } });
-      if (current) await tx.deploymentModelConnection.delete({ where: { provider } });
-      if (!keepsDefault)
-        await tx.deploymentSettings.updateMany({
-          where: { id: "default", defaultModelProvider: provider },
-          data: { defaultModelProvider: null, defaultModelId: null },
-        });
-      return current?.ciphertext;
-    }),
+  // Serializable and retried, as a connection is, so the secret cleaned up below is the one this
+  // removed, never a replacement another admin saved meanwhile.
+  const removed = await withTransactionRetry(() =>
+    runAsSystem("an admin removes a deployment model provider", () =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          const current = await tx.deploymentModelConnection.findUnique({ where: { provider } });
+          if (current) await tx.deploymentModelConnection.delete({ where: { provider } });
+          if (!keepsDefault)
+            await tx.deploymentSettings.updateMany({
+              where: { id: "default", defaultModelProvider: provider },
+              data: { defaultModelProvider: null, defaultModelId: null },
+            });
+          return current?.ciphertext;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    ),
   );
   if (removed)
     await forgetDeploymentSecret(deps.secrets, removed, deploymentConnectionRecord(provider));

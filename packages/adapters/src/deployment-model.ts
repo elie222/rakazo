@@ -375,6 +375,31 @@ export function deploymentConnection(
   return models.connections.find((entry) => canonicalPiProviderId(entry.provider) === canonical);
 }
 
+/**
+ * The deployment connection that may run a model, or none. A deployment key is a bearer credential
+ * for exactly one vendor, so it goes only to that vendor's models a member may run on it: the
+ * default model or one the allowlist names. Hosted credits fund their provider's models, and the
+ * environment's own key for its default provider keeps serving any of that provider's models, as
+ * it always has.
+ */
+export function entitledDeploymentConnection(
+  models: DeploymentModels,
+  input: {
+    environmentProvider: string;
+    provider: string;
+    modelId: string;
+    hostedCredits?: boolean;
+  },
+): DeploymentConnection | undefined {
+  const candidate = deploymentConnection(models, input.provider);
+  const environmentProvider =
+    canonicalPiProviderId(input.provider) === canonicalPiProviderId(input.environmentProvider);
+  return deploymentServes(models, input.provider, input.modelId) ||
+    (environmentProvider && (input.hostedCredits || candidate?.source === "environment"))
+    ? candidate
+    : undefined;
+}
+
 let catalogIds: { catalog: readonly unknown[]; byProvider: Map<string, string[]> } | undefined;
 
 /** Model ids of a provider's bundled catalog that members can be offered. */

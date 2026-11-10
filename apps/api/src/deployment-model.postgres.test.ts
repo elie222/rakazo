@@ -86,3 +86,33 @@ dbTests("saves, applies and removes an admin's model connection without a restar
     await fixtures.deploymentModelConnection.findUnique({ where: { provider: "deepseek" } }),
   ).toBeNull();
 });
+
+dbTests("keeps both of two provider switches made at once", async () => {
+  const deps = {
+    prisma: db.prisma,
+    secrets: new EncryptedSecretStore("fake-deployment-model-test-encryption-key"),
+    modelConnectionFetch: (async () => new Response(null, { status: 200 })) as typeof fetch,
+    env: {
+      adminEmails: [email],
+      defaultProvider: "openrouter",
+      defaultModel: "anthropic/claude-haiku-5.5",
+      deploymentModels: environmentDeploymentModels({ OPENROUTER_API_KEY: "fixture-env-key" }),
+    },
+  };
+  for (const provider of ["deepseek", "anthropic"])
+    await connectDeploymentModel(deps, actor, { provider, apiKey: `fixture-${provider}-key` });
+  await updateDeploymentModelSettings(deps, actor, { allowedModels: [] });
+  try {
+    await Promise.all(
+      ["deepseek", "anthropic"].map((provider) =>
+        updateDeploymentModelSettings(deps, actor, { open: { provider, open: true } }),
+      ),
+    );
+    const models = await currentDeploymentModels(deps);
+    expect([...models.allowed].sort()).toEqual(["anthropic:*", "deepseek:*"]);
+  } finally {
+    for (const provider of ["deepseek", "anthropic"])
+      await disconnectDeploymentModel(deps, actor, { provider });
+    await updateDeploymentModelSettings(deps, actor, { allowedModels: null });
+  }
+});

@@ -266,10 +266,18 @@ export async function aiConsentStatus(
       }),
     );
   }
-  // Without a default connection of their own here, voice goes to the deployment's provider.
-  if (uses.includes("voice") && !voices.some((voice) => voice.isDefault)) {
+  // Without a default connection of their own here whose key is still saved, voice goes to the
+  // deployment's provider, as it does when it speaks.
+  if (uses.includes("voice")) {
     const deployment = await findDeploymentVoice(deps.prisma, deps.secrets);
-    if (deployment) add(aiRecipient({ provider: deployment.provider, use: "voice" }));
+    const own = voices.find((voice) => voice.isDefault);
+    const ownSpeaks =
+      own &&
+      (await deps.prisma.secret.findFirst({
+        where: { id: own.credential.secretId, userId: actor.userId, spaceId: null },
+        select: { id: true },
+      }));
+    if (deployment && !ownSpeaks) add(aiRecipient({ provider: deployment.provider, use: "voice" }));
   }
   if (memory)
     add(

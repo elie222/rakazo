@@ -5,7 +5,7 @@ import type {
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
-import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
@@ -21,6 +21,7 @@ import {
   deploymentConnectionSecret,
   deploymentServes,
   deploymentStandIn,
+  entitledDeploymentConnection,
   loadDeploymentModels,
   resolveDeploymentModel,
 } from "./deployment-model.js";
@@ -158,12 +159,7 @@ function environmentDefault(deps: Pick<ExecutorDeps, "deploymentModels">) {
   return deps.deploymentModels?.default ?? resolveDeploymentModel();
 }
 
-/**
- * A deployment key is a bearer credential for exactly one vendor, so it is handed out only for
- * that vendor's models a member may run on it: the default model or one the allowlist names.
- * Hosted credits, checked by the caller, fund their provider's models. The environment's own key
- * for its default provider keeps serving any of that provider's models, as it always has.
- */
+/** The deployment's key for a model it may run; see entitledDeploymentConnection. */
 async function deploymentKeyFor(
   deps: ExecutorDeps,
   provider: string,
@@ -172,13 +168,13 @@ async function deploymentKeyFor(
   hostedCredits = false,
 ) {
   const models = await runDeploymentModels(deps);
-  const environmentProvider =
-    canonicalPiProviderId(provider) === canonicalPiProviderId(environmentDefault(deps).provider);
-  const candidate = deploymentConnection(models, provider);
-  const entitled =
-    deploymentServes(models, provider, modelId) ||
-    (environmentProvider && (hostedCredits || candidate?.source === "environment"));
-  const connection = entitled ? candidate : undefined;
+  // Hosted credits, checked by the caller, fund their provider's models.
+  const connection = entitledDeploymentConnection(models, {
+    environmentProvider: environmentDefault(deps).provider,
+    provider,
+    modelId,
+    hostedCredits,
+  });
   const secret = await deploymentConnectionSecret(deps.secretStore, connection);
   if (!secret || secret.kind === "oauth") {
     cloudflareProviderEnv({ provider });

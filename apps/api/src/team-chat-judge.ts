@@ -5,10 +5,10 @@ import {
   compatibleModelSeesImages,
   DEPLOYMENT_MODEL_SETTINGS,
   defaultOnlyDeploymentModels,
-  deploymentConnection,
   deploymentConnectionSecret,
   deploymentModelRole,
   deploymentServes,
+  entitledDeploymentConnection,
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
@@ -279,12 +279,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
     if (!credential || hosted) {
-      // A deployment key goes only to its own provider, for the default or a served model.
+      // A deployment key goes only to a model members may run on it, as it does for a run.
       const secret = await deploymentConnectionSecret(
         this.deps.secrets,
-        provider === models.default.provider || deploymentServes(models, provider, modelId)
-          ? deploymentConnection(models, provider)
-          : undefined,
+        entitledDeploymentConnection(models, {
+          environmentProvider:
+            this.deps.deploymentModels?.default.provider ?? this.deps.deploymentProvider,
+          provider,
+          modelId,
+          hostedCredits: Boolean(hosted),
+        }),
       );
       // An endpoint brings its URL, headers and limits, as it does for a run.
       const fields =
