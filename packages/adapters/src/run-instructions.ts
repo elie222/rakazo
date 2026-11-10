@@ -136,7 +136,7 @@ export function dockerComputerToolInstruction(
     : builtinOffered(disabled, "shell");
   if (shellOffered) {
     parts.push(
-      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, systemd, cron, or Docker daemon; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, ImageMagick, and a graphical browser (Chromium by default).",
+      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
     );
   }
   if (builtinOffered(disabled, "shell")) {

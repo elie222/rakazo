@@ -79,6 +79,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     jq \
+    ripgrep \
+    fd-find \
+    file \
+    sqlite3 \
     openssh-client \
     unzip \
     xclip \
@@ -87,6 +91,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pandoc \
     python3-openpyxl \
   && rm -rf /var/lib/apt/lists/* \
+  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+  && rg --version \
+  && fd --version \
+  && file --version \
+  && sqlite3 --version \
   && pdftotext -v \
   && pdfinfo -v \
   && pandoc --version \
