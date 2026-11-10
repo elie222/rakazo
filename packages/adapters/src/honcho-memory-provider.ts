@@ -284,8 +284,7 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
     // Preserve Peer Chat for higher reasoning and external user peers.
     if (
       this.settings.mode === "local" &&
-      (this.connection.reasoningLevel === "low" ||
-        this.connection.reasoningLevel === "minimal") &&
+      (this.connection.reasoningLevel === "low" || this.connection.reasoningLevel === "minimal") &&
       !this.settings.userPeerId?.trim()
     ) {
       const observers = recallObservers(request.scope, request.botId);
@@ -309,49 +308,39 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
         })),
       );
 
-      const failures = searched.filter(({ result }) => !result.ok);
-      if (failures.length) {
-        return {
-          ok: false,
-          error: failures
-            .map(({ result }) => result.ok ? "" : result.error)
-            .filter(Boolean)
-            .join("; "),
-        };
-      }
+      // Use any successful search; otherwise fall back to Peer Chat.
+      if (searched.some(({ result }) => result.ok)) {
+        const groups = searched.map(({ entity, result }) => {
+          const items: SemanticMemoryResult[] = [];
+          if (!result.ok) return items;
+          for (const fact of result.value) {
+            if (fact.observerId !== entity || fact.observedId !== SHARED_PEER_ID) continue;
+            items.push({
+              memory: fact.content,
+              score: 1,
+              id: fact.id,
+              provenance: "honcho",
+              entity,
+            });
+          }
+          return items;
+        });
 
-      const groups = searched.map(({ entity, result }) => {
-        const items: SemanticMemoryResult[] = [];
-        if (!result.ok) return items;
-        for (const fact of result.value) {
-          if (fact.observerId !== entity ||
-              fact.observedId !== SHARED_PEER_ID) continue;
-          items.push({
-            memory: fact.content,
-            score: 1,
-            id: fact.id,
-            provenance: "honcho",
-            entity,
-          });
+        const seen = new Set<string>();
+        const results: SemanticMemoryResult[] = [];
+        for (let row = 0; groups.some((group) => row < group.length); row++) {
+          for (const group of groups) {
+            const item = group[row];
+            if (!item) continue;
+            const key = normalizeMemory(item.memory);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            results.push(item);
+            if (results.length >= limit) return { ok: true, value: results };
+          }
         }
-        return items;
-      });
-
-      const seen = new Set<string>();
-      const results: SemanticMemoryResult[] = [];
-      for (let row = 0; groups.some(group => row < group.length); row++) {
-        for (const group of groups) {
-          const item = group[row];
-          if (!item) continue;
-          const key = normalizeMemory(item.memory);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          results.push(item);
-          if (results.length >= limit)
-            return { ok: true, value: results };
-        }
+        return { ok: true, value: results };
       }
-      return { ok: true, value: results };
     }
 
     const query = recallQuery(request.query);
