@@ -26,8 +26,8 @@
     "unified": "11.0.5"
   },
   "peerDependencies": {
-    "react": "19.2.9",
-    "react-dom": "19.2.9",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-native": ">=0.79",
     "@ronradtke/react-native-markdown-display": "9.0.3"
   },
@@ -43,13 +43,13 @@
     }
   },
   "devDependencies": {
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.7",
-    "react": "19.2.9",
-    "react-dom": "19.2.9",
-    "react-native": "0.86.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-native": "0.88.1",
     "typescript": "7.0.2",
-    "vitest": "4.1.12",
+    "vitest": "5.1.0",
     "@ronradtke/react-native-markdown-display": "9.0.3"
   }
 }

@@ -50,7 +50,7 @@ vi.mock("expo-file-system", () => ({
       await new Promise((resolve) => setTimeout(resolve, 20));
       return content;
     }
-    write(content: string) {
+    writeSync(content: string) {
       files.set(this.key, content);
     }
   },

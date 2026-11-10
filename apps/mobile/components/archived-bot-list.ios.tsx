@@ -19,8 +19,8 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { useLingui } from "@lingui/react/macro";
 import { PlatformColor } from "react-native";
-import { useI18n } from "../lib/i18n";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useMobileTokens } from "../lib/native";
 import type { ArchivedBotListProps } from "./archived-bot-list";
@@ -35,7 +35,7 @@ export function ArchivedBotList({
   onDelete,
   onRestoreGroup,
 }: ArchivedBotListProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const edges = useInsetListEdges();
   const tokens = useMobileTokens();
   // A swipe button is filled with its tint and keeps a white label. The host's tint is the
@@ -47,13 +47,13 @@ export function ArchivedBotList({
     return (
       <>
         <Button
-          label={t("Restore")}
+          label={t`Restore`}
           systemImage="arrow.uturn.backward"
           modifiers={swipe ? swipeTint : undefined}
           onPress={() => onRestore(bot)}
         />
         <Button
-          label={t("Delete")}
+          label={t`Delete`}
           systemImage="trash"
           // The swipe button is red by its tint, not the destructive role: SwiftUI removes a row
           // as soon as a destructive swipe button is tapped, even when the confirmation is cancelled.
@@ -67,7 +67,7 @@ export function ArchivedBotList({
   function groupActions(group: MobileGroup, swipe = false) {
     return (
       <Button
-        label={t("Restore")}
+        label={t`Restore`}
         systemImage="arrow.uturn.backward"
         modifiers={swipe ? swipeTint : undefined}
         onPress={() => onRestoreGroup(group)}
@@ -108,7 +108,7 @@ export function ArchivedBotList({
                     spacing={12}
                     modifiers={[
                       accessibilityElement("ignore"),
-                      accessibilityLabel(`${group.name}, ${t("Group")}`),
+                      accessibilityLabel(`${group.name}, ${t`Group`}`),
                     ]}
                   >
                     <Image

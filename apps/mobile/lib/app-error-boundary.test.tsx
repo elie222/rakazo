@@ -18,7 +18,6 @@ vi.mock("../lib/appearance", () => ({
     primaryForeground: "primary-foreground",
   }),
 }));
-vi.mock("../lib/i18n", () => ({ t: (text: string) => text }));
 vi.mock("react-native", () => ({
   Pressable: (props: { children?: ReactNode; onPress?: () => void }) => (
     <button type="button" onClick={props.onPress}>

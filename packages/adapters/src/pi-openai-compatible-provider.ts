@@ -17,9 +17,10 @@ import {
   MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
+import type { Dispatcher } from "undici";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
-import type { ResolveHostname } from "./network-address.js";
+import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
 import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
@@ -34,6 +35,7 @@ import {
 } from "./openai-compatible-url.js";
 import { MODEL_CONNECT_TIMEOUT_MS, modelConnectTimeoutMs } from "./pi-runtime-limits.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
@@ -190,12 +192,19 @@ export function createOpenAiCompatibleLookup(
   resolve: ResolveHostname = resolveHostname,
   opts?: { allowPrivate?: boolean },
 ): LookupFunction {
+  return createAddressCheckedLookup(resolve, openAiCompatibleAddressCheck(url, opts));
+}
+
+function openAiCompatibleAddressCheck(
+  url: URL,
+  opts?: { allowPrivate?: boolean },
+): (addresses: ResolvedAddress[]) => void {
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   const privateHostname = isPrivateOpenAiCompatibleHostname(hostname);
   if (privateHostname && opts?.allowPrivate !== true) {
     throw new Error(PRIVATE_MODEL_ENDPOINT_MESSAGE);
   }
-  return createAddressCheckedLookup(resolve, (addresses) => {
+  return (addresses) => {
     if (addresses.length === 0) throw new Error("Model server did not resolve to an address");
     if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
       throw new Error("Model server hostname resolved to a blocked metadata address");
@@ -216,7 +225,7 @@ export function createOpenAiCompatibleLookup(
     if (addresses.some((entry) => isNonPublicAddress(entry.address))) {
       throw new Error("Public model server hostname resolved to a private address");
     }
-  });
+  };
 }
 
 function isAuthHeader(name: string, value: string | null | undefined): boolean {
@@ -256,14 +265,21 @@ export function createOpenAiCompatibleFetch(
       );
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    const dispatcher = new Agent({
-      connect: {
-        timeout: modelConnectTimeoutMs(),
-        ...(ipVersion(hostname) === 0
-          ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
-          : {}),
-      },
-    });
+    // Local model servers stay on the direct route; public endpoints honor HTTP(S)_PROXY.
+    const dispatcher: Dispatcher = isPrivateOpenAiCompatibleHostname(hostname)
+      ? new Agent({
+          connect: {
+            timeout: modelConnectTimeoutMs(),
+            ...(ipVersion(hostname) === 0
+              ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
+              : {}),
+          },
+        })
+      : createCheckedProxyDispatcher(
+          resolve,
+          openAiCompatibleAddressCheck(url, opts),
+          modelConnectTimeoutMs(),
+        );
     // Node's fetch rejects this package Agent. Use its matching fetch;
     // a caller-supplied fetch stays in charge.
     const transport = fetchPairedWithDispatcher(baseFetch);
@@ -280,7 +296,7 @@ export function createOpenAiCompatibleFetch(
         headers,
         redirect: "error",
         dispatcher,
-      } as RequestInit & { dispatcher: Agent });
+      } as RequestInit & { dispatcher: Dispatcher });
       return await closeDispatcherWithResponse(response, dispatcher);
     } catch (error) {
       await dispatcher.destroy().catch(() => undefined);
@@ -308,7 +324,7 @@ async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Pro
 
 async function closeDispatcherWithResponse(
   response: Response,
-  dispatcher: Agent,
+  dispatcher: Dispatcher,
 ): Promise<Response> {
   if (!response.body) {
     await dispatcher.close();

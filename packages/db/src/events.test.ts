@@ -2504,7 +2504,7 @@ describe("answerWaitingRunWithTextInTransaction", () => {
   });
 });
 
-describe("answerRunInput", () => {
+describe("answerRunInput approvals", () => {
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {

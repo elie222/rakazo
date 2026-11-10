@@ -16,7 +16,7 @@ it("keeps the Lark SDK dynamic in a production server bundle", async () => {
     bundle: true,
     platform: "node",
     format: "esm",
-    target: "node22",
+    target: "node24",
     sourcemap: true,
     conditions: ["node"],
     logLevel: "warning",

@@ -438,11 +438,6 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string | number>) =>
-    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values?.[key] ?? match));
-  return { t, useI18n: () => ({ t }) };
-});
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: ({
     label,

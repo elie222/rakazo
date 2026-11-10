@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import {
@@ -18,7 +19,6 @@ import { chatSettingsRoute } from "./chat-settings-route";
 import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
 import { hapticImpact, hapticSuccess } from "./haptics";
-import { useI18n } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
 import { takePageReply } from "./pages";
@@ -35,8 +35,8 @@ import { errorText } from "./user-error";
 import { startWorkActivity } from "./work-activity";
 
 /**
- * What the chat sends: composer messages with their reply and attachments, retries, stopping
- * work, ask answers and reactions, and slash actions.
+ * What the chat sends: composer messages with their reply and attachments, retries, ask
+ * answers and reactions, and slash actions.
  */
 export function useThreadSend({
   botId,
@@ -74,7 +74,7 @@ export function useThreadSend({
   markCaughtUp: () => void;
   openBotChat: (target: MobileBot, ring: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const { pendingAttachments, setPendingAttachments, setAttachmentNotice, importingShare } =
@@ -85,7 +85,6 @@ export function useThreadSend({
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
   const replyPage = useRef<{ id: string; title: string } | null>(null);
-  const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
 
   useEffect(() => {
@@ -144,7 +143,7 @@ export function useThreadSend({
     if (readOnly || importingShare.current) return;
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
-    if ((!initialBotTarget && !initialGroupTarget) || sending || preparingSend.current) return;
+    if ((!initialBotTarget && !initialGroupTarget) || preparingSend.current) return;
     const originThreadKey = initialGroupTarget ?? initialBotTarget;
     const submitted = composerRef.current?.snapshot();
     if (!submitted) return;
@@ -168,7 +167,7 @@ export function useThreadSend({
     try {
       await prepareUnsentSends();
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     } finally {
       preparingSend.current = false;
@@ -209,7 +208,7 @@ export function useThreadSend({
         fromPage: pageCard ? true : undefined,
       });
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     }
     composerRef.current?.reset();
@@ -266,7 +265,7 @@ export function useThreadSend({
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",
-        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t("Group") },
+        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t`Group` },
       });
       return;
     }
@@ -287,36 +286,6 @@ export function useThreadSend({
   const afterDeliveredRef = useRef(afterDelivered);
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
-
-  async function stop() {
-    if (readOnly) return;
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || sending) return;
-    setSending(true);
-    try {
-      await rpc(
-        "threads/stop",
-        targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
-      );
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        Alert.alert(t("Failed to stop work"), errorText(err, t("Try again.")));
-      }
-      setSending(false);
-      return;
-    }
-    try {
-      await refresh();
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        const detail = errorText(err, t("Failed to refresh"));
-        setError(t("Work stopped, but the thread could not refresh: {detail}", { detail }));
-      }
-    } finally {
-      setSending(false);
-    }
-  }
 
   const answer = useCallback(
     (
@@ -365,7 +334,7 @@ export function useThreadSend({
       return true;
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return false;
-      Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
+      Alert.alert(t`Could not update reaction`, errorText(err, t`Try again.`));
       return false;
     }
   }
@@ -380,10 +349,8 @@ export function useThreadSend({
     setQuoteTarget,
     receivePageReply,
     composerEmptied,
-    sending,
     send,
     retry,
-    stop,
     answer,
     react,
     runSlashAction,

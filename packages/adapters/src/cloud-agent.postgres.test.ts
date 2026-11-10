@@ -26,7 +26,7 @@ function deferred() {
 }
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulator)", () => {
   let prisma: PrismaClient;

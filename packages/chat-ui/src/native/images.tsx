@@ -1,9 +1,14 @@
 import type { MarkdownStyleMap } from "@ronradtke/react-native-markdown-display";
-import { FitImage } from "@ronradtke/react-native-markdown-display";
+import { FitImage as UntypedFitImage } from "@ronradtke/react-native-markdown-display";
+import type { ComponentType } from "react";
 import { useContext, useState } from "react";
+import type { ImageProps } from "react-native";
 import { Pressable, Text, View } from "react-native";
 import { markRemoteImageLoaded, RemoteImagesContext, remoteImageRenders } from "../markdown";
 import { linkHost, NativeLink } from "./links";
+
+// Its declared props extend a type React Native's public API no longer exports.
+export const FitImage = UntypedFitImage as ComponentType<ImageProps & { indicator?: boolean }>;
 
 export function LinkedRemoteImage({
   href,

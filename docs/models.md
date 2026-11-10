@@ -47,7 +47,6 @@ for a simple daily check.
 
 **Settings → Usage** shows runs, tokens and cost by model.
 
-
 ## Compatible server wire protocol
 
 OpenAI-compatible connections default to Chat Completions. For an endpoint that serves another

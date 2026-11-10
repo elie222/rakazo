@@ -1,4 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useNavigation } from "expo-router";
@@ -6,7 +7,6 @@ import { useLayoutEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";
@@ -23,7 +23,7 @@ export function ComputerMaintenanceActions({
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const navigation = useNavigation();
@@ -45,7 +45,7 @@ export function ComputerMaintenanceActions({
       setError(
         errorText(
           err,
-          action === "stop" ? t("Could not stop computer") : t("Could not update computer"),
+          action === "stop" ? t`Could not stop computer` : t`Could not update computer`,
         ),
       );
     } finally {
@@ -55,14 +55,14 @@ export function ComputerMaintenanceActions({
 
   function confirm(action: "recover" | "reset") {
     Alert.alert(
-      action === "reset" ? t("Reset computer?") : t("Recover computer?"),
+      action === "reset" ? t`Reset computer?` : t`Recover computer?`,
       action === "reset"
-        ? t("Restore the last saved workspace. Unsaved work on the computer is lost.")
-        : t("Recovery restores the last saved workspace. Unsaved work may be lost."),
+        ? t`Restore the last saved workspace. Unsaved work on the computer is lost.`
+        : t`Recovery restores the last saved workspace. Unsaved work may be lost.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: action === "reset" ? t("Reset") : t("Recover computer"),
+          text: action === "reset" ? t`Reset` : t`Recover computer`,
           style: "destructive",
           onPress: () => void run(action),
         },
@@ -81,7 +81,7 @@ export function ComputerMaintenanceActions({
       ? [
           {
             id: "stop",
-            title: t("Stop computer"),
+            title: t`Stop computer`,
             destructive: false,
             onPress: () => void run("stop"),
           },
@@ -92,8 +92,8 @@ export function ComputerMaintenanceActions({
       ? [
           {
             id: "recover",
-            title: t("Recover computer"),
-            explanation: t("Recreate a computer that is not working."),
+            title: t`Recover computer`,
+            explanation: t`Recreate a computer that is not working.`,
             destructive: false,
             onPress: () => confirm("recover"),
           },
@@ -101,8 +101,8 @@ export function ComputerMaintenanceActions({
       : []),
     {
       id: "reset",
-      title: t("Reset computer"),
-      explanation: t("Restore the last saved workspace."),
+      title: t`Reset computer`,
+      explanation: t`Restore the last saved workspace.`,
       destructive: true,
       onPress: () => confirm("reset"),
     },
@@ -110,8 +110,8 @@ export function ComputerMaintenanceActions({
       ? [
           {
             id: "update",
-            title: t("Update computer"),
-            explanation: t("Save the workspace and install current software."),
+            title: t`Update computer`,
+            explanation: t`Save the workspace and install current software.`,
             destructive: false,
             onPress: () => void run("update"),
           },
@@ -130,8 +130,8 @@ export function ComputerMaintenanceActions({
           ? [
               {
                 type: "menu" as const,
-                label: t("More computer actions"),
-                accessibilityLabel: t("More computer actions"),
+                label: t`More computer actions`,
+                accessibilityLabel: t`More computer actions`,
                 icon: { type: "sfSymbol" as const, name: "ellipsis" },
                 menu: {
                   items: actions.map((action) => ({
@@ -158,7 +158,7 @@ export function ComputerMaintenanceActions({
       {!iosAtLeast(26) ? (
         <MenuView
           colorScheme={scheme}
-          title={t("More computer actions")}
+          title={t`More computer actions`}
           actions={actions.map((action) =>
             action.explanation
               ? {
@@ -185,7 +185,7 @@ export function ComputerMaintenanceActions({
         >
           <View
             accessibilityRole="button"
-            accessibilityLabel={t("More computer actions")}
+            accessibilityLabel={t`More computer actions`}
             style={{ alignSelf: "flex-end", padding: 12 }}
           >
             <NativeSymbol

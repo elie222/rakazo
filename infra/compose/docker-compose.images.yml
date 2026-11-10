@@ -13,8 +13,7 @@ name: rakazo
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
@@ -336,7 +335,24 @@ services:
     image: ${BUSYBOX_IMAGE:-busybox:1}
     # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
     # in the volume; -h changes a symlink itself, never its target.
-    command: ["find", "/data", "!", "(", "-user", "1000", "-group", "1000", ")", "-exec", "chown", "-h", "1000:1000", "{}", "+"]
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:

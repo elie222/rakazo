@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",
+    "@lingui/core": "6.12.0",
+    "@lingui/message-utils": "6.12.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/contracts": "workspace:*",
@@ -30,6 +33,6 @@
     "@rakazo/sandbox-supervisor": "workspace:*",
     "@types/pngjs": "6.0.5",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

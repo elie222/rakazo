@@ -11,7 +11,7 @@ import { claimSteering, createPendingSteeringRun } from "./thread-steering.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 describePostgres("steering after a run ends without completing (PostgreSQL)", () => {
   let prisma: PrismaClient;

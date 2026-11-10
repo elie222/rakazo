@@ -56,13 +56,13 @@ Keys**, create a key with **Apple Push Notifications service (APNs)** enabled fo
 and download its `.p8` file. Configure these server secrets through your deployment's
 normal environment/secret manager:
 
-| Setting | Value |
-| --- | --- |
-| `APNS_VOIP_KEY_ID` | `<APNS_KEY_ID>` |
-| `APNS_VOIP_TEAM_ID` | `<APPLE_TEAM_ID>` |
-| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted |
+| Setting                 | Value                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `APNS_VOIP_KEY_ID`      | `<APNS_KEY_ID>`                                                                    |
+| `APNS_VOIP_TEAM_ID`     | `<APPLE_TEAM_ID>`                                                                  |
+| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted                      |
 | `APNS_VOIP_ENVIRONMENT` | `sandbox` for development signing, `production` for TestFlight/App Store (default) |
-| `APNS_VOIP_BUNDLE_ID` | Your iOS bundle identifier; defaults to `com.rakazo.app` |
+| `APNS_VOIP_BUNDLE_ID`   | Your iOS bundle identifier; defaults to `com.rakazo.app`                           |
 
 The adapter uses the `<bundle identifier>.voip` topic. Keep keys on the server; never put
 them in the app or repository. Enable Push Notifications and Background Modes (Voice over
@@ -94,10 +94,10 @@ as [iOS VoIP ringing](#mobile-incoming-calls) (`APNS_VOIP_KEY_ID`, `APNS_VOIP_TE
 `APNS_VOIP_PRIVATE_KEY`), so the desktop app must belong to that team, with Push Notifications
 enabled on its App ID and in its provisioning profile. Optionally set, on both the API and worker:
 
-| Setting | Value |
-| --- | --- |
+| Setting                    | Value                                                                      |
+| -------------------------- | -------------------------------------------------------------------------- |
 | `APNS_DESKTOP_ENVIRONMENT` | `sandbox` for development signing, `production` for Developer ID (default) |
-| `APNS_DESKTOP_BUNDLE_ID` | Your desktop bundle identifier; defaults to `dev.rakazo.desktop` |
+| `APNS_DESKTOP_BUNDLE_ID`   | Your desktop bundle identifier; defaults to `dev.rakazo.desktop`           |
 
 Build the app with `RAKAZO_DESKTOP_PUSH=production` (or `development` for a development-signed
 build) so it carries the matching push entitlement. An app that is open never gets a push for the
