@@ -8,8 +8,7 @@ import { EncryptedSecretStore } from "./secrets.js";
 import { MODEL_CONNECTION_VOICE_SECRET, resolveVoiceKey } from "./voice-model-connection.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const TOKEN_URL = "https://auth.x.ai/oauth2/token";
 
