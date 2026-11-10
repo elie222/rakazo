@@ -204,6 +204,36 @@ function portalStartLine(binary: string, display: string, log: string) {
   return `DISPLAY=${display} DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" nohup ${binary} 8>&- 9>&- </dev/null >${log} 2>&1 &`;
 }
 
+// Pid files outlive the container, and the kernel reuses the numbers.
+// Same shape as browser_matches: a live pid is ours only when its executable still is.
+function screenSessionMatchers() {
+  return [
+    "screen_live() {",
+    "  case \"$1\" in ''|*[!0-9]*|0|1) return 1 ;; esac",
+    '  kill -0 "$1" 2>/dev/null || return 1',
+    '  case "$(readlink "/proc/$1/exe" 2>/dev/null || true)" in',
+    '    */"$2"|"$2") return 0 ;;',
+    "  esac",
+    "  return 1",
+    "}",
+    "screen_recorded() {",
+    '  [ -r "$1" ] || return 1',
+    '  screen_recorded_pid=$(cat "$1" 2>/dev/null || true)',
+    '  screen_live "$screen_recorded_pid" "$2"',
+    "}",
+    "screen_stop_recorded() {",
+    '  if [ -r "$1" ]; then',
+    '    screen_pid=$(cat "$1" 2>/dev/null || true)',
+    '    if screen_live "$screen_pid" "$2"; then',
+    '      kill "$screen_pid" 2>/dev/null || true',
+    '      kill -KILL "$screen_pid" 2>/dev/null || true',
+    "    fi",
+    "  fi",
+    '  rm -f "$1"',
+    "}",
+  ];
+}
+
 // One GTK portal process draws on a single DISPLAY. The boot backend stays on
 // displayStart; every other screen needs its own session bus and backend.
 function renderStartScreenSessionCommand(index: number | undefined, env: DesktopEnvironment) {
@@ -215,36 +245,16 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     `screen_dbus_pid_file=${paths.dbusPid}`,
     `screen_portal_pid_file=${paths.portalPid}`,
     `screen_gtk_pid_file=${paths.gtkPid}`,
-    "screen_live() {",
-    "  case \"$1\" in ''|*[!0-9]*|0|1) return 1 ;; esac",
-    '  kill -0 "$1" 2>/dev/null',
-    "}",
-    "screen_recorded() {",
-    '  [ -r "$1" ] || return 1',
-    '  screen_recorded_pid=$(cat "$1" 2>/dev/null || true)',
-    '  screen_live "$screen_recorded_pid"',
-    "}",
+    ...screenSessionMatchers(),
     "screen_portals=0",
     `if [ -x ${DESKTOP_PORTAL} ] && [ -x ${DESKTOP_PORTAL_GTK} ]; then screen_portals=1; fi`,
-    "screen_ready=1",
-    '[ -r "$screen_bus_file" ] || screen_ready=0',
-    'screen_recorded "$screen_dbus_pid_file" || screen_ready=0',
-    'if [ "$screen_portals" -eq 1 ]; then',
-    '  screen_recorded "$screen_portal_pid_file" || screen_ready=0',
-    '  screen_recorded "$screen_gtk_pid_file" || screen_ready=0',
-    "fi",
-    'if [ "$screen_ready" -eq 0 ]; then',
-    "  screen_bus_alive=0",
-    '  if [ -r "$screen_bus_file" ] && screen_recorded "$screen_dbus_pid_file"; then screen_bus_alive=1; fi',
-    '  if [ "$screen_bus_alive" -eq 0 ]; then',
-    '    for screen_pid_file in "$screen_portal_pid_file" "$screen_gtk_pid_file" "$screen_dbus_pid_file"; do',
-    '      if [ -r "$screen_pid_file" ]; then',
-    '        screen_pid=$(cat "$screen_pid_file" 2>/dev/null || true)',
-    '        if screen_live "$screen_pid"; then kill "$screen_pid" 2>/dev/null || true; kill -KILL "$screen_pid" 2>/dev/null || true; fi',
-    "      fi",
-    '      rm -f "$screen_pid_file"',
-    "    done",
-    '    rm -f "$screen_bus_file"',
+    "screen_bus_alive=0",
+    'if [ -r "$screen_bus_file" ] && screen_recorded "$screen_dbus_pid_file" dbus-daemon; then screen_bus_alive=1; fi',
+    'if [ "$screen_bus_alive" -eq 0 ]; then',
+    '  screen_stop_recorded "$screen_portal_pid_file" xdg-desktop-portal',
+    '  screen_stop_recorded "$screen_gtk_pid_file" xdg-desktop-portal-gtk',
+    '  screen_stop_recorded "$screen_dbus_pid_file" dbus-daemon',
+    '  rm -f "$screen_bus_file"',
     "    if command -v dbus-launch >/dev/null 2>&1; then",
     '      eval "$(dbus-launch --sh-syntax)"',
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
@@ -262,18 +272,17 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     "  else",
     '    . "$screen_bus_file"',
     '    if [ "$screen_portals" -eq 1 ]; then',
-    '      if ! screen_recorded "$screen_portal_pid_file"; then',
+    '      if ! screen_recorded "$screen_portal_pid_file" xdg-desktop-portal; then',
     `        ${portalStartLine(DESKTOP_PORTAL, layout.display, paths.portalLog)}`,
     '        printf %s "$!" >"$screen_portal_pid_file"',
     "      fi",
-    '      if ! screen_recorded "$screen_gtk_pid_file"; then',
+    '      if ! screen_recorded "$screen_gtk_pid_file" xdg-desktop-portal-gtk; then',
     `        ${portalStartLine(DESKTOP_PORTAL_GTK, layout.display, paths.gtkLog)}`,
     '        printf %s "$!" >"$screen_gtk_pid_file"',
     "      fi",
     "    fi",
     "    unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID",
     "  fi",
-    "fi",
   ];
   if (index !== undefined) return lines;
   return [`if [ "$desktop_display" != "${env.displayStart}" ]; then`, ...lines, "fi"];
@@ -284,16 +293,10 @@ function renderStopScreenSessionCommand(index: number | undefined, env: DesktopE
   const layout = commandLayout(index, env);
   const paths = screenSessionPaths(String(layout.displayNumber));
   const lines = [
-    `for screen_pid_file in ${paths.portalPid} ${paths.gtkPid} ${paths.dbusPid}; do`,
-    '  if [ -r "$screen_pid_file" ]; then',
-    '    screen_pid=$(cat "$screen_pid_file" 2>/dev/null || true)',
-    '    case "$screen_pid" in',
-    "      ''|*[!0-9]*|0|1) ;;",
-    '      *) kill "$screen_pid" 2>/dev/null || true; kill -KILL "$screen_pid" 2>/dev/null || true ;;',
-    "    esac",
-    "  fi",
-    '  rm -f "$screen_pid_file"',
-    "done",
+    ...screenSessionMatchers(),
+    `screen_stop_recorded ${paths.portalPid} xdg-desktop-portal`,
+    `screen_stop_recorded ${paths.gtkPid} xdg-desktop-portal-gtk`,
+    `screen_stop_recorded ${paths.dbusPid} dbus-daemon`,
     `rm -f ${paths.bus}`,
   ];
   if (index !== undefined) return lines;
