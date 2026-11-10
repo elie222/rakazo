@@ -18,7 +18,6 @@ vi.mock("./api", () => ({
 vi.mock("./mobile-types", () => ({
   prependMobileMessagePage: vi.fn(),
 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
 vi.mock("./response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => false,

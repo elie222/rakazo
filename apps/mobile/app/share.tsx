@@ -1,10 +1,11 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { useNavigation, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
-import { useI18n } from "../lib/i18n";
 import {
   cancelIncomingShare,
   getIncomingShare,
@@ -23,7 +24,7 @@ export default function ShareRoute() {
   const [guarded, setGuarded] = useState(true);
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const allowRemoval = usePreventRemove(guarded, ({ data, repeat }) => {
     const payload = data.action.payload;
     // Authentication temporarily replaces the picker; sign-in returns here with the share.
@@ -85,7 +86,7 @@ export default function ShareRoute() {
       >
         <GlassIconButton
           testID="share-close"
-          accessibilityLabel={t("Close")}
+          accessibilityLabel={t`Close`}
           ios="xmark"
           android="close"
           size={44}
@@ -97,7 +98,7 @@ export default function ShareRoute() {
           accessibilityRole="header"
           style={{ fontSize: 20, fontWeight: "600", color: tokens.foreground }}
         >
-          {t("Share to")}
+          {t`Share to`}
         </Text>
       </View>
       {preview ? (
@@ -135,7 +136,7 @@ export default function ShareRoute() {
                 numberOfLines={1}
                 style={{ flex: 1, fontSize: 15, color: tokens.mutedForeground }}
               >
-                {preview.fileName ?? t("{count} files", { count: preview.fileCount })}
+                {preview.fileName ?? t`${ph({ count: preview.fileCount })} files`}
               </Text>
             </View>
           ) : null}

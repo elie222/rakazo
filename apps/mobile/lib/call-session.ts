@@ -1,3 +1,4 @@
+import { ph, t } from "@lingui/core/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
@@ -40,7 +41,7 @@ import {
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { hapticImpact, hapticSuccess } from "./haptics";
-import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
+import { deviceLanguage, getActiveUiLocale } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
@@ -430,7 +431,7 @@ async function openMic(): Promise<void> {
   // first snapshot arrives, the call cannot tell, so it waits for that too.
   if (!thread || pendingCallSecretAsk(thread)) {
     heldForCode = true;
-    if (thread) set({ caption: t("Hang up, then enter the code on screen.") });
+    if (thread) set({ caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   micOpen = true;
@@ -483,9 +484,7 @@ async function openMic(): Promise<void> {
     if (!canTranscribe) {
       micOpen = false;
       set({
-        caption: t(
-          "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.",
-        ),
+        caption: t`Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.`,
       });
       return;
     }
@@ -542,7 +541,7 @@ async function handleTranscript(raw: string): Promise<void> {
   const next = callTurn(thread, text);
   if (next.kind === "enter_code") {
     heldForCode = true;
-    set({ phase: "listening", heard: "", caption: t("Hang up, then enter the code on screen.") });
+    set({ phase: "listening", heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   const closing = isFarewell(text);
@@ -555,7 +554,7 @@ async function handleTranscript(raw: string): Promise<void> {
     callRunId = next.runId;
     if (closing) hangUpAfterReply = true;
     void listen();
-    set({ caption: t("Approve or deny it on screen.") });
+    set({ caption: t`Approve or deny it on screen.` });
     return;
   }
   const { botId } = state;
@@ -644,7 +643,7 @@ function failTurn(error: unknown): void {
     endCall();
     return;
   }
-  set({ phase: "listening", caption: errorText(error, t("Could not hear that.")) });
+  set({ phase: "listening", caption: errorText(error, t`Could not hear that.`) });
   void listen();
 }
 
@@ -659,7 +658,7 @@ function blockForConsent(error: AiConsentBlocked): void {
     phase: "listening",
     muted: true,
     heard: "",
-    caption: errorText(error, t("Could not hear that.")),
+    caption: errorText(error, t`Could not hear that.`),
   });
 }
 
@@ -694,14 +693,14 @@ function onThread(next: MobileSnapshot): void {
   if (!state) return;
   if (pendingCallSecretAsk(next)) {
     // Also when the mic never opened (the thread loaded late): the caller still needs to know.
-    if (heldForCode) set({ caption: t("Hang up, then enter the code on screen.") });
+    if (heldForCode) set({ caption: t`Hang up, then enter the code on screen.` });
     if (!micOpen) return;
     heldForCode = true;
     turn?.abort();
     turn = null;
     micOpen = false;
     interim.clear();
-    set({ heard: "", caption: t("Hang up, then enter the code on screen.") });
+    set({ heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
   // The first snapshot arrived, or the code was entered on screen: listen again unless the
@@ -717,7 +716,7 @@ async function switchCall(target: CallSwitch, heard: string): Promise<void> {
   switching = true;
   const { botId } = state;
   const switchingCallId = callId;
-  const notice = t("OK, switching to {name}.", { name: target.name });
+  const notice = t`OK, switching to ${ph({ name: target.name })}.`;
   turn?.abort();
   turn = null;
   micOpen = false;
@@ -790,7 +789,7 @@ function speakAndListen(text: string): void {
         blockForConsent(error);
         return;
       }
-      set({ caption: errorText(error, t("Could not speak that.")) });
+      set({ caption: errorText(error, t`Could not speak that.`) });
     })
     .finally(() => {
       if (superseded()) return;
@@ -826,7 +825,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   const callContext = async () => {
     const context = requestContext ?? (await captureApiRequestContext());
     if (context.sessionGeneration !== generation || currentSessionGeneration() !== generation)
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     return context;
   };
   // The server rejected this call's session: stop listening instead of opening the
@@ -908,9 +907,7 @@ export async function recordClip(
   if (signal.aborted) return null;
   if (!permission.granted)
     throw new ExpectedTurnFailure(
-      until
-        ? t("Allow microphone access to dictate.")
-        : t("Allow microphone access to call a bot."),
+      until ? t`Allow microphone access to dictate.` : t`Allow microphone access to call a bot.`,
     );
   let recorder: AudioRecorder | undefined;
   let heardSpeech = false;
@@ -1004,12 +1001,12 @@ export async function transcribeClip(
   );
   const body = await readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(res, {
     maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
-    tooLargeMessage: t("Could not transcribe that."),
+    tooLargeMessage: t`Could not transcribe that.`,
     signal,
   });
   if (!res.ok) {
     throw new ExpectedTurnFailure(
-      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not transcribe that.")),
+      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t`Could not transcribe that.`),
     );
   }
   return body.text ?? "";
@@ -1030,7 +1027,7 @@ async function speakReply(
   requestContext?: ApiRequestContext,
 ): Promise<void> {
   if (!(await speakText(text, { botId, owner, requestContext }))) {
-    throw new Error(t("Add a voice provider in Voice settings."));
+    throw new Error(t`Add a voice provider in Voice settings.`);
   }
 }
 

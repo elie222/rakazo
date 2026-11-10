@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { ContactFields, VaultKind, VaultRevealed } from "@rakazo/contracts";
 import { commandVariableName } from "@rakazo/contracts";
 import type { ReactNode } from "react";
@@ -6,7 +8,6 @@ import type { TextInputInstance, TextInputProps } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { useSecretSheetClose } from "../lib/secret-sheet-close";
 import { errorText } from "../lib/user-error";
@@ -56,14 +57,14 @@ export function VaultItemEditor({
   /** Rejects when nothing was saved. */
   onSave: (save: VaultSave) => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [draft, setDraft] = useState<VaultDraft>(() => {
     const fields: LoginFieldRow[] = [
-      { id: 0, label: t("Username"), value: item?.preview?.username ?? "", hidden: false },
-      { id: 1, label: t("Password"), value: "", hidden: true },
+      { id: 0, label: t`Username`, value: item?.preview?.username ?? "", hidden: false },
+      { id: 1, label: t`Password`, value: "", hidden: true },
     ];
     if (!item) return emptyDraft(fields);
     const draft = itemDraft(item, fields, revealed);
@@ -100,7 +101,7 @@ export function VaultItemEditor({
       await onSave(save);
       close();
     } catch (err) {
-      setError(ask ? t("Could not send answer") : errorText(err, t("Could not save")));
+      setError(ask ? t`Could not send answer` : errorText(err, t`Could not save`));
     } finally {
       setSubmitting(false);
     }
@@ -159,9 +160,9 @@ export function VaultItemEditor({
   );
 
   const apiTypes: { key: ApiAuthType; label: string }[] = [
-    { key: "bearer", label: t("Bearer token") },
-    { key: "header", label: t("Custom header") },
-    { key: "basic", label: t("Basic auth") },
+    { key: "bearer", label: t`Bearer token` },
+    { key: "header", label: t`Custom header` },
+    { key: "basic", label: t`Basic auth` },
   ];
   const brand = typedCardBrand(draft.number);
   const problem = kind === "variable" && !item ? variableProblem(draft) : undefined;
@@ -183,7 +184,7 @@ export function VaultItemEditor({
         <View style={styles.header}>
           <NativeActionButton
             disabled={submitting}
-            label={t("Cancel")}
+            label={t`Cancel`}
             onPress={cancel}
             prominence="plain"
           />
@@ -191,7 +192,7 @@ export function VaultItemEditor({
             disabled={!save}
             busy={submitting}
             fill={false}
-            label={t("Save")}
+            label={t`Save`}
             onPress={() => void submit()}
             prominence={save ? "primary" : "plain"}
           />
@@ -209,7 +210,7 @@ export function VaultItemEditor({
             <>
               {item ? null : (
                 <View style={styles.group}>
-                  {field(t("Site"), draft.origin, (origin) => update({ origin }), {
+                  {field(t`Site`, draft.origin, (origin) => update({ origin }), {
                     placeholder: "https://example.com",
                     keyboardType: "url",
                     autoCapitalize: "none",
@@ -232,7 +233,7 @@ export function VaultItemEditor({
 
           {kind === "card" ? (
             <View style={styles.group}>
-              {field(t("Card number"), draft.number, (number) => update({ number }), {
+              {field(t`Card number`, draft.number, (number) => update({ number }), {
                 slot: 0,
                 placeholder: item?.preview?.card ? `•••• ${item.preview.card.last4}` : undefined,
                 keyboardType: "number-pad",
@@ -242,12 +243,12 @@ export function VaultItemEditor({
               {brand ? <Text style={styles.brand}>{brand}</Text> : null}
               <View style={styles.separator} />
               {pair(
-                field(t("Expiry"), draft.expiry, (expiry) => update({ expiry }), {
+                field(t`Expiry`, draft.expiry, (expiry) => update({ expiry }), {
                   placeholder: "MM/YY",
                   keyboardType: "numbers-and-punctuation",
                   autoComplete: "cc-exp",
                 }),
-                field(t("Security code"), draft.cvc, (cvc) => update({ cvc }), {
+                field(t`Security code`, draft.cvc, (cvc) => update({ cvc }), {
                   slot: 1,
                   secureTextEntry: true,
                   keyboardType: "number-pad",
@@ -256,7 +257,7 @@ export function VaultItemEditor({
                 }),
               )}
               <View style={styles.separator} />
-              {field(t("Name on card"), draft.cardName, (cardName) => update({ cardName }), {
+              {field(t`Name on card`, draft.cardName, (cardName) => update({ cardName }), {
                 autoCapitalize: "words",
                 autoComplete: "cc-name",
                 textContentType: "name",
@@ -265,8 +266,8 @@ export function VaultItemEditor({
                 <>
                   <View style={styles.separator} />
                   <MenuPicker
-                    label={t("Billing address")}
-                    choices={[{ key: "", label: t("None") }, ...contacts]}
+                    label={t`Billing address`}
+                    choices={[{ key: "", label: t`None` }, ...contacts]}
                     value={draft.billing}
                     onChange={(billing) => update({ billing })}
                   />
@@ -277,42 +278,42 @@ export function VaultItemEditor({
 
           {kind === "contact" ? (
             <View style={styles.group}>
-              {contactField("name", t("Full name"), {
+              {contactField("name", t`Full name`, {
                 textContentType: "name",
                 autoComplete: "name",
               })}
               <View style={styles.separator} />
-              {contactField("line1", t("Address"), {
+              {contactField("line1", t`Address`, {
                 textContentType: "streetAddressLine1",
                 autoComplete: "address-line1",
               })}
               <View style={styles.separator} />
-              {contactField("line2", t("Address line 2"), {
+              {contactField("line2", t`Address line 2`, {
                 textContentType: "streetAddressLine2",
                 autoComplete: "address-line2",
               })}
               <View style={styles.separator} />
               {pair(
-                contactField("city", t("City"), { textContentType: "addressCity" }),
-                contactField("region", t("State or region"), { textContentType: "addressState" }),
+                contactField("city", t`City`, { textContentType: "addressCity" }),
+                contactField("region", t`State or region`, { textContentType: "addressState" }),
               )}
               <View style={styles.separator} />
               {pair(
-                contactField("postalCode", t("ZIP or postal code"), {
+                contactField("postalCode", t`ZIP or postal code`, {
                   textContentType: "postalCode",
                   autoComplete: "postal-code",
                   autoCapitalize: "characters",
                 }),
-                contactField("country", t("Country"), { textContentType: "countryName" }),
+                contactField("country", t`Country`, { textContentType: "countryName" }),
               )}
               <View style={styles.separator} />
-              {contactField("phone", t("Phone"), {
+              {contactField("phone", t`Phone`, {
                 keyboardType: "phone-pad",
                 textContentType: "telephoneNumber",
                 autoComplete: "tel",
               })}
               <View style={styles.separator} />
-              {contactField("email", t("Email"), {
+              {contactField("email", t`Email`, {
                 keyboardType: "email-address",
                 textContentType: "emailAddress",
                 autoComplete: "email",
@@ -325,7 +326,7 @@ export function VaultItemEditor({
             <View style={styles.group}>
               {item ? null : (
                 <>
-                  {field(t("Site"), draft.origin, (origin) => update({ origin }), {
+                  {field(t`Site`, draft.origin, (origin) => update({ origin }), {
                     placeholder: "https://api.example.com",
                     keyboardType: "url",
                     autoCapitalize: "none",
@@ -333,7 +334,7 @@ export function VaultItemEditor({
                   })}
                   <View style={styles.separator} />
                   <MenuPicker
-                    label={t("Type")}
+                    label={t`Type`}
                     choices={apiTypes}
                     value={draft.apiAuth}
                     onChange={(key) => update({ apiAuth: key as ApiAuthType })}
@@ -342,7 +343,7 @@ export function VaultItemEditor({
                     <>
                       <View style={styles.separator} />
                       {field(
-                        t("Header name"),
+                        t`Header name`,
                         draft.headerName,
                         (headerName) => update({ headerName }),
                         {
@@ -356,7 +357,7 @@ export function VaultItemEditor({
                     <>
                       <View style={styles.separator} />
                       {field(
-                        t("Username"),
+                        t`Username`,
                         draft.basicUsername,
                         (basicUsername) => update({ basicUsername }),
                         {
@@ -377,7 +378,7 @@ export function VaultItemEditor({
               {item
                 ? null
                 : field(
-                    t("Name"),
+                    t`Name`,
                     draft.variable,
                     (variable) => update({ variable: variable.toUpperCase() }),
                     {
@@ -392,26 +393,24 @@ export function VaultItemEditor({
           {problem ? (
             <Text style={styles.error}>
               {problem === "reserved"
-                ? t("{variable} is reserved. Choose another name.", {
-                    variable: `$${commandVariableName(variableName(draft))}`,
-                  })
-                : t("Use letters, numbers and _, starting with a letter.")}
+                ? t`${ph({ variable: `$${commandVariableName(variableName(draft))}` })} is reserved. Choose another name.`
+                : t`Use letters, numbers and _, starting with a letter.`}
             </Text>
           ) : null}
 
           {ask ? null : (
             <View style={styles.group}>
               {field(
-                kind === "contact" ? t("Label") : t("Title"),
+                kind === "contact" ? t`Label` : t`Title`,
                 draft.title,
                 (text) => update({ title: text }),
                 {
-                  placeholder: kind === "contact" ? t("Home") : item?.title,
+                  placeholder: kind === "contact" ? t`Home` : item?.title,
                   autoCapitalize: "sentences",
                 },
               )}
               <View style={styles.separator} />
-              {field(t("When to use"), draft.note, (note) => update({ note }), {
+              {field(t`When to use`, draft.note, (note) => update({ note }), {
                 autoCapitalize: "sentences",
               })}
             </View>
@@ -427,7 +426,7 @@ export function VaultItemEditor({
   );
 
   function secretValueField() {
-    return field(t("Value"), draft.value, (value) => update({ value }), {
+    return field(t`Value`, draft.value, (value) => update({ value }), {
       slot: 0,
       secureTextEntry: true,
       autoCapitalize: "none",

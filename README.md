@@ -91,7 +91,7 @@ Gmail, Slack, GitHub, Notion, Linear and thousands more, plus your own MCP serve
 
 ### On every device
 
-Web, desktop, iPhone, and Android, all talking to the same server.
+Web, desktop, iPhone, iPad, and Android, all talking to the same server.
 
 <img src="./docs/screenshots/readme/mobile.png" alt="The bot list and a chat on iPhone" width="100%">
 

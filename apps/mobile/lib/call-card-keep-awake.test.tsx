@@ -116,11 +116,6 @@ vi.mock("./session", () => ({
     return () => sessionChange.listeners.delete(listener);
   },
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
-}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));

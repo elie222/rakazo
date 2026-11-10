@@ -13,10 +13,6 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {} }));
-vi.mock("./i18n", () => {
-  const i18n = { t: (text: string) => text };
-  return { useI18n: () => i18n };
-});
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) =>
     createElement("button", { type: "button" }, label),

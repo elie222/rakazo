@@ -5,12 +5,7 @@ import {
   decodeLoginSecret,
   vaultKind,
 } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("./i18n", () => ({
-  t: (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key),
-}));
+import { describe, expect, it } from "vitest";
 
 import type { VaultDraft, VaultItem } from "./vault";
 import {
