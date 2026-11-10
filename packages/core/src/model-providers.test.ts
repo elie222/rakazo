@@ -649,6 +649,17 @@ describe("connectionModelChoices", () => {
     expect(keys).toEqual(["sub@@anthropic::opus"]);
   });
 
+  it.each([
+    ["saved", { modelId: "funded" }],
+    ["enabled", { enabledModelIds: ["funded"] }],
+  ])("lists a %s funded model only under no connection", (_name, saved) => {
+    const keys = connectionModelChoices(
+      [{ ...anthropic("api", "API key"), ...saved }, anthropic("sub", "Subscription")],
+      [{ ...entry("anthropic", "funded"), managed: true }],
+    ).map((choice) => choice.key);
+    expect(keys).toEqual(["anthropic::funded"]);
+  });
+
   it("keeps a custom model id the catalog does not list", () => {
     const keys = connectionModelChoices(
       [{ ...anthropic("api", "API key"), modelId: "custom" }, anthropic("sub", "Subscription")],

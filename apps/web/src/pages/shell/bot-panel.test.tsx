@@ -598,6 +598,18 @@ describe("BotSettings thinking options", () => {
     vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
   });
 
+  it("says so when the bot's connection cannot be loaded", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    vi.mocked(rpc.bots.modelConnection).mockRejectedValue(new Error("offline"));
+    await render("Billing", { modelProvider: "anthropic", modelId: "claude-opus" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Could not load model settings");
+    vi.mocked(rpc.bots.modelConnection).mockResolvedValue({ credentialId: null, pinned: false });
+  });
+
   it("asks again which connection runs the bot when another session changes its model", async () => {
     i18n.load("en", {});
     i18n.activate("en");

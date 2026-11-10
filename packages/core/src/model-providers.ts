@@ -430,11 +430,10 @@ export function connectionModelChoices(
     counts.set(provider(credential), (counts.get(provider(credential)) ?? 0) + 1);
   const several = (entry: { provider: string }) => (counts.get(provider(entry)) ?? 0) > 1;
   const separate = credentials.filter(several).flatMap((credential) => {
-    const listed = catalog.filter(
-      (entry) => provider(entry) === provider(credential) && !entry.managed,
-    );
+    const listed = catalog.filter((entry) => provider(entry) === provider(credential));
     const served = listed.filter(
-      (entry) => !entry.credentialIds || entry.credentialIds.includes(credential.id),
+      (entry) =>
+        !entry.managed && (!entry.credentialIds || entry.credentialIds.includes(credential.id)),
     );
     return (
       connectedModelChoices([credential], served)

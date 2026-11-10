@@ -61,9 +61,10 @@ async function compatibleModelPins(
             },
           },
           select: {
+            provider: true,
             modelId: true,
             credentialId: true,
-            bot: { select: { name: true, spaceId: true } },
+            bot: { select: { name: true, spaceId: true, modelId: true } },
           },
         }),
         deps.prisma.userModelRoleChoice.findMany({ where: { ...where, provider }, select: role }),
@@ -95,7 +96,10 @@ async function compatibleModelPins(
             ? chosenConnectionId(bot.modelConnections, routine.modelId)
             : undefined,
       })),
-      ...sharedBotChoices.map(({ bot, ...choice }) => ({ ...bot, ...choice })),
+      // A choice left behind on a model the bot has moved off no longer runs anything.
+      ...sharedBotChoices
+        .filter((choice) => botModelConnectionApplies(choice, provider, choice.bot.modelId))
+        .map(({ bot: { modelId: _botModel, ...bot }, ...choice }) => ({ ...bot, ...choice })),
     ],
     backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
   };

@@ -8367,7 +8367,8 @@ describe("openai-compatible enabled models", () => {
     sharedBotChoices?: {
       modelId: string;
       credentialId: string;
-      bot: { name: string; spaceId: string };
+      provider: string;
+      bot: { name: string; spaceId: string; modelId: string };
     }[];
     /** Stored plaintext; null makes the stored ciphertext unreadable. */
     plaintext: string | null;
@@ -8650,9 +8651,10 @@ describe("openai-compatible enabled models", () => {
       defaultModel: "m-a",
       sharedBotChoices: [
         {
+          provider: compatible,
           modelId: "m-b",
           credentialId: "cred-compat",
-          bot: { name: "Shared", spaceId: "space-2" },
+          bot: { name: "Shared", spaceId: "space-2", modelId: "m-b" },
         },
       ],
     });
@@ -8674,6 +8676,29 @@ describe("openai-compatible enabled models", () => {
         }),
       }),
     );
+  });
+
+  it("ignores a member's old choice once the shared bot has moved to another model", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      sharedBotChoices: [
+        {
+          provider: compatible,
+          modelId: "m-b",
+          credentialId: "cred-compat",
+          bot: { name: "Shared", spaceId: "space-2", modelId: "m-c" },
+        },
+      ],
+    });
+    await expect(
+      call("models/connect", {
+        provider: compatible,
+        baseUrl,
+        modelId: "m-a",
+        enabledModelIds: ["m-a"],
+      }),
+    ).resolves.toMatchObject({ status: 200 });
   });
 
   it("ignores a routine's model once its bot has moved off the chosen connection's model", async () => {
@@ -8931,9 +8956,10 @@ describe("openai-compatible enabled models", () => {
       {
         sharedBotChoices: [
           {
+            provider: compatible,
             modelId: "m-a",
             credentialId: "cred-other",
-            bot: { name: "Ada", spaceId: "space-2" },
+            bot: { name: "Ada", spaceId: "space-2", modelId: "m-a" },
           },
         ],
       },

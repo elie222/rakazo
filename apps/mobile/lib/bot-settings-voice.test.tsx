@@ -685,6 +685,22 @@ describe("bot settings device voice menu", () => {
       expect(container.textContent).toContain("Connection lookup refused");
     });
 
+    it("does not show the old connection when the new model's lookup fails", async () => {
+      mocks.connection = { credentialId: "sub", pinned: true };
+      mocks.catalog = [opus, { ...opus, id: "claude-sonnet", label: "Claude Sonnet" }];
+      await render();
+      await act(async () =>
+        row((title) => title.includes("Claude subscription") && title.includes("Sonnet")).click(),
+      );
+      mocks.connectionError = new Error("Connection lookup refused");
+      await save();
+      expect(container.textContent).toContain("Connection lookup refused");
+      expect(
+        row((title) => title.includes("Claude subscription") && title.includes("Sonnet")).dataset
+          .state,
+      ).not.toBe("on");
+    });
+
     it("sends no connection when none was picked", async () => {
       mocks.connection = { credentialId: "sub", pinned: true };
       await render();

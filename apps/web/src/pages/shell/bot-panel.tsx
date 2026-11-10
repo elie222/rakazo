@@ -225,6 +225,7 @@ export function BotSettings({
     connectionChanged ||
     description.trim() !== savedDescriptionRef.current;
   const [error, setError] = useState<string | null>(null);
+  const shownError = error ?? (connectionQuery.isError ? t`Could not load model settings` : null);
   const saveQueueRef = useRef(Promise.resolve());
   const executeSaveRef = useRef<
     (
@@ -719,7 +720,7 @@ export function BotSettings({
           ) : null}
         </TabsContent>
       </Tabs>
-      {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
+      {shownError ? <p className="mt-2 text-body-sm text-destructive">{shownError}</p> : null}
     </div>
   );
 }

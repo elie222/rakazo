@@ -249,10 +249,8 @@ export default function BotSettingsScreen() {
   const savedModelId = bot?.modelId;
   useEffect(() => {
     setConnectionError(null);
-    if (!savedProvider || !savedModelId) {
-      setSavedConnection(null);
-      return;
-    }
+    setSavedConnection(null);
+    if (!savedProvider || !savedModelId) return;
     let current = true;
     void rpc("bots/modelConnection", { botId })
       .then((next) => {
