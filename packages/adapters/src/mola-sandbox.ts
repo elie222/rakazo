@@ -46,7 +46,15 @@ type MolaApiMode = "cloud" | "selfhosted";
 interface MolaMachine {
   id: string;
   name: string;
-  status: "provisioning" | "booting" | "starting" | "ready" | "stopped" | "unknown";
+  status:
+    | "provisioning"
+    | "booting"
+    | "starting"
+    | "ready"
+    | "stopped"
+    | "stopping"
+    | "deleting"
+    | "unknown";
   is_transitional?: boolean;
   runtime_status?: string;
   vcpus: number;
@@ -282,6 +290,13 @@ export class MolaSandboxProvider implements SandboxProvider {
         throw new Error("Machine is not in a state that allows this operation");
       }
 
+      if (response.status === 504) {
+        // Cloudflare gateway timeout on Cloud (cuts at ~60s)
+        throw new Error(
+          "Command execution timed out at the Mola Cloud gateway (~60s limit). For Cloud mode, commands are capped to 50 seconds. Use self-hosted Mola for longer commands.",
+        );
+      }
+
       if (!response.ok) {
         const text = await response.text();
         throw new SandboxUnresponsiveError(`Mola API error: ${text || response.statusText}`);
@@ -357,7 +372,8 @@ export class MolaSandboxProvider implements SandboxProvider {
         machine.is_transitional ||
         machine.status === "provisioning" ||
         machine.status === "booting" ||
-        machine.status === "starting"
+        machine.status === "starting" ||
+        machine.status === "stopping"
       ) {
         await abortableDelay(MOLA_POLL_MS, context.signal);
         continue;
@@ -365,6 +381,10 @@ export class MolaSandboxProvider implements SandboxProvider {
 
       if (machine.status === "stopped") {
         throw new SandboxUnavailableError({ cause: new Error("Machine stopped during startup") });
+      }
+
+      if (machine.status === "deleting") {
+        throw new SandboxUnavailableError({ cause: new Error("Machine is being deleted") });
       }
 
       throw new SandboxUnavailableError({
@@ -532,8 +552,10 @@ export class MolaSandboxProvider implements SandboxProvider {
     const command = argv.map(shellQuote).join(" ");
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
 
-    // Clamp exec timeout to Mola's 1-120 second range
-    const execTimeoutSeconds = Math.max(1, Math.min(120, Math.ceil(timeoutMs / 1000)));
+    // Cloud has Cloudflare 504 gateway timeout at ~60s, so cap to 50s for safety
+    // Self-hosted accepts 1-120s
+    const maxExecSeconds = this.apiMode === "cloud" ? 50 : 120;
+    const execTimeoutSeconds = Math.max(1, Math.min(maxExecSeconds, Math.ceil(timeoutMs / 1000)));
     // HTTP timeout = exec timeout + 10s margin
     const httpTimeoutMs = (execTimeoutSeconds + 10) * 1000;
 
@@ -858,16 +880,20 @@ export class MolaSandboxProvider implements SandboxProvider {
     const normalized = normalizeWorkspacePath(file.path);
     const fullPath = path.posix.join(MOLA_WORKSPACE, normalized);
 
+    // Mola Cloud API expects 'content' field (base64-encoded for binary safety)
+    // Self-hosted mola-core may accept content_base64, but content works for both
+    const contentBase64 = Buffer.from(
+      file.content.buffer,
+      file.content.byteOffset,
+      file.content.byteLength,
+    ).toString("base64");
+
     await this.executeAction(
       computer.providerRef,
       {
         action: "write_file",
         path: fullPath,
-        content_base64: Buffer.from(
-          file.content.buffer,
-          file.content.byteOffset,
-          file.content.byteLength,
-        ).toString("base64"),
+        content: contentBase64,
       },
       { signal: context.signal },
     );

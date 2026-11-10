@@ -413,8 +413,9 @@ describe("MolaSandboxProvider", () => {
       expect(startCall[0]).toBe(`https://cloud.mola.sh/api/v1/computers/${machineId}/start`);
     });
 
-    it("clamps exec timeout to 1-120 seconds and extends HTTP timeout", async () => {
-      const provider = createMolaSandboxProvider({
+    it("clamps exec timeout: Cloud to 50s, self-hosted to 120s", async () => {
+      // Test Cloud mode (capped at 50s due to Cloudflare 504 at ~60s)
+      const cloudProvider = createMolaSandboxProvider({
         apiKey: "test-key",
         apiUrl: "https://cloud.mola.sh/api/v1",
       });
@@ -439,7 +440,7 @@ describe("MolaSandboxProvider", () => {
       );
 
       const events: string[] = [];
-      for await (const event of provider.execute(
+      for await (const event of cloudProvider.execute(
         computer,
         { argv: ["sleep", "5"], timeoutMs: 300_000 }, // 5 minutes requested
         createMockContext(),
@@ -448,14 +449,49 @@ describe("MolaSandboxProvider", () => {
       }
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const call = fetchMock.mock.calls[0];
-      if (!call) throw new Error("Execute call not made");
-      const options = call[1] as RequestInit;
-      const body = JSON.parse(options.body as string);
-      // Timeout should be clamped to 120s (Mola's max)
-      expect(body.timeout).toBe(120);
+      const cloudCall = fetchMock.mock.calls[0];
+      if (!cloudCall) throw new Error("Execute call not made");
+      const cloudOptions = cloudCall[1] as RequestInit;
+      const cloudBody = JSON.parse(cloudOptions.body as string);
+      // Cloud timeout should be clamped to 50s (Cloudflare gateway limit)
+      expect(cloudBody.timeout).toBe(50);
       expect(events).toContain("stdout");
       expect(events).toContain("exit");
+
+      // Test self-hosted mode (capped at 120s - Mola's API max)
+      fetchMock.mockClear();
+      const selfhostedProvider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "http://localhost:4141/v1",
+      });
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, {
+          data: {
+            exit_code: 0,
+            stdout: "command output",
+            stderr: "",
+            timed_out: false,
+          },
+        }),
+      );
+
+      const events2: string[] = [];
+      for await (const event of selfhostedProvider.execute(
+        computer,
+        { argv: ["sleep", "5"], timeoutMs: 300_000 },
+        createMockContext(),
+      )) {
+        events2.push(event.type);
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const selfhostedCall = fetchMock.mock.calls[0];
+      if (!selfhostedCall) throw new Error("Execute call not made");
+      const selfhostedOptions = selfhostedCall[1] as RequestInit;
+      const selfhostedBody = JSON.parse(selfhostedOptions.body as string);
+      // Self-hosted timeout should be clamped to 120s (Mola API max)
+      expect(selfhostedBody.timeout).toBe(120);
     });
 
     it("detects self-hosted for custom domain (not localhost)", async () => {
