@@ -236,7 +236,9 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: { role: "bot", blocks: [{ type: "text", text: "The report is ready." }] },
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", true, "group-g"));
+    act(() =>
+      hook.notifyBrowserForEvent(event, "thread-g", 4, true, "Scout", () => true, "group-g"),
+    );
     const [notification] = FakeNotification.shown;
     expect(shown()).toEqual([["Scout", "The report is ready.", "thread-g"]]);
     notification!.onclick!();
@@ -256,7 +258,9 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: {},
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() =>
+      hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", () => true, undefined),
+    );
     act(() => root.unmount());
     expect(FakeNotification.shown[0]!.closed).toBe(true);
     root = createRoot(document.createElement("div"));
@@ -274,12 +278,69 @@ describe("useBrowserNotifications chat alerts", () => {
       botId: "bot-b",
       payload: {},
     } as const;
-    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    act(() =>
+      hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", () => true, undefined),
+    );
     act(() => root.unmount());
     FakeNotification.permission = "granted";
     hook.flushPendingBrowserNotifications();
     expect(shown()).toEqual([]);
     root = createRoot(document.createElement("div"));
+  });
+
+  it("asks whether the open chat is muted only for what would notify, and then stays silent", async () => {
+    visible = false;
+    await open({ botId: "bot-b" });
+    const enabled = vi.fn(() => false);
+    const event = {
+      id: "event-1",
+      type: "thread.message.created",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: { role: "bot", blocks: [{ type: "text", text: "For another bot." }] },
+    } as const;
+    act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", enabled, undefined));
+    expect(enabled).toHaveBeenCalledOnce();
+    expect(shown()).toEqual([]);
+    visible = true;
+    act(() =>
+      hook.notifyBrowserForEvent(
+        { ...event, id: "event-2", seq: 6 },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        enabled,
+        undefined,
+      ),
+    );
+    expect(enabled).toHaveBeenCalledOnce();
+  });
+
+  it("drops a notification held for permission once its chat is muted", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    await open({ botId: "bot-b" });
+    const event = {
+      id: "event-1",
+      type: "run.failed",
+      threadId: "thread-b",
+      seq: 5,
+      botId: "bot-b",
+      payload: {},
+    } as const;
+    act(() =>
+      hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", () => true, undefined),
+    );
+    bots[0]!.muted = true;
+    FakeNotification.permission = "granted";
+    try {
+      hook.flushPendingBrowserNotifications();
+      expect(shown()).toEqual([]);
+    } finally {
+      bots[0]!.muted = false;
+    }
   });
 
   it("closes the stream when the shell unmounts", async () => {

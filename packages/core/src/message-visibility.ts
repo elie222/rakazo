@@ -184,6 +184,29 @@ export function foldPeerReplies<T extends PresentableMessage>(
   return { messages: visible, folded, markerOf, mergedInto };
 }
 
+/**
+ * Whether a message is one bot talking to another rather than to the people in the chat: a
+ * message it sent another bot, a group handoff, or a reply the chat folds into the errand another
+ * bot gave it. Such a message alerts nobody; the reply that bot then gives the person does.
+ */
+export function messageForAnotherBot(
+  messages: readonly PresentableMessage[],
+  messageId: string,
+): boolean {
+  const message = messages.find((candidate) => candidate.id === messageId);
+  if (!message) return false;
+  if (
+    message.blocks.some(
+      (block) =>
+        block.kind === "bot_message_sent" ||
+        block.kind === "bot_message_received" ||
+        block.kind === "handoff",
+    )
+  )
+    return true;
+  return foldPeerReplies(messages, { includePeerReceipts: true }).markerOf.has(messageId);
+}
+
 export function userVisibleMessages<T extends PresentableMessage>(
   messages: readonly T[],
   options: UserVisibleMessagesOptions = {},

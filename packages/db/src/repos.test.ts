@@ -450,7 +450,15 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           id: "thread-2",
-          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
+          // Never chose a mute, so the bot's own switch decides.
+          reads: [
+            {
+              unread: true,
+              snoozedUntil: new Date("2026-08-21T09:00:00.000Z"),
+              muted: null,
+              hidden: true,
+            },
+          ],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running", threadId: "group-thread" }],
@@ -491,6 +499,8 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         sectionId: null,
         unread: true,
         snoozedUntil: "2026-08-21T09:00:00.000Z",
+        muted: true,
+        hidden: true,
         parentBotId: null,
         preview: "Waiting for a reply",
         status: "running",

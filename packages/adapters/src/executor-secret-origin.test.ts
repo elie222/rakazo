@@ -242,7 +242,8 @@ describe("request_secret for a login's fields", () => {
         blocks: [expect.objectContaining({ loginFields: ["ID number", "Phone number"] })],
       }),
     );
-    expect(everything).not.toContain('"hidden"');
+    // The visibility the bot chose for "ID number" reaches nothing it called.
+    expect(everything).not.toContain('"hidden":false');
   });
 
   it("turns down fields it can't ask for", async () => {

@@ -11,6 +11,7 @@ import {
   activeThreadRuns,
   answerableAskMessageIds,
   channelMessageSender,
+  chatListed,
   chatSnoozed,
   chatUserBubbleColors,
   chatWoke,
@@ -83,15 +84,16 @@ import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
+import { HiddenChats, SnoozedChats } from "./shell/shelved-chats";
 import { ShellSidePanel } from "./shell/side-panel";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
+import type { RosterMenu } from "./shell/sidebar-roster";
 import { SidebarRoster } from "./shell/sidebar-roster";
-import { SnoozedChats } from "./shell/snoozed-chats";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { useChatRead } from "./shell/use-chat-read";
-import { useChatSnooze } from "./shell/use-chat-snooze";
+import { useChatHide, useChatMute, useChatSnooze } from "./shell/use-chat-snooze";
 import { useComposerActions } from "./shell/use-composer-actions";
 import { useComposerMentions } from "./shell/use-composer-mentions";
 import { useComputerControls, useComputerState } from "./shell/use-computer";
@@ -177,14 +179,17 @@ function SpaceShell() {
     ...groups,
     ...spaces.flatMap((space) => [...space.bots, ...space.groups]),
   ]);
-  const snooze = useChatSnooze({
+  const chatChoiceDeps = {
     rpc,
     openSpaceId: bootstrapMe?.spaceId,
     setBots,
     setGroups,
     setSpaces,
     refreshBots,
-  });
+  };
+  const snooze = useChatSnooze(chatChoiceDeps);
+  const mute = useChatMute(chatChoiceDeps);
+  const hide = useChatHide(chatChoiceDeps);
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   useEffect(() => {
@@ -252,7 +257,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
-  const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
+  const [botMenu, setBotMenu] = useState<RosterMenu | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
   // null: settings follow the space the app is showing.
@@ -283,8 +288,8 @@ function SpaceShell() {
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
-        // With no chat named, open one that's in the list, not a snoozed one.
-        bots.find((b) => !chatSnoozed(b, snoozeNow)) ??
+        // With no chat named, open one that's in the list, not a snoozed or hidden one.
+        bots.find((b) => chatListed(b, snoozeNow)) ??
         bots[0]);
   const selectBot = useCallback(
     (id: string) => {
@@ -319,7 +324,7 @@ function SpaceShell() {
   const cycleBots = useMemo(
     () =>
       groupBotsForSidebar(
-        bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
+        bots.filter((bot) => chatListed(bot, snoozeNow)),
         botSections,
       ).flatMap((group) => group.bots),
     [bots, botSections, snoozeNow],
@@ -905,12 +910,15 @@ function SpaceShell() {
         rpc={rpc}
         bot={contextBot}
         group={contextGroup}
+        anchor={botMenu?.anchor}
         sections={botSections}
         spaceId={bootstrapMe?.spaceId}
         onClose={closeBotMenu}
         refreshBots={refreshBots}
         read={read}
         snooze={snooze}
+        mute={mute}
+        hide={hide}
         dialogs={dialogs}
         openChatSettings={openChatSettings}
         navigate={navigate}
@@ -993,15 +1001,28 @@ function SpaceShell() {
             <SnoozedChats
               snoozed={sidebarSpaces.flatMap((space) => [
                 ...space.bots
-                  .filter((chat) => chatSnoozed(chat, snoozeNow))
+                  .filter((chat) => !chat.hidden && chatSnoozed(chat, snoozeNow))
                   .map((chat) => ({ kind: "bot" as const, chat })),
                 ...space.groups
-                  .filter((chat) => chatSnoozed(chat, snoozeNow))
+                  .filter((chat) => !chat.hidden && chatSnoozed(chat, snoozeNow))
                   .map((chat) => ({ kind: "group" as const, chat })),
               ])}
               showSpaceSearch={search.showSpaceSearch}
               now={snoozeNow}
               snooze={snooze}
+              openSpaceChat={openSpaceChat}
+            />
+            <HiddenChats
+              hidden={sidebarSpaces.flatMap((space) => [
+                ...space.bots
+                  .filter((chat) => chat.hidden)
+                  .map((chat) => ({ kind: "bot" as const, chat })),
+                ...space.groups
+                  .filter((chat) => chat.hidden)
+                  .map((chat) => ({ kind: "group" as const, chat })),
+              ])}
+              showSpaceSearch={search.showSpaceSearch}
+              hide={hide}
               openSpaceChat={openSpaceChat}
             />
             <ArchivedChats

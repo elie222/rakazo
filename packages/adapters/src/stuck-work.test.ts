@@ -168,6 +168,21 @@ describe("reconcileStuckWork", () => {
     expect(stamps).toHaveLength(1);
   });
 
+  it("still reminds whoever muted the chat themselves, as a question would", async () => {
+    const run = candidate("waiting_input", 5);
+    run.bot.notifyOnFinish = false;
+    const prisma = noticePrisma(run, []);
+    prisma.threadRead.findMany = vi.fn(async () => [
+      { userId: "user-1", snoozedUntil: null, hidden: false, muted: true },
+    ]) as never;
+    const { jobs } = publisher();
+    const { provider, send } = notifications();
+
+    await reconcileStuckWork({ prisma, jobs, notifications: provider, now, batchSize: 100 });
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {
     const tokens = new MemoryPushTokenStore();
     const run = candidate("waiting_input", 5);
@@ -652,6 +667,7 @@ function stampMatchesDelete(stamp: NoticeStamp, where: NoticeDeleteWhere | undef
 function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) {
   let nextId = 0;
   const prisma = {
+    threadRead: noOwnState(),
     run: {
       findMany: vi.fn(async () => [run]),
       findUnique: vi.fn(async () => ({
@@ -696,8 +712,14 @@ function noticePrisma(run: ReturnType<typeof candidate>, stamps: NoticeStamp[]) 
   return prisma as unknown as PrismaClient & { $transaction: ReturnType<typeof vi.fn> };
 }
 
+/** Nobody muted, hid or snoozed the chat. */
+function noOwnState() {
+  return { findMany: vi.fn(async () => []), updateMany: vi.fn(async () => ({ count: 0 })) };
+}
+
 function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?: number }) {
   const client = {
+    threadRead: noOwnState(),
     externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     run: {
       findMany: vi.fn(async () => [run]),

@@ -11,3 +11,8 @@ it("lands on a listed chat before a snoozed one", () => {
   expect(firstThreadRoute([{ id: "a", snoozedUntil: later }], [], now)).toBe("/app/a");
   expect(firstThreadRoute([], [], now)).toBe("/app");
 });
+
+it("lands on a listed chat before a hidden one", () => {
+  expect(firstThreadRoute([{ id: "a", hidden: true }, { id: "b" }], [], now)).toBe("/app/b");
+  expect(firstThreadRoute([{ id: "a", hidden: true }], [{ id: "g" }], now)).toBe("/app/g/g");
+});

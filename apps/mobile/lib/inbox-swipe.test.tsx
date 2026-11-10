@@ -394,18 +394,20 @@ describe("iOS swipe row", () => {
     act(() => root.unmount());
   });
 
-  it("offers read state, pin, notifications, move, then archive and delete last for a bot", () => {
+  it("offers read state, pin, mute, snooze, hide, move, then archive and delete last", () => {
     const { items, find, root } = render({
       unread: true,
       pinned: false,
-      notifyOnFinish: true,
+      muted: false,
+      hidden: false,
       sectionId: "s1",
     });
     expect(entries(items)).toEqual([
       ["Mark as Read", "checkmark.message.fill", null],
       ["Pin", "pin", null],
-      ["Silence notifications", "bell.slash", null],
+      ["Mute", "bell.slash", null],
       ["Snooze", "moon.zzz", null],
+      ["Hide {label}", "eye.slash.circle", null],
       ["Move to", "folder", null],
       ["Archive", "eye.slash", null],
       ["Delete…", "trash", "destructive"],
@@ -424,7 +426,7 @@ describe("iOS swipe row", () => {
     act(() => root.unmount());
   });
 
-  it("offers a group's actions without notifications or renaming outside a section", () => {
+  it("leaves out mute and hide where the server can't set them, and renaming outside a section", () => {
     const { items, find, root } = render({ key: "group:1", unread: false, pinned: true });
     expect(entries(items).map(([label]) => label)).toEqual([
       "Mark as Unread",
@@ -470,12 +472,14 @@ describe("iOS swipe row", () => {
     const { press, onAction, onOrganize, onEditSection, root } = render({
       unread: false,
       pinned: false,
-      notifyOnFinish: false,
+      muted: true,
+      hidden: true,
       sectionId: "s1",
     });
     press("Mark as Unread");
     press("Pin");
-    press("Resume notifications");
+    press("Unmute");
+    press("Show {label}");
     press("Work");
     press("Home");
     press("Unassigned");
@@ -486,7 +490,8 @@ describe("iOS swipe row", () => {
     expect(onAction.mock.calls).toEqual([["unread"], ["pin"], ["archive"], ["delete"]]);
     // Choosing the current section again changes nothing.
     expect(onOrganize.mock.calls).toEqual([
-      [{ notifyOnFinish: true }],
+      [{ muted: false }],
+      [{ hidden: false }],
       [{ sectionId: "s2" }],
       [{ sectionId: null }],
     ]);

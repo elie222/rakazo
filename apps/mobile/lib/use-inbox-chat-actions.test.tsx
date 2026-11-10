@@ -116,14 +116,18 @@ async function handlers(
     updateChat: (
       kind: "bot" | "group",
       chat: Chat,
-      change: { pinned?: boolean; notifyOnFinish?: boolean },
+      change: { pinned?: boolean; muted?: boolean; hidden?: boolean },
     ) => current().updateChat(kind, chat as MobileBot, change),
   };
 }
 
 it("reports a saved bot mute even when its inbox row has no thread id", async () => {
   const actions = await handlers(async () => undefined);
-  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false });
+  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { muted: true });
+  // Through the bot's own setting, which older servers know too.
+  expect(vi.mocked(rpc).mock.calls.map(sent)).toEqual([
+    ["bots/update", { botId: "b1", notifyOnFinish: false }],
+  ]);
   expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith("", null, "space-a", {
     botId: "b1",
     threadId: undefined,
@@ -131,12 +135,23 @@ it("reports a saved bot mute even when its inbox row has no thread id", async ()
   });
 });
 
+it("mutes a group and hides a chat through the viewer's own chat settings", async () => {
+  const actions = await handlers(async () => undefined);
+  await actions.updateChat("group", { id: "g1", spaceId: "space-a" }, { muted: true });
+  await actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { hidden: true });
+  expect(vi.mocked(rpc).mock.calls.map(sent)).toEqual([
+    ["threads/mute", { groupId: "g1", muted: true }],
+    ["threads/hide", { botId: "b1", hidden: true }],
+  ]);
+  expect(afterChatNotifyChange).not.toHaveBeenCalled();
+});
+
 it("does not report a bot mute when the server save fails", async () => {
   const actions = await handlers(async () => {
     throw new Error("offline");
   });
   await expect(
-    actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { notifyOnFinish: false }),
+    actions.updateChat("bot", { id: "b1", spaceId: "space-a" }, { muted: true }),
   ).rejects.toThrow("offline");
   expect(afterChatNotifyChange).not.toHaveBeenCalled();
 });

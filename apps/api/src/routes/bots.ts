@@ -44,6 +44,7 @@ import {
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
+  setBotNotifyFor,
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -452,7 +453,6 @@ export function botsRoutes(ctx: RouterContext) {
             name: input.name,
             description: input.description,
             instructions: input.instructions,
-            notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             avatarSet: input.avatarSet,
             avatarSetPinned,
@@ -489,6 +489,15 @@ export function botsRoutes(ctx: RouterContext) {
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
+        // Each member mutes a bot for themselves; this field is how settings and installed apps
+        // do it.
+        if (input.notifyOnFinish !== undefined) {
+          await setBotNotifyFor(
+            deps.prisma,
+            { botId: input.botId, spaceId: context.actor.spaceId, userId: context.actor.userId },
+            input.notifyOnFinish,
+          );
+        }
         for (const setting of changedBotSettings(existing, input)) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }

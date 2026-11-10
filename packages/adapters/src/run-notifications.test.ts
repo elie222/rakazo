@@ -1,17 +1,30 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
 
 vi.mock("./notification-identity.js", () => ({ notificationIdentity: async () => undefined }));
+// What each person set on the chat; anyone missing never chose.
+const holds = vi.hoisted(
+  () => new Map<string, { snoozed: boolean; hidden: boolean; muted: boolean | null }>(),
+);
+const unhidden = vi.hoisted(() => [] as string[]);
 // Each person's own unread count: Ada has 2 unread chats, Bea 5.
-const snoozing = vi.hoisted(() => new Set<string>());
 vi.mock("@rakazo/db", () => ({
   countUnreadInboxChats: async (_: unknown, { userId }: { userId: string }) =>
     userId === "user-1" ? 2 : 5,
-  membersSnoozing: async (_: unknown, _threadId: string, userIds: string[]) =>
-    new Set(userIds.filter((userId) => snoozing.has(userId))),
+  chatHoldsFor: async (_: unknown, _threadId: string, userIds: string[]) =>
+    new Map(userIds.flatMap((userId) => (holds.has(userId) ? [[userId, holds.get(userId)]] : []))),
+  unhideChatFor: async (_: unknown, _threadId: string, userId: string) => {
+    unhidden.push(userId);
+  },
 }));
+const hold = (userId: string, set: { snoozed?: boolean; hidden?: boolean; muted?: boolean }) =>
+  holds.set(userId, { snoozed: false, hidden: false, muted: null, ...set });
+afterEach(() => {
+  holds.clear();
+  unhidden.length = 0;
+});
 
 const run = {
   spaceId: "space-1",
@@ -157,19 +170,71 @@ describe("notifications in a shared Space", () => {
   });
 
   it("holds a reply for whoever snoozed the chat, but still asks its owner to answer", async () => {
-    snoozing.add("user-1");
-    try {
-      const { value, publish, send } = deps({ members: shared });
-      await notifyRun(value, run, message);
-      expect(recipients(send)).toEqual(["user-2"]);
-      expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-2"]);
+    hold("user-1", { snoozed: true });
+    const { value, publish, send } = deps({ members: shared });
+    await notifyRun(value, run, message);
+    expect(recipients(send)).toEqual(["user-2"]);
+    expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-2"]);
 
-      const help = deps({ members: shared });
-      await notifyRun(help.value, run, { ...message, kind: "help" });
-      expect(recipients(help.send)).toEqual(["user-1"]);
-    } finally {
-      snoozing.clear();
+    const help = deps({ members: shared });
+    await notifyRun(help.value, run, { ...message, kind: "help" });
+    expect(recipients(help.send)).toEqual(["user-1"]);
+  });
+
+  it("holds a reply for whoever muted the chat, a group included", async () => {
+    hold("user-2", { muted: true });
+    for (const groupId of [null, "group-1"]) {
+      const { value, publish, send } = deps({ members: shared, groupId });
+      await notifyRun(value, run, message);
+      expect(recipients(send)).toEqual(["user-1"]);
+      expect(publish.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["user-1"]);
     }
+  });
+
+  it("still brings its owner a muted chat's questions, takeovers and failures", async () => {
+    hold("user-1", { muted: true });
+    for (const kind of ["help", "takeover", "failure"] as const) {
+      const { value, send } = deps({ members: shared });
+      await notifyRun(value, run, { ...message, kind });
+      expect(recipients(send)).toEqual(["user-1"]);
+    }
+  });
+
+  it("keeps a bot's own switch for whoever never chose, and lets each member choose", async () => {
+    hold("user-2", { muted: false });
+    const { value, send } = deps({ members: shared, notifyOnFinish: false });
+    await notifyRun(value, run, message);
+    expect(recipients(send)).toEqual(["user-2"]);
+
+    // Its owner never chose, so the switch still silences their questions too, as it always did.
+    const help = deps({ members: shared, notifyOnFinish: false });
+    await notifyRun(help.value, run, { ...message, kind: "help" });
+    expect(help.send).not.toHaveBeenCalled();
+    hold("user-1", { muted: true });
+    await notifyRun(help.value, run, { ...message, kind: "help" });
+    expect(recipients(help.send)).toEqual(["user-1"]);
+  });
+
+  it("holds a hidden chat's replies and brings it back when it needs its owner", async () => {
+    hold("user-1", { hidden: true });
+    const { value, send } = deps({ members: shared });
+    await notifyRun(value, run, message);
+    expect(recipients(send)).toEqual(["user-2"]);
+    expect(unhidden).toEqual([]);
+
+    const help = deps({ members: shared });
+    await notifyRun(help.value, run, { ...message, kind: "help" });
+    expect(recipients(help.send)).toEqual(["user-1"]);
+    expect(unhidden).toEqual(["user-1"]);
+  });
+
+  it("brings a hidden chat back even where nobody can be alerted", async () => {
+    hold("user-1", { hidden: true });
+    const { value } = deps();
+    delete (value as { notifications?: unknown }).notifications;
+    delete (value.events as { publishChatAlert?: unknown }).publishChatAlert;
+    await notifyRun(value, run, { ...message, kind: "takeover" });
+    expect(unhidden).toEqual(["user-1"]);
   });
 
   it("asks only the person whose run it is to answer, take over, or fix a failure", async () => {
@@ -206,6 +271,18 @@ describe("notifications in a shared Space", () => {
       "user-2",
       expect.objectContaining({ threadId: "thread-1" }),
     );
+  });
+
+  it("skips whoever muted the chat when another member writes in it", async () => {
+    hold("user-2", { muted: true });
+    const { value, send } = deps({ members: [...shared, "user-3"], groupId: "group-1" });
+    await notifyMemberMessage(value, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      authorUserId: "user-1",
+      text: "hello",
+    });
+    expect(recipients(send)).toEqual(["user-3"]);
   });
 
   it("sends nothing for a message in a muted chat or a Space of one", async () => {

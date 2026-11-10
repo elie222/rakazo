@@ -1,5 +1,5 @@
 import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { createSnoozeQueue } from "@rakazo/core";
+import { createChatChoiceQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
@@ -61,15 +61,26 @@ export function useInboxChatActions({
   const [archiving, setArchiving] = useState<ReadonlySet<string>>(() => new Set());
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
-  const [snoozeQueue] = useState(createSnoozeQueue);
+  const [snoozeQueue] = useState(createChatChoiceQueue<string | null>);
   const updateChat = useCallback(
     async (
       kind: InboxChatKind,
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       update: BotOrganizationUpdate,
     ) => {
-      await chatRpc(chat.spaceId, `${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
-      if (kind === "bot" && update.notifyOnFinish !== undefined) {
+      const { muted, hidden, ...organize } = update;
+      const target = chatTarget(kind, chat.id);
+      // A bot's own notification setting is the viewer's mute, which older servers know too.
+      const settings =
+        kind === "bot" && muted !== undefined ? { ...organize, notifyOnFinish: !muted } : organize;
+      if (kind === "group" && muted !== undefined) {
+        await chatRpc(chat.spaceId, "threads/mute", { ...target, muted });
+      }
+      if (hidden !== undefined) await chatRpc(chat.spaceId, "threads/hide", { ...target, hidden });
+      if (Object.keys(settings).length > 0) {
+        await chatRpc(chat.spaceId, `${kind}s/update`, { ...target, ...settings });
+      }
+      if (kind === "bot" && muted !== undefined) {
         await afterChatNotifyChange(
           currentApiBase(),
           await loadSessionToken(),
@@ -77,7 +88,7 @@ export function useInboxChatActions({
           {
             botId: chat.id,
             threadId: "threadId" in chat ? chat.threadId : undefined,
-            notify: update.notifyOnFinish,
+            notify: !muted,
           },
         );
       }

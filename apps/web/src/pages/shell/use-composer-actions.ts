@@ -358,10 +358,8 @@ export function useComposerActions({
       );
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
-      if (
-        plan.shouldSend &&
-        (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
-      ) {
+      const targetBot = botsRef.current.find((bot) => bot.id === botTarget);
+      if (plan.shouldSend && (groupTarget || (targetBot && !targetBot.muted))) {
         const permissionRequest = requestBrowserNotificationPermission();
         if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);
       }

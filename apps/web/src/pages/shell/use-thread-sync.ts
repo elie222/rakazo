@@ -14,6 +14,7 @@ import {
   isRunTerminalEvent,
   isRunWorking,
   isThreadSnapshotEvent,
+  messageForAnotherBot,
   messageUnreadFor,
   reconcileRefreshedThread,
   reduceThreadSnapshot,
@@ -51,6 +52,15 @@ const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return anySignal([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
+}
+
+/** A message one bot sent another, or replied to another bot's errand with, alerts nobody. */
+function forAnotherBot(event: ProductEvent, snapshot: ThreadSnapshot | null): boolean {
+  return (
+    event.type === "thread.message.created" &&
+    typeof event.payload.messageId === "string" &&
+    messageForAnotherBot(snapshot?.messages ?? [], event.payload.messageId)
+  );
 }
 
 function applyThreadEvent(
@@ -138,6 +148,9 @@ export function useThreadSync({
   } = computerState;
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
+  // The open group as it is now, so a mute or hide since it opened holds back its notifications.
+  const activeGroupRef = useRef(activeGroup);
+  activeGroupRef.current = activeGroup;
   const [loadingOlder, setLoadingOlder] = useState(false);
   // A very fast run can finish over SSE while its threads.send response is still
   // returning. Do not let that late receipt resurrect terminal work as queued.
@@ -377,7 +390,9 @@ export function useThreadSync({
           initial.cursor,
           true,
           currentBot?.name ?? active.name,
-          currentBot?.notifyOnFinish ?? false,
+          () =>
+            Boolean(currentBot && !currentBot.muted && !currentBot.hidden) &&
+            !forAnotherBot(event, snapshotRef.current),
           undefined,
         );
         if (event.type === "thread.cleared") resetHistory();
@@ -477,7 +492,10 @@ export function useThreadSync({
           initial.cursor,
           true,
           eventBot?.name ?? activeGroup.name,
-          true,
+          () =>
+            !activeGroupRef.current?.muted &&
+            !activeGroupRef.current?.hidden &&
+            !forAnotherBot(event, snapshotRef.current),
           groupId,
         );
         if (event.type === "thread.message.created" && messageUnreadFor(event.payload, meId)) {

@@ -6,11 +6,16 @@ import { createThreadMessage } from "./messages.js";
 import { asSystem, runAsTenant } from "./row-security.js";
 import { leaveSpace } from "./space-members.js";
 import {
+  chatHoldsFor,
   clearThreadReads,
   markThreadReadFor,
   markThreadUnreadFromFor,
+  setBotNotifyFor,
+  setThreadHiddenFor,
+  setThreadMuteFor,
   setThreadSnoozeFor,
   setThreadUnreadFor,
+  unhideChatFor,
 } from "./thread-reads.js";
 import { countUnreadInboxChats } from "./unread-inbox-chats.js";
 
@@ -32,6 +37,7 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let threadId = "";
+  let botId = "";
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
@@ -108,6 +114,7 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
       include: { thread: true },
     });
     threadId = bot.thread!.id;
+    botId = bot.id;
   });
 
   afterAll(async () => {
@@ -271,6 +278,46 @@ describePostgres("each member's own read state (PostgreSQL)", () => {
     expect(await unread(bea)).toBe(false);
     await as(bea, () => setThreadSnoozeFor(prisma, reader(bea), null));
     expect(await snoozeOf(bea)).toBeNull();
+  });
+
+  it("mutes and hides a chat for one person, and keeps both through a clear", async () => {
+    const own = async (userId: string) =>
+      (await as(userId, () =>
+        prisma.threadRead.findFirst({
+          where: { threadId, userId },
+          select: { muted: true, hidden: true },
+        }),
+      )) ?? { muted: null, hidden: false };
+    await as(bea, () => setThreadMuteFor(prisma, reader(bea), true));
+    await as(bea, () => setThreadHiddenFor(prisma, reader(bea), true));
+    expect(await own(bea)).toEqual({ muted: true, hidden: true });
+    expect(await own(ada)).toEqual({ muted: null, hidden: false });
+    const holds = await chatHoldsFor(prisma, threadId, [ada, bea]);
+    expect(holds.get(bea)).toEqual({ snoozed: false, hidden: true, muted: true });
+    expect(holds.has(ada)).toBe(false);
+
+    // A hidden chat is off the badge; once back, a muted one still counts, as its dot shows.
+    await post(ada, { role: "bot", text: "Filed the report." });
+    await expect(countUnreadInboxChats(prisma, { spaceId: space, userId: bea })).resolves.toBe(0);
+    await unhideChatFor(prisma, threadId, bea);
+    await expect(countUnreadInboxChats(prisma, { spaceId: space, userId: bea })).resolves.toBe(1);
+
+    await as(bea, () => setThreadHiddenFor(prisma, reader(bea), true));
+    await as(ada, () => prisma.$transaction((tx) => clearThreadReads(tx, threadId)));
+    expect(await own(bea)).toEqual({ muted: true, hidden: true });
+
+    // Unmuting is a choice too: it outlasts a clear, unlike having no state at all.
+    await as(bea, () => setThreadHiddenFor(prisma, reader(bea), false));
+    await as(bea, () => setThreadMuteFor(prisma, reader(bea), false));
+    expect(await own(bea)).toEqual({ muted: false, hidden: false });
+
+    // The bot's own field mutes for the caller alone, and saving what is already so records nothing.
+    await as(ada, () => setBotNotifyFor(prisma, { botId, spaceId: space, userId: ada }, true));
+    expect(await own(ada)).toEqual({ muted: null, hidden: false });
+    await as(ada, () => setBotNotifyFor(prisma, { botId, spaceId: space, userId: ada }, false));
+    expect(await own(ada)).toEqual({ muted: true, hidden: false });
+    expect(await own(bea)).toEqual({ muted: false, hidden: false });
+    await asSystem(prisma).threadRead.updateMany({ where: { threadId }, data: { muted: null } });
   });
 
   it("clears every member's state with the chat", async () => {

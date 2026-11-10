@@ -33,7 +33,10 @@ import { NativeSymbol } from "./native-symbol";
 export type BotOrganizationUpdate = {
   pinned?: boolean;
   sectionId?: string | null;
-  notifyOnFinish?: boolean;
+  /** The viewer's own: no pushes or alerts from the chat. */
+  muted?: boolean;
+  /** The viewer's own: out of their list, still working. */
+  hidden?: boolean;
 };
 
 export function BotOrganizeModal({
@@ -47,8 +50,8 @@ export function BotOrganizeModal({
   snoozed,
   onSnooze,
 }: {
-  bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> &
-    Partial<Pick<MobileBot, "notifyOnFinish">>;
+  /** `muted` and `hidden` are left out where the server can't set them. */
+  bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> & { muted?: boolean; hidden?: boolean };
   sections: MobileBotSection[];
   onClose: () => void;
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
@@ -132,20 +135,33 @@ export function BotOrganizeModal({
         />
         <Text style={styles.actionLabel}>{bot.pinned ? t("Unpin") : t("Pin")}</Text>
       </Pressable>
-      {typeof bot.notifyOnFinish === "boolean" ? (
+      {typeof bot.muted === "boolean" ? (
         <Pressable
           accessibilityRole="button"
           disabled={saving}
-          onPress={() => void save(() => onUpdate({ notifyOnFinish: !bot.notifyOnFinish }))}
+          onPress={() => void save(() => onUpdate({ muted: !bot.muted }))}
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}
         >
           <NativeSymbol
-            ios={bot.notifyOnFinish ? "bell.slash" : "bell"}
-            android={bot.notifyOnFinish ? "notifications-off-outline" : "notifications-outline"}
+            ios={bot.muted ? "bell" : "bell.slash"}
+            android={bot.muted ? "notifications-outline" : "notifications-off-outline"}
             size={18}
           />
+          <Text style={styles.actionLabel}>{bot.muted ? t("Unmute") : t("Mute")}</Text>
+        </Pressable>
+      ) : null}
+      {typeof bot.hidden === "boolean" ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={saving}
+          onPress={() => void save(() => onUpdate({ hidden: !bot.hidden }))}
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+        >
+          <NativeSymbol ios="eye.slash.circle" android="eye-off-outline" size={18} />
           <Text style={styles.actionLabel}>
-            {bot.notifyOnFinish ? t("Silence notifications") : t("Resume notifications")}
+            {bot.hidden
+              ? t("Show {label}", { label: bot.name })
+              : t("Hide {label}", { label: bot.name })}
           </Text>
         </Pressable>
       ) : null}

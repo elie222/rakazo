@@ -356,7 +356,8 @@ describe("inbox organization actions", () => {
         name: "Sample chat",
         pinned: false,
         sectionId: "one",
-        notifyOnFinish: true,
+        muted: false,
+        hidden: false,
         ...botOverrides,
       },
       sections: [
@@ -431,14 +432,17 @@ describe("inbox organization actions", () => {
   it.each([
     ["Pin", { pinned: true }],
     ["Unpin", { pinned: false }],
-    ["Silence notifications", { notifyOnFinish: false }],
-    ["Resume notifications", { notifyOnFinish: true }],
+    ["Mute", { muted: true }],
+    ["Unmute", { muted: false }],
+    ["Hide {label}", { hidden: true }],
+    ["Show {label}", { hidden: false }],
     ["Second", { sectionId: "two" }],
     ["Unassigned", { sectionId: null }],
   ])("keeps %s working inside the native sheet", async (label, update) => {
     const { props, click } = await organize({
       pinned: label === "Unpin",
-      notifyOnFinish: label !== "Resume notifications",
+      muted: label === "Unmute",
+      hidden: label === "Show {label}",
     });
     await click(label as string);
     expect(props.onUpdate).toHaveBeenCalledWith(update);

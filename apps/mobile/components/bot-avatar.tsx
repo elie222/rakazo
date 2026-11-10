@@ -198,7 +198,8 @@ function WorkingDot({ size, muted }: { size: number; muted: boolean }) {
   );
 }
 
-function MutedBadge({ size }: { size: number }) {
+/** The bell on a muted chat's avatar. */
+export function MutedBadge({ size }: { size: number }) {
   const tokens = useMobileTokens();
   const { t } = useI18n();
   return (

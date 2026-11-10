@@ -10,7 +10,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { hiddenFor, mutedFor, Prisma } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -58,11 +58,12 @@ export function activityPreview(
   };
 }
 
+/** Whether the viewer hears from the run's chat: not when they muted or hid it. */
 export function activityNotificationsEnabled(
-  groupId: string | null,
-  notifyOnFinish: boolean,
+  thread: { groupId: string | null; reads: Array<{ muted: boolean | null; hidden: boolean }> },
+  bot: { notifyOnFinish: boolean },
 ): boolean {
-  return groupId !== null || notifyOnFinish;
+  return !hiddenFor(thread) && !mutedFor(thread, thread.groupId === null ? bot : null);
 }
 
 export async function listSpaceRuns(
@@ -88,6 +89,7 @@ export async function listSpaceRuns(
         select: {
           groupId: true,
           group: { select: { name: true } },
+          reads: { where: { userId: actor.userId }, select: { muted: true, hidden: true } },
         },
       },
     },
@@ -106,7 +108,7 @@ export async function listSpaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
-    notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
+    notificationsEnabled: activityNotificationsEnabled(row.thread, row.bot),
     ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,

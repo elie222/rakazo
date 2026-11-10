@@ -95,6 +95,11 @@ async function failRun(scenario: Scenario) {
   const prisma = {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
+    // Nobody muted, hid or snoozed the chat.
+    threadRead: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ ...run })),
@@ -646,6 +651,11 @@ function retryHarness(scenario: RetryScenario = {}) {
   const prisma = {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
+    // Nobody muted, hid or snoozed the chat.
+    threadRead: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     run: {
       findUnique: vi.fn(async () => failed),
       findFirst: vi.fn(async ({ select }: { select: { id?: boolean } }) =>

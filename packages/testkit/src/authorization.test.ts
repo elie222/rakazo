@@ -345,6 +345,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/markRead", { botId: "missing-bot" }],
       ["threads/markUnread", { botId: "missing-bot" }],
       ["threads/snooze", { botId: "missing-bot", until: null }],
+      ["threads/mute", { botId: "missing-bot", muted: true }],
+      ["threads/hide", { botId: "missing-bot", hidden: true }],
       ["threads/head"],
       ["threads/react"],
       ["threads/endCall"],
@@ -721,6 +723,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/markRead", { botId: ownerBot.id }],
       ["threads/markUnread", { botId: ownerBot.id }],
       ["threads/snooze", { botId: ownerBot.id, until: null }],
+      ["threads/mute", { botId: ownerBot.id, muted: true }],
+      ["threads/hide", { botId: ownerBot.id, hidden: true }],
       ["computer/status", { botId: ownerBot.id }],
       ["computer/boot", { botId: ownerBot.id }],
       ["computer/stop", { botId: ownerBot.id }],
@@ -773,6 +777,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/markRead", { groupId: ownerGroup.id }],
       ["threads/markUnread", { groupId: ownerGroup.id }],
       ["threads/snooze", { groupId: ownerGroup.id, until: null }],
+      ["threads/mute", { groupId: ownerGroup.id, muted: true }],
+      ["threads/hide", { groupId: ownerGroup.id, hidden: true }],
     ];
     await Promise.all(
       groupCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),

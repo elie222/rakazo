@@ -116,9 +116,29 @@ describe("run activity copy", () => {
 });
 
 describe("run activity notification preference", () => {
-  it("silences only direct messages", () => {
-    expect(activityNotificationsEnabled(null, false)).toBe(false);
-    expect(activityNotificationsEnabled("group-1", false)).toBe(true);
+  const off = { notifyOnFinish: false };
+  const on = { notifyOnFinish: true };
+  it("follows a bot's own switch until the viewer mutes or unmutes it", () => {
+    expect(activityNotificationsEnabled({ groupId: null, reads: [] }, off)).toBe(false);
+    expect(activityNotificationsEnabled({ groupId: "group-1", reads: [] }, off)).toBe(true);
+    expect(
+      activityNotificationsEnabled(
+        { groupId: null, reads: [{ muted: false, hidden: false }] },
+        off,
+      ),
+    ).toBe(true);
+    expect(
+      activityNotificationsEnabled(
+        { groupId: "group-1", reads: [{ muted: true, hidden: false }] },
+        on,
+      ),
+    ).toBe(false);
+  });
+
+  it("silences a chat the viewer hid", () => {
+    expect(
+      activityNotificationsEnabled({ groupId: null, reads: [{ muted: null, hidden: true }] }, on),
+    ).toBe(false);
   });
 });
 

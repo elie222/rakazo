@@ -138,7 +138,8 @@ export function useBrowserNotifications(
       pending.event,
       currentBot.name || pending.botName,
       {
-        enabled: pending.groupId !== undefined || currentBot.notifyOnFinish,
+        // A group's own mute was checked when the notification was first held.
+        enabled: pending.groupId !== undefined || (!currentBot.muted && !currentBot.hidden),
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
@@ -169,7 +170,8 @@ export function useBrowserNotifications(
       initialCursor: number,
       streamReady: boolean,
       botName: string,
-      enabled: boolean,
+      /** Asked only for an event that would otherwise notify: not for a muted or hidden chat. */
+      enabled: () => boolean,
       groupId: string | undefined,
     ) => {
       const botId = event.botId;
@@ -184,7 +186,7 @@ export function useBrowserNotifications(
         notifiedEventIds: notifiedBrowserEvents.current,
         meId: meIdRef.current,
       });
-      if (!eligible || !enabled) return;
+      if (!eligible || !enabled()) return;
       const pending = {
         event,
         botId,

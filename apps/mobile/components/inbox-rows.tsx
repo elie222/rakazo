@@ -24,7 +24,7 @@ import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-typ
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { androidRipple } from "../lib/ripple";
-import { BotAvatar } from "./bot-avatar";
+import { BotAvatar, MutedBadge } from "./bot-avatar";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
 import { DragSafePressable } from "./drag-safe-pressable";
 import { GroupAvatar } from "./group-avatar";
@@ -342,6 +342,16 @@ function chatTime(
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
 }
 
+/**
+ * Whether the viewer muted the chat; unknown for a group on a server that can't mute one. A bot's
+ * notification setting is the viewer's mute, on servers old and new.
+ */
+export function chatMuted(
+  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+): boolean | undefined {
+  return "notifyOnFinish" in chat ? chat.notifyOnFinish === false : chat.muted;
+}
+
 /** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
 export function ChatSwipe({
   target,
@@ -371,7 +381,8 @@ export function ChatSwipe({
       rowKey={rowKey}
       unread={chat.unread}
       pinned={chat.pinned}
-      notifyOnFinish={target.kind === "bot" ? target.chat.notifyOnFinish : undefined}
+      muted={chatMuted(chat)}
+      hidden={chat.hidden}
       sectionId={chat.sectionId}
       sections={sections}
       preview={{
@@ -517,7 +528,13 @@ export const GroupRow = memo(function GroupRow({
       preview={preview}
       time={time}
       unread={group.unread}
-      accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
+      accessibilityLabel={[
+        group.name,
+        group.muted ? t("notifications silenced") : null,
+        group.unread ? t("unread") : null,
+        time,
+        preview,
+      ]
         .filter(Boolean)
         .join(", ")}
       accessibilityHint={
@@ -527,7 +544,12 @@ export const GroupRow = memo(function GroupRow({
       onLongPress={onLongPress ? () => onLongPress(group) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
-      avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
+      avatar={
+        <View>
+          <GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />
+          {group.muted ? <MutedBadge size={INBOX_ROW.avatarSize} /> : null}
+        </View>
+      }
     />
   );
   return onAction ? (

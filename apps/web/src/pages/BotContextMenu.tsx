@@ -14,10 +14,12 @@ import {
   Archive,
   Bell,
   BellDot,
+  BellOff,
   Check,
   Clock,
   Copy,
   Eraser,
+  EyeOff,
   Folder,
   FolderPlus,
   Pencil,
@@ -25,13 +27,17 @@ import {
   Trash2,
 } from "lucide-react";
 
-type ChatMenuTarget = Pick<Bot, "name" | "pinned" | "sectionId" | "unread">;
+type ChatMenuTarget = Pick<Bot, "name" | "pinned" | "sectionId" | "unread" | "muted" | "hidden">;
 
 const PRESET_DAYS: ReadonlySet<SnoozePreset> = new Set(["tomorrow", "nextWeek"]);
 
-/** A roster row's context menu content; `onClose` serves the lazy-load error fallback. */
+/**
+ * A roster row's context menu content; `onClose` serves the lazy-load error fallback. Opened from
+ * the row's "⋯" button, it hangs from that `anchor` instead of the pointer.
+ */
 export function BotContextMenu({
   bot,
+  anchor,
   onTogglePinned,
   sections,
   onMoveToSection,
@@ -40,6 +46,8 @@ export function BotContextMenu({
   onToggleUnread,
   snoozed,
   onSnooze,
+  onToggleMuted,
+  onToggleHidden,
   onEdit,
   onDuplicate,
   onClear,
@@ -47,6 +55,7 @@ export function BotContextMenu({
   onDelete,
 }: {
   bot: ChatMenuTarget;
+  anchor?: HTMLElement | null;
   onClose: () => void;
   onTogglePinned: () => void;
   sections: BotSection[];
@@ -58,6 +67,8 @@ export function BotContextMenu({
   snoozed: boolean;
   /** An ISO wake time, or null to unsnooze. */
   onSnooze: (until: string | null) => void;
+  onToggleMuted: () => void;
+  onToggleHidden: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
   onClear: () => void;
@@ -77,6 +88,7 @@ export function BotContextMenu({
     <ContextMenuContent
       aria-label={t`Actions for ${bot.name}`}
       className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
+      {...(anchor ? { anchor, side: "bottom", align: "end", alignOffset: 0, sideOffset: 4 } : {})}
     >
       <ContextMenuItem onClick={onTogglePinned}>
         <Pin />
@@ -149,6 +161,14 @@ export function BotContextMenu({
           </ContextMenuSubContent>
         </ContextMenuSub>
       )}
+      <ContextMenuItem onClick={onToggleMuted}>
+        <BellOff />
+        {bot.muted ? t`Unmute` : t`Mute`}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onToggleHidden}>
+        <EyeOff />
+        {bot.hidden ? t`Unhide` : t`Hide`}
+      </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onClick={onEdit}>
         <Pencil />

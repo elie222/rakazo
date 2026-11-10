@@ -1260,18 +1260,43 @@ describe("updateChildBot", () => {
       prisma.$transaction.mockImplementation(async (write) => write(tx));
       // Stop after the write to inspect the normalized patch without needing the event fixture.
       tx.bot.update.mockRejectedValueOnce(new Error("write reached"));
+      const real = field === "description" ? { name: "Helper" } : { description: "Helps." };
       await expect(
-        updateChildBot(writeDeps(prisma), run, {
-          bot_id: "bot-child",
-          [field]: "  ",
-          notify_on_finish: false,
-        }),
+        updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", [field]: "  ", ...real }),
       ).rejects.toThrow("write reached");
-      expect(tx.bot.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { notifyOnFinish: false } }),
-      );
+      expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: real }));
     },
   );
+
+  it("mutes the child's chat for the person whose run asked, not for everyone", async () => {
+    const { prisma } = fakeFleet({ bots });
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ nextMessageSeq: 3 }]),
+      threadRead: { upsert: vi.fn(async () => ({})) },
+      bot: { update: vi.fn().mockRejectedValue(new Error("write reached")) },
+    };
+    prisma.$transaction.mockImplementation(async (write) => write(tx));
+    // The bot notifies everyone who never chose, the asker included.
+    Object.assign(prisma, {
+      thread: {
+        findUnique: vi.fn(async () => ({
+          id: "thread-bot-child",
+          bot: { notifyOnFinish: true },
+          reads: [],
+        })),
+      },
+    });
+    await expect(
+      updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", notify_on_finish: false }),
+    ).rejects.toThrow("write reached");
+    expect(tx.threadRead.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { threadId_userId: { threadId: "thread-bot-child", userId: run.userId } },
+        update: { muted: true },
+      }),
+    );
+    expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
+  });
 
   it.each([true, false])("writes boolean dailyCheckIns: %j", async (dailyCheckIns) => {
     const { prisma } = fakeFleet({ bots });

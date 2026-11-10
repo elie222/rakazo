@@ -17,6 +17,7 @@ import {
 import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  botChatMutedFor,
   commitBotUpdate,
   createGroupRepos,
   createRepos,
@@ -24,6 +25,7 @@ import {
   IsolationError,
   isRecordNotFound,
   SpaceDeletionInProgressError,
+  setBotNotifyFor,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
@@ -849,6 +851,15 @@ export async function updateChildBot(
       error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
+  const { notifyOnFinish, ...profileData } = patch;
+  // Notifications are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: child.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   await commitBotUpdate({
     prisma: deps.prisma,
     notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -856,7 +867,7 @@ export async function updateChildBot(
     threadId: child.thread.id,
     botId: child.id,
     emitBotUpdated: true,
-    data: patch,
+    data: profileData,
   });
   return { ok: true };
 }
@@ -1349,9 +1360,18 @@ export async function updateOwnBotFromTool(
         "Provide at least one of name, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
     };
   }
+  const { notifyOnFinish, ...profile } = patch;
+  // Notifications are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: bot.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   const updated = await deps.prisma.bot.update({
     where: { id: bot.id },
-    data: patch,
+    data: profile,
     select: {
       id: true,
       name: true,
@@ -1383,7 +1403,11 @@ export async function updateOwnBotFromTool(
     name: updated.name,
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
-    notifyOnFinish: updated.notifyOnFinish,
+    notifyOnFinish: !(await botChatMutedFor(
+      deps.prisma,
+      { botId: bot.id, userId: run.userId },
+      updated,
+    )),
     dailyCheckIns: updated.dailyCheckIns,
   };
 }

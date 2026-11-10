@@ -324,6 +324,12 @@ function fixture({
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
+    // Nobody muted, hid or snoozed the chat.
+    threadRead: {
+      findFirst: vi.fn(async () => null),
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,

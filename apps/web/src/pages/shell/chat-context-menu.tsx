@@ -4,7 +4,7 @@ import { lazyOverlay } from "../../components/ErrorBoundary";
 import type { createSpaceRpc } from "../../lib/rpc";
 import type { ShellDialogsState } from "./shell-dialogs";
 import type { useChatRead } from "./use-chat-read";
-import type { SnoozeChat } from "./use-chat-snooze";
+import type { SnoozeChat, ToggleChat } from "./use-chat-snooze";
 
 const BotContextMenu = lazyOverlay(() =>
   import("../BotContextMenu").then((module) => module.BotContextMenu),
@@ -12,17 +12,20 @@ const BotContextMenu = lazyOverlay(() =>
 
 type ChatRead = ReturnType<typeof useChatRead>;
 
-/** The right-click menu for a bot or group in the roster. */
+/** The menu for a bot or group in the roster, from a right-click or the row's "⋯" button. */
 export function ChatContextMenu({
   rpc,
   bot,
   group,
+  anchor,
   sections,
   spaceId,
   onClose,
   refreshBots,
   read,
   snooze,
+  mute,
+  hide,
   dialogs,
   openChatSettings,
   navigate,
@@ -30,12 +33,16 @@ export function ChatContextMenu({
   rpc: ReturnType<typeof createSpaceRpc>;
   bot: Bot | undefined;
   group: Group | undefined;
+  /** The "⋯" button it opened from, if not the pointer. */
+  anchor?: HTMLElement | null;
   sections: BotSection[];
   spaceId: string | undefined;
   onClose: () => void;
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   read: Pick<ChatRead, "markBotRead" | "markBotUnread" | "toggleGroupUnread">;
   snooze: SnoozeChat;
+  mute: ToggleChat;
+  hide: ToggleChat;
   dialogs: ShellDialogsState;
   openChatSettings: (kind: "bot" | "group", id: string) => void;
   navigate: (path: string) => void;
@@ -48,6 +55,7 @@ export function ChatContextMenu({
   return (
     <BotContextMenu
       bot={chat}
+      anchor={anchor}
       onClose={onClose}
       sections={sections}
       onTogglePinned={() => {
@@ -74,6 +82,14 @@ export function ChatContextMenu({
       onSnooze={(until) => {
         onClose();
         snooze({ kind: target.kind, ...chat }, until);
+      }}
+      onToggleMuted={() => {
+        onClose();
+        mute({ kind: target.kind, ...chat }, !chat.muted);
+      }}
+      onToggleHidden={() => {
+        onClose();
+        hide({ kind: target.kind, ...chat }, !chat.hidden);
       }}
       onMoveToSection={(sectionId) => {
         onClose();
