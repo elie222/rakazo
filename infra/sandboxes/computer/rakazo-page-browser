@@ -356,9 +356,14 @@ class AgentBrowser:
         # rewritten in place: a call for another screen may be starting agent-browser on it right now.
         self.config = os.path.join(self.home, "config.json")
         fd, staged = tempfile.mkstemp(dir=self.home, prefix=".config-")
-        with os.fdopen(fd, "w", encoding="utf-8") as config:
-            config.write("{}")
-        os.replace(staged, self.config)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as config:
+                config.write("{}")
+            os.replace(staged, self.config)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(staged)
+            raise
         self.session = f"display-{port}"
         # When set, every command answers by then or is given up.
         self.deadline: float | None = None
