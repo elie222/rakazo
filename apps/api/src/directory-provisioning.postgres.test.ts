@@ -11,7 +11,7 @@ import type { AppHandles } from "./app.js";
 import { createApp } from "./app.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
-const describePostgres = databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = databaseUrl ? describe : describe.skip;
 const webOrigin = "http://127.0.0.1:5173";
 const token = "scim-test-token-0123456789abcdef0123456789";
 const authSecret = "directory-test-secret-with-32-characters";

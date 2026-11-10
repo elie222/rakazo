@@ -1,9 +1,10 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { BotSecretMetadata, ContactFields } from "@rakazo/contracts";
 import { cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
 import * as Clipboard from "expo-clipboard";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { siteHost } from "../lib/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../lib/vault";
@@ -36,7 +37,7 @@ export function VaultItemSheet({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
   const readable = readableItem(item);
@@ -53,43 +54,43 @@ export function VaultItemSheet({
       if (value) list.push({ label, value });
     };
     if (entry.auth.type === "login") {
-      add(t("Site"), siteHost(entry.origin));
-      add(t("Username"), preview?.username);
-      list.push({ label: t("Password"), ...hidden });
+      add(t`Site`, siteHost(entry.origin));
+      add(t`Username`, preview?.username);
+      list.push({ label: t`Password`, ...hidden });
     } else if (entry.auth.type === "card") {
       const card = preview?.card;
       list.push({
-        label: t("Card number"),
+        label: t`Card number`,
         value: card ? `•••• ${card.last4}` : "••••",
         hidden: true,
       });
-      add(t("Expires"), card ? cardExpiry(card) : undefined);
-      add(t("Name on card"), card?.name);
-      add(t("Billing address"), billing);
+      add(t`Expires`, card ? cardExpiry(card) : undefined);
+      add(t`Name on card`, card?.name);
+      add(t`Billing address`, billing);
     } else if (entry.auth.type === "contact") {
       const contact: Partial<ContactFields> = preview?.contact ?? {};
-      add(t("Full name"), contact.name);
-      add(t("Address"), [contact.line1, contact.line2].filter(Boolean).join("\n"));
-      add(t("City"), [contact.city, contact.region, contact.postalCode].filter(Boolean).join(", "));
-      add(t("Country"), contact.country);
-      add(t("Phone"), contact.phone);
-      add(t("Email"), contact.email);
+      add(t`Full name`, contact.name);
+      add(t`Address`, [contact.line1, contact.line2].filter(Boolean).join("\n"));
+      add(t`City`, [contact.city, contact.region, contact.postalCode].filter(Boolean).join(", "));
+      add(t`Country`, contact.country);
+      add(t`Phone`, contact.phone);
+      add(t`Email`, contact.email);
     } else if (entry.auth.type === "command") {
-      add(t("Variable"), `$${commandVariableName(entry.name)}`);
-      list.push({ label: t("Value"), ...hidden });
+      add(t`Variable`, `$${commandVariableName(entry.name)}`);
+      list.push({ label: t`Value`, ...hidden });
     } else {
-      add(t("Site"), entry.origin);
+      add(t`Site`, entry.origin);
       add(
-        t("Type"),
+        t`Type`,
         entry.auth.type === "header"
-          ? t("Header {name}", { name: entry.auth.name })
+          ? t`Header ${ph({ name: entry.auth.name })}`
           : entry.auth.type === "basic"
-            ? t("Basic auth ({username})", { username: entry.auth.username })
-            : t("Bearer token"),
+            ? t`Basic auth (${ph({ username: entry.auth.username })})`
+            : t`Bearer token`,
       );
-      list.push({ label: t("Value"), ...hidden });
+      list.push({ label: t`Value`, ...hidden });
     }
-    add(t("When to use"), entry.note);
+    add(t`When to use`, entry.note);
     return list;
   }
 
@@ -106,12 +107,12 @@ export function VaultItemSheet({
         ]}
       >
         <View style={styles.header}>
-          <NativeActionButton label={t("Done")} onPress={onClose} prominence="plain" />
+          <NativeActionButton label={t`Done`} onPress={onClose} prominence="plain" />
           {readable ? (
             <NativeActionButton
               disabled={busy}
               fill={false}
-              label={t("Edit")}
+              label={t`Edit`}
               onPress={onEdit}
               prominence="plain"
             />
@@ -131,7 +132,7 @@ export function VaultItemSheet({
           </View>
           {readable ? null : (
             <Text style={styles.unreadable}>
-              {t("These saved settings can't be read. Remove it and add it again.")}
+              {t`These saved settings can't be read. Remove it and add it again.`}
             </Text>
           )}
           <SettingsGroup>
@@ -139,7 +140,7 @@ export function VaultItemSheet({
               <SettingsRow
                 key={row.label}
                 accessibilityRole="button"
-                accessibilityHint={row.hidden ? t("Show") : t("Copy")}
+                accessibilityHint={row.hidden ? t`Show` : t`Copy`}
                 disabled={busy}
                 title={row.label}
                 value={row.value}
@@ -162,7 +163,7 @@ export function VaultItemSheet({
               destructive
               disabled={busy}
               onPress={onRemove}
-              title={t("Remove")}
+              title={t`Remove`}
             />
           </SettingsGroup>
         </ScrollView>

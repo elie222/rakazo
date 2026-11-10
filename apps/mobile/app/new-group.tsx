@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import {
   defaultGroupName,
   GROUP_MEMBER_MAX,
@@ -16,7 +17,6 @@ import { NativeActionButton } from "../components/native-action-button";
 import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
 import { hapticSuccess } from "../lib/haptics";
-import { useI18n } from "../lib/i18n";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -26,7 +26,7 @@ import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const navigation = useNavigation();
@@ -80,7 +80,7 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     } catch (err) {
-      setError(errorText(err, t("Could not create group")));
+      setError(errorText(err, t`Could not create group`));
     } finally {
       creating.current = false;
       setPending(false);
@@ -90,7 +90,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen
         options={{
-          title: t("New group chat"),
+          title: t`New group chat`,
           headerTransparent: true,
           headerStyle: { backgroundColor: "transparent" },
           headerBackVisible: false,
@@ -99,7 +99,7 @@ export default function NewGroup() {
               <SheetCloseButton onPress={close} />
             ) : (
               <GlassIconButton
-                accessibilityLabel={t("Back")}
+                accessibilityLabel={t`Back`}
                 ios="chevron.left"
                 android="chevron-back"
                 onPress={goBack}
@@ -108,7 +108,7 @@ export default function NewGroup() {
           headerRight: () =>
             step === "bots" ? (
               <NativeActionButton
-                label={t("Next")}
+                label={t`Next`}
                 disabled={!valid}
                 size="compact"
                 onPress={() => setStep("name")}
@@ -120,7 +120,7 @@ export default function NewGroup() {
                 unstable_headerLeftItems: () => [
                   {
                     type: "button" as const,
-                    label: step === "bots" ? t("Close") : t("Back"),
+                    label: step === "bots" ? t`Close` : t`Back`,
                     icon: {
                       type: "sfSymbol" as const,
                       name: step === "bots" ? "xmark" : "chevron.left",
@@ -134,7 +134,7 @@ export default function NewGroup() {
                     ? [
                         {
                           type: "button" as const,
-                          label: t("Next"),
+                          label: t`Next`,
                           icon: { type: "sfSymbol" as const, name: "chevron.right" },
                           variant: "prominent" as const,
                           tintColor: tokens.primary,
@@ -185,7 +185,7 @@ export default function NewGroup() {
                 autoComplete="off"
                 textContentType="none"
                 editable={!pending}
-                placeholder={t("Ex: Project Falcon")}
+                placeholder={t`Ex: Project Falcon`}
                 placeholderTextColor={tokens.mutedForeground}
                 returnKeyType="done"
                 onSubmitEditing={() => void create()}
@@ -202,7 +202,7 @@ export default function NewGroup() {
               />
               <NativeActionButton
                 fill
-                label={pending ? t("Creating…") : name.trim() ? t("Create") : t("Skip")}
+                label={pending ? t`Creating…` : name.trim() ? t`Create` : t`Skip`}
                 prominence={name.trim() ? "primary" : "secondary"}
                 disabled={pending}
                 onPress={() => void create()}

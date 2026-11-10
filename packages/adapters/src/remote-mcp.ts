@@ -22,8 +22,7 @@ import {
   normalizeHost,
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
-import type { Dispatcher } from "undici";
-import { Agent, EnvHttpProxyAgent, Pool } from "undici";
+import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
@@ -40,6 +39,7 @@ import {
   egressRefused,
   withPinnedDnsLookup,
 } from "./network-address.js";
+import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_MAX_MCP_TOOLS = 250;
@@ -678,80 +678,14 @@ function literalAddresses(hostname: string): ResolvedAddress[] | undefined {
   return [{ address: hostname, family }];
 }
 
-/**
- * Honors HTTP(S)_PROXY / NO_PROXY. Every proxied request is tunneled with CONNECT to the checked
- * IP, so the proxy never resolves the hostname itself and DNS rebinding cannot reach past it.
- */
-function createRemoteDispatcher(resolve: ResolveHostname, policy: RemoteUrlPolicy): Dispatcher {
-  const { env } = process;
-  const proxy = env.http_proxy ?? env.HTTP_PROXY ?? env.https_proxy ?? env.HTTPS_PROXY;
-  if (proxy && !/^https?:\/\//i.test(proxy)) {
-    throw new Error("Only HTTP proxies are supported");
-  }
-  if (!proxy) {
-    return new Agent({ connect: { lookup: createSafeLookup(resolve, policy) } });
-  }
-  return new EnvHttpProxyAgent({
-    connect: { lookup: createSafeLookup(resolve, policy) },
-    proxyTunnel: true,
-    clientFactory: (origin, options) => {
-      const pool = new Pool(origin, options);
-      const connect = pool.connect.bind(pool) as (
-        options: Dispatcher.ConnectOptions,
-      ) => Promise<Dispatcher.ConnectData>;
-      return Object.assign(pool, {
-        connect: async (options: Dispatcher.ConnectOptions) => {
-          const authority = await checkedAuthority(options.path, resolve, policy);
-          return connect({
-            ...options,
-            path: authority,
-            headers: { ...(options.headers as Record<string, string>), host: authority },
-          });
-        },
-      });
-    },
-  });
-}
-
-async function checkedAuthority(
-  authority: string,
-  resolve: ResolveHostname,
-  policy: RemoteUrlPolicy,
-): Promise<string> {
-  const separator = authority.lastIndexOf(":");
-  const [first] = await resolvePublicHost(authority.slice(0, separator), resolve, policy);
-  const address = first?.address ?? "";
-  const host = ipVersion(address) === 6 ? `[${address}]` : address;
-  return `${host}${authority.slice(separator)}`;
-}
-
-async function resolvePublicHost(
-  host: string,
-  resolve: ResolveHostname,
-  policy: RemoteUrlPolicy,
-): Promise<ResolvedAddress[]> {
-  const hostname = host.replace(/^\[|\]$/g, "");
-  const addresses = await resolve(hostname);
-  try {
-    // The CONNECT tunnel bypasses createSafeLookup's own per-address check, so
-    // re-apply the same policy: loopback stays allowed under the private-endpoint escape.
-    if (policy.allowPrivateEndpoint === true && isLocalhostOrLoopbackIp(hostname)) {
-      assertLoopbackAddresses(addresses);
-    } else {
-      assertAllowedAddresses(addresses, policy);
-    }
-  } catch (error) {
-    throw egressRefused(hostname, error);
-  }
-  return addresses;
-}
-
 export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): SafeRemoteFetch {
-  const dispatcher = createRemoteDispatcher(resolve, policy);
+  const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
+    assertSafeRemoteAddresses(addresses, hostname, policy),
+  );
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
   const usePackageFetch = fetchPairedWithDispatcher(baseFetch) === dispatcherFetch;
@@ -878,16 +812,25 @@ export function createSafeLookup(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): LookupFunction {
-  return createAddressCheckedLookup(resolve, (addresses, hostname) => {
-    if (
-      policy.allowPrivateEndpoint === true &&
-      isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
-    ) {
-      assertLoopbackAddresses(addresses);
-      return;
-    }
-    assertAllowedAddresses(addresses, policy);
-  });
+  return createAddressCheckedLookup(resolve, (addresses, hostname) =>
+    assertSafeRemoteAddresses(addresses, hostname, policy),
+  );
+}
+
+function assertSafeRemoteAddresses(
+  addresses: ResolvedAddress[],
+  hostname: string,
+  policy: RemoteUrlPolicy,
+): void {
+  // Loopback stays allowed under the deployment owner's private-endpoint escape.
+  if (
+    policy.allowPrivateEndpoint === true &&
+    isLocalhostOrLoopbackIp(hostname.replace(/^\[|\]$/g, ""))
+  ) {
+    assertLoopbackAddresses(addresses);
+    return;
+  }
+  assertAllowedAddresses(addresses, policy);
 }
 
 /** Reserved local names (localhost, .local, .internal, Docker Desktop) and non-public literals. */

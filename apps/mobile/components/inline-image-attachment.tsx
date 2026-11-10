@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
 import {
@@ -12,7 +13,6 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactPreview } from "../lib/artifact-open";
-import { useI18n } from "../lib/i18n";
 import type { ImageSize } from "../lib/inline-image";
 import { fitImageSize } from "../lib/inline-image";
 
@@ -40,7 +40,7 @@ export function InlineImageAttachment({
   pressableProps?: Omit<PressableProps, "onPress" | "children" | "style">;
   labelColor: string;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = mobileTokens();
   const { width: windowWidth } = useWindowDimensions();
   const maxWidth = Math.min(Math.round(windowWidth * 0.68), 400);
@@ -73,7 +73,7 @@ export function InlineImageAttachment({
       <Pressable
         {...pressableProps}
         accessibilityRole="imagebutton"
-        accessibilityLabel={t("Open image {name}", { name })}
+        accessibilityLabel={t`Open image ${name}`}
         onPress={onOpen}
       >
         <Image
@@ -91,10 +91,10 @@ export function InlineImageAttachment({
         {state.status === "loading" ? (
           <ActivityIndicator
             color={tokens.mutedForeground}
-            accessibilityLabel={t("Loading image…")}
+            accessibilityLabel={t`Loading image…`}
           />
         ) : (
-          <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{t("Tap to open")}</Text>
+          <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{t`Tap to open`}</Text>
         )}
       </View>
     </Pressable>

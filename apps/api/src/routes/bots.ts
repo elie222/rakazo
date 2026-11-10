@@ -756,6 +756,41 @@ export function botsRoutes(ctx: RouterContext) {
           webhookConfigured: true as const,
         };
       }),
+      revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        // Only the creator can issue the secret, so only the creator can read it back. Checked
+        // first, so another member is never asked to confirm their identity for nothing.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        await requireIdentityConfirmation(deps.auth, context);
+        const stored = bot.webhookSecretId
+          ? await deps.prisma.secret.findFirst({
+              where: {
+                id: bot.webhookSecretId,
+                userId: context.actor.userId,
+                spaceId: context.actor.spaceId,
+                kind: "webhook",
+              },
+              select: { id: true, ciphertext: true },
+            })
+          : null;
+        if (!stored) throw new ORPCError("NOT_FOUND", { message: "Webhook key not found" });
+        const secret = await deps.secrets.load(stored.ciphertext, stored.id);
+        // A rotation can commit while this decrypts; never hand back a key it has revoked.
+        const current = await deps.prisma.bot.findUnique({
+          where: { id: bot.id },
+          select: { webhookSecretId: true },
+        });
+        if (current?.webhookSecretId !== stored.id) {
+          throw new ORPCError("CONFLICT", { message: "The webhook key just changed" });
+        }
+        await recordSecurityEvent({
+          type: "credential.revealed",
+          userId: context.actor.userId,
+          spaceId: context.actor.spaceId,
+          metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
+        });
+        return { secret };
+      }),
     },
     groups: {
       create: authed.groups.create.handler(async ({ context, input }) => {

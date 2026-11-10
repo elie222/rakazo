@@ -74,7 +74,7 @@ describe("bot tool permissions", () => {
     expect(search.description).toContain("direct human app run");
     expect(search.inputSchema).toMatchObject({
       properties: { queries: { maxItems: 5 }, scope: { enum: ["this_chat", "my_chats"] } },
-      oneOf: [{ required: ["query"] }, { required: ["queries"] }],
+      oneOf: [{ required: ["query"] }, { required: ["queries"] }, { required: ["kinds"] }],
     });
     expect(tools.find((tool) => tool.name === "read_history")?.inputSchema).toMatchObject({
       properties: { threadId: { type: "string" } },

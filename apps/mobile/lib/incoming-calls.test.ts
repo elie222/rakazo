@@ -65,7 +65,6 @@ vi.mock("./call-session", () => ({
   startCall: fake.startCall,
   subscribe: () => () => {},
 }));
-vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./push", () => ({ registerCallPushToken: vi.fn() }));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./session", () => ({

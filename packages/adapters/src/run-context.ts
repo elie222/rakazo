@@ -10,6 +10,7 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
@@ -36,6 +37,7 @@ import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
@@ -117,6 +119,10 @@ export interface ReplyState {
    * sentence boundary, so the step chips never render in the middle of a clause.
    */
   pendingToolNames: string[];
+  /** Every step label a call made, in call order, so its outcome can be saved on its step. */
+  toolCalls: { label: string; executionId: string }[];
+  /** How each finished call ended, by execution id. */
+  toolOutcomes: Map<string, ToolStepOutcome>;
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
@@ -436,7 +442,8 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
 /**
  * Reserve the effect occurrences a saved turn already assigned, so its pending call claims the
  * same effect when it resumes. Returns undefined when the turn cannot resume with this run's
- * tools or transcript format.
+ * tools or transcript format. A pinned computer-mode turn whose pending tool is not offered
+ * right now throws PausedTurnToolsUnavailableError instead, so setup retries it quietly.
  */
 export function restoreTurnCheckpointEffects(
   ctx: RunContext,
@@ -462,19 +469,25 @@ export function restoreTurnCheckpointEffects(
         return undefined;
       available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
     }
-    if (
-      saved.messages.some(
-        (message) =>
-          message.role === "assistant" &&
-          message.content.some(
+    const missing = saved.messages.flatMap((message) =>
+      message.role === "assistant"
+        ? message.content.filter(
             (call) =>
               call.type === "toolCall" &&
               unresolved.has(call) &&
               (saved.executionMode === "sequential" || call.id === saved.pendingToolCallId) &&
               !available.has(call.name),
-          ),
-      )
-    ) {
+          )
+        : [],
+    );
+    if (missing.length) {
+      // A transition for the other mode is an invalid checkpoint, not a tool that went offline.
+      const transition = missing.some(
+        (call) =>
+          call.type === "toolCall" &&
+          (call.name === "enter_computer_mode" || call.name === "leave_computer_mode"),
+      );
+      if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;
     }
     if (saved.effectOccurrences) {
@@ -516,7 +529,8 @@ export function restoreTurnCheckpointEffects(
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
-  } catch {
+  } catch (error) {
+    if (error instanceof PausedTurnToolsUnavailableError) throw error;
     // Incompatible transcripts use the existing canonical approval replay.
     // Decryption happens earlier and must still fail closed.
     return undefined;

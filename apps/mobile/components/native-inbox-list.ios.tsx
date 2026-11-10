@@ -218,7 +218,10 @@ export function NativeInboxList<Item>({
             topInset={headerInset}
             bottomInset={bottom}
             onJump={(index) =>
-              void scrollNativeListToRow(findNodeHandle(hostRef.current), firstItemRow + index)
+              void scrollNativeListToRow(
+                findNodeHandle(hostRef.current) ?? null,
+                firstItemRow + index,
+              )
             }
           />
         </View>
