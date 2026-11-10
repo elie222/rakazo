@@ -89,6 +89,20 @@ describe.each(["local", "openai-compatible"] as const)("%s model stream transpor
     );
   });
 
+  it("still bounds the wait for response headers", async () => {
+    await expect(runTurn(provider, () => {})).rejects.toThrow(/timeout|timed out/i);
+  });
+
+  it("still aborts a response body that stays silent", async () => {
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "1000");
+    await expect(
+      runTurn(provider, (response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.flushHeaders();
+      }),
+    ).rejects.toThrow("Model stream idle timeout");
+  });
+
   it("names why a stream that started was cut off", async () => {
     await expect(
       runTurn(provider, (response) => {
