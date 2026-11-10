@@ -507,7 +507,7 @@ msgid "**This week**\n"
 "Nothing new on battery recycling."
 msgstr "**本週**\n"
 "\n"
-"**開源 AI 代理**\n"
+"**開源 AI 代理程式**\n"
 "- 一個重大版本新增了排程任務（3 天前）\n"
 "- 兩篇新的比較文章；都認為記憶是最大缺口\n"
 "\n"
@@ -830,7 +830,7 @@ msgstr "進階..."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Agent from another app"
-msgstr "其他應用程式中的代理"
+msgstr "其他應用程式中的代理程式"
 
 #: src/components/VaultSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1298,7 +1298,7 @@ msgstr "機器人"
 
 #: src/components/vault/BotEmailAddresses.tsx
 msgid "Bot email addresses"
-msgstr "Bot 的電子郵件地址"
+msgstr "機器人的電子郵件地址"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Bot is watching, not acting"
