@@ -283,6 +283,14 @@ export async function createPendingSteeringRun(
     where: { id: { in: batch.map((item) => item.id) }, runId: null },
     data: { runId: run.id, claimedAt: null },
   });
+  // A steering row is deleted once answered, and only the newest message is the run's source. This
+  // is what still names the run for the others when a service caller asks later.
+  if (origin === "service") {
+    await tx.message.updateMany({
+      where: { id: { in: batch.map((item) => item.message.id) }, runId: null },
+      data: { runId: run.id },
+    });
+  }
   return run.id;
 }
 

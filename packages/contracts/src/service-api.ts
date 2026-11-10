@@ -38,6 +38,9 @@ const decimal = z
   .string()
   .regex(/^(0|[1-9][0-9]{0,14})$/)
   .transform(Number);
+/** Message numbers are 32-bit in the database, so anything larger simply means "from the end". */
+const SEQ_MAX = 2_147_483_647;
+const seqBefore = decimal.transform((value) => Math.min(value, SEQ_MAX));
 const pageCursor = z.string().min(1).max(512);
 
 /** Conversation as a person sees it. Tool calls, their results and secrets never leave. */
@@ -342,7 +345,7 @@ export const SERVICE_ROUTES = {
     path: "/bots/:botId/activity",
     scope: "conversations:read",
     summary: "A page of the conversation, newest first by cursor",
-    query: z.strictObject({ before: decimal.optional() }),
+    query: z.strictObject({ before: seqBefore.optional() }),
     response: conversationPage.extend({ botId: z.string() }),
   }),
   botEvents: route({
@@ -622,7 +625,7 @@ export const SERVICE_ROUTES = {
     scope: "conversations:read",
     summary: "A page of a group's conversation",
     spaceWide: true,
-    query: z.strictObject({ before: decimal.optional() }),
+    query: z.strictObject({ before: seqBefore.optional() }),
     response: conversationPage.extend({ groupId: z.string() }),
   }),
   sendGroupPrompt: route({

@@ -669,6 +669,16 @@ describeWithDatabase("service API surface", () => {
         runId: shared.id,
         held: false,
       });
+
+      // Answered: the waiting rows are gone, and a retry must not read as a dropped message.
+      await db.steeringMessage.deleteMany({ where: { runId: shared.id } });
+      await db.run.update({ where: { id: shared.id }, data: { status: "completed" } });
+      await expect(send("one", "first waiting")).resolves.toMatchObject({
+        runId: shared.id,
+        taskId: shared.taskId,
+        held: false,
+      });
+      expect(await db.message.count({ where: { threadId, role: "user" } })).toBe(2);
     });
 
     it("says so when a stop dropped the waiting message", async () => {
@@ -884,6 +894,15 @@ describeWithDatabase("service API surface", () => {
         headers: { authorization: `Bearer ${token}` },
       });
       expect(get.status).toBe(405);
+      const oversized = await app.request(`${SERVICE_API_PREFIX}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: "x".repeat(70_000),
+      });
+      expect(oversized.status).toBe(413);
+      expect(await oversized.json()).toEqual({
+        error: { code: "payload_too_large", message: "Body too large for this call." },
+      });
     });
 
     it("offers a key only the tools it may use", async () => {
@@ -1048,6 +1067,19 @@ describeWithDatabase("service API surface", () => {
       expect(body).toContain('"kind":"sent_with_key"');
     });
 
+    it("opens at once on a quiet bot", async () => {
+      const { cookie } = await person();
+      const bot = await newBot(cookie, "Quiet");
+      const { token } = await newKey(cookie);
+      const reader = (await open(token, bot.id)).body!.getReader();
+      const first = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no bytes")), 2_000)),
+      ]);
+      expect(new TextDecoder().decode(first.value)).toBe(": connected\n\n");
+      await reader.cancel();
+    });
+
     it("ends the stream soon after the key is revoked", async () => {
       const { cookie } = await person();
       const bot = await newBot(cookie, "Revoked");
@@ -1145,6 +1177,17 @@ describeWithDatabase("service API surface", () => {
     await ok(token, "GET", "/usage/summary");
     await ok(token, "GET", "/search?q=Everything");
     await ok(token, "GET", "/audit/events?limit=5");
+  });
+
+  it("answers an out-of-range cursor and a NUL without a server error", async () => {
+    const { cookie } = await person();
+    const bot = await newBot(cookie, "Edges");
+    const { token } = await newKey(cookie);
+    const huge = await api(token, "GET", `/bots/${bot.id}/activity?before=999999999999999`);
+    expect(huge.status).toBe(200);
+    for (const suffix of ["/search?q=%00", "/audit/events?action=a%00b", "/tickets?q=%00"]) {
+      expect((await api(token, "GET", suffix)).status, suffix).toBe(400);
+    }
   });
 
   it("describes itself from the table the server enforces", async () => {

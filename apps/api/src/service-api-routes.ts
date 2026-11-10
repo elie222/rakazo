@@ -205,7 +205,7 @@ async function placementOf(
   messageId: string,
   preferredRunId?: string | null,
 ) {
-  const [started, waiting] = await Promise.all([
+  const [started, waiting, saved] = await Promise.all([
     prisma.run.findMany({
       where: { sourceMessageId: messageId },
       orderBy: { createdAt: "asc" },
@@ -215,13 +215,22 @@ async function placementOf(
       where: { messageId, originTrigger: "service" },
       select: { runId: true, run: { select: { id: true, taskId: true } } },
     }),
+    prisma.message.findUnique({ where: { id: messageId }, select: { runId: true } }),
   ]);
+  // Its waiting row is gone once the shared run has answered it, so the message carries the link.
+  const linked =
+    !started.length && !waiting.some((row) => row.run) && saved?.runId
+      ? await prisma.run.findUnique({
+          where: { id: saved.runId },
+          select: { id: true, taskId: true },
+        })
+      : null;
   // Several held messages share one follow-up run, whose source is only the newest of them.
   const run =
     started.find(({ id }) => id === preferredRunId) ??
     started[0] ??
     waiting.find((row) => row.run)?.run ??
-    null;
+    linked;
   return {
     taskId: run?.taskId ?? null,
     runId: run?.id ?? null,
@@ -364,6 +373,10 @@ async function streamBotEvents(context: ServiceContext<"botEvents">): Promise<Re
   }
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      // Headers leave with the first bytes. Without this a quiet bot looks like a hung connection.
+      controller.enqueue(encoder.encode(": connected\n\n"));
+    },
     async pull(controller) {
       try {
         for (;;) {

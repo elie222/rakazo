@@ -56,6 +56,10 @@ function fieldsOf(issues: readonly Issue[]) {
 function parseQuery(url: URL, definition: ServiceRouteDefinition): unknown {
   const names = [...url.searchParams.keys()];
   if (new Set(names).size !== names.length) throw new ServiceRejection("invalid_request");
+  // Postgres cannot store or compare a NUL, so it would surface as a server error.
+  if ([...url.searchParams.values()].some((value) => value.includes("\0"))) {
+    throw new ServiceRejection("invalid_request");
+  }
   if (!definition.query) {
     if (names.length) throw new ServiceRejection("invalid_request");
     return undefined;
