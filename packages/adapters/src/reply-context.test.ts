@@ -246,6 +246,23 @@ describe("earlier turns' tool work", () => {
     expect(text).not.toContain("Shell");
   });
 
+  it("quotes a copied step list as the message someone replied to", () => {
+    const text = messageToAgentHistoryText({
+      id: "reaction",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: "bot-copied",
+      replyTo: {
+        id: "bot-copied",
+        threadId: "thread-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
+      },
+    });
+    expect(text).toContain("List files (succeeded)");
+  });
+
   it("quotes the tool steps of a reply someone reacted to", () => {
     const text = messageToAgentHistoryText({
       id: "reaction",

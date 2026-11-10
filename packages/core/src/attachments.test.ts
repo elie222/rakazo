@@ -576,6 +576,11 @@ describe("tool step history", () => {
     ).toBe("");
   });
 
+  it("keeps a bot's mention of the marker when no list follows it", () => {
+    const text = "That line is:\n[tool calls this reply made]\nIt came from the app.";
+    expect(blocksToAgentHistoryText([{ kind: "text", text }], { fromBot: true })).toBe(text);
+  });
+
   it("keeps a step list a person wrote", () => {
     for (const text of [
       "[tool calls this reply made]",

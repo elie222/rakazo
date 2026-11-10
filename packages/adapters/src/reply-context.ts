@@ -38,7 +38,6 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
     : (() => {
         const content = blocksToAgentHistoryText(messageBlocks(target), {
           toolSteps: true,
-          fromBot: target.role === "bot",
         });
         return {
           content: content.slice(0, 20_000),

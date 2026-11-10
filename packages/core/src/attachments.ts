@@ -205,7 +205,7 @@ export function toolStepsHistoryText(
 }
 
 const COPIED_TOOL_STEPS =
-  /^[ \t]*\[tool calls this reply made\][ \t]*(?:\r?\n[ \t]*[-•*][^\n]*)*\n?/gim;
+  /^[ \t]*\[tool calls this reply made\][ \t]*(?:\r?\n[ \t]*- [^\n]*)+\n?/gim;
 
 /**
  * Drops a step list a bot wrote out as reply text. Replies that copied the replayed list instead
