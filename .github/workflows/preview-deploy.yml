@@ -247,14 +247,14 @@ jobs:
               --endpoint-url "$S3_ENDPOINT" --content-type image/png \
               --cache-control "public,max-age=31536000,immutable"
           done < "$out/uploads.txt"
+          if [[ -s $out/section.md ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
+          elif gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' | grep -qx screenshots; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/screenshots" --silent
+          fi
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$out/body.md"
           if [[ ! -s $out/section.md ]] && ! grep -qF '<!-- rakazo-pr-screenshots:start -->' "$out/body.md"; then
             exit 0
           fi
           python3 .github/scripts/pr-screenshots.py splice "$out/body.md" "$out/section.md" > "$out/new.md"
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F body=@"$out/new.md" > /dev/null
-          if [[ -s $out/section.md ]]; then
-            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=screenshots" --silent
-          else
-            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/screenshots" --silent || true
-          fi
