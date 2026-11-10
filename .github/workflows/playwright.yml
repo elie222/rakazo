@@ -103,12 +103,23 @@ jobs:
         run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Install CJK fonts
         if: steps.areas.outputs.e2e != 'false'
-        timeout-minutes: 6
-        # Chromium needs CJK fallback fonts; the runner's Azure mirror can stall on this package.
+        timeout-minutes: 4
+        # Chromium needs CJK fallback fonts. apt-get against the runner's Azure mirror
+        # stalls on this 61 MB package and the install hits the wall clock (exit 124,
+        # not a test failure), so fetch the .deb straight from the archive and skip
+        # the index update entirely. Deterministic: one file, one dpkg.
         run: |
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
-          sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          sudo timeout 240s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends fonts-noto-cjk
+          set -euo pipefail
+          if command -v fc-list >/dev/null && fc-list :lang=zh | grep -q .; then
+            echo "CJK fonts already present"
+            exit 0
+          fi
+          DEB=/tmp/fonts-noto-cjk.deb
+          URL="https://archive.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20220127+repack1-1_all.deb"
+          curl -fsSL --retry 3 --retry-delay 2 --max-time 120 -o "$DEB" "$URL"
+          sudo dpkg -i "$DEB"
+          sudo fc-cache -f
+          fc-list :lang=zh | head -3
       - name: Wait for Postgres
         if: steps.areas.outputs.e2e != 'false'
         run: |
