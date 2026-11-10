@@ -22,11 +22,30 @@ const DICTATION_PAUSE_MS = 30_000;
 
 export type ComposerDictationStatus = "idle" | "listening" | "transcribing";
 
+/** How long a session hidden during setup waits for the app to come back from a prompt. */
+const RETURN_FROM_PROMPT_MS = 1_000;
+
+function untilActive(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      subscription.remove();
+      resolve();
+    };
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") done();
+    });
+    const timer = setTimeout(done, timeoutMs);
+  });
+}
+
 type Session = {
   cancel: AbortController;
   finish: () => void;
   /** Permissions are settled and the microphone is in use. */
   live: boolean;
+  /** The app is in the background while setup is still running. */
+  hidden: boolean;
 };
 
 /**
@@ -75,15 +94,35 @@ export function useComposerDictation({
   // and its audio.
   useEffect(() => {
     const unsubscribe = navigation.addListener("blur", cancel);
-    // Android reports a permission prompt as background, so only a live mic is dropped.
+    // Android reports a permission prompt as background, so during setup a background move only
+    // marks the session; it is dropped unless the app is back in front before the mic opens.
     const appState = AppState.addEventListener("change", (state) => {
-      if (state === "background" && session.current?.live) cancel();
+      const mine = session.current;
+      if (!mine) return;
+      if (state === "active") mine.hidden = false;
+      else if (state === "background") {
+        if (mine.live) cancel();
+        else mine.hidden = true;
+      }
     });
     return () => {
       unsubscribe();
       appState.remove();
     };
   }, [navigation]);
+
+  /** Opens the mic only for a session still current and in front; a hidden one is dropped. */
+  async function goLive(mine: Session) {
+    // A permission answer can land just before Android reports the app in front again.
+    if (mine.hidden) await untilActive(RETURN_FROM_PROMPT_MS);
+    if (session.current !== mine) return false;
+    if (mine.hidden) {
+      cancel();
+      return false;
+    }
+    mine.live = true;
+    return true;
+  }
 
   async function start(mine: Session) {
     const plan = await resolveVoiceCallPlan({
@@ -116,8 +155,7 @@ export function useComposerDictation({
       // Ask for the microphone first: on Android its prompt reads as leaving the app.
       const { AudioModule } = await import("expo-audio");
       await AudioModule.requestRecordingPermissionsAsync();
-      if (session.current !== mine) return;
-      mine.live = true;
+      if (!(await goLive(mine))) return;
       const stopped = new AbortController();
       mine.finish = () => {
         stopped.abort();
@@ -155,9 +193,8 @@ export function useComposerDictation({
       return;
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
-    if (session.current !== mine) return;
     // The plan above already asked for speech recognition, so the microphone is next.
-    mine.live = true;
+    if (!(await goLive(mine))) return;
     // A stop tap while the recognizer is still loading lands once it has started.
     let stopRequested = false;
     mine.finish = () => {
@@ -189,7 +226,12 @@ export function useComposerDictation({
     }
     if (disabled) return;
     // Until the path is chosen, a second tap cancels.
-    const mine: Session = { cancel: new AbortController(), finish: () => cancel(), live: false };
+    const mine: Session = {
+      cancel: new AbortController(),
+      finish: () => cancel(),
+      live: false,
+      hidden: false,
+    };
     session.current = mine;
     setStatus("listening");
     start(mine).catch((error: unknown) => {
