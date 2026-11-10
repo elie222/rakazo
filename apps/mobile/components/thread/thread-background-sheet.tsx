@@ -22,29 +22,48 @@ import {
   setChatBackgroundOpacity,
   useChatBackground,
 } from "../../lib/chat-background";
+import {
+  deleteHeroBackgroundFile,
+  saveHeroBackgroundFile,
+  setHeroBackground,
+  setHeroBackgroundOpacity,
+  useHeroBackground,
+} from "../../lib/hero-background";
 import { useI18n } from "../../lib/i18n";
 import { NativeActionButton } from "../native-action-button";
 import { NativeSheet, useNativeSheet } from "../native-sheet";
 import { NativeSymbol } from "../native-symbol";
 
 /**
- * The chat background settings: a local image, a subscribed image URL, or a
+ * The background settings: a local image, a subscribed image URL, or a
  * local video that plays muted on a loop, plus an opacity slider and a
- * restore-default button. The background covers only the chat area.
+ * restore-default button. Two independent sections share the one editor: the
+ * chat background (behind the message list) and the title hero's background
+ * (behind the big avatar and name). Each is stored per thread under its own
+ * key, so setting one never touches the other.
  */
 export function ThreadBackgroundSheet({
   visible,
   threadKey,
+  heroVisible,
   onClose,
 }: {
   visible: boolean;
   threadKey: string | undefined;
+  /** False where there is no title hero (groups): the hero section hides. */
+  heroVisible?: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
   const Sheet = useNativeSheet();
-  const background = useChatBackground(threadKey);
+  const [section, setSection] = useState<"chat" | "hero">("chat");
+  // Groups have no hero: the section is forced back to the chat background,
+  // so a stale hero selection can never edit a hero that is not there.
+  const activeSection = heroVisible === false ? "chat" : section;
+  const chatBackground = useChatBackground(threadKey);
+  const heroBackground = useHeroBackground(threadKey);
+  const background = activeSection === "hero" ? heroBackground : chatBackground;
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,6 +75,10 @@ export function ThreadBackgroundSheet({
   // a stale first-render key would adjust another thread's background.
   const threadKeyRef = useRef(threadKey);
   threadKeyRef.current = threadKey;
+  // Same for the section: the responder must write to the section that is
+  // showing when the finger moves, not the one from the first render.
+  const sectionRef = useRef(activeSection);
+  sectionRef.current = activeSection;
   const slider = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -63,7 +86,9 @@ export function ThreadBackgroundSheet({
       onPanResponderGrant: (event) => {
         const key = threadKeyRef.current;
         if (sliderWidthRef.current > 0 && key) {
-          setChatBackgroundOpacity(
+          const setOpacity =
+            sectionRef.current === "hero" ? setHeroBackgroundOpacity : setChatBackgroundOpacity;
+          setOpacity(
             key,
             chatBackgroundOpacityFromRatio(event.nativeEvent.locationX / sliderWidthRef.current),
           );
@@ -72,7 +97,9 @@ export function ThreadBackgroundSheet({
       onPanResponderMove: (event) => {
         const key = threadKeyRef.current;
         if (sliderWidthRef.current > 0 && key) {
-          setChatBackgroundOpacity(
+          const setOpacity =
+            sectionRef.current === "hero" ? setHeroBackgroundOpacity : setChatBackgroundOpacity;
+          setOpacity(
             key,
             chatBackgroundOpacityFromRatio(event.nativeEvent.locationX / sliderWidthRef.current),
           );
@@ -94,13 +121,23 @@ export function ThreadBackgroundSheet({
       });
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
-      const saved = await saveChatBackgroundFile(
-        threadKey,
-        asset.uri,
-        asset.fileName ?? "background",
-        kind,
-      );
-      setChatBackground(threadKey, { kind, ...saved, opacity });
+      if (activeSection === "hero") {
+        const saved = await saveHeroBackgroundFile(
+          threadKey,
+          asset.uri,
+          asset.fileName ?? "background",
+          kind,
+        );
+        setHeroBackground(threadKey, { kind, ...saved, opacity });
+      } else {
+        const saved = await saveChatBackgroundFile(
+          threadKey,
+          asset.uri,
+          asset.fileName ?? "background",
+          kind,
+        );
+        setChatBackground(threadKey, { kind, ...saved, opacity });
+      }
       // The "Current background" line above updates live; that is the confirmation.
     } catch {
       Alert.alert(t("Could not load that file"), t("Try again."));
@@ -125,7 +162,11 @@ export function ThreadBackgroundSheet({
     try {
       const ok = await Image.prefetch(trimmed);
       if (!ok) throw new Error("prefetch failed");
-      setChatBackground(threadKey, { kind: "url", uri: trimmed, opacity });
+      if (activeSection === "hero") {
+        setHeroBackground(threadKey, { kind: "url", uri: trimmed, opacity });
+      } else {
+        setChatBackground(threadKey, { kind: "url", uri: trimmed, opacity });
+      }
       setUrl("");
       setUrlError(null);
     } catch {
@@ -156,10 +197,43 @@ export function ThreadBackgroundSheet({
         }}
       >
         <Text style={{ color: tokens.foreground, fontSize: 17, fontWeight: "600" }}>
-          {t("Chat background")}
+          {activeSection === "hero" ? t("Hero background") : t("Chat background")}
         </Text>
         <NativeActionButton label={t("Cancel")} prominence="plain" onPress={onClose} />
       </View>
+      {heroVisible === false ? null : (
+        <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingBottom: 12 }}>
+          {(["chat", "hero"] as const).map((option) => (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityLabel={option === "hero" ? t("Hero background") : t("Chat background")}
+              onPress={() => {
+                setSection(option);
+                setUrl("");
+                setUrlError(null);
+              }}
+              style={{
+                flex: 1,
+                alignItems: "center",
+                paddingVertical: 8,
+                borderRadius: 10,
+                backgroundColor: activeSection === option ? tokens.accent : tokens.muted,
+              }}
+            >
+              <Text
+                style={{
+                  color: activeSection === option ? tokens.link : tokens.foreground,
+                  fontSize: 15,
+                  fontWeight: activeSection === option ? "600" : "400",
+                }}
+              >
+                {option === "hero" ? t("Hero background") : t("Chat background")}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <Text
         style={{
           color: tokens.mutedForeground,
@@ -298,9 +372,17 @@ export function ThreadBackgroundSheet({
           // Clearing the background also removes its local file, so a restored
           // default leaves nothing behind in documents.
           if (background && (background.kind === "image" || background.kind === "video")) {
-            void deleteChatBackgroundFile(background.uri);
+            if (activeSection === "hero") {
+              void deleteHeroBackgroundFile(background.uri);
+            } else {
+              void deleteChatBackgroundFile(background.uri);
+            }
           }
-          setChatBackground(threadKey, null);
+          if (activeSection === "hero") {
+            setHeroBackground(threadKey, null);
+          } else {
+            setChatBackground(threadKey, null);
+          }
         }}
         style={({ pressed }) => ({
           flexDirection: "row",
@@ -327,7 +409,11 @@ export function ThreadBackgroundSheet({
 
   if (Sheet) {
     return (
-      <NativeSheet Sheet={Sheet} onClose={onClose} label={t("Chat background")}>
+      <NativeSheet
+        Sheet={Sheet}
+        onClose={onClose}
+        label={activeSection === "hero" ? t("Hero background") : t("Chat background")}
+      >
         {content}
       </NativeSheet>
     );

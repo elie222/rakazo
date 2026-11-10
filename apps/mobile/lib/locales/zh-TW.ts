@@ -1581,6 +1581,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Bot menu": "機器人選單",
   "Bot settings": "機器人設定",
   "Chat background": "聊天背景",
+  "Hero background": "懸浮大圖示背景",
   "Choose a video": "從手機選擇影片",
   "Choose an image": "從手機選擇圖片",
   "Close search": "關閉搜尋",

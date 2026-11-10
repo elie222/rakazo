@@ -1583,6 +1583,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Bot menu": "Botmenu",
   "Bot settings": "Botinstellingen",
   "Chat background": "Chat-achtergrond",
+  "Hero background": "Hero-achtergrond",
   "Choose a video": "Kies een video",
   "Choose an image": "Kies een afbeelding",
   "Close search": "Zoekopdracht sluiten",

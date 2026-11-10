@@ -80,6 +80,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notic
 import { createThreadHeaderStyles } from "../thread-header-styles";
 import { ChatBackgroundLayer } from "./chat-background-layer";
 import { ComputerFloatWindow } from "./computer-float-window";
+import { HeroBackgroundLayer } from "./hero-background-layer";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadBackgroundSheet } from "./thread-background-sheet";
 import { ThreadBotMenuSheet } from "./thread-bot-menu-sheet";
@@ -820,7 +821,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           </NewestPageCards.Provider>
           {/* The title hero floats above the list, flush against the native header with
               zero gap, and never scrolls away; it paints a solid background, so the
-              scrolling conversation can never show through it. Only the avatar
+              scrolling conversation can never show through it. The hero's own
+              background, when set, blends over that solid base at its opacity —
+              it is independent of the chat background behind the list. Only the avatar
               intercepts touches, so the list still scrolls under the hero. */}
           {chatHero ? (
             <View
@@ -833,6 +836,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
                 backgroundColor: tokens.background,
               }}
             >
+              <HeroBackgroundLayer threadKey={threadKey} />
               {chatHero}
             </View>
           ) : null}
@@ -1042,6 +1046,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         <ThreadBackgroundSheet
           visible={backgroundOpen}
           threadKey={threadKey}
+          heroVisible={!inGroup}
           onClose={() => setBackgroundOpen(false)}
         />
         <RunErrorSheet

@@ -1617,6 +1617,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Bot menu": "ボットメニュー",
   "Bot settings": "ボット設定",
   "Chat background": "チャットの背景",
+  "Hero background": "ヒーロー背景",
   "Choose a video": "動画を選択",
   "Choose an image": "画像を選択",
   "Close search": "検索を閉じる",

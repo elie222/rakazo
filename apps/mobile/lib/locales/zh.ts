@@ -1586,6 +1586,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Bot menu": "机器人菜单",
   "Bot settings": "机器人设置",
   "Chat background": "聊天背景",
+  "Hero background": "悬浮大图标背景",
   "Choose a video": "从手机选择视频",
   "Choose an image": "从手机选择图片",
   "Close search": "关闭搜索",

@@ -1596,6 +1596,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Bot menu": "Bot-Menü",
   "Bot settings": "Bot-Einstellungen",
   "Chat background": "Chat-Hintergrund",
+  "Hero background": "Hero-Hintergrund",
   "Choose a video": "Video auswählen",
   "Choose an image": "Bild auswählen",
   "Close search": "Suche schließen",

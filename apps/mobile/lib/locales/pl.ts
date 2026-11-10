@@ -1576,6 +1576,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Bot menu": "Menu bota",
   "Bot settings": "Ustawienia bota",
   "Chat background": "Tło czatu",
+  "Hero background": "Tło bohatera",
   "Choose a video": "Wybierz wideo",
   "Choose an image": "Wybierz obraz",
   "Close search": "Zamknij wyszukiwanie",

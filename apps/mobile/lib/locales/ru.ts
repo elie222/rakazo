@@ -1624,6 +1624,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Bot menu": "Меню бота",
   "Bot settings": "Настройки бота",
   "Chat background": "Фон чата",
+  "Hero background": "Фон героя",
   "Choose a video": "Выбрать видео",
   "Choose an image": "Выбрать изображение",
   "Close search": "Закрыть поиск",

@@ -1537,6 +1537,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Bot menu": "Menú del bot",
   "Bot settings": "Ajustes del bot",
   "Chat background": "Fondo del chat",
+  "Hero background": "Fondo del héroe",
   "Choose a video": "Elegir un video",
   "Choose an image": "Elegir una imagen",
   "Close search": "Cerrar búsqueda",
