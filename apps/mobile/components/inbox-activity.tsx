@@ -4,12 +4,13 @@ import { activitySections } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { activityPreview, activityStatusLabel, formatActivityRelativeTime } from "../lib/activity";
 import type { InboxRowAction } from "../lib/inbox-swipe";
 import { inboxRowActionList } from "../lib/inbox-swipe";
 import type { MobileBot, MobileGroup } from "../lib/mobile-types";
 import { useThemedStyles } from "../lib/native";
+import type { SpaceActivityStatus } from "../lib/use-space-activity";
 import { BotAvatar } from "./bot-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { createHomeStyles } from "./home-styles";
@@ -26,6 +27,7 @@ export type ActivitySwipe = RowMenuProps & {
 
 export function ActivitySection({
   activity,
+  status,
   bots,
   groups,
   toggledSections,
@@ -34,6 +36,7 @@ export function ActivitySection({
   swipe,
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
+  status: SpaceActivityStatus;
   bots: MobileBot[];
   groups: MobileGroup[];
   /** Section keys flipped from their default fold, stored with the inbox's collapsed sections. */
@@ -117,8 +120,14 @@ export function ActivitySection({
   if (
     sections.attention.length + sections.working.length + unreadCount + sections.recent.length ===
     0
-  )
-    return null;
+  ) {
+    if (status === "loading") return null;
+    return (
+      <Text style={styles.empty}>
+        {status === "failed" ? t`Could not load activity` : t`No runs yet`}
+      </Text>
+    );
+  }
   return (
     <View style={styles.activitySection}>
       {sections.attention.length > 0 ? (

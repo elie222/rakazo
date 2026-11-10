@@ -6,6 +6,9 @@ import { isComposeViewAvailable } from "../lib/compose-available";
 import { useMobileTokens } from "../lib/native";
 
 const sheetViews = ["HostView", "ModalBottomSheetView", "RNHostView", "SlotView"];
+// Material's BottomSheetDefaults.SheetMaxWidth. The adapter lays content out at the window width,
+// so on tablets and unfolded foldables it overflows the narrower centered sheet and gets clipped.
+const sheetMaxWidth = 640;
 
 // Loading constructs native adapters, so even preloading must follow the view checks.
 let loadedSheet: ComponentType<BottomSheetProps> | null | undefined;
@@ -50,7 +53,7 @@ export function NativeSheet({
   label?: string;
 }) {
   const tokens = useMobileTokens();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const closed = useRef(false);
   useEffect(() => {
@@ -77,26 +80,35 @@ export function NativeSheet({
         onClose();
       }}
     >
-      {/* The community adapter only supports hiding its stock handle. */}
-      <View accessible={false} style={{ alignItems: "center", paddingTop: 16, paddingBottom: 10 }}>
+      <View style={{ width: Math.min(width, sheetMaxWidth), alignSelf: "center" }}>
+        {/* The community adapter only supports hiding its stock handle. */}
         <View
-          style={{
-            width: 32,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: tokens.mutedForeground,
-            opacity: 0.4,
-          }}
-        />
-      </View>
-      <View
-        accessibilityViewIsModal
-        accessibilityLabel={label}
-        style={{ maxHeight, height: expanded ? maxHeight : undefined }}
-      >
-        <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-          {children}
-        </ScrollView>
+          accessible={false}
+          style={{ alignItems: "center", paddingTop: 16, paddingBottom: 10 }}
+        >
+          <View
+            style={{
+              width: 32,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: tokens.mutedForeground,
+              opacity: 0.4,
+            }}
+          />
+        </View>
+        <View
+          accessibilityViewIsModal
+          accessibilityLabel={label}
+          style={{ maxHeight, height: expanded ? maxHeight : undefined }}
+        >
+          <ScrollView
+            style={{ flexGrow: 0 }}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
+            {children}
+          </ScrollView>
+        </View>
       </View>
     </Sheet>
   );

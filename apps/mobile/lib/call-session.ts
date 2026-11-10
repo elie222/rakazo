@@ -485,7 +485,7 @@ async function openMic(): Promise<void> {
     if (!canTranscribe) {
       micOpen = false;
       set({
-        caption: t`Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.`,
+        caption: t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
       });
       return;
     }
