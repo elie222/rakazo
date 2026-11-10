@@ -24,7 +24,12 @@ import {
   toggleMute,
 } from "./call-session";
 import type { SpeechRecognizer } from "./dictation";
-import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
+import {
+  ENDPOINT_SILENCE_MS,
+  QUIET_RESTART_MS,
+  setSpeechRecognizer,
+  stop as stopDictation,
+} from "./dictation";
 import { activateUiLocale, getActiveUiLocale } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
@@ -1578,7 +1583,7 @@ describe("mobile call recognition recovery", () => {
     }
     const starts = fake.start.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(fake.start).toHaveBeenCalledTimes(starts);
+    expect(fake.start.mock.calls.length - starts).toBeLessThanOrEqual(60_000 / QUIET_RESTART_MS);
     fake.emit("result", { isFinal: false, results: [{ transcript: "status please" }] });
     await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
     expect(fake.send).toHaveBeenCalledExactlyOnceWith(

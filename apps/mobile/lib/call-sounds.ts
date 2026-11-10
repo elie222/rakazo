@@ -1,5 +1,6 @@
 import type { AudioPlayer } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
+import { callAudioActive } from "./voice";
 import type { WaitTone, WaitUnit } from "./wait-pattern";
 import { nextWaitUnit, WAIT_PATTERNS } from "./wait-pattern";
 
@@ -75,13 +76,15 @@ export async function saveCallGreetingEnabled(on: boolean): Promise<void> {
   else await SecureStore.setItemAsync(CALL_GREETING_KEY, "0");
 }
 
-export async function playCallCue(cue: CallCue, { duringCall = false } = {}): Promise<void> {
+export async function playCallCue(cue: CallCue): Promise<void> {
   const epoch = waitCallEpoch;
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   if (epoch !== waitCallEpoch) return;
   const { createAudioPlayer } = await import("expo-audio");
   if (epoch !== waitCallEpoch) return;
-  const player = createAudioPlayer(CUE_ASSETS[cue], { keepAudioSessionActive: duringCall });
+  const player = createAudioPlayer(CUE_ASSETS[cue], {
+    keepAudioSessionActive: callAudioActive(),
+  });
   let finish: () => void = () => undefined;
   cuePlayers.set(player, () => finish());
   try {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
 import {
+  ABORT_END_GRACE_MS,
   ENDPOINT_SILENCE_MS,
   finishListening,
   listen,
@@ -184,6 +185,22 @@ describe("mobile dictation", () => {
     vi.advanceTimersByTime(250);
     expect(fake.start).toHaveBeenCalledTimes(2);
     expect(onFinal).not.toHaveBeenCalled();
+  });
+
+  it("restarts an aborted session that never reports its end, exactly once", async () => {
+    await listen({ onFinal: vi.fn() });
+    vi.advanceTimersByTime(QUIET_RESTART_MS);
+    expect(fake.abort).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(ABORT_END_GRACE_MS + 250);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+  });
+
+  it("restarts once when the aborted session reports its end in time", async () => {
+    await listen({ onFinal: vi.fn() });
+    vi.advanceTimersByTime(QUIET_RESTART_MS);
+    fake.end();
+    vi.advanceTimersByTime(ABORT_END_GRACE_MS + 250);
+    expect(fake.start).toHaveBeenCalledTimes(2);
   });
 
   it("restarts a quiet session that keeps reporting empty results", async () => {

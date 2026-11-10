@@ -152,6 +152,10 @@ function changeAudioMode(change: () => Promise<void>): Promise<void> {
   return next;
 }
 
+export function callAudioActive(): boolean {
+  return onCall;
+}
+
 export function setCallAudio(active: boolean): Promise<void> {
   onCall = active;
   return changeAudioMode(async () => {

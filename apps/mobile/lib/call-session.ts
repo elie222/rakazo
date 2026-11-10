@@ -868,7 +868,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
     speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
     audio: setCallAudio,
-    cue: (cue) => playCallCue(cue, { duringCall: true }),
+    cue: playCallCue,
     waitSound: (action) => {
       if (action === "start") void startWaitSound().catch(() => undefined);
       else if (action === "stop") stopWaitSound();

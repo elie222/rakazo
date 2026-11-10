@@ -25,6 +25,8 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(async () => undefined),
   deleteItemAsync: vi.fn(async () => undefined),
 }));
+const call = vi.hoisted(() => ({ active: false }));
+vi.mock("./voice", () => ({ callAudioActive: () => call.active }));
 vi.mock("expo-audio", () => ({
   createAudioPlayer: vi.fn(),
   setAudioModeAsync: vi.fn(),
@@ -41,6 +43,7 @@ const player = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  call.active = false;
   vi.mocked(getItemAsync).mockResolvedValue(null);
   vi.useFakeTimers();
   vi.mocked(createAudioPlayer).mockReturnValue(
@@ -67,9 +70,10 @@ it("greets on calls until the greeting is turned off on this device", async () =
 });
 
 it.each(["start", "end"] as const)(
-  "plays the %s cue without changing the audio mode",
+  "plays the %s cue during a call without changing the audio mode",
   async (cue) => {
-    const playing = playCallCue(cue, { duringCall: true });
+    call.active = true;
+    const playing = playCallCue(cue);
     await vi.advanceTimersByTimeAsync(1600);
     await playing;
 
