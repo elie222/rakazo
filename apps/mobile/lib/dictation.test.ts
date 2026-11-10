@@ -18,6 +18,12 @@ type Listener = (payload: never) => void;
 /** Longest restart delay the module backs off to. */
 const RESTART_CAP_MS = 2_000;
 
+const CALL_SESSION = {
+  category: "playAndRecord",
+  categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
+  mode: "default",
+};
+
 function fakeRecognizer() {
   const listeners = new Map<string, Set<Listener>>();
   const start = vi.fn();
@@ -29,6 +35,7 @@ function fakeRecognizer() {
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: async () => ({ granted: true }),
     getSupportedLocales: async () => ({ locales: [] }),
+    getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
     addListener: (event, listener) => {
       const set = listeners.get(event) ?? new Set();
       set.add(listener as Listener);
@@ -133,16 +140,10 @@ describe("mobile dictation", () => {
     expect(fake.abort).toHaveBeenCalled();
   });
 
-  it("shares the call's audio session only when a call is listening", async () => {
+  it("keeps the call's current audio session only when a call is listening", async () => {
     await listen({ onFinal: vi.fn(), call: true });
     expect(fake.start).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        iosCategory: {
-          category: "playAndRecord",
-          categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
-          mode: "default",
-        },
-      }),
+      expect.objectContaining({ iosCategory: CALL_SESSION }),
     );
   });
 

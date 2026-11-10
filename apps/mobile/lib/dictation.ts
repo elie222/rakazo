@@ -15,11 +15,6 @@ const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
 export const QUIET_RESTART_MS = 15_000;
-const IOS_CALL_SESSION = {
-  category: "playAndRecord",
-  categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
-  mode: "default",
-};
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
 const FATAL_ERRORS = new Set([
   "not-allowed",
@@ -36,6 +31,7 @@ export type DictationGiveUp = "idle" | "failed";
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
 type DictationEventMap = { result: ResultEvent; end: null; error: ErrorEvent };
+type AudioSession = { category: string; categoryOptions: string[]; mode: string };
 
 /** The slice of `expo-speech-recognition` this module needs, so tests can drive the events. */
 export type SpeechRecognizer = {
@@ -43,8 +39,9 @@ export type SpeechRecognizer = {
     lang: string;
     interimResults: boolean;
     continuous: boolean;
-    iosCategory?: typeof IOS_CALL_SESSION;
+    iosCategory?: AudioSession;
   }): void;
+  getAudioSessionCategoryAndOptionsIOS(): AudioSession;
   stop(): void;
   abort(): void;
   isRecognitionAvailable(): boolean;
@@ -224,7 +221,9 @@ function start(session: Session): void {
     lang: session.lang,
     interimResults: true,
     continuous: true,
-    ...(session.call ? { iosCategory: IOS_CALL_SESSION } : {}),
+    ...(session.call
+      ? { iosCategory: session.recognizer.getAudioSessionCategoryAndOptionsIOS() }
+      : {}),
   });
   watchQuiet(session);
 }

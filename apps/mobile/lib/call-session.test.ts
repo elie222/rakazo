@@ -142,6 +142,11 @@ function deferred<T>(): Deferred<T> {
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const CALL_SESSION = {
+  category: "playAndRecord",
+  categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
+  mode: "default",
+};
 
 function idleThread(botId: string): MobileSnapshot {
   return { threadId: "thread-1", botId, cursor: 0, olderCursor: null, run: null, messages: [] };
@@ -1472,6 +1477,7 @@ describe("mobile call speech locales", () => {
         isRecognitionAvailable: () => true,
         requestPermissionsAsync: async () => ({ granted: true }),
         getSupportedLocales: async () => ({ locales: IOS_LOCALES }),
+        getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
         addListener: (event, listener) => {
           listeners.set(event, listener as (payload: never) => void);
           return { remove: () => void listeners.delete(event) };
@@ -1534,6 +1540,7 @@ describe("mobile call recognition recovery", () => {
       isRecognitionAvailable: () => true,
       requestPermissionsAsync: async () => ({ granted: true }),
       getSupportedLocales: async () => ({ locales: [] }),
+      getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
       addListener: (event, listener) => {
         listeners.set(event, listener as (payload: never) => void);
         return { remove: () => void listeners.delete(event) };
@@ -1549,7 +1556,7 @@ describe("mobile call recognition recovery", () => {
     expect(start).toHaveBeenCalledOnce();
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({
-        iosCategory: expect.objectContaining({ category: "playAndRecord" }),
+        iosCategory: CALL_SESSION,
       }),
     );
     return {
@@ -2106,6 +2113,7 @@ describe("mobile call microphone after hang-up", () => {
         return next.promise;
       },
       getSupportedLocales: async () => ({ locales: [] }),
+      getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
       addListener: () => ({ remove: () => undefined }),
     });
     const { dictate: _first, ...firstDeps } = fakes().deps;
