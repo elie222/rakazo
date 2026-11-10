@@ -13,6 +13,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  canRetryRun,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -149,6 +150,9 @@ export function useComposerActions({
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
+  const runRetryable =
+    Boolean(displayedRunErrorId) && canRetryRun(activeSnapshot?.run, bootstrapMe?.userId);
+  const [retrying, setRetrying] = useState(false);
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -607,6 +611,31 @@ export function useComposerActions({
     }
   }
 
+  async function retryRun() {
+    const failedRunId = displayedRunErrorId;
+    const botId = activeBotId.current;
+    const groupId = activeGroupId.current;
+    if (!failedRunId || (!botId && !groupId) || retrying) return;
+    const stillHere = () =>
+      groupId ? activeGroupId.current === groupId : activeBotId.current === botId;
+    setRetrying(true);
+    try {
+      await rpc.threads.retry({
+        ...(groupId ? { groupId } : { botId: botId! }),
+        runId: failedRunId,
+      });
+      // A group keeps its failure on screen until dismissed, even once the retry starts.
+      setDismissedRunErrorIds((current) => new Set(current).add(failedRunId));
+      if (!stillHere()) return;
+      if (groupId) await refreshGroupThreadRef.current(groupId).catch(() => undefined);
+      else if (botId) await refreshThreadRef.current(botId).catch(() => undefined);
+    } catch (error) {
+      if (stillHere()) setSendError(errorText(error, t`Could not try again`));
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return {
     activePendingAttachments,
     attachmentNotice,
@@ -634,6 +663,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
+    retryRun: runRetryable && !retrying ? retryRun : undefined,
     startFocusPrompt,
   };
 }

@@ -142,6 +142,25 @@ it("shows a readable run error with raw details, while preserving send errors", 
   expect(error?.querySelector("details")).toBeNull();
 });
 
+it("offers to try a failed reply again only while it is retryable", () => {
+  const onRetryRun = vi.fn();
+  renderComposer(async () => true, {
+    runError: "terminated",
+    runErrorId: "failed-run",
+    onRetryRun,
+  });
+  const retry = () =>
+    container?.querySelector<HTMLButtonElement>('[data-testid="composer-error-retry"]');
+  expect(retry()?.getAttribute("aria-label")).toBe("Try again");
+  act(() => retry()?.click());
+  expect(onRetryRun).toHaveBeenCalledOnce();
+
+  rerenderComposer({ onRetryRun: undefined });
+  expect(retry()).toBeNull();
+  rerenderComposer({ onRetryRun, sendError: "Could not send the message." });
+  expect(retry()).toBeNull();
+});
+
 it.each([
   ['402: {"message":"You have no credits remaining."}', "Choose a model", "models"],
   [

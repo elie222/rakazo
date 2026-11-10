@@ -1,6 +1,7 @@
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 import { RunErrorAction, RunErrorTextAction } from "./run-error-actions";
 
@@ -11,6 +12,7 @@ export function ThreadErrorNotice({
   resetAt,
   onDetails,
   action,
+  retry,
 }: {
   error: string | null;
   summary: string | null;
@@ -18,6 +20,8 @@ export function ThreadErrorNotice({
   onDetails?: () => void;
   /** The one action that fixes the failure. */
   action?: { label: string; onPress: () => void } | null;
+  /** Runs the failed reply again. */
+  retry?: { onPress: () => void; busy: boolean } | null;
 }) {
   const { t, locale } = useI18n();
   const tokens = useMobileTokens();
@@ -55,6 +59,16 @@ export function ThreadErrorNotice({
           />
         </View>
         <Text style={[styles.headline, { color: tokens.foreground }]}>{summary ?? error}</Text>
+        {retry ? (
+          <NativeActionButton
+            accessibilityLabel={t("Try again")}
+            icon={{ ios: "arrow.clockwise", android: "refresh" }}
+            prominence="quiet"
+            size="compact"
+            busy={retry.busy}
+            onPress={retry.onPress}
+          />
+        ) : null}
       </View>
       {hasBody ? (
         <View style={[styles.body, { marginLeft: 18 * fontScale + 8 }]}>
