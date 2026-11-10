@@ -99,6 +99,13 @@ export type OnDeviceSpeechNative = {
   isModelDownloaded: (category: string, id: string) => Promise<boolean>;
   getModelPath: (category: string, id: string) => Promise<string | null>;
   deleteModel: (category: string, id: string) => Promise<void>;
+  /**
+   * Fetches a category's release list into the download manager's local
+   * cache. ensureModel looks a model id up in that cache, and the cache
+   * starts empty, so a download must refresh first; the manager returns the
+   * cached list when it is under a day old.
+   */
+  refreshModels: (category: string) => Promise<unknown[]>;
 };
 
 let injected: OnDeviceSpeechNative | null = null;
@@ -136,6 +143,7 @@ async function loadNative(): Promise<OnDeviceSpeechNative> {
       isModelDownloaded: download.isModelDownloaded,
       getModelPath: download.getModelPath,
       deleteModel: download.deleteModel,
+      refreshModels: download.refreshModels,
     } as unknown as OnDeviceSpeechNative;
   })();
   return nativePromise;
@@ -236,6 +244,12 @@ export async function downloadOnDeviceSpeechModels(
       }));
       onProgress?.(status);
     };
+    // The download manager only knows a model after its release list is
+    // fetched: ensureModel looks the id up in a local cache, and the cache
+    // starts empty, so refresh both lists before downloading. refreshModels
+    // returns the cached list when it is under a day old.
+    await native.refreshModels("stt");
+    await native.refreshModels("tts");
     // The two downloads run one after the other so the progress bar reads
     // as one download: STT first, then TTS.
     downloadProgress = 0;

@@ -148,6 +148,7 @@ function fakeNative(
     ),
     getModelPath: vi.fn(async (category: string) => (category === "stt" ? sttPath : ttsPath)),
     deleteModel: vi.fn(async () => undefined),
+    refreshModels: vi.fn(async () => []),
   };
   return {
     native,
@@ -352,6 +353,17 @@ describe("on-device speech models", () => {
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[seen.length - 1]).toBe(1);
+  });
+
+  it("refreshes the model lists before downloading", async () => {
+    await downloadOnDeviceSpeechModels();
+    expect(fake.native.refreshModels).toHaveBeenNthCalledWith(1, "stt");
+    expect(fake.native.refreshModels).toHaveBeenNthCalledWith(2, "tts");
+    // Without the refresh the download manager's cache starts empty and
+    // ensureModel throws "Unknown model id".
+    const refreshOrder = vi.mocked(fake.native.refreshModels).mock.invocationCallOrder;
+    const ensureOrder = vi.mocked(fake.native.ensureModel).mock.invocationCallOrder;
+    expect(refreshOrder[0]!).toBeLessThan(ensureOrder[0]!);
   });
 
   it("deletes both models", async () => {
