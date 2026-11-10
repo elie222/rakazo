@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   chmodSync,
   mkdirSync,
@@ -22,6 +23,7 @@ import {
   desktopControlCommand,
   desktopTerminalCommand,
   desktopUrl,
+  desktopWorkCommand,
   ensureScreenCommand,
   interactiveScreenCommand,
   MAX_DESKTOP_DISPLAY,
@@ -34,6 +36,7 @@ import {
   shellQuote,
   stopBrowserProfileCommand,
   stopExtraScreenCommand,
+  TERMINAL_MENU_COMMAND,
   terminalCommand,
 } from "./desktop-runtime.js";
 
@@ -91,7 +94,7 @@ const env = {
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), "desktop-runtime-test-"));
   roots.push(root);
-  const run = (script: string, failLifecycle = false) =>
+  const run = (script: string, failLifecycle = false, input?: string) =>
     spawnSync(
       "bash",
       [
@@ -106,7 +109,7 @@ function fixture() {
             .replaceAll("/tmp/rakazo", root),
         ].join("\n"),
       ],
-      { encoding: "utf8", timeout: 5000 },
+      { encoding: "utf8", timeout: 5000, input },
     );
   const ensure = (bot: string, lease = "run:1", fail = false) =>
     run(managedDesktopCommand(bot, lease, env, `view-${bot}`), fail);
@@ -116,6 +119,104 @@ function fixture() {
 }
 
 describe("shared Linux desktop lifecycle", () => {
+  it("runs work on the matching assignment without changing its lease and preserves stdin", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const result = f.run(
+      desktopWorkCommand("a", "run:1", 0, "cat; exit 7"),
+      false,
+      "private input\n",
+    );
+    expect(result.stdout).toBe("private input\n");
+    expect(result.status).toBe(7);
+    expect(f.run(desktopWorkCommand("a", undefined, 0, "printf unleased")).stdout).toBe("unleased");
+    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+    expect(readFileSync(path.join(f.root, slot), "utf8")).toBe("0\nrun:1\nview-a\n");
+  });
+
+  it("refuses delayed work after its removed slot has been reused", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const work = desktopWorkCommand("a", "run:1", 0, 'printf touched >"$dir/touched"');
+    expect(f.release("a").status).toBe(0);
+    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=0:view-b");
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+  });
+
+  it("refuses delayed work after its screen is assigned a different slot", () => {
+    const f = fixture();
+    expect(f.ensure("a").status).toBe(0);
+    const work = desktopWorkCommand("a", "run:1", 0, 'printf touched >"$dir/touched"');
+    expect(f.release("a").status).toBe(0);
+    expect(f.ensure("b").status).toBe(0);
+    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+  });
+
+  it.each([
+    ["new:2", "run:1"],
+    ["run:1", "new:2"],
+    ["run:1", ""],
+  ])("requires the exact work lease without replacing %s with %s", (current, incoming) => {
+    const f = fixture();
+    expect(f.ensure("a", current).status).toBe(0);
+    const work = desktopWorkCommand("a", incoming, 0, 'printf touched >"$dir/touched"');
+    expect(f.run(work).status).toBe(75);
+    expect(readdirSync(f.root)).not.toContain("touched");
+    const slot = readdirSync(f.root).find((name) => name.endsWith(".slot"))!;
+    expect(readFileSync(path.join(f.root, slot), "utf8")).toBe(`0\n${current}\nview-a\n`);
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "keeps a helper's slot reserved until its lifecycle lock is released",
+    async () => {
+      const f = fixture();
+      expect(f.ensure("a").status).toBe(0);
+      const relocate = (command: string) =>
+        command
+          .replaceAll("/tmp/rakazo/desktop-assignments", f.root)
+          .replaceAll("/tmp/rakazo", f.root);
+      const ready = path.join(f.root, "helper-ready");
+      const releasing = path.join(f.root, "release-ready");
+      const helper = spawn("bash", [
+        "-eu",
+        "-c",
+        relocate(
+          desktopWorkCommand("a", "run:1", 0, `printf ready >${shellQuote(ready)}; read -r done`),
+        ),
+      ]);
+      const helperExited = once(helper, "exit");
+      let release: ChildProcess | undefined;
+      try {
+        waitForReady(ready);
+        const lifecycle = readdirSync(f.root).find((name) => name.endsWith(".lifecycle-lock"))!;
+        expect(spawnSync("flock", ["-n", path.join(f.root, lifecycle), "true"]).status).toBe(1);
+        expect(spawnSync("flock", ["-n", path.join(f.root, ".lock"), "true"]).status).toBe(0);
+        release = spawn("bash", [
+          "-eu",
+          "-c",
+          [
+            `printf ready >${shellQuote(releasing)}`,
+            "bash() { return 0; }",
+            relocate(releaseDesktopCommand("a", "run:1", env)),
+          ].join("\n"),
+        ]);
+        const releaseExited = once(release, "exit");
+        waitForReady(releasing);
+        expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
+        helper.stdin.end("done\n");
+        expect((await helperExited)[0]).toBe(0);
+        expect((await releaseExited)[0]).toBe(0);
+        expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=0:view-c");
+      } finally {
+        helper.kill("SIGKILL");
+        release?.kill("SIGKILL");
+      }
+    },
+  );
+
   it("defaults to a loopback gateway without environment options", () => {
     expect(ensureScreenCommand(0, "bot", "view")).toContain("127.0.0.1:6080 8>&-");
     expect(interactiveScreenCommand(true, "control")).toContain("127.0.0.1:6080 8>&-");
@@ -362,6 +463,70 @@ describe("shared Linux desktop lifecycle", () => {
     // A relaunch keeps the bot's tabs and session cookies, matching rakazo-browser.
     expect(lines[execAt]).toContain("--restore-last-session");
   });
+
+  it.skipIf(process.platform !== "linux").each([
+    ["readable", false],
+    ["readable", true],
+    ["missing", false],
+    // An unreadable image menu falls back instead of failing the screen. Root reads any mode.
+    ...(process.getuid?.() === 0 ? [] : [["unreadable", false] as const]),
+  ] as const)(
+    "writes a screen's menu from the image menu with its own browser launcher (imageMenu=%s, managed=%s)",
+    (imageMenu, managed) => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-menu-test-"));
+      roots.push(root);
+      if (imageMenu !== "missing") {
+        writeFileSync(
+          path.join(root, "image-menu"),
+          [
+            "[begin] (Rakazo)",
+            "  [exec] (Browser) {rakazo-browser}",
+            "  [exec] (Docs) {rakazo-browser https://example.test}",
+            "  [exec] (Files) {pcmanfm}",
+            "  [exec] (Other) {rakazo-browser-beta}",
+            "[end]",
+            "",
+          ].join("\n"),
+          { mode: imageMenu === "readable" ? 0o644 : 0 },
+        );
+      }
+      const script = (
+        managed
+          ? managedDesktopCommand("bot", "run:1", env, "token")
+          : ensureScreenCommand(0, "bot", "token", env)
+      )
+        .replaceAll("/etc/rakazo/fluxbox/menu", path.join(root, "image-menu"))
+        .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root);
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          // Stop right after the menu is written; the managed path runs it in a child bash.
+          ["command() { :; }", "xdpyinfo() { exit 0; }", "export -f command xdpyinfo", script].join(
+            "\n",
+          ),
+        ],
+        { encoding: "utf8", timeout: 5000 },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const launcher = path.join(root, "browser-launch-20");
+      expect(readFileSync(path.join(root, "flux-20/.fluxbox/menu"), "utf8")).toBe(
+        imageMenu === "readable"
+          ? [
+              "[begin] (Rakazo)",
+              `  [exec] (Browser) {${launcher}}`,
+              `  [exec] (Docs) {${launcher} https://example.test}`,
+              "  [exec] (Files) {pcmanfm}",
+              "  [exec] (Other) {rakazo-browser-beta}",
+              "[end]",
+              "",
+            ].join("\n")
+          : `[begin] (Desktop)\n[exec] (Browser) {${launcher}}\n[exec] (Terminal) {${TERMINAL_MENU_COMMAND}}\n[end]\n`,
+      );
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",

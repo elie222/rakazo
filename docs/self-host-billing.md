@@ -53,6 +53,44 @@ purchased top-ups remain available. Prorated upgrades share the original period 
 creates a financial journal delta and runs before balance reads, reservations, settlements, and
 background recovery. Unclassified legacy balances are preserved as non-expiring funds.
 
+## Reviewing an account's credit usage
+
+An operator can cap a person's total hosted model-credit usage without deactivating their
+account. From the API container, run:
+
+```sh
+node dist/cli/model-credit-cap.js set customer@example.test 2
+node dist/cli/model-credit-cap.js status customer@example.test
+node dist/cli/model-credit-cap.js clear customer@example.test
+```
+
+The amount is a **total recorded USD ceiling**, not an additional allowance. It counts model
+spend and outstanding reservations across all their organizations, bots and runs. For example,
+a person who has used $1.50 has $0.50 left under a $2 cap. Set zero to stop new hosted model
+calls. Setting or clearing a cap is audited; it does not reactivate an account, change its
+balance, cancel renewal, or refund a payment. Reactivate a deactivated person separately after
+setting their cap.
+
+Only hosted charges recorded with per-user attribution in the credit journal count. Earlier
+baseline records do not reliably identify whose hosted credits were spent; usage baselines
+also include personal-key activity. Those records are excluded rather than guessed. This is
+not a complete lifetime-spend total for people who used credits before per-user journaling.
+The operator command reports this boundary alongside the allowance.
+
+The cap has no automatic reset or expiry, and credit purchases cannot lift it. At the limit,
+new hosted calls fail with “Usage limit reached. Contact support to continue.” Sign-in and
+personal model connections remain available. Reservations may stop a call before the displayed
+remaining amount reaches zero because its maximum estimated cost must fit. Calls already
+admitted can finish; actual provider charges above their reserved estimate can exceed the cap.
+Unknown usage keeps its hold until reconciled. Deleting an organization does not erase usage
+from the cap, because it is counted from the durable journal.
+
+Uncapped calls read only the nullable user setting alongside their existing credit account
+lock, with no added database round trips or history scans. Only capped calls lock the person's
+row and sum their indexed journal. Automatic assignment and timed caps are not enabled.
+Deploy the API and worker changes before relying on enforcement; the previous release ignores
+the new nullable setting while a rolling deployment finishes.
+
 ## Accounting
 
 Postgres owns accounting. `billing_audit_events` is an append-only journal enforced by database

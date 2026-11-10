@@ -1,11 +1,13 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
 import { darkTokens } from "@rakazo/ui-tokens";
+import type { ASTNode, RenderRules } from "@ronradtke/react-native-markdown-display";
 import Markdown, {
   createMarkdownIt,
+  renderRules as libraryRenderRules,
   MarkdownStream,
 } from "@ronradtke/react-native-markdown-display";
 import { memo, useMemo } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import type { ChatMarkdownProps } from "./markdown";
 import { LinkFaviconsPausedContext, linkifyExplicitUrls } from "./markdown";
 import { InlineChipsContext } from "./native/chips";
@@ -24,6 +26,43 @@ const markdownParser = createMarkdownIt();
 markdownParser.validateLink = keepMarkdownLinkToken;
 linkifyExplicitUrls(markdownParser);
 markTaskListItems(markdownParser);
+
+/** A node's place in the tree, which stays the same when the same Markdown is parsed again. */
+function markdownNodeKey(node: ASTNode, parents: readonly ASTNode[]): string {
+  let path = `${node.index}`;
+  for (const parent of parents) path = `${parent.index}.${path}`;
+  return `${path}_${node.type}`;
+}
+
+/**
+ * The library keys every node afresh on each parse, so each re-render (every streamed chunk)
+ * remounted and re-measured the whole message. Keying nodes by place keeps unchanged blocks.
+ */
+function withPlaceKeys(rules: RenderRules): RenderRules {
+  return Object.fromEntries(
+    Object.entries(rules).map(([type, rule]) => [
+      type,
+      rule &&
+        ((node, children, parents, ...extra) => {
+          node.key = markdownNodeKey(node, parents);
+          return rule(node, children, parents, ...extra);
+        }),
+    ]),
+  );
+}
+
+let chatRenderRules: { text: typeof Text; rules: RenderRules } | undefined;
+
+// Built from the current Text, which the app replaces after this file loads.
+function placeKeyedRenderRules(): RenderRules {
+  if (chatRenderRules?.text !== Text) {
+    chatRenderRules = {
+      text: Text,
+      rules: withPlaceKeys({ ...libraryRenderRules(Text), ...renderRules }),
+    };
+  }
+  return chatRenderRules.rules;
+}
 
 /** The code of each fenced or indented block in a message, as its copy button copies it. */
 export function markdownCodeBlocks(markdown: string): string[] {
@@ -52,7 +91,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     colorScheme,
     markdownit: markdownParser,
     style: styles,
-    rules: renderRules,
+    rules: placeKeyedRenderRules(),
     onLinkPress: (url: string) => {
       openLink(url);
       return false;
@@ -89,6 +128,7 @@ export {
   LinkFaviconsContext,
   plainTextLinkParts,
   RemoteImagesContext,
+  useLinkFavicon,
   withBlockMentions,
 } from "./markdown";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

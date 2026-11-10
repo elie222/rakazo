@@ -7,7 +7,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { SCREEN_FRAME_LOAD_TIMEOUT_MS } from "../../lib/computer-screen";
+import { SCREEN_FRAME_LOAD_TIMEOUT_MS, screenFrames } from "../../lib/computer-screen";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -42,9 +42,17 @@ function Harness() {
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
   });
-  return state.screenUrl && !state.screenLoadError ? (
-    <iframe key={state.screenFrameKey} ref={state.setScreenFrame} title="screen" />
-  ) : null;
+  if (!state.screenUrl || state.screenLoadError) return null;
+  // Drawn as the panel and overlay draw it: a held predecessor first, then the live frame.
+  return screenFrames(state.screenFrameKey, state.screenUrl, state.heldScreen).map((frame) => (
+    <iframe
+      key={frame.key}
+      ref={frame.held ? undefined : state.setScreenFrame}
+      data-src={frame.url}
+      aria-hidden={frame.held || undefined}
+      title="screen"
+    />
+  ));
 }
 
 const code = () => /auth_code=([^&]+)/.exec(state.screenUrl ?? "")?.[1] ?? null;
@@ -357,6 +365,89 @@ it("keeps a newer read's answer when the hung reconnect read runs out of time", 
   });
   expect(state.screenUrl).toBe(takeoverUrl);
   expect(state.screenLoadError).toBeNull();
+});
+
+const proxied = (policy: "view" | "control", token: string) =>
+  `/novnc/session/${policy}/9999999999999.${token}/embed.html`;
+
+async function reportFrom(frame: HTMLIFrameElement, rakazoScreen: string) {
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { rakazoScreen }, source: frame.contentWindow }),
+    );
+  });
+}
+
+it("keeps the replaced screen over its successor until that one connects", async () => {
+  screenUrlFactory = () => proxied("view", "v1");
+  await read();
+  const viewFrame = container.querySelector("iframe")!;
+  screenUrlFactory = () => proxied("control", "c1");
+  await read();
+  let frames = [...container.querySelectorAll("iframe")];
+  expect(frames).toHaveLength(2);
+  // The same element stays, so its page does not reload.
+  expect(frames[0]).toBe(viewFrame);
+  expect(frames[0]!.getAttribute("aria-hidden")).toBe("true");
+  expect(frames[1]!.dataset.src).toContain("/control/");
+  await reportFrom(frames[1]!, "connecting");
+  expect(container.querySelectorAll("iframe")).toHaveLength(2);
+  await reportFrom(frames[1]!, "connected");
+  frames = [...container.querySelectorAll("iframe")];
+  expect(frames).toHaveLength(1);
+  expect(frames[0]!.dataset.src).toContain("/control/");
+});
+
+it("shows the remembered view at once on release and returns to control if it fails", async () => {
+  const pending = { reject: (_error: Error) => {} };
+  const release = vi.fn(
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        pending.reject = reject;
+      }),
+  );
+  let controls!: ReturnType<typeof useComputerControls>;
+  function Controls() {
+    controls = useComputerControls({
+      rpc: { computer: { release, screenUrl } } as never,
+      state,
+      panel: "computer",
+      active: undefined,
+      bots: [],
+      botsRef: { current: [] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(async () => ({}) as never),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Harness />
+        <Controls />
+      </>,
+    ),
+  );
+  screenUrlFactory = () => proxied("view", "v1");
+  await read();
+  screenUrlFactory = () => proxied("control", "c1");
+  await read();
+  let released!: Promise<void>;
+  await act(async () => {
+    released = controls.releaseComputer();
+  });
+  expect(release).toHaveBeenCalled();
+  expect(state.screenUrl).toBe(proxied("view", "v1"));
+  await act(async () => {
+    pending.reject(new Error("offline"));
+    await released;
+  });
+  expect(state.screenUrl).toBe(proxied("control", "c1"));
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {

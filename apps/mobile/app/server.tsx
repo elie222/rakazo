@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow } from "@rakazo/contracts";
 import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
@@ -16,7 +17,6 @@ import {
   probeApiBase,
   usesCustomApiBase,
 } from "../lib/endpoint";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
@@ -25,7 +25,7 @@ import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const current = currentApiBase();
@@ -115,13 +115,9 @@ export default function ServerScreen() {
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.background }}>
       <Stack.Screen
         options={{
-          title: t("Server"),
-          ...cancelHeaderOptions(t("Cancel"), close),
-          ...trailingHeaderOptions(
-            pending ? t("Checking…") : t("Save"),
-            () => void save(),
-            pending,
-          ),
+          title: t`Server`,
+          ...cancelHeaderOptions(t`Cancel`, close),
+          ...trailingHeaderOptions(pending ? t`Checking…` : t`Save`, () => void save(), pending),
         }}
       />
       <KeyboardAvoidingView
@@ -136,7 +132,7 @@ export default function ServerScreen() {
         >
           <TextInput
             testID="server-address"
-            accessibilityLabel={t("Server")}
+            accessibilityLabel={t`Server`}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
@@ -176,7 +172,7 @@ export default function ServerScreen() {
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}
-              label={t("Use default server")}
+              label={t`Use default server`}
               onPress={() => void restoreDefault()}
               prominence="plain"
               style={{ marginTop: 28, alignSelf: "center" }}

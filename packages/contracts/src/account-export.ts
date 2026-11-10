@@ -152,6 +152,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     hash: z.string(),
     rootArtifactId: Id.nullable(),
     version: z.number().int().positive(),
+    /** A file a stranger emailed; absent from older archives. */
+    standalone: z.boolean().optional(),
     createdAt: IsoDate,
   }),
   z.object({

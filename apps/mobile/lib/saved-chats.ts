@@ -114,6 +114,7 @@ export function writeSavedInbox(
           color,
           preview,
           unread,
+          snoozedUntil,
           pinned,
           spaceId,
           status,
@@ -129,6 +130,7 @@ export function writeSavedInbox(
             color,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             status,
@@ -140,7 +142,18 @@ export function writeSavedInbox(
           }) as MobileBot,
       ),
       groups: navigation.current.groups.slice(0, SAVED_INBOX_ROWS).map(
-        ({ id, name, members, preview, unread, pinned, spaceId, sectionId, updatedAt }) =>
+        ({
+          id,
+          name,
+          members,
+          preview,
+          unread,
+          snoozedUntil,
+          pinned,
+          spaceId,
+          sectionId,
+          updatedAt,
+        }) =>
           ({
             id,
             name,
@@ -148,6 +161,7 @@ export function writeSavedInbox(
             sectionId,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             updatedAt,
@@ -303,7 +317,7 @@ function writeSavedFile(
 
   while (total > SAVED_CHATS_MAX_BYTES) evict(threads);
   file.create({ overwrite: true });
-  file.write(text);
+  file.writeSync(text);
 }
 
 export function writeSavedThread(

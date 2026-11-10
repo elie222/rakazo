@@ -96,7 +96,7 @@ function splitsSurrogatePair(text: string, index: number): boolean {
 
 function publishWithheld(text: string, holdStart: number, holdEnd: number): string {
   if (holdStart <= 0 && holdEnd <= 0) return text;
-  let start = holdStart > 0 ? holdStart : 0;
+  let start = Math.max(holdStart, 0);
   let end = holdEnd > 0 ? text.length - holdEnd : text.length;
   // Keep a surrogate pair out of the published view rather than splitting it.
   if (splitsSurrogatePair(text, start)) start += 1;

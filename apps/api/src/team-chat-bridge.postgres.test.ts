@@ -11,8 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { TeamChatBridge } from "./team-chat-bridge.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("TeamChat deferred routing (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;

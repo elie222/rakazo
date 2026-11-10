@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   isBackgroundRunTrigger,
   redactSecrets,
   resolveBotAddress,
@@ -165,6 +166,16 @@ async function sharedFiles(
 }
 
 /**
+ * Checked before any file is read or copied: shared paths are added to the message, so a blank
+ * one must be caught first, and an oversized one would leave copies behind for nothing.
+ */
+function messageError(ctx: RunContext, message: unknown): string | undefined {
+  const text = redactSecrets(String(message ?? ""), ctx.secrets).trim();
+  if (!text) return "message is required";
+  if (text.length > BOT_MESSAGE_MAX_LENGTH) return BOT_MESSAGE_TOO_LONG;
+}
+
+/**
  * The message as delivered: shared paths are listed where the recipient reads its task. The list
  * counts toward the message limit, so a message it would push over is refused with the room left.
  */
@@ -293,8 +304,8 @@ export const messagingTools: ToolHandlers = {
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args, effectKey } = call;
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,
@@ -376,8 +387,8 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
-    // Shared paths are added to the message, so a blank one must be caught before they are.
-    if (!String(args.message ?? "").trim()) return call.finish({ error: "message is required" });
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
     const stored = await prepareSentFiles(ctx, call, {
       botId: args.bot_id ? String(args.bot_id) : undefined,
       name: args.confirm_name ? String(args.confirm_name) : undefined,

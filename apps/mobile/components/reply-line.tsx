@@ -1,10 +1,10 @@
+import { t } from "@lingui/core/macro";
 import type { ReplyPreview } from "@rakazo/contracts";
 import { isPageOriginReply, replyLabel } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
-import { t } from "../lib/i18n";
 import { NativeSymbol } from "./native-symbol";
 import { ReplyThumbnail } from "./reply-thumbnail";
 
@@ -32,7 +32,7 @@ export function ReplyLine({
     quote,
     preview?.text || (preview?.attachment ? undefined : fallbackText),
     preview?.attachment,
-    { photo: t("Photo"), attachment: t("Attachment") },
+    { photo: t`Photo`, attachment: t`Attachment` },
   );
   const tokens = mobileTokens();
   return (
@@ -63,7 +63,7 @@ export function ReplyLine({
         selectable={false}
         style={{ flexShrink: 1, color: tokens.mutedForeground, ...typeScale.footnote }}
       >
-        {unavailable ? t("Original message unavailable") : `${author}: ${text}`}
+        {unavailable ? t`Original message unavailable` : `${author}: ${text}`}
       </Text>
     </Pressable>
   );

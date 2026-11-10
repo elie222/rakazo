@@ -16,6 +16,7 @@ import {
   configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
+  createApnsActivityProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -56,6 +57,7 @@ import {
   shutdownPiTelemetry,
   UserDevices,
   userDeviceForwardSecret,
+  WorkActivities,
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -69,6 +71,7 @@ import {
   installSecurityEventStore,
   isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
+  observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   rowSecurityWarning,
@@ -102,10 +105,16 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
-  const realtime = new PostgresRealtimeFanout({
-    connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
-    publisher: pool,
-  });
+  // Set once push delivery is configured below; thread changes before then have no cards.
+  let workActivities: WorkActivities | undefined;
+  // Every thread change this process commits also updates its users' live status cards.
+  const realtime = observeThreadChanges(
+    new PostgresRealtimeFanout({
+      connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
+      publisher: pool,
+    }),
+    (threadId) => workActivities?.threadChanged(threadId),
+  );
   const secrets = await createWorkerSecretStore(process.env, realtime);
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
@@ -189,6 +198,8 @@ async function main() {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
   });
+  const activityPush = await createApnsActivityProvider(apnsVoipConfig(process.env));
+  if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
   const email = configuredEmailProvider({
     provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
     apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,

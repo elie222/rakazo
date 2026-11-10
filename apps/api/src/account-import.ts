@@ -145,7 +145,8 @@ async function spoolBody(
   spoolDir = tmpdir(),
 ): Promise<{ handle: FileHandle; path: string }> {
   const spoolPath = path.join(spoolDir, `${SPOOL_PREFIX}${randomUUID()}`);
-  const handle = await open(spoolPath, "w+", 0o600);
+  // Exclusive: the temp dir is shared, so a file or link already at the path is never reused.
+  const handle = await open(spoolPath, "wx+", 0o600);
   let size = 0;
   try {
     for await (const chunk of body) {
@@ -189,7 +190,7 @@ export async function readArchive(
       // the sink ever sees the entry — and heap stays bounded no matter
       // how large the entry is.
       const spillPath = `${spool.path}.entry`;
-      const spill = await open(spillPath, "w+", 0o600);
+      const spill = await open(spillPath, "wx+", 0o600);
       try {
         const entry = parseEntryName(zipEntry.name, index++);
         const maxBytes = entryLimit(entry, limits);
@@ -978,7 +979,7 @@ class AccountImporter implements ArchiveSink {
       if (lastSeq < 0) continue;
       await this.deps.prisma.thread.update({
         where: { id: threadId },
-        data: { nextMessageSeq: lastSeq + 1, lastReadSeq: lastSeq, unread: false },
+        data: { nextMessageSeq: lastSeq + 1 },
       });
     }
   }
@@ -1068,6 +1069,7 @@ class AccountImporter implements ArchiveSink {
           storageKey: stored.storageKey,
           rootArtifactId: space.optional(record.rootArtifactId),
           version: record.version,
+          standalone: record.standalone === true,
           createdAt: new Date(record.createdAt),
         });
       }

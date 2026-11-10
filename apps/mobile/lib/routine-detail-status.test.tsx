@@ -23,10 +23,6 @@ vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
 vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
-vi.mock("./i18n", () => {
-  const t = (message: string) => message;
-  return { useI18n: () => ({ t, locale: "en" }), dateLocaleForUi: () => "en-US" };
-});
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -34,6 +30,7 @@ vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fa
 vi.mock("./routine", () => ({
   deviceTimeZone: () => "UTC",
   routineTriggerRows: () => ["Every day at 9:00 AM"],
+  routineWebTriggers: () => [],
 }));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
@@ -44,6 +41,7 @@ vi.mock("../components/settings-group", () => ({
     createElement("span", null, title, value),
   SettingsSwitch: () => null,
 }));
+vi.mock("../components/menu-picker", () => ({ MenuPickerMenu: () => null }));
 vi.mock("../components/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../components/routine-email-trigger", () => ({ RoutineEmailTrigger: () => null }));
 vi.mock("../components/bot-email", () => ({

@@ -82,38 +82,45 @@ export function CodeFence({
         <Highlight theme={theme} code={code} language={language || "text"}>
           {({ tokens, getTokenProps }) => (
             <View style={styleMap._VIEW_SAFE_fence_code}>
-              {tokens.map((line, lineIndex) => (
-                <View key={lineIndex} style={layout.codeLine}>
-                  {line.every((token) => token.empty) ? (
-                    <Text style={[{ color: theme.plain.color }, styleMap.fence_token]}> </Text>
-                  ) : null}
-                  {line
-                    .filter((token) => !token.empty)
-                    .map((token, tokenIndex) => {
-                      const tokenStyle = getTokenProps({ token }).style;
-                      return (
-                        <Text
-                          key={tokenIndex}
-                          style={[
-                            // Prism leaves plain text to inherit the line's colour, which
-                            // React Native text doesn't. A colour set on fence_token wins.
-                            { color: theme.plain.color },
-                            styleMap.fence_token,
-                            tokenStyle?.color != null ? { color: tokenStyle.color } : null,
-                            tokenStyle?.fontStyle != null
-                              ? { fontStyle: tokenStyle.fontStyle as TextStyle["fontStyle"] }
-                              : null,
-                            tokenStyle?.fontWeight != null
-                              ? { fontWeight: tokenStyle.fontWeight as TextStyle["fontWeight"] }
-                              : null,
-                          ]}
-                        >
-                          {token.content}
-                        </Text>
-                      );
-                    })}
-                </View>
-              ))}
+              {tokens.map((line, lineIndex) => {
+                const visible = line.filter((token) => !token.empty);
+                // One Text per line, its tokens as spans: a Text per token made a long block
+                // thousands of separately measured paragraphs.
+                return (
+                  <View key={lineIndex} style={layout.codeLine}>
+                    <Text style={[{ color: theme.plain.color }, styleMap.fence_token]}>
+                      {visible.length === 0
+                        ? " "
+                        : visible.map((token, tokenIndex) => {
+                            const tokenStyle = getTokenProps({ token }).style;
+                            return (
+                              <Text
+                                key={tokenIndex}
+                                style={[
+                                  // Prism leaves plain text to inherit the line's colour, which
+                                  // React Native text doesn't. A colour set on fence_token wins.
+                                  { color: theme.plain.color },
+                                  styleMap.fence_token,
+                                  tokenStyle?.color != null ? { color: tokenStyle.color } : null,
+                                  tokenStyle?.fontStyle != null
+                                    ? { fontStyle: tokenStyle.fontStyle as TextStyle["fontStyle"] }
+                                    : null,
+                                  tokenStyle?.fontWeight != null
+                                    ? {
+                                        fontWeight:
+                                          tokenStyle.fontWeight as TextStyle["fontWeight"],
+                                      }
+                                    : null,
+                                ]}
+                              >
+                                {token.content}
+                              </Text>
+                            );
+                          })}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           )}
         </Highlight>

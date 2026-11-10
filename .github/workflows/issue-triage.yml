@@ -51,12 +51,14 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Read-only token: agent mode writes it into git config, so .git is unreadable.
           github_token: ${{ github.token }}
+          # Most issue authors lack write access; the agent only reads code and returns JSON.
+          allowed_non_write_users: "*"
           prompt: Follow .github/prompts/issue-triage.md.
           claude_args: >-
             --model claude-haiku-5-5
             --effort high
             --max-turns 25
-            --allowedTools Read,Grep,Glob
+            --allowedTools "Read(./**)",Grep,Glob
             --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,"Read(./.git/**)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["type","size","priority_high","duplicate_of","reason"],"properties":{"type":{"enum":["bug","enhancement","question","documentation","self-host"]},"size":{"enum":["small","medium","large"]},"priority_high":{"type":"boolean"},"duplicate_of":{"type":["integer","null"]},"reason":{"type":"string"}}}'
 

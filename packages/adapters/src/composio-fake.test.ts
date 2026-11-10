@@ -74,6 +74,42 @@ describe("ComposioConnector over the fake Composio client", () => {
     ]);
   });
 
+  it("hides apps nobody can sign in to until the project sets up their auth", async () => {
+    const fake = new FakeComposioClient([
+      { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
+      { slug: "SHOPIFY", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
+    ]);
+    const hidden = new ComposioConnector({ client: fake });
+    await expect(hidden.catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "GMAIL" }),
+    ]);
+    await expect(connect(hidden, "SHOPIFY")).rejects.toBeInstanceOf(ConnectorAuthUnavailableError);
+
+    fake.authConfigs.list = async () => ({
+      items: [{ toolkit: { slug: "shopify" }, status: "ENABLED" }],
+      nextCursor: null,
+    });
+    await expect(new ComposioConnector({ client: fake }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "GMAIL" }),
+      expect.objectContaining({ slug: "SHOPIFY" }),
+    ]);
+    await expect(connect(new ComposioConnector({ client: fake }), "SHOPIFY")).resolves.toMatch(
+      /^ca_/,
+    );
+  });
+
+  it("lists every app when the sign-in lookup fails", async () => {
+    const fake = new FakeComposioClient([
+      { slug: "SHOPIFY", name: "Shopify", logo: null, noAuth: false, needsSignInSetup: true },
+    ]);
+    fake.authConfigs.list = async () => {
+      throw new Error("auth configs unavailable");
+    };
+    await expect(new ComposioConnector({ client: fake }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "SHOPIFY" }),
+    ]);
+  });
+
   it("fails connect with a typed error when Composio has no managed auth for the toolkit", async () => {
     const { fake, connector } = setup();
     const create = fake.create.bind(fake);

@@ -86,11 +86,6 @@ vi.mock("./native", () => ({
 
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ foreground: "foreground" }) }));
 
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
-
 vi.mock("../components/native-action-button", async () => {
   const { createElement } = await import("react");
   return {
@@ -124,6 +119,9 @@ vi.mock("../components/native-action-button", async () => {
   };
 });
 
+vi.mock("../components/vault-tile", () => ({
+  VaultTile: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 
 vi.mock("../components/vault-item-editor", async () => {

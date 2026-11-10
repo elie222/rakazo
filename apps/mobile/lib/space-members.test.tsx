@@ -100,11 +100,6 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: <T,>(factory: () => T) => factory(),
 }));
-vi.mock("./i18n", () => {
-  const t = (text: string, values?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_match, key: string) => values?.[key] ?? "");
-  return { t, useI18n: () => ({ t }) };
-});
 
 const owner = {
   userId: "user-owner",
