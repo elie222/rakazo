@@ -577,7 +577,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     loopGuard.stuck ||
     ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
   ) {
-    await stopStuckToolLoop(ctx, event.name, previousRefusal);
+    // An action-limit stop is not about the previous call, which may be another tool's.
+    await stopStuckToolLoop(ctx, event.name, loopGuard.stuck ? previousRefusal : undefined);
     return true;
   }
   if (!ctx.scripted) return false;
