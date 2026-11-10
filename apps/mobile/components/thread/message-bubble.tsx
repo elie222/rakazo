@@ -565,6 +565,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       paddingVertical: 12,
       gap: 8,
     } as const;
+    // Named `label` so these share the catalog's existing "Hide {label}" and "Show {label}".
+    const label = delivery?.title;
     const messageCaption = caption ? (
       <MessageCaption
         role={message.role}
@@ -591,9 +593,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 {...actionProps}
                 onPress={() => setPeerExpanded((expanded) => !expanded)}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  peerExpanded ? t`Hide ${delivery.title}` : t`Show ${delivery.title}`
-                }
+                accessibilityLabel={peerExpanded ? t`Hide ${label}` : t`Show ${label}`}
               >
                 {messageCaption}
               </Pressable>
