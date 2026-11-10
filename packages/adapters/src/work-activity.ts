@@ -174,6 +174,25 @@ export class WorkActivities {
       }),
     );
     if (!count) {
+      // iOS gave this phone a new token: it replaces the old one and keeps its last start, so a
+      // card the user dismissed is not started again for the same work.
+      const previous = await runAsSystem("find a phone's earlier token for live status cards", () =>
+        this.prisma.workActivityStartToken.findMany({
+          where: { userId, sessionId },
+          select: { tokenDigest: true, startedAt: true },
+        }),
+      );
+      const startedAt =
+        previous
+          .map((phone) => phone.startedAt)
+          .filter((date): date is Date => date !== null)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+      if (previous.length)
+        await runAsSystem("drop a phone's earlier token for live status cards", () =>
+          this.prisma.workActivityStartToken.deleteMany({
+            where: { tokenDigest: { in: previous.map((phone) => phone.tokenDigest) }, userId },
+          }),
+        );
       const sealed = await this.encryption.put(
         token,
         {
@@ -188,7 +207,7 @@ export class WorkActivities {
       await runAsSystem("register a phone for live status cards", () =>
         this.prisma.workActivityStartToken.upsert({
           where: { tokenDigest },
-          create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext },
+          create: { tokenDigest, userId, sessionId, ciphertext: sealed.ciphertext, startedAt },
           update: { userId, sessionId, createdAt: new Date() },
         }),
       );
@@ -417,24 +436,42 @@ export class WorkActivities {
       }
       return [];
     }
+    const startedAt = new Date(now);
     return Promise.all(
-      due.map(async (phone) => {
-        const token = await this.encryption.load(
-          phone.ciphertext,
-          startRecordId(phone.tokenDigest),
+      due.map(async (phone): Promise<"sent" | "invalid" | "unavailable"> => {
+        const where = { tokenDigest: phone.tokenDigest, userId, sessionId: phone.sessionId };
+        const previous = phone.startedAt;
+        // Claimed before sending: the API and the worker both follow the user's work, and only
+        // one of them starts the card. A phone signed out meanwhile has no row left to claim.
+        const { count } = await runAsSystem("claim a live status card start", () =>
+          this.prisma.workActivityStartToken.updateMany({
+            where: { ...where, startedAt: previous },
+            data: { startedAt },
+          }),
         );
-        const result = await this.provider.start(token, { state, ended: false, urgent: true, at });
+        if (!count) return "sent";
+        let result: "sent" | "invalid" | "unavailable";
+        try {
+          const token = await this.encryption.load(
+            phone.ciphertext,
+            startRecordId(phone.tokenDigest),
+          );
+          result = await this.provider.start(token, { state, ended: false, urgent: true, at });
+        } catch (error) {
+          // One phone's failure never holds back the user's other cards.
+          getLogger().warn("work_activity.start_failed", { error });
+          result = "unavailable";
+        }
         if (result === "invalid")
           await runAsSystem("forget a phone Apple no longer knows", () =>
-            this.prisma.workActivityStartToken.deleteMany({
-              where: { tokenDigest: phone.tokenDigest, userId },
-            }),
+            this.prisma.workActivityStartToken.deleteMany({ where }),
           );
-        else if (result === "sent")
-          await runAsSystem("record a live status card start", () =>
+        // Not started after all: the retry may claim it again.
+        else if (result === "unavailable")
+          await runAsSystem("release a live status card start", () =>
             this.prisma.workActivityStartToken.updateMany({
-              where: { tokenDigest: phone.tokenDigest, userId },
-              data: { startedAt: new Date(now) },
+              where: { ...where, startedAt },
+              data: { startedAt: previous },
             }),
           );
         return result;
@@ -470,10 +507,13 @@ export class WorkActivities {
     // One row per bot in a chat: a continuation is the same work. A question still open there
     // outranks newer work beside it, which a pending question does not hold back.
     const byChat = new Map<string, (typeof runs)[number]>();
+    const started: number[] = [];
     for (const run of runs) {
       // Background work, and a bot's helpers working for it in hidden threads, are not more bots.
       if (isBackgroundRunTrigger(run.trigger) || run.trigger === BACKGROUND_HELPER_TRIGGER)
         continue;
+      // A continuation is part of the stretch of work its chat began, so the oldest run counts.
+      started.push(run.createdAt.getTime());
       const key = `${run.threadId}:${run.botId}`;
       const newest = byChat.get(key);
       if (!newest) byChat.set(key, run);
@@ -494,7 +534,6 @@ export class WorkActivities {
         }),
       ),
     );
-    const started = shown.map((run) => run.createdAt.getTime());
     return {
       state: { count: shown.length, waiting: waiting.length, rows },
       ...(started.length

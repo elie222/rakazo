@@ -142,14 +142,24 @@ function fakeDatabase() {
     workActivityStartToken: {
       upsert: async (input: {
         where: { tokenDigest: string };
-        create: Omit<Phone, "startedAt">;
+        create: Omit<Phone, "startedAt"> & { startedAt?: Date | null };
       }) => {
         if (!phones.has(input.where.tokenDigest))
           phones.set(input.where.tokenDigest, { startedAt: null, ...input.create });
       },
-      findMany: async ({ where, skip = 0 }: { where: { userId: string }; skip?: number }) =>
+      findMany: async ({
+        where,
+        skip = 0,
+      }: {
+        where: { userId: string; sessionId?: string };
+        skip?: number;
+      }) =>
         [...phones.values()]
-          .filter((phone) => phone.userId === where.userId)
+          .filter(
+            (phone) =>
+              phone.userId === where.userId &&
+              (!where.sessionId || phone.sessionId === where.sessionId),
+          )
           .reverse()
           .slice(skip),
       deleteMany: async ({
@@ -582,6 +592,57 @@ describe("live status card of the user's bots at work", () => {
       await activities.registerStarts("user-1", "session-2", START_TOKEN);
       await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
       await vi.waitFor(() => expect(phones.size).toBe(0));
+    });
+
+    it("counts a chat's continuation as the same stretch of work", async () => {
+      const { activities, phones, run, runs, start } = setup();
+      runs[0]!.createdAt = new Date(Date.now() - 180_000);
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      for (const phone of phones.values()) phone.startedAt = new Date(Date.now() - 120_000);
+      run("7", { threadId: "thread-1", botId: "bot-1", createdAt: new Date(Date.now() - 20_000) });
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledOnce();
+    });
+
+    it("starts a card once when two processes follow the same work", async () => {
+      const { prisma, start } = setup();
+      const other = new WorkActivities(prisma, "offline-activity-key", {
+        send: vi.fn().mockResolvedValue("sent"),
+        start,
+      });
+      const first = new WorkActivities(prisma, "offline-activity-key", {
+        send: vi.fn().mockResolvedValue("sent"),
+        start,
+      });
+      await first.registerStarts("user-1", "session-1", START_TOKEN);
+      await Promise.all([first.sync("user-1"), other.sync("user-1")]);
+      await vi.waitFor(() => expect(start).toHaveBeenCalled());
+      expect(start).toHaveBeenCalledOnce();
+    });
+
+    it("keeps a phone's last start when iOS gives it a new token", async () => {
+      const { activities, phones, start } = setup();
+      await activities.registerStarts("user-1", "session-1", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      await activities.registerStarts("user-1", "session-1", "ef".repeat(32));
+      await activities.sync("user-1");
+      expect(phones.size).toBe(1);
+      expect([...phones.values()][0]!.startedAt).not.toBeNull();
+      expect(start).toHaveBeenCalledOnce();
+    });
+
+    it("tries again a start that did not go through, without holding back the cards", async () => {
+      const { activities, cards, phones, send, start } = await registered();
+      start.mockRejectedValueOnce(new Error("broken"));
+      await activities.registerStarts("user-1", "session-2", START_TOKEN);
+      await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect([...phones.values()][0]!.startedAt).toBeNull());
+      // The card on the other phone still follows the work.
+      expect(cards.size).toBe(1);
+      expect(send).toHaveBeenCalled();
+      await activities.sync("user-1");
+      expect(start).toHaveBeenCalledTimes(2);
     });
 
     it("moves to a replacement session and to the account signed in last", async () => {

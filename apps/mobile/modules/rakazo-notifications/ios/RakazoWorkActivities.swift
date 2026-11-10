@@ -44,7 +44,7 @@ final class WorkActivities {
     }
     Task { @MainActor [weak self] in
       for await token in Activity<WorkActivityAttributes>.pushToStartTokenUpdates {
-        self?.onStartToken?(hex(token))
+        self?.deliverStart(hex(token))
       }
     }
     Task { @MainActor [weak self] in
@@ -89,6 +89,15 @@ final class WorkActivities {
     Task { @MainActor [weak self] in
       for await token in activity.pushTokenUpdates { self?.deliver(hex(token)) }
     }
+  }
+
+  /// Like a card's token, a new start token may arrive while the app runs in the background.
+  private func deliverStart(_ token: String) {
+    if UIApplication.shared.applicationState == .active, let onStartToken {
+      onStartToken(token)
+      return
+    }
+    IncomingCalls.shared.send("notifications/registerWorkActivityStarts", ["token": token])
   }
 
   /// A card the server starts wakes the app in the background, where its JavaScript may not run
