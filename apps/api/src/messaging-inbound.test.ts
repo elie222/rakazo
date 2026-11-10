@@ -868,6 +868,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect(deliveries[0]![0]).toMatchObject({
         trigger: "webhook",
         blocks: [
+          { kind: "delivery", source: "messaging", title: "+15551111111" },
           { kind: "text", text: expect.stringContaining("<untrusted_delivery_payload>") },
           { kind, artifactId: "artifact-1", name, mimeType },
         ],

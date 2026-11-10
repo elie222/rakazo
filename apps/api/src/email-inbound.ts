@@ -230,7 +230,14 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   return deliverWebhookEvent(
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
-    { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
+    {
+      prompt,
+      title: [name || sender, payload.subject].filter(Boolean).join(" · "),
+      artifacts,
+      routines: matched,
+      source: "email",
+      idempotencyKey: email.key,
+    },
   ).catch((error: unknown) => {
     if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
     throw error;

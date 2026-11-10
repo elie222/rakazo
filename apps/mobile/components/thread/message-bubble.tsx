@@ -15,7 +15,7 @@ import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
 import { memo, useContext, useMemo, useState } from "react";
 import type { TextProps } from "react-native";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Platform, Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { openMobileArtifact } from "../../lib/artifact-open";
@@ -28,7 +28,7 @@ import {
   UserMentionsContext,
   userMentionTargets,
 } from "../../lib/message-mentions";
-import { messagePresentationSegments } from "../../lib/message-presentation";
+import { isDeliveryLine, messagePresentationSegments } from "../../lib/message-presentation";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
 import { blockText } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
@@ -314,6 +314,24 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       </View>
     );
   }
+  const delivery = message.blocks.find((block) => block.kind === "delivery");
+  // A delivery with files keeps its file cards, captioned with its title below.
+  if (delivery && isDeliveryLine(message.blocks)) {
+    return (
+      <AgentEventLabel
+        actionProps={actionProps}
+        symbol={DELIVERY_SYMBOLS[delivery.source]}
+        label={delivery.title}
+        // The text block is the full prompt the delivery woke the bot with.
+        detail={message.blocks
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("\n\n")}
+        literal
+        expanded={peerExpanded}
+        onToggle={() => setPeerExpanded((expanded) => !expanded)}
+      />
+    );
+  }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
     const from = memberName(members, handoff.fromBotId) ?? t`bot`;
@@ -520,16 +538,18 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const attachments = message.blocks.filter(
     (block) => block.kind === "image" || block.kind === "file",
   );
-  const caption = message.blocks
-    .flatMap((block) => {
-      if (block.kind === "channel_message" && block.text) {
-        return [
-          `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`,
-        ];
-      }
-      return block.kind === "text" && block.text ? [block.text] : [];
-    })
-    .join("\n");
+  const caption = delivery
+    ? delivery.title
+    : message.blocks
+        .flatMap((block) => {
+          if (block.kind === "channel_message" && block.text) {
+            return [
+              `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`,
+            ];
+          }
+          return block.kind === "text" && block.text ? [block.text] : [];
+        })
+        .join("\n");
   if (attachments.length > 0) {
     const speaker =
       message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
@@ -853,15 +873,29 @@ function MessageTextCard({
   );
 }
 
+const DELIVERY_SYMBOLS = {
+  webhook: { ios: "bolt", android: "flash-outline" },
+  email: { ios: "envelope", android: "mail-outline" },
+  messaging: { ios: "bubble.left", android: "chatbubble-outline" },
+} as const satisfies Record<
+  Extract<MessageBlock, { kind: "delivery" }>["source"],
+  Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">
+>;
+
 function AgentEventLabel({
   label,
   detail,
+  literal = false,
+  symbol = { ios: "arrow.left.arrow.right", android: "swap-horizontal" },
   expanded,
   onToggle,
   actionProps,
 }: {
   label: string;
   detail?: string;
+  /** Show the detail as written, not as Markdown. */
+  literal?: boolean;
+  symbol?: Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">;
   expanded: boolean;
   onToggle: () => void;
   actionProps: MessageActionProps;
@@ -879,12 +913,20 @@ function AgentEventLabel({
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
         <NativeSymbol
-          ios="arrow.left.arrow.right"
-          android="swap-horizontal"
+          ios={symbol.ios}
+          android={symbol.android}
           size={12}
           color={tokens.mutedForeground}
         />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
+        <Text
+          numberOfLines={1}
+          style={{
+            flexShrink: 1,
+            color: tokens.mutedForeground,
+            fontSize: 13.5,
+            textAlign: "center",
+          }}
+        >
           {label}
         </Text>
       </View>
@@ -899,9 +941,22 @@ function AgentEventLabel({
             paddingVertical: 10,
           }}
         >
-          <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
-            {detail}
-          </ChatMarkdown>
+          {literal ? (
+            <Text
+              selectable
+              style={{
+                color: tokens.foreground,
+                fontSize: 12.5,
+                fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+              }}
+            >
+              {detail}
+            </Text>
+          ) : (
+            <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+              {detail}
+            </ChatMarkdown>
+          )}
         </View>
       ) : null}
     </Pressable>

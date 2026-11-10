@@ -244,3 +244,56 @@ test("run history links runs that replied and marks silent ones", async ({ page 
   await history.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "routine-run-history-states");
 });
+
+test("a webhook delivery shows as one line that opens to what the bot got", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-delivery-${stamp}@rakazo.test`, "password12", "Delivery");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await rpc(page, "routines/create", {
+    botId,
+    name: "CRM sync",
+    prompt: "Add the new contact to the weekly list.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const delivered = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: {
+      event: "contact.created",
+      contact: { name: "Ada Lovelace", email: "ada@example.test", company: "Analytical" },
+    },
+  });
+  expect(delivered.ok()).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? "",
+      { timeout: 30_000 },
+    )
+    .toMatch(/^(completed|failed|cancelled|waiting_input)$/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  const transcript = page.getByTestId("transcript");
+  const delivery = transcript.getByTestId("delivery-message");
+  await expect(delivery).toHaveCount(1);
+  const line = delivery.getByRole("button", { name: "CRM sync" });
+  await expect(line).toBeVisible();
+  await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
+  await expect(transcript.getByText("ada@example.test")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "routine-webhook-delivery");
+
+  await line.click();
+  const prompt = delivery.getByTestId("delivery-message-prompt");
+  await expect(prompt).toContainText('Run routine "CRM sync"');
+  await expect(prompt).toContainText('"email": "ada@example.test"');
+  await captureScreenshot(page, testInfo, "routine-webhook-delivery-open");
+});

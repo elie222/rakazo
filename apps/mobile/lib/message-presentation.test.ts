@@ -13,9 +13,10 @@ import {
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
-  it("centers handoffs, inter-agent messages, and channel mirrors", () => {
+  it("centers handoffs, deliveries, inter-agent messages, and channel mirrors", () => {
     const blocks = [
       { kind: "handoff", fromBotId: "a", toBotId: "b", text: "Go" },
+      { kind: "delivery", source: "email", title: "Ana · Invoice" },
       { kind: "bot_message_sent", toBotId: "b", toBotName: "Research", text: "Go" },
       {
         kind: "bot_message_received",
@@ -35,6 +36,12 @@ describe("mobile message presentation", () => {
 
     for (const block of blocks) expect(isCenteredAgentEvent([block])).toBe(true);
     expect(isCenteredAgentEvent([{ kind: "text", text: "Hello" }])).toBe(false);
+    expect(
+      isCenteredAgentEvent([
+        { kind: "delivery", source: "email", title: "Ana · Invoice" },
+        { kind: "file", artifactId: "f", name: "a.pdf", mimeType: "application/pdf", size: 1 },
+      ]),
+    ).toBe(false);
   });
 
   it("hides completed tool activity", () => {

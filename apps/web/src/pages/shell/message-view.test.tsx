@@ -411,3 +411,29 @@ it("stops a background helper from its saved running card, never a turn's live o
     messageId: "card-1",
   });
 });
+
+it("folds a delivery's prompt under its one-line title", () => {
+  renderView("user", [
+    { kind: "delivery", source: "webhook", title: "CRM sync" },
+    { kind: "text", text: 'Run routine "CRM sync":\nAdd it.\n\n{"email": "ada@example.test"}' },
+  ]);
+  expect(container.querySelector('[data-testid="message-user-bubble"]')).toBeNull();
+  const line = container.querySelector<HTMLButtonElement>(
+    '[data-testid="delivery-message"] button',
+  )!;
+  expect(line.textContent).toBe("CRM sync");
+  expect(line.getAttribute("aria-expanded")).toBe("false");
+  act(() => line.click());
+  expect(line.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector('[data-testid="delivery-message-prompt"]')?.textContent).toContain(
+    '"email": "ada@example.test"',
+  );
+});
+
+it("keeps an older delivery saved as text in its bubble", () => {
+  renderView("user", [{ kind: "text", text: 'Run routine "CRM sync":\nAdd it.' }]);
+  expect(container.querySelector('[data-testid="message-user-bubble"]')?.textContent).toContain(
+    "CRM sync",
+  );
+  expect(container.querySelector('[data-testid="delivery-message"]')).toBeNull();
+});

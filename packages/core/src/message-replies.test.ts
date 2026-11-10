@@ -201,6 +201,22 @@ describe("previewMessageText", () => {
     ).toBe("**hi**");
   });
 
+  it("names a delivery by its title, never the prompt it carries", () => {
+    const blocks: MessageBlock[] = [
+      { kind: "delivery", source: "email", title: "Ana · Invoice" },
+      { kind: "text", text: 'Run routine "Triage":\nTriage this.\n\nInbound email:\n{...}' },
+      {
+        kind: "file",
+        artifactId: "file-1",
+        name: "invoice.pdf",
+        mimeType: "application/pdf",
+        size: 42,
+      },
+    ];
+    expect(previewMessageText({ role: "user", blocks }, labels)).toBe("Ana · Invoice");
+    expect(messageReplyPreview(blocks, "user")).toMatchObject({ text: "Ana · Invoice" });
+  });
+
   it("shows a channel message's text alone, like the server preview", () => {
     expect(
       previewMessageText(

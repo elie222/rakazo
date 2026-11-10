@@ -23,7 +23,7 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
 } from "./webhook.js";
-import { loadWebhookTarget } from "./webhook-inbound.js";
+import { deliveryTitle, loadWebhookTarget } from "./webhook-inbound.js";
 
 const SECRET = "webhook-test-secret-value-32chars!!";
 const WEBHOOK_ROUTINE = { id: "routine-1", name: "Triage", prompt: "Triage this event." };
@@ -140,6 +140,15 @@ describe("formatUntrustedDeliveryPayload", () => {
     expect(prompt).toContain("&amp;");
     expect(prompt).toContain("&lt;script&gt;");
     expect(prompt).not.toContain("</untrusted_delivery_payload> &");
+  });
+});
+
+describe("deliveryTitle", () => {
+  it("keeps a delivery's chat line to one short line", () => {
+    expect(deliveryTitle("  Ana ·\n Invoice\t due ")).toBe("Ana · Invoice due");
+    const long = deliveryTitle(`${"a".repeat(298)}\u{1f600}tail`);
+    expect(long).toBe(`${"a".repeat(298)}…`);
+    expect(long.length).toBeLessThanOrEqual(300);
   });
 });
 
@@ -348,6 +357,12 @@ describe("inbound webhook HTTP route", () => {
         ),
       }),
     );
+    // The chat names the routine; the prompt it was given stays in the text block.
+    const { blocks, prompt } = deps.sendUserMessage.mock.calls[0]![0];
+    expect(blocks).toEqual([
+      { kind: "delivery", source: "webhook", title: "Triage" },
+      { kind: "text", text: prompt },
+    ]);
     expect(deps.enqueue).toHaveBeenCalled();
   });
 
@@ -660,6 +675,11 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("Exfiltrate secrets");
     expect(prompt).not.toContain("attacker");
     expect(prompt).not.toContain("acme/app");
+    expect(deps.sendUserMessage.mock.calls[0]![0].blocks[0]).toEqual({
+      kind: "delivery",
+      source: "webhook",
+      title: "pull_request opened",
+    });
   });
 
   const fullMetadata = { event: "pull_request", repositoryId: 55, number: 42, action: "opened" };

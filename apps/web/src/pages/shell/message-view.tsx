@@ -16,6 +16,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { DeliveryDisclosure } from "../../components/DeliveryDisclosure";
 import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
@@ -231,11 +232,14 @@ export const MessageView = memo(function MessageView({
   );
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
+  const deliveryIndex = message.blocks.findIndex((block) => block.kind === "delivery");
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
   const hoverAnchorIndex =
-    textAnchorIndex === -1
-      ? message.blocks.findIndex((block) => block.kind === "ask")
-      : textAnchorIndex;
+    deliveryIndex !== -1
+      ? deliveryIndex
+      : textAnchorIndex === -1
+        ? message.blocks.findIndex((block) => block.kind === "ask")
+        : textAnchorIndex;
   const peerReceipt = isPeerReceiptBlocks(message.blocks);
   const hoverActions = peerReceipt ? null : (
     <MessageHoverActions
@@ -408,6 +412,19 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
+          if (block.kind === "delivery") {
+            return (
+              <DeliveryDisclosure
+                key={i}
+                block={block}
+                text={blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n\n")}
+              >
+                {i === hoverAnchorIndex ? hoverActions : null}
+              </DeliveryDisclosure>
+            );
+          }
+          // A delivery's text is the prompt it folds.
+          if (block.kind === "text" && deliveryIndex !== -1) return null;
           if (block.kind === "meta") {
             return (
               <div

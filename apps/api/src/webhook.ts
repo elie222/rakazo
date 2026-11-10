@@ -100,6 +100,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       c,
       deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
+        title: webhookRoutines.map((routine) => routine.name).join(", "),
         routines: webhookRoutines,
         source: "webhook",
         idempotencyKey,

@@ -123,6 +123,8 @@ export function deriveMessageQuote(
 
 /** A compact server-owned preview; text takes priority over cards and attachments. */
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
+  const delivery = blocks.find((block) => block.kind === "delivery");
+  if (delivery) return delivery.title.slice(0, 280);
   for (const block of [
     ...blocks.filter((block) => block.kind === "text"),
     ...blocks.filter((block) => block.kind !== "text"),
@@ -166,6 +168,8 @@ function replyBlockText(block: MessageBlock): string {
       return block.title;
     case "call_request":
       return block.reason;
+    case "delivery":
+      return block.title;
     case "subagent":
       return block.name || block.task;
     case "child_bot":
