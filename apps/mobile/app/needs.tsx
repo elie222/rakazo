@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
 import type { AttentionItem } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
@@ -36,8 +37,8 @@ import { errorText } from "../lib/user-error";
 export default function NeedsYouScreen() {
   const { t, i18n } = useLingui();
   const translate = useCallback(
-    (message: string, values?: Record<string, string | number>) =>
-      i18n._({ id: message, message, values }),
+    (descriptor: MessageDescriptor, values?: Record<string, string | number>) =>
+      i18n._(values ? { ...descriptor, values } : descriptor),
     [i18n],
   );
   const router = useRouter();

@@ -90,7 +90,7 @@ export function SidebarHeader({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={t`Needs you`}
+            aria-label={attentionCount > 0 ? t`Needs you, ${attentionCount} waiting` : t`Needs you`}
             data-testid="needs-you-trigger"
             onClick={onOpenNeedsYou}
             className="app-no-drag relative text-muted-foreground"

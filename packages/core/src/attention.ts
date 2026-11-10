@@ -26,6 +26,9 @@ export function attentionActionsForBlock(block: MessageBlock): AttentionAction[]
   if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return [];
   if (isSecretAskBlock(block)) return [];
   const approval = isApprovalAskBlock(block);
+  // A payment's receipt and total only live in the chat; a truncated inbox preview must
+  // not offer to approve it blind.
+  if (approval && block.receipt) return [];
   return (block.actions ?? []).map((action) => ({
     id: action.id,
     // An approval label interpolates the site it allows; existing cards have no length cap.

@@ -78,6 +78,19 @@ describe("attention cards", () => {
     expect(attentionActionsForBlock(secret)).toEqual([]);
   });
 
+  it("leaves a payment approval in the chat, where its receipt is visible", () => {
+    const payment: MessageBlock = {
+      ...approval,
+      receipt: {
+        items: [{ name: "Coffee", amount: "$4" }],
+        amountSource: "page",
+        amount: "$4",
+      },
+    };
+    expect(attentionKindForBlock(payment)).toBe("approval");
+    expect(attentionActionsForBlock(payment)).toEqual([]);
+  });
+
   it("fits an approval label into the attention action contract", () => {
     const actions = attentionActionsForBlock({
       kind: "ask",

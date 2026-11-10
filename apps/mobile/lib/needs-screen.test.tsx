@@ -97,6 +97,12 @@ vi.mock("./native", () => ({
   native: { label: "#000", page: "#fff", secondaryLabel: "#666", tertiaryLabel: "#999" },
   useThemedStyles: (factory: () => object) => factory(),
 }));
+vi.mock("@lingui/core/macro", () => ({
+  msg: (parts: TemplateStringsArray) => ({ id: parts.join(""), message: parts.join("") }),
+  ph: (def: { message?: string }) => def.message ?? "",
+  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), ""),
+}));
 vi.mock("@lingui/react/macro", () => {
   const interpolate = (text: string, values?: Record<string, string | number>) =>
     values
@@ -110,11 +116,10 @@ vi.mock("@lingui/react/macro", () => {
     useLingui: () => ({
       t,
       i18n: {
-        _: (descriptor: {
-          id?: string;
-          message?: string;
-          values?: Record<string, string | number>;
-        }) => interpolate(descriptor.message ?? descriptor.id ?? "", descriptor.values),
+        _: (
+          descriptor: { id?: string; message?: string; values?: Record<string, string | number> },
+          values?: Record<string, string | number>,
+        ) => interpolate(descriptor.message ?? descriptor.id ?? "", values ?? descriptor.values),
       },
     }),
   };

@@ -1,12 +1,21 @@
+import type { MessageDescriptor } from "@lingui/core";
 import type { AttentionItem } from "@rakazo/contracts";
 import { expect, it, vi } from "vitest";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("@lingui/core/macro", () => ({
+  msg: (parts: TemplateStringsArray) => ({ id: parts.join(""), message: parts.join("") }),
+  ph: (def: { message?: string }) => def.message ?? "",
+  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), ""),
+}));
 
 import { attentionDetail, attentionHref, attentionSections, attentionTitle } from "./attention";
 
-const translate = (message: string, values?: Record<string, string | number>) =>
-  message.replace(/\{(\w+)\}/g, (match, key: string) => String(values?.[key] ?? match));
+const translate = (descriptor: MessageDescriptor, values?: Record<string, string | number>) =>
+  (descriptor.message ?? "").replace(/\{(\w+)\}/g, (match, key: string) =>
+    String(values?.[key] ?? match),
+  );
 
 const item = (overrides: Partial<AttentionItem>): AttentionItem =>
   ({
