@@ -147,43 +147,43 @@ msgstr "{amount} / {period}"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a day"
-msgstr ""
+msgstr "{amount} par jour"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a month"
-msgstr ""
+msgstr "{amount} par mois"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} a week"
-msgstr ""
+msgstr "{amount} par semaine"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} in total"
-msgstr ""
+msgstr "{amount} au total"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent"
-msgstr ""
+msgstr "{amount} dépensés"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent this month"
-msgstr ""
+msgstr "{amount} dépensés ce mois-ci"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent this week"
-msgstr ""
+msgstr "{amount} dépensés cette semaine"
 
 #: apps/mobile/lib/spending-limit.ts
 msgid "{amount} spent today"
-msgstr ""
+msgstr "{amount} dépensés aujourd'hui"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "{bot} here."
-msgstr ""
+msgstr "Ici {bot}."
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "{bot} here. Hi {name}."
-msgstr ""
+msgstr "Ici {bot}. Bonjour {name}."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
@@ -195,15 +195,15 @@ msgstr "Ordinateur de {botName}"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
-msgstr ""
+msgstr "{calls} appels, {tokens} jetons"
 
 #: apps/mobile/lib/app-version.ts
 msgid "{channel} {id}"
-msgstr ""
+msgstr "{channel} {id}"
 
 #: apps/mobile/lib/app-version.ts
 msgid "{channel} {id}, {date}"
-msgstr ""
+msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -224,19 +224,19 @@ msgstr "{count, plural, one {# ligne} other {# lignes}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
-msgstr ""
+msgstr "{count} agents au travail"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "{count} bots have their own model:"
-msgstr ""
+msgstr "{count} bots ont leur propre modèle :"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "{count} bots now use the space default."
-msgstr ""
+msgstr "{count} bots utilisent maintenant le modèle par défaut de l'espace."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "{count} connectors"
-msgstr ""
+msgstr "{count} connecteurs"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} days"
@@ -244,12 +244,12 @@ msgstr "{count} jours"
 
 #: apps/mobile/app/share.tsx
 msgid "{count} files"
-msgstr ""
+msgstr "{count} fichiers"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/invite.tsx
 msgid "{count} free months earned"
-msgstr ""
+msgstr "{count} mois gratuits gagnés"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} months"
@@ -263,27 +263,27 @@ msgstr "{count} de plus"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{count} need attention"
-msgstr ""
+msgstr "{count} demandent votre attention"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "{count} on"
-msgstr ""
+msgstr "{count} activés"
 
 #: apps/mobile/app/(settings)/skills.tsx
 msgid "{count} skills"
-msgstr ""
+msgstr "{count} compétences"
 
 #: apps/mobile/components/space-availability.tsx
 msgid "{count} spaces"
-msgstr ""
+msgstr "{count} espaces"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "{count} tools"
-msgstr ""
+msgstr "{count} outils"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{count} unread"
-msgstr ""
+msgstr "{count} non lus"
 
 #: apps/web/src/lib/billing.ts
 msgid "{count} weeks"
@@ -295,27 +295,27 @@ msgstr "{count} ans"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}d ago"
-msgstr ""
+msgstr "il y a {count} j"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}h ago"
-msgstr ""
+msgstr "il y a {count} h"
 
 #: apps/mobile/lib/activity.ts
 msgid "{count}m ago"
-msgstr ""
+msgstr "il y a {count} min"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
-msgstr ""
+msgstr "{days} jours gratuits"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free, then {price} / month. Cancel anytime."
-msgstr ""
+msgstr "{days} jours gratuits, puis {price} / mois. Annulable à tout moment."
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free, then {price} / year. Cancel anytime."
-msgstr ""
+msgstr "{days} jours gratuits, puis {price} / an. Annulable à tout moment."
 
 #: apps/web/src/lib/relative-time.ts
 msgid "{days}d ago"
@@ -323,11 +323,11 @@ msgstr "il y a {days} j"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "{from} messaged {to}"
-msgstr ""
+msgstr "{from} a écrit à {to}"
 
 #: apps/mobile/lib/cron.ts
 msgid "{from} to {to}"
-msgstr ""
+msgstr "{from} à {to}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{from}–{to} of {total} rows"
@@ -359,11 +359,11 @@ msgstr "{inviterName} vous a invité"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{label}, above"
-msgstr ""
+msgstr "{label}, au-dessus"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "{label}, below"
-msgstr ""
+msgstr "{label}, en dessous"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "{label}, empty"
@@ -375,23 +375,23 @@ msgstr "il y a {minutes} min"
 
 #: apps/mobile/lib/cron.ts
 msgid "{n} {unit}"
-msgstr ""
+msgstr "{n} {unit}"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (could not read)"
-msgstr ""
+msgstr "{name} (lecture impossible)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (max {count} attachments)"
-msgstr ""
+msgstr "{name} ({count} pièces jointes max.)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (over {limit})"
-msgstr ""
+msgstr "{name} (plus de {limit})"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (permission denied)"
-msgstr ""
+msgstr "{name} (autorisation refusée)"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -400,7 +400,7 @@ msgstr "{name} (même nom qu'une compétence intégrée)"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "{name} (unsupported type)"
-msgstr ""
+msgstr "{name} (type non pris en charge)"
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
@@ -414,7 +414,7 @@ msgstr "{name} demande : {text}"
 
 #: apps/mobile/components/AppConnectCard.tsx
 msgid "{name} connection"
-msgstr ""
+msgstr "Connexion {name}"
 
 #. js-lingui-explicit-id
 #: apps/web/src/lib/browser-notifications.ts
@@ -428,11 +428,11 @@ msgstr "{name} terminé"
 
 #: apps/mobile/lib/computer.ts
 msgid "{name} is using it"
-msgstr ""
+msgstr "{name} l'utilise"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{name} is working"
-msgstr ""
+msgstr "{name} travaille"
 
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
@@ -446,15 +446,15 @@ msgstr "{name} arrêté"
 
 #: apps/mobile/lib/routine.ts
 msgid "{name}, Off"
-msgstr ""
+msgstr "{name}, désactivée"
 
 #: apps/mobile/lib/routine.ts
 msgid "{name}, On"
-msgstr ""
+msgstr "{name}, activée"
 
 #: apps/mobile/lib/computer.ts
 msgid "{name}’s computer"
-msgstr ""
+msgstr "Ordinateur de {name}"
 
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keep their own model"
@@ -467,27 +467,27 @@ msgstr "{names} garde son propre modèle"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month"
-msgstr ""
+msgstr "{price} / mois"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month begins"
-msgstr ""
+msgstr "Début à {price} / mois"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / month. Cancel anytime."
-msgstr ""
+msgstr "{price} / mois. Annulable à tout moment."
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{price} / year"
-msgstr ""
+msgstr "{price} / an"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / year begins"
-msgstr ""
+msgstr "Début à {price} / an"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{price} / year. Cancel anytime."
-msgstr ""
+msgstr "{price} / an. Annulable à tout moment."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -590,11 +590,11 @@ msgstr "{remaining} restant"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{runs} runs, {tokens} tokens"
-msgstr ""
+msgstr "{runs} exécutions, {tokens} jetons"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 msgid "{schedule}, paused until you turn it on"
-msgstr ""
+msgstr "{schedule}, en pause jusqu'à ce que vous l'activiez"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -602,7 +602,7 @@ msgstr "{seats, plural, one {# siège} other {# sièges}}"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "{sender} rollup hours"
-msgstr ""
+msgstr "{sender} heures de regroupement"
 
 #: apps/web/src/components/SpendingLimitSettings.tsx
 msgid "{shown} a day"
@@ -675,7 +675,7 @@ msgstr "{toolCount, plural, one {# outil} other {# outils}}"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "{variable} is reserved. Choose another name."
-msgstr ""
+msgstr "{variable} est réservé. Choisissez un autre nom."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -689,7 +689,7 @@ msgstr "@{0}"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "@{name}"
-msgstr ""
+msgstr "@{name}"
 
 #: apps/mobile/lib/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -795,20 +795,20 @@ msgstr "/ mois"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "1 bot has its own model:"
-msgstr ""
+msgstr "1 bot a son propre modèle :"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "1 bot now uses the space default."
-msgstr ""
+msgstr "1 bot utilise maintenant le modèle par défaut de l'espace."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "1 connector"
-msgstr ""
+msgstr "1 connecteur"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/invite.tsx
 msgid "1 free month earned"
-msgstr ""
+msgstr "1 mois gratuit gagné"
 
 #: apps/mobile/lib/inbox-swipe.ts
 #: apps/web/src/pages/BotContextMenu.tsx
@@ -817,7 +817,7 @@ msgstr "1 heure"
 
 #: apps/mobile/app/(settings)/skills.tsx
 msgid "1 skill"
-msgstr ""
+msgstr "1 compétence"
 
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "1 space"
@@ -825,11 +825,11 @@ msgstr "1 espace"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "1 tool"
-msgstr ""
+msgstr "1 outil"
 
 #: apps/mobile/components/unread-jump-overlay.tsx
 msgid "1 unread"
-msgstr ""
+msgstr "1 non lu"
 
 #: apps/mobile/lib/inbox-swipe.ts
 #: apps/web/src/pages/BotContextMenu.tsx
@@ -851,7 +851,7 @@ msgstr "Un modèle approuve les actions courantes et vous consulte pour le reste
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "A sign-in page opened — enter this code there:"
-msgstr ""
+msgstr "Une page de connexion s'est ouverte — saisissez-y ce code :"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -919,7 +919,7 @@ msgstr "Menu du compte de {name}"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Accounts"
-msgstr ""
+msgstr "Comptes"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
@@ -949,7 +949,7 @@ msgstr "Actif"
 #: apps/mobile/components/routine-list.ios.tsx
 #: apps/mobile/components/routine-list.tsx
 msgid "Active: {name}"
-msgstr ""
+msgstr "Active : {name}"
 
 #: apps/mobile/components/inbox-header.tsx
 #: apps/mobile/lib/use-home-header.ts
@@ -976,7 +976,7 @@ msgstr "Ajouter {0} au groupe"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Add {name}"
-msgstr ""
+msgstr "Ajouter {name}"
 
 #: apps/web/src/lib/routine-draft.ts
 msgid "Add a command to run"
@@ -1020,7 +1020,7 @@ msgstr "Ajoutez un déclencheur pour exécuter cette routine."
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/thread-voice.ts
 msgid "Add a voice provider in Voice settings."
-msgstr ""
+msgstr "Ajoutez un fournisseur vocal dans les paramètres Voix."
 
 #: apps/web/src/lib/tts.ts
 msgid "Add a voice provider key and pick a voice in Voice settings."
@@ -1028,7 +1028,7 @@ msgstr "Ajoutez une clé de fournisseur vocal et choisissez une voix dans les pa
 
 #: apps/mobile/lib/model-settings.ts
 msgid "Add an AI model to keep chatting"
-msgstr ""
+msgstr "Ajoutez un modèle d'IA pour continuer à discuter"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -1042,7 +1042,7 @@ msgstr "En ajouter un autre"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Add another {name}"
-msgstr ""
+msgstr "Ajouter un autre {name}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -1057,7 +1057,7 @@ msgstr "Ajouter un élément personnalisé"
 
 #: apps/mobile/app/routine.tsx
 msgid "Add email trigger"
-msgstr ""
+msgstr "Ajouter un déclencheur e-mail"
 
 #: apps/mobile/components/model-role-settings.tsx
 #: apps/web/src/pages/ModelRoleSettings.tsx
@@ -1086,7 +1086,7 @@ msgstr "Ajouter un serveur MCP"
 #: apps/mobile/lib/model-settings.ts
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "Add model"
-msgstr ""
+msgstr "Ajouter un modèle"
 
 #: apps/mobile/components/bot-context-cards.tsx
 #: apps/web/src/pages/ScratchpadSection.tsx
@@ -1114,7 +1114,7 @@ msgstr "Ajouter une règle"
 
 #: apps/mobile/app/routine.tsx
 msgid "Add schedule"
-msgstr ""
+msgstr "Ajouter une planification"
 
 #: apps/web/src/pages/McpServerForm.tsx
 #: apps/web/src/pages/McpServersOverlay.tsx
@@ -1198,7 +1198,7 @@ msgstr "Avancé..."
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "Agent"
-msgstr ""
+msgstr "Agent"
 
 #: apps/web/src/components/AccountDataSettings.tsx
 msgid "Agent from another app"
@@ -1206,17 +1206,17 @@ msgstr "Agent d'une autre application"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Agent messages"
-msgstr ""
+msgstr "Messages des agents"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "AI data sharing"
-msgstr ""
+msgstr "Partage des données avec l'IA"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "AI models"
-msgstr ""
+msgstr "Modèles d'IA"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/vault.tsx
@@ -1231,7 +1231,7 @@ msgstr "La totalité des {credit} sert à l’utilisation des modèles."
 
 #: apps/mobile/app/paywall.tsx
 msgid "All {price} goes to model usage."
-msgstr ""
+msgstr "La totalité des {price} sert à l'utilisation des modèles."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
@@ -1265,7 +1265,7 @@ msgstr "Autoriser"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Allow {name} on mobile"
-msgstr ""
+msgstr "Autoriser {name} sur mobile"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -1279,11 +1279,11 @@ msgstr "Autoriser dans cet espace"
 
 #: apps/mobile/lib/call-session.ts
 msgid "Allow microphone access to call a bot."
-msgstr ""
+msgstr "Autorisez l'accès au micro pour appeler un bot."
 
 #: apps/mobile/lib/call-session.ts
 msgid "Allow microphone access to dictate."
-msgstr ""
+msgstr "Autorisez l'accès au micro pour dicter."
 
 #: apps/mobile/lib/ask-action-label.ts
 #: apps/web/src/components/AskCard.tsx
@@ -1296,12 +1296,12 @@ msgstr "Autorisez Rakazo à utiliser la reconnaissance vocale et le micro dans l
 
 #: apps/mobile/lib/composer-dictation.ts
 msgid "Allow speech recognition in Settings, or connect a voice provider that transcribes."
-msgstr ""
+msgstr "Autorisez la reconnaissance vocale dans Réglages, ou connectez un fournisseur vocal qui transcrit."
 
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/thread-voice.ts
 msgid "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."
-msgstr ""
+msgstr "Autorisez la reconnaissance vocale dans Réglages, ou connectez ElevenLabs, OpenAI ou Fish Audio."
 
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -1385,7 +1385,7 @@ msgstr "Un outil d’intégration"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/lib/live-notifications.ts
 msgid "Android blocked notifications."
-msgstr ""
+msgstr "Android a bloqué les notifications."
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
@@ -1433,7 +1433,7 @@ msgstr "N'importe quel modèle, avec votre propre clé"
 
 #: apps/mobile/components/routine-email-trigger.tsx
 msgid "Anyone at @{domain}"
-msgstr ""
+msgstr "Tout le monde chez @{domain}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Anyone at @{ownerDomain}"
@@ -1472,7 +1472,7 @@ msgstr "En-tête de clé API"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "API key header name"
-msgstr ""
+msgstr "Nom de l'en-tête de la clé API"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "API keys"
@@ -1572,7 +1572,7 @@ msgstr "Arguments"
 
 #: apps/mobile/app/_layout.tsx
 msgid "Artifact"
-msgstr ""
+msgstr "Artefact"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -1589,7 +1589,7 @@ msgstr "Demander"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
-msgstr ""
+msgstr "Demandez à ce bot dans la discussion de configurer une routine."
 
 #: apps/mobile/components/approval-settings-rows.tsx
 #: apps/web/src/components/ApprovalRulesSettings.tsx
@@ -1614,7 +1614,7 @@ msgstr "à {0}"
 
 #: apps/mobile/lib/cron.ts
 msgid "at {time}"
-msgstr ""
+msgstr "à {time}"
 
 #: apps/web/src/pages/RoutineSchedule.tsx
 msgid "at {timeSelect}"
@@ -1754,7 +1754,7 @@ msgstr "Authentification basique ({username})"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Bearer"
-msgstr ""
+msgstr "Bearer"
 
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -1843,7 +1843,7 @@ msgstr "Bot"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "Bot actions"
-msgstr ""
+msgstr "Actions du bot"
 
 #: apps/mobile/components/bot-email.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
@@ -1856,7 +1856,7 @@ msgstr "Le bot observe, il n'agit pas"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Bot models"
-msgstr ""
+msgstr "Modèles des bots"
 
 #: apps/web/src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
@@ -1892,7 +1892,7 @@ msgstr "Bots et automatisation du navigateur"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
-msgstr ""
+msgstr "Les bots et leurs discussions sont conservés."
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Bots use the accounts of whoever messages them"
@@ -1900,7 +1900,7 @@ msgstr "Les bots utilisent les comptes de la personne qui leur écrit"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Bots with their own computer"
-msgstr ""
+msgstr "Des bots avec leur propre ordinateur"
 
 #: apps/web/src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -1945,11 +1945,11 @@ msgstr "Rappeler"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Call greeting"
-msgstr ""
+msgstr "Salutation d'appel"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Call sounds"
-msgstr ""
+msgstr "Sons d'appel"
 
 #. placeholder {0}: call.botName
 #: apps/web/src/components/call/CallCard.tsx
@@ -1970,7 +1970,7 @@ msgstr "Appels"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Calls need transcription"
-msgstr ""
+msgstr "Les appels nécessitent une transcription"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Calls, dictation, and replies read aloud."
@@ -1978,7 +1978,7 @@ msgstr "Appels, dictée et réponses lues à voix haute."
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Camera"
-msgstr ""
+msgstr "Appareil photo"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Can view without signing in"
@@ -2128,7 +2128,7 @@ msgstr "Cartes"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Category"
-msgstr ""
+msgstr "Catégorie"
 
 #: apps/web/src/pages/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -2152,7 +2152,7 @@ msgstr "Changer le mot de passe"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Change plan"
-msgstr ""
+msgstr "Changer de forfait"
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Change server"
@@ -2184,7 +2184,7 @@ msgstr "Détails de la discussion"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Chat settings"
-msgstr ""
+msgstr "Paramètres de la discussion"
 
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/composer-mentions.tsx
@@ -2289,7 +2289,7 @@ msgstr "Choisissez un nouveau mot de passe"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Choose a plan"
-msgstr ""
+msgstr "Choisir un forfait"
 
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
@@ -2325,7 +2325,7 @@ msgstr "Réserver"
 
 #: apps/mobile/components/bot-email.tsx
 msgid "Claim {address}"
-msgstr ""
+msgstr "Réserver {address}"
 
 #: apps/web/src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -2357,7 +2357,7 @@ msgstr "Effacer la conversation"
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Clear conversation?"
-msgstr ""
+msgstr "Effacer la conversation ?"
 
 #: apps/web/src/pages/ActivityList.tsx
 msgid "Clear filter {label}"
@@ -2401,7 +2401,7 @@ msgstr "Fermer le graphique"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Close chat organization"
-msgstr ""
+msgstr "Fermer l'organisation des discussions"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-overlay.tsx
@@ -2410,7 +2410,7 @@ msgstr "Fermer l'ordinateur"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Close image"
-msgstr ""
+msgstr "Fermer l'image"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Close image preview"
@@ -2474,7 +2474,7 @@ msgstr "Cloud"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 msgid "Cloud agent"
-msgstr ""
+msgstr "Agent cloud"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/confirm-identity.tsx
@@ -2496,7 +2496,7 @@ msgstr "Réduire {0}"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Collapse {name}"
-msgstr ""
+msgstr "Réduire {name}"
 
 #: apps/mobile/components/bot-look-picker.tsx
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
@@ -2509,7 +2509,7 @@ msgstr "Couleur {color}"
 
 #: apps/mobile/components/bot-look-picker.tsx
 msgid "Color {number}"
-msgstr ""
+msgstr "Couleur {number}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "column {index}"
@@ -2595,7 +2595,7 @@ msgstr "L'ordinateur est en veille. Ouvrez-le pour le réveiller."
 
 #: apps/mobile/lib/computer.ts
 msgid "Computer is asleep. Take control to wake it."
-msgstr ""
+msgstr "L'ordinateur est en veille. Prenez le contrôle pour le réveiller."
 
 #: apps/mobile/lib/computer.ts
 #: apps/web/src/pages/shell/computer-overlay.tsx
@@ -2605,7 +2605,7 @@ msgstr "L'ordinateur est arrêté"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Computer keyboard"
-msgstr ""
+msgstr "Clavier de l'ordinateur"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
@@ -2680,7 +2680,7 @@ msgstr "Connecter"
 #: apps/mobile/components/add-custom-integration.tsx
 #: apps/mobile/components/AppConnectCard.tsx
 msgid "Connect {name}"
-msgstr ""
+msgstr "Connecter {name}"
 
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 msgid "Connect {selectedProviderName}"
@@ -2703,7 +2703,7 @@ msgstr "Connectez un modèle dans Paramètres avant d'exécuter des bots."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Connect a voice provider first."
-msgstr ""
+msgstr "Connectez d'abord un fournisseur vocal."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -2722,7 +2722,7 @@ msgstr "Connecter le serveur MCP « {name} »"
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
-msgstr ""
+msgstr "Connecter le serveur MCP {name}"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Connect memory provider"
@@ -2742,7 +2742,7 @@ msgstr "Connectez d’abord le fournisseur de ce modèle."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Connect your AI"
-msgstr ""
+msgstr "Connectez votre IA"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -2773,7 +2773,7 @@ msgstr "Connecté à {0}."
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Connected."
-msgstr ""
+msgstr "Connecté."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -2793,7 +2793,7 @@ msgstr "Connexion"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Connection pending"
-msgstr ""
+msgstr "Connexion en attente"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Connection test failed."
@@ -2865,15 +2865,15 @@ msgstr "Continuer avec {0}"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Continue with {name}"
-msgstr ""
+msgstr "Continuer avec {name}"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Control"
-msgstr ""
+msgstr "Contrôle"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context."
-msgstr ""
+msgstr "Les résumés de conversation, souvenirs, recherches et identifiants de bots et d'espaces sont envoyés pour stocker et retrouver le contexte."
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
@@ -2969,7 +2969,7 @@ msgstr "Impossible d'ajouter les compétences"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not add source"
-msgstr ""
+msgstr "Impossible d'ajouter la source"
 
 #: apps/web/src/pages/PluginSubmissionsPanel.tsx
 msgid "Could not approve plugin"
@@ -2983,11 +2983,11 @@ msgstr "Impossible d'approuver ce serveur"
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Could not archive bot"
-msgstr ""
+msgstr "Impossible d'archiver le bot"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Could not attach files"
-msgstr ""
+msgstr "Impossible de joindre les fichiers"
 
 #: apps/mobile/components/AppConnectCard.tsx
 #: apps/web/src/pages/shell/message-cards.tsx
@@ -3005,7 +3005,7 @@ msgstr "Impossible de modifier"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
-msgstr ""
+msgstr "Impossible de changer de langue"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/lib/api-auth.ts
@@ -3038,15 +3038,15 @@ msgstr "Impossible d'effacer la conversation"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not clear the custom server URL"
-msgstr ""
+msgstr "Impossible d'effacer l'URL du serveur personnalisé"
 
 #: apps/mobile/lib/api-auth.ts
 msgid "Could not clear the local session"
-msgstr ""
+msgstr "Impossible d'effacer la session locale"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not clear the previous server session"
-msgstr ""
+msgstr "Impossible d'effacer la session du serveur précédent"
 
 #: apps/mobile/components/ChoiceCard.tsx
 #: apps/mobile/components/computer-update-progress.tsx
@@ -3119,7 +3119,7 @@ msgstr "Impossible de continuer"
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
 msgid "Could not copy the link."
-msgstr ""
+msgstr "Impossible de copier le lien."
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/web/src/pages/shell/agent-import.tsx
@@ -3162,7 +3162,7 @@ msgstr "Impossible de créer votre bot"
 #: apps/mobile/components/account-deletion.tsx
 #: apps/mobile/lib/api-auth.ts
 msgid "Could not delete account"
-msgstr ""
+msgstr "Impossible de supprimer le compte"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/lib/bot-lifecycle.ts
@@ -3181,7 +3181,7 @@ msgstr "Impossible de supprimer le serveur MCP"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Could not delete note"
-msgstr ""
+msgstr "Impossible de supprimer la note"
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "Could not delete page"
@@ -3211,12 +3211,12 @@ msgstr "Impossible de supprimer l'espace"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not delete the page."
-msgstr ""
+msgstr "Impossible de supprimer la page."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 msgid "Could not delete this artifact"
-msgstr ""
+msgstr "Impossible de supprimer cet artefact"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
@@ -3224,11 +3224,11 @@ msgstr "Impossible de supprimer cet artefact."
 
 #: apps/mobile/lib/composer-dictation.ts
 msgid "Could not dictate"
-msgstr ""
+msgstr "Impossible de dicter"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Could not disconnect"
-msgstr ""
+msgstr "Impossible de déconnecter"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
@@ -3272,7 +3272,7 @@ msgstr "Impossible d'activer les outils"
 
 #: apps/mobile/lib/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
-msgstr ""
+msgstr "Impossible de terminer la connexion"
 
 #: apps/web/src/pages/AdminAccessPage.tsx
 msgid "Could not grant access"
@@ -3280,7 +3280,7 @@ msgstr "Impossible d'accorder l'accès"
 
 #: apps/mobile/lib/call-session.ts
 msgid "Could not hear that."
-msgstr ""
+msgstr "Je n'ai pas entendu."
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
@@ -3326,12 +3326,12 @@ msgstr "Impossible de charger la facturation"
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not load bot"
-msgstr ""
+msgstr "Impossible de charger le bot"
 
 #: apps/mobile/app/index.tsx
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not load bots"
-msgstr ""
+msgstr "Impossible de charger les bots"
 
 #: apps/web/src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
@@ -3340,7 +3340,7 @@ msgstr "Impossible de charger les bots. Rechargez pour réessayer."
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/home-error-state.tsx
 msgid "Could not load chats"
-msgstr ""
+msgstr "Impossible de charger les discussions"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Could not load computer settings"
@@ -3352,15 +3352,15 @@ msgstr "Impossible de charger les identifiants."
 
 #: apps/mobile/lib/thread-paging.ts
 msgid "Could not load earlier messages"
-msgstr ""
+msgstr "Impossible de charger les messages précédents"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
-msgstr ""
+msgstr "Impossible de charger le groupe"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Could not load image"
-msgstr ""
+msgstr "Impossible de charger l'image"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/lib/integrations-cache.ts
@@ -3383,7 +3383,7 @@ msgstr "Impossible de charger les membres"
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 msgid "Could not load memory"
-msgstr ""
+msgstr "Impossible de charger la mémoire"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
@@ -3396,23 +3396,23 @@ msgstr "Impossible de charger les paramètres du modèle"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not load pages."
-msgstr ""
+msgstr "Impossible de charger les pages."
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
-msgstr ""
+msgstr "Impossible de charger les autorisations."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Could not load plugin"
-msgstr ""
+msgstr "Impossible de charger le plugin"
 
 #: apps/mobile/app/routine.tsx
 msgid "Could not load routine"
-msgstr ""
+msgstr "Impossible de charger la routine"
 
 #: apps/mobile/app/routines.tsx
 msgid "Could not load routines"
-msgstr ""
+msgstr "Impossible de charger les routines"
 
 #: apps/mobile/components/routine-run-history.tsx
 #: apps/web/src/pages/RoutineRunHistory.tsx
@@ -3440,7 +3440,7 @@ msgstr "Impossible de charger les modèles"
 
 #: apps/mobile/app/computer.tsx
 msgid "Could not load the desktop. This device cannot reach the screen URL."
-msgstr ""
+msgstr "Impossible de charger le bureau. Cet appareil ne peut pas joindre l'URL de l'écran."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -3459,7 +3459,7 @@ msgstr "Impossible de charger ce fichier."
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/page.tsx
 msgid "Could not load this page."
-msgstr ""
+msgstr "Impossible de charger cette page."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -3468,11 +3468,11 @@ msgstr "Impossible de charger les paramètres vocaux"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not load voices"
-msgstr ""
+msgstr "Impossible de charger les voix"
 
 #: apps/mobile/app/(settings)/wallet.tsx
 msgid "Could not load wallet"
-msgstr ""
+msgstr "Impossible de charger le portefeuille"
 
 #: apps/web/src/lib/sign-out.ts
 msgid "Could not log out. Try again."
@@ -3480,7 +3480,7 @@ msgstr "Impossible de se déconnecter. Réessayez."
 
 #: apps/mobile/app/board.tsx
 msgid "Could not move the ticket"
-msgstr ""
+msgstr "Impossible de déplacer le ticket"
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -3492,21 +3492,21 @@ msgstr "Impossible d'ouvrir la facturation"
 
 #: apps/mobile/lib/use-computer-boot.ts
 msgid "Could not open computer"
-msgstr ""
+msgstr "Impossible d'ouvrir l'ordinateur"
 
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Could not open file"
-msgstr ""
+msgstr "Impossible d'ouvrir le fichier"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Could not open image"
-msgstr ""
+msgstr "Impossible d'ouvrir l'image"
 
 #: apps/mobile/lib/thread-paging.ts
 #: apps/mobile/lib/thread-sync.ts
 msgid "Could not open message"
-msgstr ""
+msgstr "Impossible d'ouvrir le message"
 
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
@@ -3514,11 +3514,11 @@ msgstr "Impossible d'ouvrir le bot"
 
 #: apps/mobile/components/pdf-preview.tsx
 msgid "Could not open this PDF."
-msgstr ""
+msgstr "Impossible d'ouvrir ce PDF."
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not pin the page."
-msgstr ""
+msgstr "Impossible d'épingler la page."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Could not pin this page. Try again."
@@ -3526,7 +3526,7 @@ msgstr "Impossible d'épingler cette page. Réessayez."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Could not play a sample"
-msgstr ""
+msgstr "Impossible de lire un extrait"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -3535,7 +3535,7 @@ msgstr "Impossible de lire un extrait de test"
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/lib/voice.ts
 msgid "Could not play that clip."
-msgstr ""
+msgstr "Impossible de lire cet extrait."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3544,7 +3544,7 @@ msgstr "Impossible de prévisualiser le plugin"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Could not reach that server"
-msgstr ""
+msgstr "Impossible de joindre ce serveur"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -3565,7 +3565,7 @@ msgstr "Impossible d'atteindre le serveur"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Could not reach this model server"
-msgstr ""
+msgstr "Impossible de joindre ce serveur de modèles"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 #: apps/web/src/pages/shell/use-agent-import-source.ts
@@ -3608,7 +3608,7 @@ msgstr "Impossible de retirer les compétences"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not remove source"
-msgstr ""
+msgstr "Impossible de retirer la source"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Could not remove the credential"
@@ -3616,7 +3616,7 @@ msgstr "Impossible de supprimer l'identifiant"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Could not remove the item"
-msgstr ""
+msgstr "Impossible de retirer l'élément"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -3634,7 +3634,7 @@ msgstr "Impossible de renommer l'espace"
 
 #: apps/mobile/app/pages.tsx
 msgid "Could not rename the page."
-msgstr ""
+msgstr "Impossible de renommer la page."
 
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -3652,7 +3652,7 @@ msgstr "Impossible de réinitialiser le mot de passe"
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Could not restore bot"
-msgstr ""
+msgstr "Impossible de restaurer le bot"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -3688,7 +3688,7 @@ msgstr "Impossible d'enregistrer la révision automatique"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Could not save bot"
-msgstr ""
+msgstr "Impossible d'enregistrer le bot"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Could not save computer settings"
@@ -3733,7 +3733,7 @@ msgstr "Impossible d'enregistrer ce choix"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/lib/approval-settings.ts
 msgid "Could not save that preference"
-msgstr ""
+msgstr "Impossible d'enregistrer cette préférence"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -3752,15 +3752,15 @@ msgstr "Impossible d'enregistrer l'identifiant"
 
 #: apps/mobile/lib/use-home-inbox.ts
 msgid "Could not save the default space"
-msgstr ""
+msgstr "Impossible d'enregistrer l'espace par défaut"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not save the previous server session"
-msgstr ""
+msgstr "Impossible d'enregistrer la session du serveur précédent"
 
 #: apps/mobile/lib/api-server.ts
 msgid "Could not save the server URL"
-msgstr ""
+msgstr "Impossible d'enregistrer l'URL du serveur"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -3771,7 +3771,7 @@ msgstr "Impossible d'enregistrer ce choix"
 #: apps/mobile/lib/sso.ts
 #: apps/mobile/lib/user-error.ts
 msgid "Could not save your sign-in on this device. Try again."
-msgstr ""
+msgstr "Impossible d'enregistrer votre connexion sur cet appareil. Réessayez."
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Could not search catalog"
@@ -3781,7 +3781,7 @@ msgstr "Impossible de rechercher dans le catalogue"
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "Could not send answer"
-msgstr ""
+msgstr "Impossible d'envoyer la réponse"
 
 #: apps/mobile/lib/api-auth.ts
 #: apps/web/src/pages/Auth.tsx
@@ -3795,15 +3795,15 @@ msgstr "Impossible d'envoyer cela"
 
 #: apps/mobile/components/audio-attachment.tsx
 msgid "Could not share file"
-msgstr ""
+msgstr "Impossible de partager le fichier"
 
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Could not share image"
-msgstr ""
+msgstr "Impossible de partager l'image"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
-msgstr ""
+msgstr "Impossible de partager cet artefact"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "Could not show the credential"
@@ -3811,7 +3811,7 @@ msgstr "Impossible d'afficher l'identifiant"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Could not show the item"
-msgstr ""
+msgstr "Impossible d'afficher l'élément"
 
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
@@ -3825,20 +3825,20 @@ msgstr "Impossible de se connecter"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "Could not sign out"
-msgstr ""
+msgstr "Impossible de se déconnecter"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Could not speak"
-msgstr ""
+msgstr "Impossible de parler"
 
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/voice.ts
 msgid "Could not speak that."
-msgstr ""
+msgstr "Impossible de lire ce texte à voix haute."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
-msgstr ""
+msgstr "Impossible de lancer l'OAuth MCP"
 
 #: apps/web/src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -3846,7 +3846,7 @@ msgstr "Impossible de démarrer OAuth"
 
 #: apps/mobile/lib/use-subscription-sign-in.ts
 msgid "Could not start sign-in"
-msgstr ""
+msgstr "Impossible de lancer la connexion"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
@@ -3859,7 +3859,7 @@ msgstr "Impossible d'arrêter l'ordinateur"
 
 #: apps/mobile/components/AskActions.tsx
 msgid "Could not submit answer"
-msgstr ""
+msgstr "Impossible d'envoyer la réponse"
 
 #: apps/web/src/components/AskCard.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -3873,7 +3873,7 @@ msgstr "Impossible de basculer {failedNames}. Réessayez."
 
 #: apps/mobile/app/computer.tsx
 msgid "Could not switch computer"
-msgstr ""
+msgstr "Impossible de changer d'ordinateur"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/index.tsx
@@ -3883,7 +3883,7 @@ msgstr ""
 #: apps/mobile/components/organization-menu.tsx
 #: apps/mobile/lib/organizations.ts
 msgid "Could not switch spaces"
-msgstr ""
+msgstr "Impossible de changer d'espace"
 
 #: apps/web/src/pages/shell/use-computer.tsx
 msgid "Could not take control"
@@ -3900,7 +3900,7 @@ msgstr "Impossible de transcrire cet enregistrement."
 #: apps/mobile/lib/call-session.ts
 #: apps/mobile/lib/composer-dictation.ts
 msgid "Could not transcribe that."
-msgstr ""
+msgstr "Impossible de transcrire cela."
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -3920,7 +3920,7 @@ msgstr "Impossible de mettre à jour l'accès des bots"
 #: apps/mobile/lib/thread-read.ts
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Could not update chat"
-msgstr ""
+msgstr "Impossible de mettre à jour la discussion"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -3937,7 +3937,7 @@ msgstr "Impossible de mettre à jour le nom"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/bot-profile.tsx
 msgid "Could not update notifications"
-msgstr ""
+msgstr "Impossible de mettre à jour les notifications"
 
 #: apps/mobile/lib/thread-send.ts
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -3947,7 +3947,7 @@ msgstr "Impossible de mettre à jour la réaction"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Could not update routine"
-msgstr ""
+msgstr "Impossible de mettre à jour la routine"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
@@ -3955,7 +3955,7 @@ msgstr "Impossible de mettre à jour la portée de mémoire par défaut"
 
 #: apps/mobile/app/(settings)/wallet.tsx
 msgid "Could not update wallet"
-msgstr ""
+msgstr "Impossible de mettre à jour le portefeuille"
 
 #: apps/web/src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -3991,11 +3991,11 @@ msgstr "Impossible de charger votre portefeuille"
 
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Couldn't refresh — showing the last loaded messages."
-msgstr ""
+msgstr "Actualisation impossible — affichage des derniers messages chargés."
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
-msgstr ""
+msgstr "Impossible de démarrer l'ordinateur"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -4067,7 +4067,7 @@ msgstr "Créer une routine"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Create section"
-msgstr ""
+msgstr "Créer une section"
 
 #: apps/mobile/app/new-space.tsx
 #: apps/mobile/lib/ask-action-label.ts
@@ -4147,11 +4147,11 @@ msgstr "Mot de passe actuel"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Current plan"
-msgstr ""
+msgstr "Forfait actuel"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
-msgstr ""
+msgstr "Connecteur personnalisé"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -4160,11 +4160,11 @@ msgstr "En-tête personnalisé"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Custom server"
-msgstr ""
+msgstr "Serveur personnalisé"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Custom server {host}"
-msgstr ""
+msgstr "Serveur personnalisé {host}"
 
 #: apps/mobile/app/new-space.tsx
 #: apps/web/src/pages/shell/dialogs.tsx
@@ -4182,7 +4182,7 @@ msgstr "Personnaliser {label}"
 
 #: apps/mobile/app/(settings)/space.tsx
 msgid "Customize {setting}"
-msgstr ""
+msgstr "Personnaliser {setting}"
 
 #: apps/web/src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
@@ -4218,7 +4218,7 @@ msgstr "jour"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Day {days}"
-msgstr ""
+msgstr "Jour {days}"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Day-to-day work"
@@ -4314,7 +4314,7 @@ msgstr "Supprimer « {0} » ?"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete \"{name}\"?"
-msgstr ""
+msgstr "Supprimer « {name} » ?"
 
 #. placeholder {0}: artifact.name
 #: apps/web/src/pages/Artifacts.tsx
@@ -4333,15 +4333,15 @@ msgstr "Supprimer {0} ?"
 #: apps/mobile/components/routine-list.ios.tsx
 #: apps/mobile/components/routine-list.tsx
 msgid "Delete {name}"
-msgstr ""
+msgstr "Supprimer {name}"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its {count} bots?"
-msgstr ""
+msgstr "Supprimer {name} et ses {count} bots ?"
 
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name} and its bot?"
-msgstr ""
+msgstr "Supprimer {name} et son bot ?"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
@@ -4351,7 +4351,7 @@ msgstr ""
 #: apps/mobile/lib/confirm-delete-section.ts
 #: apps/mobile/lib/inbox-spaces.ts
 msgid "Delete {name}?"
-msgstr ""
+msgstr "Supprimer {name} ?"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/paywall.tsx
@@ -4377,7 +4377,7 @@ msgstr "Supprimer l’organisation"
 
 #: apps/mobile/app/routine.tsx
 msgid "Delete routine"
-msgstr ""
+msgstr "Supprimer la routine"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-render-item.tsx
@@ -4394,7 +4394,7 @@ msgstr "Supprimer l'espace"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "Delete this routine?"
-msgstr ""
+msgstr "Supprimer cette routine ?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
@@ -4403,12 +4403,12 @@ msgstr "Supprimer les identifiants de cet espace ?"
 
 #: apps/mobile/components/account-deletion.tsx
 msgid "Delete your account?"
-msgstr ""
+msgstr "Supprimer votre compte ?"
 
 #: apps/mobile/components/bot-profile-menu.tsx
 #: apps/mobile/lib/inbox-swipe.ts
 msgid "Delete…"
-msgstr ""
+msgstr "Supprimer…"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/pages/shell/message-view.tsx
@@ -4417,7 +4417,7 @@ msgstr "supprimé"
 
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Deleted"
-msgstr ""
+msgstr "Supprimée"
 
 #: apps/web/src/components/PasskeySettings.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -4476,11 +4476,11 @@ msgstr "Développeur"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
-msgstr ""
+msgstr "Voix de l'appareil"
 
 #: apps/mobile/components/mermaid-diagram.tsx
 msgid "Diagram"
-msgstr ""
+msgstr "Diagramme"
 
 #: apps/mobile/components/thread-composer.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
@@ -4501,7 +4501,7 @@ msgstr "Échec de la dictée."
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Did you mean {email}?"
-msgstr ""
+msgstr "Vouliez-vous dire {email} ?"
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Did you mean <0>{emailSuggestion}</0>?"
@@ -4522,11 +4522,11 @@ msgstr "Désactivé"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Discard"
-msgstr ""
+msgstr "Abandonner"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Discard changes?"
-msgstr ""
+msgstr "Abandonner les modifications ?"
 
 #: apps/web/src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
@@ -4568,7 +4568,7 @@ msgstr "{disconnectName} déconnecté."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Disconnected {provider}."
-msgstr ""
+msgstr "{provider} déconnecté."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -4613,7 +4613,7 @@ msgstr "Fermé. Reconnectez-vous à tout moment depuis les paramètres MCP."
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Display name"
-msgstr ""
+msgstr "Nom affiché"
 
 #: apps/web/src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -4657,7 +4657,7 @@ msgstr "Terminé"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Down"
-msgstr ""
+msgstr "Bas"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -4720,7 +4720,7 @@ msgstr "Modifier"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Edit avatar"
-msgstr ""
+msgstr "Modifier l'avatar"
 
 #: apps/web/src/components/AskCard.tsx
 msgid "Edit first"
@@ -4741,7 +4741,7 @@ msgstr "Modifier le profil"
 
 #: apps/mobile/app/routine.tsx
 msgid "Edit routine"
-msgstr ""
+msgstr "Modifier la routine"
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/sign-in.tsx
@@ -4782,7 +4782,7 @@ msgstr "Vérification de l’e-mail requise"
 
 #: apps/mobile/lib/app-version.ts
 msgid "Embedded"
-msgstr ""
+msgstr "Intégrée"
 
 #. placeholder {0}: humanizeTool(toolName)
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -4795,7 +4795,7 @@ msgstr "ID de l'utilisateur final"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Ends"
-msgstr ""
+msgstr "Se termine"
 
 #: apps/web/src/lib/billing.ts
 msgid "Ends {day}"
@@ -4812,7 +4812,7 @@ msgstr "Saisissez un mot de passe"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Enter a server URL"
-msgstr ""
+msgstr "Saisissez une URL de serveur"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -4831,11 +4831,11 @@ msgstr "Saisissez un nombre entier de 1 à {MAX_MODEL_MAX_TOKENS} pour le maximu
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Enter a whole number from 1 to {max} for maximum output tokens."
-msgstr ""
+msgstr "Saisissez un nombre entier de 1 à {max} pour le nombre maximal de jetons en sortie."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Enter a whole number from 1 to {max} for the context limit."
-msgstr ""
+msgstr "Saisissez un nombre entier de 1 à {max} pour la limite de contexte."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
@@ -4845,7 +4845,7 @@ msgstr "Saisissez un nombre entier de 1 à 1000 pour la limite d'images."
 
 #: apps/mobile/app/(settings)/spending-limit.tsx
 msgid "Enter an amount"
-msgstr ""
+msgstr "Saisissez un montant"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
@@ -4871,7 +4871,7 @@ msgstr "Erreur"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Escape"
-msgstr ""
+msgstr "Échap"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/routine-schedule-editor.tsx
@@ -4894,11 +4894,11 @@ msgstr "Chaque {0} et {1}"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every {day}"
-msgstr ""
+msgstr "Chaque {day}"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every {days} and {last}"
-msgstr ""
+msgstr "Chaque {days} et {last}"
 
 #: apps/web/src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -4906,7 +4906,7 @@ msgstr "tous les {intervalAmountSelect} {intervalUnitSelect}"
 
 #: apps/mobile/lib/cron.ts
 msgid "every {n} {unit}"
-msgstr ""
+msgstr "tous les {n} {unit}"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -4936,7 +4936,7 @@ msgstr "Chaque heure à :{0}"
 
 #: apps/mobile/lib/cron.ts
 msgid "Every hour at :{minute}"
-msgstr ""
+msgstr "Toutes les heures à :{minute}"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -4950,11 +4950,11 @@ msgstr "Chaque lundi"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Every month"
-msgstr ""
+msgstr "Chaque mois"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Every week"
-msgstr ""
+msgstr "Chaque semaine"
 
 #: apps/web/src/components/SharedSpaceRules.tsx
 msgid "Everyone here sees its chats, bots and memory"
@@ -4962,7 +4962,7 @@ msgstr "Tous les membres voient les discussions, les bots et la mémoire de cet 
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
-msgstr ""
+msgstr "Tous les membres de l'espace de ce bot peuvent lire les discussions qu'il reçoit de {app}."
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
@@ -4970,11 +4970,11 @@ msgstr "Tous les membres de l'espace de ce bot peuvent lire les discussions qu'i
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
-msgstr ""
+msgstr "Ex. : Projet Falcon"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "exact-model-id"
-msgstr ""
+msgstr "exact-model-id"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "Expand"
@@ -4987,7 +4987,7 @@ msgstr "Développer {0}"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Expand {name}"
-msgstr ""
+msgstr "Développer {name}"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -5006,7 +5006,7 @@ msgstr "Expire"
 
 #: apps/mobile/lib/vault.ts
 msgid "Expires {date}"
-msgstr ""
+msgstr "Expire le {date}"
 
 #: apps/web/src/components/vault/kinds.tsx
 msgid "Expires {expiry}"
@@ -5159,11 +5159,11 @@ msgstr "Recherche en cours…"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Finish connecting in the browser, then refresh this page."
-msgstr ""
+msgstr "Terminez la connexion dans le navigateur, puis actualisez cette page."
 
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
-msgstr ""
+msgstr "Terminez l'autorisation MCP dans l'application web."
 
 #: apps/mobile/components/ImportSetupCard.tsx
 #: apps/web/src/pages/shell/import-setup-card.tsx
@@ -5172,7 +5172,7 @@ msgstr "Terminer la configuration"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Finish signing in in your browser:"
-msgstr ""
+msgstr "Terminez la connexion dans votre navigateur :"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
@@ -5203,11 +5203,11 @@ msgstr "Mot de passe oublié ?"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Found {count} model."
-msgstr ""
+msgstr "{count} modèle trouvé."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Found {count} models."
-msgstr ""
+msgstr "{count} modèles trouvés."
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -5228,15 +5228,15 @@ msgstr "L’offre gratuite se termine le {day}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Free trial"
-msgstr ""
+msgstr "Essai gratuit"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Free until"
-msgstr ""
+msgstr "Gratuit jusqu'au"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Free until {date}"
-msgstr ""
+msgstr "Gratuit jusqu'au {date}"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -5262,7 +5262,7 @@ msgstr "Depuis GitHub"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Full access, nothing to pay"
-msgstr ""
+msgstr "Accès complet, rien à payer"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
@@ -5296,7 +5296,7 @@ msgstr "Général"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Get a free month for each friend who starts a trial."
-msgstr ""
+msgstr "Obtenez un mois gratuit pour chaque ami qui commence un essai."
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -5305,7 +5305,7 @@ msgstr "Obtenir une adresse e-mail"
 
 #: apps/mobile/app/bot-profile.tsx
 msgid "Get notified when this Bot finishes or needs input"
-msgstr ""
+msgstr "Être averti quand ce bot termine ou a besoin de vous"
 
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -5346,7 +5346,7 @@ msgstr "Attribution…"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "GraphQL endpoint"
-msgstr ""
+msgstr "Point de terminaison GraphQL"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
@@ -5368,11 +5368,11 @@ msgstr "Groupe"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Group name"
-msgstr ""
+msgstr "Nom du groupe"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Group not found"
-msgstr ""
+msgstr "Groupe introuvable"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/group-settings.tsx
@@ -5403,7 +5403,7 @@ msgstr "Raccrochez, puis saisissez le code à l'écran."
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Haptics"
-msgstr ""
+msgstr "Retour haptique"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Header"
@@ -5415,7 +5415,7 @@ msgstr "En-tête « {header} »"
 
 #: apps/mobile/components/vault-item-sheet.tsx
 msgid "Header {name}"
-msgstr ""
+msgstr "En-tête {name}"
 
 #: apps/mobile/components/header-rows-editor.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -5444,15 +5444,15 @@ msgstr "Écouter un extrait"
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Hello {name}, {bot} here."
-msgstr ""
+msgstr "Bonjour {name}, ici {bot}."
 
 #: apps/mobile/lib/thread-voice.ts
 msgid "Hello, {bot} here."
-msgstr ""
+msgstr "Bonjour, ici {bot}."
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Hi, I'm {name}."
-msgstr ""
+msgstr "Bonjour, je suis {name}."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -5461,7 +5461,7 @@ msgstr "Bonjour, c'est ainsi que je sonnerai quand je lirai les réponses à voi
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Hi, this is how I'll sound."
-msgstr ""
+msgstr "Bonjour, voici ma voix."
 
 #: apps/mobile/components/login-fields-editor.tsx
 #: apps/web/src/components/vault/LoginFieldsInput.tsx
@@ -5474,11 +5474,11 @@ msgstr "Masquer"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
-msgstr ""
+msgstr "Masquer {label}"
 
 #: apps/mobile/components/chat-route-header.tsx
 msgid "Hide chats"
-msgstr ""
+msgstr "Masquer les discussions"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Hide key"
@@ -5486,7 +5486,7 @@ msgstr "Masquer la clé"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Hide keyboard"
-msgstr ""
+msgstr "Masquer le clavier"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -5567,19 +5567,19 @@ msgstr "Comment allez-vous utiliser Rakazo ?"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 msgid "http://127.0.0.1:8000/v1"
-msgstr ""
+msgstr "http://127.0.0.1:8000/v1"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/graphql"
-msgstr ""
+msgstr "https://example.com/graphql"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/mcp"
-msgstr ""
+msgstr "https://example.com/mcp"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "https://example.com/openapi.json"
-msgstr ""
+msgstr "https://example.com/openapi.json"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-release-actions.tsx
@@ -5602,7 +5602,7 @@ msgstr "Ignorer"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Image"
-msgstr ""
+msgstr "Image"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -5793,7 +5793,7 @@ msgstr "Aperçu isolé — aucun accès à votre compte"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
-msgstr ""
+msgstr "Impossible de l'ouvrir. Réessayez depuis la barre latérale."
 
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "It may have been deleted, or it belongs to someone else."
@@ -5810,11 +5810,11 @@ msgstr "Sa conversation, ses fichiers et ses routines seront définitivement sup
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "Its conversation, files, and routines will be permanently deleted. What should happen to its memories?"
-msgstr ""
+msgstr "Sa conversation, ses fichiers et ses routines seront définitivement supprimés. Que faire de ses souvenirs ?"
 
 #: apps/mobile/app/pages.tsx
 msgid "Its link stops working. This cannot be undone."
-msgstr ""
+msgstr "Son lien cessera de fonctionner. Cette action est irréversible."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Its shared link stops working and its cards in chat show it as deleted. This can't be undone."
@@ -5835,7 +5835,7 @@ msgstr "Aller au plus récent"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "Jump to latest, new messages"
-msgstr ""
+msgstr "Aller aux derniers messages, nouveaux messages"
 
 #: apps/web/src/pages/shell/chat-context.tsx
 msgid "Jump to replied message: {excerpt}"
@@ -5871,7 +5871,7 @@ msgstr "Clés"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Kind"
-msgstr ""
+msgstr "Type"
 
 #: apps/mobile/components/login-fields-editor.tsx
 #: apps/mobile/components/vault-item-editor.tsx
@@ -5915,7 +5915,7 @@ msgstr "Quitter {0} ?"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Leave {name}?"
-msgstr ""
+msgstr "Quitter {name} ?"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -5924,7 +5924,7 @@ msgstr "Quitter l'espace"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Left"
-msgstr ""
+msgstr "Gauche"
 
 #: apps/web/src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -5942,7 +5942,7 @@ msgstr "Clair"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Limit"
-msgstr ""
+msgstr "Limite"
 
 #: apps/mobile/lib/search-sheet.ts
 #: apps/web/src/pages/SpaceSearch.tsx
@@ -5978,11 +5978,11 @@ msgstr "À l’écoute…"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Live update settings"
-msgstr ""
+msgstr "Paramètres des mises à jour en direct"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Live working status"
-msgstr ""
+msgstr "Statut de travail en direct"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 #: apps/web/src/pages/shell/transcript.tsx
@@ -6010,7 +6010,7 @@ msgstr "Chargement de l'activité…"
 #: apps/mobile/components/image-artifact-viewer.tsx
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Loading image…"
-msgstr ""
+msgstr "Chargement de l'image…"
 
 #: apps/web/src/pages/PluginsOverlay.tsx
 msgid "Loading integrations…"
@@ -6035,7 +6035,7 @@ msgstr "Chargement de l'aperçu…"
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "Loading tools…"
-msgstr ""
+msgstr "Chargement des outils…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6098,15 +6098,15 @@ msgstr "Identifiants et clés que vos bots peuvent utiliser."
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Long press to delete"
-msgstr ""
+msgstr "Appui long pour supprimer"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Long press to pin or move to a section"
-msgstr ""
+msgstr "Appui long pour épingler ou déplacer vers une section"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "Long press to pin, move, or silence notifications"
-msgstr ""
+msgstr "Appui long pour épingler, déplacer ou couper les notifications"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Looks like it contains a key"
@@ -6148,7 +6148,7 @@ msgstr "Gérer {0}"
 
 #: apps/mobile/components/model-role-settings.tsx
 msgid "Manage {provider}"
-msgstr ""
+msgstr "Gérer {provider}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -6273,7 +6273,7 @@ msgstr "Membres ({0})"
 
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "Members ({count})"
-msgstr ""
+msgstr "Membres ({count})"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6334,7 +6334,7 @@ msgstr "Message à {activeName}"
 
 #: apps/mobile/components/thread/thread-screen.tsx
 msgid "Message {name}"
-msgstr ""
+msgstr "Écrire à {name}"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Message composer"
@@ -6373,7 +6373,7 @@ msgstr "Messages"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
-msgstr ""
+msgstr "Les messages, l'historique des discussions, les instructions des bots, les souvenirs, les pièces jointes, les captures d'écran et le contenu des applications connectées sont envoyés pour faire fonctionner vos bots, y compris les routines."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6464,7 +6464,7 @@ msgstr "Options du modèle"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
-msgstr ""
+msgstr "Fournisseur de modèles"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6631,7 +6631,7 @@ msgstr "Nommez cette routine"
 
 #: apps/mobile/app/routine.tsx
 msgid "Name this routine."
-msgstr ""
+msgstr "Nommez cette routine."
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/web/src/pages/shell/create-bot-dialog.tsx
@@ -6738,7 +6738,7 @@ msgstr "Nouvelle discussion de groupe"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
-msgstr ""
+msgstr "Nouvel élément"
 
 #: apps/web/src/components/VaultSettings.tsx
 msgid "New login"
@@ -6751,7 +6751,7 @@ msgstr "Nouveaux messages"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them."
-msgstr ""
+msgstr "Les nouvelles actions mobiles n'enverront pas de données à ces services. Les exécutions en cours et les routines continuent jusqu'à ce que vous les arrêtiez."
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
@@ -6773,7 +6773,7 @@ msgstr "Nouvel espace privé"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "New routine"
-msgstr ""
+msgstr "Nouvelle routine"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
@@ -6803,7 +6803,7 @@ msgstr "Nouvelle variable"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
-msgstr ""
+msgstr "Suivant"
 
 #: apps/web/src/pages/shell/chat-find-bar.tsx
 msgid "Next match"
@@ -6819,7 +6819,7 @@ msgstr "Page suivante"
 
 #: apps/mobile/app/routine.tsx
 msgid "Next run"
-msgstr ""
+msgstr "Prochaine exécution"
 
 #: apps/web/src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
@@ -6832,7 +6832,7 @@ msgstr "La semaine prochaine"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "No AI services configured."
-msgstr ""
+msgstr "Aucun service d'IA configuré."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -6841,7 +6841,7 @@ msgstr "Aucune application ne correspond à votre recherche."
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 msgid "No archived chats"
-msgstr ""
+msgstr "Aucune discussion archivée"
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/Artifacts.tsx
@@ -6850,7 +6850,7 @@ msgstr "Aucun artefact pour l'instant"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "No auth"
-msgstr ""
+msgstr "Sans authentification"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "No authentication"
@@ -6888,7 +6888,7 @@ msgstr "Aucun artefact correspondant sur cette page."
 
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "No matching bots"
-msgstr ""
+msgstr "Aucun bot correspondant"
 
 #: apps/mobile/components/model-picker-list.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6911,7 +6911,7 @@ msgstr "Aucun message avec {peerBotName} pour le moment."
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/mobile/lib/search-sheet.ts
 msgid "No messages yet"
-msgstr ""
+msgstr "Aucun message pour l'instant"
 
 #: apps/web/src/pages/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
@@ -6932,7 +6932,7 @@ msgstr "Aucune page ne correspond à « {query} »."
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/video-preview.tsx
 msgid "No preview for this file type."
-msgstr ""
+msgstr "Pas d'aperçu pour ce type de fichier."
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -6975,7 +6975,7 @@ msgstr "Aucune exécution pour le moment"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
-msgstr ""
+msgstr "Aucune connexion requise"
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -6991,11 +6991,11 @@ msgstr "Aucun ticket pour l'instant"
 
 #: apps/mobile/app/board.tsx
 msgid "No tickets yet."
-msgstr ""
+msgstr "Aucun ticket pour l'instant."
 
 #: apps/mobile/components/integration-detail.tsx
 msgid "No tools available."
-msgstr ""
+msgstr "Aucun outil disponible."
 
 #: apps/web/src/pages/RoutineList.tsx
 msgid "No trigger"
@@ -7025,7 +7025,7 @@ msgstr "Non ajoutés : {0}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Not added: {list}"
-msgstr ""
+msgstr "Non ajoutés : {list}"
 
 #: apps/web/src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
@@ -7061,23 +7061,23 @@ msgstr "Pas maintenant"
 
 #: apps/mobile/lib/model-settings.ts
 msgid "Not Now"
-msgstr ""
+msgstr "Plus tard"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent"
-msgstr ""
+msgstr "Non envoyé"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. No model"
-msgstr ""
+msgstr "Non envoyé. Aucun modèle"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. Tap for options"
-msgstr ""
+msgstr "Non envoyé. Touchez pour les options"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 msgid "Not sent. Tap to retry"
-msgstr ""
+msgstr "Non envoyé. Touchez pour réessayer"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 #: apps/web/src/pages/shell/import-status.ts
@@ -7101,11 +7101,11 @@ msgstr "Rien n'est mémorisé pour le moment"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Nothing saved yet."
-msgstr ""
+msgstr "Rien d'enregistré pour l'instant."
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Notification settings"
-msgstr ""
+msgstr "Paramètres des notifications"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -7116,11 +7116,11 @@ msgstr "Notifications"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "notifications silenced"
-msgstr ""
+msgstr "notifications coupées"
 
 #: apps/mobile/components/bot-avatar.tsx
 msgid "Notifications silenced"
-msgstr ""
+msgstr "Notifications coupées"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Number"
@@ -7128,7 +7128,7 @@ msgstr "Numéro"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "OAuth"
-msgstr ""
+msgstr "OAuth"
 
 #: apps/web/src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -7152,11 +7152,11 @@ msgstr "Hors ligne"
 
 #: apps/mobile/lib/call-session.ts
 msgid "OK, switching to {name}."
-msgstr ""
+msgstr "D'accord, je passe à {name}."
 
 #: apps/mobile/components/CallCard.tsx
 msgid "On a call with {name}"
-msgstr ""
+msgstr "En appel avec {name}"
 
 #: apps/web/src/pages/routine-editor/add-trigger-menu.tsx
 #: apps/web/src/pages/RoutineSchedule.tsx
@@ -7175,7 +7175,7 @@ msgstr "le 1er à {0}"
 
 #: apps/mobile/lib/cron.ts
 msgid "on the 1st at {time}"
-msgstr ""
+msgstr "le 1er à {time}"
 
 #: apps/mobile/components/ask-receipt.tsx
 #: apps/web/src/components/AskCard.tsx
@@ -7197,7 +7197,7 @@ msgstr "Ne saisissez qu'un code envoyé par {codeHost}."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Only enter a code {host} sent you."
-msgstr ""
+msgstr "Ne saisissez qu'un code envoyé par {host}."
 
 #: apps/mobile/components/routine-email-trigger.tsx
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
@@ -7214,7 +7214,7 @@ msgstr "Seul le créateur du bot peut définir sa clé de webhook."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Only the owner of this account can choose a plan."
-msgstr ""
+msgstr "Seul le propriétaire de ce compte peut choisir un forfait."
 
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -7270,7 +7270,7 @@ msgstr "Ouvrir la discussion avec {0}"
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/components/ComputerCard.tsx
 msgid "Open computer"
-msgstr ""
+msgstr "Ouvrir l'ordinateur"
 
 #: apps/web/src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
@@ -7278,7 +7278,7 @@ msgstr "Ouvrir les paramètres des ordinateurs"
 
 #: apps/mobile/app/routine.tsx
 msgid "Open conversation"
-msgstr ""
+msgstr "Ouvrir la conversation"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/web/src/components/markdown-link-prompt.tsx
@@ -7287,11 +7287,11 @@ msgstr "Ouvrir le lien externe ?"
 
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Open image {name}"
-msgstr ""
+msgstr "Ouvrir l'image {name}"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Open in browser"
-msgstr ""
+msgstr "Ouvrir dans le navigateur"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computer-panel.tsx
@@ -7315,7 +7315,7 @@ msgstr "Ouvrir Rakazo"
 #: apps/mobile/lib/composer-dictation.ts
 #: apps/mobile/lib/thread-voice.ts
 msgid "Open Voice"
-msgstr ""
+msgstr "Ouvrir Voix"
 
 #: apps/mobile/components/bot-context-cards.tsx
 #: apps/web/src/pages/ScratchpadSection.tsx
@@ -7334,7 +7334,7 @@ msgstr "URL de serveur compatible OpenAI"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "OpenAPI JSON"
-msgstr ""
+msgstr "OpenAPI JSON"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
@@ -7360,7 +7360,7 @@ msgstr "Valeur d'en-tête optionnelle"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
-msgstr ""
+msgstr "Ou connectez une clé API"
 
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
@@ -7392,11 +7392,11 @@ msgstr "Message d’origine indisponible"
 
 #: apps/mobile/lib/app-version.ts
 msgid "OTA {id}"
-msgstr ""
+msgstr "OTA {id}"
 
 #: apps/mobile/lib/app-version.ts
 msgid "OTA {id}, {date}"
-msgstr ""
+msgstr "OTA {id}, {date}"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/components/FoundModelPicker.tsx
@@ -7472,7 +7472,7 @@ msgstr "Pages"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this bot builds for you appear here."
-msgstr ""
+msgstr "Les pages que ce bot crée pour vous apparaissent ici."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Pages this bot builds for you appear here. Ask for a dashboard, tracker or plan to make one."
@@ -7480,7 +7480,7 @@ msgstr "Les pages que ce bot crée pour vous apparaissent ici. Demandez un table
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this group builds for you appear here."
-msgstr ""
+msgstr "Les pages que ce groupe crée pour vous apparaissent ici."
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one."
@@ -7517,7 +7517,7 @@ msgstr "Le mot de passe doit contenir au maximum {MAX_PASSWORD_LENGTH} caractèr
 
 #: apps/mobile/lib/user-error.ts
 msgid "Password must be {max} characters or fewer"
-msgstr ""
+msgstr "Le mot de passe doit comporter {max} caractères au maximum"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -7572,7 +7572,7 @@ msgstr "Collez votre clé API, puis testez à nouveau."
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/voice-player-bar.tsx
 msgid "Pause"
-msgstr ""
+msgstr "Pause"
 
 #: apps/mobile/lib/import-setup.ts
 #: apps/mobile/lib/routine.ts
@@ -7624,7 +7624,7 @@ msgstr "Photo"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Photo library"
-msgstr ""
+msgstr "Photothèque"
 
 #: apps/web/src/pages/GroupPanel.tsx
 msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
@@ -7633,11 +7633,11 @@ msgstr "Choisissez-en {GROUP_MEMBER_MIN} à {GROUP_MEMBER_MAX}"
 #: apps/mobile/components/bot-chip-picker.tsx
 #: apps/mobile/components/bot-member-picker.tsx
 msgid "Pick {min}–{max}"
-msgstr ""
+msgstr "Choisissez-en {min} à {max}"
 
 #: apps/mobile/components/pick-chat-pane.tsx
 msgid "Pick a chat"
-msgstr ""
+msgstr "Choisir une discussion"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -7674,7 +7674,7 @@ msgstr "Forfait"
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/voice-player-bar.tsx
 msgid "Play"
-msgstr ""
+msgstr "Lire"
 
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -7688,7 +7688,7 @@ msgstr "Lecture en cours…"
 #: apps/mobile/components/ChoiceCard.tsx
 #: apps/mobile/components/McpApprovalCard.tsx
 msgid "Please try again."
-msgstr ""
+msgstr "Veuillez réessayer."
 
 #: apps/web/src/pages/KnowledgeSection.tsx
 msgid "Plugin"
@@ -7757,15 +7757,15 @@ msgstr "Priorité"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Privacy"
-msgstr ""
+msgstr "Confidentialité"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Privacy policies"
-msgstr ""
+msgstr "Politiques de confidentialité"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Privacy policy"
-msgstr ""
+msgstr "Politique de confidentialité"
 
 #: apps/mobile/components/computer-mode-picker.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -7784,7 +7784,7 @@ msgstr "Productivité"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/chat-header-title.tsx
 msgid "Profile"
-msgstr ""
+msgstr "Profil"
 
 #: apps/mobile/lib/import-setup.ts
 #: apps/web/src/pages/shell/import-status.ts
@@ -7808,7 +7808,7 @@ msgstr "Fournisseur"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Provider message"
-msgstr ""
+msgstr "Message du fournisseur"
 
 #: apps/mobile/components/model-providers.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -7817,7 +7817,7 @@ msgstr "Fournisseurs"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
-msgstr ""
+msgstr "Les serveurs publics nécessitent https://. HTTP ne fonctionne que sur votre réseau local."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/CloudAgentCard.tsx
@@ -7826,11 +7826,11 @@ msgstr "Demande de fusion"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Put your bots to work"
-msgstr ""
+msgstr "Mettez vos bots au travail"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Questions, approvals, takeover"
-msgstr ""
+msgstr "Questions, approbations, interventions"
 
 #: apps/mobile/lib/activity.ts
 #: apps/web/src/pages/ActivityList.tsx
@@ -7840,7 +7840,7 @@ msgstr "En file d'attente"
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
 msgid "Quote"
-msgstr ""
+msgstr "Citer"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -7972,7 +7972,7 @@ msgstr "Récupération de l'ordinateur de {0}"
 
 #: apps/mobile/components/computer-update-progress.tsx
 msgid "Recovering {name}’s Computer"
-msgstr ""
+msgstr "Récupération de l'ordinateur de {name}"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -8065,7 +8065,7 @@ msgstr "Refus…"
 
 #: apps/mobile/app/computer.tsx
 msgid "Release"
-msgstr ""
+msgstr "Rendre le contrôle"
 
 #: apps/web/src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
@@ -8078,7 +8078,7 @@ msgstr "Recharger"
 
 #: apps/mobile/components/add-custom-integration.tsx
 msgid "Remote MCP server"
-msgstr ""
+msgstr "Serveur MCP distant"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -8130,13 +8130,13 @@ msgstr "Retirer {memberName} ?"
 #: apps/mobile/components/integration-detail.tsx
 #: apps/mobile/components/thread/thread-composer-dock.tsx
 msgid "Remove {name}"
-msgstr ""
+msgstr "Retirer {name}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Remove {name}?"
-msgstr ""
+msgstr "Retirer {name} ?"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8178,7 +8178,7 @@ msgstr "Retirer le déclencheur de message"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
-msgstr ""
+msgstr "Retirer la photo"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 #: apps/web/src/pages/RoutineSchedule.tsx
@@ -8192,7 +8192,7 @@ msgstr "Retirer la compétence {0}"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "Remove skill {name}"
-msgstr ""
+msgstr "Retirer la compétence {name}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -8242,7 +8242,7 @@ msgstr "Renouveler l’abonnement"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Renews"
-msgstr ""
+msgstr "Renouvellement"
 
 #: apps/web/src/lib/billing.ts
 msgid "Renews {day}"
@@ -8275,7 +8275,7 @@ msgstr "Remplace l'identifiant enregistré pour {0}"
 #: apps/mobile/components/secret-ask-sheet.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Replaces the login saved for {site}"
-msgstr ""
+msgstr "Remplace l'identifiant enregistré pour {site}"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bot-settings-sections.tsx
@@ -8284,7 +8284,7 @@ msgstr "Réponses"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Replies and completed work"
-msgstr ""
+msgstr "Réponses et travaux terminés"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/ExternalConversationSettings.tsx
@@ -8313,7 +8313,7 @@ msgstr "Demandez un nouveau code"
 
 #: apps/mobile/lib/use-computer-boot.ts
 msgid "Request timed out"
-msgstr ""
+msgstr "La requête a expiré"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
@@ -8363,7 +8363,7 @@ msgstr "Réinitialisation"
 
 #: apps/mobile/components/thread-error-notice.tsx
 msgid "Resets {date}."
-msgstr ""
+msgstr "Réinitialisation le {date}."
 
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -8423,7 +8423,7 @@ msgstr "Restauration de votre espace de travail"
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
 msgid "Resume notifications"
-msgstr ""
+msgstr "Réactiver les notifications"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -8474,7 +8474,7 @@ msgstr "Revenir à l’appel avec {0}"
 
 #: apps/mobile/app/thread.tsx
 msgid "Return to inbox"
-msgstr ""
+msgstr "Retour à la boîte de réception"
 
 #: apps/web/src/pages/McpOAuthCallback.tsx
 #: apps/web/src/pages/SlackInstallCallback.tsx
@@ -8502,7 +8502,7 @@ msgstr "Révoqué"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Right"
-msgstr ""
+msgstr "Droite"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Root filesystem"
@@ -8525,7 +8525,7 @@ msgstr "Routine"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
-msgstr ""
+msgstr "Le lien de la routine est incomplet"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -8546,7 +8546,7 @@ msgstr "Ligne"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/approval-settings-rows.tsx
 msgid "Rules"
-msgstr ""
+msgstr "Règles"
 
 #: apps/web/src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -8583,7 +8583,7 @@ msgstr "En cours"
 
 #: apps/mobile/components/thread/thread-screen.tsx
 msgid "Running {name}…"
-msgstr ""
+msgstr "Exécution de {name}…"
 
 #: apps/web/src/pages/shell/transcript.tsx
 msgid "Running {workingRoutine}…"
@@ -8608,7 +8608,7 @@ msgstr "Ventes et CRM"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "Same as {bot}"
-msgstr ""
+msgstr "Comme {bot}"
 
 #: apps/web/src/pages/ExternalConversationSettings.tsx
 msgid "Same as {botName}"
@@ -8667,11 +8667,11 @@ msgstr "Enregistrer"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
-msgstr ""
+msgstr "Garder la mienne"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Save section name"
-msgstr ""
+msgstr "Enregistrer le nom de la section"
 
 #: apps/mobile/components/computer-maintenance-actions.tsx
 #: apps/web/src/components/ComputerMaintenanceActions.tsx
@@ -8693,7 +8693,7 @@ msgstr "Enregistré"
 
 #: apps/mobile/lib/artifact-open.ts
 msgid "Saved {name} locally"
-msgstr ""
+msgstr "{name} enregistré localement"
 
 #: apps/web/src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
@@ -8746,7 +8746,7 @@ msgstr "Routines planifiées"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Scheduled tasks"
-msgstr ""
+msgstr "Tâches planifiées"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Scopes (optional)"
@@ -8856,11 +8856,11 @@ msgstr "Secret"
 
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Section actions for {name}"
-msgstr ""
+msgstr "Actions de section pour {name}"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 msgid "Section name"
-msgstr ""
+msgstr "Nom de la section"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -8884,7 +8884,7 @@ msgstr "Sélectionnez un bot"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
-msgstr ""
+msgstr "Sélectionner le texte"
 
 #: apps/web/src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Self-hosted"
@@ -8897,11 +8897,11 @@ msgstr "Envoyer"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Send {code} from {app} within 10 minutes."
-msgstr ""
+msgstr "Envoyez {code} depuis {app} dans les 10 minutes."
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "Send {code} to {address} from {app} within 10 minutes."
-msgstr ""
+msgstr "Envoyez {code} à {address} depuis {app} dans les 10 minutes."
 
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
@@ -8963,15 +8963,15 @@ msgstr "Le point de terminaison Serenity est obligatoire."
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
-msgstr ""
+msgstr "Serveur"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Server found. Enter a model name."
-msgstr ""
+msgstr "Serveur trouvé. Saisissez un nom de modèle."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 msgid "Server integrations"
-msgstr ""
+msgstr "Intégrations du serveur"
 
 #: apps/web/src/pages/McpServerForm.tsx
 msgid "Server name"
@@ -9045,7 +9045,7 @@ msgstr "Forme {0}"
 
 #: apps/mobile/components/bot-look-picker.tsx
 msgid "Shape {number}"
-msgstr ""
+msgstr "Forme {number}"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/page-share.tsx
@@ -9064,19 +9064,19 @@ msgstr "Partager « {title} »"
 #: apps/mobile/components/audio-attachment.tsx
 #: apps/mobile/components/image-artifact-viewer.tsx
 msgid "Share {name}"
-msgstr ""
+msgstr "Partager {name}"
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Share data with {name}?"
-msgstr ""
+msgstr "Partager des données avec {name} ?"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
-msgstr ""
+msgstr "Partager le lien"
 
 #: apps/mobile/app/share.tsx
 msgid "Share to"
-msgstr ""
+msgstr "Partager vers"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -9101,7 +9101,7 @@ msgstr "Afficher"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
-msgstr ""
+msgstr "Afficher {label}"
 
 #: apps/mobile/components/bot-member-picker.tsx
 #: apps/web/src/components/SpendingLimitSettings.tsx
@@ -9115,7 +9115,7 @@ msgstr "Afficher les bots"
 
 #: apps/mobile/components/chat-route-header.tsx
 msgid "Show chats"
-msgstr ""
+msgstr "Afficher les discussions"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Show key"
@@ -9123,7 +9123,7 @@ msgstr "Afficher la clé"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Show keyboard"
-msgstr ""
+msgstr "Afficher le clavier"
 
 #: apps/web/src/pages/Artifacts.tsx
 msgid "Show list"
@@ -9220,11 +9220,11 @@ msgstr "Connectez-vous avec l'abonnement, ou testez la clé API à la place."
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/paywall.tsx
 msgid "Sign out"
-msgstr ""
+msgstr "Se déconnecter"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Sign out anyway"
-msgstr ""
+msgstr "Se déconnecter quand même"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/Auth.tsx
@@ -9233,7 +9233,7 @@ msgstr "S'inscrire"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Sign up for Rakazo"
-msgstr ""
+msgstr "S'inscrire à Rakazo"
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Sign-in cancelled. Try again."
@@ -9243,20 +9243,20 @@ msgstr "Connexion annulée. Réessayez."
 #: apps/mobile/lib/passkey.ts
 #: apps/mobile/lib/sso.ts
 msgid "Sign-in did not return a session"
-msgstr ""
+msgstr "La connexion n'a pas renvoyé de session"
 
 #: apps/mobile/lib/api-auth.ts
 msgid "Sign-up did not return a session"
-msgstr ""
+msgstr "L'inscription n'a pas renvoyé de session"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Signing out deletes unsent messages."
-msgstr ""
+msgstr "La déconnexion supprime les messages non envoyés."
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
 msgid "Silence notifications"
-msgstr ""
+msgstr "Couper les notifications"
 
 #: apps/mobile/components/vault-item-editor.tsx
 #: apps/mobile/components/vault-item-sheet.tsx
@@ -9272,7 +9272,7 @@ msgstr "Les sites auxquels vous vous connectez restent connectés pour tous les 
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
-msgstr ""
+msgstr "sk-…"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -9286,7 +9286,7 @@ msgstr "Compétence {0}"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "Skill {name}"
-msgstr ""
+msgstr "Compétence {name}"
 
 #: apps/web/src/pages/shell/agent-import-plan.tsx
 msgid "Skill {position}"
@@ -9329,7 +9329,7 @@ msgstr "Ignoré {0}"
 
 #: apps/mobile/lib/thread-attachments.ts
 msgid "Skipped {items}"
-msgstr ""
+msgstr "Ignorés : {items}"
 
 #: apps/mobile/lib/routine.ts
 #: apps/web/src/pages/routine-editor/add-trigger-menu.tsx
@@ -9370,7 +9370,7 @@ msgstr "Certains réglages ne sont pas importés"
 
 #: apps/mobile/app/computer.tsx
 msgid "Something went wrong while it was starting. Try again in a moment."
-msgstr ""
+msgstr "Un problème est survenu au démarrage. Réessayez dans un instant."
 
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -9429,11 +9429,11 @@ msgstr "Espace"
 
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Space actions for {name}"
-msgstr ""
+msgstr "Actions d'espace pour {name}"
 
 #: apps/mobile/app/new-space.tsx
 msgid "Space created"
-msgstr ""
+msgstr "Espace créé"
 
 #: apps/mobile/lib/chat-model.ts
 #: apps/web/src/pages/shell/bot-panel.tsx
@@ -9450,7 +9450,7 @@ msgstr "Parler"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Speak message"
-msgstr ""
+msgstr "Lire le message à voix haute"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak this reply"
@@ -9496,7 +9496,7 @@ msgstr "Commencer l’essai gratuit de {trialDays} jours"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Start free trial"
-msgstr ""
+msgstr "Commencer l'essai gratuit"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -9516,7 +9516,7 @@ msgstr "Démarrer l'enregistrement"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Start using Rakazo"
-msgstr ""
+msgstr "Commencer à utiliser Rakazo"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -9583,7 +9583,7 @@ msgstr "Arrêter l'ordinateur"
 
 #: apps/mobile/components/thread-composer.tsx
 msgid "Stop dictating"
-msgstr ""
+msgstr "Arrêter la dictée"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Stop speaking"
@@ -9684,19 +9684,19 @@ msgstr "Changer"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Switch {count} bots to the space default?"
-msgstr ""
+msgstr "Passer {count} bots au modèle par défaut de l'espace ?"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Switch 1 bot to the space default?"
-msgstr ""
+msgstr "Passer 1 bot au modèle par défaut de l'espace ?"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Switch anyway"
-msgstr ""
+msgstr "Changer quand même"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Switch to {name}?"
-msgstr ""
+msgstr "Passer à {name} ?"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Switch to {tierTargetName}?"
@@ -9714,7 +9714,7 @@ msgstr "Passer à l'annuel ?"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Switching servers deletes unsent messages."
-msgstr ""
+msgstr "Changer de serveur supprime les messages non envoyés."
 
 #: apps/mobile/components/space-bots-model.tsx
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
@@ -9729,7 +9729,7 @@ msgstr "Système"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Tab"
-msgstr ""
+msgstr "Tab"
 
 #: apps/web/src/components/markdown-copy.tsx
 msgid "Table"
@@ -9743,11 +9743,11 @@ msgstr "Prendre le contrôle"
 #: apps/mobile/app/index.tsx
 #: apps/mobile/components/inbox-render-item.tsx
 msgid "Tap + to create a bot"
-msgstr ""
+msgstr "Touchez + pour créer un bot"
 
 #: apps/mobile/components/inline-image-attachment.tsx
 msgid "Tap to open"
-msgstr ""
+msgstr "Touchez pour ouvrir"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Target"
@@ -9779,7 +9779,7 @@ msgstr "Message Teams"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Technical details"
-msgstr ""
+msgstr "Détails techniques"
 
 #: apps/web/src/components/ComputerProviderSettings.tsx
 msgid "Template"
@@ -9794,7 +9794,7 @@ msgstr "Modèles"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Terms"
-msgstr ""
+msgstr "Conditions"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -9824,15 +9824,15 @@ msgstr "Cette adresse n’est pas disponible"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That doesn’t look like a URL"
-msgstr ""
+msgstr "Ceci ne ressemble pas à une URL"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL did not look like a Rakazo server"
-msgstr ""
+msgstr "Cette URL ne ressemble pas à un serveur Rakazo"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "That URL is missing a host"
-msgstr ""
+msgstr "Il manque un hôte dans cette URL"
 
 #: apps/mobile/components/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer-error.tsx
@@ -9841,23 +9841,23 @@ msgstr "Le bot peut utiliser le fichier, mais ne verra pas l'image."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't finish its reply. Technical details includes the reported error."
-msgstr ""
+msgstr "Le bot n'a pas pu terminer sa réponse. Les détails techniques contiennent l'erreur signalée."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's daily limit was reached."
-msgstr ""
+msgstr "Le bot n'a pas pu répondre car la limite quotidienne de son fournisseur a été atteinte."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's monthly limit was reached."
-msgstr ""
+msgstr "Le bot n'a pas pu répondre car la limite mensuelle de son fournisseur a été atteinte."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's usage limit was reached."
-msgstr ""
+msgstr "Le bot n'a pas pu répondre car la limite d'utilisation de son fournisseur a été atteinte."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The bot couldn't reply because its provider's weekly limit was reached."
-msgstr ""
+msgstr "Le bot n'a pas pu répondre car la limite hebdomadaire de son fournisseur a été atteinte."
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/SecretAskCard.tsx
@@ -9897,7 +9897,7 @@ msgstr "Le propriétaire a peut-être désactivé son lien ou l'a supprimée."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
-msgstr ""
+msgstr "Le fournisseur n'a pas pu servir le modèle sélectionné pour ce bot."
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
@@ -9905,11 +9905,11 @@ msgstr "Le fournisseur limite le débit des requêtes."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider received too many requests to answer this bot."
-msgstr ""
+msgstr "Le fournisseur a reçu trop de requêtes pour répondre à ce bot."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "The provider refused the key this bot used for its reply."
-msgstr ""
+msgstr "Le fournisseur a refusé la clé utilisée par ce bot pour sa réponse."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/lib/computer-screen.ts
@@ -9930,15 +9930,15 @@ msgstr "Le fournisseur de mémoire sélectionné n'est pas disponible dans cette
 
 #: apps/mobile/lib/api.ts
 msgid "The server changed while starting the request"
-msgstr ""
+msgstr "Le serveur a changé au lancement de la requête"
 
 #: apps/mobile/components/home-error-state.tsx
 msgid "The server had a problem"
-msgstr ""
+msgstr "Le serveur a rencontré un problème"
 
 #: apps/mobile/lib/user-error.ts
 msgid "The server had a problem. Try again in a moment."
-msgstr ""
+msgstr "Le serveur a rencontré un problème. Réessayez dans un instant."
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
@@ -9951,11 +9951,11 @@ msgstr "La différence non utilisée est créditée sur votre prochaine facture.
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
-msgstr ""
+msgstr "Leur propre modèle est effacé. Vous pouvez en choisir un de nouveau dans chaque bot."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Then paste the code here."
-msgstr ""
+msgstr "Puis collez le code ici."
 
 #: apps/web/src/pages/shell/use-agent-import-source.ts
 msgid "These files are too large to import."
@@ -9992,7 +9992,7 @@ msgstr "Réflexion : {0}"
 
 #: apps/mobile/components/model-role-settings.tsx
 msgid "Thinking: {level}"
-msgstr ""
+msgstr "Réflexion : {level}"
 
 #: apps/mobile/lib/user-error.ts
 #: apps/web/src/lib/user-error.ts
@@ -10018,19 +10018,19 @@ msgstr "Ce bot s'exécute sur cet ordinateur, pas sur un bureau Linux. Le shell 
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's daily limit. Your own key has its own limits."
-msgstr ""
+msgstr "La réponse de ce bot s'est arrêtée à la limite quotidienne de sa clé. Votre propre clé a ses propres limites."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's monthly limit. Your own key has its own limits."
-msgstr ""
+msgstr "La réponse de ce bot s'est arrêtée à la limite mensuelle de sa clé. Votre propre clé a ses propres limites."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's usage limit. Your own key has its own limits."
-msgstr ""
+msgstr "La réponse de ce bot s'est arrêtée à la limite d'utilisation de sa clé. Votre propre clé a ses propres limites."
 
 #: apps/mobile/lib/run-error-presentation.ts
 msgid "This bot's reply stopped at its key's weekly limit. Your own key has its own limits."
-msgstr ""
+msgstr "La réponse de ce bot s'est arrêtée à la limite hebdomadaire de sa clé. Votre propre clé a ses propres limites."
 
 #: apps/web/src/lib/dictation.ts
 msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
@@ -10082,11 +10082,11 @@ msgstr "Cela supprime toutes les {0} versions de cet artefact. Cette action est 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 msgid "This deletes all {count} versions of this artifact. This can't be undone."
-msgstr ""
+msgstr "Cela supprime les {count} versions de cet artefact. Cette action est irréversible."
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "This device"
-msgstr ""
+msgstr "Cet appareil"
 
 #: apps/web/src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
@@ -10130,11 +10130,11 @@ msgstr "Les heures d’ordinateur de ce mois sont épuisées."
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "This note changed"
-msgstr ""
+msgstr "Cette note a changé"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "This note no longer exists"
-msgstr ""
+msgstr "Cette note n'existe plus"
 
 #: apps/mobile/app/page.tsx
 #: apps/mobile/components/pages/page-card.tsx
@@ -10159,7 +10159,7 @@ msgstr "Cette page n'est pas disponible"
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
 msgid "This permanently deletes the routine and its run history."
-msgstr ""
+msgstr "Cela supprime définitivement la routine et son historique d'exécutions."
 
 #: apps/web/src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
@@ -10167,7 +10167,7 @@ msgstr "Cela supprime définitivement votre compte et vos données."
 
 #: apps/mobile/components/account-deletion.tsx
 msgid "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone."
-msgstr ""
+msgstr "Cela supprime définitivement votre compte, vos bots, conversations, souvenirs, fichiers et connexions enregistrées. Cette action est irréversible."
 
 #: apps/web/src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
@@ -10183,7 +10183,7 @@ msgstr "Ce fournisseur n'est pas encore connecté."
 
 #: apps/mobile/lib/bot-lifecycle.ts
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
-msgstr ""
+msgstr "Cela supprime tous les messages et arrête le travail en cours. Le bot, l'ordinateur, la mémoire et les routines sont conservés."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/model-providers.tsx
@@ -10193,7 +10193,7 @@ msgstr "La connexion sera retirée de tous les espaces."
 
 #: apps/mobile/app/index.tsx
 msgid "This removes the space for everyone."
-msgstr ""
+msgstr "Cela supprime l'espace pour tout le monde."
 
 #: apps/web/src/pages/Auth.tsx
 msgid "This reset link is invalid or expired"
@@ -10201,7 +10201,7 @@ msgstr "Ce lien de réinitialisation est invalide ou a expiré"
 
 #: apps/mobile/app/routine.tsx
 msgid "This routine no longer exists"
-msgstr ""
+msgstr "Cette routine n'existe plus"
 
 #: apps/web/src/pages/shell/message-cards.tsx
 msgid "This server cannot be assigned without a bot."
@@ -10238,7 +10238,7 @@ msgstr "Cette semaine"
 #: apps/mobile/components/chat-header-title.tsx
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Thread"
-msgstr ""
+msgstr "Fil"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/cron.ts
@@ -10304,11 +10304,11 @@ msgstr "Demain"
 
 #: apps/mobile/lib/user-error.ts
 msgid "Too many attempts. Try again in a few minutes."
-msgstr ""
+msgstr "Trop de tentatives. Réessayez dans quelques minutes."
 
 #: apps/mobile/lib/thread-feedback.ts
 msgid "Too many unsent messages"
-msgstr ""
+msgstr "Trop de messages non envoyés"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Tool arguments (JSON)"
@@ -10440,7 +10440,7 @@ msgstr "Réessayer"
 #: apps/mobile/lib/thread-voice.ts
 #: apps/mobile/lib/use-inbox-chat-actions.ts
 msgid "Try again."
-msgstr ""
+msgstr "Réessayez."
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Try the test again."
@@ -10500,7 +10500,7 @@ msgstr "Désinstaller"
 
 #: apps/mobile/components/routine-schedule-editor.tsx
 msgid "Unit"
-msgstr ""
+msgstr "Unité"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/MessagingSettingsPanel.tsx
@@ -10522,7 +10522,7 @@ msgstr "Désépingler"
 
 #: apps/mobile/components/inbox-rows.tsx
 msgid "unread"
-msgstr ""
+msgstr "non lu"
 
 #: apps/mobile/components/inbox-activity.tsx
 #: apps/web/src/pages/ActivityList.tsx
@@ -10531,7 +10531,7 @@ msgstr "Non lus"
 
 #: apps/mobile/lib/unsent-send-warning.ts
 msgid "Unsent messages"
-msgstr ""
+msgstr "Messages non envoyés"
 
 #: apps/mobile/components/bot-organize-modal.tsx
 #: apps/mobile/components/inbox-swipe-row.ios.tsx
@@ -10552,7 +10552,7 @@ msgstr "Type de fichier non pris en charge : {0}"
 
 #: apps/mobile/components/computer-keyboard-bar.tsx
 msgid "Up"
-msgstr ""
+msgstr "Haut"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
@@ -10600,11 +10600,11 @@ msgstr "Mise à jour requise"
 
 #: apps/mobile/lib/api.ts
 msgid "Update your server to use AI data sharing in this mobile version."
-msgstr ""
+msgstr "Mettez à jour votre serveur pour utiliser le partage des données avec l'IA dans cette version mobile."
 
 #: apps/mobile/components/pages/page-card.tsx
 msgid "Updated below"
-msgstr ""
+msgstr "Mise à jour ci-dessous"
 
 #: apps/web/src/pages/settings-nav.ts
 msgid "Updates"
@@ -10617,7 +10617,7 @@ msgstr "Mise à jour de l'ordinateur de {0}"
 
 #: apps/mobile/components/computer-update-progress.tsx
 msgid "Updating {name}’s Computer"
-msgstr ""
+msgstr "Mise à jour de l'ordinateur de {name}"
 
 #: apps/mobile/components/computer-update-progress.tsx
 #: apps/web/src/components/ComputerUpdateProgress.tsx
@@ -10679,11 +10679,11 @@ msgstr "Utilisez de 2 à 64 caractères"
 
 #: apps/mobile/lib/account-name-editor.ts
 msgid "Use 80 characters or fewer"
-msgstr ""
+msgstr "Utilisez 80 caractères au maximum"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Use a custom server"
-msgstr ""
+msgstr "Utiliser un serveur personnalisé"
 
 #: apps/mobile/components/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10693,7 +10693,7 @@ msgstr "Utiliser un modèle trouvé"
 
 #: apps/mobile/lib/endpoint.ts
 msgid "Use an http or https URL"
-msgstr ""
+msgstr "Utilisez une URL http ou https"
 
 #: apps/web/src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -10701,7 +10701,7 @@ msgstr "Utilisez Connecter pour vérifier la clé."
 
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
-msgstr ""
+msgstr "Utiliser le serveur par défaut"
 
 #: apps/web/src/pages/SpaceSettingOverrides.tsx
 msgid "Use defaults"
@@ -10718,11 +10718,11 @@ msgstr "Utiliser dans ce bot"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
-msgstr ""
+msgstr "Utiliser la plus récente"
 
 #: apps/mobile/components/vault-item-editor.tsx
 msgid "Use letters, numbers and _, starting with a letter."
-msgstr ""
+msgstr "Utilisez des lettres, des chiffres et _, en commençant par une lettre."
 
 #: apps/mobile/components/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -10748,7 +10748,7 @@ msgstr "Utiliser les crédits Rakazo"
 
 #: apps/mobile/components/space-bots-model.tsx
 msgid "Use space default"
-msgstr ""
+msgstr "Utiliser le modèle par défaut de l'espace"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
@@ -10756,7 +10756,7 @@ msgstr "Utilisez jusqu'à 512 lettres, chiffres, _ ou -."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
-msgstr ""
+msgstr "Utiliser votre propre clé"
 
 #: apps/web/src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"
@@ -10787,7 +10787,7 @@ msgstr "Utilise les identifiants {hostCredentialSource} propres à ce serveur po
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
-msgstr ""
+msgstr "Utilise les identifiants {source} de ce serveur pour accéder à {provider}."
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Using your API key"
@@ -10846,7 +10846,7 @@ msgstr "Version"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Versions"
-msgstr ""
+msgstr "Versions"
 
 #: apps/mobile/components/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -10872,7 +10872,7 @@ msgstr "Voix"
 
 #: apps/mobile/components/VoiceChatCard.tsx
 msgid "Voice chat"
-msgstr ""
+msgstr "Discussion vocale"
 
 #: apps/web/src/lib/tts.ts
 msgid "Voice request timed out."
@@ -10884,15 +10884,15 @@ msgstr "Patientez un instant et testez à nouveau."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the code expires in about {minutes} minutes."
-msgstr ""
+msgstr "En attente de connexion — le code expire dans environ {minutes} minutes."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the link expires in about {minutes} minutes."
-msgstr ""
+msgstr "En attente de connexion — le lien expire dans environ {minutes} minutes."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Waiting for this bot’s response."
-msgstr ""
+msgstr "En attente de la réponse de ce bot."
 
 #: apps/web/src/lib/roster-status.ts
 msgid "Waiting in line…"
@@ -10900,7 +10900,7 @@ msgstr "En attente dans la file…"
 
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "Waiting sound"
-msgstr ""
+msgstr "Son d'attente"
 
 #: apps/mobile/lib/app-connect.ts
 #: apps/web/src/pages/shell/message-cards.tsx
@@ -11066,19 +11066,19 @@ msgstr "Qui peut la lancer"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Who can view"
-msgstr ""
+msgstr "Qui peut voir"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw"
-msgstr ""
+msgstr "Retirer"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw all permissions"
-msgstr ""
+msgstr "Retirer toutes les autorisations"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Withdraw all permissions?"
-msgstr ""
+msgstr "Retirer toutes les autorisations ?"
 
 #: apps/mobile/components/inbox-rows.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
@@ -11133,7 +11133,7 @@ msgstr "Espace de travail"
 
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
-msgstr ""
+msgstr "Décrivez ce que cette routine doit faire."
 
 #: apps/web/src/lib/billing.ts
 msgid "year"
@@ -11145,7 +11145,7 @@ msgstr "Annuel"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Yearly −{percent}%"
-msgstr ""
+msgstr "Annuel −{percent} %"
 
 #: apps/mobile/components/time-separator.tsx
 #: apps/web/src/pages/shell/chat-context.tsx
@@ -11177,7 +11177,7 @@ msgstr "Vous pouvez fermer cette fenêtre."
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "You can turn this off in Account → AI data sharing."
-msgstr ""
+msgstr "Vous pouvez désactiver cela dans Compte → Partage des données avec l'IA."
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "You declined"
@@ -11196,11 +11196,11 @@ msgstr "Vous avez le contrôle"
 
 #: apps/mobile/app/paywall.tsx
 msgid "You're all set"
-msgstr ""
+msgstr "Tout est prêt"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Your account"
-msgstr ""
+msgstr "Votre compte"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -11217,7 +11217,7 @@ msgstr "Votre carte est débitée de {annualPrice} aujourd'hui, moins la partie 
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your card is charged {price} today, less the unused part of this month."
-msgstr ""
+msgstr "Votre carte est débitée de {price} aujourd'hui, moins la partie non utilisée de ce mois."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/ModelCredits.tsx
@@ -11248,7 +11248,7 @@ msgstr "Votre adresse e-mail"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Your free trial has started"
-msgstr ""
+msgstr "Votre essai gratuit a commencé"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
@@ -11279,11 +11279,11 @@ msgstr "À la fin de votre essai, votre forfait passe à {annualPrice} / an."
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your plan becomes {price} / year when your trial ends."
-msgstr ""
+msgstr "Votre forfait passe à {price} / an à la fin de votre essai."
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Your plan becomes {price} when your trial ends."
-msgstr ""
+msgstr "Votre forfait passe à {price} à la fin de votre essai."
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "Your plan becomes {tierTargetLabel} when your trial ends."
@@ -11291,11 +11291,11 @@ msgstr "Votre forfait passe à {tierTargetLabel} à la fin de votre essai."
 
 #: apps/mobile/lib/ai-consent.ts
 msgid "Your recordings are sent for transcription, and text you play is sent to generate speech."
-msgstr ""
+msgstr "Vos enregistrements sont envoyés pour transcription, et le texte que vous lisez à voix haute est envoyé pour générer la parole."
 
 #: apps/mobile/components/home-error-state.tsx
 msgid "Your session expired"
-msgstr ""
+msgstr "Votre session a expiré"
 
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
