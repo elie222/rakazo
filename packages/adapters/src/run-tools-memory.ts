@@ -164,17 +164,19 @@ export const memoryTools: ToolHandlers = {
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;
     const { args } = call;
-    return ctx.memory.semantic!.recall(
-      {
-        query: String(args.query ?? ""),
-        scope: ctx.memory.scope!,
-        botId: bot.id,
-        ...(thread.historyCompactedUpToSeq == null
-          ? {}
-          : { historyGeneration: thread.historyCompactionGeneration }),
-        limit: MAX_RECALLED_MEMORIES,
-      },
-      context,
+    return call.finish(
+      await ctx.memory.semantic!.recall(
+        {
+          query: String(args.query ?? ""),
+          scope: ctx.memory.scope!,
+          botId: bot.id,
+          ...(thread.historyCompactedUpToSeq == null
+            ? {}
+            : { historyGeneration: thread.historyCompactionGeneration }),
+          limit: MAX_RECALLED_MEMORIES,
+        },
+        context,
+      ),
     );
   },
   search_history: readHistoryTool,

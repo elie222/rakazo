@@ -124,7 +124,7 @@ type Effect = {
   reviewDecision?: string;
 };
 
-function fixture(runId = "run-1") {
+function fixture(runId = "run-1", provider = "openrouter") {
   const effects: Effect[] = [];
   const artifactRows: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
   const artifactPut = vi.fn();
@@ -225,7 +225,7 @@ function fixture(runId = "run-1") {
       },
     ),
   };
-  const choice = { modelId: "main-a" };
+  const choice = { modelId: "main-a", provider };
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     space: { findUnique: vi.fn(async () => null) },
@@ -251,7 +251,7 @@ function fixture(runId = "run-1") {
         name: "Assistant",
         title: "Assistant",
         description: "Test assistant",
-        modelProvider: "openrouter",
+        modelProvider: choice.provider,
         modelId: choice.modelId,
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
@@ -584,5 +584,30 @@ it.each(["main-a", "computer-c"])(
     expect(vi.mocked(resolveModelKey).mock.calls.some((call) => call[5] === "main-b")).toBe(false);
     expect(fake.stream).not.toHaveBeenCalled();
     expect(f.browserAct).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["openai-codex", "openrouter"])(
+  "keeps image search eligibility on the pinned %s model when the current choice changes",
+  async (provider) => {
+    const f = fixture("run-image-search", provider);
+    script();
+    await f.run();
+    const effect = f.effects.find((entry) => entry.kind === "browser_act");
+    expect(effect?.status).toBe("intended");
+    if (!effect) throw new Error("Expected paused browser action");
+    effect.status = "approved";
+    f.choice.provider = provider === "openai-codex" ? "openrouter" : "openai-codex";
+    fake.stream.mockReset();
+    fake.stream.mockImplementation((target: Model<"openai-completions">) =>
+      respond(target, target.id === "computer-c" ? [leave] : []),
+    );
+    await f.run();
+    const request = f.runtimeRun.mock.calls.at(-1)?.[0];
+    expect(request?.model.provider).toBe(provider);
+    expect(request?.tools.some((tool) => tool.name === "image_search")).toBe(
+      provider === "openai-codex",
+    );
+    expect(f.browserAct).toHaveBeenCalledOnce();
   },
 );

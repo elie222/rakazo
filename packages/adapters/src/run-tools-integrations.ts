@@ -2,6 +2,7 @@ import type { ConnectorApp } from "@rakazo/adapter-kit";
 import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger } from "@rakazo/logging";
+import * as z from "zod";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { collectLogIds } from "./composio-connector.js";
 import { connectApp } from "./connect-app.js";
@@ -148,18 +149,45 @@ export async function callPaidService(ctx: RunContext, call: ToolCall) {
   );
 }
 
+const successfulSearchSchema = z.object({
+  error: z.never().optional(),
+  uncertain: z.never().optional(),
+});
+const webSearchUrlsSchema = successfulSearchSchema
+  .extend({ results: z.array(z.object({ url: z.string() })) })
+  .transform((found) => found.results.map((hit) => hit.url));
+const imageSearchUrlsSchema = successfulSearchSchema
+  .extend({ results: z.array(z.object({ imageUrl: z.string(), sourceUrl: z.string() })) })
+  .transform((found) => found.results.flatMap((hit) => [hit.imageUrl, hit.sourceUrl]));
+
+export function trustSearchResult(ctx: RunContext, name: string, result: unknown): void {
+  const schema =
+    name === "web_search"
+      ? webSearchUrlsSchema
+      : name === "image_search"
+        ? imageSearchUrlsSchema
+        : undefined;
+  const parsed = schema?.safeParse(result);
+  if (!parsed?.success) return;
+  for (const value of parsed.data) {
+    const url = normalizedHttpUrl(value);
+    if (url) ctx.trust.searchResultUrls.add(url);
+  }
+}
+
+export async function finishSearchResult(ctx: RunContext, call: ToolCall, found: unknown) {
+  const settled = await call.finish(found);
+  if (settled === found) trustSearchResult(ctx, call.name, found);
+  return settled;
+}
+
 /** Web, cloud agents, MCP servers, app connections and connector tools. */
 export const integrationTools: ToolHandlers = {
   async web_search(ctx, call) {
     const { context } = ctx;
     const { args } = call;
     const found = await webSearchFromTool(ctx.providers.web, context, args);
-    // A result's exact URL was chosen by the search index, not by text in this run.
-    for (const hit of ("results" in found && found.results) || []) {
-      const url = normalizedHttpUrl(hit.url);
-      if (url) ctx.trust.searchResultUrls.add(url);
-    }
-    return call.finish(found);
+    return finishSearchResult(ctx, call, found);
   },
   async web_fetch(ctx, call) {
     const { context } = ctx;

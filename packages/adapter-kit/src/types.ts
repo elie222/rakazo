@@ -632,6 +632,12 @@ export interface AgentRunRequest {
     route?: ConnectorRoute,
     observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
+  /** Gate image search, invoking run only with authorized, saved arguments. */
+  gateImageSearch?: (
+    args: Record<string, unknown>,
+    executionId: string,
+    run: (approvedArgs: Record<string, unknown>) => Promise<ImageSearchResult>,
+  ) => Promise<unknown>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
@@ -1097,6 +1103,15 @@ export interface WebSearchRequest {
   maxResults?: number;
   signal?: AbortSignal;
 }
+
+export interface ImageSearchHit {
+  imageUrl: string;
+  sourceUrl: string;
+  title?: string;
+  thumbnailUrl?: string;
+}
+
+export type ImageSearchResult = { results: ImageSearchHit[] } | { error: string };
 
 export interface WebSearchHit {
   title: string;

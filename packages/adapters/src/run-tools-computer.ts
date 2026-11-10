@@ -327,12 +327,14 @@ export const computerTools: ToolHandlers = {
     const { deps, context } = ctx;
     const { name } = call;
     const blocked = await screenBlocked(ctx);
-    if (blocked) return { error: blocked };
-    return computerScreenToolResult(async () =>
-      formatObservation(
-        ctx,
-        await deps.sandbox.observe(await ctx.computer.get("tool", name), context),
-      ),
+    if (blocked) return call.finish({ error: blocked });
+    return computerScreenToolResult(
+      async () =>
+        formatObservation(
+          ctx,
+          await deps.sandbox.observe(await ctx.computer.get("tool", name), context),
+        ),
+      call.finish,
     );
   },
   async computer_act(ctx, call) {

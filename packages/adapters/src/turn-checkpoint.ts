@@ -32,6 +32,7 @@ export interface TurnCheckpoint {
   ownInstructionsBaseline?: string;
   /** Executor-assigned occurrences include canonical arguments and the paused call. */
   effectOccurrences?: Array<{ executionId: string; fingerprint: string; occurrence: number }>;
+  searchResultUrls?: string[];
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */
   executionMode?: "parallel" | "sequential";
 }
@@ -51,7 +52,10 @@ export function restoreTurnCheckpoint(
     typeof checkpoint.provider !== "string" ||
     typeof checkpoint.model !== "string" ||
     typeof checkpoint.pendingToolCallId !== "string" ||
-    !Array.isArray(checkpoint.messages)
+    !Array.isArray(checkpoint.messages) ||
+    (checkpoint.searchResultUrls !== undefined &&
+      (!Array.isArray(checkpoint.searchResultUrls) ||
+        checkpoint.searchResultUrls.some((url) => typeof url !== "string")))
   ) {
     throw new Error("Unsupported turn checkpoint");
   }

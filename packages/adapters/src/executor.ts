@@ -117,6 +117,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
+import { supportsModelImageSearch } from "./pi-image-search.js";
 import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
@@ -1270,6 +1271,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             semanticMemoryEnabled,
             semanticMemoryForgets: Boolean(semanticMemory?.forget),
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
+            modelImageSearchEnabled: supportsModelImageSearch(
+              mainRunModel.provider,
+              mainRunModel.apiProtocol,
+            ),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             paidServicesEnabled: Boolean(paidServices),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
@@ -1916,6 +1921,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 ? undefined
                 : (name, args, executionId, route, observer) =>
                     applyTool(ctx, name, args, executionId, route, observer),
+              gateImageSearch: scripted
+                ? undefined
+                : (args, executionId, run) =>
+                    applyTool(ctx, "image_search", args, executionId, undefined, undefined, run),
               resolveModel: scripted
                 ? undefined
                 : (provider, modelId) =>

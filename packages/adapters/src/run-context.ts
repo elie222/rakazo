@@ -12,6 +12,7 @@ import type {
 import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
@@ -430,6 +431,7 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
     saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
+    saved.searchResultUrls = [...ctx.trust.searchResultUrls];
     await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
     effects.storedTurnCheckpoint = true;
   } else if (effects.storedTurnCheckpoint) {
@@ -528,6 +530,10 @@ export function restoreTurnCheckpointEffects(
     // baseline must match it, not the current row. Checkpoints without one (older saves)
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
+    for (const value of saved.searchResultUrls ?? []) {
+      const url = normalizedHttpUrl(value);
+      if (url) ctx.trust.searchResultUrls.add(url);
+    }
     return turnCheckpoint;
   } catch (error) {
     if (error instanceof PausedTurnToolsUnavailableError) throw error;

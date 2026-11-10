@@ -231,8 +231,8 @@ export const messagingTools: ToolHandlers = {
       ),
     );
   },
-  async request_takeover() {
-    return { ok: true };
+  async request_takeover(_ctx, call) {
+    return call.finish({ ok: true });
   },
   async run_subagent(ctx, call) {
     const { args } = call;
@@ -252,10 +252,10 @@ export const messagingTools: ToolHandlers = {
         }),
       );
     }
-    return {
+    return call.finish({
       ok: true,
       result: String(args.task ?? "done."),
-    };
+    });
   },
   async message_user(ctx, call) {
     const { args } = call;

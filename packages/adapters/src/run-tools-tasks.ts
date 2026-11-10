@@ -71,24 +71,28 @@ export async function scheduleCreateRefusal(
 
 /** The task catalog, scratchpad, ticket board, schedules and skills. */
 export const taskTools: ToolHandlers = {
-  async task_catalog(ctx) {
+  async task_catalog(ctx, call) {
     const { deps, run, bot, thread } = ctx;
-    return taskCatalogFromTool(deps, {
-      spaceId: run.spaceId,
-      botId: bot.id,
-      userId: run.userId,
-      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
-      tools: ctx.tools.offered,
-    });
+    return call.finish(
+      await taskCatalogFromTool(deps, {
+        spaceId: run.spaceId,
+        botId: bot.id,
+        userId: run.userId,
+        ...(thread.groupId ? { groupThreadId: thread.id } : {}),
+        tools: ctx.tools.offered,
+      }),
+    );
   },
   async scratchpad_list(ctx, call) {
     const { deps, run, bot } = ctx;
     const { args } = call;
-    return listScratchpadItemsFromTool(deps, {
-      spaceId: run.spaceId,
-      botId: bot.id,
-      includeDone: Boolean(args.includeDone),
-    });
+    return call.finish(
+      await listScratchpadItemsFromTool(deps, {
+        spaceId: run.spaceId,
+        botId: bot.id,
+        includeDone: Boolean(args.includeDone),
+      }),
+    );
   },
   async scratchpad_add(ctx, call) {
     const { deps, run, bot } = ctx;
@@ -239,13 +243,15 @@ export const taskTools: ToolHandlers = {
       }),
     );
   },
-  async schedule_list(ctx) {
+  async schedule_list(ctx, call) {
     const { deps, run, bot, thread } = ctx;
-    return listSchedulesFromTool(deps, {
-      spaceId: run.spaceId,
-      botId: bot.id,
-      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
-    });
+    return call.finish(
+      await listSchedulesFromTool(deps, {
+        spaceId: run.spaceId,
+        botId: bot.id,
+        ...(thread.groupId ? { groupThreadId: thread.id } : {}),
+      }),
+    );
   },
   async schedule_cancel(ctx, call) {
     const { deps, run, bot, thread } = ctx;
@@ -262,17 +268,19 @@ export const taskTools: ToolHandlers = {
   async skill_read(ctx, call) {
     const { deps, run } = ctx;
     const { args } = call;
-    return skillReadFromTool(
-      deps.prisma,
-      {
-        spaceId: run.spaceId,
-        userId: run.userId,
-      },
-      {
-        name: args.name ? String(args.name) : undefined,
-        skillId: args.skillId ? String(args.skillId) : undefined,
-        file: args.file ? String(args.file) : undefined,
-      },
+    return call.finish(
+      await skillReadFromTool(
+        deps.prisma,
+        {
+          spaceId: run.spaceId,
+          userId: run.userId,
+        },
+        {
+          name: args.name ? String(args.name) : undefined,
+          skillId: args.skillId ? String(args.skillId) : undefined,
+          file: args.file ? String(args.file) : undefined,
+        },
+      ),
     );
   },
   async skill_create(ctx, call) {
