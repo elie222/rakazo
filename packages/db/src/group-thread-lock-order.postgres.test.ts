@@ -11,7 +11,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 const WAIT_BUDGET_MS = 5_000;
 const WAIT_INTERVAL_MS = 20;
@@ -28,7 +28,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * a key share on the group row: the reverse order. A group lock that conflicts with key
  * shares closed the cycle; this test holds both transactions at that point.
  */
-describePostgres("group and thread lock order (PostgreSQL)", () => {
+describePostgres("group and thread lock order (PostgreSQL)", { concurrent: false }, () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let pool: Pool;

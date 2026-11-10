@@ -10,7 +10,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE === "1" && databaseUrl ? describe : describe.skip;
 
 const WAIT_BUDGET_MS = 5_000;
 const WAIT_INTERVAL_MS = 20;
@@ -34,7 +34,7 @@ const outcome = (result: PromiseSettledResult<unknown>) => {
  * Deleting the group must not hold the group row exclusively while it waits for that
  * thread, or the two transactions wait on each other.
  */
-describePostgres("group delete and thread writer lock order (PostgreSQL)", () => {
+describePostgres("group deletion lock order (PostgreSQL)", { concurrent: false }, () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let pool: ReturnType<typeof createDb>["pool"];
