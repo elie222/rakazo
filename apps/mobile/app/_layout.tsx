@@ -454,7 +454,8 @@ function LayoutContent() {
                       name="server"
                       options={{
                         title: t`Server`,
-                        presentation: "formSheet",
+                        // Android formSheet hides the header Save action.
+                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
                       }}
