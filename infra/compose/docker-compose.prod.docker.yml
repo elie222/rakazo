@@ -29,7 +29,24 @@ services:
     image: ${BUSYBOX_IMAGE:-busybox:1}
     # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
     # in the volume; -h changes a symlink itself, never its target.
-    command: ["find", "/data", "!", "(", "-user", "1000", "-group", "1000", ")", "-exec", "chown", "-h", "1000:1000", "{}", "+"]
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:

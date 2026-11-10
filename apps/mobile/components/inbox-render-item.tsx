@@ -1,5 +1,7 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -8,7 +10,6 @@ import type { PressableProps } from "react-native";
 import { Platform, Pressable, Text, View } from "react-native";
 import type { ResolvedAppearance } from "../lib/appearance";
 import { AvatarRow } from "../lib/avatar-life";
-import { useI18n } from "../lib/i18n";
 import type { InboxItem, InboxSpace } from "../lib/inbox-spaces";
 import { canDeleteInboxSpace, inboxItemKey } from "../lib/inbox-spaces";
 import type { MobileBot, MobileBotSection, MobileGroup } from "../lib/mobile-types";
@@ -38,11 +39,11 @@ export function InboxListFooter({
   archivedCount: number;
 }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   return (
     <>
-      {createHint ? <Text style={styles.empty}>{t("Tap + to create a bot")}</Text> : null}
+      {createHint ? <Text style={styles.empty}>{t`Tap + to create a bot`}</Text> : null}
       <ArchivedChatsRow count={archivedCount} onPress={() => router.push("/archived-bots")} />
     </>
   );
@@ -184,16 +185,16 @@ function SectionHeading({
   onDelete?: () => void;
   appearance: ResolvedAppearance;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <HeadingWithMenu
       menu={
         onDelete
           ? {
               actions: [
-                { id: "delete", title: t("Delete section"), image: "trash", destructive: true },
+                { id: "delete", title: t`Delete section`, image: "trash", destructive: true },
               ],
-              label: t("Section actions for {name}", { name: title }),
+              label: t`Section actions for ${ph({ name: title })}`,
               onAction: onDelete,
             }
           : undefined
@@ -268,7 +269,7 @@ export function useInboxRenderItem({
   toggleCollapsed: (key: string) => void;
 }) {
   const styles = useThemedStyles(createHomeStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   return useCallback(
     ({ item }: { item: InboxItem }) => {
@@ -303,17 +304,17 @@ export function useInboxRenderItem({
                     actions: [
                       {
                         id: "new-bot",
-                        title: t("New bot"),
+                        title: t`New bot`,
                         image: "person.crop.circle.badge.plus",
                         disabled: spaceBusy || !!spaceRecoveryId,
                       },
-                      { id: "members", title: t("Members"), image: "person.2" },
-                      { id: "settings", title: t("Settings"), image: "gearshape" },
+                      { id: "members", title: t`Members`, image: "person.2" },
+                      { id: "settings", title: t`Settings`, image: "gearshape" },
                       ...(canDeleteInboxSpace(item.space)
                         ? [
                             {
                               id: "delete",
-                              title: t("Delete space"),
+                              title: t`Delete space`,
                               image: "trash" as const,
                               destructive: true,
                               disabled: spaceBusy || !!spaceRecoveryId,
@@ -321,7 +322,7 @@ export function useInboxRenderItem({
                           ]
                         : []),
                     ],
-                    label: t("Space actions for {name}", { name: item.title }),
+                    label: t`Space actions for ${ph({ name: item.title })}`,
                     onAction: (id) => {
                       if (!item.space) return;
                       if (id === "new-bot") createBotInSpace(item.space.id);

@@ -304,7 +304,12 @@ export class FakeComposioClient implements ComposioClient {
       toolkits: async (options) => this.toolkitPage(userId, options),
       tools: async () => [...enabled].flatMap((toolkit) => toolsFor(toolkit)),
       execute: async (tool, args = {}, options) => {
-        const refused = (error: string) => ({ data: {}, error, logId: "" });
+        const refused = (error: string) => ({
+          data: {},
+          error,
+          logId: "",
+          resultType: "failed" as const,
+        });
         const toolkit = [...enabled].find((slug) => tool.startsWith(`${slug}_`));
         if (!toolkit && !tool.startsWith("COMPOSIO_")) {
           return refused(`Toolkit for ${tool} is not enabled in this session`);
@@ -322,7 +327,11 @@ export class FakeComposioClient implements ComposioClient {
         }
         const result = this.run(userId, tool, args);
         this.executions.push({ userId, tool, args, result: result.data });
-        return { ...result, logId: `log_${++this.nextId}` };
+        return {
+          ...result,
+          logId: `log_${++this.nextId}`,
+          resultType: result.error ? ("failed" as const) : ("completed" as const),
+        };
       },
       authorize: async (toolkit) => this.authorize(userId, toolkit),
     };

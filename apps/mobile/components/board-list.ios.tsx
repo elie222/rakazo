@@ -9,17 +9,17 @@ import {
   refreshable,
   shapes,
 } from "@expo/ui/swift-ui/modifiers";
+import { useLingui } from "@lingui/react/macro";
 import { TICKET_STATUSES } from "@rakazo/contracts";
 import { ticketStatusLabel } from "../lib/board";
 import { useFloatingHeaderInset } from "../lib/floating-header";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { BoardListProps } from "./board-list";
 import { NativeInsetList, useInsetListEdges } from "./native-inset-list";
 
 /** A SwiftUI inset list: a section per column, and a pull-down menu on each ticket to move it. */
 export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const headerInset = useFloatingHeaderInset();
   const edges = useInsetListEdges();
   const tokens = useMobileTokens();
@@ -46,7 +46,7 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
       {sections.map((section) => (
         <Section
           key={section.status}
-          title={ticketStatusLabel(section.status, t)}
+          title={ticketStatusLabel(section.status)}
           footer={section.status === lastStatus ? edges.footer : undefined}
         >
           {section.tickets.map((ticket) => (
@@ -81,11 +81,11 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
                 </VStack>
               }
             >
-              <Section title={t("Move to")}>
+              <Section title={t`Move to`}>
                 {TICKET_STATUSES.filter((status) => status !== ticket.status).map((status) => (
                   <Button
                     key={status}
-                    label={ticketStatusLabel(status, t)}
+                    label={ticketStatusLabel(status)}
                     onPress={() => onMove(ticket, status)}
                   />
                 ))}

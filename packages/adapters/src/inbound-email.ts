@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ARCResult } from "mailauth";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "./keyless-http-web.js";
 
@@ -7,6 +8,9 @@ export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;
 
 /** DKIM signatures checked per message; mail carrying more is never verified. */
 export const INBOUND_EMAIL_MAX_SIGNATURES = 5;
+
+/** How old a message may be when its signature leaves its recipients out. */
+export const INBOUND_EMAIL_UNSIGNED_RECIPIENTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Body text handed to the bot; longer mail is cut here. */
 export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
@@ -33,6 +37,8 @@ export type InboundEmail = {
    * From, To, Cc and Subject field, so that domain vouches for the sender, recipients and subject.
    */
   authenticated: boolean;
+  /** Why it isn't authenticated, for logs; null when it is. */
+  unauthenticatedReason: string | null;
   /** Not authenticated only because a DKIM key lookup failed for now; worth trying again later. */
   temporaryFailure: boolean;
   to: string[];
@@ -45,13 +51,23 @@ export type InboundEmail = {
   attachments: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
 };
 
+export type ReadInboundEmailOptions = {
+  resolver?: InboundEmailResolver;
+  now?: Date;
+  /**
+   * The ARC signing domain of the relay that hands mail to this server. Its sealed SPF result is
+   * the only proof of which server sent a message whose signature leaves its recipients out.
+   */
+  relayArcDomain?: string;
+};
+
 /** Parse a raw RFC 5322 message and check its DKIM signatures. */
 export async function readInboundEmail(
   raw: Uint8Array,
-  options: { resolver?: InboundEmailResolver } = {},
+  options: ReadInboundEmailOptions = {},
 ): Promise<InboundEmail> {
   // Loaded only on servers that receive email.
-  const [{ default: PostalMime }, { dkimVerify }] = await Promise.all([
+  const [{ default: PostalMime }, { arc, dkimVerify }] = await Promise.all([
     import("postal-mime"),
     import("mailauth"),
   ]);
@@ -91,28 +107,63 @@ export async function readInboundEmail(
   // An extra To, Cc or Subject added above the signed one would be read but not verified.
   const singleFields = fieldCount("to") <= 1 && fieldCount("cc") <= 1 && fieldCount("subject") <= 1;
   const fromDomain = fromAddress?.slice(fromAddress.lastIndexOf("@") + 1);
-  const signature =
+  const now = (options.now ?? new Date()).getTime();
+  const sentAt = fieldCount("date") === 1 && email.date ? Date.parse(email.date) : Number.NaN;
+  const recent =
+    sentAt > now - INBOUND_EMAIL_UNSIGNED_RECIPIENTS_MAX_AGE_MS && sentAt < now + 60 * 60 * 1000;
+  const fromDomainPasses = (dkim?.results ?? []).filter(
+    (result) =>
+      result.status.result === "pass" &&
+      // Exactly the From domain: a subdomain (often run by a sending service) would align too.
+      result.signingDomain?.toLowerCase() === fromDomain &&
+      // l= leaves trailing body bytes unsigned; anything could be appended there.
+      (result.status.underSized ?? 0) === 0 &&
+      result.signatureTimeValid !== false,
+  );
+  const signedFields = (result: (typeof fromDomainPasses)[number]) =>
+    new Set((result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()));
+  const candidates =
     fromAddress === null || !singleFields
-      ? undefined
-      : dkim?.results.find((result) => {
-          const status = result.status;
-          // Exactly the From domain: a subdomain (often run by a sending service) would align too.
-          if (status.result !== "pass" || result.signingDomain?.toLowerCase() !== fromDomain) {
-            return false;
-          }
-          // l= leaves trailing body bytes unsigned; anything could be appended there.
-          if ((status.underSized ?? 0) > 0 || result.signatureTimeValid === false) return false;
-          const signed = new Set(
-            (result.signingHeaders?.keys ?? "").split(":").map((key) => key.trim().toLowerCase()),
-          );
-          return (
-            signed.has("from") &&
-            (fieldCount("to") === 0 || signed.has("to")) &&
-            (fieldCount("cc") === 0 || signed.has("cc")) &&
-            // The owner's mail is taken as instructions, subject included.
-            (fieldCount("subject") === 0 || signed.has("subject"))
-          );
+      ? []
+      : fromDomainPasses.filter((result) => {
+          const signed = signedFields(result);
+          // The owner's mail is taken as instructions, subject included.
+          return signed.has("from") && (fieldCount("subject") === 0 || signed.has("subject"));
         });
+  const fullySigned = candidates.find((result) => {
+    const signed = signedFields(result);
+    return (
+      (fieldCount("to") === 0 || signed.has("to")) && (fieldCount("cc") === 0 || signed.has("cc"))
+    );
+  });
+  // Microsoft 365 never signs To or Cc, so its signature alone would let anyone the owner wrote to
+  // resend that mail to the bot. Such mail must also come straight from a server the sender's
+  // domain allows, as the relay saw it, and be recent.
+  const recipientsUnsigned = fullySigned
+    ? undefined
+    : candidates.find((result) => signedFields(result).has("date") && recent);
+  const sentFromSenderDomain =
+    recipientsUnsigned && fromDomain && options.relayArcDomain && dkim?.arc
+      ? relayConfirmsSender(
+          await arc(dkim.arc, options.resolver ? { resolver: options.resolver } : {}),
+          options.relayArcDomain,
+          fromDomain,
+        )
+      : false;
+  const signature = fullySigned ?? (sentFromSenderDomain ? recipientsUnsigned : undefined);
+  const unauthenticatedReason = signature
+    ? null
+    : !dkim
+      ? "too many signatures"
+      : fromAddress === null
+        ? "no single valid From"
+        : !singleFields
+          ? "repeated To, Cc or Subject"
+          : fromDomainPasses.length === 0
+            ? "no valid signature from the sender's domain"
+            : recipientsUnsigned
+              ? "recipients unsigned and the relay did not confirm the sending server"
+              : "signature leaves out required headers";
 
   // Every copy of a header counts, so an extra "Auto-Submitted: no" cannot hide an auto-reply.
   const automated =
@@ -174,6 +225,7 @@ export async function readInboundEmail(
       ...new Set([...messageIds(email.references), ...messageIds(email.inReplyTo)]),
     ].slice(-MAX_REFERENCES),
     authenticated: signature !== undefined,
+    unauthenticatedReason,
     // Only the From domain's own signature decides; another domain's slow DNS changes nothing.
     temporaryFailure:
       signature === undefined &&
@@ -186,12 +238,28 @@ export async function readInboundEmail(
     to,
     cc,
     subject: email.subject?.trim() ?? "",
-    // Date is not required to be signed, so cut it like any other unverified header.
+    // Date is not always signed, so cut it like any other unverified header.
     date: email.date?.slice(0, 100) ?? null,
     text,
     automated,
     attachments,
   };
+}
+
+/**
+ * Whether the newest ARC set was sealed by the relay and records an SPF pass for the sender's own
+ * domain: the delivering server, which a resent copy cannot borrow, is one that domain allows.
+ */
+function relayConfirmsSender(result: ARCResult, relay: string, senderDomain: string): boolean {
+  if (result.status.result !== "pass") return false;
+  // The seal, not the message signature, covers the authentication results.
+  const sealer = result.chain?.at(-1)?.["arc-seal"]?.parsed?.d?.value;
+  if (typeof sealer !== "string" || sealer.toLowerCase() !== relay) return false;
+  const spf = result.authenticationResults?.spf as
+    | { result?: unknown; smtp?: { mailfrom?: unknown } }
+    | undefined;
+  const mailFrom = typeof spf?.smtp?.mailfrom === "string" ? spf.smtp.mailfrom.toLowerCase() : "";
+  return spf?.result === "pass" && mailFrom.slice(mailFrom.lastIndexOf("@") + 1) === senderDomain;
 }
 
 /** References kept per message; a long thread's oldest ones add nothing to a reply. */

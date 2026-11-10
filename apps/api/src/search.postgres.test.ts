@@ -5,8 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("space search with CONTENT_ENCRYPTION on and off (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

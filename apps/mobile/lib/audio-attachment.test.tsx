@@ -36,7 +36,6 @@ vi.mock("../lib/appearance", () => ({
     secondary: "token-secondary",
   }),
 }));
-vi.mock("../lib/i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("../lib/artifact-open", () => ({
   audioArtifactUri: vi.fn(),
   openMobileArtifact: mocks.share,
@@ -104,7 +103,7 @@ it("preserves message actions on the row and independent play/share controls", a
     );
     expect(mocks.toggle).toHaveBeenCalledTimes(1);
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Share {name}"]')?.click(),
+      container.querySelector<HTMLButtonElement>('button[aria-label="Share clip"]')?.click(),
     );
     expect(mocks.share).toHaveBeenCalledWith({ botId: "bot-1" }, "audio-1", "clip", "audio/mpeg");
   } finally {

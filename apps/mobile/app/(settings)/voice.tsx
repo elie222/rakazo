@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
@@ -33,7 +34,6 @@ import {
   saveWaitSoundEnabled,
 } from "../../lib/call-sounds";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
 import type { SettingsTarget } from "../../lib/settings-target";
@@ -92,7 +92,7 @@ export default function VoiceSettings() {
   const deviceSettings = scope === "account";
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createVoiceStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [cached] = useState(() => cachedVoiceSettings(target));
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
@@ -185,8 +185,7 @@ export default function VoiceSettings() {
     void load(undefined, true)
       .catch((err: unknown) => {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err))
-          setLoadError(errorText(err, t("Could not load voice settings")));
+        if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load voice settings`));
       })
       .finally(() => setLoading(false));
   }, [load, t]);
@@ -207,7 +206,7 @@ export default function VoiceSettings() {
           if (deviceVoiceSaveInFlight.current) return;
           if (deviceVoiceRevision.current !== revision) return;
           setDeviceVoiceReady(true);
-          setError(errorText(err, t("Could not load voice settings")));
+          setError(errorText(err, t`Could not load voice settings`));
         });
       const soundRevision = soundPrefsRevision.current;
       void Promise.allSettled([
@@ -221,7 +220,7 @@ export default function VoiceSettings() {
         setCallGreeting(greeting.status === "fulfilled" ? greeting.value : null);
         const failed = [calls, waiting, greeting].find((result) => result.status === "rejected");
         if (failed?.status === "rejected") {
-          setError(errorText(failed.reason, t("Could not load voice settings")));
+          setError(errorText(failed.reason, t`Could not load voice settings`));
         }
       });
     }, [deviceSettings, open, t]),
@@ -242,7 +241,7 @@ export default function VoiceSettings() {
       return true;
     } catch {
       show(!next);
-      setError(t("Could not save that preference"));
+      setError(t`Could not save that preference`);
       return false;
     } finally {
       soundPrefSaving.current = false;
@@ -276,7 +275,7 @@ export default function VoiceSettings() {
       return true;
     } catch (err) {
       setDeviceVoice(!next);
-      setError(errorText(err, t("Could not save that preference")));
+      setError(errorText(err, t`Could not save that preference`));
       return false;
     } finally {
       deviceVoiceSaveInFlight.current = false;
@@ -322,7 +321,7 @@ export default function VoiceSettings() {
           selectedProvider.current = previousProvider;
           setProvider(previousProvider);
           if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
-          setError(errorText(err, t("Could not save that voice")));
+          setError(errorText(err, t`Could not save that voice`));
           return;
         }
       }
@@ -335,7 +334,7 @@ export default function VoiceSettings() {
       } catch (err) {
         // A refresh failure must not leave another provider's voices available.
         setVoices([]);
-        setError(errorText(err, t("Could not load voice settings")));
+        setError(errorText(err, t`Could not load voice settings`));
       }
     } finally {
       setPending(null);
@@ -376,7 +375,7 @@ export default function VoiceSettings() {
       setApiKey("");
       await load(selected.id);
     } catch (err) {
-      setError(errorText(err, t("Could not connect")));
+      setError(errorText(err, t`Could not connect`));
     } finally {
       setPending(null);
     }
@@ -392,7 +391,7 @@ export default function VoiceSettings() {
       setApiKey("");
       await load(providerId);
     } catch (err) {
-      setError(errorText(err, t("Could not disconnect")));
+      setError(errorText(err, t`Could not disconnect`));
     } finally {
       setPending(null);
     }
@@ -423,7 +422,7 @@ export default function VoiceSettings() {
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
       void load(selected.id, true).catch(() => undefined);
     } catch (err) {
-      setError(errorText(err, t("Could not save that speech model")));
+      setError(errorText(err, t`Could not save that speech model`));
     } finally {
       speechModelSave.current = null;
       setPending(null);
@@ -438,7 +437,7 @@ export default function VoiceSettings() {
       await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id, scope });
       await load(selected?.id);
     } catch (err) {
-      setError(errorText(err, t("Could not save that voice")));
+      setError(errorText(err, t`Could not save that voice`));
     } finally {
       setPending(null);
     }
@@ -449,14 +448,14 @@ export default function VoiceSettings() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."), {
+      const ready = await speakText(t`Hi, this is how I'll sound when I read replies out loud.`, {
         scope,
       });
       if (!ready) {
-        throw new Error(t("Connect a voice provider first."));
+        throw new Error(t`Connect a voice provider first.`);
       }
     } catch (err) {
-      setError(errorText(err, t("Could not play a sample")));
+      setError(errorText(err, t`Could not play a sample`));
     } finally {
       setPending(null);
     }
@@ -499,7 +498,7 @@ export default function VoiceSettings() {
               ]}
             >
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("This device")}</Text>
+                <Text style={styles.cardTitle}>{t`This device`}</Text>
               </View>
               {deviceVoice ? <Checkmark /> : null}
             </Pressable>
@@ -535,7 +534,7 @@ export default function VoiceSettings() {
         {/* Connections belong to the account, so a space never removes them. */}
         {hiddenSelfHosted && scope === "account" ? (
           <NativeActionButton
-            label={t("Disconnect Self-hosted")}
+            label={t`Disconnect Self-hosted`}
             prominence="quiet"
             disabled={pending !== null}
             onPress={() => void disconnect(OPENAI_COMPATIBLE_PROVIDER_ID)}
@@ -545,7 +544,7 @@ export default function VoiceSettings() {
           <>
             {selfHosted ? (
               <TextInput
-                accessibilityLabel={t("Server URL")}
+                accessibilityLabel={t`Server URL`}
                 autoCapitalize="none"
                 autoComplete="off"
                 autoCorrect={false}
@@ -561,7 +560,7 @@ export default function VoiceSettings() {
             ) : null}
             {keyless ? null : (
               <TextInput
-                accessibilityLabel={t("API key")}
+                accessibilityLabel={t`API key`}
                 autoCapitalize="none"
                 autoComplete="off"
                 autoCorrect={false}
@@ -570,10 +569,10 @@ export default function VoiceSettings() {
                 onChangeText={setApiKey}
                 placeholder={
                   selfHosted
-                    ? t("Optional")
+                    ? t`Optional`
                     : credential
-                      ? t("Paste a replacement key")
-                      : t("Paste your API key")
+                      ? t`Paste a replacement key`
+                      : t`Paste your API key`
                 }
                 placeholderTextColor={native.tertiaryLabel}
                 secureTextEntry
@@ -583,9 +582,9 @@ export default function VoiceSettings() {
             )}
             {selfHosted ? (
               <>
-                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Speech model")}
+                  accessibilityLabel={t`Speech model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={ttsModel}
@@ -594,9 +593,9 @@ export default function VoiceSettings() {
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
-                <Text style={styles.fieldLabel}>{t("Transcription model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Transcription model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Transcription model")}
+                  accessibilityLabel={t`Transcription model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={sttModel}
@@ -611,11 +610,7 @@ export default function VoiceSettings() {
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={
-                  credential && selfHosted
-                    ? t("Reconnect")
-                    : credential
-                      ? t("Replace key")
-                      : t("Connect")
+                  credential && selfHosted ? t`Reconnect` : credential ? t`Replace key` : t`Connect`
                 }
                 onPress={() => void connect()}
               />
@@ -623,16 +618,16 @@ export default function VoiceSettings() {
             {credential && scope === "account" ? (
               <NativeActionButton
                 disabled={pending !== null}
-                label={pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
+                label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
                 onPress={() => void disconnect()}
                 prominence="destructive"
               />
             ) : null}
             {credential && selected.speechModel ? (
               <>
-                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Speech model")}
+                  accessibilityLabel={t`Speech model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={pending === null}
@@ -640,7 +635,7 @@ export default function VoiceSettings() {
                   onChangeText={edit("speechModel", setSpeechModel)}
                   onBlur={() => void saveSpeechModel()}
                   onSubmitEditing={() => void saveSpeechModel()}
-                  placeholder={t("Optional")}
+                  placeholder={t`Optional`}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
@@ -673,7 +668,7 @@ export default function VoiceSettings() {
         {deviceSettings && (deviceVoice || status?.ready) ? (
           <NativeActionButton
             disabled={pending !== null}
-            label={t("Hear a sample")}
+            label={t`Hear a sample`}
             onPress={() => void testVoice()}
           />
         ) : null}
@@ -681,10 +676,10 @@ export default function VoiceSettings() {
           <View style={styles.group}>
             <View style={styles.groupRow}>
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("Call sounds")}</Text>
+                <Text style={styles.cardTitle}>{t`Call sounds`}</Text>
               </View>
               <NativeSwitch
-                accessibilityLabel={t("Call sounds")}
+                accessibilityLabel={t`Call sounds`}
                 value={callSounds === true}
                 disabled={callSounds === null}
                 onValueChange={(next) => void toggleCallSounds(next)}
@@ -692,10 +687,10 @@ export default function VoiceSettings() {
             </View>
             <View style={[styles.groupRow, styles.groupDivider]}>
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("Waiting sound")}</Text>
+                <Text style={styles.cardTitle}>{t`Waiting sound`}</Text>
               </View>
               <NativeSwitch
-                accessibilityLabel={t("Waiting sound")}
+                accessibilityLabel={t`Waiting sound`}
                 value={waitSound === true}
                 disabled={waitSound === null}
                 onValueChange={(next) => void toggleWaitSound(next)}
@@ -703,10 +698,10 @@ export default function VoiceSettings() {
             </View>
             <View style={[styles.groupRow, styles.groupDivider]}>
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("Call greeting")}</Text>
+                <Text style={styles.cardTitle}>{t`Call greeting`}</Text>
               </View>
               <NativeSwitch
-                accessibilityLabel={t("Call greeting")}
+                accessibilityLabel={t`Call greeting`}
                 value={callGreeting === true}
                 disabled={callGreeting === null}
                 onValueChange={(next) => void toggleCallGreeting(next)}

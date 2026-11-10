@@ -1505,6 +1505,13 @@ export const appContract = {
     followWorkActivity: oc
       .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
       .output(z.object({ following: z.boolean() })),
+    /**
+     * Lets the server start this phone's live status card when the user's bots get to work from
+     * another device. `token` is the phone's token for starting cards, again whenever it changes.
+     */
+    registerWorkActivityStarts: oc
+      .input(z.object({ token: z.string().regex(/^[a-fA-F0-9]{64,512}$/) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),

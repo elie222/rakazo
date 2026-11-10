@@ -11,12 +11,12 @@ Use this skill as a router. Identify the product and the job, load only the rele
 
 Do not blend the products. They use different credentials and setup paths.
 
-| | Composio For You | Composio Platform |
-|---|---|---|
-| Use when | Someone wants their own agent to use their own apps | A developer is building a product whose users connect accounts |
-| Primary surface | MCP or the Composio CLI | SDK sessions inside an application |
-| Credential | `ck_...` consumer key when the client requires a header | `COMPOSIO_API_KEY` project key |
-| Dashboard | `dashboard.composio.dev` → For You | `dashboard.composio.dev` → Platform |
+|                 | Composio For You                                        | Composio Platform                                              |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| Use when        | Someone wants their own agent to use their own apps     | A developer is building a product whose users connect accounts |
+| Primary surface | MCP or the Composio CLI                                 | SDK sessions inside an application                             |
+| Credential      | `ck_...` consumer key when the client requires a header | `COMPOSIO_API_KEY` project key                                 |
+| Dashboard       | `dashboard.composio.dev` → For You                      | `dashboard.composio.dev` → Platform                            |
 
 Ask one short question only when context does not establish the product:
 

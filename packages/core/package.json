@@ -80,10 +80,10 @@
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {
-    "@observablehq/plot": "0.6.17",
+    "@observablehq/plot": "0.6.19",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "@tanstack/query-core": "5.105.3",
+    "@tanstack/query-core": "5.107.1",
     "croner": "10.0.1",
     "d3-dsv": "3.0.2",
     "dotenv": "17.4.2",
@@ -101,6 +101,6 @@
     "@types/d3-dsv": "3.0.7",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }
