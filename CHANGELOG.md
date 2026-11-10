@@ -50,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Reading web pages with very large numbers of HTML elements no longer freezes unrelated sign-ins, page loads and chat runs. Oversized pages use simpler text extraction, which may include navigation.
+- Rejected personal access tokens open model connection recovery, and unavailable hosted models offer another model instead of showing a generic server error.
 - Mobile drafts and unsent attachments survive chat changes, rejected sessions and cache cleanup. Failed dictated sends retain their words without duplication, and near-silent recordings are discarded before transcription.
 - Sending, stopping, streaming and answering cards are more reliable while other chat operations are running. Background command output reaches the next model request, and loop detection stops equivalent repeated tool calls.
 - Android avoids a native memory-sampling launch crash, and long mobile messages and streamed replies cause fewer layout stalls.
