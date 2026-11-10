@@ -697,5 +697,174 @@ describe("MolaSandboxProvider", () => {
       expect(body.action).toBe("write_file");
       expect(body.content).toBe(""); // Empty string
     });
+
+    it("treats invalid UTF-8 as binary on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-invalid-utf8";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-invalid",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+      );
+
+      // Invalid UTF-8 sequence: f0 90 88 (incomplete 4-byte sequence)
+      // toString('utf-8') replaces with U+FFFD (ef bf bd), so strict check catches it
+      const invalidUtf8 = new Uint8Array([0xf0, 0x90, 0x88]);
+      await provider.writeFile(
+        computer,
+        {
+          path: "invalid.bin",
+          content: invalidUtf8,
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      // Should use exec with base64, not write_file
+      expect(body.action).toBe("exec");
+      expect(body.command).toContain("base64 -d");
+    });
+
+    it("respects 32768 char exec command limit on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-exec-limit";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-limit",
+      };
+
+      fetchMock.mockResolvedValueOnce(
+        mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+      );
+
+      // Binary content that fits in single exec (~24 KB base64 -> ~32700 chars in command)
+      const smallBinary = new Uint8Array(18000); // Will be ~24000 base64 chars
+      for (let i = 0; i < smallBinary.length; i++) {
+        smallBinary[i] = i % 256;
+      }
+
+      await provider.writeFile(
+        computer,
+        {
+          path: "small.bin",
+          content: smallBinary,
+        },
+        createMockContext(),
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Write call not made");
+      const options = call[1] as RequestInit;
+      const body = JSON.parse(options.body as string);
+      expect(body.action).toBe("exec");
+      expect(body.command).toContain("printf");
+      // Verify command is under limit
+      expect(body.command.length).toBeLessThanOrEqual(32768);
+    });
+
+    it("uses write_file staging for large binary on Cloud", async () => {
+      const provider = createMolaSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://cloud.mola.sh/api/v1",
+      });
+
+      const machineId = "test-write-large";
+      const computer = {
+        id: machineId,
+        kind: "mola" as const,
+        providerRef: machineId,
+        botId: "bot-write-large",
+      };
+
+      // Mock write_file for first part, second part, then cat/decode, then rm
+      fetchMock
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { ok: true, path: "/home/dev/rakazo-home/large.bin.b64part0" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, {
+            data: { ok: true, path: "/home/dev/rakazo-home/large.bin.b64part1" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+        )
+        .mockResolvedValueOnce(
+          mockFetchResponse(200, { data: { exit_code: 0, stdout: "", stderr: "" } }),
+        );
+
+      // Binary that requires 2 write_file chunks: 1.5MB raw -> ~2MB base64
+      const largeBinary = new Uint8Array(1_500_000);
+      for (let i = 0; i < largeBinary.length; i++) {
+        largeBinary[i] = i % 256;
+      }
+
+      await provider.writeFile(
+        computer,
+        {
+          path: "large.bin",
+          content: largeBinary,
+        },
+        createMockContext(),
+      );
+
+      // Should have: 2 write_file calls for parts, 1 exec for cat|base64, 1 exec for rm
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+
+      // First two calls should be write_file with content (base64 chunks)
+      const part0Call = fetchMock.mock.calls[0];
+      if (!part0Call) throw new Error("Part 0 call not made");
+      const part0Body = JSON.parse((part0Call[1] as RequestInit).body as string);
+      expect(part0Body.action).toBe("write_file");
+      expect(part0Body.path).toContain(".b64part0");
+      expect(part0Body.content.length).toBeLessThanOrEqual(1048576);
+
+      const part1Call = fetchMock.mock.calls[1];
+      if (!part1Call) throw new Error("Part 1 call not made");
+      const part1Body = JSON.parse((part1Call[1] as RequestInit).body as string);
+      expect(part1Body.action).toBe("write_file");
+      expect(part1Body.path).toContain(".b64part1");
+      expect(part1Body.content.length).toBeLessThanOrEqual(1048576);
+
+      // Third call should be exec with cat and base64 -d
+      const catCall = fetchMock.mock.calls[2];
+      if (!catCall) throw new Error("Cat call not made");
+      const catBody = JSON.parse((catCall[1] as RequestInit).body as string);
+      expect(catBody.action).toBe("exec");
+      expect(catBody.command).toContain("cat");
+      expect(catBody.command).toContain("base64 -d");
+      expect(catBody.command).toContain("large.bin");
+      expect(catBody.command.length).toBeLessThanOrEqual(32768);
+
+      // Fourth call should be rm cleanup
+      const rmCall = fetchMock.mock.calls[3];
+      if (!rmCall) throw new Error("Rm call not made");
+      const rmBody = JSON.parse((rmCall[1] as RequestInit).body as string);
+      expect(rmBody.action).toBe("exec");
+      expect(rmBody.command).toContain("rm -f");
+      expect(rmBody.command.length).toBeLessThanOrEqual(32768);
+    });
   });
 });
