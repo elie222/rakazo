@@ -985,5 +985,56 @@ describe("MolaSandboxProvider", () => {
       const bodyBytes = Buffer.byteLength(serializedBody, "utf-8");
       expect(bodyBytes).toBeLessThanOrEqual(950 * 1024);
     });
+
+    it("correctly quotes paths with spaces, quotes, and $ in real bash execution", async () => {
+      const { execSync } = await import("node:child_process");
+      const fs = await import("node:fs/promises");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const { shellQuote } = await import("./computer-support.js");
+
+      // Create temp directory
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "mola-test-"));
+
+      try {
+        // Challenging filename with space, single quote, and $
+        const destName = "file with space and ' quote and $var.bin";
+        const destPath = path.join(tmpDir, destName);
+
+        // Create base64 part files with same challenging pattern
+        const part0Name = `${destName}.b64part0`;
+        const part1Name = `${destName}.b64part1`;
+        const part0Path = path.join(tmpDir, part0Name);
+        const part1Path = path.join(tmpDir, part1Name);
+
+        // Expected binary content
+        const expectedBytes = Buffer.from([0x00, 0xff, 0x10, 0x80, 0x7f, 0xaa, 0xbb, 0xcc]);
+        const base64Content = expectedBytes.toString("base64");
+
+        // Split into two parts
+        const mid = Math.floor(base64Content.length / 2);
+        const part0Content = base64Content.slice(0, mid);
+        const part1Content = base64Content.slice(mid);
+
+        // Write part files
+        await fs.writeFile(part0Path, part0Content, "utf-8");
+        await fs.writeFile(part1Path, part1Content, "utf-8");
+
+        // Build command using same logic as implementation
+        const partsArgs = [part0Path, part1Path].map(shellQuote).join(" ");
+        const script = `set -o pipefail; cat ${partsArgs} | base64 -d > ${shellQuote(destPath)}`;
+        const command = `bash -c ${shellQuote(script)}`;
+
+        // Execute the command
+        execSync(command, { stdio: "pipe" });
+
+        // Read and verify the result
+        const resultBytes = await fs.readFile(destPath);
+        expect(Buffer.from(resultBytes)).toEqual(expectedBytes);
+      } finally {
+        // Cleanup
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
   });
 });

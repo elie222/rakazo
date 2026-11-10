@@ -985,8 +985,9 @@ export class MolaSandboxProvider implements SandboxProvider {
 
           // Concatenate and decode all parts with pipefail
           const partsArgs = tempFiles.map(shellQuote).join(" ");
-          // Use bash with pipefail to detect missing parts
-          const catCommand = `bash -c 'set -o pipefail; cat ${partsArgs} | base64 -d > ${shellQuote(fullPath)}'`;
+          // Build script first, then quote the whole thing for bash -c
+          const script = `set -o pipefail; cat ${partsArgs} | base64 -d > ${shellQuote(fullPath)}`;
+          const catCommand = `bash -c ${shellQuote(script)}`;
           if (catCommand.length > EXEC_COMMAND_LIMIT) {
             throw new Error(
               `Too many temp files: cat command ${catCommand.length} > ${EXEC_COMMAND_LIMIT}`,
