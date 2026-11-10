@@ -28,13 +28,13 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @rakazo/desktop build
@@ -56,7 +56,7 @@ jobs:
         run: >-
           pnpm --filter @rakazo/desktop exec playwright test
           --config e2e/playwright.config.ts setup.spec.ts
-          --grep "first run asks whether to use a local or existing instance"
+          --grep "setup offers Rakazo Cloud first, with local and existing instances"
       - name: Upload native macOS setup screenshot
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

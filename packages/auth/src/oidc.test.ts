@@ -1,10 +1,11 @@
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import type * as Db from "@rakazo/db";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, AuthEnv } from "./index.js";
 import { createAuth } from "./index.js";
 import { isCurrentOidcAccount, oidcAccountSubject } from "./oidc.js";
+import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
 const state = vi.hoisted(() => ({ db: {} as Record<string, Record<string, unknown>[]> }));
 vi.mock("better-auth/adapters/prisma", () => ({ prismaAdapter: () => memoryAdapter(state.db) }));
@@ -15,6 +16,7 @@ vi.mock("@rakazo/db", async (original) => ({
 
 const issuer = "https://identity.example.test";
 const origin = "https://rakazo.example.test";
+const secret = "offline-test-secret-with-at-least-32-characters";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key", alg: "RS256", use: "sig" };
 let auth: Auth;
@@ -27,6 +29,12 @@ let corruptSignature = false;
 let omitIdToken = false;
 let replayedIdToken: string | undefined;
 let userInfoClaims: Record<string, unknown>;
+/** Directory-made accounts by user id: the profile source the directory manages, or null when adopted. */
+let directorySubjects: Map<string, string | null>;
+/** Users the directory currently provisions. */
+let provisionedUsers: Set<string>;
+/** Users who have a workspace, which every first sign-in creates. */
+let signedInUsers: Set<string>;
 const codes = new Map<
   string,
   { challenge: string; nonce: string; claims: Record<string, unknown> }
@@ -52,22 +60,57 @@ function jwt(claims: Record<string, unknown>) {
   return `${data}.${sign("RSA-SHA256", Buffer.from(corruptSignature ? `${data}tampered` : data), privateKey).toString("base64url")}`;
 }
 
-function setup(options: Partial<AuthEnv> = {}) {
+function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
   const prisma: Record<string, unknown> = {
     deploymentSettings: {
       findUnique: vi.fn(async () => null),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    spaceMember: { findFirst: vi.fn(async () => ({ id: "existing-space" })) },
+    spaceMember: {
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        hasMembership || signedInUsers.has(where.userId) ? { id: "existing-space" } : null,
+      ),
+      findMany: vi.fn(async () => []),
+    },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
+    messagingLinkCode: { deleteMany: vi.fn(async () => ({})) },
+    userDevice: { updateMany: vi.fn(async () => ({})) },
+    passkey: { deleteMany: vi.fn(async () => ({})) },
+    account: {
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const kept = rows("account").filter(
+          (row) => row.userId !== where.userId || row.providerId === "credential",
+        );
+        state.db.account!.splice(0, state.db.account!.length, ...kept);
+        return {};
+      }),
+    },
     organization: { deleteMany: vi.fn(async () => ({})) },
+    scimSubject: {
+      findUnique: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        directorySubjects.has(where.userId)
+          ? { profileSourceId: directorySubjects.get(where.userId) }
+          : null,
+      ),
+    },
+    user: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          rows("user").find((row) => row.id === where.id) ?? null,
+      ),
+    },
+    scimUser: {
+      findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        provisionedUsers.has(where.userId) ? { id: `scim-${where.userId}` } : null,
+      ),
+    },
   };
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),
   );
   auth = createAuth(prisma as never, {
-    secret: "offline-test-secret-with-at-least-32-characters",
+    secret,
     baseURL: origin,
     webOrigin: origin,
     signupsEnabled: "true",
@@ -95,6 +138,12 @@ function setup(options: Partial<AuthEnv> = {}) {
   });
 }
 
+/** Signs a stored session token the way the session cookie and `set-auth-token` do. */
+function signedBearer(token: string) {
+  if (token.includes(".")) return token;
+  return `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
+}
+
 async function request(
   path: string,
   body?: unknown,
@@ -105,7 +154,7 @@ async function request(
     origin,
     "content-type": "application/json",
     ...(cookies ? { cookie: cookies } : {}),
-    ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+    ...(bearer ? { authorization: `Bearer ${signedBearer(bearer)}` } : {}),
   });
   for (const [key, value] of Object.entries(overrides)) {
     if (value === null) headers.delete(key);
@@ -176,6 +225,8 @@ async function signIn(claims?: Record<string, unknown>) {
   return request(await start(claims));
 }
 const rows = (model: string) => state.db[model] ?? [];
+const hashedIdentifier = (identifier: string) =>
+  createHash("sha256").update(identifier).digest("base64url");
 
 function expireOidcProofs() {
   for (const value of rows("verification")) {
@@ -202,6 +253,9 @@ beforeEach(() => {
   omitIdToken = false;
   replayedIdToken = undefined;
   userInfoClaims = { sub: "subject-1", email: "sso@example.test", email_verified: true };
+  directorySubjects = new Map();
+  provisionedUsers = new Set();
+  signedInUsers = new Set();
   codes.clear();
   vi.stubGlobal(
     "fetch",
@@ -314,6 +368,89 @@ describe("OIDC callbacks", () => {
       expect(rows("account")[0]?.providerId).toBe("credential");
     },
   );
+  it("stores provider tokens encrypted and still reads them", async () => {
+    setup();
+    await signIn();
+    const stored = () => rows("account").find((account) => account.providerId === "oidc")!;
+    const first = { ...stored() };
+    expect(first.accessToken).toEqual(expect.any(String));
+    expect(first.accessToken).not.toBe("fake-access-token");
+    expect(String(first.idToken)).not.toContain(".");
+    expect(await openIdToken(secret, String(first.idToken))).toMatch(/^ey/);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    const tokens = await request("/get-access-token", { accountId: String(first.id) });
+    expect(tokens.status, await tokens.clone().text()).toBe(200);
+    expect(await tokens.json()).toMatchObject({
+      accessToken: "fake-access-token",
+      idToken: await openIdToken(secret, String(first.idToken)),
+    });
+    cookies = "";
+    const again = await signIn();
+    expect(again.headers.get("location")).toBe(`${origin}/app`);
+    expect(String(stored().idToken)).not.toContain(".");
+    expect(await openIdToken(secret, String(stored().idToken))).toMatch(/^ey/);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+  });
+  it("keeps accounts stored before token encryption working, then encrypts them", async () => {
+    setup();
+    await signIn();
+    const account = rows("account").find((row) => row.providerId === "oidc")!;
+    const idToken = jwt({ sub: "subject-1", email: "sso@example.test" });
+    Object.assign(account, {
+      accessToken: "legacy-access-token",
+      refreshToken: "legacy-refresh-token",
+      idToken,
+    });
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    const prisma = {
+      account: {
+        findMany: vi.fn(async () => rows("account").map((row) => ({ ...row }))),
+        updateMany: vi.fn(
+          async ({ where, data }: { where: Record<string, unknown>; data: object }) => {
+            const row = rows("account").find((item) =>
+              Object.entries(where).every(([key, value]) => (item[key] ?? null) === value),
+            );
+            if (row) Object.assign(row, data);
+            return { count: row ? 1 : 0 };
+          },
+        ),
+      },
+    };
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(1);
+    expect(account.accessToken).not.toBe("legacy-access-token");
+    expect(account.refreshToken).not.toBe("legacy-refresh-token");
+    expect(await openIdToken(secret, String(account.idToken))).toBe(idToken);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(0);
+
+    // A sign-in that refreshes the row after the upgrade read it must win.
+    account.accessToken = "legacy-access-token";
+    prisma.account.findMany.mockImplementationOnce(async () => {
+      const read = rows("account").map((row) => ({ ...row }));
+      account.accessToken = "refreshed-access-token";
+      return read;
+    });
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(0);
+    expect(account.accessToken).toBe("refreshed-access-token");
+  });
+  it("stores deletion codes hashed and accepts one stored before hashing", async () => {
+    setup();
+    await signIn();
+    await request("/request-account-deletion", {});
+    const code = sentCodes.at(-1)!.match(/\b[a-f0-9]{32}\b/)![0];
+    expect(rows("verification").some((row) => String(row.identifier).includes(code))).toBe(false);
+    rows("verification").push({
+      id: "legacy-deletion-code",
+      identifier: "delete-account-legacy-code",
+      value: rows("user")[0]!.id,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const deleted = await request("/delete-user", { token: "legacy-code" });
+    expect(deleted.status, await deleted.clone().text()).toBe(200);
+    expect(rows("user")).toHaveLength(0);
+  });
   it("does not reuse identities after changing the configured issuer", async () => {
     setup();
     await signIn();
@@ -334,7 +471,7 @@ describe("OIDC callbacks", () => {
     expect(rows("user")).toHaveLength(1);
     expect(rows("account")).toHaveLength(1);
   });
-  it("links only through an authenticated link flow", async () => {
+  it("links only through an authenticated link flow from a verified account", async () => {
     setup();
     expect(
       (await request("/link-social", { provider: "oidc", callbackURL: `${origin}/app` })).status,
@@ -344,6 +481,9 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    const unverified = await request(await start(undefined, true));
+    expect(unverified.headers.get("location")).toContain("error=unable_to_link_account");
+    rows("user")[0]!.emailVerified = true;
     const response = await request(await start(undefined, true));
     expect(response.headers.get("location")).toBe(`${origin}/app`);
     expect(rows("account")).toHaveLength(2);
@@ -356,6 +496,7 @@ describe("OIDC callbacks", () => {
       password: "test-password-123",
       name: "Local",
     });
+    rows("user")[0]!.emailVerified = true;
     await request(await start(undefined, true));
     expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
     const oldAccountId = rows("account").find(
@@ -406,14 +547,117 @@ describe("OIDC callbacks", () => {
     expect(response.headers.get("location")).toContain("error=unable_to_link_account");
     expect(rows("account")).toHaveLength(1);
   });
+  it("refuses a link to an unverified account finished in another browser", async () => {
+    setup();
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Squatter",
+    });
+    const callback = await start(undefined, true);
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    const response = await request(callback);
+    expect(response.headers.get("location")).toContain("error=unable_to_link_account");
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(0);
+  });
+  it("links an unverified account from its own browser when nothing can verify it", async () => {
+    setup({ email: undefined });
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Local",
+    });
+    const session = cookies;
+    const planted = await start(undefined, true);
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${planted}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    expect((await request(planted)).headers.get("location")).toContain(
+      "error=unable_to_link_account",
+    );
+    cookies = session;
+    expect((await request(await start(undefined, true))).headers.get("location")).toBe(
+      `${origin}/app`,
+    );
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(1);
+  });
+  it("links a verified account from the native browser", async () => {
+    setup();
+    await request("/sign-up/email", {
+      email: "sso@example.test",
+      password: "test-password-123",
+      name: "Local",
+    });
+    rows("user")[0]!.emailVerified = true;
+    const callback = await start(undefined, true, "rakazo://account");
+    const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    cookies = "";
+    await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
+    );
+    expect(new URL((await request(callback)).headers.get("location")!).protocol).toBe("rakazo:");
+    expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(1);
+  });
+  it("drops an unverified account's SSO links when its mailbox owner resets the password", async () => {
+    setup();
+    const squatter = { sub: "subject-1", email: "sso@example.test", email_verified: false };
+    await signIn(squatter);
+    cookies = "";
+    await request("/request-password-reset", {
+      email: "sso@example.test",
+      redirectTo: `${origin}/reset`,
+    });
+    const token = sentCodes.at(-1)!.match(/reset-password\/([^?\s]+)/)![1]!;
+    expect(
+      (await request("/reset-password", { newPassword: "owner-password-123", token })).status,
+    ).toBe(200);
+    expect(rows("account").map((account) => account.providerId)).toEqual(["credential"]);
+    expect((await signIn(squatter)).headers.get("location")).toContain("error=account_not_linked");
+  });
+  it("keeps the stored email when an unverified claim names a new one", async () => {
+    setup();
+    await signIn();
+    cookies = "";
+    await signIn({ sub: "subject-1", email: "other@example.test", email_verified: false });
+    expect(rows("user")[0]).toMatchObject({ email: "sso@example.test", emailVerified: false });
+    cookies = "";
+    const owner = await request("/sign-up/email", {
+      email: "other@example.test",
+      password: "owner-password-123",
+      name: "Owner",
+    });
+    expect(owner.status).toBe(200);
+  });
   it("hands the native browser callback to Expo with a valid bearer session", async () => {
     setup();
+    const context = await auth.$context;
+    const createVerificationValue = context.internalAdapter.createVerificationValue;
+    vi.spyOn(context.internalAdapter, "createVerificationValue").mockImplementation(
+      async (input) => {
+        if (typeof input.value !== "string" || input.value.length === 0) {
+          throw new Error("verification values must be non-empty strings");
+        }
+        return createVerificationValue.call(context.internalAdapter, input);
+      },
+    );
     const callback = await start(undefined, false, "rakazo://sign-in");
     const authorize = `${issuer}/authorize?state=${new URL(`${origin}${callback}`).searchParams.get("state")}`;
+    const callbackMarkers = rows("verification").filter((row) =>
+      String(row.identifier).startsWith("oidc-callback-"),
+    ).length;
     const proxy = await request(
       `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: authorize })}`,
     );
     expect(proxy.headers.get("location")).toBe(authorize);
+    expect(
+      rows("verification").filter((row) => String(row.identifier).startsWith("oidc-callback-")),
+    ).toHaveLength(callbackMarkers);
     const returned = await request(callback);
     const destination = new URL(returned.headers.get("location")!);
     expect(destination.protocol).toBe("rakazo:");
@@ -425,6 +669,30 @@ describe("OIDC callbacks", () => {
     expect(session.status).toBe(200);
     expect(await session.json()).toMatchObject({ user: { email: "sso@example.test" } });
   });
+  it.each([
+    "https://attacker.example.test/authorize",
+    `${issuer}/elsewhere`,
+    "https://identity.example.test.attacker.example.test/authorize",
+  ])(
+    "only lets the native proxy redirect to the SSO authorization endpoint (%s)",
+    async (target) => {
+      setup();
+      const response = await request(
+        `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: `${target}?state=planted` })}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("location")).toBeNull();
+      expect(cookies).not.toContain("state=");
+    },
+  );
+  it("closes the native proxy without SSO", async () => {
+    setup({ oidc: undefined });
+    const response = await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: "https://attacker.example.test/x?state=planted" })}`,
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+  });
   it("enforces the allowlist before inserting a user", async () => {
     setup({ signupAllowlist: "allowed@example.test" });
     expect((await signIn()).headers.get("location")).toContain("error=EMAIL_NOT_ALLOWED");
@@ -434,6 +702,16 @@ describe("OIDC callbacks", () => {
   it("admits allowlisted verified identities", async () => {
     setup({ signupAllowlist: "sso@example.test" });
     expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+  });
+  it("redirects an unprovisioned identity when registration closes", async () => {
+    setup();
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+    auth.disposeOidcDiscovery();
+    setup({ signupsEnabled: "false" }, false);
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain(
+      `${origin}/sign-in?error=REGISTRATION_CLOSED`,
+    );
   });
   it("never upgrades an unverified allowlisted identity", async () => {
     setup({ signupAllowlist: "sso@example.test" });
@@ -570,6 +848,8 @@ describe("OIDC callbacks", () => {
       "/sign-up/email",
       "/request-password-reset",
       "/set-password",
+      "/email-otp/send-verification-otp",
+      "/sign-in/email-otp",
     ]) {
       expect(
         (await request(path, { email: "local@example.test", password: "test-password-123" }))
@@ -1079,6 +1359,25 @@ describe("SSO-only account deletion", () => {
     expect((await request("/delete-user", {})).status).toBe(200);
     expect(rows("user")).toHaveLength(0);
   });
+  it("confirms identity for the session a fresh SSO sign-in creates", async () => {
+    setup();
+    await signIn();
+    const confirmed = (row: Record<string, unknown>) =>
+      auth.hasRecentIdentityConfirmation({
+        sessionId: String(row.id),
+        userId: String(row.userId),
+      });
+    const first = rows("session").at(-1)!;
+    expect(await confirmed(first)).toBe(false);
+    expect((await request("/confirm-identity", {})).status).toBe(400);
+    await request(await start(undefined, false, `${origin}/app`, true));
+    const current = rows("session").at(-1)!;
+    expect(current.id).not.toBe(first.id);
+    expect(await confirmed(current)).toBe(true);
+    expect(await confirmed(first)).toBe(false);
+    expireOidcProofs();
+    expect(await confirmed(current)).toBe(false);
+  });
   it("refuses a stale session, then accepts fresh reauthentication", async () => {
     setup();
     await signIn();
@@ -1097,6 +1396,12 @@ describe("SSO-only account deletion", () => {
     const sessionToken = String(rows("session")[0]!.token);
     expireOidcProofs();
     cookies = "";
+    // A token copied from the session table is not a session.
+    const raw = { authorization: `Bearer ${sessionToken}` };
+    expect((await request("/request-account-deletion", {}, undefined, raw)).status).toBe(401);
+    expect((await request("/delete-user", {}, undefined, raw)).status).toBe(401);
+    const reauth = { provider: "oidc", additionalData: { reauthenticate: true } };
+    expect((await request("/sign-in/social", reauth, undefined, raw)).status).toBe(401);
     expect((await request("/delete-user", { token: "wrong-code" }, sessionToken)).status).not.toBe(
       200,
     );
@@ -1143,8 +1448,8 @@ describe("SSO-only account deletion", () => {
     await signIn();
     await request("/request-account-deletion", {});
     const code = sentCodes.at(-1)!.match(/\b[a-f0-9]{32}\b/)![0];
-    const verification = rows("verification").find((value) =>
-      String(value.identifier).includes(code),
+    const verification = rows("verification").find(
+      (value) => value.identifier === hashedIdentifier(`delete-account-${code}`),
     )!;
     verification.expiresAt = new Date(0);
     expect((await request("/delete-user", { token: code })).status).not.toBe(200);
@@ -1187,17 +1492,154 @@ describe("SSO-only account deletion", () => {
   );
 });
 
-it("counts only stored OIDC subjects bound to the current issuer", () => {
+it("counts only stored OIDC subjects bound to the current issuer", async () => {
   const account = {
     providerId: "oidc",
     accountId: oidcAccountSubject(issuer, "subject-1"),
     idToken: jwt({ sub: "subject-1" }),
   };
-  expect(isCurrentOidcAccount(account, issuer)).toBe(true);
-  expect(isCurrentOidcAccount(account, undefined)).toBe(false);
-  expect(isCurrentOidcAccount(account, "https://replacement.example.test")).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, providerId: "credential" }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, accountId: "unbound" }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, idToken: null }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer)).toBe(false);
+  const sealed = { ...account, idToken: await sealIdToken(secret, account.idToken) };
+  expect(await isCurrentOidcAccount(account, issuer, secret)).toBe(true);
+  expect(await isCurrentOidcAccount(sealed, issuer, secret)).toBe(true);
+  expect(await isCurrentOidcAccount(sealed, issuer, "another-secret-with-32-characters!")).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount(account, undefined, secret)).toBe(false);
+  expect(await isCurrentOidcAccount(account, "https://replacement.example.test", secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, providerId: "credential" }, issuer, secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, accountId: "unbound" }, issuer, secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, idToken: null }, issuer, secret)).toBe(false);
+  expect(await isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer, secret)).toBe(
+    false,
+  );
+});
+
+describe("directory accounts", () => {
+  const now = () => new Date();
+
+  /** An account the directory made: no login yet, its profile managed by the directory. */
+  function provisionedAccount(id = "provisioned-1", email = "sso@example.test") {
+    rows("user").push({
+      id,
+      name: "Provisioned",
+      email,
+      emailVerified: false,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    directorySubjects.set(id, `scim-${id}`);
+    provisionedUsers.add(id);
+    return id;
+  }
+
+  it("refuses a deactivated account's sign-in and its existing sessions", async () => {
+    setup();
+    const credentials = { email: "local@example.test", password: "test-password-123" };
+    expect((await request("/sign-up/email", { ...credentials, name: "Local" })).status).toBe(200);
+    expect(await (await request("/get-session")).json()).toMatchObject({
+      user: { email: "local@example.test" },
+    });
+    rows("user")[0]!.deactivatedAt = now();
+
+    expect(await (await request("/get-session")).json()).toBeNull();
+    cookies = "";
+    const refused = await request("/sign-in/email", credentials);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: "ACCOUNT_DEACTIVATED" });
+
+    delete rows("user")[0]!.deactivatedAt;
+    expect((await request("/sign-in/email", credentials)).status).toBe(200);
+  });
+
+  it("refuses a deactivated account's SSO sign-in", async () => {
+    setup();
+    await signIn();
+    rows("user")[0]!.deactivatedAt = now();
+    cookies = "";
+    const sessions = rows("session").length;
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=ACCOUNT_DEACTIVATED");
+    expect(rows("session")).toHaveLength(sessions);
+  });
+
+  it("claims an account the directory made on its first SSO sign-in", async () => {
+    setup({ directoryProvisioning: true }, false);
+    const userId = provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toBe(`${origin}/app`);
+    expect(rows("user")).toHaveLength(1);
+    expect(rows("account")).toEqual([expect.objectContaining({ userId, providerId: "oidc" })]);
+    expect(rows("user")[0]?.emailVerified).toBe(true);
+    // The link is now the account's own; signing in again needs no claim.
+    cookies = "";
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+  });
+
+  it("admits a directory account while registration is closed", async () => {
+    setup({ directoryProvisioning: true, signupsEnabled: "false" }, false);
+    provisionedAccount();
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+
+    // An account the directory no longer provisions follows the signup policy again.
+    cookies = "";
+    provisionedAccount("provisioned-2", "second@example.test");
+    provisionedUsers.delete("provisioned-2");
+    const refused = await signIn({
+      sub: "subject-2",
+      email: "second@example.test",
+      email_verified: true,
+    });
+    expect(refused.headers.get("location")).toContain("error=REGISTRATION_CLOSED");
+  });
+
+  it.each([
+    [
+      "the provider email is unverified",
+      () => provisionedAccount(),
+      { sub: "subject-1", email: "sso@example.test", email_verified: false },
+    ],
+    [
+      // An emailed code leaves no login row, only the workspace the first sign-in made.
+      "someone already signed in to it",
+      () => signedInUsers.add(provisionedAccount()),
+      undefined,
+    ],
+    [
+      // Nothing is linked to an account while it is off, so turning it back on adds no login.
+      "the account is deactivated",
+      () => {
+        const userId = provisionedAccount();
+        rows("user").find((row) => row.id === userId)!.deactivatedAt = now();
+      },
+      undefined,
+    ],
+    [
+      "the directory adopted an account it did not make",
+      () => {
+        const userId = provisionedAccount();
+        directorySubjects.set(userId, null);
+      },
+      undefined,
+    ],
+  ])("does not claim the account when %s", async (_case, seed, claims) => {
+    setup({ directoryProvisioning: true }, false);
+    seed();
+    const response = await signIn(claims);
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account").filter((row) => row.providerId === "oidc")).toHaveLength(0);
+  });
+
+  it("never links by email without directory provisioning", async () => {
+    setup({}, false);
+    provisionedAccount();
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain("error=account_not_linked");
+    expect(rows("account")).toHaveLength(0);
+  });
 });

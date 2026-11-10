@@ -1,10 +1,6 @@
 import { readFile } from "node:fs/promises";
-import {
-  type PerformanceReport,
-  parsePerformanceReport,
-  percentageDelta,
-  roundMetric,
-} from "../performance-report.js";
+import type { PerformanceReport } from "../performance-report.js";
+import { parsePerformanceReport, percentageDelta, roundMetric } from "../performance-report.js";
 
 const [beforePath, afterPath] = process.argv.slice(2).filter((value) => value !== "--");
 if (!beforePath || !afterPath) {

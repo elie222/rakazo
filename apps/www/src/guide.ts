@@ -69,7 +69,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   {
     question: "What do I need to self-host Rakazo?",
     answer:
-      "Published images need Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. You do not need Node.js for that path. A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported.",
+      "Published images need Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. You do not need Node.js for that path. A source checkout needs Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 25.x is not supported.",
   },
   {
     question: "Where does my data live?",
@@ -84,7 +84,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   {
     question: "Is hosted Rakazo available?",
     answer:
-      "Self-hosting is available now. Hosted Rakazo Cloud is not generally available. Get started includes a waitlist for Cloud.",
+      "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
   },
   {
     question: "How does this compare with OpenClaw?",
@@ -147,7 +147,7 @@ export const OPENCLAW_FAQS: readonly FaqItem[] = [
   {
     question: "Does either project charge for the software?",
     answer:
-      "Rakazo is free to self-host. Hosted Rakazo Cloud is not generally available. OpenClaw's documentation says the project has no paid tier and no hosted service. You still pay for models, machines, and any optional computer providers you use.",
+      "Rakazo is free to self-host. Hosted Rakazo Cloud is in beta. OpenClaw's documentation says the project has no paid tier and no hosted service. You still pay for models, machines, and any optional computer providers you use.",
   },
 ];
 
@@ -181,7 +181,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     aspect: "Where it runs",
     rakazo:
-      "You self-host with published Docker images or from source. Web, desktop, and mobile apps are clients of that API. Hosted Rakazo Cloud is not generally available.",
+      "You self-host with published Docker images or from source. Web, desktop, and mobile apps are clients of that API. Hosted Rakazo Cloud is in beta.",
     openclaw:
       "You run the Gateway on your own computer or a server. The docs say there is no hosted service in the middle. Interfaces include a browser Control UI, companion apps, and iOS and Android nodes.",
   },
@@ -202,7 +202,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     aspect: "Computers and tools",
     rakazo:
-      "Browser, terminal, files, and a graphical desktop. The default computer is local Docker. Optional remote computers are E2B, Daytona, CreateOS, and Box. An explicit desktop provider can run on the host; it is not the default.",
+      "Browser, terminal, files, and a graphical desktop. The default computer is local Docker. Optional remote computers are E2B, Daytona, CreateOS, and Boat. An explicit desktop provider can run on the host; it is not the default.",
     openclaw:
       "Tools include browser automation and exec. Sandboxing is off by default. When enabled, documented backends include Docker, Podman, SSH, OpenShell, and Crabbox. The Gateway process stays on the host.",
   },
@@ -264,7 +264,7 @@ export const SELF_HOST_MARKDOWN = `# Self-hosted AI agent
 
 Rakazo is an open source AI agent for persistent teammates. Each bot can use a browser and a shell, keep routines as Markdown, and pause for approval when work crosses a boundary you set. Self-hosting means that stack runs on infrastructure you operate.
 
-The software is [Apache-2.0](${GITHUB_URL}/blob/main/LICENSE). Hosted Rakazo Cloud is not generally available. This page is the essential setup. The [full self-hosting guide](${DOCS_URL}) on GitHub covers backups, upgrades, secrets, restricted networks, and production Compose.
+The software is [Apache-2.0](${GITHUB_URL}/blob/main/LICENSE). Hosted Rakazo Cloud is in beta. This page is the essential setup. The [full self-hosting guide](${DOCS_URL}) on GitHub covers backups, upgrades, secrets, restricted networks, and production Compose.
 
 ## What self-hosting gives you
 
@@ -278,13 +278,26 @@ Connect OpenAI, Anthropic, Google, OpenRouter, or Vercel AI Gateway. You can als
 
 ### Cost control
 
-There is no seat fee for the open source software. You pay the model provider you connect and any remote computer provider you choose. Local Docker computers are the default, so a single machine does not need an E2B, Daytona, CreateOS, or Box account.
+There is no seat fee for the open source software. You pay the model provider you connect and any remote computer provider you choose. Local Docker computers are the default, so a single machine does not need an E2B, Daytona, CreateOS, or Boat account.
+
+## Self-host only, for now
+
+These work on your own deployment and are not yet on Rakazo Cloud. Each turns on from \`.env\`.
+
+- **Telegram, WhatsApp, iMessage and SMS, Feishu and Lark.** Add the platform's credentials: \`TELEGRAM_BOT_TOKEN\`, \`WHATSAPP_*\`, \`SENDBLUE_*\` (iMessage and SMS), or \`LARK_*\`.
+- **Image and video generation.** \`MEDIA_GENERATION_PROVIDER=fal\`, \`MEDIA_GENERATION_API_KEY\`, and an image or video model (\`MEDIA_GENERATION_IMAGE_MODEL\`, \`MEDIA_GENERATION_VIDEO_MODEL\`).
+- **Purchases with Stripe Link.** \`PAYMENT_WALLET_PROVIDER=link\`. Each purchase waits for your approval in Link.
+- **Cursor cloud agents.** \`CLOUD_AGENT_PROVIDER=cursor\`, \`CURSOR_API_KEY\`, and \`CLOUD_AGENT_SPACE_ID\`.
+- **Ticket board.** \`TICKET_BOARD_ENABLED=true\`.
+- **Local models and local MCP servers.** \`RAKAZO_LOCAL_MODELS\`, and \`MCP_STDIO_ENABLED\` with \`MCP_STDIO_ALLOWED_COMMANDS\`.
+
+The [full guide](${DOCS_URL}) lists every setting for each one.
 
 ## Requirements
 
 Published images need Docker Engine 26 or newer (API 1.45 or newer, for bot home volume subpaths), the Compose plugin, curl, and OpenSSL. No Node.js install.
 
-A source checkout needs Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported.
+A source checkout needs Node.js 24.15.0 or newer on the 24.x line, or Node.js 26 or newer, plus pnpm 12 and Docker. Node.js 25.x is not supported.
 
 ## Install with published images
 
@@ -306,7 +319,7 @@ Use the same installer on a VPS when bots should stay running. Images Compose bi
 ${PUBLISHED_IMAGES_SERVER}
 \`\`\`
 
-Before the second command, set \`RAKAZO_HOST\` to the hostname and set \`BETTER_AUTH_URL\`, \`WEB_ORIGIN\`, and \`API_URL\` to that same \`https://\` origin. For a remote computer instead of local Docker, set \`SANDBOX_PROVIDER\` to \`e2b\`, \`daytona\`, \`createos\`, or \`box\` and add that provider's API key.
+Before the second command, set \`RAKAZO_HOST\` to the hostname and set \`BETTER_AUTH_URL\`, \`WEB_ORIGIN\`, and \`API_URL\` to that same \`https://\` origin. For a remote computer instead of local Docker, set \`SANDBOX_PROVIDER\` to \`e2b\`, \`daytona\`, \`createos\`, or \`boat\` and add that provider's API key.
 
 \`\`\`Caddyfile
 ${CADDY_SNIPPET}
@@ -322,7 +335,7 @@ If downloads are blocked, use the [restricted-network guide](${SELF_HOST_RESTRIC
 ${SOURCE_CHECKOUT}
 \`\`\`
 
-Set \`POSTGRES_PASSWORD\` to a URI-safe random value (for example \`openssl rand -hex 16\`) and put the same value in \`DATABASE_URL\`. Set \`BETTER_AUTH_SECRET\`, \`ENCRYPTION_KEY\`, and \`SCREEN_PROXY_SECRET\` to independent long random values. Docker sandboxes also need a dedicated \`SANDBOX_SUPERVISOR_TOKEN\`. Keep these in \`.env\`, not in git.
+Set \`POSTGRES_PASSWORD\` and \`POSTGRES_APP_PASSWORD\` to two URI-safe random values (for example \`openssl rand -hex 16\`) and put them in \`DATABASE_MIGRATION_URL\` and \`DATABASE_URL\`. Set \`BETTER_AUTH_SECRET\`, \`ENCRYPTION_KEY\`, and \`SCREEN_PROXY_SECRET\` to independent long random values. Docker sandboxes also need a dedicated \`SANDBOX_SUPERVISOR_TOKEN\`. Keep these in \`.env\`, not in git.
 
 For host-side development with Docker Desktop, set \`SANDBOX_CONTROL_VIA_LOOPBACK=true\` in \`.env\`. The supervisor then publishes its control service on a loopback port, because Docker Desktop container addresses are not reachable from the host. Leave this unset when the supervisor runs inside Compose.
 
@@ -359,10 +372,11 @@ ${faqMarkdown(SELF_HOST_FAQS)}
 `;
 
 export const OPENCLAW_RELATED = [
-  { href: "/grok-bot-alternative/", label: "Grok Bot alternative" },
+  { href: "/grok-bot-alternative/", label: "Grok Bot alternatives" },
   { href: "/muse-alternative/", label: "Meta Muse" },
   { href: "/dots-alternative/", label: "OpenAI Dots" },
   { href: "/instinct-alternative/", label: "Instinct AI" },
+  { href: "/claude-duet-alternative/", label: "Claude Duet" },
   { href: "/hark-alternative/", label: "Hark Pro" },
   { href: "/hermes-alternative/", label: "Hermes Agent" },
   { href: "/alternatives/", label: "All comparisons" },
@@ -396,7 +410,7 @@ Rakazo is a web, desktop, and mobile app for persistent teammates: a bot has a j
 
 Rakazo runs bot work on a computer. Local Docker is the default. OpenClaw can sandbox tool execution, and its docs say sandboxing is off by default. The Gateway process stays on the host.
 
-Both let you bring a model provider, including a server you run. Neither charges a seat fee for the software. OpenClaw's docs say it has no paid tier and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is not generally available.
+Both let you bring a model provider, including a server you run. Neither charges a seat fee for the software. OpenClaw's docs say it has no paid tier and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is in beta.
 
 Rakazo is Apache-2.0, maintained by Inbox Zero Inc. OpenClaw is MIT, stewarded by the OpenClaw Foundation.
 

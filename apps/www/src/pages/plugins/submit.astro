@@ -1,0 +1,63 @@
+---
+import SiteFrame from "../../components/SiteFrame.astro";
+import type { SubmissionField } from "../../components/SubmissionForm.astro";
+import SubmissionForm from "../../components/SubmissionForm.astro";
+import { docsPath } from "../../docs";
+import { GITHUB_URL } from "../../site";
+
+const fields: SubmissionField[] = [
+  { name: "email", label: "Email", placeholder: "you@acme.com", type: "email", required: true },
+  { name: "name", label: "Plugin name", placeholder: "Acme", type: "text", required: true },
+  { name: "website", label: "Website URL", placeholder: "acme.com", type: "url" },
+  {
+    name: "logo",
+    label: "Logo URL",
+    placeholder: "acme.com/logo.svg",
+    type: "url",
+    required: true,
+  },
+  {
+    name: "source",
+    label: "GitHub repository",
+    placeholder: "github.com/acme/plugin",
+    type: "url",
+    required: true,
+  },
+  {
+    name: "description",
+    label: "Description",
+    placeholder: "What your plugin does and how it helps people",
+    type: "textarea",
+    required: true,
+  },
+  {
+    name: "testing",
+    label: "Testing instructions",
+    placeholder: "How to try it in Rakazo, without real credentials",
+    type: "textarea",
+    required: true,
+  },
+];
+---
+
+<SiteFrame
+  title="Submit a plugin to Rakazo"
+  description="List your plugin or MCP server in the Rakazo marketplace."
+  markdownAlternate="/plugins/submit.md"
+>
+  <h1>Submit a plugin</h1>
+  <p>List your plugin or MCP server in the Rakazo marketplace. We review every submission.</p>
+  <h2>What a plugin looks like</h2>
+  <p>
+    A public GitHub repository, or a folder in one, with a <code>plugin.json</code> manifest and
+    a hosted MCP server in <code>mcp.json</code>, skills in <code>skills/&lt;name&gt;/SKILL.md</code>,
+    or both. Read <a href={docsPath("build-a-plugin")}>Build a plugin</a> or copy the{" "}
+    <a href={`${GITHUB_URL}/tree/main/examples/plugins/mcp-server`}>MCP server example</a> or{" "}
+    <a href={`${GITHUB_URL}/tree/main/examples/plugins/hello-world`}>skills-only example</a>.
+  </p>
+  <SubmissionForm
+    fields={fields}
+    confirm={{ name: "tested", label: "I've tested this plugin in Rakazo and it works" }}
+    submitLabel="Submit plugin"
+  />
+</SiteFrame>

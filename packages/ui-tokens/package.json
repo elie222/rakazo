@@ -8,14 +8,14 @@
     "./css": "./src/tokens.css"
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "vitest run --root ../.. packages/ui-tokens/src",
     "generate": "tsx src/generate-css.ts",
     "export:brand": "node scripts/export-brand.ts"
   },
   "devDependencies": {
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "5.1.0"
   }
 }

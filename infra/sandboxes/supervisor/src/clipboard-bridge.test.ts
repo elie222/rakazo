@@ -12,6 +12,7 @@ import {
   releaseModifierKeys,
   sendRemotePaste,
 } from "../../computer/clipboard-bridge.js";
+import { COMPUTER_IMAGE_CONTEXT_FILES } from "./computer-spec.js";
 
 describe("host clipboard paste bridge", () => {
   it("detects Ctrl/Cmd+V and ignores other chords", () => {
@@ -205,7 +206,6 @@ describe("host clipboard paste bridge", () => {
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
     const embed = readFileSync(path.join(root, "embed.html"), "utf8");
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
-    const supervisor = readFileSync(path.join(import.meta.dirname, "index.ts"), "utf8");
     expect(dockerfile).toMatch(/clipboard-bridge\.js/);
     expect(embed).toMatch(/attachHostClipboardPaste/);
     expect(embed).toMatch(/attachRemoteClipboardCopy/);
@@ -213,7 +213,7 @@ describe("host clipboard paste bridge", () => {
     expect(embed).toMatch(/id="mobile-paste"/);
     expect(embed).toMatch(/clipboard-bridge\.js/);
     expect(start).toMatch(/clipboard-bridge\.js/);
-    expect(supervisor).toMatch(/"clipboard-bridge\.js"/);
+    expect(COMPUTER_IMAGE_CONTEXT_FILES).toContain("clipboard-bridge.js");
   });
 });
 

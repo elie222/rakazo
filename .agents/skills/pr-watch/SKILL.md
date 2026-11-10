@@ -31,8 +31,11 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 ## The cycle
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
-   every check run and commit status on the exact head SHA is terminal, then
-   prints the digest. You are re-invoked when it exits.
+   there is something to act on: a review finding you have not seen, a check
+   that newly failed, or every check run and commit status on the exact head
+   SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   Review bots usually answer long before the slowest check, so expect to
+   handle comments while CI is still running.
 
    Never wait in the foreground. `sleep` is blocked and an `until` loop is
    killed at the execution tool's timeout, costing an error round-trip plus a
@@ -40,20 +43,20 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 2. Read the `VERDICT` line and act:
 
-   | verdict | do |
-   |---|---|
-   | `green` | Check the completion gate below, then report. |
-   | `failures` | Triage below. |
-   | `open-comments` | Answer them below. |
-   | `pending` | A check registered late. Back to 1. |
-   | `out-of-sync` | Push or reconcile, then back to 1. |
+   | verdict         | do                                                                            |
+   | --------------- | ----------------------------------------------------------------------------- |
+   | `green`         | Check the completion gate below, then report.                                 |
+   | `failures`      | Triage below.                                                                 |
+   | `open-comments` | Answer them below.                                                            |
+   | `pending`       | Checks are still running (you woke early, or one registered late). Back to 1. |
+   | `out-of-sync`   | Push or reconcile, then back to 1.                                            |
 
 3. After any push or reply, go back to 1 once. A verdict is only good for the
    SHA it was taken on; never mix observations from two commits.
 
 ## Failures
 
-Each `FAIL` line names the job and the step that broke. *"Later steps skipped"*
+Each `FAIL` line names the job and the step that broke. _"Later steps skipped"_
 does not establish whether tests ran: an assertion failure can skip subsequent
 steps too. Inspect `"$PRD" --logs <job-id>` before classifying the failure. Only
 rerun as infrastructure when the evidence establishes a setup/infrastructure
@@ -74,6 +77,9 @@ do not mutate external checks without authorization.
 Judge each on merits. Review bots are confidently wrong often enough to check,
 and a wrong fix is worse than a declined comment.
 
+- The flagged code should not exist (unrun harness, speculative path, scope the
+  PR does not need) → remove it, validate, and reply that it was removed.
+  Do not build more code to satisfy a finding about code that should go.
 - Valid → fix, validate, then reply with what changed.
 - Wrong → reply with the evidence that refutes it: the line of code, the
   upstream source, the behaviour on the base branch.
@@ -93,7 +99,7 @@ unanswered conversation comment the same as an open inline finding — both
 yield `VERDICT open-comments`. It skips known non-actionable noise (Vercel
 deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
 but keeps actionable bot conversation comments in the open set. A conversation
-comment is handled only once *you* have posted a later conversation comment
+comment is handled only once _you_ have posted a later conversation comment
 that quotes its permalink; bot follow-ups do not close it. Quote the complete
 URL as a Markdown link or on its own; sentence-ending punctuation is accepted.
 An edit to an inline or conversation root after your reply reopens the finding
@@ -148,15 +154,46 @@ Finish only when one observation of a single SHA proves all of:
    comments alike — and no new one appeared.
 4. At least one full wait happened after your last push or reply.
 
-Report the PR link, final head, waits, fix rounds, what feedback you handled and
-declined, what you validated, any unresolved threads, and whether you finished
-clean or stopped at a limit. If you stopped at a limit, say what was pending.
+For a UI change, once the screenshot gallery for that SHA is published, put the
+screenshot that shows the change in the PR description.
+`pr-screenshots [PR] [FILTER]`, next to `pr-digest`, prints the run's
+checkpoints as `<source>\t<Markdown image>`; filter by the spec or checkpoint
+name you wrote, pick the frame, and edit the description
+(`gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@<file>`). If the
+Playwright workflow did not run for that SHA, there is no gallery; say so in
+the description instead of waiting for one.
+
+Screens you captured yourself (a native simulator, emulator, or a local browser)
+that show the change go in the description too. Leave out any that show private
+data: real names, emails, hostnames, server URLs, tokens. Reference the rest as
+local files in the body and upload them with `gh pr edit <n> --body-file
+<body.md> --attach ./<shot>.png` (gh 2.99 or newer), which rewrites each
+reference to the uploaded asset.
+
+## Reporting
+
+Be concise. Too much information is hard to digest, so leave out anything the
+user does not need to act on or know. Stay quiet while watching; speak up
+mid-loop only when you are blocked or need a decision.
+
+End with a few short lines, not sections:
+
+- The PR link and whether it is ready to merge. If it is and the change is low
+  risk, say so; still do not merge unless the user asked.
+- Any decision the user needs to make.
+- Review findings you declined that the user might reasonably disagree with,
+  one line each.
+- Tests only when something failed or a real risk went untested.
+- If you stopped at a limit, what was still pending.
+
+No routine checks that passed, no recap of each fix round, no restating what
+the change does at length.
 
 ## Reference
 
 ```
 "$PRD" [PR]            one-shot digest
-"$PRD" --watch [PR]    block until checks settle, then digest
+"$PRD" --watch [PR]    block until something is actionable or checks settle
 "$PRD" --all [PR]      reprint findings already shown once
 "$PRD" --logs JOB_ID   failing CI log, stripped
 "$PRD" --reply ID BODY reply to a review thread

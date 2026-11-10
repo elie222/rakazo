@@ -1,15 +1,25 @@
 export type Panel =
   | "computer"
+  | "routines"
+  | "pages"
   | "settings"
   | "routine"
-  | "create"
   | "create-group"
   | "group-settings"
+  | "import-agent"
   | null;
 export type RightPanelState = { panel: Panel; routineId?: string };
 
-/** Panels that are safe to remember across reloads. Create flows stay ephemeral. */
-const durablePanels: readonly Panel[] = ["computer", "settings", "routine", "group-settings", null];
+/** Panels that are safe to remember across reloads. */
+const durablePanels: readonly Panel[] = [
+  "computer",
+  "routines",
+  "pages",
+  "settings",
+  "routine",
+  "group-settings",
+  null,
+];
 
 export function rightPanelStorageKey(
   userId: string,
@@ -45,8 +55,8 @@ export function readRightPanelState(key: string): RightPanelState {
 }
 
 export function writeRightPanelState(key: string, panel: Panel, routineId?: string) {
-  // Keep the last durable preference while create/create-group is open.
-  if (panel === "create" || panel === "create-group") return;
+  // Keep the last durable preference while create-group or an import is open.
+  if (panel === "create-group" || panel === "import-agent") return;
   try {
     localStorage.setItem(
       key,

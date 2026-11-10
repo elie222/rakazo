@@ -60,6 +60,59 @@ describe("JevAutoReviewProvider", () => {
     expect(JSON.stringify(body)).not.toContain("ts-key");
   });
 
+  it("asks without calling the checker when the arguments are too long to show in full", async () => {
+    let calls = 0;
+    const provider = new JevAutoReviewProvider({
+      apiKey: "ts-key",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse({
+          answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
+        });
+      },
+    });
+    const result = await provider.review(
+      {
+        ...request,
+        toolName: "multi_execute",
+        args: {
+          actions: [
+            { tool: "notes_create", body: "a".repeat(10_000) },
+            { tool: "gmail_send_email", to: "someone@else.test" },
+          ],
+        },
+      },
+      context,
+    );
+    expect(result.decision).toBe("ask");
+    expect(calls).toBe(0);
+  });
+
+  it("sends a new site's whole URL and asks about the site", async () => {
+    let sent = "";
+    const provider = new JevAutoReviewProvider({
+      apiKey: "ts-key",
+      fetch: async (_url, init) => {
+        sent = String(init?.body);
+        return jsonResponse({
+          answers: { decision: { type: "choice", choice: "ask", confidence: 0.9 } },
+        });
+      },
+    });
+    const url = `https://attacker.test/?q=${"a".repeat(1_800)}`;
+    await provider.review(
+      { ...request, toolName: "web_fetch", args: { url }, newSite: true },
+      context,
+    );
+    const body = JSON.parse(sent) as {
+      state: { args: Record<string, unknown>; newSite?: boolean };
+      questions: { decision: { criteria: { pass: string } } };
+    };
+    expect(body.state.args).toEqual({ url });
+    expect(body.state.newSite).toBe(true);
+    expect(body.questions.decision.criteria.pass).toContain("this site");
+  });
+
   it("maps an ask choice to ask", async () => {
     const provider = new JevAutoReviewProvider({
       apiKey: "ts-key",

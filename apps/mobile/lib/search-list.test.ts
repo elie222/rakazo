@@ -1,38 +1,5 @@
-import type { SearchHit } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  dedupeSearchHits,
-  searchHitListKey,
-  searchHitPreview,
-  searchHitRowPreview,
-} from "./search-list.js";
-
-function link(url: string, messageId = "message-1"): SearchHit {
-  return {
-    kind: "link",
-    botId: "bot-1",
-    botName: "Scout",
-    title: url,
-    snippet: "match",
-    messageId,
-    seq: 4,
-    url,
-  };
-}
-
-describe("searchHitListKey", () => {
-  it("keeps two links from the same message distinct", () => {
-    const first = link("https://example.com/a");
-    const second = link("https://example.com/b");
-    expect(searchHitListKey(first)).not.toBe(searchHitListKey(second));
-    expect(dedupeSearchHits([first, second, first])).toEqual([first, second]);
-  });
-
-  it("drops a repeated hit", () => {
-    const hit = link("https://example.com/a");
-    expect(dedupeSearchHits([hit, { ...hit }])).toEqual([hit]);
-  });
-});
+import { searchHitPreview, searchHitRowPreview } from "./search-list.js";
 
 describe("searchHitPreview", () => {
   it("strips markdown to a plain line", () => {
@@ -61,9 +28,16 @@ describe("searchHitPreview", () => {
   it("joins the conversation name with the plain preview", () => {
     expect(
       searchHitRowPreview({
+        title: "launch-notes.txt",
         botName: "Scout",
         snippet: "See **this** ![x](data:image/png;base64,aaaa)",
       }),
-    ).toBe("Scout · See this x");
+    ).toBe("Scout: See this x");
+  });
+
+  it("does not repeat the chat the row title already names", () => {
+    expect(
+      searchHitRowPreview({ title: "Scout", botName: "Scout", snippet: "The plan is ready." }),
+    ).toBe("The plan is ready.");
   });
 });

@@ -9,20 +9,26 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 
+type Scope = { spaceId?: string; userId?: string; OR?: Array<{ spaceId?: string }> };
+/** The owner's rows here: added in this space (no fixture is available beyond one). */
+function inScope(row: Record<string, unknown>, where: Scope): boolean {
+  if (where.userId && row.userId !== where.userId) return false;
+  if (where.spaceId && row.spaceId !== where.spaceId) return false;
+  if (where.OR && !where.OR.some((branch) => branch.spaceId === row.spaceId)) return false;
+  return true;
+}
+
 function makePrisma(rows: Array<Record<string, unknown>> = []) {
   const store = [...rows];
   return {
     agentSkill: {
-      findMany: vi.fn(async ({ where }: { where?: Record<string, string> } = {}) =>
-        store
-          .filter((row) => {
-            if (!where) return true;
-            if (where.spaceId && row.spaceId !== where.spaceId) return false;
-            if (where.userId && row.userId !== where.userId) return false;
-            return true;
-          })
-          .map((row) => ({ ...row })),
+      findMany: vi.fn(async ({ where }: { where?: Scope } = {}) =>
+        store.filter((row) => !where || inScope(row, where)).map((row) => ({ ...row })),
       ),
+      findFirst: vi.fn(async ({ where }: { where: Scope & { id: string } }) => {
+        const row = store.find((item) => item.id === where.id && inScope(item, where));
+        return row ? { files: row.files ?? null } : null;
+      }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
           id: `skill-${store.length + 1}`,
@@ -122,6 +128,38 @@ describe("skill tools", () => {
     expect(await skillReadFromTool(prisma as never, owner, { name: "Daily standup" })).toEqual({
       error: "Skill not found.",
     });
+  });
+
+  it("lists a skill's reference files and reads one by exact path only", async () => {
+    const prisma = makePrisma([
+      {
+        id: "plugin-1",
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        name: "billing",
+        description: "Billing guidance",
+        content: buildSkillMd({
+          name: "billing",
+          description: "Billing guidance",
+          body: "See references/rates.md.",
+        }),
+        source: "plugin",
+        files: { "references/rates.md": "Rates table", "notes.txt": "Notes" },
+      },
+    ]);
+    expect(await skillReadFromTool(prisma as never, owner, { name: "billing" })).toMatchObject({
+      name: "billing",
+      files: ["notes.txt", "references/rates.md"],
+    });
+    expect(
+      await skillReadFromTool(prisma as never, owner, {
+        name: "billing",
+        file: "./references/rates.md",
+      }),
+    ).toEqual({ name: "billing", file: "references/rates.md", content: "Rates table" });
+    expect(
+      await skillReadFromTool(prisma as never, owner, { name: "billing", file: "../secrets.md" }),
+    ).toMatchObject({ error: expect.stringContaining("No file") });
   });
 
   it("preserves extra frontmatter keys on update", async () => {

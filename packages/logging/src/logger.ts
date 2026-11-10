@@ -1,5 +1,6 @@
 import { enrichLogContext, getLogContext, runWithLogContext } from "./context.js";
 import { redactBindings, redactSensitiveText } from "./redaction.js";
+import { markReportedError } from "./reported-errors.js";
 import { serializeError } from "./serialize-error.js";
 import { guardedFlush, guardedWrite } from "./sink-guard.js";
 import type {
@@ -83,11 +84,8 @@ class LoggerImpl implements Logger {
 
   private emit(level: EmitLevel, message: string, bindings?: LogBindings, error?: unknown): void {
     if (LOG_LEVELS[level] < LOG_LEVELS[this.level]) return;
-    const merged = redactBindings({
-      ...this.localBindings,
-      ...getLogContext(),
-      ...bindings,
-    });
+    const combined = { ...this.localBindings, ...getLogContext(), ...bindings };
+    const merged = redactBindings(combined);
     const event: LogEvent = {
       timestamp: new Date().toISOString(),
       level,
@@ -98,7 +96,13 @@ class LoggerImpl implements Logger {
       if (RESERVED.has(key) || value === undefined) continue;
       event[key] = value;
     }
-    if (error !== undefined) event.error = serializeError(error);
+    // A failure passed as an `error` binding, at any level, is serialized like `error()`'s.
+    const failure = error ?? combined.error;
+    if (failure !== undefined) event.error = serializeError(failure);
+    if (level === "error" && merged["error.report"] !== false) {
+      markReportedError(failure);
+      enrichLogContext({ "error.reported": true });
+    }
     for (const sink of this.sinks) {
       guardedWrite(() => sink.write(event));
     }

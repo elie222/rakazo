@@ -105,6 +105,11 @@ export async function addScratchpadItemFromTool(
   return { item: mapScratchpadItem(row) };
 }
 
+/** Items are the bot's, shared by every member of its space. */
+function scratchpadItemScope(input: { spaceId: string; botId: string }, id: string) {
+  return { id, spaceId: input.spaceId, botId: input.botId };
+}
+
 export async function updateScratchpadItemFromTool(
   deps: ScratchpadToolDeps,
   input: {
@@ -121,12 +126,7 @@ export async function updateScratchpadItemFromTool(
   if (!itemId) return { error: "itemId is required." };
 
   const existing = await deps.prisma.scratchpadItem.findFirst({
-    where: {
-      id: itemId,
-      spaceId: input.spaceId,
-      botId: input.botId,
-      userId: input.userId,
-    },
+    where: scratchpadItemScope(input, itemId),
   });
   if (!existing) return { error: "Scratchpad item not found." };
 
@@ -154,10 +154,12 @@ export async function updateScratchpadItemFromTool(
     return { error: "Provide title, status, and/or notes to update." };
   }
 
-  const row = await deps.prisma.scratchpadItem.update({
-    where: { id: existing.id },
+  // The scope is part of the write, so the item cannot change hands between the read and it.
+  const [row] = await deps.prisma.scratchpadItem.updateManyAndReturn({
+    where: scratchpadItemScope(input, existing.id),
     data,
   });
+  if (!row) return { error: "Scratchpad item not found." };
   return { item: mapScratchpadItem(row) };
 }
 
@@ -189,16 +191,14 @@ export async function removeScratchpadItemFromTool(
   if (!itemId) return { error: "itemId is required." };
 
   const existing = await deps.prisma.scratchpadItem.findFirst({
-    where: {
-      id: itemId,
-      spaceId: input.spaceId,
-      botId: input.botId,
-      userId: input.userId,
-    },
+    where: scratchpadItemScope(input, itemId),
   });
   if (!existing) return { error: "Scratchpad item not found." };
 
-  await deps.prisma.scratchpadItem.delete({ where: { id: existing.id } });
+  const { count } = await deps.prisma.scratchpadItem.deleteMany({
+    where: scratchpadItemScope(input, existing.id),
+  });
+  if (count === 0) return { error: "Scratchpad item not found." };
   return { ok: true as const, itemId: existing.id, title: existing.title };
 }
 

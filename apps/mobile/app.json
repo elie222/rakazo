@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.5",
+    "version": "1.0.14",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -14,7 +14,10 @@
         {
           "image": "./assets/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#050506"
+          "backgroundColor": "#FCFCFC",
+          "dark": {
+            "backgroundColor": "#141414"
+          }
         }
       ],
       "expo-router",
@@ -50,15 +53,56 @@
           "microphonePermission": "Rakazo uses the microphone for voice calls with your bots."
         }
       ],
-      "expo-sharing",
+      "./plugins/with-share-extension",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "appGroupId": "group.com.rakazo.app",
+            "activationRule": {
+              "supportsText": true,
+              "supportsWebUrlWithMaxCount": 1,
+              "supportsImageWithMaxCount": 10,
+              "supportsFileWithMaxCount": 10
+            }
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "text/*",
+              "image/*",
+              "audio/*",
+              "video/mp4",
+              "application/pdf",
+              "application/json",
+              "application/zip"
+            ],
+            "multipleShareMimeTypes": [
+              "image/*",
+              "audio/*",
+              "video/mp4",
+              "application/pdf",
+              "application/json",
+              "application/zip"
+            ]
+          }
+        }
+      ],
       "./plugins/with-worklets-headers",
-      "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext"
+      "./plugins/with-lan-cleartext",
+      "./plugins/with-android-no-gwp-asan",
+      "./plugins/with-agent-notifications",
+      "./plugins/with-app-intents"
     ],
+    "locales": {
+      "es": "./locales/es.json",
+      "pl": "./locales/pl.json"
+    },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
       "buildNumber": "1",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "config": {
         "usesNonExemptEncryption": false
@@ -69,7 +113,13 @@
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
+        "NSUserActivityTypes": ["INSendMessageIntent"]
+      },
+      "entitlements": {
+        "com.apple.developer.usernotifications.time-sensitive": true,
+        "com.apple.developer.usernotifications.communication": true
       }
     },
     "android": {
@@ -90,7 +140,33 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RakazoWidgets",
+                  "bundleIdentifier": "com.rakazo.app.widgets"
+                },
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "com.rakazo.app.expo-sharing-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
+                },
+                {
+                  "targetName": "AgentNotifications",
+                  "bundleIdentifier": "com.rakazo.app.notifications",
+                  "entitlements": {
+                    "com.apple.developer.usernotifications.communication": true
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "runtimeVersion": {

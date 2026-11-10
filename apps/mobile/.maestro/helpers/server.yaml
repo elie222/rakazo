@@ -1,0 +1,20 @@
+appId: com.rakazo.app
+---
+# Reuse an already-open server sheet, or open it from authentication.
+- runFlow:
+    when:
+      notVisible:
+        id: "server-address"
+    commands:
+      - tapOn: "Use a custom server|Custom server.*"
+- tapOn:
+    id: "server-address"
+- eraseText
+- inputText: ${RAKAZO_MOBILE_API_URL}
+# Android form sheets can omit native-stack header buttons. Submit the URL
+# through TextInput.onSubmitEditing while its keyboard remains focused.
+- pressKey: Enter
+- extendedWaitUntil:
+    notVisible:
+      id: "server-address"
+    timeout: 15000

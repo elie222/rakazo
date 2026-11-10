@@ -1,16 +1,16 @@
+import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DockerFailureKind, RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   classifyDockerFailure,
   composeSupportsWaitTimeout,
-  type DockerFailureKind,
   dockerSpawnEnv,
-  type RunDocker,
-  type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
+import { t } from "./i18n.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const STACK_DIR_NAME = "stack";
@@ -19,6 +19,7 @@ export const STACK_COMPOSE_FILE = "docker-compose.images.yml";
 export const STACK_ENV_TEMPLATE = ".env.images.example";
 export const STACK_ENV_FILE = ".env";
 export const STACK_WEB_URL_FILE = ".desktop-web-url";
+export const STACK_HOST_CONFIG_FILE = ".desktop-host-config";
 export const STACK_TOKEN_FILE = ".desktop-stack-token";
 export const STACK_OUTPUT_LINES = 20;
 export const STACK_HEALTH_TIMEOUT_MS = 120_000;
@@ -92,6 +93,7 @@ export function resolveImageTag(input: {
 
 const GENERATED_SECRETS: Record<string, number> = {
   POSTGRES_PASSWORD: 16,
+  POSTGRES_APP_PASSWORD: 16,
   BETTER_AUTH_SECRET: 32,
   ENCRYPTION_KEY: 32,
   SCREEN_PROXY_SECRET: 32,
@@ -120,19 +122,47 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
   return rendered.join("\n");
 }
 
-/** Keeps an existing regular `.env`, but replaces a final symlink instead of trusting its target. */
+// Secrets a later version added. A stack created before then gets them appended,
+// so an update keeps starting (Compose requires them) without touching other lines.
+const ADDED_SECRETS = ["POSTGRES_APP_PASSWORD"];
+
+/** Lines to append so an existing `.env` has every added secret, or "" when it already does. */
+export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+  const values = new Map<string, string>();
+  // Consume quoted values across lines so their contents cannot become assignments.
+  const assignments = env.matchAll(
+    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=[\t ]*(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
+  );
+  for (const match of assignments) {
+    values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
+  }
+  // Compose uses the last assignment; empty quotes still fail its required-value check.
+  return ADDED_SECRETS.filter((name) => (values.get(name) ?? "") === "")
+    .map((name) => `${name}=${randomHex(GENERATED_SECRETS[name]!)}\n`)
+    .join("");
+}
+
+/**
+ * Keeps an existing regular `.env` (appending only secrets added since it was
+ * created), but replaces a final symlink instead of trusting its target.
+ */
 export async function ensureStackEnv(
   dir: string,
   template: string,
   randomHex: (bytes: number) => string,
 ): Promise<"kept" | "created"> {
   const destination = path.join(dir, STACK_ENV_FILE);
-  try {
-    const info = await lstat(destination);
-    if (!info.isSymbolicLink()) return "kept";
-  } catch {
-    // Missing files are created below.
+  const info = await lstat(destination).catch(() => undefined);
+  if (info && !info.isSymbolicLink()) {
+    const current = await readFile(destination, "utf8");
+    const missing = missingStackSecrets(current, randomHex);
+    if (missing) {
+      const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+      await writePrivateFile(destination, `${current}${separator}${missing}`);
+    }
+    return "kept";
   }
+  // Missing files (and a final symlink) are created below.
   await writePrivateFile(destination, renderStackEnv(template, randomHex));
   return "created";
 }
@@ -168,7 +198,7 @@ export type LocalStackEvent =
   | { type: "wait-start" }
   | { type: "output"; line: string }
   | { type: "ready" }
-  | { type: "failed"; message: string };
+  | { type: "failed"; message: string; output?: string[] };
 
 export function initialStackState(imageTag: string): DesktopLocalStackState {
   return { phase: "idle", message: null, output: [], layerBytes: {}, imageTag };
@@ -227,14 +257,20 @@ export function reduceStackState(
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":
-      return { ...state, phase: "failed", message: event.message };
+      return {
+        ...state,
+        phase: "failed",
+        message: event.message,
+        output: [...state.output, ...(event.output ?? [])].slice(-STACK_OUTPUT_LINES),
+      };
   }
 }
 
-const DOCKER_GROUP_HINT =
-  "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.";
-const STOP_FAILED = "Could not stop the local stack. Check that Docker is running, then try again.";
-const START_INTERRUPTED = "The start was interrupted. Retry to continue.";
+const dockerGroupHint = () =>
+  t(
+    "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.",
+  );
+const startInterrupted = () => t("The start was interrupted. Retry to continue.");
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -244,23 +280,29 @@ export function stackFailureMessage(
 ): string {
   switch (kind) {
     case "image-not-found":
-      return `Images for ${imageTag} are not published yet. Try again in a few minutes.`;
+      return t("Images for {tag} are not published yet. Try again in a few minutes.", {
+        tag: imageTag,
+      });
     case "port-in-use":
-      return "Could not bind a local port after retrying. Retry to choose another port.";
+      return t("Could not bind a local port after retrying. Retry to choose another port.");
     case "address-pool-exhausted":
-      return "Docker has no free network address pools. Remove unused Docker networks or expand Docker’s address pools, then retry.";
+      return t(
+        "Docker has no free network address pools. Remove unused Docker networks or expand Docker’s address pools, then retry.",
+      );
     case "network":
-      return "Could not reach the image registry. Check the internet connection, then retry.";
+      return t("Could not reach the image registry. Check the internet connection, then retry.");
     case "daemon-down":
-      return "Docker stopped answering. Start Docker, then retry.";
+      return t("Docker stopped answering. Start Docker, then retry.");
     case "socket-permission":
-      return DOCKER_GROUP_HINT;
+      return dockerGroupHint();
     case "compose-missing":
-      return "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.";
+      return t(
+        "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.",
+      );
     case "other":
       return phase === "pulling"
-        ? "Downloading Rakazo images failed. Check the output below, then retry."
-        : "Rakazo services did not start. Check the output below, then retry.";
+        ? t("Downloading Rakazo images failed. Check the output below, then retry.")
+        : t("Rakazo services did not start. Check the output below, then retry.");
   }
 }
 
@@ -274,6 +316,7 @@ function interrupted(signal: AbortSignal, result: RunDockerResult): boolean {
 }
 
 export interface LocalStackDeps {
+  hostComputer?: { url: string; token: string };
   platform: string;
   env: NodeJS.ProcessEnv;
   exists: (file: string) => boolean;
@@ -335,6 +378,12 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    if (
+      this.deps.hostComputer &&
+      (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
+        this.hostConfigIdentity()
+    )
+      return false;
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
@@ -395,7 +444,13 @@ export class LocalStackController {
     this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
-        : { ...this.current, phase: "failed", message: STOP_FAILED },
+        : {
+            ...this.current,
+            phase: "failed",
+            message: t(
+              "Could not stop the local stack. Check that Docker is running, then try again.",
+            ),
+          },
     );
     return this.current;
   }
@@ -417,7 +472,7 @@ export class LocalStackController {
       await this.attempt(controller.signal);
     } catch {
       // Copying the bundled compose files failed; the path would not help the person.
-      this.push({ type: "failed", message: "Could not prepare the local stack. Retry." });
+      this.push({ type: "failed", message: t("Could not prepare the local stack. Retry.") });
     } finally {
       if (this.inFlight === controller) this.inFlight = null;
     }
@@ -430,7 +485,10 @@ export class LocalStackController {
 
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     if (binary === null) {
-      this.push({ type: "docker-missing", message: "Docker is not installed on this computer." });
+      this.push({
+        type: "docker-missing",
+        message: t("Docker is not installed on this computer."),
+      });
       return;
     }
     const version = await this.docker(
@@ -440,13 +498,25 @@ export class LocalStackController {
       signal,
     );
     if (interrupted(signal, version))
-      return this.push({ type: "failed", message: START_INTERRUPTED });
+      return this.push({ type: "failed", message: startInterrupted() });
     if (version.code !== 0) {
-      this.push({
-        type: "docker-missing",
-        message:
-          "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
-      });
+      if (failureKind(version) === "compose-missing") {
+        this.push({
+          type: "docker-missing",
+          message: t(
+            "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.",
+          ),
+        });
+      } else {
+        this.push({
+          type: "failed",
+          message: t("Could not check Docker Compose. Check the output below, then retry."),
+          output: [
+            ...`${version.stdout}\n${version.stderr}`.split(/\r?\n/).filter((line) => line !== ""),
+            `docker compose version --short exited with code ${version.code}.`,
+          ],
+        });
+      }
       return;
     }
     const info = await this.docker(
@@ -455,14 +525,15 @@ export class LocalStackController {
       DOCKER_INFO_TIMEOUT_MS,
       signal,
     );
-    if (interrupted(signal, info)) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (interrupted(signal, info))
+      return this.push({ type: "failed", message: startInterrupted() });
     if (info.code !== 0) {
       this.push({
         type: "docker-not-running",
         message:
           failureKind(info) === "socket-permission"
-            ? DOCKER_GROUP_HINT
-            : "Docker is installed but not running. Start Docker, then check again.",
+            ? dockerGroupHint()
+            : t("Docker is installed but not running. Start Docker, then check again."),
       });
       return;
     }
@@ -477,16 +548,20 @@ export class LocalStackController {
     const stackToken = await ensureStackToken(this.deps.stackDir, this.deps.randomHex);
     this.currentStackToken = stackToken;
 
-    this.push({ type: "pull-start" });
-    const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
-    if (interrupted(signal, pulled))
-      return this.push({ type: "failed", message: START_INTERRUPTED });
-    if (pulled.code !== 0) {
-      this.push({
-        type: "failed",
-        message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
-      });
-      return;
+    const imagesCached = await this.hasLocalReleaseImages(binary, signal);
+    if (signal.aborted) return this.push({ type: "failed", message: startInterrupted() });
+    if (!imagesCached) {
+      this.push({ type: "pull-start" });
+      const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
+      if (interrupted(signal, pulled))
+        return this.push({ type: "failed", message: startInterrupted() });
+      if (pulled.code !== 0) {
+        this.push({
+          type: "failed",
+          message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
+        });
+        return;
+      }
     }
 
     this.push({ type: "up-start" });
@@ -506,7 +581,7 @@ export class LocalStackController {
       await writePrivateFile(path.join(this.deps.stackDir, STACK_WEB_URL_FILE), this.currentWebUrl);
       up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     }
-    if (interrupted(signal, up)) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (interrupted(signal, up)) return this.push({ type: "failed", message: startInterrupted() });
     if (up.code !== 0) {
       // Best effort: recent service logs usually name the failing service.
       await this.compose(binary, ["logs", "--tail", "30", "--no-color"], LOGS_TIMEOUT_MS, signal);
@@ -522,6 +597,11 @@ export class LocalStackController {
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     while (!signal.aborted) {
       if ((await this.deps.probe(this.currentWebUrl, signal, stackToken)) === this.deps.imageTag) {
+        if (this.deps.hostComputer)
+          await writePrivateFile(
+            path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE),
+            this.hostConfigIdentity(),
+          );
         this.push({ type: "ready" });
         return;
       }
@@ -531,17 +611,55 @@ export class LocalStackController {
     this.push({
       type: "failed",
       message: signal.aborted
-        ? START_INTERRUPTED
-        : "The stack started but the web app did not answer. Retry, and check the output below.",
+        ? startInterrupted()
+        : t("The stack started but the web app did not answer. Retry, and check the output below."),
     });
+  }
+
+  private async hasLocalReleaseImages(binary: string, signal: AbortSignal): Promise<boolean> {
+    // Moving tags must still check the registry for newer images.
+    if (!this.deps.imageTag.startsWith("v") || !STABLE_VERSION.test(this.deps.imageTag.slice(1)))
+      return false;
+    const config = await this.compose(
+      binary,
+      ["config", "--images"],
+      DOCKER_INFO_TIMEOUT_MS,
+      signal,
+    );
+    if (interrupted(signal, config) || config.code !== 0) return false;
+    const images = [...new Set(config.stdout.split(/\s+/).filter(Boolean))];
+    if (images.length === 0) return false;
+    const inspected = await this.docker(
+      binary,
+      ["image", "inspect", "--format", "{{.Id}}", ...images],
+      DOCKER_INFO_TIMEOUT_MS,
+      signal,
+    );
+    return !interrupted(signal, inspected) && inspected.code === 0;
+  }
+
+  private hostConfigIdentity() {
+    return createHash("sha256").update(JSON.stringify(this.deps.hostComputer)).digest("hex");
   }
 
   private docker(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     return this.deps.run(binary, args, {
       cwd: this.deps.stackDir,
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
+        SANDBOX_HOST_URL: this.deps.hostComputer?.url ?? "",
+        SANDBOX_HOST_TOKEN: this.deps.hostComputer?.token ?? "",
         RAKAZO_IMAGE_TAG: this.deps.imageTag,
         RAKAZO_COMPUTER_IMAGE_TAG: this.deps.imageTag,
+        // Restricted egress needs host iptables rules. Docker Desktop keeps its
+        // bridges inside its VM where the host cannot add them, and the app cannot
+        // install root firewall rules on Linux either, so the stack would refuse
+        // every computer. This computer is the person's own machine.
+        SANDBOX_COMPUTER_EGRESS: "open",
+        // Content stays on this computer, under its own disk encryption; a lost key
+        // would otherwise lose every conversation. Existing ciphertext still reads.
+        CONTENT_ENCRYPTION: "off",
+        // Only this computer can reach the stack, so its own model and tool servers are fair game.
+        MCP_ALLOW_PRIVATE_ENDPOINT: "true",
         ...(this.currentStackToken === null
           ? {}
           : { RAKAZO_DESKTOP_STACK_TOKEN: this.currentStackToken }),

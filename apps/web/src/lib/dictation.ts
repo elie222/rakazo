@@ -1,8 +1,18 @@
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { t } from "@lingui/core/macro";
+import {
+  cancelResponseBody,
+  MAX_TRANSCRIPTION_RESPONSE_BYTES,
+  readJsonObjectWithin,
+  recognitionLocaleTag,
+  speechLocaleTag,
+  VOICE_RESPONSE_TIMEOUT_MS,
+  withAbort,
+} from "@rakazo/core";
+import { desktopBridge } from "./desktop.js";
+import { DesktopSpeechRecognition } from "./desktop-speech.js";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
-import type { UiLocale } from "./ui-locale.js";
-import { errorText } from "./user-error.js";
+import { errorText, voiceAccountErrorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -35,15 +45,11 @@ const IDLE: DictationSnapshot = { status: "idle", transcript: "" };
 const ENDPOINT_SILENCE_MS = 1200;
 const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
-export const TRANSCRIPTION_RESPONSE_TIMEOUT_MS = 70_000;
-export const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
-const ENDPOINT_UNSUPPORTED =
-  "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.";
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
 const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
 
 export function webSpeechAvailable(): boolean {
-  return Boolean(speechRecognitionCtor()) && !electronSpeechHost();
+  return Boolean(speechRecognitionCtor());
 }
 
 /**
@@ -93,26 +99,10 @@ const RESTART_SHORT_SESSION_MS = 400;
 const RESTART_BACKOFF_AFTER = 2;
 const RESTART_BACKOFF_MS = 900;
 const RESTART_GIVE_UP_AFTER = 4;
-const RESTART_GIVE_UP_ERROR =
-  "The browser keeps dropping the microphone. Start dictation again to retry.";
 
-/** Web Speech wants a BCP-47 tag; the app's UI locale is a short code. */
-const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
-  en: "en-US",
-  de: "de-DE",
-  es: "es-ES",
-  fr: "fr-FR",
-  hi: "hi-IN",
-  ko: "ko-KR",
-  "pt-BR": "pt-BR",
-  ru: "ru-RU",
-  tr: "tr-TR",
-  "zh-CN": "zh-CN",
-};
-
-/** The tag the recognizer needs for a UI locale, when we know one. */
-export function speechLocaleTag(locale: UiLocale): string | undefined {
-  return SPEECH_LOCALE_TAGS[locale];
+/** English UI follows the browser; other UI languages keep matching regional variants. */
+export function recognitionLanguage(): string {
+  return recognitionLocaleTag(getActiveUiLocale(), navigator.language);
 }
 
 /**
@@ -160,6 +150,9 @@ export function combineTranscript(prefix: string, speechText: string): string {
 
 function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
   if (typeof window === "undefined") return undefined;
+  // The desktop app listens through the operating system's recognizer instead.
+  if (desktopBridge()?.speech) return DesktopSpeechRecognition;
+  if (electronSpeechHost()) return undefined;
   const host = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
     webkitSpeechRecognition?: SpeechRecognitionCtor;
@@ -186,7 +179,12 @@ export class Dictation {
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
+  private speechSamples = 0;
+  private sampleInput: (() => boolean) | undefined;
+  private heardSpeech = false;
   private onFinal: ((text: string) => void) | null = null;
+  /** Mode of the running session: an endpoint turn reports back even without words. */
+  private mode: DictationMode | null = null;
 
   subscribe(fn: (s: DictationSnapshot) => void): () => void {
     this.watchers.add(fn);
@@ -237,7 +235,10 @@ export class Dictation {
       }
     }
     this.chunks = [];
+    this.speechSamples = 0;
+    this.heardSpeech = false;
     this.onFinal = null;
+    this.mode = null;
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
   }
 
@@ -251,11 +252,16 @@ export class Dictation {
     const mine = this.token;
     const spaceId = selectedSpaceId();
     this.onFinal = opts.onFinal;
+    this.mode = opts.mode;
     this.set({ status: "listening", transcript: "" });
     const transcribe = Boolean(opts.transcribe);
+    // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (prefersServerDictation() && opts.transcribe !== false) {
+    if (
+      (prefersServerDictation() && opts.transcribe !== false) ||
+      (desktopBridge()?.speech && transcribe)
+    ) {
       await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
@@ -275,8 +281,7 @@ export class Dictation {
     }
     this.set({
       ...IDLE,
-      error:
-        "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app.",
+      error: t`This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app.`,
     });
   }
 
@@ -293,7 +298,7 @@ export class Dictation {
     let live = true;
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = navigator.language || "en-US";
+    rec.lang = recognitionLanguage();
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
     let sessionStartedAt = Date.now();
@@ -333,9 +338,16 @@ export class Dictation {
         return;
       }
       live = false;
+      const code = event.error;
       this.set({
         ...IDLE,
-        error: event.error ? `Dictation failed: ${event.error}` : "Dictation failed.",
+        error:
+          // macOS asks only once; after a refusal, only System Settings can allow it again.
+          code === "not-allowed" && desktopBridge()?.speech
+            ? t`Allow Rakazo to use Speech Recognition and the microphone in System Settings.`
+            : code
+              ? t`Dictation failed: ${code}`
+              : t`Dictation failed.`,
       });
     };
     rec.onend = () => {
@@ -361,7 +373,11 @@ export class Dictation {
           return;
         }
         this.releaseRecognition(rec);
-        this.failListening(mine, RESTART_GIVE_UP_ERROR, true);
+        this.failListening(
+          mine,
+          t`The browser keeps dropping the microphone. Start dictation again to retry.`,
+          true,
+        );
         return;
       }
       const restart = () => {
@@ -371,7 +387,7 @@ export class Dictation {
           sessionHeardSpeech = false;
           rec.start();
         } catch {
-          this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
+          this.set({ ...IDLE, error: t`Dictation ended unexpectedly.` });
         }
       };
       if (shortSessions >= RESTART_BACKOFF_AFTER) {
@@ -393,7 +409,7 @@ export class Dictation {
       }
       live = false;
       this.releaseRecognition(rec);
-      this.set({ ...IDLE, error: "Dictation failed." });
+      this.set({ ...IDLE, error: t`Dictation failed.` });
     }
   }
 
@@ -437,7 +453,7 @@ export class Dictation {
         audio: { echoCancellation: true, noiseSuppression: true },
       });
     } catch (error) {
-      this.failListening(mine, errorText(error, "Microphone failed"));
+      this.failListening(mine, errorText(error, t`Microphone failed`));
       return;
     }
     if (this.token !== mine) {
@@ -445,9 +461,16 @@ export class Dictation {
       return;
     }
     const keptSpeech = this.snapshot.transcript.trim().length > 0;
-    if (mode === "endpoint" && !this.armSilence(stream, mine, endpointMs, keptSpeech)) {
+    this.speechSamples = 0;
+    this.heardSpeech = keptSpeech;
+    const endpoint = mode === "endpoint";
+    const monitoring = this.monitorInput(stream, mine, endpoint ? endpointMs : undefined);
+    if (endpoint && !monitoring) {
       for (const track of stream.getTracks()) track.stop();
-      this.failListening(mine, ENDPOINT_UNSUPPORTED);
+      this.failListening(
+        mine,
+        t`This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.`,
+      );
       return;
     }
     let media: MediaRecorder | undefined;
@@ -460,6 +483,7 @@ export class Dictation {
         if (event.data.size) this.chunks.push(event.data);
       };
       media.onstop = () => {
+        if (this.token === mine) this.sampleInput?.();
         for (const track of stream.getTracks()) track.stop();
         if (this.token !== mine) return;
         this.stopVad();
@@ -475,16 +499,17 @@ export class Dictation {
       if (this.media === media) this.media = null;
       if (this.token !== mine) return;
       this.stopVad();
-      this.failListening(mine, errorText(error, "Dictation failed."));
+      this.failListening(mine, errorText(error, t`Dictation failed.`));
     }
   }
 
-  private armSilence(
-    stream: MediaStream,
-    mine: number,
-    endpointMs: number,
-    alreadyHeard = false,
-  ): boolean {
+  /**
+   * Watches the microphone level so a recording that never rose above the speech
+   * threshold is not sent to a transcription model, which invents text for silence.
+   * Endpoint mode also uses it to end the turn after a quiet gap; `endpointMs` is
+   * undefined in hold mode, where the caller's release ends the turn.
+   */
+  private monitorInput(stream: MediaStream, mine: number, endpointMs: number | undefined): boolean {
     const Ctor = audioContextCtor();
     if (!Ctor) return false;
     try {
@@ -494,26 +519,30 @@ export class Dictation {
       analyser.fftSize = 2048;
       source.connect(analyser);
       this.audioContext = ctx;
-      if (ctx.state === "suspended") void ctx.resume();
+      if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
       const data = new Uint8Array(analyser.fftSize);
-      let heardSpeech = alreadyHeard;
-      let silentFor = 0;
-      this.vadTimer = setInterval(() => {
-        const media = this.media;
-        if (this.token !== mine || !media || media.state === "inactive") return;
+      this.sampleInput = () => {
+        if (this.token !== mine || ctx.state !== "running") return false;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const sample of data) {
           const n = (sample - 128) / 128;
           sum += n * n;
         }
-        const rms = Math.sqrt(sum / data.length);
-        if (rms > SILENCE_RMS) {
-          heardSpeech = true;
+        this.speechSamples += 1;
+        const speech = Math.sqrt(sum / data.length) > SILENCE_RMS;
+        if (speech) this.heardSpeech = true;
+        return speech;
+      };
+      let silentFor = 0;
+      this.vadTimer = setInterval(() => {
+        const media = this.media;
+        if (this.token !== mine || !media || media.state === "inactive") return;
+        if (this.sampleInput?.()) {
           silentFor = 0;
           return;
         }
-        if (!heardSpeech) return;
+        if (endpointMs === undefined || !this.heardSpeech) return;
         silentFor += ENDPOINT_TICK_MS;
         if (silentFor < endpointMs) return;
         this.stopVad();
@@ -533,6 +562,7 @@ export class Dictation {
   private stopVad() {
     clearInterval(this.vadTimer);
     this.vadTimer = undefined;
+    this.sampleInput = undefined;
     const ctx = this.audioContext;
     this.audioContext = null;
     if (ctx) void ctx.close().catch(() => undefined);
@@ -540,23 +570,34 @@ export class Dictation {
 
   private async transcribeChunks(mine: number, spaceId: string | null) {
     if (this.token !== mine) return;
+    // Whisper-style models invent text for silence, so a recording that never rose above
+    // the speech threshold is not sent. Require multiple running-context readings so
+    // a quick release with only a final sample still gets transcribed.
+    if (this.speechSamples >= 2 && !this.heardSpeech) {
+      this.chunks = [];
+      this.media = null;
+      const prefix = normalizedTranscript(this.snapshot.transcript);
+      if (prefix) {
+        this.finish(prefix, mine);
+        return;
+      }
+      this.set({ ...IDLE, error: t`Didn't catch that.` });
+      return;
+    }
     const blob = new Blob(this.chunks, { type: this.chunks[0]?.type || "audio/webm" });
     this.chunks = [];
     if (!blob.size) {
-      const prefix = normalizedTranscript(this.snapshot.transcript);
-      if (!prefix) {
-        this.set(IDLE);
-        return;
-      }
-      this.finish(prefix, mine);
+      this.finish(normalizedTranscript(this.snapshot.transcript), mine);
       return;
     }
     this.set({ status: "transcribing", transcript: this.snapshot.transcript });
     const abort = new AbortController();
     this.transcribeAbort = abort;
+    const timedOutMessage = t`Transcription request timed out.`;
+    const couldNotTranscribe = t`Could not transcribe that recording.`;
     const timer = setTimeout(
-      () => abort.abort(new Error("Transcription request timed out.")),
-      TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
+      () => abort.abort(new Error(timedOutMessage)),
+      VOICE_RESPONSE_TIMEOUT_MS,
     );
     try {
       const audioBase64 = await blobToBase64(blob);
@@ -576,13 +617,13 @@ export class Dictation {
         abort.signal,
       );
       if (this.token !== mine) {
-        cancelResponse(res);
+        cancelResponseBody(res);
         return;
       }
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
-        this.failListening(mine, body.error ?? "Could not transcribe that recording.");
+        this.failListening(mine, voiceAccountErrorText(body) ?? body.error ?? couldNotTranscribe);
         return;
       }
       // The recorder captures fresh audio, so matching words are intentional repetitions.
@@ -597,15 +638,11 @@ export class Dictation {
       // means the deadline timer fired. Browsers may reject fetch as AbortError
       // instead of signal.reason; surface the timeout either way.
       if (this.token !== mine) return;
-      const timedOut =
-        (abort.signal.reason instanceof Error &&
-          abort.signal.reason.message === "Transcription request timed out.") ||
-        (error instanceof Error && error.message === "Transcription request timed out.");
-      if (timedOut || (error instanceof Error && error.name === "AbortError")) {
-        this.failListening(mine, "Transcription request timed out.");
+      if (abort.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        this.failListening(mine, timedOutMessage);
         return;
       }
-      this.failListening(mine, errorText(error, "Could not transcribe that recording."));
+      this.failListening(mine, errorText(error, couldNotTranscribe));
     } finally {
       clearTimeout(timer);
       if (this.transcribeAbort === abort) this.transcribeAbort = null;
@@ -634,9 +671,14 @@ export class Dictation {
     if (this.token !== mine) return;
     const trimmed = text.trim();
     const onFinal = this.onFinal;
+    const mode = this.mode;
     this.stop("submit");
     if (error) this.set({ ...IDLE, error });
     if (trimmed) onFinal?.(trimmed);
+    // An endpoint session ends with the attempt, words or not. Report the empty turn
+    // too, so a caller holding the microphone open starts the next attempt; hold mode
+    // watches for idle itself.
+    else if (mode === "endpoint") onFinal?.("");
   }
 }
 
@@ -648,55 +690,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-async function readTranscriptionBody(
-  response: Response,
-  signal: AbortSignal,
-): Promise<{ text?: string; error?: string }> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
-    cancelResponse(response);
-    throw new Error("Transcription response is too large.");
-  }
-  const bytes = await readBoundedResponseBytes(response, {
+function readTranscriptionBody(response: Response, signal: AbortSignal) {
+  return readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(response, {
     maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
-    tooLargeMessage: "Transcription response is too large.",
-    read: (operation) => withAbort(operation(), signal),
+    tooLargeMessage: t`Transcription response is too large.`,
+    signal,
   });
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as { text?: string; error?: string })
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request aborted."));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Request aborted."));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        // Prefer abort reason over a bare AbortError from fetch/read.
-        reject(signal.aborted ? (signal.reason ?? error) : error);
-      },
-    );
-  });
-}
-
-function cancelResponse(response: Response): void {
-  try {
-    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
 }
 
 export const dictation = new Dictation();

@@ -102,12 +102,34 @@ describe("task catalog", () => {
     expect(result.guidance).toBe(TASK_CATALOG_GUIDANCE);
   });
 
-  it("treats a retry as the same tool call with the same arguments", () => {
-    expect(TASK_CATALOG_GUIDANCE).toContain(
-      "Correct the specific field once as a separate attempt; if that attempt fails, stop and explain the blocker",
+  it("lists a group run's routines from every chat and marks the ones posting there", async () => {
+    const findMany = vi.fn(async (_args: Record<string, unknown>) => [
+      { id: "r-dm", name: "Daily check", crons: ["0 8 * * *"], threadId: "dm-thread" },
+      { id: "r-group", name: "Digest", crons: ["0 9 * * *"], threadId: "group-thread" },
+    ]);
+    const prisma = {
+      scratchpadItem: { findMany: vi.fn(async () => []) },
+      routine: { findMany },
+      taughtSkill: { findMany: vi.fn(async () => []) },
+      agentSkill: { findMany: vi.fn(async () => []) },
+    };
+    const result = await taskCatalogFromTool(
+      { prisma: prisma as never },
+      {
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "user-1",
+        groupThreadId: "group-thread",
+        tools: [],
+      },
     );
-    expect(TASK_CATALOG_GUIDANCE).not.toContain("after a second failure of the same call");
-    expect(TASK_CATALOG_GUIDANCE).toContain("A different command is not a retry.");
-    expect(TASK_CATALOG_GUIDANCE).not.toContain("after a second failure, stop");
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { spaceId: "space-1", botId: "bot-1" },
+    });
+    expect(findMany.mock.calls[0]?.[0]?.where).not.toHaveProperty("threadId");
+    expect(result.routines).toEqual([
+      expect.objectContaining({ routineId: "r-dm", inThisChat: false }),
+      expect.objectContaining({ routineId: "r-group", inThisChat: true }),
+    ]);
   });
 });

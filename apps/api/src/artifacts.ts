@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
-import type { ArtifactStore } from "@rakazo/adapter-kit";
+import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
+import { createAdapterContext } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import {
+  ARTIFACT_NAME_MAX_LENGTH,
+  ATTACHMENT_MAX_BYTES,
+  attachmentMaxCount,
+  attachmentSizeLabel,
+  isAttachmentAudioMimeType,
+  MCP_APP_MIME_TYPE,
+} from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   decodeAttachmentBase64,
@@ -11,18 +19,7 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
-
-function adapterContext(actor: Actor, botId: string, operationId: string) {
-  return {
-    operationId,
-    traceId: operationId,
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId,
-    signal: new AbortController().signal,
-  };
-}
+import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -43,20 +40,99 @@ export async function createOwnedArtifact(
 ) {
   const replayed = await findReplayedArtifact(deps.prisma, actor, input);
   if (replayed) return createdArtifact(replayed);
+  const inferredType = inferAttachmentMimeType(input.name, input.mimeType);
   const mimeType =
-    inferAttachmentMimeType(input.name, input.mimeType) === "application/zip"
-      ? "application/zip"
+    inferredType && (inferredType === "application/zip" || isAttachmentAudioMimeType(inferredType))
+      ? inferredType
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64, deps.maxUploadSizeBytes);
-  const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
+  return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
+}
+
+/** A stored inbound attachment plus its downloaded content when it was fresh. */
+export type StoredInboundAttachment = ReturnType<typeof createdArtifact> & {
+  bytes?: Uint8Array;
+};
+
+export async function storeInboundAttachment(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+    maxUploadSizeBytes?: number;
+  },
+  owner: ArtifactOwner,
+  input: {
+    botId: string;
+    attachment: MessagingInboundAttachment;
+    clientNonce: string;
+    downloadDeadline?: number;
+    /** Stored as a file of its own, never as the next version of one with the same name. */
+    standalone?: boolean;
+  },
+): Promise<StoredInboundAttachment> {
+  const replayed = await findReplayedArtifact(deps.prisma, owner, input);
+  if (replayed) return createdArtifact(replayed);
+  const { attachment } = input;
+  const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const mimeType = inferAttachmentMimeType(name, attachment.mimeType) ?? attachment.mimeType;
+  validateAttachmentMimeType(mimeType);
+  const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
+  const tooLarge = new AttachmentValidationError(
+    `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
+  );
+  if ((attachment.size ?? 0) > maxBytes) throw tooLarge;
+  const timeoutMs = Math.min(2_000, (input.downloadDeadline ?? Infinity) - Date.now());
+  if (timeoutMs <= 0) throw new AttachmentValidationError("Attachment download timed out");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new AttachmentValidationError("Attachment download timed out")),
+      timeoutMs,
+    );
+  });
+  const bytes = await Promise.race([
+    Promise.resolve().then(() => attachment.fetch()),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
+  if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
+  if (bytes.byteLength > maxBytes) throw tooLarge;
+  const stored = await storeOwnedArtifact(deps, owner, {
+    botId: input.botId,
+    name,
+    mimeType,
+    bytes,
+    clientNonce: input.clientNonce,
+    standalone: input.standalone,
+  });
+  // The replay return above carries no bytes; callers treat them as optional.
+  return { ...stored, bytes };
+}
+
+type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;
+
+async function storeOwnedArtifact(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  actor: ArtifactOwner,
+  input: {
+    botId: string;
+    groupId?: string;
+    name: string;
+    description?: string;
+    mimeType: string;
+    bytes: Uint8Array;
+    clientNonce?: string;
+    standalone?: boolean;
+  },
+) {
+  const { mimeType, bytes } = input;
+  const context = createAdapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
   const { row, replay } = await withResolvedArtifactVersion(
     deps.prisma,
     {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       botId: input.botId,
       groupId: input.groupId,
       name: input.name,
@@ -77,8 +153,9 @@ export async function createOwnedArtifact(
           size: bytes.byteLength,
           hash,
           storageKey: stored.id,
-          rootArtifactId,
-          version,
+          ...(input.standalone
+            ? { rootArtifactId: null, version: 1, standalone: true }
+            : { rootArtifactId, version }),
           clientNonce: input.clientNonce,
         },
       });
@@ -95,7 +172,7 @@ export async function createOwnedArtifact(
 /** The artifact an earlier upload with this nonce created; a nonce reused for another chat is refused. */
 async function findReplayedArtifact(
   db: Pick<Prisma.TransactionClient, "artifact">,
-  actor: Actor,
+  actor: ArtifactOwner,
   input: { botId: string; groupId?: string; clientNonce?: string },
 ) {
   if (!input.clientNonce) return null;
@@ -140,7 +217,6 @@ export async function getOwnedArtifact(
       botId: input.botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -160,7 +236,6 @@ export async function getSpaceArtifact(
       id: input.artifactId,
       groupId: input.groupId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -180,7 +255,6 @@ export async function getSpaceArtifactById(
     where: {
       id: input.artifactId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -207,7 +281,7 @@ async function readArtifact(
 ) {
   const bytes = await artifacts.get(
     row.storageKey,
-    adapterContext(actor, contextBotId, `artifact-get:${row.id}`),
+    createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),
   );
   return {
     id: row.id,
@@ -250,6 +324,7 @@ type ArtifactListCursor = {
   createdAt: string;
   id: string;
   botId: string | null;
+  madeByBots: boolean;
   // Freezes the version set for this page sequence.
   asOf: string;
 };
@@ -283,12 +358,20 @@ function decodeArtifactListCursor(value: string): ArtifactListCursor {
     throw new ArtifactListCursorError();
   }
   const botId = cursorBotId(record.botId);
+  const madeByBots = record.madeByBots ?? false;
+  if (typeof madeByBots !== "boolean") throw new ArtifactListCursorError();
   const createdAt = new Date(record.createdAt);
   const asOf = new Date(record.asOf);
   if (Number.isNaN(createdAt.getTime()) || Number.isNaN(asOf.getTime())) {
     throw new ArtifactListCursorError();
   }
-  return { createdAt: createdAt.toISOString(), id: record.id, botId, asOf: asOf.toISOString() };
+  return {
+    createdAt: createdAt.toISOString(),
+    id: record.id,
+    botId,
+    madeByBots,
+    asOf: asOf.toISOString(),
+  };
 }
 
 function cursorBotId(value: unknown): string | null {
@@ -299,18 +382,21 @@ function cursorBotId(value: unknown): string | null {
 export async function listSpaceArtifacts(
   deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
   actor: Actor,
-  input: { botId?: string; cursor?: string; limit?: number },
+  input: { botId?: string; madeByBots?: boolean; cursor?: string; limit?: number },
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
   const scopeBotId = input.botId ?? null;
   const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
+  const madeByBots = input.madeByBots ?? false;
+  const madeByBotsFilter = madeByBots ? Prisma.sql`AND latest."runId" IS NOT NULL` : Prisma.empty;
 
   let asOf = new Date();
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
     // Position is stored on the cursor so a deleted row cannot replay the first page.
     const cursor = decodeArtifactListCursor(input.cursor);
-    if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
+    if (cursor.botId !== scopeBotId || cursor.madeByBots !== madeByBots)
+      throw new ArtifactListCursorError();
     asOf = new Date(cursor.asOf);
     cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${new Date(cursor.createdAt)}, ${cursor.id})`;
   }
@@ -318,8 +404,8 @@ export async function listSpaceArtifacts(
   const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
     WITH scoped AS (
       SELECT * FROM "artifacts"
-      WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
-        AND "createdAt" <= ${asOf}
+      WHERE "spaceId" = ${actor.spaceId} ${botFilter}
+        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -338,7 +424,7 @@ export async function listSpaceArtifacts(
            counts."versionCount"
     FROM latest
     JOIN counts ON counts."familyId" = COALESCE(latest."rootArtifactId", latest.id)
-    WHERE true ${cursorFilter}
+    WHERE true ${madeByBotsFilter} ${cursorFilter}
     ORDER BY latest."createdAt" DESC, latest.id DESC
     LIMIT ${take + 1}
   `);
@@ -368,6 +454,7 @@ export async function listSpaceArtifacts(
             createdAt: last.createdAt.toISOString(),
             id: last.id,
             botId: scopeBotId,
+            madeByBots,
             asOf: asOf.toISOString(),
           })
         : null,
@@ -380,7 +467,7 @@ export async function listArtifactVersions(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -388,7 +475,6 @@ export async function listArtifactVersions(
   const rows = await deps.prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [{ id: rootId }, { rootArtifactId: rootId }],
     },
     orderBy: { version: "desc" },
@@ -410,7 +496,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -420,7 +506,6 @@ export async function deleteArtifactFamily(
     const members = await deps.prisma.artifact.findMany({
       where: {
         spaceId: actor.spaceId,
-        userId: actor.userId,
         OR: [{ id: rootId }, { rootArtifactId: rootId }],
       },
       select: { id: true, storageKey: true, botId: true },
@@ -466,7 +551,7 @@ async function deleteArtifactRootIfChildless(
     try {
       await tx.artifact.delete({ where: { id: root.id } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (isRecordNotFound(error)) {
         outcome = "gone";
         return;
       }
@@ -485,7 +570,7 @@ async function removeArtifactBlob(
   try {
     await artifacts.remove(
       member.storageKey,
-      adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
+      createAdapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
     );
   } catch (error) {
     if (isAlreadyRemoved(error)) return;
@@ -513,7 +598,7 @@ async function deleteArtifactRowIfPresent(
   try {
     await prisma.artifact.delete({ where: { id } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return;
+    if (isRecordNotFound(error)) return;
     throw error;
   }
 }
@@ -526,10 +611,10 @@ type SendAttachmentRow = {
   storageKey: string;
 };
 
-function normalizeAttachmentIds(artifactIds: string[] | undefined) {
+function normalizeAttachmentIds(artifactIds: string[] | undefined, maxCount: number) {
   const ids = [...new Set(artifactIds ?? [])];
-  if (ids.length > ATTACHMENT_MAX_COUNT) {
-    throw new AttachmentValidationError(`At most ${ATTACHMENT_MAX_COUNT} attachments per message`);
+  if (ids.length > maxCount) {
+    throw new AttachmentValidationError(`At most ${maxCount} attachments per message`);
   }
   return ids;
 }
@@ -550,12 +635,12 @@ function toAttachmentResolution<T extends SendAttachmentRow>(ids: string[], rows
 }
 
 export async function resolveSendAttachments(
-  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  deps: { prisma: Pick<PrismaClient, "artifact">; maxAttachmentsPerMessage?: number },
   actor: Actor,
   botId: string,
   artifactIds: string[] | undefined,
 ) {
-  const ids = normalizeAttachmentIds(artifactIds);
+  const ids = normalizeAttachmentIds(artifactIds, attachmentMaxCount(deps));
   if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
 
   const rows = await deps.prisma.artifact.findMany({
@@ -564,27 +649,25 @@ export async function resolveSendAttachments(
       botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   return toAttachmentResolution(ids, rows);
 }
 
 export async function resolveGroupSendAttachments(
-  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  deps: { prisma: Pick<PrismaClient, "artifact">; maxAttachmentsPerMessage?: number },
   actor: Actor,
   groupId: string,
   memberBotIds: string[],
   artifactIds: string[] | undefined,
 ) {
-  const ids = normalizeAttachmentIds(artifactIds);
+  const ids = normalizeAttachmentIds(artifactIds, attachmentMaxCount(deps));
   if (!ids.length) return toAttachmentResolution(ids, [] as SendAttachmentRow[]);
 
   const rows = await deps.prisma.artifact.findMany({
     where: {
       id: { in: ids },
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [
         { groupId },
         // Uploads from before group ownership was stored, still tied to a current member.

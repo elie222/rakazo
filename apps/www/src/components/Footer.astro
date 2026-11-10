@@ -2,6 +2,7 @@
 import {
   DEFAULT_LOCALE,
   LOCALE_HREFLANG,
+  LOCALE_HTML_LANG,
   LOCALE_LABELS,
   LOCALES,
   isLocale,
@@ -9,14 +10,16 @@ import {
   type Locale,
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
+import { INTEGRATION_PLATFORMS_PATH } from "../integration-platforms/shared";
+import { SANDBOXES_PATH } from "../sandboxes";
+import { VOICE_PROVIDERS_PATH } from "../voice-providers/shared";
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import {
-  ANDROID_APK_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
-  IOS_APP_URL,
+  PLUGIN_SUBMIT_PATH,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
 import Logo from "./Logo.astro";
@@ -55,9 +58,12 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   {
     heading: linkLabels.product,
     links: [
-      { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
-      { href: ANDROID_APK_URL, label: linkLabels.androidApp },
+      { href: "/download/", label: linkLabels.download },
       { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: SANDBOXES_PATH, label: linkLabels.sandboxes },
+      { href: INTEGRATION_PLATFORMS_PATH, label: linkLabels.integrationPlatforms },
+      { href: VOICE_PROVIDERS_PATH, label: linkLabels.voiceProviders },
+      { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
       { href: GITHUB_URL, label: "GitHub", external: true },
     ],
@@ -74,6 +80,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     links: [
       { href: "/blog/", label: linkLabels.blog },
       { href: "/about/", label: linkLabels.about },
+      { href: "/brand/", label: linkLabels.brand },
       { href: "/support/", label: linkLabels.support },
       { href: "/privacy/", label: linkLabels.privacy },
       { href: "/terms/", label: linkLabels.terms },
@@ -86,22 +93,33 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   <div class="site-footer__brand">
     <Logo href={homeHref} label={homeLabel} />
     <nav class="site-footer__languages" aria-label={languagesLabel}>
-      {
-        LOCALES.map((locale) => (
-          <a
-            href={localeHomePath(locale)}
-            hreflang={LOCALE_HREFLANG[locale]}
-            aria-current={isCurrentPage(localeHomePath(locale)) ? "page" : undefined}
-          >
-            {LOCALE_LABELS[locale]}
-          </a>
-        ))
-      }
+      <details class="language-menu">
+        <summary>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+          {LOCALE_LABELS[currentLocale]}
+          <svg class="language-menu__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+        </summary>
+        <ul>
+          {
+            LOCALES.map((locale) => (
+              <li>
+                <a
+                  href={localeHomePath(locale)}
+                  hreflang={LOCALE_HREFLANG[locale]}
+                  lang={LOCALE_HTML_LANG[locale]}
+                  aria-current={locale === currentLocale ? "true" : undefined}
+                >
+                  {LOCALE_LABELS[locale]}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </details>
     </nav>
     <span class="site-footer__legal">
-      © 2026 ·
-      <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a>
-      · Apache-2.0
+      <span>© 2026 <a href={INBOX_ZERO_URL} target="_blank" rel="noopener">Inbox Zero Inc.</a></span>
+      <span>Apache-2.0</span>
     </span>
   </div>
   <nav class="site-footer__columns" aria-label={navLabel}>
@@ -115,7 +133,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
                 <a
                   href={link.href}
                   aria-current={!link.external && isCurrentPage(link.href) ? "page" : undefined}
-                  {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                  {...(link.external ? { target: "_blank", rel: "noopener" } : {})}
                 >
                   {link.label}
                 </a>

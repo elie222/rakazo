@@ -3,10 +3,9 @@ import type { ContextBudget } from "./context-selection.js";
 import { estimateContextTokens } from "./context-selection.js";
 
 /**
- * Conservative fallback for an unknown tokenizer: one token per UTF-8 byte,
- * including tool schemas and message framing. When an adapter supplies a
- * dimension-based image planning estimate, use it for actual image blocks only.
- * Unknown images keep the byte fallback.
+ * Provider-neutral estimate for an unknown tokenizer, including tool schemas and
+ * message framing. Image blocks use the adapter's dimension-based planning estimate
+ * when one is supplied and a serialized byte count otherwise.
  */
 export function estimateModelContextTokens(
   context: Context,

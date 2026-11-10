@@ -3,9 +3,9 @@ import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { toolRequiresApproval } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { selectBuiltinToolsForRun } from "./executor.js";
 import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
 const run = { id: "run", threadId: "thread", botId: "bot", spaceId: "space", userId: "owner" };
 const context: AdapterContext = {
@@ -258,7 +258,7 @@ describe("bot media tools", () => {
       await generateMediaFromTool({ ...options, name: "generate_video", args: { jobId: row.id } }),
     ).toMatchObject({ error: expect.not.stringContaining("private") });
     expect(externalEffect.updateMany).toHaveBeenCalledWith({
-      where: { id: row.id, status: { not: "media_completed" } },
+      where: { id: row.id, status: "media_polling" },
       data: { status: "media_pending" },
     });
   });

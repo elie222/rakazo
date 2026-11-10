@@ -4,8 +4,10 @@ import {
   DEV_ENCRYPTION_KEY_PLACEHOLDER,
   DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
   DEV_SUPERVISOR_TOKEN_PLACEHOLDER,
+  encryptionKeyWarning,
   hasValidBearerToken,
   resolveAuthSecret,
+  resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
@@ -20,6 +22,12 @@ describe("secrets-guard", () => {
     expect(resolveSupervisorToken({ NODE_ENV: "test" })).toBe(DEV_SUPERVISOR_TOKEN_PLACEHOLDER);
     expect(resolveScreenProxySecret({ NODE_ENV: "test" })).toBe(
       DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
+    );
+    expect(resolveAuthSecret({ NODE_ENV: "production", VITEST: "true" })).toBe(
+      DEV_AUTH_SECRET_PLACEHOLDER,
+    );
+    expect(resolveAuthSecret({ NODE_ENV: "production", RAKAZO_ALLOW_DEV_SECRETS: "1" })).toBe(
+      DEV_AUTH_SECRET_PLACEHOLDER,
     );
   });
 
@@ -140,6 +148,22 @@ describe("secrets-guard", () => {
     );
   });
 
+  it("warns about a weak production encryption key without rejecting it", () => {
+    expect(
+      encryptionKeyWarning({ NODE_ENV: "production", ENCRYPTION_KEY: "existing-key" }),
+    ).toMatch(/ENCRYPTION_KEY/);
+    expect(
+      encryptionKeyWarning({
+        NODE_ENV: "production",
+        ENCRYPTION_KEY: "replace-with-64-random-hex-characters",
+      }),
+    ).toMatch(/ENCRYPTION_KEY/);
+    expect(
+      encryptionKeyWarning({ NODE_ENV: "production", ENCRYPTION_KEY: "a".repeat(64) }),
+    ).toBeUndefined();
+    expect(encryptionKeyWarning({ NODE_ENV: "development" })).toBeUndefined();
+  });
+
   it("requires dedicated supervisor and screen-proxy credentials", () => {
     expect(
       resolveSupervisorToken({
@@ -168,6 +192,13 @@ describe("secrets-guard", () => {
         NODE_ENV: "test",
         SCREEN_PROXY_SECRET: "supervisor-only",
         SANDBOX_SUPERVISOR_TOKEN: "supervisor-only",
+      }),
+    ).toThrow(/must differ/);
+    expect(() =>
+      resolveSupervisorToken({
+        NODE_ENV: "test",
+        SANDBOX_SUPERVISOR_TOKEN: "screen-only",
+        SCREEN_PROXY_SECRET: "screen-only",
       }),
     ).toThrow(/must differ/);
     expect(() =>
@@ -230,10 +261,49 @@ describe("secrets-guard", () => {
 
   it("compares bearer tokens without leaking a length or a prefix match", () => {
     expect(hasValidBearerToken("Bearer secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bearer secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("BEARER secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bEaReR secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bearer Secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Bearer secret-token-longer", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Bearer secret-toke", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearersecret-token", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearer  secret-token", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearer\tsecret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Basic secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken(undefined, "secret-token")).toBe(false);
+  });
+});
+
+describe("resolveContentEncryption", () => {
+  it("defaults to on for servers and tests, off for local development", () => {
+    expect(resolveContentEncryption({ NODE_ENV: "production" })).toBe(true);
+    expect(resolveContentEncryption({})).toBe(true);
+    expect(resolveContentEncryption({ NODE_ENV: "test" })).toBe(true);
+    expect(resolveContentEncryption({ NODE_ENV: "development" })).toBe(false);
+    expect(
+      resolveContentEncryption({ NODE_ENV: "production", RAKAZO_ALLOW_DEV_SECRETS: "1" }),
+    ).toBe(false);
+  });
+
+  it("follows an explicit setting in every mode", () => {
+    expect(resolveContentEncryption({ NODE_ENV: "development", CONTENT_ENCRYPTION: "on" })).toBe(
+      true,
+    );
+    expect(resolveContentEncryption({ NODE_ENV: "production", CONTENT_ENCRYPTION: "off" })).toBe(
+      false,
+    );
+    expect(resolveContentEncryption({ CONTENT_ENCRYPTION: " OFF " })).toBe(false);
+    expect(resolveContentEncryption({ NODE_ENV: "development", CONTENT_ENCRYPTION: "" })).toBe(
+      false,
+    );
+  });
+
+  it("rejects anything but on or off", () => {
+    for (const value of ["true", "1", "yes", "disabled"])
+      expect(() => resolveContentEncryption({ CONTENT_ENCRYPTION: value })).toThrow(
+        'CONTENT_ENCRYPTION must be "on" or "off".',
+      );
   });
 });

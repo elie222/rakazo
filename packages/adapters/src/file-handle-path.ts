@@ -1,5 +1,6 @@
 import { readlink } from "node:fs/promises";
-import koffi, { type LibraryHandle } from "koffi";
+import type { LibraryHandle } from "koffi";
+import koffi from "koffi";
 import { pathFromWindowsHandle } from "./desktop-sandbox-win32-path.js";
 
 type KoffiFunction = ReturnType<LibraryHandle["func"]>;

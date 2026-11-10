@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   activeBotId,
   captureScreenshot,
@@ -8,55 +9,14 @@ import {
   signup,
 } from "./helpers";
 
-test("actions run by default while optional confirmations live in advanced user settings", async ({
+test("A change asks without an approval model, and approvals settings shape what asks", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `action-confirmations-${stamp}@rakazo.test`, "password12", "Approval UI");
+  await signup(page, `action-approvals-${stamp}@rakazo.test`, "password12", "Approval UI");
   await completeOnboarding(page, testInfo);
 
-  await sendDestinationWrite(page, "write this to the destination crm as a note");
-  await waitForRunIdle(page);
-  await expectComposerReady(page);
-  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "50-actions-run-without-confirmation");
-
-  await page.getByTestId("bot-settings-trigger").click();
-  await expect(page.getByTestId("bot-settings")).toBeVisible();
-  await expect(page.getByTestId("bot-settings").getByText("Action confirmations")).toHaveCount(0);
-  await page.getByRole("button", { name: "Close panel" }).click();
-
-  const settings = await openUserSettings(page);
-  await expect(settings).toHaveAttribute("role", "dialog");
-  await expect(settings).toBeFocused();
-  await expect(settings.getByText("Advanced", { exact: true })).toBeVisible();
-  await expect(settings.getByText("Optional controls most people never need")).toHaveCount(0);
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).not.toBeVisible();
-  await captureScreenshot(page, testInfo, "51-user-settings-advanced-collapsed");
-
-  await settings.getByText("Advanced", { exact: true }).click();
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toBeVisible();
-  await expect(
-    settings.getByText(
-      "Bots act without asking by default. Add an exception only when you want to review a type of action first.",
-    ),
-  ).toHaveCount(0);
-  await expect(settings.getByText("No exceptions. Actions run automatically.")).toHaveCount(0);
-  await expect(settings.getByTestId("auto-review-toggle")).toBeVisible();
-  await expect(settings.getByTestId("auto-review-toggle")).not.toBeChecked();
-  await expect(settings.getByText("Flag unexpected actions")).toBeVisible();
-  await settings.getByRole("button", { name: "Ask before sending external email" }).click();
-  await expect(settings.getByText("Ask before email actions", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "52-advanced-action-confirmations");
-  await settings.getByRole("button", { name: "Close user settings" }).click();
-
-  await rpc(page, "approvalRules/set", {
-    effect: "require_approval",
-    matchKind: "connector",
-    matchValue: "destination.write",
-  });
-
-  await requestDestinationWrite(page, "write this to the destination crm as a note again");
+  await requestDestinationWrite(page, "write this to the destination crm as a note");
   const allowOnce = page.getByRole("button", { name: "Allow once", exact: true });
   const alwaysAllow = page.getByRole("button", { name: "Always allow this tool", exact: true });
   const deny = page.getByRole("button", { name: "Deny", exact: true });
@@ -68,17 +28,23 @@ test("actions run by default while optional confirmations live in advanced user 
   expect(allowBox).toBeTruthy();
   expect(alwaysBox).toBeTruthy();
   expect(denyBox).toBeTruthy();
-  expect(alwaysBox!.y).toBeGreaterThan(allowBox!.y + allowBox!.height - 2);
-  expect(denyBox!.y).toBeGreaterThan(alwaysBox!.y + alwaysBox!.height - 2);
-  expect(Math.abs(allowBox!.x - alwaysBox!.x)).toBeLessThan(2);
-  const optionList = allowOnce.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
-  const listBox = await optionList.boundingBox();
-  expect(listBox).toBeTruthy();
-  expect(Math.abs(allowBox!.width - listBox!.width)).toBeLessThan(2);
+  expect(alwaysBox!.y).toBe(allowBox!.y);
+  expect(denyBox!.y).toBe(allowBox!.y);
+  expect(alwaysBox!.x).toBeGreaterThan(allowBox!.x);
+  expect(denyBox!.x).toBeGreaterThan(alwaysBox!.x);
   await captureScreenshot(page, testInfo, "53-action-confirmation-pending");
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 400, height: 900 });
+  await expect(allowOnce).toBeVisible();
+  await expect(alwaysAllow).toBeVisible();
+  await expect(deny).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  if (viewport) await page.setViewportSize(viewport);
 
-  await page.getByRole("button", { name: "Deny", exact: true }).click();
-  await expect(page.getByText("Denied", { exact: true })).toBeVisible();
+  await deny.click();
+  await expect(page.getByTestId("transcript").getByText("Denied", { exact: true })).toHaveClass(
+    /text-muted-foreground/,
+  );
   await waitForRunIdle(page);
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "54-action-confirmation-denied");
@@ -90,7 +56,7 @@ test("actions run by default while optional confirmations live in advanced user 
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "55-action-confirmation-allowed-once");
 
-  await requestDestinationWrite(page, "write this to the destination crm one final time");
+  await requestDestinationWrite(page, "write this to the destination crm one more time");
   await page.getByRole("button", { name: "Always allow this tool", exact: true }).click();
   await expect(page.getByText("Always allowed", { exact: true })).toBeVisible();
   await waitForRunIdle(page);
@@ -101,6 +67,94 @@ test("actions run by default while optional confirmations live in advanced user 
   await waitForRunIdle(page);
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+
+  const settings = await openUserSettings(page);
+  await expect(settings).toHaveAttribute("role", "dialog");
+  await expect(settings).toBeFocused();
+  await settings.getByTestId("settings-nav-confirmations").click();
+  await expect(settings.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
+  const mode = settings.getByTestId("approval-mode");
+  await expect(mode.getByRole("button", { name: "Auto", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const allowed = settings.getByTestId("approval-rules-always_allow");
+  await expect(allowed.getByText("Destination.write", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "52-approvals-settings");
+  await settings
+    .getByRole("group", { name: "Destination.write", exact: true })
+    .getByRole("button", { name: "Block", exact: true })
+    .click();
+  await expect(
+    settings.getByTestId("approval-rules-deny").getByText("Destination.write", { exact: true }),
+  ).toBeVisible();
+  await mode.getByRole("button", { name: "Never ask", exact: true }).click();
+  await expect(mode.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "52b-approvals-never-ask-with-block");
+  await settings.getByRole("button", { name: "Close user settings" }).click();
+
+  // A blocked tool is refused without a card, even in Never ask.
+  await sendDestinationWrite(page, "write this to the destination crm while it is blocked");
+  await waitForRunIdle(page);
+  await expectComposerReady(page);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+});
+
+test("A webhook run's card says why it asks after Always allow", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `webhook-approval-${stamp}@rakazo.test`, "password12", "Webhook Approval");
+  await completeOnboarding(page);
+  const reason = page.getByText(
+    "Asked because a webhook started this run. Always allow doesn't skip this.",
+  );
+
+  await requestDestinationWrite(page, "write this to the destination crm as a note");
+  await expect(reason).toHaveCount(0);
+  await page.getByRole("button", { name: "Always allow this tool", exact: true }).click();
+  await expect(page.getByText("Always allowed", { exact: true })).toBeVisible();
+  await waitForRunIdle(page);
+
+  const botId = activeBotId(page);
+  // A delivery with no active webhook routine is ignored.
+  await rpc(page, "routines/create", {
+    botId,
+    name: "Relay",
+    prompt: "Handle the relay's request.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const delivered = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: { text: "write this to the destination crm from the relay" },
+  });
+  expect(delivered.ok()).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? null,
+      { timeout: 30_000 },
+    )
+    .toBe("waiting_input");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(reason).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Always allow this tool", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("ask-detail").last()).toContainText(
+    "Asked because a webhook started this run.",
+  );
+  await captureScreenshot(page, testInfo, "57-webhook-run-approval-reason");
 });
 
 async function sendDestinationWrite(page: Page, prompt: string) {

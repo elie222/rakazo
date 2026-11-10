@@ -3,6 +3,9 @@ import type { PrismaClient } from "./client.js";
 import {
   assertComputerQuotaForRestore,
   ComputerLimitError,
+  clearEndedExecutionRunBinding,
+  computerHomeKey,
+  computerScopeKey,
   ensureComputerRecord,
   resolveMaxComputersPerUser,
   restoreBotUnderComputerQuota,
@@ -250,6 +253,84 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("clearEndedExecutionRunBinding", () => {
+  function bindingPrisma(run: { status: string } | null) {
+    return {
+      computer: {
+        findUnique: vi.fn(async () => ({ executionRunId: "run-1" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      run: { findUnique: vi.fn(async () => run) },
+    } as unknown as PrismaClient;
+  }
+
+  it("clears a binding whose run ended", async () => {
+    const prisma = bindingPrisma({ status: "cancelled" });
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", executionRunId: "run-1" },
+      data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
+    });
+  });
+
+  it("clears a binding whose run no longer exists", async () => {
+    const prisma = bindingPrisma(null);
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).toHaveBeenCalled();
+  });
+
+  it("leaves a binding whose run may still execute", async () => {
+    const prisma = bindingPrisma({ status: "running" });
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no binding is set", async () => {
+    const prisma = {
+      computer: {
+        findUnique: vi.fn(async () => ({ executionRunId: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      run: { findUnique: vi.fn(async () => ({ status: "cancelled" })) },
+    } as unknown as PrismaClient;
+    await clearEndedExecutionRunBinding(prisma, "computer-1");
+    expect(prisma.run.findUnique).not.toHaveBeenCalled();
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("team computer keys", () => {
+  const team = { mode: "team" as const, spaceId: "space-1" };
+
+  it("keys a team computer by space and user", () => {
+    expect(computerScopeKey({ ...team, userId: "user-1" })).toBe("team:space-1:user-1");
+    expect(computerScopeKey({ ...team, userId: "user-2" })).toBe("team:space-1:user-2");
+    expect(computerScopeKey({ ...baseInput })).toBe("bot:bot-4");
+  });
+
+  it("gives each user a distinct home that survives the 40-character container name", () => {
+    const first = computerHomeKey({ ...team, userId: "user-1" });
+    const second = computerHomeKey({ ...team, userId: "user-2" });
+    expect(first).toMatch(/^team-[0-9a-f]{32}$/);
+    expect(first).toBe(computerHomeKey({ ...team, userId: "user-1" }));
+    expect(first.slice(0, 40)).not.toBe(second.slice(0, 40));
+    expect(computerHomeKey({ ...team, spaceId: "space-2", userId: "user-1" })).not.toBe(first);
+    expect(computerHomeKey(baseInput)).toBe("bot-4");
+  });
+
+  it("shares one team computer per user, not across members of a space", async () => {
+    const { prisma } = fakeSerializingPrisma(0);
+    const ensureTeam = (userId: string) =>
+      ensureComputerRecord(prisma, { ...team, userId, kind: "docker" });
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "5";
+    const firstBot = await ensureTeam("user-1");
+    const secondBot = await ensureTeam("user-1");
+    const otherMember = await ensureTeam("user-2");
+    expect(secondBot.id).toBe(firstBot.id);
+    expect(otherMember.id).not.toBe(firstBot.id);
+  });
+});
+
 describe("resolveMaxComputersPerUser", () => {
   it("treats unset, empty, and 0 as no configured cap", () => {
     expect(resolveMaxComputersPerUser(undefined)).toBe(0);
@@ -273,7 +354,8 @@ describe("ensureComputerRecord", () => {
       ComputerLimitError,
     );
     expect(prisma.computer.upsert).not.toHaveBeenCalled();
-    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+    // The quota lock, then the system bypass on and off around the cross-Space count.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
   });
 
   it("does not count archived-bot computers against the cap", async () => {
@@ -371,7 +453,7 @@ describe("ensureComputerRecord", () => {
     });
     await prisma.bot.update({ where: { id: "bot-1" }, data: { computerId: dedicated.id } });
     expect(state.inUse).toBe(1);
-    expect(refs.get("team:space-1")?.size).toBe(0);
+    expect(refs.get("team:space-1:user-1")?.size).toBe(0);
   });
 });
 

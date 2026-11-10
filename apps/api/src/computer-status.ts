@@ -1,6 +1,13 @@
-import { computerSupportsTerminal, computerSupportsUpdate } from "@rakazo/adapters";
+import {
+  computerScreenSize,
+  computerSupportsTerminal,
+  computerSupportsUpdate,
+  DISK_WARNING_PERCENT,
+  diskUsedPercent,
+  holdsUserControl,
+} from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 /** Mirrors computer.takeover: an execution lease blocks user control unless a takeover is pending. */
@@ -60,24 +67,46 @@ export function toComputerStatus(
     controlRunId?: string | null;
     homeRevision: string;
     maintenanceId?: string | null;
+    diskUsedBytes?: bigint | null;
+    diskFreeBytes?: bigint | null;
+    diskDismissedPercent?: number | null;
+    controlUserId?: string | null;
+    userId?: string | null;
   } | null,
   busyBotName: string | null = null,
+  shared = false,
+  viewerId?: string,
 ): ComputerStatus {
-  const state = computer?.maintenanceId
-    ? "booting"
-    : computer?.state === "suspending"
-      ? "running"
-      : computer?.state === "stopped" ||
-          computer?.state === "booting" ||
-          computer?.state === "running" ||
-          computer?.state === "suspended" ||
-          computer?.state === "error"
-        ? computer.state
-        : "stopped";
-  const screen = computerScreenSize(computer?.kind);
+  const controlledByOther = Boolean(
+    viewerId && computer?.controlHolder === "user" && !holdsUserControl(computer, viewerId),
+  );
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
+  const state =
+    kind === "none"
+      ? "stopped"
+      : computer?.maintenanceId
+        ? "booting"
+        : computer?.state === "quarantined"
+          ? "error"
+          : computer?.state === "suspending"
+            ? "running"
+            : computer?.state === "stopped" ||
+                computer?.state === "booting" ||
+                computer?.state === "running" ||
+                computer?.state === "suspended" ||
+                computer?.state === "error"
+              ? computer.state
+              : "stopped";
+  const screen = computerScreenSize(computer?.kind);
+  const diskPercent = computer ? diskUsedPercent(computer) : null;
+  const diskFull =
+    diskPercent !== null &&
+    diskPercent >= DISK_WARNING_PERCENT &&
+    diskPercent > (computer?.diskDismissedPercent ?? 0);
   return {
     botId,
+    ...(shared ? { shared } : {}),
+    ...(controlledByOther ? { controlledByOther } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,
@@ -91,5 +120,6 @@ export function toComputerStatus(
     busyBotName,
     canUpdate: computerSupportsUpdate(kind),
     terminalAvailable: computerSupportsTerminal(kind),
+    ...(diskFull ? { diskFullPercent: diskPercent } : {}),
   };
 }

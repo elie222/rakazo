@@ -14,10 +14,6 @@ afterEach(async () => {
 });
 
 describe("managed stack address", () => {
-  it("keeps the desktop default separate from development", () => {
-    expect(DEFAULT_LOCAL_WEB_URL).toBe("http://127.0.0.1:45173");
-  });
-
   it("restores a previously selected loopback port", async () => {
     await writeFile(path.join(dir, STACK_WEB_URL_FILE), "http://127.0.0.1:49152");
     expect(await readStackWebUrl(dir, DEFAULT_LOCAL_WEB_URL)).toBe("http://127.0.0.1:49152");

@@ -1,21 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  appContract,
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  BOT_TITLE_MAX_LENGTH,
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
   canReactToThreadMessage,
   McpServerConfigInput,
   MessageBlock,
+  MODEL_ROUTING_ID_MESSAGE,
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
-  normalizeCreateBotProfile,
-  ProductEventType,
+  modelRoutingForm,
+  modelRoutingReady,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -28,6 +23,51 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("leaves bot management to the database default and preserves explicit choices", () => {
+    expect(CreateBotInput.parse({ name: "New bot" }).fleetManagement).toBeUndefined();
+    for (const fleetManagement of [false, true]) {
+      expect(CreateBotInput.parse({ name: "New bot", fleetManagement }).fleetManagement).toBe(
+        fleetManagement,
+      );
+    }
+  });
+
+  it("bounds the count and length of compatible model selections", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(512)] }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(513)] }).success,
+    ).toBe(false);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        ...input,
+        enabledModelIds: Array.from({ length: 501 }, (_, i) => `model-${i}`),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("round-trips every wire protocol a compatible connection may select", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    for (const apiProtocol of ["chat-completions", "responses", "anthropic-messages"] as const) {
+      expect(ModelConnectInputSchema.parse({ ...input, apiProtocol })).toMatchObject({
+        apiProtocol,
+      });
+    }
+    expect(ModelConnectInputSchema.safeParse({ ...input, apiProtocol: "grpc" }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts structured live activity progress", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },
@@ -46,8 +86,11 @@ describe("contracts", () => {
   it("parses bounded model output-token limits", () => {
     expect(parseModelMaxTokens("1")).toBe(1);
     expect(parseModelMaxTokens("131072")).toBe(131072);
+    // Current models emit far more than 128K tokens in one reply (384K and up).
+    expect(parseModelMaxTokens("393216")).toBe(393216);
+    expect(parseModelMaxTokens("2147483647")).toBe(2147483647);
     expect(parseModelMaxTokens("0")).toBeUndefined();
-    expect(parseModelMaxTokens("131073")).toBeUndefined();
+    expect(parseModelMaxTokens("2147483648")).toBeUndefined();
     expect(parseModelMaxTokens("1.5")).toBeUndefined();
   });
 
@@ -95,63 +138,56 @@ describe("contracts", () => {
     expect(valid.success).toBe(true);
   });
 
-  it("validates each Cloudflare routing id and allows an update to send only one", () => {
-    const provider = CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  it("rejects a routing id that is not a single path segment, for any provider", () => {
+    const provider = "example-gateway";
     expect(
       ModelConnectInputSchema.safeParse({
         provider,
-        apiKey: "cf-test-key-value",
-      }).success,
-    ).toBe(true);
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        maxTokens: 1024,
-        accountId: "acct9999",
-      }).success,
-    ).toBe(true);
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        maxTokens: 1024,
-        gatewayId: "gateway-2",
-      }).success,
-    ).toBe(true);
-    const unsafeAccount = ModelConnectInputSchema.safeParse({
-      provider,
-      apiKey: "cf-test-key-value",
-      accountId: "../account",
-      gatewayId: "gateway-1",
-    });
-    expect(unsafeAccount.success).toBe(false);
-    if (!unsafeAccount.success) {
-      expect(unsafeAccount.error.issues.some((issue) => issue.path[0] === "accountId")).toBe(true);
-      expect(
-        unsafeAccount.error.issues.some(
-          (issue) => issue.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-        ),
-      ).toBe(true);
-    }
-    const unsafeGateway = ModelConnectInputSchema.safeParse({
-      provider,
-      maxTokens: 1024,
-      gatewayId: "gateway/1",
-    });
-    expect(unsafeGateway.success).toBe(false);
-    if (!unsafeGateway.success) {
-      expect(unsafeGateway.error.issues.some((issue) => issue.path[0] === "gatewayId")).toBe(true);
-    }
-    expect(
-      ModelConnectInputSchema.safeParse({
-        provider,
-        apiKey: "cf-test-key-value",
+        apiKey: "fixture-key",
         accountId: "acct1234",
         gatewayId: "gateway-1",
       }).success,
     ).toBe(true);
+    // An update may send one id, and a blank one is left for the provider to judge.
     expect(
-      ModelConnectInputSchema.safeParse({ provider: "openai", apiKey: "sk-test-key-123" }).success,
+      ModelConnectInputSchema.safeParse({ provider, maxTokens: 1024, gatewayId: "gateway-2" })
+        .success,
     ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ provider, maxTokens: 1024, gatewayId: "" }).success,
+    ).toBe(true);
+    for (const field of ["accountId", "gatewayId"] as const) {
+      for (const id of ["../account", "account/other", "a".repeat(65)]) {
+        const result = ModelConnectInputSchema.safeParse({
+          provider,
+          maxTokens: 1024,
+          [field]: id,
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toContainEqual(
+            expect.objectContaining({ path: [field], message: MODEL_ROUTING_ID_MESSAGE }),
+          );
+        }
+      }
+    }
+  });
+
+  it("is routing-ready only when every field the provider asks for is valid", () => {
+    expect(modelRoutingReady(undefined, {})).toBe(true);
+    expect(modelRoutingForm(undefined, {})).toEqual({
+      needsRouting: false,
+      needsGateway: false,
+      routingReady: true,
+    });
+    expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
+      needsRouting: true,
+      needsGateway: true,
+      routingReady: false,
+    });
+    expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
+    expect(modelRoutingReady(["accountId", "gatewayId"], { accountId: "acct" })).toBe(false);
+    expect(modelRoutingReady(["accountId"], { accountId: "acct/x" })).toBe(false);
   });
 
   it("lets a built-in connection update maxTokens without a new API key", () => {
@@ -180,6 +216,15 @@ describe("contracts", () => {
     );
   });
 
+  it("keeps a step's note and outcomes and still reads steps saved without them", () => {
+    const steps = [
+      { label: "Read file", count: 1, note: "The meeting is with Anna." },
+      { label: "Save", count: 2, outcomes: { succeeded: 1, failed: 1 } },
+      { label: "Shell", count: 1 },
+    ];
+    expect(MessageBlock.parse({ kind: "steps", steps })).toEqual({ kind: "steps", steps });
+  });
+
   it("limits reactions to persisted non-channel messages", () => {
     expect(
       canReactToThreadMessage({ id: "message-1", blocks: [{ kind: "text", text: "hi" }] }),
@@ -206,21 +251,16 @@ describe("contracts", () => {
 
   it("parses bot create input", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
-    expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
+    expect(parsed.avatarFamily).toBeUndefined();
   });
 
-  it("normalizes bot creation fields without losing the longer instruction copy", () => {
-    const profile = normalizeCreateBotProfile({
-      name: `  ${"N".repeat(100)}  `,
-      title: `  ${"T".repeat(BOT_TITLE_MAX_LENGTH + 10)}  `,
-      description: `  ${"D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
-    });
-
-    expect(profile.name).toHaveLength(80);
-    expect(profile.title).toHaveLength(BOT_TITLE_MAX_LENGTH);
-    expect(profile.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
-    expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
+  it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {
+    expect(CreateBotInput.parse({ name: "Chief", avatarFamily: 0 }).avatarFamily).toBe(0);
+    expect(CreateBotInput.parse({ name: "Chief", avatarFamily: 9 }).avatarFamily).toBe(9);
+    for (const avatarFamily of [-1, 10, 2.5, "3"]) {
+      expect(CreateBotInput.safeParse({ name: "Chief", avatarFamily }).success).toBe(false);
+    }
   });
 
   it("rejects unknown built-in tool names and keeps a known denylist", () => {
@@ -238,19 +278,30 @@ describe("contracts", () => {
     }
   });
 
-  it("accepts the same title limit when creating and updating bots", () => {
-    const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
-    expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);
-    expect(UpdateBotInput.safeParse({ botId: "bot-1", title }).success).toBe(true);
-    expect(UpdateBotInput.safeParse({ botId: "bot-1", title: `${title}T` }).success).toBe(false);
+  it("accepts fleetManagement on bot updates and rejects non-boolean values", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", fleetManagement: true }).fleetManagement).toBe(
+      true,
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", fleetManagement: "yes" }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepts a known reply mode on bot updates", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", replyMode: "messages" }).replyMode).toBe(
+      "messages",
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", replyMode: "quiet" }).success).toBe(false);
+  });
+
+  it("drops a title that installed apps still send", () => {
+    expect(CreateBotInput.parse({ name: "Chief", title: "Lead" })).not.toHaveProperty("title");
+    expect(UpdateBotInput.parse({ botId: "bot-1", title: "Lead" })).toEqual({ botId: "bot-1" });
   });
 
   it("normalizes bot names and rejects whitespace-only values at the contract boundary", () => {
     expect(CreateBotInput.parse({ name: "  Chief  " }).name).toBe("Chief");
     expect(UpdateBotInput.parse({ botId: "bot-1", name: "  Atlas  " }).name).toBe("Atlas");
-    expect(UpdateBotInput.parse({ botId: "bot-1", title: "  Lead researcher  " }).title).toBe(
-      "Lead researcher",
-    );
     expect(
       UpdateBotInput.parse({ botId: "bot-1", description: "  Concise briefs.  " }).description,
     ).toBe("Concise briefs.");
@@ -313,34 +364,6 @@ describe("contracts", () => {
         verificationUri: "javascript:alert(1)",
       }).success,
     ).toBe(false);
-  });
-
-  it("exposes the product rpc surface", () => {
-    expect(appContract.models.beginOAuth).toBeTruthy();
-    expect(appContract.bootstrap).toBeTruthy();
-    expect(appContract.models.completeOAuth).toBeTruthy();
-    expect(appContract.bots.create).toBeTruthy();
-    expect(appContract.bots.reorder).toBeTruthy();
-    expect(appContract.bots.archive).toBeTruthy();
-    expect(appContract.bots.restore).toBeTruthy();
-    expect(appContract.bots.remove).toBeTruthy();
-    expect(appContract.spaces.rename).toBeTruthy();
-    expect(appContract.spaces.remove).toBeTruthy();
-    expect(appContract.botSections.list).toBeTruthy();
-    expect(appContract.botSections.create).toBeTruthy();
-    expect(appContract.botSections.update).toBeTruthy();
-    expect(appContract.threads.subscribe).toBeTruthy();
-    expect(appContract.threads.clear).toBeTruthy();
-    expect(appContract.voice.prepare).toBeTruthy();
-    expect(appContract.externalConversations.updatePolicy).toBeTruthy();
-    expect(appContract.agentSecrets.list).toBeTruthy();
-    expect(appContract.agentSecrets.put).toBeTruthy();
-    expect(appContract.agentSecrets.remove).toBeTruthy();
-    expect(appContract.notifications.registerPush).toBeTruthy();
-    expect(ProductEventType.options).toContain("thread.message.created");
-    expect(ProductEventType.options).toContain("thread.cleared");
-    expect(ProductEventType.options).toContain("thread.subagent");
-    expect(ProductEventType.options).toContain("bot.spawned");
   });
 
   it("requires a distinct, non-empty bot order", () => {
@@ -417,6 +440,7 @@ describe("contracts", () => {
         status: run.status,
         trigger: run.trigger,
         notificationsEnabled: true,
+        agentMessage: null,
         promptSnippet: "Review the report",
         updatedAt: "2026-08-26T00:00:01.000Z",
       }).success,
@@ -501,5 +525,27 @@ describe("contracts", () => {
         data: rows.slice(0, 2_501),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("compatible connection headers", () => {
+  const input = {
+    provider: "openai-compatible",
+    baseUrl: "https://example.invalid/v1",
+    modelId: "test",
+  };
+  it("retains trimmed header names", () => {
+    expect(
+      ModelConnectInputSchema.parse({ ...input, headers: { " x-session ": "secret" } }),
+    ).toHaveProperty("headers", { "x-session": "secret" });
+  });
+});
+
+it("retains legacy unknown-field stripping for model connections", () => {
+  expect(
+    ModelConnectInputSchema.parse({ provider: "test", apiKey: "fake-key", futureOption: true }),
+  ).toEqual({
+    provider: "test",
+    apiKey: "fake-key",
   });
 });

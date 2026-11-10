@@ -1,8 +1,12 @@
 /**
- * On-device dictation for calls, mirroring the web store's endpoint mode: the recognizer
+ * On-device dictation for calls and the composer, mirroring the web store's endpoint mode: the recognizer
  * reports words, and only a quiet gap measured here ends a turn. The recognizer's own
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
+
+import { supportedSpeechTag } from "@rakazo/core";
+import { Platform } from "react-native";
+import { reportMobileError } from "./monitoring";
 
 /** Quiet gap that ends an utterance. A natural breath is well under it, a finished turn well over. */
 export const ENDPOINT_SILENCE_MS = 1_200;
@@ -11,7 +15,17 @@ const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
-const FATAL_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
+const FATAL_ERRORS = new Set([
+  "not-allowed",
+  "service-not-allowed",
+  "audio-capture",
+  "language-not-supported",
+  "bad-grammar",
+]);
+/** Recoverable errors that indicate failure if the last empty attempt still has one. */
+const TRANSIENT_ERRORS = new Set(["client", "busy", "network", "unknown", "too-many-requests"]);
+
+export type DictationGiveUp = "idle" | "failed";
 
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
@@ -24,6 +38,7 @@ export type SpeechRecognizer = {
   abort(): void;
   isRecognitionAvailable(): boolean;
   requestPermissionsAsync(): Promise<{ granted: boolean }>;
+  getSupportedLocales(options: Record<string, never>): Promise<{ locales: string[] }>;
   addListener<Event extends keyof DictationEventMap>(
     event: Event,
     listener: (payload: DictationEventMap[Event]) => void,
@@ -35,6 +50,13 @@ type Session = {
   lang: string;
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
+  /** Quiet gap that ends the utterance. */
+  endpointMs: number;
+  /** The caller chose the gap, so the silence timer alone ends a quiet session. */
+  ownEndpoint: boolean;
+  /** The words last reported, so a repeated result is not mistaken for new speech. */
+  reported: string;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -44,18 +66,37 @@ type Session = {
   restart?: ReturnType<typeof setTimeout>;
   backoff: number;
   deadRestarts: number;
+  /** Reset on each native start: only the last attempt classifies empty exhaustion. */
+  transientError: boolean;
 };
 
 let injected: SpeechRecognizer | null = null;
 /** Test seam: an injected recognizer replaces the native module. */
 export function setSpeechRecognizer(recognizer: SpeechRecognizer | null): void {
   injected = recognizer;
+  supported = null;
 }
 
 async function load(): Promise<SpeechRecognizer> {
   if (injected) return injected;
+  // The native recognizer loads on first dictation, not with every screen that imports this.
   const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
   return ExpoSpeechRecognitionModule as unknown as SpeechRecognizer;
+}
+
+let supported: Promise<string[]> | null = null;
+
+/**
+ * iOS starts a recognizer only for a tag it lists exactly. Android takes any regional tag, and
+ * asking it would start its recognition service first, so it lists nothing here.
+ */
+function supportedLocales(recognizer: SpeechRecognizer): Promise<string[]> {
+  if (Platform.OS !== "ios") return Promise.resolve([]);
+  supported ??= recognizer.getSupportedLocales({}).then(
+    (result) => result.locales,
+    () => [],
+  );
+  return supported;
 }
 
 /** A session older than this one can never deliver a final. */
@@ -88,29 +129,49 @@ export function stop(): void {
   }
 }
 
-/** Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it. */
+/** Ends the running session now and delivers what it heard. */
+export function finishListening(): void {
+  if (active) finish(active, "idle");
+}
+
+/**
+ * Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it.
+ * A caller's own `endpointMs` also counts from the start, so a mic that never hears
+ * anything closes too.
+ */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
+  endpointMs?: number;
 }): Promise<void> {
+  // A cancelled request can arrive after a newer session started; it must not stop that one.
+  if (opts.signal?.aborted) return;
   stop();
   const mine = token;
-  if (opts.signal?.aborted) return;
   const recognizer = await load();
+  const lang = supportedSpeechTag(opts.lang || "en-US", await supportedLocales(recognizer));
   // A hang-up or a newer session landed while the native module was loading.
   if (token !== mine) return;
+  // A signal aborted during loading never fires the listener added below, so check it here.
+  if (opts.signal?.aborted) return;
   const session: Session = {
     recognizer,
-    lang: opts.lang || "en-US",
+    lang,
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
+    onGiveUp: opts.onGiveUp,
+    endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+    ownEndpoint: opts.endpointMs !== undefined,
+    reported: "",
     subs: [],
     carried: "",
     heard: "",
     backoff: RESTART_MIN_MS,
     deadRestarts: 0,
+    transientError: false,
   };
   active = session;
   opts.signal?.addEventListener(
@@ -125,11 +186,24 @@ export async function listen(opts: {
     recognizer.addListener("end", () => onEnd(session)),
     recognizer.addListener("error", (event) => onError(session, event)),
   ];
-  start(session);
+  try {
+    start(session);
+  } catch {
+    giveUp(session, "failed", "start-failed");
+    return;
+  }
+  if (session.ownEndpoint) armSilence(session);
+}
+
+/** Ends the utterance once nothing new is heard for the session's quiet gap. */
+function armSilence(session: Session): void {
+  clearTimeout(session.silence);
+  session.silence = setTimeout(() => finish(session, "idle"), session.endpointMs);
 }
 
 function start(session: Session): void {
   if (active !== session) return;
+  session.transientError = false;
   session.recognizer.start({ lang: session.lang, interimResults: true, continuous: true });
 }
 
@@ -148,11 +222,13 @@ function onResult(session: Session, event: ResultEvent): void {
   }
   const text = join(session.carried, session.heard);
   if (!text) return;
+  // With the caller's own pause limit, only new words count as being heard.
+  if (session.ownEndpoint && text === session.reported) return;
+  session.reported = text;
   session.onInterim?.(text);
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
-  clearTimeout(session.silence);
-  session.silence = setTimeout(() => finish(session), ENDPOINT_SILENCE_MS);
+  armSilence(session);
 }
 
 function onEnd(session: Session): void {
@@ -163,10 +239,13 @@ function onEnd(session: Session): void {
   session.heard = "";
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
-    // ponytail: a wedged recognizer just ends the turn; the call opens the mic again next
-    // turn. Surface it as an error if callers ever need to tell it from a real endpoint.
-    finish(session);
-    return;
+    const failed = session.transientError && !session.carried;
+    // A recognizer that keeps failing gives up; one that just ended quietly during a pause
+    // keeps restarting when the caller's own silence timer decides when the pause is over.
+    if (failed || !session.ownEndpoint) {
+      giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
+      return;
+    }
   }
   clearTimeout(session.restart);
   const delay = session.backoff;
@@ -176,23 +255,35 @@ function onEnd(session: Session): void {
     try {
       start(session);
     } catch {
-      finish(session);
+      giveUp(session, "failed", "start-failed");
     }
   }, delay);
 }
 
 function onError(session: Session, event: ErrorEvent): void {
   if (active !== session) return;
-  if (!event?.error || !FATAL_ERRORS.has(event.error)) return;
-  finish(session);
+  if (!event?.error) return;
+  if (TRANSIENT_ERRORS.has(event.error)) session.transientError = true;
+  if (FATAL_ERRORS.has(event.error)) giveUp(session, "failed", event.error);
 }
 
-function finish(session: Session): void {
+function giveUp(session: Session, reason: DictationGiveUp, code: string): void {
+  if (active !== session) return;
+  if (reason === "failed") {
+    reportMobileError(new Error(`Speech recognition stopped: ${code}`), "voice.microphone", {
+      source: "dictation",
+    });
+  }
+  finish(session, reason);
+}
+
+function finish(session: Session, reason?: DictationGiveUp): void {
   if (active !== session) return;
   const text = join(session.carried, session.heard).trim();
   const { onFinal } = session;
   stop();
   if (text) onFinal(text);
+  else if (reason) session.onGiveUp?.(reason);
 }
 
 function join(left: string, right: string): string {

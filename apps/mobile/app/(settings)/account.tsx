@@ -1,25 +1,29 @@
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import { MenuView } from "@expo/ui/community/menu";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
+import { APP_LOCALE_LABELS, accountDisplay, displayName } from "@rakazo/core";
+import * as Notifications from "expo-notifications";
+import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
+  Alert,
+  AppState,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAccountDeletion } from "../../components/account-deletion";
 import { AppMark } from "../../components/app-mark";
-import { useAvatarStyle } from "../../components/avatar-style";
-import { BotAvatar } from "../../components/bot-avatar";
+import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
+import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
-import { NativeSymbol } from "../../components/native-symbol";
 import {
   SettingsGroup,
   SettingsLabel,
@@ -27,39 +31,55 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
-import type { MobileMe } from "../../lib/api";
+import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
+import { createAccountNameEditor } from "../../lib/account-name-editor";
+import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
 import {
-  currentApiBase,
-  deleteAccount,
   fetchAccountSecurity,
-  loadSessionToken,
-  requestAccountDeletionCode,
-  rpc,
-  selectedSpaceId,
+  passwordResetCapabilities,
   signOut,
-} from "../../lib/api";
+  updateAccountName,
+} from "../../lib/api-auth";
 import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
   setAppearancePreference,
 } from "../../lib/appearance";
+import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
-import { promptAccountDeletion } from "../../lib/delete-account-prompt";
-import { setUiLocale, useI18n } from "../../lib/i18n";
+import { endCallBeforeSessionEnd } from "../../lib/call-session";
+import {
+  getHapticsEnabled,
+  loadHapticsPreference,
+  setHapticsEnabled,
+  subscribeHaptics,
+} from "../../lib/haptics";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
+  hasLiveUpdateSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
+import type { MobileMe } from "../../lib/mobile-types";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
+import { activeOrganization, useOrganizations } from "../../lib/organizations";
+import type { MobilePasskey } from "../../lib/passkey";
+import {
+  addPasskey,
+  deletePasskey,
+  listPasskeys,
+  passkeysAvailable,
+  renamePasskey,
+} from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
+import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -70,52 +90,97 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { promptSectionName } from "../../lib/section-name-prompt";
+import { loadSessionToken } from "../../lib/session";
+import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
+import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
-import type { AccountUiLocale } from "../../lib/ui-locale";
-import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../../lib/ui-locale";
+import { openStoreListing, useStoreUpdateAvailable } from "../../lib/store-update";
+import {
+  loadTrustedLinkSites,
+  removeTrustedLinkSite,
+  useTrustedLinkSites,
+} from "../../lib/trusted-link-sites";
+import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
 import { errorText } from "../../lib/user-error";
 
-/** Render account settings, including the entry point for voice configuration. */
+let hapticsSaveVersion = 0;
+
 export default function Account() {
-  const { t, locale } = useI18n();
-  const colorScheme = useResolvedAppearance();
+  const sideInsets = useSideInsets();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const botStyleRequest = useRef(0);
+  const account = accountDisplay(me ?? {}, t`Your account`);
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const currentName = account.label === me?.email ? "" : displayName(me?.name, "");
+
+  const nameSaving = useRef(false);
+  const nameSaveVersion = useRef(0);
+  const { saveName, editName, closeNameDialog } = createAccountNameEditor({
+    currentName,
+    pending: nameSaving,
+    saveVersion: nameSaveVersion,
+    Platform,
+    Alert,
+    errorText,
+    updateAccountName,
+    refresh: () => rpc("me"),
+    onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
+    onRefreshed: setMe,
+    setNameDraft,
+    setNamePending,
+    setNameError,
+    setNameDialogOpen,
+  });
+
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
-  const [deletionCodeSent, setDeletionCodeSent] = useState(false);
-  const [ssoReauthenticated, setSsoReauthenticated] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
-  const [localeSaving, setLocaleSaving] = useState(false);
-  const [localeError, setLocaleError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const deletionDisabled =
-    pending ||
-    (security?.hasPassword
-      ? !deletePassword
-      : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const deletion = useAccountDeletion({ onSecurity: setSecurity });
+  const { run: securityAction } = deletion;
+  const [signingOut, setSigningOut] = useState(false);
+  // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
+  const signOutStarted = useRef(false);
+  const pending = deletion.pending || signingOut;
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
-  const [notificationPending, setNotificationPending] = useState(false);
+  const notificationQueue = useRef<ReturnType<
+    typeof createQueuedSave<LiveNotificationSettings>
+  > | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [passkeys, setPasskeys] = useState<MobilePasskey[] | null>(null);
+  const [passkeyPending, setPasskeyPending] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyLoadError, setPasskeyLoadError] = useState<string | null>(null);
+  // A failed load keeps the section, with Add and a retry, instead of hiding it.
+  const loadPasskeys = useCallback(async () => {
+    setPasskeyLoadError(null);
+    try {
+      setPasskeys(await listPasskeys());
+    } catch (err) {
+      setPasskeys((current) => current ?? []);
+      setPasskeyLoadError(errorText(err, t`Could not continue`));
+    }
+  }, [t]);
+  const colorScheme = useResolvedAppearance();
+  const trustedSites = useTrustedLinkSites();
   const [archivedCount, setArchivedCount] = useState(0);
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
-  const [usage, setUsage] = useState<{
-    runs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens?: number | null;
-  } | null>(null);
-  const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // Messaging appears only on servers that have a chat app connected, as on web.
+  const [messagingEnabled, setMessagingEnabled] = useState(false);
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -127,24 +192,58 @@ export default function Account() {
     getCachedRemoteImagesEnabled,
     () => false,
   );
-  const loadRemoteImagesLabel = t("Load web images automatically");
+  const hapticsEnabled = useSyncExternalStore(
+    subscribeHaptics,
+    getHapticsEnabled,
+    getHapticsEnabled,
+  );
+  function updateHaptics(value: boolean) {
+    const version = ++hapticsSaveVersion;
+    const isCurrent = () => version === hapticsSaveVersion && getHapticsEnabled() === value;
+    void setHapticsEnabled(value).catch(() => {
+      if (!isCurrent()) return;
+      Alert.alert(t`Haptics`, t`Could not save`, [
+        { text: t`Cancel`, style: "cancel" },
+        {
+          text: t`Retry`,
+          onPress: () => {
+            if (isCurrent()) updateHaptics(value);
+          },
+        },
+      ]);
+    });
+  }
+
+  const loadRemoteImagesLabel = t`Load web images automatically`;
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const stackOptions = useStackedSettings();
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
-  const updateLabel = formatUpdateLabel(versionInfo.update, t);
+  const updateLabel = formatUpdateLabel(versionInfo.update);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const storeUpdateAvailable = useStoreUpdateAvailable();
+  const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const spending = useSpendingStatus();
+  const organizations = useOrganizations().data;
+  const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
+    <SettingsRow
+      key={href}
+      accessibilityRole="button"
+      chevron="right"
+      disabled={pending}
+      // Artifacts lives on the root stack, so it closes the sheet before opening.
+      onPress={() =>
+        isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+      }
+      title={title}
+    />
+  );
 
   useEffect(() => {
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<{
-      runs: number;
-      inputTokens: number | null;
-      outputTokens: number | null;
-      totalTokens?: number | null;
-    }>("usage/summary")
+    void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
     if (Platform.OS === "android") {
@@ -155,20 +254,43 @@ export default function Account() {
     }
   }, []);
 
+  const count = new Intl.NumberFormat(dateLocaleForUi(locale));
+  const usd = new Intl.NumberFormat(dateLocaleForUi(locale), {
+    style: "currency",
+    currency: "USD",
+  });
+  const tokens = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
+  const cost = (value: number | null | undefined) =>
+    value == null
+      ? undefined
+      : value > 0 && value < 0.01
+        ? `<${usd.format(0.01)}`
+        : usd.format(value);
   const usageBlock = (
     <SettingsRow
       accessible
-      title={t("Usage")}
+      title={t`Usage`}
       detail={
         usage
-          ? t("{runs} runs · {tokens} tokens", {
-              runs: usage.runs,
-              tokens: usage.totalTokens ?? "—",
-            })
+          ? t`${ph({ runs: count.format(usage.runs) })} runs, ${ph({ tokens: tokens(usage.totalTokens) })} tokens`
           : undefined
       }
+      value={cost(usage?.costUsd)}
     />
   );
+  const usageModels = usage?.models?.length ? (
+    <SettingsGroup>
+      {usage.models.map((row) => (
+        <SettingsRow
+          key={`${row.provider}:${row.model}`}
+          accessible
+          title={row.model}
+          detail={`${row.provider}, ${t`${ph({ calls: count.format(row.modelCalls) })} calls, ${ph({ tokens: tokens(row.totalTokens) })} tokens`}`}
+          value={cost(row.costUsd)}
+        />
+      ))}
+    </SettingsGroup>
+  ) : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -184,175 +306,199 @@ export default function Account() {
     }, []),
   );
 
-  async function selectAvatarStyle(next: AvatarStyle) {
-    if (next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await updateAvatarStyle(next);
-    } catch {
-      setAvatarError(t("Couldn't update avatars"));
-    } finally {
-      setAvatarPending(false);
-    }
-  }
+  useFocusEffect(
+    useCallback(() => {
+      void loadHapticsPreference();
+      void loadTrustedLinkSites().catch(() => undefined);
+    }, []),
+  );
+
+  // Checked on every visit, so a failed check never hides Messaging for good.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc("messaging/status")
+        .then((status) => {
+          if (active) setMessagingEnabled(status.enabled);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  // Granting notifications in system settings leaves this screen mounted, so the
+  // row would keep saying blocked until the app comes back to the foreground.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      let active = true;
+      const read = () => {
+        void Notifications.getPermissionsAsync()
+          .then((permission) => {
+            if (active) setNotificationPermission(permission.status);
+          })
+          .catch(() => undefined);
+      };
+      read();
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") read();
+      });
+      return () => {
+        active = false;
+        subscription.remove();
+      };
+    }, []),
+  );
 
   async function handleSignOut() {
-    setPending(true);
+    if (signOutStarted.current) return;
+    signOutStarted.current = true;
+    if (!(await confirmUnsentSendLoss("sign-out"))) {
+      signOutStarted.current = false;
+      return;
+    }
+    setSigningOut(true);
     setSignOutError(null);
     try {
+      // Hang up while the session still exists, so the server records the call's end.
+      await endCallBeforeSessionEnd();
       await signOut();
       replaceWithSignIn();
     } catch (err) {
-      setSignOutError(errorText(err, t("Could not sign out")));
-      setPending(false);
+      setSignOutError(errorText(err, t`Could not sign out`));
+      setSigningOut(false);
+      signOutStarted.current = false;
     }
   }
 
-  async function updateNotifications(next: LiveNotificationSettings) {
-    const previous = notifications;
-    setNotifications(next);
-    setNotificationPending(true);
+  function updateNotifications(next: LiveNotificationSettings) {
+    notificationQueue.current ??= createQueuedSave(notifications, {
+      onChange: setNotifications,
+      equals: (a, b) =>
+        a.liveConnection === b.liveConnection &&
+        a.messages === b.messages &&
+        a.scheduledTasks === b.scheduledTasks &&
+        a.needsAttention === b.needsAttention,
+      save: async (settings) => {
+        await setLiveNotificationSettings(
+          settings,
+          currentApiBase(),
+          await loadSessionToken(),
+          selectedSpaceId() ?? "",
+        );
+      },
+      onSaved: async (settings) => {
+        if (settings.liveConnection && !(await canPostPromotedNotifications())) {
+          await openPromotedNotificationSettings();
+        }
+        await registerPushToken();
+      },
+      onError: (cause) => setNotificationError(errorText(cause, t`Could not update notifications`)),
+    });
     setNotificationError(null);
-    try {
-      await setLiveNotificationSettings(
-        next,
-        currentApiBase(),
-        await loadSessionToken(),
-        selectedSpaceId() ?? "",
-      );
-      if (next.liveConnection && !(await canPostPromotedNotifications())) {
-        await openPromotedNotificationSettings();
-      }
-      await registerPushToken();
-    } catch (cause) {
-      setNotifications(previous);
-      setNotificationError(errorText(cause, t("Could not update notifications")));
-    } finally {
-      setNotificationPending(false);
-    }
+    notificationQueue.current.update(next);
   }
 
-  async function securityAction(run: () => Promise<void>) {
-    setPending(true);
-    setDeleteError(null);
-    try {
-      await run();
-    } catch (err) {
-      setDeleteError(errorText(err, t("Could not continue")));
-    } finally {
-      setPending(false);
-    }
-  }
   useEffect(() => {
     void fetchAccountSecurity()
       .then(setSecurity)
       .catch(() => undefined);
-  }, []);
-
-  function closeDeletePrompt() {
-    if (pending) return;
-    setDeleteOpen(false);
-    setDeletePassword("");
-  }
-
-  async function requestDeletion() {
-    if (pending) return;
-    setDeleteError(null);
-    try {
-      const value = await fetchAccountSecurity();
-      setSecurity(value);
-      if (!value.hasPassword) {
-        setDeletePassword("");
-        setDeletionCodeSent(false);
-        setSsoReauthenticated(value.freshOidcAuth);
-        setDeleteOpen(true);
-        return;
-      }
-    } catch (err) {
-      setDeleteError(errorText(err, t("Could not continue")));
-      return;
-    }
-
-    const prompted = promptAccountDeletion({
-      title: t("Delete your account?"),
-      message: t(
-        "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-      ),
-      cancelLabel: t("Cancel"),
-      deleteLabel: t("Delete"),
-      onSubmit: (password) => void handleDeletion(password, true),
-    });
-    if (!prompted) {
-      setDeletePassword("");
-      setDeleteOpen(true);
-    }
-  }
-
-  function applyLocale(code: AccountUiLocale) {
-    if (code === locale || localeSaving) return;
-    setLocaleSaving(true);
-    setLocaleError(null);
-    void setUiLocale(code)
-      .catch(() => {
-        setLocaleError(t("Could not change language"));
+    void passwordResetCapabilities()
+      .then(async (capabilities) => {
+        if (await passkeysAvailable(capabilities)) await loadPasskeys();
       })
-      .finally(() => setLocaleSaving(false));
-  }
+      .catch(() => undefined);
+  }, [loadPasskeys]);
 
-  function openLanguagePicker() {
-    if (localeSaving) return;
-    presentMessageActionSheet({
-      title: t("Language"),
-      actions: ACCOUNT_UI_LOCALES.map((code) => ({
-        text: UI_LOCALE_LABELS[code],
-        onPress: () => applyLocale(code),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
-  }
-
-  async function handleDeletion(password: string, hasPassword = security?.hasPassword === true) {
-    if ((!password && !ssoReauthenticated) || pending) return;
-    setPending(true);
-    setDeleteError(null);
+  async function passkeyAction(run: () => Promise<unknown>) {
+    setPasskeyPending(true);
+    setPasskeyError(null);
     try {
-      if (hasPassword) await deleteAccount(password);
-      else {
-        const current = await fetchAccountSecurity();
-        setSecurity(current);
-        setSsoReauthenticated(current.freshOidcAuth);
-        const token = deletionCodeSent ? password.trim() : undefined;
-        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
-        await deleteAccount(undefined, token);
-      }
-      setDeleteOpen(false);
-      replaceWithSignIn("/sign-in");
+      await run();
+      await loadPasskeys();
     } catch (err) {
-      setDeleteError(errorText(err, t("Could not delete account")));
+      setPasskeyError(errorText(err, t`Could not continue`));
     } finally {
-      setPending(false);
+      setPasskeyPending(false);
     }
+  }
+
+  function passkeyMenuAction(passkey: MobilePasskey, name: string, action: string) {
+    if (action === "rename") {
+      promptSectionName({
+        title: t`Rename`,
+        cancelLabel: t`Cancel`,
+        submitLabel: t`Save`,
+        defaultValue: passkey.name ?? undefined,
+        onSubmit: (next) => void passkeyAction(() => renamePasskey(passkey.id, next)),
+      });
+    } else if (action === "delete") {
+      Alert.alert(t`Delete ${name}?`, undefined, [
+        { text: t`Cancel`, style: "cancel" },
+        {
+          text: t`Delete`,
+          style: "destructive",
+          onPress: () => void passkeyAction(() => deletePasskey(passkey.id)),
+        },
+      ]);
+    }
+  }
+
+  function removeTrustedSite(site: string) {
+    void removeTrustedLinkSite(site).catch((cause: unknown) =>
+      Alert.alert(t`Could not continue`, errorText(cause, t`Try again.`)),
+    );
   }
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        style={sideInsets}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {focus === "usage" ? <SettingsGroup>{usageBlock}</SettingsGroup> : null}
+        {focus === "usage" ? (
+          <>
+            <SettingsGroup>{usageBlock}</SettingsGroup>
+            {usageModels}
+          </>
+        ) : null}
         <SettingsGroup>
           <SettingsRow
-            accessible
-            detail={me?.email || undefined}
+            accessibilityRole="button"
+            accessibilityLabel={t`Edit name`}
+            accessibilityValue={{
+              text:
+                me?.email && account.label !== me.email
+                  ? `${account.label}, ${me.email}`
+                  : account.label,
+            }}
+            chevron="right"
+            disabled={!me}
+            detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
-            title={me?.name || t("Your account")}
+            title={account.label}
+            dimmed={namePending}
+            onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
+
+        {organizations ? (
+          <SettingsGroup>
+            <SettingsRow
+              key="organization"
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/organization")}
+              title={t`Organization`}
+              value={activeOrganization(organizations)?.name}
+            />
+          </SettingsGroup>
+        ) : null}
 
         {(security?.sso && !security.ssoLinked) || canChangePassword ? (
           <SettingsGroup>
@@ -362,7 +508,7 @@ export default function Account() {
                 chevron="right"
                 disabled={pending}
                 dimmed={pending}
-                title={t("Link SSO")}
+                title={t`Link SSO`}
                 onPress={() =>
                   void securityAction(async () => {
                     if (await continueWithSso("link")) setSecurity(await fetchAccountSecurity());
@@ -375,186 +521,280 @@ export default function Account() {
                 accessibilityRole="button"
                 chevron="right"
                 onPress={() => router.push("/change-password")}
-                title={t("Change password")}
+                title={t`Change password`}
               />
             ) : null}
           </SettingsGroup>
         ) : null}
 
-        <View accessibilityLabel={t("Appearance")} style={styles.section}>
-          <SettingsLabel>{t("Appearance")}</SettingsLabel>
+        {passkeys ? (
+          <SettingsGroup accessibilityLabel={t`Passkeys`} label={t`Passkeys`}>
+            {passkeys.map((passkey) => {
+              const name = passkey.name ?? t`Passkey`;
+              const created = passkey.createdAt ? new Date(passkey.createdAt) : null;
+              return (
+                <MenuView
+                  key={passkey.id}
+                  actions={[
+                    // Alert.prompt, which renames, exists only on iOS.
+                    ...(Platform.OS === "ios" ? [{ id: "rename", title: t`Rename` }] : []),
+                    { id: "delete", title: t`Delete`, attributes: { destructive: true } },
+                  ]}
+                  colorScheme={colorScheme}
+                  onPressAction={(event) =>
+                    passkeyMenuAction(passkey, name, event.nativeEvent.event)
+                  }
+                  title={name}
+                >
+                  <SettingsRow
+                    accessible
+                    accessibilityRole="button"
+                    detail={
+                      created && !Number.isNaN(created.getTime())
+                        ? created.toLocaleDateString(dateLocaleForUi(locale), {
+                            dateStyle: "medium",
+                          })
+                        : undefined
+                    }
+                    dimmed={passkeyPending}
+                    title={name}
+                  />
+                </MenuView>
+              );
+            })}
+            <SettingsRow
+              accessibilityRole="button"
+              disabled={passkeyPending}
+              dimmed={passkeyPending}
+              onPress={() => void passkeyAction(addPasskey)}
+              title={t`Add passkey`}
+            />
+            {passkeyLoadError ? (
+              <>
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {passkeyLoadError}
+                </Text>
+                <SettingsRow
+                  accessibilityRole="button"
+                  onPress={() => void loadPasskeys()}
+                  title={t`Retry`}
+                />
+              </>
+            ) : null}
+            {passkeyError ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {passkeyError}
+              </Text>
+            ) : null}
+          </SettingsGroup>
+        ) : null}
+
+        {trustedSites.length > 0 ? (
+          <SettingsGroup accessibilityLabel={t`Trusted sites`} label={t`Trusted sites`}>
+            {trustedSites.map((site) => (
+              <MenuView
+                key={site}
+                actions={[{ id: "remove", title: t`Remove`, attributes: { destructive: true } }]}
+                colorScheme={colorScheme}
+                onPressAction={() => removeTrustedSite(site)}
+                title={site}
+              >
+                <SettingsRow accessible accessibilityRole="button" title={site} />
+              </MenuView>
+            ))}
+          </SettingsGroup>
+        ) : null}
+
+        <View accessibilityLabel={t`Appearance`} style={styles.section}>
+          <SettingsLabel>{t`Appearance`}</SettingsLabel>
           <NativeSegmentedControl
-            accessibilityLabel={t("Appearance")}
+            accessibilityLabel={t`Appearance`}
             onChange={(value) => void setAppearancePreference(value)}
             options={[
-              { value: "system", label: t("System") },
-              { value: "light", label: t("Light") },
-              { value: "dark", label: t("Dark") },
+              { value: "system", label: t`System` },
+              { value: "light", label: t`Light` },
+              { value: "dark", label: t`Dark` },
             ]}
             value={appearance}
           />
         </View>
 
-        <View accessibilityLabel={t("Avatar style")} style={styles.section}>
-          <SettingsLabel>{t("Avatars")}</SettingsLabel>
-          <View style={[styles.options, stackOptions && styles.optionsStacked]}>
-            {(["robot", "organic"] as const).map((style) => {
-              const selected = avatarStyle === style;
-              const styleLabel = style === "robot" ? t("Robot") : t("Organic");
-              return (
-                <Pressable
-                  key={style}
-                  accessibilityLabel={t("{style} avatars", { style: styleLabel })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: avatarPending }}
-                  disabled={avatarPending}
-                  onPress={() => void selectAvatarStyle(style)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.avatarOption,
-                    !stackOptions && styles.optionSideBySide,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <BotAvatar
-                    color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
-                    identity="avatar-preview"
-                    size={42}
-                    variant={style}
-                  />
-                  <Text style={styles.optionLabel}>{styleLabel}</Text>
-                  <NativeSymbol
-                    android={selected ? "checkmark-circle" : "ellipse-outline"}
-                    color={selected ? native.label : native.tertiaryLabel}
-                    ios={selected ? "checkmark.circle.fill" : "circle"}
-                    size={22}
-                  />
-                </Pressable>
-              );
-            })}
+        {me?.botAvatarSet ? (
+          <View accessibilityLabel={t`Bot style`} style={styles.section}>
+            <SettingsLabel>{t`Bot style`}</SettingsLabel>
+            <NativeSegmentedControl
+              accessibilityLabel={t`Bot style`}
+              onChange={(botAvatarSet) => {
+                const previous = me.botAvatarSet;
+                // Only the latest tap's reply may land, so a slower earlier save can't undo it.
+                const request = ++botStyleRequest.current;
+                setMe((current) => (current ? { ...current, botAvatarSet } : current));
+                rpc("preferences/update", { botAvatarSet })
+                  .then((next) => {
+                    // Take only the style, so an older snapshot can't undo another edit.
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: next.botAvatarSet } : next,
+                    );
+                  })
+                  .catch(() => {
+                    if (request !== botStyleRequest.current) return;
+                    setMe((current) =>
+                      current ? { ...current, botAvatarSet: previous } : current,
+                    );
+                    Alert.alert(t`Couldn't update bot style`);
+                  });
+              }}
+              options={[
+                { value: "organic", label: t`Original` },
+                { value: "rakazo", label: t`Rakazo` },
+              ]}
+              value={me.botAvatarSet}
+            />
           </View>
-          <SettingsGroup>
-            {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
-          </SettingsGroup>
-        </View>
+        ) : null}
 
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"
-            accessibilityLabel={t("Language")}
-            accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
-            accessibilityState={{ disabled: localeSaving }}
+            accessibilityLabel={t`Language`}
+            accessibilityValue={{ text: APP_LOCALE_LABELS[locale] }}
             chevron="right"
-            dimmed={localeSaving}
-            disabled={localeSaving}
-            onPress={openLanguagePicker}
-            title={t("Language")}
-            value={UI_LOCALE_LABELS[locale]}
+            onPress={() => router.push("/language")}
+            title={t`Language`}
+            value={APP_LOCALE_LABELS[locale]}
           />
-          {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
+          <SettingsSwitch label={t`Haptics`} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
         {Platform.OS === "android" ? (
-          <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
+          <SettingsGroup accessibilityLabel={t`Notifications`} label={t`Notifications`}>
+            {notificationPermission === "denied" ? (
+              <SettingsRow
+                accessibilityRole="button"
+                detail={t`Android blocked notifications.`}
+                onPress={() => void openLiveNotificationSettings()}
+                title={t`Notifications`}
+              />
+            ) : null}
             <SettingsSwitch
-              label={t("Live working status")}
-              detail={t("While agents are working")}
+              label={t`Live working status`}
               value={notifications.liveConnection}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(liveConnection) =>
                 void updateNotifications({ ...notifications, liveConnection })
               }
             />
             <SettingsSwitch
-              label={t("Agent messages")}
-              detail={t("Replies and completed work")}
+              label={t`Agent messages`}
+              detail={t`Replies and completed work`}
               value={notifications.messages}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
             <SettingsSwitch
-              label={t("Scheduled tasks")}
-              detail={t("Alerts from routines")}
+              label={t`Scheduled tasks`}
               value={notifications.scheduledTasks}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(scheduledTasks) =>
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
             />
             <SettingsSwitch
-              label={t("Needs attention")}
-              detail={t("Questions, approvals, takeover")}
+              label={t`Needs attention`}
+              detail={t`Questions, approvals, takeover`}
               value={notifications.needsAttention}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(needsAttention) =>
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <SettingsRow
-              accessibilityRole="button"
-              onPress={() => void openPromotedNotificationSettings()}
-              title={t("Live update settings")}
-            />
+            {hasLiveUpdateSettings() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                onPress={() => void openPromotedNotificationSettings()}
+                title={t`Live update settings`}
+              />
+            ) : null}
             <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
-              title={t("Notification settings")}
+              title={t`Notification settings`}
             />
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
           </SettingsGroup>
         ) : null}
 
         <SettingsGroup>
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/models")}
-            title={t("Models")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/voice")}
-            title={t("Voice")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/integrations")}
-            title={t("Integrations")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/ai-data-sharing")}
-            title={t("AI data sharing")}
-          />
-          {me?.isDeploymentOwner ? (
+          {me?.billingEnabled ? (
+            <SettingsRow
+              title={t`Billing`}
+              chevron="right"
+              onPress={() => router.push("/billing")}
+            />
+          ) : null}
+          {me ? (
             <SettingsRow
               accessibilityRole="button"
               chevron="right"
-              onPress={() => router.push("/integration-setup")}
-              title={t("Server integrations")}
+              disabled={pending}
+              // The space header holds Members too, but a single space has no header.
+              onPress={() =>
+                openFromSettingsSheet(router, {
+                  pathname: "/space-members",
+                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
+                })
+              }
+              title={t`Members`}
             />
           ) : null}
+          {(
+            [
+              ...(me?.ticketBoardEnabled ? [{ title: t`Board`, href: "/board" } as const] : []),
+              { title: t`Artifacts`, href: "/artifacts" },
+              { title: t`Models`, href: "/models" },
+              { title: t`Voice`, href: "/voice" },
+            ] as const
+          ).map(settingsLink)}
+          <ApprovalModeRow key="approvals" approvals={approvals} disabled={pending} />
+          {approvals.ruleCount ? (
+            <ApprovalRulesRow
+              key="approval-rules"
+              count={approvals.ruleCount}
+              disabled={pending}
+              onPress={() => router.push("/approvals")}
+            />
+          ) : null}
+          {spending?.shown ? (
+            <SpendingLimitRow key="spending-limit" status={spending} disabled={pending} />
+          ) : null}
+          {(
+            [
+              { title: t`Vault`, href: "/vault" },
+              ...(me?.paymentWalletProvider
+                ? [{ title: t`Wallet`, href: "/wallet" } as const]
+                : []),
+              { title: t`Integrations`, href: "/integrations" },
+              { title: t`Skills`, href: "/skills" },
+              { title: t`Memory`, href: "/memory" },
+              ...(messagingEnabled ? [{ title: t`Messaging`, href: "/messaging" } as const] : []),
+              { title: t`AI data sharing`, href: "/ai-data-sharing" },
+            ] as const
+          ).map(settingsLink)}
         </SettingsGroup>
 
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"
-            accessibilityLabel={t("Advanced")}
+            accessibilityLabel={t`Advanced`}
             accessibilityState={{ expanded: advancedOpen }}
             chevron={advancedOpen ? "down" : "right"}
             onPress={() => setAdvancedOpen((open) => !open)}
-            title={t("Advanced")}
+            title={t`Advanced`}
           />
           {advancedOpen ? (
             <SettingsSwitch
-              label={t("Stream replies")}
+              label={t`Stream replies`}
               value={streamReplies}
               onChange={(checked) => void setResponseStreamingPreference(checked ? "on" : "off")}
             />
@@ -572,7 +812,7 @@ export default function Account() {
           <NativeActionButton
             disabled={pending}
             fill
-            label={t("Sign out")}
+            label={t`Sign out`}
             onPress={() => void handleSignOut()}
             prominence="secondary"
           />
@@ -591,7 +831,7 @@ export default function Account() {
               accessibilityRole="button"
               chevron="right"
               onPress={() => router.push("/archived-bots")}
-              title={t("Archived")}
+              title={t`Archived`}
               value={String(archivedCount)}
             />
           </SettingsGroup>
@@ -611,6 +851,15 @@ export default function Account() {
               {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
             </View>
           ) : null}
+          {storeUpdateAvailable ? (
+            <NativeActionButton
+              label={t`Update`}
+              onPress={openStoreListing}
+              prominence="secondary"
+              size="compact"
+              style={styles.updateButton}
+            />
+          ) : null}
         </View>
 
         <SettingsGroup>
@@ -619,118 +868,33 @@ export default function Account() {
             destructive
             dimmed={pending}
             disabled={pending}
-            onPress={requestDeletion}
-            title={t("Delete account")}
+            onPress={() => void deletion.request()}
+            title={t`Delete account`}
             trailing={
               pending ? <ActivityIndicator color={mobileTokens().destructive} /> : undefined
             }
           />
-          {!deleteOpen && deleteError ? (
+          {deletion.error ? (
             <Text accessibilityRole="alert" style={styles.error}>
-              {deleteError}
+              {deletion.error}
             </Text>
           ) : null}
         </SettingsGroup>
       </ScrollView>
-      {deleteOpen ? (
-        <Modal transparent animationType="fade" onRequestClose={closeDeletePrompt}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.dialogOverlay}
-          >
-            <Pressable
-              accessibilityLabel={t("Cancel")}
-              style={StyleSheet.absoluteFill}
-              onPress={closeDeletePrompt}
-            />
-            <ScrollView
-              bounces={false}
-              contentContainerStyle={styles.dialog}
-              keyboardShouldPersistTaps="handled"
-              style={styles.dialogScroll}
-            >
-              <Text style={styles.dialogTitle}>{t("Delete your account?")}</Text>
-              <Text style={styles.dialogBody}>
-                {t(
-                  "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
-                )}
-              </Text>
-              {!security?.hasPassword ? (
-                <>
-                  {security?.sso ? (
-                    <NativeActionButton
-                      label={t("Sign in again")}
-                      disabled={pending}
-                      onPress={() =>
-                        void securityAction(async () => {
-                          setSsoReauthenticated(await continueWithSso("reauthenticate"));
-                        })
-                      }
-                    />
-                  ) : null}
-                  {security?.emailDeletion ? (
-                    <NativeActionButton
-                      label={t("Send deletion code")}
-                      disabled={pending}
-                      onPress={() =>
-                        void securityAction(async () => {
-                          await requestAccountDeletionCode();
-                          setDeletionCodeSent(true);
-                        })
-                      }
-                    />
-                  ) : null}
-                </>
-              ) : null}
-              {security?.hasPassword || deletionCodeSent ? (
-                <TextInput
-                  accessibilityLabel={
-                    security?.hasPassword ? t("Current password") : t("Deletion code")
-                  }
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                  editable={!pending}
-                  onChangeText={(value) => {
-                    setDeletePassword(value);
-                    setDeleteError(null);
-                  }}
-                  placeholder={security?.hasPassword ? t("Current password") : t("Deletion code")}
-                  placeholderTextColor={native.tertiaryLabel}
-                  secureTextEntry={security?.hasPassword}
-                  style={styles.dialogInput}
-                  textContentType={security?.hasPassword ? "password" : "oneTimeCode"}
-                  value={deletePassword}
-                />
-              ) : null}
-              {deleteError ? (
-                <Text accessibilityRole="alert" style={styles.dialogError}>
-                  {deleteError}
-                </Text>
-              ) : null}
-              <View style={styles.dialogActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={closeDeletePrompt}
-                  style={styles.dialogAction}
-                >
-                  <Text style={styles.dialogCancel}>{t("Cancel")}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={deletionDisabled}
-                  onPress={() => void handleDeletion(deletePassword)}
-                  style={styles.dialogAction}
-                >
-                  <Text style={[styles.dialogDelete, deletionDisabled && styles.disabled]}>
-                    {t("Delete")}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </Modal>
+      {nameDialogOpen ? (
+        <NameDialog
+          draft={nameDraft}
+          error={nameError}
+          saving={namePending}
+          onChange={(value) => {
+            setNameDraft(value);
+            setNameError(null);
+          }}
+          onSave={(value) => void saveName(value)}
+          onClose={closeNameDialog}
+        />
       ) : null}
+      {deletion.dialog}
     </SafeAreaView>
   );
 }
@@ -755,38 +919,6 @@ function createAccountStyles() {
     section: {
       gap: 7,
     },
-    options: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    optionsStacked: {
-      flexDirection: "column",
-    },
-    option: {
-      minHeight: 48,
-      borderRadius: 14,
-      borderCurve: "continuous",
-      borderWidth: 2,
-      borderColor: "transparent",
-      backgroundColor: native.groupedCell,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    optionSideBySide: {
-      flex: 1,
-    },
-    avatarOption: {
-      minHeight: 96,
-      gap: 8,
-    },
-    optionLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-      textAlign: "center",
-    },
     about: {
       alignItems: "center",
       gap: 16,
@@ -795,6 +927,9 @@ function createAccountStyles() {
     },
     versionFooter: {
       alignItems: "center",
+    },
+    updateButton: {
+      alignSelf: "center",
     },
     versionLine: {
       color: native.secondaryLabel,
@@ -806,72 +941,6 @@ function createAccountStyles() {
       fontSize: 15,
       paddingHorizontal: 16,
       paddingVertical: 10,
-    },
-    dialogOverlay: {
-      flex: 1,
-      justifyContent: "center",
-      padding: 24,
-      backgroundColor: "rgba(0, 0, 0, 0.62)",
-    },
-    dialogScroll: {
-      flexGrow: 0,
-      flexShrink: 1,
-      maxHeight: "100%",
-      borderRadius: 14,
-      backgroundColor: native.page,
-    },
-    dialog: {
-      padding: 18,
-      gap: 12,
-    },
-    dialogTitle: {
-      color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
-    },
-    dialogBody: {
-      color: native.secondaryLabel,
-      fontSize: 14,
-      lineHeight: 20,
-    },
-    dialogInput: {
-      height: 48,
-      borderRadius: 12,
-      backgroundColor: native.fill,
-      color: native.label,
-      paddingHorizontal: 14,
-      fontSize: 16,
-    },
-    dialogError: {
-      color: tokens.destructive,
-      fontSize: 14,
-    },
-    dialogActions: {
-      flexDirection: "row",
-      justifyContent: "flex-end",
-      alignItems: "center",
-      gap: 12,
-    },
-    dialogAction: {
-      minHeight: 48,
-      justifyContent: "center",
-      paddingHorizontal: 8,
-    },
-    dialogCancel: {
-      color: native.label,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    dialogDelete: {
-      color: tokens.destructive,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    disabled: {
-      opacity: 0.45,
-    },
-    pressed: {
-      backgroundColor: native.fillPressed,
     },
   });
 }

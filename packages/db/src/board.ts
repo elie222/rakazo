@@ -34,9 +34,8 @@ export async function listBoards(prisma: PrismaClient, spaceId: string): Promise
 }
 
 /**
- * Atomically reserve the next ticket number for a board. The board's counter is
- * incremented in the same transaction as the insert, so concurrent creates get
- * distinct ascending numbers.
+ * The board's counter is incremented in the same transaction as the insert, so
+ * concurrent creates get distinct ascending numbers.
  */
 export async function allocateTicketNumber(
   tx: Pick<Prisma.TransactionClient, "board">,

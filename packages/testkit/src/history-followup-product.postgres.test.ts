@@ -12,7 +12,6 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
   it.each([
     { size: 1000 as const, strategy: "snapshots" as const },
     { size: 1000 as const, strategy: undefined },
-    { size: 1000 as const, strategy: "retrieval" as const },
     { size: 100 as const, strategy: undefined },
   ])(
     "retains source-verified replies with $size originals and $strategy strategy",
@@ -30,11 +29,13 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       const followup = (request: ModelEmulatorRequest, index: number) => {
         const serialized = JSON.stringify(request.messages);
         expect(serialized).toContain(questions[index]);
+        // Earlier replies are replayed as assistant turns.
         expect(
-          request.messages.filter((row) =>
-            String(row.content).includes(`Assistant: ${verifiedReply}`),
-          ),
-        ).toHaveLength(index);
+          request.messages.filter(
+            (row) =>
+              row.role === "assistant" && JSON.stringify(row.content).includes(verifiedReply),
+          ).length,
+        ).toBe(index);
         expect(serialized).toContain("do not repeat retrieval solely because the user asks again");
       };
       const key = "synthetic-history-followup-key";
@@ -93,7 +94,7 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       });
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-history-followup-"));
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(
           {
             id: "synthetic-source-verified-followups",

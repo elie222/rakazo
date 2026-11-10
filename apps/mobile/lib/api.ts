@@ -1,116 +1,111 @@
-import type {
-  AccountSecurity,
-  AuthCapabilities,
-  AvatarStyle,
-  Bot,
-  BotSection,
-  ComputerMode,
-  Group,
-  Me,
-  MessageBlock,
-  ModelCatalogEntry,
-  ModelCredential,
-  ReplyPreview,
-  Space,
-  SpaceNavigation,
-} from "@rakazo/contracts";
+import { t } from "@lingui/core/macro";
+import type { RpcInput, RpcOutput, RpcPath, ThreadSnapshot } from "@rakazo/contracts";
+import { CLIENT_UPDATE_REQUIRED_STATUS, parseServerHeaders } from "@rakazo/contracts";
 import {
-  accountSecuritySchema,
-  authCapabilitiesSchema,
-  legacyAccountSecurity,
-  legacyAuthCapabilitiesSchema,
-} from "@rakazo/contracts";
-import type { ThreadHistory } from "@rakazo/core";
-import {
-  aiConsentTarget,
+  aiConsentTargets,
   aiDataUsesForProcedure,
   cancelResponseBody,
+  displayIdentityResult,
   ensureAiDataConsent,
-  isRunTerminalEvent,
   isServerUnreachable,
   isUnreachableStatus,
-  mergeThreadHistory,
-  prependThreadHistoryPage,
-  progressMessageId,
+  parseRetryAfter,
   readBoundedJsonResponse,
-  reduceLiveMessageBlocks,
-  replyMetadata,
-  runFailureError,
-  signupRequiresEmailVerification,
-  takeLiveMessage,
-  updateCloudAgentMessages,
-  upsertMessageById,
+  withAbort,
 } from "@rakazo/core";
+import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
-import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
-import { resumeLiveNotifications } from "./live-notifications";
+import { identityLabels } from "./identity-display";
+import {
+  newMobileAvatarSnapshotRequest,
+  rememberMobileAvatarSnapshot,
+  syncMobileAvatarSession,
+} from "./logo-avatar-activity";
+import { reportMobileError } from "./monitoring";
+import { followSelectedSpace, selectedSpaceChanged } from "./referral";
+import { fetchServer } from "./server-headers";
 import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  replaceSessionTokenIfCurrent,
-  restoreSessionToken,
-  saveSessionToken,
   saveVerifiedIntegrationsScope,
+  sessionOnlyInMemory,
+  sessionSaveInProgress,
   snapshotSessionToken,
-  tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import { authErrorText, errorText } from "./user-error";
+import { errorText } from "./user-error";
 
-const ENDPOINT_KEY = "rakazo.api_base";
-const SPACE_KEY = "rakazo.space_id";
-const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
+export const SPACE_KEY = "rakazo.space_id";
+export const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
 const RPC_TIMEOUT_MS = 8_000;
 export const MAX_MOBILE_AUTH_RESPONSE_BYTES = 256 * 1024;
 export const MAX_MOBILE_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
 /** Inbox bootstrap reads safe to replay without a Space header during auth recovery. */
 const SPACE_AUTH_RECOVERY_SAFE_PROCS = new Set(["spaces/list", "me"]);
-
 let cachedApiBase: string | undefined;
 const apiBaseListeners = new Set<() => void>();
-
 export function subscribeApiBase(listener: () => void): () => void {
   apiBaseListeners.add(listener);
   return () => {
     apiBaseListeners.delete(listener);
   };
 }
-
-function setCachedApiBase(url: string): void {
+export function setCachedApiBase(url: string): void {
   if (cachedApiBase !== undefined && cachedApiBase !== url) clearUnsentSends();
   cachedApiBase = url;
   for (const listener of apiBaseListeners) listener();
 }
 let cachedSpaceId = "";
+followSelectedSpace(() => cachedSpaceId || null);
 /** Bumped on every in-memory Space selection change so a delayed response
  * cannot treat a later reselection of the same Space id as its own. */
 let spaceSelectionGeneration = 0;
 /** Counts selectSpace attempts so one still cleaning up a rollback record
  * cannot claim the selection after a newer attempt has started. */
 let spaceSelectionRequestGeneration = 0;
-
+/** Includes pending selections that have not claimed the in-memory space yet. */
+export function spaceSelectionSeq(): number {
+  return spaceSelectionRequestGeneration;
+}
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
+  // Another Space can belong to another organization, with its own invite link.
+  selectedSpaceChanged();
 }
-
+/** Orders complete endpoint transactions, including credential rollback. */
+let endpointChangeQueue: Promise<unknown> = Promise.resolve();
+/** Runs an endpoint change in order, holding the reconcile gate while it switches servers. */
+export function queueEndpointChange(
+  url: string,
+  change: (previous: string, switching: boolean) => Promise<EndpointResult>,
+): Promise<EndpointResult> {
+  const result = endpointChangeQueue.then(async () => {
+    const previous = currentApiBase();
+    const switching = url !== previous;
+    if (switching) endpointChanges += 1;
+    try {
+      return await change(previous, switching);
+    } finally {
+      if (switching) endpointChanges -= 1;
+    }
+  });
+  endpointChangeQueue = result.catch(() => undefined);
+  return result;
+}
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
 function requestError(error: unknown, signal: AbortSignal): unknown {
   return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error), { cause: error });
 }
-
 let serverReachable = true;
 const serverReachableListeners = new Set<() => void>();
-
 /** False from a request that could not reach the server until the server answers again. */
 export function isServerReachable(): boolean {
   return serverReachable;
 }
-
 /** Calls `listener` each time the server stops or starts answering. */
 export function subscribeServerReachable(listener: () => void): () => void {
   serverReachableListeners.add(listener);
@@ -118,141 +113,23 @@ export function subscribeServerReachable(listener: () => void): () => void {
     serverReachableListeners.delete(listener);
   };
 }
-
-function noteServerReachable(reachable: boolean): void {
-  if (reachable === serverReachable) return;
-  serverReachable = reachable;
-  for (const listener of [...serverReachableListeners]) listener();
+export function noteServerReachable(reachable: boolean): void {
+  if (reachable !== serverReachable) {
+    serverReachable = reachable;
+    for (const listener of [...serverReachableListeners]) listener();
+  }
+  // Every answered request is also a connectivity window for a revocation still pending.
+  if (reachable) void flushPendingSignOut();
 }
-
 export function currentApiBase() {
   const parsed = normalizeApiBase(cachedApiBase ?? defaultApiBase());
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.url;
 }
-
-export async function loadApiBase() {
-  let apiBase = defaultApiBase();
-  try {
-    const stored = await SecureStore.getItemAsync(ENDPOINT_KEY);
-    if (stored) {
-      const parsed = normalizeApiBase(stored);
-      if (parsed.ok) {
-        apiBase = parsed.url;
-      }
-    }
-  } catch {
-    // SecureStore is unavailable in some test / web hosts.
-  }
-  setCachedApiBase(apiBase);
-  try {
-    const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
-    cachedSpaceId = storedSpace;
-    bumpSpaceSelectionGeneration();
-    // A deletion fallback must override the now-invalid saved Space even when
-    // the device failed to replace that value before the previous process exited.
-    await recoverSpaceRollback(apiBase);
-  } catch {
-    // Keep any in-memory selection when SecureStore is temporarily unavailable.
-  }
-  return currentApiBase();
-}
-
-export async function selectSpace(id: string) {
-  const requestGeneration = ++spaceSelectionRequestGeneration;
-  if (!(await clearStoredValue(SPACE_ROLLBACK_KEY))) return false;
-  // Rollback cleanup is the first await. A newer selection may have claimed
-  // the live space while this call was still deleting the rollback record.
-  if (requestGeneration !== spaceSelectionRequestGeneration) return false;
-  // Claim memory before persisting: recovery paths reconcile against the
-  // in-memory selection, so a durable write must never precede its owner.
-  const previousSpaceId = cachedSpaceId;
-  cachedSpaceId = id;
-  bumpSpaceSelectionGeneration();
-  // Generation ownership distinguishes A→B→A from "we still own this claim":
-  // an ID-only check would treat a later same-id selection as ours.
-  const claimGeneration = spaceSelectionGeneration;
-  try {
-    await SecureStore.setItemAsync(SPACE_KEY, id);
-    // Our write may have landed stale behind a newer overlapping selection's
-    // write. Re-assert the live selection best-effort so durable converges
-    // to it; each selector heals at most once, so overlapping chains settle
-    // on the latest claim. Never delete here: a missing memory owner means
-    // another path (recovery, sign-out) owns cleanup.
-    const liveSpaceId = cachedSpaceId;
-    if (liveSpaceId && liveSpaceId !== id) {
-      await writeStoredValue(SPACE_KEY, liveSpaceId);
-    }
-  } catch {
-    // Roll back the claim and heal durable state: a concurrent recovery may
-    // have persisted the rolled-back id after reading it, which would leave
-    // restart opening a Space the live session is not using. A newer
-    // overlapping selection owns both by now, so only heal a claim we hold.
-    if (cachedSpaceId === id && spaceSelectionGeneration === claimGeneration) {
-      cachedSpaceId = previousSpaceId;
-      bumpSpaceSelectionGeneration();
-      if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
-    }
-    return false;
-  }
-  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-    () => undefined,
-  );
-  return true;
-}
-
 export function selectedSpaceId(): string | null {
   return cachedSpaceId || null;
 }
-
-/** Keep requests usable after the server deleted the selected Space but native
- * storage could not replace it. Neutralize any same-endpoint rollback before
- * writing the replacement selection so a cleanup failure cannot leave the new
- * id beside a stale record that recoverSpaceRollback would prefer on restart. */
-export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
-  cachedSpaceId = id;
-  bumpSpaceSelectionGeneration();
-  // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
-  // selection first can leave it beside a stale record that recoverSpaceRollback
-  // would prefer on restart if later cleanup fails.
-  const rollbackNeutralized =
-    (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
-  if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
-    // SPACE_KEY is authoritative; drop a rollback we may have written only to
-    // overwrite a stale record (best-effort).
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-      () => undefined,
-    );
-    return true;
-  }
-  // Clear before saving recovery: an empty selection lets startup resolve the
-  // server default even when the recovery record cannot be written.
-  const staleSelectionCleared = await clearStoredValue(SPACE_KEY);
-  const recoverySaved = await saveSpaceRollback(id);
-  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-    () => undefined,
-  );
-  // Only treat a cleared selection as durable success when no same-endpoint
-  // rollback remains to override it after restart.
-  return recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
-}
-
-export async function selectInitialSpace(id: string) {
-  if (selectedSpaceId()) return true;
-  return selectSpace(id);
-}
-
-export async function clearSpace(): Promise<boolean> {
-  const spaceCleared = await clearStoredValue(SPACE_KEY);
-  const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (!spaceCleared || !rollbackCleared) return false;
-  cachedSpaceId = "";
-  bumpSpaceSelectionGeneration();
-  return true;
-}
-
-async function clearStoredValue(key: string): Promise<boolean> {
+export async function clearStoredValue(key: string): Promise<boolean> {
   try {
     await SecureStore.deleteItemAsync(key);
     return true;
@@ -260,8 +137,7 @@ async function clearStoredValue(key: string): Promise<boolean> {
     return writeStoredValue(key, "");
   }
 }
-
-async function writeStoredValue(key: string, value: string): Promise<boolean> {
+export async function writeStoredValue(key: string, value: string): Promise<boolean> {
   try {
     await SecureStore.setItemAsync(key, value);
     return true;
@@ -269,351 +145,71 @@ async function writeStoredValue(key: string, value: string): Promise<boolean> {
     return false;
   }
 }
-
-async function snapshotSpace(): Promise<{ ok: true; value: string } | { ok: false }> {
-  if (cachedSpaceId) return { ok: true, value: cachedSpaceId };
-  try {
-    return { ok: true, value: (await SecureStore.getItemAsync(SPACE_KEY)) ?? "" };
-  } catch {
-    return { ok: false };
-  }
+let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+  headers: () => ({}),
+  onUpdateRequired: () => {},
+};
+/** The app names its build on every request and decides what a refused build does. */
+export function configureClientBuild(options: typeof clientBuild): void {
+  clientBuild = options;
 }
-
-/** Clears session + space for an endpoint change. Restores both if either wipe fails. */
-async function clearCredentialsForEndpointChange(): Promise<
-  | {
-      ok: true;
-      previousToken: string;
-      previousSpace: string;
-      previousAvatarStyle: AvatarStyle;
-    }
-  | { ok: false; result: EndpointResult }
-> {
-  const previousToken = await snapshotSessionToken();
-  const previousSpace = await snapshotSpace();
-  const previousAvatarStyle = getCachedAvatarStyle();
-  if (!previousToken.ok || !previousSpace.ok) {
-    return {
-      ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
-    };
-  }
-  const rollbackReady = previousSpace.value
-    ? await saveSpaceRollback(previousSpace.value)
-    : await clearStoredValue(SPACE_ROLLBACK_KEY);
-  if (!rollbackReady) {
-    return {
-      ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
-    };
-  }
-  const sessionCleared = await clearSessionToken();
-  cachedSpaceId = "";
-  bumpSpaceSelectionGeneration();
-  const spaceCleared = await clearStoredValue(SPACE_KEY);
-  if (sessionCleared && spaceCleared) {
-    return {
-      ok: true,
-      previousToken: previousToken.value,
-      previousSpace: previousSpace.value,
-      previousAvatarStyle,
-    };
-  }
-
-  await restoreCredentials(previousToken.value, previousSpace.value, previousAvatarStyle);
-  return {
-    ok: false,
-    result: { ok: false, error: t("Could not clear the previous server session") },
-  };
-}
-
-async function restoreCredentials(
-  previousToken: string,
-  previousSpace: string,
-  previousAvatarStyle: AvatarStyle,
-) {
-  if (previousToken) await restoreSessionToken(previousToken);
-  await saveAvatarStyle(previousAvatarStyle);
-  if (previousSpace) {
-    cachedSpaceId = previousSpace;
-    bumpSpaceSelectionGeneration();
-    try {
-      await SecureStore.setItemAsync(SPACE_KEY, previousSpace);
-      await clearStoredValue(SPACE_ROLLBACK_KEY);
-    } catch {
-      // The endpoint-bound rollback record restores this selection after restart.
-    }
-  }
-  if (previousToken) {
-    await resumeLiveNotifications(currentApiBase(), previousToken, previousSpace).catch(
-      () => undefined,
-    );
-  }
-}
-
-async function saveSpaceRollback(spaceId: string): Promise<boolean> {
-  return writeStoredValue(
-    SPACE_ROLLBACK_KEY,
-    JSON.stringify({ apiBase: currentApiBase(), spaceId }),
-  );
-}
-
-async function recoverSpaceRollback(apiBase: string) {
-  const stored = await SecureStore.getItemAsync(SPACE_ROLLBACK_KEY);
-  if (!stored) return;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stored);
-  } catch {
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    return;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    return;
-  }
-  const rollback = parsed as { apiBase?: unknown; spaceId?: unknown };
-  if (rollback.apiBase !== apiBase || typeof rollback.spaceId !== "string" || !rollback.spaceId) {
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    return;
-  }
-  cachedSpaceId = rollback.spaceId;
-  bumpSpaceSelectionGeneration();
-  if (await writeStoredValue(SPACE_KEY, rollback.spaceId)) {
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    return;
-  }
-  // Could not replace the selection yet. Drop the deleted id so startup RPCs
-  // are not scoped to an inaccessible Space; keep the recovery record.
-  await clearStoredValue(SPACE_KEY);
-}
-
-export async function saveApiBase(input: string): Promise<EndpointResult> {
-  const parsed = normalizeApiBase(input);
-  if (!parsed.ok) return parsed;
-  if (parsed.url === defaultApiBase()) return resetApiBase();
-  const previous = currentApiBase();
-  let cleared:
-    | {
-        previousToken: string;
-        previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
-      }
-    | undefined;
-  if (parsed.url !== previous) {
-    const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) return result.result;
-    cleared = result;
-  }
-  try {
-    await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
-  } catch {
-    if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
-    }
-    return { ok: false, error: t("Could not save the server URL") };
-  }
-  setCachedApiBase(parsed.url);
-  await clearStoredValue(SPACE_ROLLBACK_KEY);
-  return parsed;
-}
-
-export async function resetApiBase(): Promise<EndpointResult> {
-  const previous = currentApiBase();
-  const url = defaultApiBase();
-  let cleared:
-    | {
-        previousToken: string;
-        previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
-      }
-    | undefined;
-  if (url !== previous) {
-    const result = await clearCredentialsForEndpointChange();
-    if (!result.ok) return result.result;
-    cleared = result;
-  }
-  try {
-    await SecureStore.deleteItemAsync(ENDPOINT_KEY);
-  } catch {
-    if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
-      return { ok: false, error: t("Could not clear the custom server URL") };
-    }
-  }
-  setCachedApiBase(url);
-  await clearStoredValue(SPACE_ROLLBACK_KEY);
-  return { ok: true, url };
-}
-
 export async function authHeaders(
   spaceId: string | null = selectedSpaceId(),
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   };
 }
-
 export type ApiRequestContext = {
   sessionGeneration?: number;
   apiBase: string;
   headers: Record<string, string>;
 };
-
 /** Keeps consent prompts separate across servers and the selected Space. */
 export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string {
   return [requestContext.apiBase, requestContext.headers["x-rakazo-space-id"] ?? ""].join("\u0000");
 }
-
-export async function captureApiRequestContext(): Promise<ApiRequestContext> {
+/** Pins a request to the current server and session, and to a Space (the selected one by default). */
+export async function captureApiRequestContext(
+  spaceId: string | null = selectedSpaceId(),
+): Promise<ApiRequestContext> {
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
-  const headers = await authHeaders(selectedSpaceId());
+  const headers = await authHeaders(spaceId);
   if (apiBase !== currentApiBase()) {
-    throw new Error(t("The server changed while starting the request"));
+    throw new Error(t`The server changed while starting the request`);
   }
   if (generation !== currentSessionGeneration())
-    throw new Error(t("Something went wrong. Try again."));
+    throw new Error(t`Something went wrong. Try again.`);
   return { apiBase, headers, sessionGeneration: generation };
 }
-
-async function authenticateWithEmail(
-  action: "sign-in" | "sign-up",
-  input: { email: string; password: string; name?: string },
-) {
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/${action}/email`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
-      body: JSON.stringify(input),
-    },
-    {},
-  );
-  if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not continue")));
-  }
-  const token = tokenFromAuthResponse(response, body);
-  if (action === "sign-up" && signupRequiresEmailVerification(body))
-    return { verificationRequired: true };
-  if (!token)
-    throw new Error(
-      t(
-        action === "sign-in"
-          ? "Sign-in did not return a session"
-          : "Sign-up did not return a session",
-      ),
-    );
-  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
-  await saveSessionToken(token);
-  return { verificationRequired: false };
-}
-
-export function signIn(email: string, password: string) {
-  return authenticateWithEmail("sign-in", { email, password });
-}
-
-export function signUp(email: string, password: string, name: string) {
-  return authenticateWithEmail("sign-up", { email, password, name });
-}
-
-export type PasswordResetCapabilities = AuthCapabilities;
-
-export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/capabilities`,
-    { headers: { origin: "rakazo://" } },
-  );
-  if (!response.ok) throw new Error(t("Could not load sign-in options"));
-  return authCapabilitiesSchema.or(legacyAuthCapabilitiesSchema).parse(body);
-}
-
-export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/request-password-reset`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
-      body: JSON.stringify({ email, redirectTo }),
-    },
-    {},
-  );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not send reset email")));
-}
-
 /** Revoking other sessions also refuses this one until the replacement is saved. */
 let passwordChangesInFlight = 0;
-
-export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  passwordChangesInFlight += 1;
-  try {
-    await replaceSessionAfterPasswordChange(currentPassword, newPassword);
-  } finally {
-    passwordChangesInFlight -= 1;
-  }
+export function passwordChangeInFlight() {
+  return passwordChangesInFlight > 0;
 }
-
-async function replaceSessionAfterPasswordChange(currentPassword: string, newPassword: string) {
-  const apiBase = currentApiBase();
-  const generation = currentSessionGeneration();
-  const headers = await authHeaders();
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${apiBase}/api/auth/change-password`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "rakazo://",
-        ...headers,
-      },
-      body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
-    },
-    {},
-  );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not change password")));
-  // Revoking other sessions also revokes this one; keep the replacement the server issued.
-  const token = tokenFromAuthResponse(response, body);
-  if (!token) return;
-  // A sign-out or server switch changes the session while the request is in flight.
-  if (currentApiBase() !== apiBase) return;
-  const maybeResume = async () => {
-    // Our save is the only change allowed; a sign-out during it must not restart notifications.
-    const spaceId = selectedSpaceId();
-    if (spaceId && currentSessionGeneration() === generation + 1) {
-      await resumeLiveNotifications(apiBase, token, spaceId).catch(() => undefined);
-    }
-  };
-  try {
-    if (!(await replaceSessionTokenIfCurrent(generation, token))) return;
-  } catch (error) {
-    // The replacement is already in memory; resume before the keychain error reaches the UI.
-    await maybeResume();
-    throw error;
-  }
-  await maybeResume();
-}
-
 export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
-): Promise<{ response: Response; body: T }> {
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetch(input, { ...init, signal: controller.signal }),
+      fetchServer(
+        input,
+        {
+          ...init,
+          signal: controller.signal,
+        },
+        currentApiBase(),
+      ),
       controller.signal,
+      "Request timed out",
     ).catch((error: unknown) => {
       throw requestError(error, controller.signal);
     });
@@ -626,7 +222,7 @@ export async function fetchMobileJson<T>(
       return { response, body };
     } catch (error) {
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback };
+        return { response, body: invalidJsonFallback, invalidJson: true };
       }
       throw requestError(error, controller.signal);
     }
@@ -634,72 +230,348 @@ export async function fetchMobileJson<T>(
     clearTimeout(timer);
   }
 }
-
-export async function signOut() {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
-  const headers = await authHeaders();
+const PENDING_SIGN_OUT_KEY = "rakazo.pending_sign_out";
+/**
+ * Better-auth expires a session 7 days after its last use, and the signed-out session is not used
+ * again; 30 days also covers longer server overrides.
+ */
+const PENDING_SIGN_OUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** Answered-request retries wait at least this long, so a dead old server is not retried per request. */
+const PENDING_SIGN_OUT_FLUSH_SPACING_MS = 60_000;
+/** Storage safety cap for the record list; with everything unexpired, the oldest go first. */
+const PENDING_SIGN_OUT_LIMIT = 100;
+/**
+ * A sign-out or server switch whose revocation has not reached its server yet. Kept in the same
+ * secure storage as the session, because the token is what the revocation must present.
+ */
+export type PendingSignOut = {
+  apiBase: string;
+  token: string;
+  headers: Record<string, string>;
+  /** When this record was written, so an age bound can retire undeliverable ones. */
+  recordedAt: number;
+  /** A server switch's record is deliverable only once the switch has committed. */
+  provisional?: boolean;
+};
+/** Records are keyed by server and session, so each signed-out account keeps its own revocation. */
+function samePendingSignOut(left: PendingSignOut, right: PendingSignOut): boolean {
+  return left.apiBase === right.apiBase && left.token === right.token;
+}
+type PendingSignOutRead = { ok: true; records: PendingSignOut[] } | { ok: false };
+/** Records whose session may still be alive on its server. */
+function livePendingSignOuts(records: PendingSignOut[]): PendingSignOut[] {
+  const now = Date.now();
+  return records.filter((record) => now - record.recordedAt < PENDING_SIGN_OUT_MAX_AGE_MS);
+}
+/**
+ * True once a retry confirmed no record is stored, so answered requests stop re-reading the store.
+ * Unknown until then: a launch that cannot read the store leaves answered requests to retry it.
+ */
+let pendingSignOutAbsent = false;
+/** When the last answered-request retry started; launch retries ignore it. */
+let lastPendingSignOutFlushAt = 0;
+/** The one in-flight flush; triggers that arrive meanwhile join it instead of starting their own. */
+let flushingPendingSignOut: Promise<void> | undefined;
+/** Delivery attempts in flight, keyed by the session each one revokes (server base, token). */
+const deliveringSignOuts = new Map<string, Promise<void>>();
+/** Orders every read-modify-write of the record list; network calls never run inside it. */
+let pendingSignOutWrites: Promise<unknown> = Promise.resolve();
+/** Endpoint changes in flight; reconcile leaves a switch's records alone while any runs. */
+let endpointChanges = 0;
+/** True from before a server switch clears the session until the new server is in place. */
+export function endpointChangeInProgress(): boolean {
+  return endpointChanges > 0;
+}
+function queuePendingSignOutWrite<T>(step: () => Promise<T>): Promise<T> {
+  const result = pendingSignOutWrites.then(step, step);
+  pendingSignOutWrites = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+async function readPendingSignOuts(): Promise<PendingSignOutRead> {
+  let stored: string | null = null;
+  try {
+    stored = await SecureStore.getItemAsync(PENDING_SIGN_OUT_KEY);
+  } catch {
+    // The store could not be read; the retry stays for a later connectivity window.
+    return { ok: false };
+  }
+  if (!stored) return { ok: true, records: [] };
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error("not a record list");
+    const records: PendingSignOut[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as {
+        apiBase?: unknown;
+        token?: unknown;
+        headers?: unknown;
+        recordedAt?: unknown;
+        provisional?: unknown;
+      };
+      if (typeof record.apiBase !== "string" || !record.apiBase) continue;
+      if (typeof record.token !== "string" || !record.token) continue;
+      if (typeof record.recordedAt !== "number" || !Number.isFinite(record.recordedAt)) continue;
+      records.push({
+        apiBase: record.apiBase,
+        token: record.token,
+        headers: parseServerHeaders(record.headers) ?? {},
+        recordedAt: record.recordedAt,
+        ...(record.provisional === true ? { provisional: true } : {}),
+      });
+    }
+    return { ok: true, records };
+  } catch {
+    // A list this app cannot read counts as empty, and the next write replaces it; the sessions
+    // expire server-side regardless.
+    return { ok: true, records: [] };
+  }
+}
+function writePendingSignOuts(records: PendingSignOut[]): Promise<boolean> {
+  return writeStoredValue(PENDING_SIGN_OUT_KEY, JSON.stringify(records));
+}
+/** Records a revocation to deliver later. False when the store could not be read or written. */
+export async function savePendingSignOut(record: PendingSignOut): Promise<boolean> {
+  return queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return false;
+    const kept = livePendingSignOuts(read.records).filter(
+      (existing) => !samePendingSignOut(existing, record),
+    );
+    kept.unshift(record);
+    if (!(await writePendingSignOuts(kept.slice(0, PENDING_SIGN_OUT_LIMIT)))) return false;
+    pendingSignOutAbsent = false;
+    // A fresh record gets its first retry at once, whatever an older record last attempted.
+    lastPendingSignOutFlushAt = 0;
+    return true;
+  });
+}
+/**
+ * Rewrites the stored records in the write queue, leaving an unreadable store alone. `transform`
+ * returns the new list, or nothing when no record changes. A write that changes how many records
+ * are stored also updates `pendingSignOutAbsent`.
+ */
+async function updatePendingSignOuts(
+  transform: (records: PendingSignOut[]) => PendingSignOut[] | undefined,
+): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok) return;
+    const updated = transform(read.records);
+    if (!updated) return;
+    if ((await writePendingSignOuts(updated)) && updated.length !== read.records.length) {
+      pendingSignOutAbsent = updated.length === 0;
+    }
+  });
+}
+/** Removes the captured record, preserving a newer sign-out that replaced a provisional one. */
+export async function removePendingSignOut(record: PendingSignOut): Promise<void> {
+  await updatePendingSignOuts((records) => {
+    const kept = records.filter(
+      (existing) =>
+        !samePendingSignOut(existing, record) ||
+        existing.recordedAt !== record.recordedAt ||
+        Boolean(existing.provisional) !== Boolean(record.provisional),
+    );
+    return kept.length === records.length ? undefined : kept;
+  });
+}
+/** Marks a switch's provisional record deliverable, once the switch has committed. */
+export async function promotePendingSignOut(record: PendingSignOut): Promise<void> {
+  await updatePendingSignOuts((records) => {
+    let promoted = false;
+    const kept = records.map((existing) => {
+      if (!existing.provisional || !samePendingSignOut(existing, record)) return existing;
+      promoted = true;
+      const { provisional, ...committed } = existing;
+      return committed;
+    });
+    return promoted ? kept : undefined;
+  });
+}
+/**
+ * Resolves records a dying server switch left behind. A provisional record whose session is still
+ * the active one on its server belongs to a switch that never completed, and the session it would
+ * revoke is still in use; every other provisional record is promoted for delivery. Everything is
+ * revalidated inside the queued step — a switch may start, finish or roll back while this waits —
+ * so a reconcile that raced a switch's start leaves its records alone.
+ */
+async function reconcileProvisionalSignOuts(): Promise<void> {
+  await queuePendingSignOutWrite(async () => {
+    const read = await readPendingSignOuts();
+    if (!read.ok || !read.records.some((record) => record.provisional)) return;
+    if (endpointChanges > 0) return;
+    const generation = currentSessionGeneration();
+    const saving = sessionSaveInProgress();
+    const snapshot = await snapshotSessionToken();
+    if (!snapshot.ok) return;
+    // Re-read after the snapshot's wait too: nothing between this check and the write awaits,
+    // so a switch that starts now queues its own record behind this step.
+    if (endpointChanges > 0) return;
+    // A running save reads as no session, so its token would count as inactive. A later pass
+    // resolves this server's records instead of waiting for the save; other servers' go on.
+    const unsettled = saving || generation !== currentSessionGeneration();
+    const activeToken = snapshot.value;
+    let resolvedAny = false;
+    const resolved: PendingSignOut[] = [];
+    for (const record of livePendingSignOuts(read.records)) {
+      if (!record.provisional) {
+        resolved.push(record);
+        continue;
+      }
+      const onCurrentServer = record.apiBase === currentApiBase();
+      if (onCurrentServer && unsettled) {
+        resolved.push(record);
+        continue;
+      }
+      const stillActive = onCurrentServer && record.token === activeToken;
+      // A session kept only in memory is gone after a restart; a later reconcile promotes its record.
+      if (stillActive && sessionOnlyInMemory()) {
+        resolved.push(record);
+        continue;
+      }
+      resolvedAny = true;
+      if (!stillActive) {
+        const { provisional, ...committed } = record;
+        resolved.push(committed);
+      }
+    }
+    if (resolvedAny) await writePendingSignOuts(resolved);
+  });
+}
+/**
+ * Sends a pending revocation to its server. Success or 401 (the session is already invalid)
+ * completes it; the server's sign-out also ends that session's push registration. Everything
+ * else — a refusing proxy, throttling, a server failure, no connection — retries.
+ */
+async function deliverPendingSignOut(record: PendingSignOut): Promise<"delivered" | "retry"> {
+  const url = `${record.apiBase}/api/auth/sign-out`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
-    await withAbort(
-      fetch(`${currentApiBase()}/api/auth/sign-out`, {
+    const response = await withAbort(
+      // Not fetchServer: it reads the headers configured for the current server, and after
+      // a switch those belong to the new one — only the record still carries this server's.
+      fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        // Reject redirects where supported; native fetch also needs response validation below.
+        redirect: "error",
+        // Bearer only: this server's cookie must not reach the jar other servers share.
+        credentials: "omit",
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          authorization: `Bearer ${record.token}`,
+          ...clientBuild.headers(),
+          ...record.headers,
+        },
         body: "{}",
         signal: controller.signal,
       }),
       controller.signal,
-    ).catch(() => undefined);
+      "Request timed out",
+    );
+    // Native fetch can follow redirects; only the sign-out endpoint itself confirms delivery.
+    if (response.url) {
+      const requested = new URL(url);
+      const answered = new URL(response.url);
+      if (
+        answered.origin !== requested.origin ||
+        answered.pathname.replace(/\/$/, "") !== requested.pathname
+      ) {
+        return "retry";
+      }
+    } else if (response.redirected) {
+      return "retry";
+    }
+    return response.ok || response.status === 401 ? "delivered" : "retry";
+  } catch {
+    return "retry";
   } finally {
     clearTimeout(timer);
   }
-  const sessionCleared = await clearSessionToken();
-  const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
 }
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
+/**
+ * Delivers a record once at a time: callers share the attempt in flight for the same session
+ * (server base, token), so the revocation is never sent twice; unrelated records deliver
+ * independently. A persisted record is delivered only while the store still holds it, so one an
+ * earlier attempt completed is not sent again; an unreadable store falls back to the captured
+ * record, as does one that could not be persisted.
+ */
+export function deliverSignOutRecord(record: PendingSignOut, persisted = true): Promise<void> {
+  const key = `${record.apiBase}\n${record.token}`;
+  const inFlight = deliveringSignOuts.get(key);
+  if (inFlight) return inFlight;
+  const delivery = (async () => {
+    try {
+      const read = persisted ? await readPendingSignOuts() : ({ ok: false } as const);
+      const current = read.ok
+        ? livePendingSignOuts(read.records).find(
+            (candidate) => samePendingSignOut(candidate, record) && !candidate.provisional,
+          )
+        : record;
+      if (current && (await deliverPendingSignOut(current)) === "delivered") {
+        await removePendingSignOut(current);
+      }
+    } catch {
+      // Delivery problems never surface; the record waits for the next pass.
+    } finally {
+      deliveringSignOuts.delete(key);
+    }
+  })();
+  deliveringSignOuts.set(key, delivery);
+  return delivery;
 }
-
-export async function deleteAccount(password?: string, token?: string) {
-  await rpc("notifications/unregisterPush").catch(() => undefined);
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/delete-user`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "rakazo://",
-        ...(await authHeaders()),
-      },
-      body: JSON.stringify({ password, token }),
-    },
-    {},
-  );
-  if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not delete account")));
+async function pendingSignOutPass(): Promise<void> {
+  try {
+    lastPendingSignOutFlushAt = Date.now();
+    await reconcileProvisionalSignOuts();
+    // This read decides whether later non-forced flushes may skip the store, so it takes
+    // its turn in the write queue: an out-of-queue read can resume after a queued sign-out
+    // recorded a revocation and still report the store it saw first, silencing retries.
+    // Records whose session cannot be alive anymore are retired in the same step. Delivery
+    // stays outside the queue, like every network call.
+    const read = await queuePendingSignOutWrite(async () => {
+      const current = await readPendingSignOuts();
+      if (!current.ok) {
+        pendingSignOutAbsent = false;
+        return current;
+      }
+      const live = livePendingSignOuts(current.records);
+      if (live.length !== current.records.length) await writePendingSignOuts(live);
+      pendingSignOutAbsent = live.length === 0;
+      return { ok: true as const, records: live };
+    });
+    if (!read.ok) return;
+    for (const record of read.records) {
+      // A provisional record belongs to a switch that has not committed; it is not delivered.
+      if (record.provisional) continue;
+      // Removal is by record, so a revocation recorded during this pass is not touched.
+      await deliverSignOutRecord(record);
+    }
+  } catch {
+    // Records stay; the next connectivity window tries again.
   }
-  await clearSessionToken();
-  await clearSpace();
 }
-
+/**
+ * Retries revocations that could not be delivered, until each server answers.
+ * `force` reads the store even when the last attempt found nothing, for launch. Every attempt
+ * first resolves provisional records a switch left behind by dying mid-change.
+ */
+export async function flushPendingSignOut(force = false): Promise<void> {
+  if (!force && pendingSignOutAbsent) return;
+  // Answered requests arrive in bursts; a permanently dead old server must not be hit
+  // after each one for the record's whole life. Launch retries are never spaced out.
+  if (!force && Date.now() - lastPendingSignOutFlushAt < PENDING_SIGN_OUT_FLUSH_SPACING_MS) return;
+  flushingPendingSignOut ??= pendingSignOutPass().finally(() => {
+    flushingPendingSignOut = undefined;
+  });
+  return flushingPendingSignOut;
+}
 const sessionRejectedListeners = new Set<() => void>();
-
 /** Runs after the server rejected the stored session and it was cleared. */
 export function subscribeSessionRejected(listener: () => void): () => void {
   sessionRejectedListeners.add(listener);
@@ -707,40 +579,60 @@ export function subscribeSessionRejected(listener: () => void): () => void {
     sessionRejectedListeners.delete(listener);
   };
 }
-
 async function rejectSession() {
-  await clearSessionToken();
+  // The server ended the session; the user never asked to leave. Keep the unsent
+  // queue, so the app can report those messages before a sign-in deletes them.
+  await clearSessionToken({ keepUnsent: true });
   for (const listener of sessionRejectedListeners) listener();
 }
-
-export async function rpc<T>(
-  proc: string,
+export type RpcOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number | null;
+  requestContext?: ApiRequestContext;
+  skipSpaceAuthRecovery?: boolean;
+};
+/** The body may be left out when the procedure takes none or every field is optional. */
+export type RpcArgs<P extends RpcPath> =
+  undefined extends RpcInput<P>
+    ? [body?: RpcInput<P>, options?: RpcOptions]
+    : // biome-ignore lint/complexity/noBannedTypes: an input whose fields are all optional
+      {} extends RpcInput<P>
+      ? [body?: RpcInput<P>, options?: RpcOptions]
+      : [body: RpcInput<P>, options?: RpcOptions];
+/** Calls a procedure from the shared contract; its path picks the body and result types. */
+export function rpc<P extends RpcPath>(proc: P, ...[body, options]: RpcArgs<P>) {
+  return request(proc, body, options) as Promise<RpcOutput<P>>;
+}
+async function request(
+  proc: RpcPath,
   body: unknown = {},
-  options: {
-    signal?: AbortSignal;
-    timeoutMs?: number | null;
-    requestContext?: ApiRequestContext;
-    skipSpaceAuthRecovery?: boolean;
-  } = {},
-): Promise<T> {
+  options: RpcOptions = {},
+): Promise<unknown> {
+  syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
+  const avatarSnapshotOrder = proc === "threads/get" ? newMobileAvatarSnapshotRequest() : 0;
   const requestSpaceGeneration = spaceSelectionGeneration;
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  await ensureAiDataConsent({
-    uses,
-    status: () =>
-      rpc(
-        "aiConsent/status",
-        { uses, ...aiConsentTarget(body) },
-        { requestContext: consentContext },
-      ),
-    prompt: promptAiConsent,
-    allow: (input) => rpc("aiConsent/allow", input, { requestContext: consentContext }),
-    coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
-  });
+  for (const consentTarget of aiConsentTargets(body)) {
+    await ensureAiDataConsent({
+      uses,
+      status: () =>
+        rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
+      prompt: promptAiConsent,
+      allow: (input) =>
+        rpc(
+          "aiConsent/allow",
+          consentTarget.settingsScope
+            ? { ...input, settingsScope: consentTarget.settingsScope }
+            : input,
+          { requestContext: consentContext },
+        ),
+      coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
+    });
+  }
   // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
   // read, and nested recovery calls that share this signal) reports the same cause.
   const controller = new AbortController();
@@ -769,23 +661,31 @@ export async function rpc<T>(
       consentContext?.sessionGeneration !== undefined &&
       consentContext.sessionGeneration !== currentSessionGeneration()
     )
-      throw new Error(t("Something went wrong. Try again."));
+      throw new Error(t`Something went wrong. Try again.`);
     let res: Response;
+    const correlation = clientCorrelationHeaders();
     try {
-      res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "rakazo://",
-          ...requestHeaders,
+      res = await fetchServer(
+        `${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...requestHeaders,
+            ...correlation,
+          },
+          body: JSON.stringify({ json: body }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({ json: body }),
-        signal: controller.signal,
-      });
+        consentContext?.apiBase ?? currentApiBase(),
+      );
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException") and an unreachable server with a native stack
       // location; say what happened instead.
+      if (!controller.signal.aborted)
+        reportMobileError(error, "rpc.transport", responseCorrelation(new Headers(correlation)));
       throw requestError(error, controller.signal);
     }
     if (
@@ -795,9 +695,9 @@ export async function rpc<T>(
       noteServerReachable(!isUnreachableStatus(res.status));
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
-      throw new Error(t("Update your server to use AI data sharing in this mobile version."));
+      throw new Error(t`Update your server to use AI data sharing in this mobile version.`);
     }
-    const parsed: { json?: T } = await readBoundedJsonResponse<{ json?: T }>(
+    const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
@@ -809,7 +709,9 @@ export async function rpc<T>(
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
-      const error = parsed.json as { message?: unknown } | undefined;
+      const error = parsed.json as
+        | { message?: unknown; code?: unknown; data?: unknown }
+        | undefined;
       const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the
@@ -867,12 +769,7 @@ export async function rpc<T>(
         const retrySameProc = SPACE_AUTH_RECOVERY_SAFE_PROCS.has(proc);
         // Share the original deadline/cancellation with recovery calls instead
         // of starting a second full timeout behind the first request.
-        const recoveryOptions: {
-          signal?: AbortSignal;
-          timeoutMs?: number | null;
-          requestContext?: ApiRequestContext;
-          skipSpaceAuthRecovery?: boolean;
-        } = {
+        const recoveryOptions: RpcOptions = {
           ...options,
           timeoutMs: null,
           signal: controller.signal,
@@ -880,13 +777,13 @@ export async function rpc<T>(
         };
         try {
           if (retrySameProc) {
-            const result = await rpc<T>(proc, body, recoveryOptions);
+            const result = await request(proc, body, recoveryOptions);
             // A Space selected while the retry was in flight already owns both
             // the in-memory and durable selection; leave it alone.
             if (!selectedSpaceId()) await clearStaleSpaceSelection();
             return result;
           }
-          await rpc("spaces/list", {}, recoveryOptions);
+          await request("spaces/list", {}, recoveryOptions);
         } catch (retryError) {
           if (!selectedSpaceId()) {
             cachedSpaceId = previousSpaceId;
@@ -897,7 +794,10 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw Object.defineProperty(new Error(message), "status", { value: res.status });
+      throw Object.assign(
+        httpError(message, res, typeof error?.code === "string" ? error.code : undefined),
+        { data: error?.data },
+      );
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (
@@ -912,7 +812,16 @@ export async function rpc<T>(
         selectionId: requestSpaceId ?? null,
       });
     }
-    return parsed.json as T;
+    if (
+      proc === "threads/get" &&
+      requestSessionGeneration === currentSessionGeneration() &&
+      requestApiBase === currentApiBase()
+    ) {
+      const snapshot = parsed.json as ThreadSnapshot;
+      if (typeof snapshot?.threadId === "string" && typeof snapshot.cursor === "number")
+        rememberMobileAvatarSnapshot(snapshot, avatarSnapshotOrder);
+    }
+    return displayIdentityResult(proc.split("/"), parsed.json, identityLabels());
   } catch (error) {
     if (
       requestSessionGeneration === currentSessionGeneration() &&
@@ -926,546 +835,45 @@ export async function rpc<T>(
     options.signal?.removeEventListener("abort", cancel);
   }
 }
-
-export type MobileBot = Pick<
-  Bot,
-  | "id"
-  | "name"
-  | "preview"
-  | "title"
-  | "color"
-  | "instructionHistory"
-  | "selfUpdateInstructions"
-  | "notifyOnFinish"
-  | "threadId"
-  | "pinned"
-  | "status"
-  | "sectionId"
-  | "archivedAt"
-  | "unread"
-  | "updatedAt"
-  | "computerMode"
-  | "modelProvider"
-  | "modelId"
-  | "thinkingLevel"
-  | "autoSpeak"
-> &
-  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
-
-export type MobileBotSection = BotSection;
-
-export type MobileMe = Pick<
-  Me,
-  | "userId"
-  | "name"
-  | "email"
-  | "spaceId"
-  | "defaultProvider"
-  | "defaultModel"
-  | "hostCredentialProvider"
-  | "hostCredentialSource"
-  | "needsModel"
-  | "avatarStyle"
-  | "isDeploymentOwner"
->;
-
-export type MobileModel = ModelCatalogEntry;
-
-export type MobileModelCredential = ModelCredential;
-
-export type MobileMessage = {
-  id: string;
-  threadId?: string;
-  seq?: number;
-  runId?: string;
-  role: "user" | "bot" | "system";
-  /** Set when the message was sent from a live voice call; groups one call's transcript. */
-  callId?: string;
-  botId?: string;
-  replyToMessageId?: string;
-  replyQuote?: string;
-  replyPreview?: ReplyPreview | null;
-  createdAt?: string;
-  blocks: MessageBlock[];
-};
-
-export type MobileGroup = Pick<
-  Group,
-  | "id"
-  | "name"
-  | "preview"
-  | "pinned"
-  | "sectionId"
-  | "archivedAt"
-  | "unread"
-  | "updatedAt"
-  | "members"
-> &
-  Partial<Pick<Group, "spaceId">>;
-
-export type MobileSpace = Space;
-export type MobileSpaceNavigation = SpaceNavigation;
-
-export type MobileSnapshot = {
-  botId?: string;
-  groupId?: string;
-  groupName?: string;
-  threadId: string;
-  cursor?: number;
-  messages: MobileMessage[];
-  olderCursor: number | null;
-  run: { id: string; botId?: string; status: string; error?: string | null } | null;
-  activeRuns?: Array<{ id: string; botId?: string; status: string }>;
-  members?: MobileGroup["members"];
-  computer?: {
-    state: string;
-    controlHolder: string;
-    screenAvailable: boolean;
-    mode: ComputerMode;
-    busyBotName: string | null;
-  };
-};
-
-export function shouldApplyMobileThreadRefresh(input: {
-  requestEpoch: number;
-  currentEpoch: number;
-  targetBotId: string | undefined;
-  targetGroupId: string | undefined;
-  activeBotId: string | undefined;
-  activeGroupId: string | undefined;
-}) {
-  return (
-    input.requestEpoch === input.currentEpoch &&
-    input.targetBotId === input.activeBotId &&
-    input.targetGroupId === input.activeGroupId
-  );
-}
-
 /**
- * What a refresh may hand the live subscription. The server replays events
- * after this snapshot's cursor, so an uncommitted fetch must not supply it.
+ * A failed response as an error the shared retry policy can read: its status, oRPC code, and any
+ * Retry-After. A 426 also asks the user to update, from whichever request noticed it.
  */
-export function mobileThreadRefreshResult(input: {
-  fetched: MobileSnapshot;
-  onScreen: MobileSnapshot | null;
-  requestGeneration: number;
-  currentGeneration: number;
-  requestEpoch: number;
-  currentEpoch: number;
-  targetBotId: string | undefined;
-  targetGroupId: string | undefined;
-  activeBotId: string | undefined;
-  activeGroupId: string | undefined;
-}): { commit: boolean; snapshot: MobileSnapshot | null } {
-  const commit =
-    input.requestGeneration === input.currentGeneration && shouldApplyMobileThreadRefresh(input);
-  return { commit, snapshot: commit ? input.fetched : input.onScreen };
-}
-
-export type MobileMessagePage = ThreadHistory<MobileMessage>;
-
-export function mergeMobileSnapshot(
-  prev: MobileSnapshot | null,
-  next: MobileSnapshot,
-  preserveLoadedHistory = false,
-): MobileSnapshot {
-  return mergeThreadHistory(prev, next, preserveLoadedHistory);
-}
-
-export function prependMobileMessagePage(
-  prev: MobileSnapshot | null,
-  page: MobileMessagePage,
-): MobileSnapshot | null {
-  return prependThreadHistoryPage(prev, page);
-}
-
-const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
-  sendblue: "iMessage",
-  slack: "Slack",
-  whatsapp: "WhatsApp",
-  telegram: "Telegram",
-  lark: "Feishu",
-};
-
-export function messagingProviderLabel(provider: string, transport?: string): string {
-  if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
-    return transport!;
-  }
-  return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
-}
-
-/** The message's text exactly as written, for a view that selects part of it. */
-export function selectableMobileMessageText(message: MobileMessage): string {
-  return message.blocks
-    .map((block) => {
-      if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
-      }
-      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
-        return block.text;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function copyableMobileMessageText(message: MobileMessage): string {
-  return selectableMobileMessageText(message).trim();
-}
-
-export function blockText(message: MobileMessage) {
-  return message.blocks
-    .map((block) => {
-      if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
-      }
-      if (block.kind === "cloud_agent")
-        return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
-      if (block.kind === "subagent") {
-        return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
-      }
-      if (block.kind === "child_bot") {
-        return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
-      }
-      if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
-      if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
-      if (block.kind === "file") {
-        return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;
-      }
-      if (block.kind === "steps") {
-        return (block.steps ?? [])
-          .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
-          .join(" · ");
-      }
-      return ("text" in block ? block.text : "state" in block ? block.state : "") ?? "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-type ThreadEvent = {
-  id?: string;
-  createdAt?: string;
-  botId?: string;
-  type: string;
-  seq?: number;
-  runId?: string;
-  payload?: Record<string, unknown>;
-};
-
-/** No frame at all for this long means the stream is half-open; the server beats far faster. */
-export const IDLE_TIMEOUT_MS = 45_000;
-
-export async function subscribeThread(
-  target: { botId: string } | { groupId: string },
-  cursor: number,
-  onEvent: (event: ThreadEvent) => void,
-  signal: AbortSignal,
-) {
-  const context = await captureApiRequestContext();
-  const current = () =>
-    context.apiBase === currentApiBase() &&
-    context.sessionGeneration === currentSessionGeneration();
-  const res = await fetch(`${context.apiBase}/rpc/threads/subscribe`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      origin: "rakazo://",
-      ...context.headers,
-    },
-    body: JSON.stringify({ json: { ...target, cursor } }),
-    signal,
-  }).catch((error: unknown) => {
-    if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
-    throw error;
+export function httpError(message: string, res: Response, code?: string): Error {
+  if (res.status === CLIENT_UPDATE_REQUIRED_STATUS) clientBuild.onUpdateRequired();
+  return Object.defineProperties(new Error(message), {
+    status: { value: res.status },
+    // oRPC's error code; a proxy's bare 404 has none.
+    code: { value: code },
+    retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
   });
-  if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (!signal.aborted) {
-    // A half-open socket never reports done, so give up on silence and let the caller reconnect.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = await Promise.race([
-      reader.read().catch((error) => {
-        if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
-        throw error;
-      }),
-      new Promise<"idle">((resolve) => {
-        timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
-      }),
-    ]).finally(() => clearTimeout(timer));
-    if (read === "idle") {
-      void reader.cancel().catch(() => undefined);
-      return;
-    }
-    const { done, value } = read;
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-    for (const chunk of chunks) {
-      const data = chunk
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("");
-      if (!data || data === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
-        // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
-        if (parsed.json?.type && parsed.json.type !== "heartbeat") onEvent(parsed.json);
-      } catch {
-        // ignore keepalives and partial frames
-      }
-    }
-  }
+}
+/** Claims the in-memory Space selection ("" clears it) and starts a new selection epoch. */
+export function setSelectedSpace(id: string): void {
+  cachedSpaceId = id;
+  bumpSpaceSelectionGeneration();
 }
 
-export function applyMobileThreadEvent(
-  prev: MobileSnapshot | null,
-  event: ThreadEvent,
-): MobileSnapshot | null {
-  if (!prev || event.type === "heartbeat") return prev;
-  if (event.type === "thread.cleared") {
-    return {
-      ...prev,
-      cursor: event.seq,
-      messages: [],
-      olderCursor: null,
-      run: null,
-      activeRuns: [],
-    };
-  }
-  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
-    const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
-    const progressId = progressMessageId(event);
-    // Waiting pauses drop live progress server-side; clear a leftover bubble so
-    // the waiting footer is not hidden behind a stale "Working…" row.
-    const messages = prev.messages.filter((message) => message.id !== progressId);
-    const progressCleared = messages.length !== prev.messages.length;
-    const runId = event.runId;
-    const knownInRun = Boolean(runId && prev.run?.id === runId);
-    const knownInActive = Boolean(
-      runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
-    );
-    // Peer bot_message runs are omitted from snapshots while busy; the first wait
-    // event is how an open thread learns they need ask/takeover UI.
-    const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
-    const runChanged = Boolean(knownInRun && prev.run && prev.run.status !== status);
-    const activeRunChanged = Boolean(
-      knownInActive &&
-        prev.activeRuns?.some((candidate) => candidate.id === runId && candidate.status !== status),
-    );
-    const computer =
-      event.type === "computer.takeover.requested" && prev.computer?.busyBotName
-        ? { ...prev.computer, busyBotName: null }
-        : prev.computer;
-    const computerChanged = computer !== prev.computer;
-    const cursor = event.seq ?? prev.cursor;
-    if (!runChanged && !activeRunChanged && !progressCleared && !needsInsert && !computerChanged) {
-      return cursor === prev.cursor ? prev : { ...prev, cursor };
-    }
-    if (needsInsert && runId) {
-      const waitingRun = {
-        id: runId,
-        status,
-        ...(event.botId ? { botId: event.botId } : {}),
-      };
-      const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
-      const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
-      const promoteWaiting =
-        !prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
-      return {
-        ...prev,
-        cursor,
-        messages,
-        computer,
-        run: promoteWaiting ? waitingRun : prev.run,
-        activeRuns,
-      };
-    }
-    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
-    const activeRuns = activeRunChanged
-      ? prev.activeRuns?.map((candidate) =>
-          candidate.id === runId ? { ...candidate, status } : candidate,
-        )
-      : prev.activeRuns;
-    return { ...prev, cursor, run, activeRuns, messages, computer };
-  }
-  if (isRunTerminalEvent(event)) {
-    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
-    const failure = runFailureError(event);
-    const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
-    // A group member run can fail while another is displayed; see reduceThreadSnapshot.
-    const endedRun =
-      primaryEnded ?? prev.activeRuns?.find((candidate) => candidate.id === event.runId) ?? null;
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
-      // A failed run stays in run so the thread can say why it stopped (see reduceThreadSnapshot).
-      run:
-        endedRun && failure
-          ? { ...endedRun, status: "failed", error: failure }
-          : primaryEnded
-            ? (activeRuns?.[0] ?? null)
-            : prev.run,
-      activeRuns,
-    };
-  }
-  if (event.type === "thread.progress") {
-    const progressId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
-    const streaming: MobileMessage = {
-      id: progressId,
-      role: "bot",
-      blocks: reduceLiveMessageBlocks((previous?.blocks ?? []) as MessageBlock[], {
-        type: "progress",
-        payload: event.payload,
-      }),
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...remaining, streaming],
-    };
-  }
-  if (event.type === "agent.tool.called") {
-    const progressId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
-    const streaming: MobileMessage = {
-      id: progressId,
-      role: "bot",
-      blocks: reduceLiveMessageBlocks((previous?.blocks ?? []) as MessageBlock[], {
-        type: "tool",
-        name: String(event.payload?.name ?? ""),
-      }),
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...remaining, streaming],
-    };
-  }
-  if (event.type === "agent.tool.completed") {
-    return { ...prev, cursor: event.seq ?? prev.cursor };
-  }
-  if (event.type === "thread.subagent") {
-    const agentId = String(event.payload?.agentId ?? event.id ?? "live");
-    const status = event.payload?.status;
-    const streaming: MobileMessage = {
-      id: `subagent:${agentId}`,
-      role: "bot",
-      ...(event.botId ? { botId: event.botId } : {}),
-      ...(event.runId ? { runId: event.runId } : {}),
-      blocks: [
-        {
-          kind: "subagent",
-          agentId,
-          name: String(event.payload?.name ?? "subagent"),
-          task: String(event.payload?.task ?? ""),
-          status: status === "completed" || status === "failed" ? status : "running",
-          progress: event.payload?.progress ? String(event.payload.progress) : undefined,
-          result: event.payload?.result ? String(event.payload.result) : undefined,
-        },
-      ],
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
-    };
-  }
-  if (event.type === "thread.cloud_agent") {
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
-    };
-  }
-  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
-    const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
-    const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
-    const known = prev.messages.find((message) => message.id === id);
-    const next: MobileMessage = {
-      id,
-      createdAt: known?.createdAt ?? event.createdAt,
-      runId: event.runId ? String(event.runId) : undefined,
-      role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
-      // An update can leave the call id out — the `end_call` marker does — so keep the one
-      // the message already carries instead of dropping it out of its call.
-      callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
-      blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
-      botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
-      ...replyMetadata(event.payload ?? {}, known),
-    };
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: upsertMessageById(
-        remaining.filter(
-          (message) =>
-            !(
-              message.id.startsWith("subagent:") &&
-              next.blocks.some(
-                (block) => block.kind === "subagent" && message.id === `subagent:${block.agentId}`,
-              )
-            ),
-        ),
-        next,
-      ),
-    };
-  }
-  return prev;
+/** The in-memory selection as stored: "" when no Space is selected. */
+export function rawSelectedSpaceId(): string {
+  return cachedSpaceId;
 }
 
-export {
-  apiBaseWarning,
-  defaultApiBase,
-  displayApiHost,
-  normalizeApiBase,
-  probeApiBase,
-  usesCustomApiBase,
-} from "./endpoint";
-export { loadSessionToken };
-
-export async function fetchAccountSecurity(): Promise<AccountSecurity> {
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/account-security`,
-    { headers: { origin: "rakazo://", ...(await authHeaders()) } },
-    null,
-  );
-  // Older servers support password accounts and the original change/delete endpoints.
-  if (response.status === 404) return legacyAccountSecurity;
-  if (!response.ok) throw new Error(t("Could not load sign-in options"));
-  try {
-    return accountSecuritySchema.parse(body);
-  } catch {
-    throw new Error(t("Could not load sign-in options"));
-  }
+/** Bumped on every in-memory Space selection change. */
+export function currentSpaceSelectionGeneration(): number {
+  return spaceSelectionGeneration;
 }
 
-export async function requestAccountDeletionCode(): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/request-account-deletion`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "rakazo://",
-        ...(await authHeaders()),
-      },
-      body: "{}",
-    },
-    null,
-  );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not continue")));
+/** Starts a selectSpace attempt; see spaceSelectionSeq. */
+export function nextSpaceSelectionRequest(): number {
+  return ++spaceSelectionRequestGeneration;
+}
+
+/** Marks a password change in flight; see passwordChangeInFlight. */
+export function beginPasswordChange(): void {
+  passwordChangesInFlight += 1;
+}
+
+export function endPasswordChange(): void {
+  passwordChangesInFlight -= 1;
 }

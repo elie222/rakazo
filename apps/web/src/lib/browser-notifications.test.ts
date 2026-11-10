@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  BrowserNotificationApi,
+  BrowserNotificationContext,
+} from "./browser-notifications.js";
 import {
-  type BrowserNotificationApi,
-  type BrowserNotificationContext,
   browserNotificationMessage,
   deliverBrowserNotification,
   requestBrowserNotificationPermission,
@@ -88,6 +90,30 @@ describe("browser notifications", () => {
     );
   });
 
+  it("accepts another member's message in a shared chat, never the viewer's own", () => {
+    const by = (id: string) =>
+      event({
+        payload: {
+          role: "user",
+          author: { id, name: "Ada Owner" },
+          blocks: [{ kind: "text", text: "Saturday works" }],
+        },
+      });
+    expect(shouldNotifyBrowser(by("user-a"), context({ meId: "user-b" }))).toBe(true);
+    expect(shouldNotifyBrowser(by("user-b"), context({ meId: "user-b" }))).toBe(false);
+    // Like its push: not a spoken call turn, nor a file sent with no text.
+    const spoken = by("user-a");
+    spoken.payload = { ...spoken.payload, callId: "call-1" };
+    expect(shouldNotifyBrowser(spoken, context({ meId: "user-b" }))).toBe(false);
+    const fileOnly = by("user-a");
+    fileOnly.payload = { ...fileOnly.payload, blocks: [{ kind: "file", name: "plan.pdf" }] };
+    expect(shouldNotifyBrowser(fileOnly, context({ meId: "user-b" }))).toBe(false);
+    expect(browserNotificationMessage(by("user-a"), "Chief")).toEqual({
+      title: "Chief",
+      body: "Ada Owner: Saturday works",
+    });
+  });
+
   it("puts the bot message in the native notification", () => {
     expect(browserNotificationMessage(event(), "Chief")).toEqual({
       title: "Chief",
@@ -159,4 +185,8 @@ describe("browser notifications", () => {
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(2);
   });
+});
+
+it("uses a readable fallback for opaque notification names", () => {
+  expect(browserNotificationMessage(event(), "__TestTok1__").title).toBe("Bot");
 });

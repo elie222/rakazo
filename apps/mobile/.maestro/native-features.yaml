@@ -1,0 +1,224 @@
+appId: com.rakazo.app
+name: Android native features
+tags:
+  - android
+---
+# Exercises native modules and system UI in a release build: device speech, sharing in,
+# the photo and document pickers, camera permission, the PDF viewer, incoming calls in
+# the app and as a notification, and a voice call with its microphone service.
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: allow
+      microphone: allow
+- runFlow: helpers/sign-in.yaml
+
+# Device speech (expo-speech): no voice provider is connected yet.
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "The fixture workspace is ready."
+    timeout: 10000
+- longPressOn: "The fixture workspace is ready."
+- tapOn: "Speak message"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 10000
+- assertNotVisible: "Could not speak"
+- takeScreenshot: "40-speak-message"
+- tapOn: "Stop"
+
+# Text shared in from another app opens the share sheet, then the chosen chat.
+- evalScript: ${output.share = http.get(RAKAZO_DEVICE_CONTROL_URL + '/share-text')}
+- assertTrue: ${output.share.ok}
+- extendedWaitUntil:
+    visible: "Share to"
+    timeout: 15000
+- takeScreenshot: "41-share-to"
+- tapOn: "Researcher"
+- extendedWaitUntil:
+    visible: "Shared from another app"
+    timeout: 10000
+
+# Photo picker (expo-image-picker).
+- tapOn: "Attach file"
+- tapOn: "Photo library"
+- extendedWaitUntil:
+    visible: "Photo taken on.*|.*rakazo-fixture.*"
+    timeout: 15000
+- takeScreenshot: "42-photo-picker"
+- tapOn:
+    text: "Photo taken on.*|.*rakazo-fixture.*"
+    index: 0
+- runFlow:
+    when:
+      visible: "Add.*"
+    commands:
+      - tapOn: "Add.*"
+- extendedWaitUntil:
+    visible: "Remove .*"
+    timeout: 15000
+
+# Document picker (expo-document-picker): the PDF the harness put in Downloads.
+- tapOn: "Attach file"
+- tapOn: "File"
+- runFlow:
+    when:
+      notVisible: "rakazo-fixture.pdf"
+    commands:
+      - tapOn: "Show roots"
+      - tapOn: "Downloads"
+- extendedWaitUntil:
+    visible: "rakazo-fixture.pdf"
+    timeout: 15000
+- takeScreenshot: "43-document-picker"
+- tapOn: "rakazo-fixture.pdf"
+- extendedWaitUntil:
+    visible: "Remove rakazo-fixture.pdf"
+    timeout: 15000
+
+# Camera permission (the emulator has no camera, so the flow denies the prompt).
+- tapOn: "Attach file"
+- tapOn: "Camera"
+- runFlow:
+    when:
+      visible: "Don.t allow"
+    commands:
+      - tapOn: "Don.t allow"
+- extendedWaitUntil:
+    visible: "Skipped Camera.*"
+    timeout: 10000
+- takeScreenshot: "44-composer-attachments"
+
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: ".*rakazo-fixture.pdf"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Open image .*"
+    timeout: 15000
+- takeScreenshot: "45-sent-attachments"
+
+# Native PDF viewer (rakazo-pdf-view): Share appears only after the file loaded.
+- tapOn: ".*rakazo-fixture.pdf"
+- extendedWaitUntil:
+    visible: "Share"
+    timeout: 20000
+- assertNotVisible: "Could not open this PDF."
+- assertNotVisible: "Could not load this artifact."
+- takeScreenshot: "46-pdf-viewer"
+- back
+- extendedWaitUntil:
+    visible: "Message Researcher|Shared from another app"
+    timeout: 10000
+
+# Vault's New item menu opens from a Compose-hosted trigger on Android.
+- openLink: "rakazo:///vault"
+- extendedWaitUntil:
+    visible: "New item"
+    timeout: 15000
+- tapOn: "New item"
+- extendedWaitUntil:
+    visible: "API key"
+    timeout: 5000
+- takeScreenshot: "46b-vault-new-item"
+- back
+
+# A long press on a row opens its menu instead of the row's own tap action.
+- openLink: "rakazo:///archived-bots"
+- extendedWaitUntil:
+    visible: "Archived fixture"
+    timeout: 15000
+- longPressOn: "Archived fixture"
+- extendedWaitUntil:
+    visible: "Restore"
+    timeout: 5000
+- takeScreenshot: "46c-archived-bot-menu"
+- back
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Message Researcher"
+    timeout: 10000
+
+# An incoming call rings in the open app, then as a native call notification once the
+# app is in the background (rakazo-notifications IncomingCalls).
+- evalScript: ${output.ring = http.get(RAKAZO_DEVICE_CONTROL_URL + '/ring')}
+- assertTrue: ${output.ring.ok}
+- extendedWaitUntil:
+    visible: "Answer"
+    timeout: 45000
+- takeScreenshot: "47-incoming-call"
+- pressKey: HOME
+- repeat:
+    times: 8
+    while:
+      notVisible: "(?i)decline"
+    commands:
+      - evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+      - assertTrue: ${output.expandNotifications.ok}
+      - waitForAnimationToEnd:
+          timeout: 2000
+- takeScreenshot: "48-incoming-call-notification"
+- tapOn: "(?i)decline"
+- extendedWaitUntil:
+    notVisible: "(?i)decline"
+    timeout: 10000
+
+# Answering a ring in the app starts the call without a voice provider check.
+- launchApp
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- evalScript: ${output.ring = http.get(RAKAZO_DEVICE_CONTROL_URL + '/ring')}
+- assertTrue: ${output.ring.ok}
+- extendedWaitUntil:
+    visible: "Answer"
+    timeout: 45000
+- tapOn: "Answer"
+- extendedWaitUntil:
+    visible: "Hang up"
+    timeout: 20000
+- takeScreenshot: "49-answered-call"
+- tapOn: "Hang up"
+- extendedWaitUntil:
+    notVisible: "Hang up"
+    timeout: 15000
+
+# A voice call through a connected provider holds the microphone foreground service.
+# Picking the provider in Voice settings turns device speech off for calls.
+- evalScript: ${output.voice = http.get(RAKAZO_DEVICE_CONTROL_URL + '/connect-voice')}
+- assertTrue: ${output.voice.ok}
+- openLink: "rakazo:///voice"
+- extendedWaitUntil:
+    visible: "Scripted"
+    timeout: 15000
+- tapOn: "Scripted"
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Message Researcher"
+    timeout: 10000
+- tapOn: "Call"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: "Hang up"
+    timeout: 20000
+- takeScreenshot: "50-voice-call"
+- repeat:
+    times: 8
+    while:
+      notVisible: "Microphone is active"
+    commands:
+      - evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+      - assertTrue: ${output.expandNotifications.ok}
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible: "Microphone is active"
+    timeout: 5000
+- takeScreenshot: "51-call-notification"
+- back
+- tapOn: "Hang up"
+- extendedWaitUntil:
+    notVisible: "Hang up"
+    timeout: 15000

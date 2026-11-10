@@ -1,32 +1,31 @@
 import type { AdapterContext, ManagedConnectorProvider, SecretStore } from "@rakazo/adapter-kit";
 import {
+  BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
-  LoginSecretValue,
+  loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  normalizeOneTimeCode,
   SecretAskPurpose,
 } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
-import { withTransactionRetry } from "@rakazo/db";
-import { type ApprovalPausedToolResult, resolveDuplicateEffectGate } from "./approval-effect.js";
-import { prepareBotSecret } from "./bot-secrets.js";
+import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
+import type { ApprovalPausedToolResult } from "./approval-effect.js";
+import { internalTerminatingResult, resolveDuplicateEffectGate } from "./approval-effect.js";
+import { encodeRunCode, encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
-
-export function runSecretKind(runId: string): string {
-  return `run-secret:${runId}`;
-}
 
 export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
   return SecretAskPurpose.safeParse(purpose).data ?? "otp";
 }
 
 export function secretPausedToolResult(): ApprovalPausedToolResult {
-  return {
+  return internalTerminatingResult({
     kind: "agent_tool_result",
     content: [{ type: "text", text: "Waiting for protected input." }],
     details: { secret: "paused" },
     terminate: true,
-  };
+  });
 }
 
 /**
@@ -149,43 +148,55 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
               throw new Error("Secret request changed; retry");
             },
           });
+        const login =
+          ask.credential?.auth.type === "login"
+            ? loginAnswerValue(ask.loginFields, input)
+            : undefined;
+        const code = ask.oneTimeCode ? normalizeOneTimeCode(input.answer) : undefined;
         if (
-          (ask.credential && run.userId !== input.answeredByUserId) ||
-          (ask.credential?.auth.type === "login") !== Boolean(input.username?.trim()) ||
-          (ask.credential?.auth.type === "login" &&
-            !LoginSecretValue.safeParse({
-              username: input.username?.trim(),
-              password: input.answer,
-            }).success)
+          input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH ||
+          (ask.oneTimeCode && !code) ||
+          ((ask.credential || ask.oneTimeCode) && run.userId !== input.answeredByUserId) ||
+          (ask.credential?.auth.type === "login"
+            ? !login
+            : input.username !== undefined || input.fields !== undefined)
         )
           return commit({
             store: async () => {
               throw new Error("Secret request changed; retry");
             },
           });
-        const plaintext =
-          ask.credential?.auth.type === "login"
-            ? encodeLoginSecret({ username: input.username?.trim() ?? "", password: input.answer })
-            : input.answer;
+        const plaintext = login ? encodeLoginSecret(login) : (code ?? input.answer);
         const scope = { userId: run.userId, spaceId: input.spaceId, botId: run.botId };
-        const prepared = ask.credential
-          ? await prepareBotSecret({
-              prisma,
-              secretStore,
-              scope,
-              destination: ask.credential,
-              plaintext,
-            })
-          : await secretStore.put(
-              plaintext,
-              {
-                operationId: input.runId,
-                traceId: input.runId,
-                ...scope,
-                signal: new AbortController().signal,
-              },
-              { ephemeral: true },
-            );
+        // With "Save to Vault" off, the login stays with this run, bound to the card's site.
+        const runLogin =
+          ask.credential?.auth.type === "login" && input.remember === false
+            ? ask.credential
+            : undefined;
+        const prepared =
+          ask.credential && !runLogin
+            ? await prepareBotSecret({
+                prisma,
+                secretStore,
+                scope,
+                destination: ask.credential,
+                plaintext,
+                replaces: ask.replaces?.id,
+              })
+            : await secretStore.put(
+                ask.oneTimeCode
+                  ? encodeRunCode(ask.oneTimeCode.origin, plaintext)
+                  : runLogin
+                    ? encodeRunLogin(runLogin.origin, plaintext)
+                    : plaintext,
+                {
+                  operationId: input.runId,
+                  traceId: input.runId,
+                  ...scope,
+                  signal: new AbortController().signal,
+                },
+                { ephemeral: true },
+              );
         return persistPreparedSecret(prisma, secretStore, prepared, () =>
           commit({
             async store(value) {
@@ -193,9 +204,31 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 value.userId !== run.userId ||
                 value.botId !== run.botId ||
                 value.plaintext !== plaintext ||
-                JSON.stringify(value.credential) !== JSON.stringify(ask.credential)
+                value.remember !== !runLogin ||
+                JSON.stringify(value.credential) !== JSON.stringify(ask.credential) ||
+                JSON.stringify(value.oneTimeCode) !== JSON.stringify(ask.oneTimeCode)
               )
                 throw new Error("Secret request changed; retry");
+              // Answering a login card again, saved or not, replaces this run's unsaved one.
+              if (ask.credential?.auth.type === "login") {
+                await value.tx.secret.deleteMany({
+                  where: {
+                    userId: run.userId,
+                    spaceId: input.spaceId,
+                    kind: runLoginKind(input.runId, ask.credential.name),
+                  },
+                });
+              }
+              // A newer answer replaces a code the page has not taken yet.
+              if (ask.oneTimeCode) {
+                await value.tx.secret.deleteMany({
+                  where: {
+                    userId: run.userId,
+                    spaceId: input.spaceId,
+                    kind: runCodeKind(input.runId),
+                  },
+                });
+              }
               if ("store" in prepared) await prepared.store(value.tx);
               else
                 await value.tx.secret.create({
@@ -203,7 +236,11 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                     id: prepared.id,
                     userId: run.userId,
                     spaceId: input.spaceId,
-                    kind: runSecretKind(input.runId),
+                    kind: ask.oneTimeCode
+                      ? runCodeKind(input.runId)
+                      : runLogin
+                        ? runLoginKind(input.runId, runLogin.name)
+                        : runSecretKind(input.runId),
                     ciphertext: prepared.ciphertext,
                   },
                 });

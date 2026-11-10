@@ -1,11 +1,11 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { PiAgentRuntime } from "@rakazo/adapters";
+import { dispatcherFetch, PiAgentRuntime } from "@rakazo/adapters";
 import { expect, it, vi } from "vitest";
 import type { ModelEmulatorRequest } from "../model-emulator.js";
 import { startModelEmulator } from "../model-emulator.js";
 import { EvalServices } from "./services.js";
 import type { DiagnosticWireObservation } from "./wire-observer.js";
-import { diagnosticWireFetch, installDiagnosticWireObserver } from "./wire-observer.js";
+import { diagnosticWireFetch } from "./wire-observer.js";
 
 function body(nextCursor: unknown = "segment-3572054") {
   return JSON.stringify({
@@ -70,7 +70,7 @@ it("forwards exact transport arguments and response while retaining only fixture
   expect(JSON.stringify(records)).not.toContain("private");
 });
 
-it("bounds records, declares unsupported evidence, propagates aborts and restores trial scope", async () => {
+it("bounds records, declares unsupported evidence and propagates aborts", async () => {
   const records: DiagnosticWireObservation[] = [];
   const abort = new DOMException("synthetic abort", "AbortError");
   const upstream = vi.fn<typeof globalThis.fetch>().mockRejectedValue(abort);
@@ -93,24 +93,6 @@ it("bounds records, declares unsupported evidence, propagates aborts and restore
   for (let i = 0; i < 65; i++) await observed("synthetic", { body: body() }).catch(() => {});
   expect(records).toHaveLength(60);
   expect(upstream).toHaveBeenCalledTimes(70);
-  const original = globalThis.fetch;
-  const first: DiagnosticWireObservation[] = [];
-  const restore = installDiagnosticWireObserver("fixture", first);
-  expect(globalThis.fetch).not.toBe(original);
-  try {
-    throw new Error("synthetic fixture startup failure");
-  } catch {
-    // CLI cleanup restores the fetch even after workflow startup fails.
-  } finally {
-    restore();
-  }
-  restore();
-  expect(globalThis.fetch).toBe(original);
-  const second: DiagnosticWireObservation[] = [];
-  const restoreSecond = installDiagnosticWireObserver("fixture", second);
-  restoreSecond();
-  expect(first).toEqual([]);
-  expect(second).toEqual([]);
 });
 
 it("observes actual Pi post-selection JSON controls through twelve dependent compressed results", async () => {
@@ -146,7 +128,10 @@ it("observes actual Pi post-selection JSON controls through twelve dependent com
     ],
   });
   const records: DiagnosticWireObservation[] = [];
-  const restore = installDiagnosticWireObserver(server.model.id, records);
+  const originalFetch = globalThis.fetch;
+  const runtime = new PiAgentRuntime({
+    modelFetch: diagnosticWireFetch(dispatcherFetch, server.model.id, records),
+  });
   const context = {
     operationId: "synthetic",
     traceId: "synthetic",
@@ -180,7 +165,7 @@ it("observes actual Pi post-selection JSON controls through twelve dependent com
           if (event.type === "result") return event.data;
       },
     };
-    for await (const _event of new PiAgentRuntime().run(request)) {
+    for await (const _event of runtime.run(request)) {
       /* Consume the real runtime. */
     }
     server.assertComplete();
@@ -194,12 +179,19 @@ it("observes actual Pi post-selection JSON controls through twelve dependent com
         record.results?.every((r) => r.jsonValid && r.controlsValidated && r.nextCursorPresent),
       ).toBe(true);
       expect(record.results?.at(-1)?.bytes).toBeLessThanOrEqual(12000);
-      expect(record.results?.slice(0, -1).every((r) => r.bytes <= 1024)).toBe(true);
+      // Earlier results go out as first sent until a rebuild compresses them all at once.
+      const earlier = record.results?.slice(0, -1) ?? [];
+      const sentBefore = records[index]!.results ?? [];
+      const compressed = (result: { bytes: number }) => result.bytes <= 1024;
+      expect(
+        earlier.every((result, i) => result.contentDigest === sentBefore[i]?.contentDigest) ||
+          (!sentBefore.every(compressed) && earlier.every(compressed)),
+      ).toBe(true);
     }
     expect(records.at(-1)?.results?.at(-1)?.nextCursor).toBeNull();
     expect(JSON.stringify(records)).not.toMatch(/private|Synthetic detailed|ledger-indexer/);
+    expect(globalThis.fetch).toBe(originalFetch);
   } finally {
-    restore();
     await server.close();
   }
 }, 20000);

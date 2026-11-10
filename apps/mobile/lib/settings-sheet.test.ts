@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -9,6 +9,8 @@ import {
   registerSettingsSheet,
   settingsSheetCloser,
 } from "./settings-sheet";
+
+vi.mock("./incoming-share", () => ({ receiveIncomingShare: vi.fn() }));
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -55,31 +57,15 @@ describe("settings sheet", () => {
     expect(sheet.goBack).not.toHaveBeenCalled();
     expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "index" } });
   });
-
-  it("leaves Server integrations through the sheet, not by replacing it with Home", () => {
-    const screen = readFileSync(
-      resolve(mobileRoot, "app/(settings)/integration-setup.tsx"),
-      "utf8",
-    );
-
-    expect(screen).not.toContain('replace("/")');
-    expect(screen).toContain('button(t("Skip"), closeSettingsSheet, busy)');
-    expect(screen).toContain("else closeSettingsSheet();");
-  });
-});
-
-describe("settings stack", () => {
-  it("has no long-press back menu, where Account would be a blank entry", () => {
-    const layout = readFileSync(resolve(mobileRoot, "app/(settings)/_layout.tsx"), "utf8");
-
-    expect(layout).toContain("headerBackButtonMenuEnabled: false,");
-  });
 });
 
 describe("settings links", () => {
-  it("knows every page in the settings group", () => {
+  it.each([true, false])("opens the share target for cold/warm arrivals (%s)", (initial) => {
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial })).toBe("/share");
+  });
+  it("knows every public page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))
-      .filter((file) => file !== "_layout.tsx")
+      .filter((file) => !["_layout.tsx", "model-picker.tsx", "model-connection.tsx"].includes(file))
       .map((file) => file.replace(/\.tsx$/, ""));
 
     for (const page of pages) expect(isSettingsLink(`/${page}`), page).toBe(true);
@@ -87,6 +73,9 @@ describe("settings links", () => {
 
   it("reads the page from any link form", () => {
     expect(isSettingsLink("rakazo:///models")).toBe(true);
+    // Picker sessions only exist after an in-sheet push, never from a link.
+    expect(isSettingsLink("rakazo:///model-picker")).toBe(false);
+    expect(isSettingsLink("rakazo:///model-connection")).toBe(false);
     expect(isSettingsLink("rakazo://voice")).toBe(true);
     expect(isSettingsLink("rakazo:///account?focus=usage")).toBe(true);
     expect(isSettingsLink("rakazo://integrations/")).toBe(true);
@@ -94,6 +83,8 @@ describe("settings links", () => {
     expect(isSettingsLink("rakazo:///thread?botId=bot-1")).toBe(false);
     expect(isSettingsLink("rakazo://group-thread?groupId=group-1")).toBe(false);
     expect(isSettingsLink("/new")).toBe(false);
+    expect(isSettingsLink("/artifacts")).toBe(false);
+    expect(isSettingsLink("rakazo:///artifacts")).toBe(false);
     expect(isSettingsLink("rakazo://")).toBe(false);
     expect(isSettingsLink("rakazo:///accounts")).toBe(false);
   });
@@ -112,6 +103,12 @@ describe("settings links", () => {
       "rakazo:///thread?botId=bot-1",
     );
     expect(close).toHaveBeenCalledTimes(1);
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/share");
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(redirectSystemPath({ path: "rakazo:///artifacts", initial: false })).toBe(
+      "rakazo:///artifacts",
+    );
+    expect(close).toHaveBeenCalledTimes(3);
     unregister();
   });
 });

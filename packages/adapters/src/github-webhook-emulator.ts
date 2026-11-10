@@ -5,7 +5,6 @@ export type GithubWebhookDeliveryInput = {
   event: string;
   deliveryId?: string;
   payload?: unknown;
-  /** Override the signing secret (defaults to the emulator secret). */
   secret?: string;
   origin?: string;
 };

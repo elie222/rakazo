@@ -1,68 +1,77 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { composeBaseArgs, postgresUp } from "./compose-stack.js";
 
-const composeFile = path.resolve("infra/compose/docker-compose.yml");
-const backupScript = path.resolve("scripts/backup.sh");
-const restoreScript = path.resolve("scripts/restore.sh");
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
 
-function postgresUp() {
-  try {
-    execSync(`docker compose -f ${composeFile} exec -T postgres pg_isready -U rakazo`, {
-      stdio: "ignore",
-      timeout: 8_000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+// The suite dumps and restores the developer's running local stack database; run it only with
+// explicit opt-in (VERIFY_COMPOSE_BACKUP=1). With the opt-in set, an unreachable stack fails the
+// suite instead of skipping it: a silent skip reads as a verified backup.
+const describeBackup = process.env.VERIFY_COMPOSE_BACKUP === "1" ? describe : describe.skip;
+
+/** Runs `docker compose` against the repo's stack, with the root env file applied (see above). */
+function compose(args: string[], options?: Parameters<typeof execFileSync>[2]) {
+  return execFileSync("docker", [...composeBaseArgs(repoRoot), ...args], options);
 }
 
-const describeBackup = postgresUp() ? describe : describe.skip;
-
 describeBackup("compose backup and restore", () => {
+  beforeAll(() => {
+    if (!postgresUp(repoRoot)) {
+      throw new Error(
+        "VERIFY_COMPOSE_BACKUP=1 but the local compose stack is not reachable; start it with pnpm compose:up",
+      );
+    }
+  });
+
   it("dumps postgres and restores into a side database", () => {
-    expect(existsSync(backupScript)).toBe(true);
-    expect(existsSync(restoreScript)).toBe(true);
+    expect(existsSync(path.join(repoRoot, "scripts/backup.sh"))).toBe(true);
+    expect(existsSync(path.join(repoRoot, "scripts/restore.sh"))).toBe(true);
     const stamp = `verify-${Date.now()}`;
-    execSync(`${backupScript} ${stamp}`, {
+    execSync(`${path.join(repoRoot, "scripts/backup.sh")} ${stamp}`, {
       stdio: "pipe",
       timeout: 60_000,
       env: { ...process.env, RAKAZO_BACKUP_SKIP_HOMES: "1" },
     });
-    const dump = path.resolve("backups", stamp, "rakazo.sql");
+    const dump = path.join(repoRoot, "backups", stamp, "rakazo.sql");
     expect(existsSync(dump)).toBe(true);
     const sql = readFileSync(dump, "utf8");
     expect(sql).toMatch(/CREATE TABLE|CREATE TABLE IF NOT EXISTS/i);
     expect(sql.toLowerCase()).toContain("bots");
     expect(sql).not.toMatch(/OPENROUTER_API_KEY|sk-or-v1-/);
 
-    execSync(
-      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d postgres -c "DROP DATABASE IF EXISTS rakazo_restore_test"`,
-      { stdio: "pipe", timeout: 20_000 },
-    );
-    execSync(
-      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d postgres -c "CREATE DATABASE rakazo_restore_test"`,
-      { stdio: "pipe", timeout: 20_000 },
-    );
-    execSync(
-      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d rakazo_restore_test`,
-      {
-        input: sql,
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 60_000,
-      },
-    );
-    const tables = execSync(
-      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d rakazo_restore_test -c "\\dt"`,
-      { encoding: "utf8", timeout: 20_000 },
-    );
+    const psql = (sqlArgs: string[]) => [
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-U",
+      "rakazo",
+      ...sqlArgs,
+    ];
+    compose(psql(["-d", "postgres", "-c", "DROP DATABASE IF EXISTS rakazo_restore_test"]), {
+      stdio: "pipe",
+      timeout: 20_000,
+    });
+    compose(psql(["-d", "postgres", "-c", "CREATE DATABASE rakazo_restore_test"]), {
+      stdio: "pipe",
+      timeout: 20_000,
+    });
+    compose(psql(["-d", "rakazo_restore_test"]), {
+      input: sql,
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 60_000,
+    });
+    const tables = compose(psql(["-d", "rakazo_restore_test", "-c", "\\dt"]), {
+      encoding: "utf8",
+      timeout: 20_000,
+    });
     expect(tables).toMatch(/bots/);
-    execSync(
-      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d postgres -c "DROP DATABASE rakazo_restore_test"`,
-      { stdio: "pipe", timeout: 20_000 },
-    );
-    rmSync(path.resolve("backups", stamp), { recursive: true, force: true });
+    compose(psql(["-d", "postgres", "-c", "DROP DATABASE rakazo_restore_test"]), {
+      stdio: "pipe",
+      timeout: 20_000,
+    });
+    rmSync(path.join(repoRoot, "backups", stamp), { recursive: true, force: true });
   }, 90_000);
 });

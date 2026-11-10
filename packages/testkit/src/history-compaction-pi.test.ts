@@ -1,3 +1,4 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -46,10 +47,14 @@ describe("history compaction with real Pi", () => {
         return { count: 1 };
       },
     );
-    const createMany = vi.fn(async () => ({ count: 1 }));
+    const createMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
     const create = vi.fn();
     const prisma = {
       thread: { findUniqueOrThrow: vi.fn(async () => thread), updateMany },
+      spaceMember: {
+        findUnique: vi.fn(async () => ({ userId: thread.userId })),
+        count: vi.fn(async () => 1),
+      },
       message: {
         findMany: vi.fn(async () => [
           {
@@ -60,13 +65,15 @@ describe("history compaction with real Pi", () => {
         ]),
       },
       usageRecord: { createMany, create },
+      modelCreditEntry: { findUnique: async () => null },
+      $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
     };
     const memoryProviders = { resolve: vi.fn(async () => null) };
     const jobs = { enqueue: vi.fn(async () => undefined) };
     const deps = {
       prisma: prisma as unknown as PrismaClient,
       runtime: new PiAgentRuntime(),
-      jobs,
+      jobs: jobs as unknown as JobPublisher,
       memoryProviders,
       resolveModel: async () => server.model,
     };
@@ -103,7 +110,11 @@ describe("history compaction with real Pi", () => {
         historyCompactedUpToSeq: 49,
         historyCompactionGeneration: 0,
       },
-      data: { historyCompactedUpToSeq: 50, historyCompactionSummary: summary },
+      data: {
+        historyCompactedUpToSeq: 50,
+        historyCompactionSummary: summary,
+        historyCompactionRetryAfterSeq: null,
+      },
     });
     expect(memoryProviders.resolve).toHaveBeenCalledOnce();
     expect(jobs.enqueue).not.toHaveBeenCalled();

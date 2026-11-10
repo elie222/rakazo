@@ -10,24 +10,24 @@ const actor = {
   isDeploymentOwner: false,
 };
 
-function prisma(options: {
-  membership: boolean;
-  settings?: () => Promise<{ ownerUserId: string } | null>;
-}) {
+function prisma(options: { membership: boolean; failure?: Error }) {
   return {
     spaceMember: {
-      findFirst: vi.fn(async () =>
-        options.membership
+      findFirst: vi.fn(async () => {
+        if (options.failure) throw options.failure;
+        return options.membership
           ? {
               userId: actor.userId,
               spaceId: actor.spaceId,
               member: { user: { email: actor.email } },
             }
-          : null,
-      ),
+          : null;
+      }),
     },
     deploymentSettings: {
-      findUnique: vi.fn(options.settings ?? (async () => ({ ownerUserId: "someone-else" }))),
+      findUnique: vi.fn(async () => {
+        throw new Error("Authorization must not read deployment owner settings");
+      }),
     },
   } as unknown as PrismaClient;
 }
@@ -41,24 +41,22 @@ describe("actorFromMembership", () => {
     ).resolves.toBeNull();
   });
 
-  it("returns the actor for a real membership", async () => {
+  it("returns the actor for a real membership without reading deployment owner settings", async () => {
+    const db = prisma({ membership: true });
     await expect(
-      actorFromMembership(
-        requireMembership(prisma({ membership: true }), "user-1", "space-support"),
-      ),
+      actorFromMembership(requireMembership(db, "user-1", "space-support")),
     ).resolves.toEqual(actor);
+    expect(db.deploymentSettings.findUnique).not.toHaveBeenCalled();
   });
 
-  it("lets a deployment-settings failure surface instead of looking signed out", async () => {
+  it("lets a membership query failure surface instead of looking signed out", async () => {
     const failure = new Error("database unavailable");
     await expect(
       actorFromMembership(
         requireMembership(
           prisma({
             membership: true,
-            settings: async () => {
-              throw failure;
-            },
+            failure,
           }),
           "user-1",
           "space-support",

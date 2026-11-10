@@ -1,6 +1,7 @@
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { toHistory } from "./pi-runtime-history.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 
 function harness(replyTo: unknown = null, replyQuote: string | null = null) {
@@ -36,6 +37,20 @@ describe("reply context", () => {
     expect(context).toContain('"messageId":"message-first"');
     expect(context).toContain('"role":"assistant"');
     expect(context).toContain("Test message 1/3: Hello!");
+  });
+
+  it("gives a reply to a page card the page's id and version", async () => {
+    const card = {
+      id: "message-first",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [{ kind: "page", pageId: "page-1", version: 3, title: "Q3 plan" }],
+    };
+    for (const quote of [null, "Q3 plan"]) {
+      // A quoted reply to the card still reads it whole, not just its title.
+      const context = await loadReplyContext(harness(card, quote).prisma, "thread-1", "user-reply");
+      expect(context).toContain("[page: Q3 plan (pageId page-1, version 3)]");
+    }
   });
 
   it("does not add context without a source or a surviving reply target", async () => {
@@ -99,6 +114,25 @@ describe("reply context", () => {
     expect(
       messageToAgentHistoryText({ ...message, replyTo: { ...target, threadId: "other" } }),
     ).toBe("❤️");
+  });
+
+  it("supplies the current reaction once with its target, without a bare emoji task", async () => {
+    const { prisma, findFirst } = harness(target);
+    findFirst.mockResolvedValueOnce({
+      id: "reaction-1",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: target.id,
+      replyQuote: null,
+      replyTo: target,
+    });
+    const prompt = await loadReplyContext(prisma, "thread-1", "reaction-1");
+    expect(prompt?.match(/👍/g)).toHaveLength(1);
+    expect(prompt).toContain("User reacted with 👍 to");
+    expect(prompt).toContain(`<reaction_target>`);
+    expect(prompt).toContain('"messageId":"message-first"');
+    expect(prompt).toContain("Test message 1/3: Hello!");
   });
 
   it("preserves reply context in historical messages", () => {
@@ -176,4 +210,73 @@ it("includes the server-derived first line and author role for an id-only reply"
   expect(text).toContain('"quotedText":"First line"');
   expect(text).not.toContain("Second line");
   expect(text).toContain("Why?");
+});
+
+describe("earlier turns' tool work", () => {
+  // Replayed in the bot's own turn, the step list was copied as whole replies instead of tool calls.
+  it("keeps tool steps, and step lists a reply copied, out of the bot's replayed turn", () => {
+    const install = messageToAgentHistoryText({
+      id: "bot-install",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            { label: "Shell", count: 2, note: "Installing the password manager extension." },
+            { label: "Computer screenshot", count: 1 },
+          ],
+          durationMs: 9_000,
+        },
+        { kind: "text", text: "Done.\n[tool calls this reply made]\n- Shell (succeeded)" },
+      ],
+    });
+    const [, replayed] = toHistory(
+      [
+        { id: "user-ask", role: "user", content: "Install the password manager extension." },
+        { id: "bot-install", role: "assistant", content: install },
+        { id: "user-later", role: "user", content: "What's the weather?" },
+      ],
+      "Did you install the extension?",
+    );
+    expect(replayed).toMatchObject({ role: "assistant" });
+    const text = JSON.stringify(replayed);
+    expect(text).toContain("Done.");
+    expect(text).not.toContain("tool calls this reply made");
+    expect(text).not.toContain("Shell");
+  });
+
+  it("quotes a copied step list as the message someone replied to", () => {
+    const text = messageToAgentHistoryText({
+      id: "reaction",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: "bot-copied",
+      replyTo: {
+        id: "bot-copied",
+        threadId: "thread-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
+      },
+    });
+    expect(text).toContain("List files (succeeded)");
+  });
+
+  it("quotes the tool steps of a reply someone reacted to", () => {
+    const text = messageToAgentHistoryText({
+      id: "reaction",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: "bot-tools",
+      replyTo: {
+        id: "bot-tools",
+        threadId: "thread-1",
+        role: "bot",
+        blocks: [{ kind: "steps", steps: [{ label: "Shell", count: 1 }] }],
+      },
+    });
+    expect(text).toContain("Shell");
+  });
 });

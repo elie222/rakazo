@@ -9,14 +9,24 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  crossSpaceCommunicationAllowed,
+  isUniqueViolation,
+  runAsSystem,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { runLeaseFor } from "./run-messages.js";
 
 export interface AgentConnectionDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
   jobs: Pick<JobPublisher, "enqueue">;
+  runLease?: ExecutorDeps["runLease"];
 }
 
 type ConnectionRun = {
@@ -38,7 +48,14 @@ type Result =
  * messages ride the existing internal bot-message machinery and never
  * transit iMessage.
  */
-export async function connectAgent(
+export function connectAgent(...args: Parameters<typeof requestConnection>): Promise<Result> {
+  // The target is found by address on the whole deployment and invited in its own Space.
+  return runAsSystem("request an agent connection in another Space", () =>
+    requestConnection(...args),
+  );
+}
+
+async function requestConnection(
   deps: AgentConnectionDeps,
   _run: ConnectionRun,
   sender: { id: string; name: string },
@@ -75,6 +92,10 @@ export async function connectAgent(
     return { ok: false, error: "no agent can be reached at that address" };
   }
 
+  if (!(await crossSpaceCommunicationAllowed(deps.prisma, sender.id, target.id))) {
+    return { ok: false, error: "no agent can be reached at that address" };
+  }
+
   const existing = await deps.prisma.agentConnection.findUnique({
     where: {
       requesterBotId_targetBotId: { requesterBotId: sender.id, targetBotId: target.id },
@@ -105,6 +126,9 @@ export async function connectAgent(
   let claimed: Awaited<ReturnType<typeof claimConnection>>;
   const claimConnection = () =>
     deps.prisma.$transaction(async (tx) => {
+      if (!(await crossSpaceCommunicationAllowed(tx, sender.id, target.id))) {
+        return { ok: false as const, error: "no agent can be reached at that address" };
+      }
       if (existing) {
         const locked = await tx.$queryRaw<Array<{ status: string }>>`
           SELECT status FROM agent_connections WHERE id = ${existing.id} FOR UPDATE
@@ -120,7 +144,7 @@ export async function connectAgent(
         }
         await tx.agentConnection.update({
           where: { id: existing.id },
-          data: { status: "pending" },
+          data: { status: "pending", requestVersion: { increment: 1 } },
         });
       } else {
         try {
@@ -131,7 +155,7 @@ export async function connectAgent(
           // Two first-time connects can both miss the pre-read; the unique key
           // serializes them. PostgreSQL aborts the interactive transaction on
           // P2002, so recovery must happen outside — rethrow a marker.
-          if (!isUniqueConstraintError(error)) throw error;
+          if (!isUniqueViolation(error)) throw error;
           throw new ConnectCreateRaceError();
         }
       }
@@ -176,22 +200,75 @@ export async function connectAgent(
   return { ok: true, status: "pending" };
 }
 
+/** Capture the exact request and requester shown on the owner's approval card. */
+export function prepareAgentConnectionResponse(
+  prisma: PrismaClient,
+  targetBotId: string,
+  accept: boolean,
+) {
+  return runAsSystem("prepare an agent connection response for its target bot", async () => {
+    const pending = await prisma.agentConnection.findFirst({
+      where: { targetBotId, status: "pending" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, requestVersion: true, requesterBotId: true },
+    });
+    if (!pending) return null;
+    const [requester, identity] = await Promise.all([
+      prisma.bot.findUnique({ where: { id: pending.requesterBotId }, select: { name: true } }),
+      prisma.messagingIdentity.findUnique({
+        where: { botId: pending.requesterBotId },
+        select: { address: true, provider: true },
+      }),
+    ]);
+    if (!requester || !identity) return null;
+    return {
+      accept,
+      connection_id: pending.id,
+      connection_version: pending.requestVersion,
+      requester_name: requester.name,
+      requester_address: identity.address,
+      requester_provider: identity.provider,
+    };
+  });
+}
+
 /** The target bot answers a pending request on its owner's instruction. */
-export async function respondAgentConnection(
+export function respondAgentConnection(
+  ...args: Parameters<typeof respondToConnection>
+): Promise<Result> {
+  return runAsSystem("respond to an agent connection in another Space", () =>
+    respondToConnection(...args),
+  );
+}
+
+async function respondToConnection(
   deps: AgentConnectionDeps,
   _run: ConnectionRun,
   sender: { id: string; name: string },
-  input: { accept: boolean },
+  input: { accept: boolean; connectionId: string; connectionVersion: number },
 ): Promise<Result> {
   const pending = await deps.prisma.agentConnection.findFirst({
-    where: { targetBotId: sender.id, status: "pending" },
+    where: {
+      targetBotId: sender.id,
+      status: "pending",
+      id: input.connectionId,
+      requestVersion: input.connectionVersion,
+    },
     orderBy: { updatedAt: "desc" },
   });
   if (!pending) return { ok: false, error: "no pending connection request" };
   const status = input.accept ? "approved" : "declined";
-  const { count } = await deps.prisma.agentConnection.updateMany({
-    where: { id: pending.id, status: "pending" },
-    data: { status },
+  const count = await deps.prisma.$transaction(async (tx) => {
+    if (
+      input.accept &&
+      !(await crossSpaceCommunicationAllowed(tx, pending.requesterBotId, sender.id))
+    )
+      return 0;
+    const result = await tx.agentConnection.updateMany({
+      where: { id: pending.id, status: "pending", requestVersion: input.connectionVersion },
+      data: { status },
+    });
+    return result.count;
   });
   // A revoke landing between the read and this write wins; never overwrite it.
   if (count === 0) return { ok: false, error: "connection request is no longer pending" };
@@ -202,7 +279,16 @@ export async function respondAgentConnection(
  * Mirror of messageBot across Spaces: the target is resolved through an
  * approved connection instead of the sender's Space roster.
  */
-export async function messageConnectedAgent(
+export function messageConnectedAgent(
+  ...args: Parameters<typeof deliverToConnectedAgent>
+): Promise<Result> {
+  // Delivery writes the message, task and run into the connected agent's Space.
+  return runAsSystem("deliver a message to a connected agent in another Space", () =>
+    deliverToConnectedAgent(...args),
+  );
+}
+
+async function deliverToConnectedAgent(
   deps: AgentConnectionDeps,
   run: ConnectionRun,
   sender: { id: string; name: string },
@@ -269,6 +355,12 @@ export async function messageConnectedAgent(
         });
         if (already) return { replayed: true as const };
       }
+      for (const threadId of [run.threadId, targetThreadId].sort()) {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+      }
+      if (!(await crossSpaceCommunicationAllowed(tx, sender.id, target.id))) {
+        return { ok: false as const, error: "no agent can be reached at that address" };
+      }
       const senderStillRunning = await tx.run.findFirst({
         where: { id: run.id, status: "running" },
         select: { id: true },
@@ -310,6 +402,7 @@ export async function messageConnectedAgent(
         blocks: [outboundBlock],
         botId: run.botId,
         runId: run.id,
+        lease: runLeaseFor(deps, run.id),
       });
       const task = await tx.task.create({
         data: {
@@ -349,6 +442,7 @@ export async function messageConnectedAgent(
         botId: run.botId,
         type: "thread.message.created",
         runId: run.id,
+        lease: runLeaseFor(deps, run.id),
         payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
       });
       return {
@@ -356,13 +450,13 @@ export async function messageConnectedAgent(
         targetEventSeq: inboundEvent.seq,
         senderEventSeq: outboundEvent.seq,
       };
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
   try {
     committed = await deliverTx();
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true },
@@ -402,10 +496,6 @@ export async function messageConnectedAgent(
     name: target.name,
     note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message.`,
   };
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** Marker: unique create raced; recover outside the aborted PG transaction. */

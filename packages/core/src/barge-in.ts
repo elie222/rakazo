@@ -30,3 +30,29 @@ function cleanWords(text: string): string {
     .trim()
     .replace(/\s+/g, " ");
 }
+
+/**
+ * Counts down an interim phrase heard over a reply: one that stands for
+ * INTERIM_BARGE_IN_MS calls `onBargeIn`, and anything that no longer qualifies resets it.
+ */
+export function createInterimBargeIn(onBargeIn: () => void) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  return {
+    hear(text: string): void {
+      if (!isInterimCallBargeIn(text)) {
+        clear();
+        return;
+      }
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        onBargeIn();
+      }, INTERIM_BARGE_IN_MS);
+    },
+    clear,
+  };
+}

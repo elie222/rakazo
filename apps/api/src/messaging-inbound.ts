@@ -1,7 +1,17 @@
-import type { JobPublisher, MessagingInboundMessage } from "@rakazo/adapter-kit";
+import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
+import { insertOutboundRows } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
-import { parseMessagingCommand, sanitizeMessagingLabel } from "@rakazo/core";
+import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
+import type { MessagingCommand } from "@rakazo/core";
+import {
+  displayName,
+  messageBlockForArtifact,
+  normalizeVoiceTranscript,
+  parseMessagingCommand,
+  promptTextForAttachments,
+  sanitizeMessagingLabel,
+} from "@rakazo/core";
 import type {
   MessagingIdentityRequest,
   Prisma,
@@ -11,16 +21,24 @@ import type {
   ThreadEvents,
 } from "@rakazo/db";
 import {
+  accountDeactivated,
   createThreadMessage,
+  crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
+  SpaceDeletionInProgressError,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { InboundAttachmentStore } from "./inbound-attachments.js";
+import { storeInboundAttachments } from "./inbound-attachments.js";
+import type { MessagingReceipts } from "./messaging-receipts.js";
 import {
   MESSAGE_ROUTING_REARMED_REASON,
   MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
 } from "./team-chat-startup.js";
+import { cancelThreadRuns, finishThreadStop, STOPPED_BY_MESSAGE_NOTE } from "./thread-stop.js";
 import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
@@ -32,6 +50,7 @@ export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
   jobs: Pick<JobPublisher, "enqueue">;
+  sandbox: SandboxProvider;
   provision: (
     request: MessagingIdentityRequest,
     env: SignupPolicyEnv,
@@ -42,12 +61,30 @@ export interface MessagingInboundDeps {
    */
   openSignup: boolean;
   signupPolicy: SignupPolicyEnv;
+  acknowledge?: MessagingReceipts["acknowledge"];
+  storeAttachment?: InboundAttachmentStore;
   /**
-   * Best-effort "…" bubbles shown to a 1:1 sender while their run executes.
-   * Cosmetic only — callers must catch failures; groups never get it.
+   * Transcribes inbound audio with the bot owner's voice provider. On null or
+   * a throw only the file reference is delivered. `signal` aborts when the
+   * budget runs out.
    */
-  typing?: (threadId: string) => Promise<void>;
+  transcribe?: (input: {
+    spaceId: string;
+    userId: string;
+    audio: Uint8Array;
+    mimeType: string;
+    signal: AbortSignal;
+  }) => Promise<string | null>;
 }
+
+/** A stored inbound attachment, with spoken words when audio was transcribed. */
+type StoredAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  transcript?: string;
+};
 
 type IdentityRow = {
   id: string;
@@ -60,7 +97,7 @@ type IdentityRow = {
 
 /**
  * Inbound routing. 1:1 messages are messages to the sender's own bot (with
- * provisioning on first contact and the YES/NO/LEAVE owner commands).
+ * provisioning on first contact and the YES/NO/LEAVE/STOP owner commands).
  * Group messages drive channel discovery — upsert channel + members, DM
  * invites to linked owners, one intro when strangers are present — and
  * fan out to every approved member bot's own thread.
@@ -71,20 +108,31 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
       await handleChannelEvent(deps, event);
       return;
     }
-    await handleDirectEvent(deps, event);
+    await handleDirectEvent(deps, event).catch(droppedWhileDeleting);
   };
+}
+
+/** A Space being deleted takes no messages; failing would only make the provider redeliver. */
+function droppedWhileDeleting(error: unknown): void {
+  if (!(error instanceof SpaceDeletionInProgressError)) throw error;
+  getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
 }
 
 async function handleDirectEvent(
   deps: MessagingInboundDeps,
   event: MessagingInboundMessage,
 ): Promise<void> {
-  // Inbound media arrives as a CDN URL (often expiring); no artifact
-  // ingestion in v1, so it rides along as text.
+  // Media that only the provider can download (Telegram file_id fetches) rides
+  // along in event.attachments; CDN media keeps riding along as text.
+  const attachments = event.attachments ?? [];
   const text = [event.content, event.mediaUrl].filter(Boolean).join("\n");
 
   const where = { provider_address: { provider: event.provider, address: event.from } } as const;
   const existing = await deps.prisma.messagingIdentity.findUnique({ where });
+  if (existing && event.installationSpaceId && existing.spaceId !== event.installationSpaceId)
+    return;
+  // A deactivated person's chat apps act for nobody: no commands, messages or links.
+  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
   if (existing) {
     // Any reply — even a content-free reaction — ends the consecutive-
     // outbound streak, but only real text wakes the bot. The conversation
@@ -93,10 +141,16 @@ async function handleDirectEvent(
       where: { id: existing.id },
       data: { outboundSinceInbound: 0, lastInboundAt: new Date(), dmThreadId: event.threadId },
     });
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
-    if (command && (await applyOwnerCommand(deps, existing, command))) return;
+    if (command === "stop") {
+      // Only a bare "stop" is the command; one carrying media is delivered as a message.
+      if (attachments.length === 0 && !event.mediaUrl) {
+        await stopOwnerWork(deps, existing, event);
+        return;
+      }
+    } else if (command && (await applyOwnerCommand(deps, existing, command))) return;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
     if (await tryRedeemLinkCode(deps, event)) return;
@@ -105,8 +159,8 @@ async function handleDirectEvent(
     // account and bot; otherwise the line is silent unless the deployment
     // explicitly runs as an open Poke-style signup line.
     if (await tryRedeemLinkCode(deps, event)) return;
-    if (!deps.openSignup) return;
-    // Never provision a full account for a reaction or empty payload.
+    if (!deps.openSignup || event.installationSpaceId) return;
+    // Media-only delivery is for linked identities; retain text-based signup.
     if (!text) return;
   }
 
@@ -135,33 +189,145 @@ async function handleDirectEvent(
     );
   }
 
+  const stored = await storeInboundMedia(deps, ids, event);
+
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
-  if (await wakeMessageRoutines(deps, ids, event)) return;
-
+  if (
+    await wakeMessageRoutines(deps, ids, event, {
+      artifacts: stored.artifacts,
+      unavailable: stored.unavailable,
+    })
+  )
+    return;
+  const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
     threadId: ids.threadId,
     botId: ids.botId,
     userId: ids.userId,
-    blocks: [{ kind: "text", text }],
-    prompt: text,
+    // The address is verified as this person\'s, so the line is theirs.
+    authorUserId: ids.userId,
+    blocks: [
+      ...(body ? [{ kind: "text" as const, text: body }] : []),
+      ...stored.artifacts.map((artifact) => messageBlockForArtifact(artifact)),
+    ],
+    prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
     clientNonce: `messaging:${event.provider}:${event.handle}`,
   });
   if (sent.runId) {
-    // Typing bubbles only make sense once a reply is actually coming. Fire
-    // before the enqueue so they land ahead of a fast reply, and never await:
-    // a stalled vendor typing call must not hold the webhook open. The bubbles
-    // clear on their own after a short display window or when the reply
-    // arrives, so long runs simply outlive them.
-    void deps.typing?.(event.threadId).catch((error) => {
-      getLogger().error("messaging typing indicator error", error);
+    const runId = sent.runId;
+    deps.acknowledge?.(event.threadId, event.handle, async () => {
+      const run = await deps.prisma.run.findUnique({
+        where: { id: runId },
+        select: { status: true, messagingMirroredAt: true },
+      });
+      if (!run) return false;
+      // A failed or cancelled run may never be mirrored, and no reply is coming.
+      if (run.status === "failed" || run.status === "cancelled") return true;
+      if (!run.messagingMirroredAt) return false;
+      // Mirroring only queues the reply in the outbox. It has gone out once
+      // none of this run's queued rows are still waiting to be sent.
+      const replies = await deps.prisma.message.findMany({
+        where: { runId, role: "bot" },
+        select: { id: true },
+      });
+      if (replies.length === 0) return true;
+      const unsent = await deps.prisma.messagingOutbound.count({
+        where: {
+          sourceMessageId: { in: replies.map((reply) => reply.id) },
+          status: { not: "sent" },
+        },
+      });
+      return unsent === 0;
     });
     await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
+}
+
+/** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
+const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
+
+/**
+ * How far a roster's platform time may run ahead of the server's clock and still count
+ * as the roster's version; further ahead the event applies its membership unversioned.
+ */
+const ROSTER_TIME_SKEW_MS = 5 * 60_000;
+
+/** Download provider-held files into thread artifacts, then transcribe voice notes. */
+async function storeInboundMedia(
+  deps: MessagingInboundDeps,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+) {
+  const { stored, unavailable } = await storeInboundAttachments(
+    deps.storeAttachment,
+    ids,
+    event.attachments ?? [],
+    {
+      clientNonce: (index) => `messaging-attachment:${event.provider}:${event.handle}:${index}`,
+      limit: ATTACHMENT_MAX_COUNT,
+      downloadDeadline: Date.now() + 2_000,
+    },
+  );
+  // Transcribe only after every download, so a slow transcription cannot use up the
+  // download deadline of the attachments that follow it. One short budget covers all
+  // transcripts, so the webhook is answered before the provider retries it.
+  const transcribeDeadline = Date.now() + VOICE_TRANSCRIBE_BUDGET_MS;
+  const artifacts: StoredAttachment[] = [];
+  for (const { artifact, bytes } of stored) {
+    artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
+  }
+  return { artifacts, unavailable };
+}
+
+/**
+ * Best-effort transcript for a stored audio attachment. No provider, oversize
+ * audio or a failed call leaves the artifact unchanged, so the message is
+ * still delivered with the file reference.
+ */
+async function withVoiceTranscript(
+  deps: MessagingInboundDeps,
+  ids: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId">,
+  artifact: StoredAttachment,
+  bytes: Uint8Array | undefined,
+  deadline: number,
+): Promise<StoredAttachment> {
+  if (!deps.transcribe || !bytes || !isAttachmentAudioMimeType(artifact.mimeType)) return artifact;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return artifact;
+  // The timer both stops waiting and cancels the provider call, so a stalled
+  // request does not keep running after the message is delivered without it.
+  const cancel = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      cancel.abort();
+      resolve(null);
+    }, remaining);
+  });
+  const call = deps
+    .transcribe({
+      spaceId: ids.spaceId,
+      userId: ids.userId,
+      audio: bytes,
+      mimeType: artifact.mimeType,
+      signal: cancel.signal,
+    })
+    .catch((error) => {
+      // Reason only: the audio and the transcript never reach the log.
+      getLogger().warn("messaging attachment transcription failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+  const transcript = await Promise.race([call, timedOut]).finally(() => clearTimeout(timer));
+  // Normalized once here, so the direct prompt and the routine payload carry the same bounded text.
+  const normalized = normalizeVoiceTranscript(transcript);
+  return normalized ? { ...artifact, transcript: normalized } : artifact;
 }
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
@@ -170,12 +336,10 @@ export async function wakeMessageRoutines(
   target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
   event: MessagingInboundMessage,
   options?: {
-    /**
-     * Provider prefix for the wake clientNonce. TeamChat recovery looks up
-     * nonces with TeamChatBridge.providerId (often "slack"); pass that here when
-     * the inbound event.provider differs (e.g. teamchat-emulator).
-     */
+    /** Wake clientNonce prefix; must match TeamChatBridge.providerId when event.provider differs. */
     deliveryProvider?: string;
+    artifacts?: StoredAttachment[];
+    unavailable?: string[];
     /**
      * TeamChat external message id. When set, atomically reassert routine
      * ownership before creating a run so a concurrent TeamChat agent claim
@@ -188,6 +352,8 @@ export async function wakeMessageRoutines(
     where: {
       botId: target.botId,
       spaceId: target.spaceId,
+      // The wake runs as the identity's person, so only their own routines may ride on it.
+      userId: target.userId,
       active: true,
       messageProvider: event.provider,
     },
@@ -238,6 +404,23 @@ export async function wakeMessageRoutines(
     channelName: event.channelName,
     content: event.content,
     mediaUrl: event.mediaUrl,
+    ...(options?.unavailable?.length ? { unavailable: options.unavailable } : {}),
+    ...(event.attachments?.length
+      ? {
+          files: event.attachments.map(({ name, mimeType, size }) => ({
+            name,
+            mimeType,
+            size,
+          })),
+        }
+      : {}),
+    ...(options?.artifacts?.some((artifact) => artifact.transcript)
+      ? {
+          voiceTranscripts: options.artifacts
+            .filter((artifact) => artifact.transcript)
+            .map((artifact) => ({ name: artifact.name, transcript: artifact.transcript })),
+        }
+      : {}),
   });
   await deliverWebhookEvent(
     { events: deps.events, jobs: deps.jobs },
@@ -247,6 +430,7 @@ export async function wakeMessageRoutines(
     },
     {
       prompt,
+      artifacts: options?.artifacts,
       routines,
       source: "messaging",
       idempotencyKey: messagingWakeIdempotencyKey(
@@ -275,8 +459,11 @@ export async function teamChatSenderCanWakeMessageRoutines(
 
   const linkedIdentity = await deps.prisma.messagingIdentity.findUnique({
     where: { provider_address: { provider: event.provider, address: event.from } },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
+  // A deactivated person counts as unlinked: like anyone in the workspace, never as themselves.
+  if (linkedIdentity && (await accountDeactivated(deps.prisma, linkedIdentity.userId)))
+    return false;
 
   if (event.isDirect) return Boolean(linkedIdentity);
 
@@ -310,31 +497,112 @@ async function tryRedeemLinkCode(
 ): Promise<boolean> {
   const code = normalizeMessagingLinkCode(event.content);
   if (!code) return false;
-  const redeemed = await redeemMessagingLinkCode(deps.prisma, {
-    code,
-    provider: event.provider,
-    address: event.from,
-    dmThreadId: event.threadId,
-  });
-  if (!redeemed) return false;
-  const bot = await deps.prisma.bot.findUnique({
-    where: { id: redeemed.botId },
-    select: { name: true },
-  });
-  await enqueueConfirmation(
-    deps,
-    { id: redeemed.identityId },
-    redeemed.confirmationKey,
-    `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+  const redeemed = await redeemMessagingLinkCode(
+    deps.prisma,
+    {
+      code,
+      provider: event.provider,
+      address: event.from,
+      dmThreadId: event.threadId,
+      spaceId: event.installationSpaceId,
+      installationId: event.installationId,
+    },
+    async (tx, linked) => {
+      const bot = await tx.bot.findUnique({
+        where: { id: linked.botId },
+        select: { name: true },
+      });
+      await writeConfirmation(
+        tx,
+        { id: linked.identityId },
+        linked.confirmationKey,
+        `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
+      );
+    },
   );
+  if (!redeemed) return false;
+  await enqueueDeliverJob(deps);
   return true;
+}
+
+/**
+ * The owner's "stop", an owner command like YES/NO/LEAVE: Stop for their bot's chat, always
+ * answered by text. The answer's row, written first, is this delivery's receipt, so a
+ * redelivered or concurrent copy finds it and changes nothing.
+ */
+async function stopOwnerWork(
+  deps: MessagingInboundDeps,
+  identity: IdentityRow,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const thread = await deps.prisma.thread.findFirstOrThrow({
+    where: { botId: identity.botId },
+    select: { id: true },
+  });
+  const key = `command:stop:${identity.id}:${event.handle}`;
+  const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
+  const stop = await deps.prisma.$transaction(async (tx) => {
+    const receipt = await tx.messagingOutbound.createMany({
+      data: [
+        { idempotencyKey: key, kind: "dm", identityId: identity.id, body: "Nothing is running." },
+      ],
+      skipDuplicates: true,
+    });
+    if (receipt.count === 0) return null;
+    const stop = await cancelThreadRuns(identity, target, { botId: identity.botId })(tx);
+    if (stop.runIds.length) {
+      await tx.messagingOutbound.update({
+        where: { idempotencyKey: key },
+        data: { body: STOPPED_BY_MESSAGE_NOTE },
+      });
+    }
+    return stop;
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  await enqueueDeliverJob(deps);
+  if (stop?.runIds.length) await finishThreadStop(deps, identity, target, stop);
+}
+
+/** How long a channel invite or connection request can be answered by text. */
+export const TEXT_ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The one request a bare YES or NO answers: the request whose prompt is the newest message this
+ * line delivered to the person, sent within the answer window and still pending. Anything said since,
+ * by the bot or the product, makes the reply an ordinary message.
+ */
+async function answeredRequest(deps: MessagingInboundDeps, identity: IdentityRow) {
+  const latest = await deps.prisma.messagingOutbound.findFirst({
+    where: { identityId: identity.id, kind: "dm", status: { in: ["pending", "sent"] } },
+    orderBy: { createdAt: "desc" },
+    select: { idempotencyKey: true, createdAt: true, status: true },
+  });
+  if (
+    latest?.status !== "sent" ||
+    Date.now() - latest.createdAt.getTime() > TEXT_ANSWER_WINDOW_MS
+  ) {
+    return null;
+  }
+  const [kind, first, second] = latest.idempotencyKey.split(":");
+  if (kind === "invite" && first && second === identity.id) {
+    const membership = await deps.prisma.messagingChannelMember.findFirst({
+      where: { channelId: first, identityId: identity.id, status: "invited" },
+    });
+    return membership ? ({ kind: "channel", membership } as const) : null;
+  }
+  if (kind === "connect" && first && second === identity.botId) {
+    const connection = await deps.prisma.agentConnection.findFirst({
+      where: { requesterBotId: first, targetBotId: identity.botId, status: "pending" },
+    });
+    return connection ? ({ kind: "connection", connection } as const) : null;
+  }
+  return null;
 }
 
 /** Returns true when the command matched a pending item and was handled. */
 async function applyOwnerCommand(
   deps: MessagingInboundDeps,
   identity: IdentityRow,
-  command: "approve" | "decline" | "leave",
+  command: Exclude<MessagingCommand, "stop">,
 ): Promise<boolean> {
   if (command === "leave") {
     const membership = await deps.prisma.messagingChannelMember.findFirst({
@@ -342,38 +610,30 @@ async function applyOwnerCommand(
       orderBy: { updatedAt: "desc" },
     });
     if (!membership) return false;
-    const { count } = await deps.prisma.messagingChannelMember.updateMany({
-      where: { id: membership.id, status: "approved" },
-      data: { status: "left" },
+    // One transaction, so a failed confirmation leaves the membership as it
+    // was and a redelivered LEAVE cannot move on to the next group.
+    const claimed = await deps.prisma.$transaction(async (tx) => {
+      const { count } = await tx.messagingChannelMember.updateMany({
+        where: { id: membership.id, status: "approved" },
+        data: { status: "left" },
+      });
+      // State changed under us (e.g. swept out and re-invited): treat the
+      // text as a normal message rather than overwriting the newer state.
+      if (count === 0) return false;
+      await writeConfirmation(
+        tx,
+        identity,
+        `command:leave:${membership.id}`,
+        "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
+      );
+      return true;
     });
-    // State changed under us (e.g. swept out and re-invited): treat the
-    // text as a normal message rather than overwriting the newer state.
-    if (count === 0) return false;
-    await enqueueConfirmation(
-      deps,
-      identity,
-      `command:leave:${membership.id}`,
-      "You've left the channel. Your agent will no longer post there. The group chat itself is unchanged.",
-    );
+    if (!claimed) return false;
+    await enqueueDeliverJob(deps);
     return true;
   }
 
-  const membership = await deps.prisma.messagingChannelMember.findFirst({
-    where: { identityId: identity.id, status: "invited" },
-    orderBy: { updatedAt: "desc" },
-  });
-  const connection = await deps.prisma.agentConnection.findFirst({
-    where: { targetBotId: identity.botId, status: "pending" },
-    orderBy: { updatedAt: "desc" },
-  });
-  // YES/NO answers whichever pending item is newest, channel invite or
-  // agent connection.
-  const target =
-    membership && (!connection || membership.updatedAt >= connection.updatedAt)
-      ? ({ kind: "channel", membership } as const)
-      : connection
-        ? ({ kind: "connection", connection } as const)
-        : null;
+  const target = await answeredRequest(deps, identity);
   if (!target) return false;
   const approved = command === "approve";
 
@@ -413,6 +673,11 @@ async function applyOwnerCommand(
   const claimed = await deps.prisma.$transaction(async (tx) => {
     // The claim holds the connection row lock through commit, so a revoke
     // can never interleave with the confirmation writes.
+    if (
+      approved &&
+      !(await crossSpaceCommunicationAllowed(tx, target.connection.requesterBotId, identity.botId))
+    )
+      return false;
     const { count } = await tx.agentConnection.updateMany({
       where: { id: target.connection.id, status: "pending" },
       data: { status: approved ? "approved" : "declined" },
@@ -442,8 +707,7 @@ async function applyOwnerCommand(
   return true;
 }
 
-/** Delete-then-insert inside the caller's claim transaction: the prior
- * cycle's row must not suppress the new confirmation. */
+/** Delete-then-insert so the prior cycle's row cannot suppress the new confirmation. */
 async function writeConfirmation(
   tx: Pick<Prisma.TransactionClient, "messagingOutbound">,
   identity: { id: string },
@@ -463,24 +727,6 @@ async function enqueueDeliverJob(deps: MessagingInboundDeps): Promise<void> {
   });
 }
 
-async function enqueueConfirmation(
-  deps: MessagingInboundDeps,
-  identity: { id: string },
-  key: string,
-  body: string,
-): Promise<void> {
-  // Keys are stable per membership/connection across approval cycles; clear
-  // the prior cycle's row or skipDuplicates would swallow the new text.
-  await deps.prisma.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
-  await deps.prisma.messagingOutbound.createMany({
-    data: [{ idempotencyKey: key, kind: "dm", identityId: identity.id, body }],
-    skipDuplicates: true,
-  });
-  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    getLogger().error("messaging confirmation enqueue error", error);
-  });
-}
-
 async function handleChannelEvent(
   deps: MessagingInboundDeps,
   event: MessagingInboundMessage,
@@ -492,81 +738,160 @@ async function handleChannelEvent(
     update: channelName ? { name: channelName } : {},
   });
 
+  // Telegram reports departures one service message at a time; a rosterless
+  // platform has no sweep, so this delta is the only removal signal. Our own
+  // bot leaving ends every membership: nothing more is delivered there. The
+  // event itself carries no conversation — no intro, no run — and it runs before
+  // member discovery, so a departing sender is never invited or announced.
+  if (event.departures) {
+    // Leaving the chat ends membership in every conversation of it: forum topics
+    // are channels of their own (`<provider>:<chat>:<topic>`) on the same mount.
+    const chat = event.threadId.split(":").slice(0, 2).join(":");
+    const chatChannels = await deps.prisma.messagingChannel.findMany({
+      where: {
+        provider: event.provider,
+        OR: [{ threadId: chat }, { threadId: { startsWith: `${chat}:` } }],
+      },
+      select: { id: true },
+    });
+    // The query includes this channel: its thread id is the chat or one of its topics.
+    const channelIds = chatChannels.map((row) => row.id);
+    await deps.prisma.messagingChannelMember.updateMany({
+      where: event.departures.botLeft
+        ? { channelId: { in: channelIds }, status: { in: ["invited", "approved"] } }
+        : {
+            channelId: { in: channelIds },
+            address: { in: event.departures.addresses },
+            status: { in: ["invited", "approved"] },
+          },
+      data: { status: "left" },
+    });
+    return;
+  }
+
+  // A deactivated sender's message does nothing: no invitations, memberships or relays.
+  const sender = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { userId: true },
+  });
+  if (sender && (await accountDeactivated(deps.prisma, sender.userId))) return;
+
   const participants = [...event.participants];
   if (!participants.includes(event.from)) participants.push(event.from);
 
+  // Roster membership changes go with the roster's own version, under the channel's
+  // row lock. A webhook retry can deliver a roster older than one a newer event
+  // already settled, and without the lock an older handler could pass the version
+  // check, pause, and then sweep members the newer roster had just settled. Whichever
+  // handler takes the lock first records its roster time — equal times conflict too —
+  // and a handler whose roster is not newer than the recorded one changes no
+  // membership at all: no sweep, no re-invite, no discovery. Invitations are
+  // announced only after the transaction commits.
+  // The roster time is the platform's clock, which can run ahead of ours. Within a
+  // small skew it stays the version, so ordering and redeliveries behave as usual.
+  // Further ahead the time is bogus and the event's roster is distrusted whole, on
+  // every delivery alike: it changes no membership — no discovery, no invites, no
+  // sweep — and records no time, so it can never settle or unsettle members, and a
+  // far-future time can never sit ahead of every later real roster and freeze it.
+  const eventRosterAt = event.participants.length > 0 ? event.rosterAt : undefined;
+  const rosterTimeRejected =
+    eventRosterAt !== undefined && eventRosterAt.getTime() > Date.now() + ROSTER_TIME_SKEW_MS;
+  const rosterAt = rosterTimeRejected ? undefined : eventRosterAt;
+  const invited: IdentityRow[] = [];
   let hasUnlinked = false;
-  for (const address of participants) {
-    const identity = await deps.prisma.messagingIdentity.findUnique({
-      where: { provider_address: { provider: event.provider, address } },
-    });
-    const member = await deps.prisma.messagingChannelMember.findUnique({
-      where: { channelId_address: { channelId: channel.id, address } },
-    });
-    if (member) {
-      // Compare against the current identity, not just null: unlinking
-      // deletes the identity row but leaves this FK-free column pointing at
-      // the dead id, so a re-link would otherwise never reattach and the
-      // member would sit in the channel unreachable by every lookup.
-      if (identity && member.identityId !== identity.id) {
-        await deps.prisma.messagingChannelMember.update({
-          where: { id: member.id },
-          data: { identityId: identity.id },
-        });
-        if (member.status === "invited") await inviteMember(deps, channel, identity);
-      }
-      if (member.status === "left") {
-        // Back in the group: restart the approval cycle.
-        await deps.prisma.messagingChannelMember.update({
-          where: { id: member.id },
-          data: { status: "invited" },
-        });
-        if (identity) await inviteMember(deps, channel, identity);
-      }
-      if (!identity) hasUnlinked = true;
-      continue;
+  await deps.prisma.$transaction(async (tx) => {
+    // A rejected time distrusts the event's membership entirely; its message content,
+    // if any, still flows below as for any message.
+    if (rosterTimeRejected) return;
+    await tx.$queryRaw`SELECT id FROM messaging_channels WHERE id = ${channel.id} FOR UPDATE`;
+    if (rosterAt) {
+      const settled = await tx.messagingChannel.findUniqueOrThrow({
+        where: { id: channel.id },
+        select: { rosterSeenAt: true },
+      });
+      if (settled.rosterSeenAt && rosterAt <= settled.rosterSeenAt) return;
+      await tx.messagingChannel.update({
+        where: { id: channel.id },
+        data: { rosterSeenAt: rosterAt },
+      });
     }
-    // Upsert, not create: concurrent group webhooks race on the unique key.
-    await deps.prisma.messagingChannelMember.upsert({
-      where: { channelId_address: { channelId: channel.id, address } },
-      create: {
-        channelId: channel.id,
-        address,
-        identityId: identity?.id ?? null,
-        status: "invited",
-      },
-      update: {},
-    });
-    if (identity) await inviteMember(deps, channel, identity);
-    else hasUnlinked = true;
-  }
+    for (const address of participants) {
+      const identity = await tx.messagingIdentity.findUnique({
+        where: { provider_address: { provider: event.provider, address } },
+      });
+      const member = await tx.messagingChannelMember.findUnique({
+        where: { channelId_address: { channelId: channel.id, address } },
+      });
+      if (member) {
+        // Compare against the current identity, not just null: unlinking
+        // deletes the identity row but leaves this FK-free column pointing at
+        // the dead id, so a re-link would otherwise never reattach and the
+        // member would sit in the channel unreachable by every lookup.
+        if (identity && member.identityId !== identity.id) {
+          await tx.messagingChannelMember.update({
+            where: { id: member.id },
+            data: { identityId: identity.id },
+          });
+          if (member.status === "invited") {
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+          }
+        }
+        if (member.status === "left") {
+          // Back in the group: restart the approval cycle.
+          await tx.messagingChannelMember.update({
+            where: { id: member.id },
+            data: { status: "invited" },
+          });
+          if (identity) {
+            if (await queueInvite(tx, channel, identity)) invited.push(identity);
+          }
+        }
+        if (!identity) hasUnlinked = true;
+        continue;
+      }
+      // Upsert, not create: concurrent group webhooks race on the unique key.
+      await tx.messagingChannelMember.upsert({
+        where: { channelId_address: { channelId: channel.id, address } },
+        create: {
+          channelId: channel.id,
+          address,
+          identityId: identity?.id ?? null,
+          status: "invited",
+        },
+        update: {},
+      });
+      if (identity) {
+        if (await queueInvite(tx, channel, identity)) invited.push(identity);
+      } else hasUnlinked = true;
+    }
 
-  // Someone removed from the group must stop receiving its content.
-  // A webhook without a participants roster says nothing about membership —
-  // never sweep on partial data.
-  if (event.participants.length > 0) {
-    await deps.prisma.messagingChannelMember.updateMany({
-      where: {
-        channelId: channel.id,
-        address: { notIn: participants },
-        status: { in: ["invited", "approved"] },
-      },
-      data: { status: "left" },
-    });
-  }
+    // Someone removed from the group must stop receiving its content.
+    // A webhook without a participants roster says nothing about membership —
+    // never sweep on partial data.
+    if (event.participants.length > 0) {
+      await tx.messagingChannelMember.updateMany({
+        where: {
+          channelId: channel.id,
+          address: { notIn: participants },
+          status: { in: ["invited", "approved"] },
+        },
+        data: { status: "left" },
+      });
+    }
+  });
+  for (const identity of invited) await announceInvite(deps, channel, identity);
 
   if (hasUnlinked && !channel.introPostedAt) {
-    await deps.prisma.messagingOutbound.createMany({
-      data: [
-        {
-          idempotencyKey: `intro:${channel.id}`,
-          kind: "intro",
-          threadId: channel.threadId,
-          body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
-        },
-      ],
-      skipDuplicates: true,
-    });
+    // Under the channel lock, so the intro never takes a position inside a
+    // mirrored reply's range and the drain's claim stays serialised with it.
+    await insertOutboundRows(deps.prisma, { identityId: null, threadId: channel.threadId }, [
+      {
+        idempotencyKey: `intro:${channel.id}`,
+        kind: "intro",
+        threadId: channel.threadId,
+        body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
+      },
+    ]);
     await deps.prisma.messagingChannel.update({
       where: { id: channel.id },
       data: { introPostedAt: new Date() },
@@ -575,6 +900,9 @@ async function handleChannelEvent(
       getLogger().error("messaging intro enqueue error", error);
     });
   }
+
+  // A service message (a pin, a join) carries nothing for a bot to read.
+  if (!event.content.trim() && !event.mediaUrl && !event.attachments?.length) return;
 
   // Only approved owners' bots participate.
   const senderMember = await deps.prisma.messagingChannelMember.findUnique({
@@ -607,7 +935,7 @@ async function handleChannelEvent(
     const identity = await deps.prisma.messagingIdentity.findUnique({
       where: { id: member.identityId! },
     });
-    if (!identity) continue;
+    if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
     const target = {
@@ -616,38 +944,47 @@ async function handleChannelEvent(
       botId: identity.botId,
       threadId: thread.id,
     };
-    if (await wakeMessageRoutines(deps, target, event)) continue;
+    // One member's Space being deleted must not keep the message from the others.
+    try {
+      if (await wakeMessageRoutines(deps, target, event)) continue;
+      // Group runs carry only text; a bare photo would start an empty prompt.
+      if (!event.content.trim()) continue;
 
-    const sent = await deps.events.sendUserMessage({
-      spaceId: identity.spaceId,
-      threadId: thread.id,
-      botId: identity.botId,
-      userId: identity.userId,
-      blocks: [block],
-      prompt,
-      trigger: "messaging",
-      clientNonce: `messaging:${event.provider}:${event.handle}`,
-    });
-    if (sent.runId) {
-      await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        getLogger().error("messaging channel fan-out enqueue error", error);
+      const sent = await deps.events.sendUserMessage({
+        spaceId: identity.spaceId,
+        threadId: thread.id,
+        botId: identity.botId,
+        userId: identity.userId,
+        blocks: [block],
+        prompt,
+        trigger: "messaging",
+        clientNonce: `messaging:${event.provider}:${event.handle}`,
       });
+      if (sent.runId) {
+        await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
+          getLogger().error("messaging channel fan-out enqueue error", error);
+        });
+      }
+    } catch (error) {
+      droppedWhileDeleting(error);
     }
   }
 }
 
-async function inviteMember(
-  deps: MessagingInboundDeps,
+async function queueInvite(
+  db: Pick<PrismaClient, "messagingOutbound" | "user">,
   channel: { id: string; name: string | null },
   identity: IdentityRow,
-): Promise<void> {
+): Promise<boolean> {
+  // A deactivated person is not invited anywhere.
+  if (await accountDeactivated(db, identity.userId)) return false;
   const name = channel.name ?? "a group chat";
   // A returning member restarts the approval cycle; clear the prior invite
   // row or skipDuplicates would leave them with no prompt to answer.
-  await deps.prisma.messagingOutbound.deleteMany({
+  await db.messagingOutbound.deleteMany({
     where: { idempotencyKey: `invite:${channel.id}:${identity.id}` },
   });
-  await deps.prisma.messagingOutbound.createMany({
+  await db.messagingOutbound.createMany({
     data: [
       {
         idempotencyKey: `invite:${channel.id}:${identity.id}`,
@@ -658,6 +995,15 @@ async function inviteMember(
     ],
     skipDuplicates: true,
   });
+  return true;
+}
+
+async function announceInvite(
+  deps: MessagingInboundDeps,
+  channel: { id: string; name: string | null },
+  identity: IdentityRow,
+): Promise<void> {
+  const name = channel.name ?? "a group chat";
   const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
   if (thread) {
     const note = await createThreadMessage(deps.prisma, {
@@ -683,6 +1029,6 @@ async function ownerFirstName(
   fallback: string,
 ): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-  const first = user?.name.trim().split(/\s+/)[0];
+  const first = displayName(user?.name, "").split(/\s+/)[0];
   return first ? sanitizeMessagingLabel(first) : fallback;
 }

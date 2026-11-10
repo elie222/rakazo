@@ -6,6 +6,7 @@ import type {
   WebSearchHit,
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
+import { clampOffset, pageWindow } from "./web-limits.js";
 
 /** In-memory web provider for offline tests. Never hits the network. */
 export class FakeWebProvider implements WebProvider {
@@ -46,13 +47,15 @@ export class FakeWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, _context: AdapterContext): Promise<WebFetchResult> {
     this.lastFetch = request;
     if (this.fetchError) throw this.fetchError;
-    const maxChars = request.maxChars ?? this.fetchResult.text.length;
-    const truncated = this.fetchResult.text.length > maxChars;
+    const offset = clampOffset(request.offset);
+    const rest = this.fetchResult.text.slice(offset);
+    const maxChars = request.maxChars ?? rest.length;
+    const window = pageWindow(rest, maxChars, offset);
     return {
       ...this.fetchResult,
       url: request.url || this.fetchResult.url,
-      text: truncated ? this.fetchResult.text.slice(0, maxChars) : this.fetchResult.text,
-      truncated: truncated || this.fetchResult.truncated,
+      text: window.text,
+      truncated: window.truncated || this.fetchResult.truncated,
     };
   }
 }

@@ -14,8 +14,8 @@ describe("listSpaceGroupsForSpaces", () => {
         sectionId: null,
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
-          unread: true,
-          messages: [{ blocks: [{ kind: "text", text: "Escalation pending" }] }],
+          id: "thread-1",
+          reads: [{ unread: true, snoozedUntil: new Date("2026-08-21T09:00:00.000Z") }],
         },
         members: [
           { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
@@ -30,15 +30,26 @@ describe("listSpaceGroupsForSpaces", () => {
         ],
       },
     ]);
-    const repos = createGroupRepos({ chatGroup: { findMany } } as unknown as PrismaClient);
-    const actor = {
-      spaceId: "workspace-1",
-      userId: "user-1",
-      email: "user@example.test",
-      isDeploymentOwner: false,
-    };
+    const repos = createGroupRepos({
+      chatGroup: { findMany },
+      $queryRaw: vi.fn(async () => [
+        {
+          id: "message-1",
+          threadId: "thread-1",
+          seq: 1,
+          role: "user",
+          blocks: [{ kind: "text", text: "Escalation pending" }],
+          botId: null,
+          replyToMessageId: null,
+          replyQuote: null,
+          runId: null,
+          clientNonce: null,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+        },
+      ]),
+    } as unknown as PrismaClient);
 
-    await expect(repos.listSpaceGroupsForSpaces(actor, ["workspace-2"])).resolves.toEqual([
+    await expect(repos.listSpaceGroupsForSpaces(["workspace-2"], "user-1")).resolves.toEqual([
       {
         id: "group-1",
         spaceId: "workspace-2",
@@ -46,11 +57,18 @@ describe("listSpaceGroupsForSpaces", () => {
         pinned: true,
         sectionId: null,
         members: [
-          { botId: "bot-1", name: "Triage", color: "#111", status: "idle" },
-          { botId: "bot-2", name: "Responder", color: "#222", status: "running" },
+          { botId: "bot-1", name: "Triage", color: "#111", avatarSet: "organic", status: "idle" },
+          {
+            botId: "bot-2",
+            name: "Responder",
+            color: "#222",
+            avatarSet: "organic",
+            status: "running",
+          },
         ],
         preview: "Escalation pending",
         unread: true,
+        snoozedUntil: "2026-08-21T09:00:00.000Z",
         updatedAt: "2026-08-20T00:00:00.000Z",
       },
     ]);
@@ -138,7 +156,9 @@ describe("archiveGroup", () => {
     findManyComputers = vi.fn(async ({ where }: { where: ComputerWhere }) =>
       computerRows.filter((row) => matches(row, where)),
     );
-    runUpdateMany = vi.fn();
+    runUpdateMany = vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => ({ id })),
+    );
     attemptUpdateMany = vi.fn();
     taskUpdateMany = vi.fn();
     // computer-1 is a Team computer: bot-2's lease there belongs to a run outside this group.
@@ -203,11 +223,14 @@ describe("archiveGroup", () => {
     eventDeleteMany = vi.fn();
     groupUpdate = vi.fn();
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      message: { findMany: vi.fn(async () => []) },
       $queryRaw: queryRaw,
       chatGroup: { findFirst, update: groupUpdate },
-      run: { findMany: findManyRuns, updateMany: runUpdateMany },
+      run: { findMany: findManyRuns, updateManyAndReturn: runUpdateMany },
       attempt: { updateMany: attemptUpdateMany },
       task: { updateMany: taskUpdateMany },
+      secret: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
       computerExecutionLease: { findMany: leaseFindMany, updateMany: leaseUpdateMany },
       computer: { findMany: findManyComputers, updateMany: computerUpdateMany },
       event: { deleteMany: eventDeleteMany },
@@ -271,7 +294,6 @@ describe("archiveGroup", () => {
         where: {
           id: "group-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         select: { archivedAt: true, thread: { select: { id: true } } },
       }),
@@ -429,7 +451,7 @@ describe("createGroup", () => {
       archivedAt: null,
       createdAt: new Date("2026-10-10T00:00:00.000Z"),
       updatedAt: new Date("2026-10-10T00:00:00.000Z"),
-      thread: { id: "thread-1", unread: false, messages: [] },
+      thread: { id: "thread-1", reads: [{ unread: false }], messages: [] },
       members: [
         { bot: { id: "lead", name: "Lead", color: "#111", runs: [] } },
         { bot: { id: "build", name: "Build", color: "#222", runs: [] } },
@@ -449,6 +471,7 @@ describe("createGroup", () => {
       },
       chatGroupMember: { createMany },
       thread: { create: vi.fn() },
+      message: { findMany: vi.fn(async () => []) },
     };
     // The bots come back in a different order than the caller asked for, so the recorded
     // order has to come from the input, not from the lookup.
@@ -486,5 +509,84 @@ describe("createGroup", () => {
       }),
     );
     expect(group.members.map((member) => member.botId)).toEqual(["lead", "build"]);
+  });
+});
+
+describe("listGroups archived", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@example.test",
+    isDeploymentOwner: false,
+  };
+  const member = (id: string, archived = false) => ({
+    bot: { id, name: id, color: "#111", runs: [], archivedAt: archived ? new Date() : null },
+  });
+  const group = (id: string, archived: boolean, members: ReturnType<typeof member>[]) => ({
+    id,
+    spaceId: "space-1",
+    userId: "user-1",
+    name: id,
+    pinned: false,
+    sectionId: null,
+    archivedAt: archived ? new Date("2026-10-20T00:00:00.000Z") : null,
+    createdAt: new Date("2026-10-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    thread: { id: `thread-${id}`, reads: [{ unread: false }], messages: [] },
+    members,
+  });
+
+  function repos(rows: ReturnType<typeof group>[]) {
+    const findMany = vi.fn(async (_query: { where: unknown; include: unknown }) => rows);
+    return {
+      findMany,
+      repos: createGroupRepos({
+        chatGroup: { findMany },
+        $queryRaw: vi.fn(async () => []),
+      } as unknown as PrismaClient),
+    };
+  }
+
+  it("lists every archived group and every group its archived bots left unopenable", async () => {
+    const { findMany, repos: groupRepos } = repos([
+      group("archived-with-archived-bots", true, [member("a", true), member("b", true)]),
+      group("archived-with-active-bots", true, [member("h"), member("i")]),
+      group("left-with-one-bot", false, [member("c"), member("d", true)]),
+      group("still-openable", false, [member("e"), member("f"), member("g", true)]),
+    ]);
+    const listed = await groupRepos.listGroups(actor, { archived: true });
+    expect(listed.map((item) => [item.id, item.archivedAt !== null])).toEqual([
+      ["archived-with-archived-bots", true],
+      ["archived-with-active-bots", true],
+      ["left-with-one-bot", false],
+    ]);
+    // Archived bots stay listed, so the group still names who is in it.
+    expect(listed[0]!.members.map((item) => item.botId)).toEqual(["a", "b"]);
+    expect(listed[2]!.members.map((item) => item.botId)).toEqual(["c", "d"]);
+    const query = findMany.mock.calls[0]![0] as {
+      where: unknown;
+      include: { members: { where?: unknown } };
+    };
+    expect(query.where).toEqual({
+      spaceId: "space-1",
+      OR: [
+        { archivedAt: { not: null } },
+        { members: { some: { bot: { archivedAt: { not: null } } } } },
+      ],
+    });
+    expect(query.include.members.where).toBeUndefined();
+  });
+
+  it("keeps the active list to groups with enough active bots", async () => {
+    const { findMany, repos: groupRepos } = repos([
+      group("openable", false, [member("a"), member("b")]),
+      group("one-bot", false, [member("c")]),
+    ]);
+    const listed = await groupRepos.listGroups(actor);
+    expect(listed.map((item) => item.id)).toEqual(["openable"]);
+    expect(findMany.mock.calls[0]![0].where).toEqual({
+      spaceId: "space-1",
+      archivedAt: null,
+    });
   });
 });

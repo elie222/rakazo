@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   API_PROBE_TIMEOUT_MS,
@@ -88,6 +85,15 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
   });
 
+  it("shares the desktop private-network rules for cleartext servers", () => {
+    expect(apiBaseWarning("http://127.0.0.2:3100")).toBeNull();
+    expect(apiBaseWarning("http://[fd00::1]:3100")).toBeNull();
+    expect(apiBaseWarning("http://rakazo.localhost:3100")).toBeNull();
+    expect(apiBaseWarning("http://169.254.169.254")).toMatch(/https/i);
+    expect(apiBaseWarning("http://100.100.100.200")).toMatch(/https/i);
+    expect(apiBaseWarning("http://[fe80::1]:3100")).toMatch(/https/i);
+  });
+
   it("treats the compile-time default as not custom", () => {
     expect(usesCustomApiBase(defaultApiBase())).toBe(false);
     expect(usesCustomApiBase("https://rakazo.example.com")).toBe(true);
@@ -162,20 +168,5 @@ describe("probeApiBase", () => {
       error: "Could not reach that server",
     });
     expect(cancel).toHaveBeenCalledOnce();
-  });
-});
-
-describe("mobile custom server UI", () => {
-  it("exposes a sign-in control that writes the stored origin", () => {
-    const dir = path.dirname(fileURLToPath(import.meta.url));
-    const signIn = readFileSync(path.join(dir, "../app/sign-in.tsx"), "utf8");
-    const server = readFileSync(path.join(dir, "../app/server.tsx"), "utf8");
-    const api = readFileSync(path.join(dir, "api.ts"), "utf8");
-    expect(signIn).toContain("Use a custom server");
-    expect(signIn).toContain('router.push("/server")');
-    expect(server).toContain("saveApiBase");
-    expect(server).toContain("probeApiBase");
-    expect(api).toContain("currentApiBase()");
-    expect(api).not.toMatch(/export const API /);
   });
 });

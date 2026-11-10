@@ -13,29 +13,37 @@ export function isDesktopSetupLink(value: unknown): value is DesktopSetupLink {
   return typeof value === "string" && Object.hasOwn(DOCKER_INSTALL_LINKS, value);
 }
 
-/**
- * Where the docker CLI usually lives. GUI launches on macOS get a minimal PATH, so the
- * well-known install locations come before whatever PATH happens to contain.
- */
-export function dockerBinaryCandidates(platform: string, env: NodeJS.ProcessEnv): string[] {
-  const candidates: string[] = [];
+/** Shared by CLI discovery and PATH lookup for Docker's credential helpers. */
+function dockerInstallDirectories(platform: string, env: NodeJS.ProcessEnv): string[] {
+  const directories: string[] = [];
   if (platform === "darwin") {
-    candidates.push(
-      "/usr/local/bin/docker",
-      "/opt/homebrew/bin/docker",
-      "/Applications/Docker.app/Contents/Resources/bin/docker",
+    directories.push(
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      "/Applications/Docker.app/Contents/Resources/bin",
     );
-    if (env.HOME) candidates.push(path.posix.join(env.HOME, ".orbstack", "bin", "docker"));
+    if (env.HOME) {
+      directories.push(
+        path.posix.join(env.HOME, ".orbstack", "bin"),
+        path.posix.join(env.HOME, ".docker", "bin"),
+        path.posix.join(env.HOME, ".rd", "bin"),
+      );
+    }
+    directories.push("/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin");
   } else if (platform === "win32") {
     const programFiles = env.ProgramFiles ?? "C:\\Program Files";
-    candidates.push(
-      path.win32.join(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe"),
-    );
+    directories.push(path.win32.join(programFiles, "Docker", "Docker", "resources", "bin"));
   } else {
-    candidates.push("/usr/bin/docker", "/usr/local/bin/docker");
+    directories.push("/usr/bin", "/usr/local/bin");
   }
+  return directories;
+}
+
+/** GUI launches on macOS get a minimal PATH, so check known install locations first. */
+export function dockerBinaryCandidates(platform: string, env: NodeJS.ProcessEnv): string[] {
   const binary = platform === "win32" ? "docker.exe" : "docker";
   const joiner = platform === "win32" ? path.win32 : path.posix;
+  const candidates = dockerInstallDirectories(platform, env).map((dir) => joiner.join(dir, binary));
   for (const entry of (env.PATH ?? "").split(platform === "win32" ? ";" : ":")) {
     if (entry.trim() !== "") candidates.push(joiner.join(entry, binary));
   }
@@ -71,7 +79,15 @@ const SPAWN_ENV_ALLOWLIST = [
   "DOCKER_CERT_PATH",
   "DOCKER_TLS_VERIFY",
 ];
-const WIN32_ENV_ALLOWLIST = ["SystemRoot", "SystemDrive", "APPDATA", "LOCALAPPDATA", "ProgramData"];
+const WIN32_ENV_ALLOWLIST = [
+  "SystemRoot",
+  "SystemDrive",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  // Docker discovers Windows CLI plugins relative to ProgramFiles, not docker.exe or PATH.
+  "ProgramFiles",
+];
 
 /**
  * Compose interpolates the process environment into the stack, so only what docker
@@ -93,8 +109,11 @@ export function dockerSpawnEnv(
   }
   const separator = platform === "win32" ? ";" : ":";
   const dockerDir = (platform === "win32" ? path.win32 : path.posix).dirname(dockerBinary);
-  const basePath = env.PATH ?? "";
-  result.PATH = basePath === "" ? dockerDir : `${dockerDir}${separator}${basePath}`;
+  // Finding docker by absolute path is not enough: it finds credential helpers by PATH.
+  // Preserve inherited helper precedence, then fill in locations absent from GUI launches.
+  const directories = [dockerDir, ...(env.PATH ?? "").split(separator)];
+  if (platform === "darwin") directories.push(...dockerInstallDirectories(platform, env));
+  result.PATH = [...new Set(directories.filter((dir) => dir.trim() !== ""))].join(separator);
   return { ...result, ...extra };
 }
 
@@ -185,10 +204,10 @@ export function runDocker(
       if (line !== "") options.onLine?.(line);
     };
     for (const stream of ["stdout", "stderr"] as const) {
-      child[stream]?.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf8");
+      child[stream]?.setEncoding("utf8");
+      child[stream]?.on("data", (text: string) => {
         captured[stream] += text;
-        const parts = (pending[stream] + text).split("\n");
+        const parts = (pending[stream] + text).split(/\r?\n/);
         pending[stream] = parts.pop() ?? "";
         for (const part of parts) emit(part);
       });
@@ -270,7 +289,14 @@ const ADDRESS_POOL_EXHAUSTED = [
   "all predefined address pools have been fully subnetted",
   "could not find an available, non-overlapping ipv4 address pool",
 ];
-const PORT_IN_USE = ["address already in use", "port is already allocated", "bind for 127.0.0.1"];
+const PORT_IN_USE = [
+  "address already in use",
+  "port is already allocated",
+  "bind for 127.0.0.1",
+  "bind: only one usage of each socket address",
+  "bind: an attempt was made to access a socket in a way forbidden by its access permissions",
+  "ports are not available",
+];
 
 /** Docker output can contain paths and hostnames, so callers map kinds to fixed messages. */
 export function classifyDockerFailure(output: string): DockerFailureKind {
@@ -280,7 +306,11 @@ export function classifyDockerFailure(output: string): DockerFailureKind {
   if (matches(DAEMON_DOWN)) return "daemon-down";
   if (matches(COMPOSE_MISSING)) return "compose-missing";
   if (matches(PORT_IN_USE)) return "port-in-use";
-  if (matches(IMAGE_NOT_FOUND)) return "image-not-found";
+  if (
+    matches(IMAGE_NOT_FOUND) ||
+    (text.includes("failed to resolve reference") && text.includes(": not found"))
+  )
+    return "image-not-found";
   if (matches(ADDRESS_POOL_EXHAUSTED)) return "address-pool-exhausted";
   if (matches(NETWORK)) return "network";
   return "other";

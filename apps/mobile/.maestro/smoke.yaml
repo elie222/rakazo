@@ -4,28 +4,28 @@ name: Rakazo mobile smoke
 - launchApp:
     clearState: true
 
-- assertVisible: "Sign in to Rakazo"
-- assertVisible: "Sign up"
-- tapOn: "Sign up"
 - assertVisible: "Sign up for Rakazo"
 - assertVisible: "Name"
 - tapOn: "Sign in"
+- runFlow:
+    when:
+      true: ${typeof RAKAZO_MOBILE_API_URL !== "undefined" && RAKAZO_MOBILE_API_URL != null && RAKAZO_MOBILE_API_URL.trim() !== ""}
+    file: helpers/server.yaml
 - assertVisible: "Sign in to Rakazo"
 - tapOn: "Email"
 - inputText: ${RAKAZO_E2E_EMAIL}
 - tapOn: "Password"
 - inputText: ${RAKAZO_E2E_PASSWORD}
-- tapOn: "Sign in to Rakazo"
+- hideKeyboard
 - tapOn: "Sign in"
 
 - extendedWaitUntil:
-    visible: "New bot"
+    visible: "Create"
     timeout: 30000
+- tapOn: "Create"
 - tapOn: "New bot"
-- assertVisible: "Name this bot"
-- tapOn: "Name this bot"
-- inputText: ${RAKAZO_E2E_BOT_NAME}
-- hideKeyboard
+- tapOn: "Name your Bot"
+- inputText: "Smoke"
 - tapOn: "Create"
 
 - extendedWaitUntil:

@@ -20,8 +20,9 @@ async function openComputerEmbed(
     ["/mobile-keyboard.js", await readFile(path.join(computerRoot, "mobile-keyboard.js"), "utf8")],
     [
       "/core/rfb.js",
-      `export default class RFB {
+      `export default class RFB extends EventTarget {
         constructor() {
+          super();
           this.viewOnly = false;
           this.focusOnClick = true;
           globalThis.__rfbKeys = [];

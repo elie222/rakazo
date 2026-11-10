@@ -1,14 +1,16 @@
-import type { RunActivityRow } from "@rakazo/contracts";
+import { ph, t } from "@lingui/core/macro";
+import type { RoutineRun, RunActivityRow } from "@rakazo/contracts";
+import { routineRunLateness } from "@rakazo/core";
 import { rpc } from "../lib/api";
-import { dateLocaleForUi, t } from "./i18n";
+import { dateLocaleForUi } from "./i18n";
 
 export async function fetchSpaceActivity(): Promise<{
   active: RunActivityRow[];
   recent: RunActivityRow[];
 }> {
   const [active, recent] = await Promise.all([
-    rpc<{ runs: RunActivityRow[] }>("runs/list", { filter: "active" }),
-    rpc<{ runs: RunActivityRow[] }>("runs/list", { filter: "recent" }),
+    rpc("runs/list", { filter: "active" }),
+    rpc("runs/list", { filter: "recent" }),
   ]);
   return { active: active.runs, recent: recent.runs };
 }
@@ -17,35 +19,56 @@ export function formatActivityRelativeTime(iso: string, now = new Date()): strin
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 45) return t("just now");
+  if (seconds < 60) return t`just now`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t("{count}m ago", { count: minutes });
+  if (minutes < 60) return t`${ph({ count: minutes })}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t("{count}h ago", { count: hours });
+  if (hours < 24) return t`${ph({ count: hours })}h ago`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return t("{count}d ago", { count: days });
+  if (days < 7) return t`${ph({ count: days })}d ago`;
   return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+}
+
+/** "Started 2h late" for a scheduled run that started well after its time; else undefined. */
+export function routineRunLateLabel(run: RoutineRun): string | undefined {
+  const late = routineRunLateness(run);
+  if (!late) return undefined;
+  if (late.unit === "minutes") return t`Started ${ph({ count: late.count })}m late`;
+  if (late.unit === "hours") return t`Started ${ph({ count: late.count })}h late`;
+  return t`Started ${ph({ count: late.count })}d late`;
 }
 
 export function activityStatusLabel(status: RunActivityRow["status"]): string {
   switch (status) {
     case "queued":
-      return t("Queued");
+      return t`Queued`;
     case "leased":
-      return t("Starting");
+      return t`Starting`;
     case "running":
-      return t("Running");
+      return t`Running`;
     case "waiting_input":
-      return t("Needs input");
+      return t`Needs input`;
     case "waiting_takeover":
-      return t("Needs takeover");
+      return t`Needs takeover`;
     case "completed":
-      return t("Done");
+      return t`Done`;
     case "failed":
-      return t("Failed");
+      return t`Failed`;
     case "cancelled":
-      return t("Cancelled");
+      return t`Cancelled`;
     default:
       return status;
   }
+}
+
+export function activityPreview(run: RunActivityRow): string {
+  if (run.trigger !== "bot_message") return run.promptSnippet;
+  if (!run.agentMessage) return run.promptSnippet;
+  if (run.agentMessage.kind === "unknown") return t`Message from another agent`;
+  const name = run.agentMessage.fromBotName.trim() || t`Another agent`;
+  const text = run.agentMessage.text;
+  if (run.agentMessage.kind === "update") {
+    return text ? t`Update from ${name}: ${text}` : t`Update from ${name}`;
+  }
+  return text ? t`${name} asked: ${text}` : t`${name} asked`;
 }

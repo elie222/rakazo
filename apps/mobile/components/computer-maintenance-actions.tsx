@@ -1,4 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useNavigation } from "expo-router";
@@ -6,13 +7,12 @@ import { useLayoutEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { computerUpdates } from "../lib/computer-updates";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
-type Action = "recover" | "reset" | "update";
+type Action = "stop" | "recover" | "reset" | "update";
 
 export function ComputerMaintenanceActions({
   botId,
@@ -23,7 +23,7 @@ export function ComputerMaintenanceActions({
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const scheme = useResolvedAppearance();
   const navigation = useNavigation();
@@ -36,12 +36,18 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await computerUpdates.start(botId, "recover");
+      if (action === "stop") await rpc("computer/stop", { botId });
+      else if (action === "recover") await computerUpdates.start(botId, "recover");
       else if (action === "reset") await rpc("computer/reset", { botId });
       else await computerUpdates.start(botId);
       await onChanged();
     } catch (err) {
-      setError(errorText(err, t("Could not update computer")));
+      setError(
+        errorText(
+          err,
+          action === "stop" ? t`Could not stop computer` : t`Could not update computer`,
+        ),
+      );
     } finally {
       setPending(null);
     }
@@ -49,14 +55,14 @@ export function ComputerMaintenanceActions({
 
   function confirm(action: "recover" | "reset") {
     Alert.alert(
-      action === "reset" ? t("Reset computer?") : t("Recover computer?"),
+      action === "reset" ? t`Reset computer?` : t`Recover computer?`,
       action === "reset"
-        ? t("Restore the last saved workspace. Unsaved work on the computer is lost.")
-        : t("Recovery restores the last saved workspace. Unsaved work may be lost."),
+        ? t`Restore the last saved workspace. Unsaved work on the computer is lost.`
+        : t`Recovery restores the last saved workspace. Unsaved work may be lost.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: action === "reset" ? t("Reset") : t("Recover computer"),
+          text: action === "reset" ? t`Reset` : t`Recover computer`,
           style: "destructive",
           onPress: () => void run(action),
         },
@@ -64,18 +70,39 @@ export function ComputerMaintenanceActions({
     );
   }
 
-  const actions = [
-    {
-      id: "recover",
-      title: t("Recover computer"),
-      explanation: t("Recreate a computer that is not working."),
-      destructive: false,
-      onPress: () => confirm("recover"),
-    },
+  const actions: {
+    id: string;
+    title: string;
+    explanation?: string;
+    destructive: boolean;
+    onPress: () => void;
+  }[] = [
+    ...(computer?.state === "running"
+      ? [
+          {
+            id: "stop",
+            title: t`Stop computer`,
+            destructive: false,
+            onPress: () => void run("stop"),
+          },
+        ]
+      : []),
+    // Recover rebuilds the computer's system, which only computers that can update have.
+    ...(computer?.canUpdate
+      ? [
+          {
+            id: "recover",
+            title: t`Recover computer`,
+            explanation: t`Recreate a computer that is not working.`,
+            destructive: false,
+            onPress: () => confirm("recover"),
+          },
+        ]
+      : []),
     {
       id: "reset",
-      title: t("Reset computer"),
-      explanation: t("Restore the last saved workspace."),
+      title: t`Reset computer`,
+      explanation: t`Restore the last saved workspace.`,
       destructive: true,
       onPress: () => confirm("reset"),
     },
@@ -83,8 +110,8 @@ export function ComputerMaintenanceActions({
       ? [
           {
             id: "update",
-            title: t("Update computer"),
-            explanation: t("Save the workspace and install current software."),
+            title: t`Update computer`,
+            explanation: t`Save the workspace and install current software.`,
             destructive: false,
             onPress: () => void run("update"),
           },
@@ -94,6 +121,7 @@ export function ComputerMaintenanceActions({
 
   const hasComputer = computer !== null;
   const canUpdate = Boolean(computer?.canUpdate);
+  const running = computer?.state === "running";
   useLayoutEffect(() => {
     if (!iosAtLeast(26)) return;
     navigation.setOptions({
@@ -102,8 +130,8 @@ export function ComputerMaintenanceActions({
           ? [
               {
                 type: "menu" as const,
-                label: t("More computer actions"),
-                accessibilityLabel: t("More computer actions"),
+                label: t`More computer actions`,
+                accessibilityLabel: t`More computer actions`,
                 icon: { type: "sfSymbol" as const, name: "ellipsis" },
                 menu: {
                   items: actions.map((action) => ({
@@ -122,7 +150,7 @@ export function ComputerMaintenanceActions({
     return () => {
       navigation.setOptions({ unstable_headerRightItems: () => [] });
     };
-  }, [navigation, hasComputer, canUpdate, busy, t, botId, onChanged]);
+  }, [navigation, hasComputer, canUpdate, running, busy, t, botId, onChanged]);
 
   if (!computer) return null;
   return (
@@ -130,26 +158,34 @@ export function ComputerMaintenanceActions({
       {!iosAtLeast(26) ? (
         <MenuView
           colorScheme={scheme}
-          title={t("More computer actions")}
-          actions={actions.map((action) => ({
-            id: action.id,
-            title: action.explanation,
-            displayInline: true,
-            subactions: [
-              {
-                id: action.id,
-                title: action.title,
-                attributes: { destructive: action.destructive, disabled: busy },
-              },
-            ],
-          }))}
+          title={t`More computer actions`}
+          actions={actions.map((action) =>
+            action.explanation
+              ? {
+                  id: action.id,
+                  title: action.explanation,
+                  displayInline: true,
+                  subactions: [
+                    {
+                      id: action.id,
+                      title: action.title,
+                      attributes: { destructive: action.destructive, disabled: busy },
+                    },
+                  ],
+                }
+              : {
+                  id: action.id,
+                  title: action.title,
+                  attributes: { destructive: action.destructive, disabled: busy },
+                },
+          )}
           onPressAction={({ nativeEvent }) =>
             actions.find((action) => action.id === nativeEvent.event)?.onPress()
           }
         >
           <View
             accessibilityRole="button"
-            accessibilityLabel={t("More computer actions")}
+            accessibilityLabel={t`More computer actions`}
             style={{ alignSelf: "flex-end", padding: 12 }}
           >
             <NativeSymbol

@@ -1,9 +1,16 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
+import { encodeLoginSecret } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
+
+const events = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock("@rakazo/db", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  recordSecurityEvent: events.record,
+}));
 
 // Offline boundary: a fake Prisma client and secret store drive the real router handlers,
 // the real repos.getBot ownership check, and the real storeBotSecret validation.
@@ -20,7 +27,11 @@ const actor = {
 const FAKE_VALUE = "fake-value-SENTINEL-1";
 
 function matches(row: Row, where: Row = {}) {
-  return Object.entries(where).every(([key, value]) => row[key] === value);
+  return Object.entries(where).every(([key, value]) =>
+    value && typeof value === "object" && "startsWith" in value
+      ? String(row[key]).startsWith(String(value.startsWith))
+      : row[key] === value,
+  );
 }
 
 function pick(row: Row, select?: Record<string, boolean>) {
@@ -32,7 +43,7 @@ function botSecretDeps(seed: Row[] = []) {
   const now = new Date("2026-09-01T00:00:00.000Z");
   const bots: Row[] = [
     { id: "bot-1", userId: "user-1", spaceId: "space-1", archivedAt: null },
-    { id: "bot-other", userId: "user-2", spaceId: "space-1", archivedAt: null },
+    { id: "bot-other", userId: "user-2", spaceId: "space-2", archivedAt: null },
   ];
   const rows: Row[] = seed.map((row) => ({ ...row }));
   const botSecret = {
@@ -58,6 +69,14 @@ function botSecretDeps(seed: Row[] = []) {
       Object.assign(row ?? {}, args.data, { updatedAt: now });
       return {};
     }),
+    updateMany: vi.fn(async (args: { where: Row; data: Row }) => {
+      // As Prisma does, an unknown column fails the update.
+      const unknown = Object.keys(args.data).filter((key) => !["title", "note"].includes(key));
+      if (unknown.length) throw new Error(`Unknown argument ${unknown.join(", ")}`);
+      const matched = rows.filter((row) => matches(row, args.where));
+      for (const row of matched) Object.assign(row, args.data, { updatedAt: now });
+      return { count: matched.length };
+    }),
     deleteMany: vi.fn(async (args: { where: Row }) => {
       const before = rows.length;
       for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -73,8 +92,16 @@ function botSecretDeps(seed: Row[] = []) {
         return bot ? { ...bot, thread: null, computer: null } : null;
       }),
     },
-    botSecret,
-    $queryRaw: vi.fn(async () => []),
+    vaultCredential: botSecret,
+    // Counted before a prepared value that was never committed is deleted from the store.
+    secret: { count: vi.fn(async () => 0) },
+    botSecret: { count: vi.fn(async () => 0) },
+    integrationProviderConfig: { count: vi.fn(async () => 0) },
+    spaceSettingOverride: {
+      findUnique: vi.fn<() => Promise<{ setting: string } | null>>(async () => null),
+    },
+    // The member's settings lock always finds the membership row.
+    $queryRaw: vi.fn(async () => [{ locked: 1 }]),
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
@@ -84,9 +111,22 @@ function botSecretDeps(seed: Row[] = []) {
       ref: `enc:${options.recordId}`,
       ciphertext: `enc:${options.recordId}`,
     })),
-    load: vi.fn(),
+    // The fake store's ciphertext is "enc:<id>"; reading it back returns what put saved.
+    load: vi.fn(async (ciphertext: string) => saved.get(ciphertext) ?? ""),
+    delete: vi.fn(async () => undefined),
   };
+  const saved = new Map<string, string>();
+  secrets.put.mockImplementation(async (plaintext, _context, options) => {
+    saved.set(`enc:${options.recordId}`, plaintext);
+    return {
+      id: options.recordId,
+      ref: `enc:${options.recordId}`,
+      ciphertext: `enc:${options.recordId}`,
+    };
+  });
+  const auth = { hasRecentIdentityConfirmation: vi.fn(async () => false) };
   const deps = {
+    auth,
     prisma: prisma as unknown as PrismaClient,
     secrets,
     env: {
@@ -99,20 +139,20 @@ function botSecretDeps(seed: Row[] = []) {
     dataDir: "/tmp/rakazo-router-test",
   } as unknown as RouterDeps;
   const handler = new RPCHandler(createRouter(deps));
-  async function call(path: "list" | "put" | "remove", input: unknown) {
+  async function call(path: string, input: unknown) {
     const { response } = await handler.handle(
-      new Request(`http://127.0.0.1/rpc/botSecrets/${path}`, {
+      new Request(`http://127.0.0.1/rpc/${path.includes("/") ? path : `botSecrets/${path}`}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ json: input }),
       }),
-      { prefix: "/rpc", context: { actor } },
+      { prefix: "/rpc", context: { actor, sessionId: "session-1" } },
     );
     if (!response) throw new Error("Procedure did not match");
     const text = await response.text();
     return { status: response.status, text, body: JSON.parse(text) as { json: unknown } };
   }
-  return { prisma, secrets, rows, call };
+  return { prisma, secrets, rows, call, auth };
 }
 
 function putInput(origin: string, botId = "bot-1") {
@@ -151,10 +191,10 @@ describe("botSecrets router", () => {
     });
     expect((await call("put", putInput("https://api.example.test"))).status).toBe(200);
     expect(secrets.put).toHaveBeenCalledOnce();
-    expect(prisma.botSecret.create).toHaveBeenCalledOnce();
+    expect(prisma.vaultCredential.create).toHaveBeenCalledOnce();
   });
 
-  it("rejects another user's bot and a missing bot before any secret access", async () => {
+  it("rejects another space's bot and a missing bot before any secret access", async () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     const { prisma, secrets, call } = botSecretDeps();
     for (const botId of ["bot-other", "missing-bot"]) {
@@ -170,25 +210,24 @@ describe("botSecrets router", () => {
     }
     expect(prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ userId: "user-1", spaceId: "space-1", archivedAt: null }),
+        where: expect.objectContaining({ spaceId: "space-1", archivedAt: null }),
       }),
     );
     expect(secrets.put).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.botSecret.findMany).not.toHaveBeenCalled();
-    expect(prisma.botSecret.create).not.toHaveBeenCalled();
-    expect(prisma.botSecret.update).not.toHaveBeenCalled();
-    expect(prisma.botSecret.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.vaultCredential.findMany).not.toHaveBeenCalled();
+    expect(prisma.vaultCredential.create).not.toHaveBeenCalled();
+    expect(prisma.vaultCredential.update).not.toHaveBeenCalled();
+    expect(prisma.vaultCredential.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("lists metadata only, selecting neither the ciphertext nor the row id", async () => {
+  it("lists metadata only, never returning the ciphertext or the row id", async () => {
     const created = new Date("2026-08-01T00:00:00.000Z");
-    const { prisma, call } = botSecretDeps([
+    const { call } = botSecretDeps([
       {
         id: "row-1",
         userId: "user-1",
-        spaceId: "space-1",
-        botId: "bot-1",
+        spaceId: null,
         name: "github",
         origin: "https://api.github.com",
         auth: { type: "basic", username: "octocat" },
@@ -199,25 +238,20 @@ describe("botSecrets router", () => {
     ]);
     const result = await call("list", { botId: "bot-1" });
     expect(result.status).toBe(200);
-    const select = prisma.botSecret.findMany.mock.calls[0]?.[0].select ?? {};
-    expect(Object.keys(select).sort()).toEqual([
-      "auth",
-      "createdAt",
-      "name",
-      "origin",
-      "updatedAt",
-    ]);
     expect(result.body.json).toEqual([
       {
         name: "github",
         origin: "https://api.github.com",
         auth: { type: "basic", username: "octocat" },
+        title: "api.github.com",
+        note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
       },
     ]);
     expect(result.text).not.toContain("enc:");
     expect(result.text).not.toContain("ciphertext");
+    expect(result.text).not.toContain("row-1");
   });
 
   it("stores a LAN http origin only with the private-HTTP opt-in", async () => {
@@ -229,6 +263,8 @@ describe("botSecrets router", () => {
       name: "router",
       origin: "http://192.168.1.20:8080",
       auth: { type: "bearer" },
+      title: "192.168.1.20:8080",
+      note: "",
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     });
@@ -239,7 +275,7 @@ describe("botSecrets router", () => {
       expect.objectContaining({ recordId: expect.any(String) }),
     );
     expect(allowed.rows).toHaveLength(1);
-    expect(allowed.rows[0]).toMatchObject({ userId: "user-1", spaceId: "space-1", botId: "bot-1" });
+    expect(allowed.rows[0]).toMatchObject({ userId: "user-1", spaceId: null });
 
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "");
     const denied = botSecretDeps();
@@ -259,6 +295,11 @@ describe("botSecrets router", () => {
         "http://100.100.100.200",
         "https://169.254.169.254",
         "https://metadata.google.internal",
+        "http://example.com/login",
+        "http://100.100.100.200/latest",
+        "https://169.254.169.254/latest/meta-data",
+        "https://metadata.google.internal/computeMetadata/v1",
+        `https://example.com/${"a".repeat(2048)}`,
       ]) {
         const { secrets, rows, call } = botSecretDeps();
         const result = await call("put", putInput(origin));
@@ -268,6 +309,47 @@ describe("botSecrets router", () => {
         expect(rows).toHaveLength(0);
       }
     }
+  });
+
+  it("saves a pasted page URL under its site", async () => {
+    const { rows, call } = botSecretDeps();
+    const saved = await call("put", {
+      botId: "bot-1",
+      destination: {
+        name: "portal",
+        origin: "https://portal.example.test/account/sign-in?next=/",
+        auth: { type: "login" },
+      },
+      value: JSON.stringify({ username: "fake-user", password: FAKE_VALUE }),
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.json).toMatchObject({
+      name: "portal",
+      origin: "https://portal.example.test",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.origin).toBe("https://portal.example.test");
+    const listed = await call("list", { botId: "bot-1" });
+    expect(listed.body.json).toMatchObject([{ origin: "https://portal.example.test" }]);
+    expect(listed.text).not.toContain("sign-in");
+  });
+
+  it("turns down a pasted URL with a username or password in it", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: {
+        name: "portal",
+        origin: `https://fake-user:${FAKE_VALUE}@portal.example.test/login`,
+        auth: { type: "login" },
+      },
+      value: JSON.stringify({ username: "fake-user", password: "fake-password-2" }),
+    });
+    expect(result.status).toBe(400);
+    expect(result.text).toContain("Invalid credential destination");
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(0);
   });
 
   it("maps malformed website login values to a bad request without echoing them", async () => {
@@ -283,7 +365,7 @@ describe("botSecrets router", () => {
         value,
       });
       expect(result.status).toBe(400);
-      expect(result.text).toContain("A website login needs a username and password");
+      expect(result.text).toContain("A website login needs a label and a value for every field");
       expect(result.text).not.toContain(FAKE_VALUE);
       expect(secrets.put).not.toHaveBeenCalled();
     }
@@ -294,8 +376,7 @@ describe("botSecrets router", () => {
     const row = (name: string, auth: unknown) => ({
       id: `row-${name}`,
       userId: "user-1",
-      spaceId: "space-1",
-      botId: "bot-1",
+      spaceId: null,
       name,
       origin: "https://api.example.com",
       auth,
@@ -331,8 +412,7 @@ describe("botSecrets router", () => {
       {
         id: "row-lan",
         userId: "user-1",
-        spaceId: "space-1",
-        botId: "bot-1",
+        spaceId: null,
         name: "router",
         origin: "http://192.168.1.20:8080",
         auth: { type: "bearer" },
@@ -348,34 +428,36 @@ describe("botSecrets router", () => {
         name: "router",
         origin: "http://192.168.1.20:8080",
         auth: null,
+        title: "192.168.1.20:8080",
+        note: "",
         createdAt: "2026-08-01T00:00:00.000Z",
         updatedAt: "2026-08-01T00:00:00.000Z",
       },
     ]);
   });
 
-  it("removes a non-regex stored name for the owned bot and rejects another user's bot", async () => {
+  it("removes a non-regex stored name for the owned bot and rejects another space's bot", async () => {
     const owned = botSecretDeps();
     const removed = await owned.call("remove", { botId: "bot-1", name: "Legacy Name" });
     expect(removed.status).toBe(200);
     expect(removed.body.json).toEqual({ ok: true });
-    expect(owned.prisma.botSecret.deleteMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", spaceId: "space-1", botId: "bot-1", name: "Legacy Name" },
+    expect(owned.prisma.vaultCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: null, name: "Legacy Name" },
     });
 
     const foreign = botSecretDeps();
     const denied = await foreign.call("remove", { botId: "bot-other", name: "Legacy Name" });
     expect(denied.status).toBeGreaterThanOrEqual(400);
-    expect(foreign.prisma.botSecret.deleteMany).not.toHaveBeenCalled();
+    expect(foreign.prisma.vaultCredential.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("removes a credential by name within the owner's bot scope", async () => {
+  it("removes a credential by name from the vault the bot's Space uses", async () => {
     const { prisma, call } = botSecretDeps();
     const result = await call("remove", { botId: "bot-1", name: "router" });
     expect(result.status).toBe(200);
     expect(result.body.json).toEqual({ ok: true });
-    expect(prisma.botSecret.deleteMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", spaceId: "space-1", botId: "bot-1", name: "router" },
+    expect(prisma.vaultCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: null, name: "router" },
     });
   });
   it("stores a command variable with no origin and lists it with its type", async () => {
@@ -421,5 +503,249 @@ describe("botSecrets router", () => {
     });
     expect(result.status).toBe(400);
     expect(secrets.put).not.toHaveBeenCalled();
+  });
+});
+
+describe("vault router", () => {
+  const destination = {
+    name: "portal",
+    origin: "https://portal.example.test",
+    auth: { type: "bearer" },
+  };
+
+  it("names a new item from its title and never replaces one saved under that name", async () => {
+    const { rows, prisma, call } = botSecretDeps();
+    const home = (city: string) => ({
+      destination: { auth: { type: "contact" } },
+      value: JSON.stringify({ city }),
+      title: "Home",
+    });
+    const first = await call("vault/put", home("Springfield"));
+    expect(first.body.json).toMatchObject({ name: "home", title: "Home" });
+    // Another save took "home" after this one looked: it is created under the next free name.
+    prisma.vaultCredential.findMany.mockResolvedValueOnce([]);
+    const second = await call("vault/put", home("Shelbyville"));
+    expect(second.status).toBe(200);
+    expect(second.body.json).toMatchObject({ name: "home-2", title: "Home" });
+    expect(rows.map((row) => row.name)).toEqual(["home", "home-2"]);
+    const listed = (await call("vault/list", {})).body.json as { preview?: unknown }[];
+    expect(listed.map((item) => item.preview)).toEqual([
+      { contact: { city: "Springfield" } },
+      { contact: { city: "Shelbyville" } },
+    ]);
+  });
+
+  it("changes only the title or note of a saved item when no value is sent", async () => {
+    const { call } = botSecretDeps();
+    await call("vault/put", { destination, value: FAKE_VALUE });
+    const relabeled = await call("vault/put", { destination, title: "Portal", note: "For work" });
+    expect(relabeled.body.json).toMatchObject({
+      name: "portal",
+      title: "Portal",
+      note: "For work",
+    });
+    expect((await call("vault/reveal", { name: "portal" })).status).not.toBe(200);
+    const missing = await call("vault/put", {
+      destination: { ...destination, name: "missing" },
+      title: "Missing",
+    });
+    expect(missing.status).toBe(404);
+    const unnamed = await call("vault/put", {
+      destination: { auth: { type: "contact" } },
+      title: "Home",
+    });
+    expect(unnamed.status).toBe(400);
+  });
+
+  it("saves, lists and removes in the account vault by default", async () => {
+    const { rows, call } = botSecretDeps();
+    expect((await call("vault/put", { destination, value: FAKE_VALUE })).status).toBe(200);
+    expect(rows).toEqual([
+      expect.objectContaining({ userId: "user-1", spaceId: null, name: "portal" }),
+    ]);
+    const listed = await call("vault/list", {});
+    expect(listed.body.json).toEqual([expect.objectContaining({ name: "portal" })]);
+    expect(listed.text).not.toContain(FAKE_VALUE);
+    expect((await call("vault/remove", { name: "portal" })).status).toBe(200);
+    expect(rows).toEqual([]);
+  });
+
+  it("keeps a Space's own vault apart from the account vault", async () => {
+    const { prisma, rows, call } = botSecretDeps();
+    prisma.spaceSettingOverride.findUnique.mockResolvedValue({ setting: "credentials" });
+    await call("vault/put", { scope: "space", destination, value: FAKE_VALUE });
+    expect(rows).toEqual([expect.objectContaining({ spaceId: "space-1", name: "portal" })]);
+    expect((await call("vault/list", { scope: "account" })).body.json).toEqual([]);
+    expect((await call("vault/list", { scope: "space" })).body.json).toEqual([
+      expect.objectContaining({ name: "portal" }),
+    ]);
+  });
+
+  it("reveals a value only after this session confirmed it's the owner", async () => {
+    const { secrets, auth, call } = botSecretDeps();
+    await call("vault/put", { destination, value: FAKE_VALUE });
+    const refused = await call("vault/reveal", { name: "portal" });
+    expect(refused.status).toBe(403);
+    expect(refused.text).toContain("IDENTITY_CONFIRMATION_REQUIRED");
+    expect(refused.text).not.toContain(FAKE_VALUE);
+    expect(secrets.load).not.toHaveBeenCalled();
+
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    events.record.mockClear();
+    const shown = await call("vault/reveal", { name: "portal" });
+    expect(shown.body.json).toEqual({ value: FAKE_VALUE });
+    // The event names the vault that was read, though the call left scope to the Space.
+    expect(events.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "credential.revealed",
+        metadata: expect.objectContaining({ scope: "account", name: "portal" }),
+      }),
+    );
+    expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
+    expect(auth.hasRecentIdentityConfirmation).toHaveBeenLastCalledWith({
+      sessionId: "session-1",
+      userId: "user-1",
+    });
+    expect((await call("vault/reveal", { name: "missing" })).status).toBe(404);
+  });
+
+  it("reveals a bot's webhook key only to its creator after they confirm it's them", async () => {
+    const { prisma, secrets, auth, call } = botSecretDeps();
+    const bot = {
+      id: "bot-1",
+      userId: "user-1",
+      spaceId: "space-1",
+      archivedAt: null,
+      webhookSecretId: "whsec-1",
+      thread: null,
+      computer: null,
+    };
+    prisma.bot.findFirst.mockResolvedValue(bot as never);
+    const findSecret = vi.fn(async () => ({ id: "whsec-1", ciphertext: "enc:whsec-1" }));
+    Object.assign(prisma.secret, { findFirst: findSecret });
+    const currentKey = vi.fn(async () => ({ webhookSecretId: "whsec-1" }));
+    Object.assign(prisma.bot, { findUnique: currentKey });
+    secrets.load.mockResolvedValue(FAKE_VALUE);
+
+    const refused = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(refused.status).toBe(403);
+    expect(refused.text).toContain("IDENTITY_CONFIRMATION_REQUIRED");
+    expect(secrets.load).not.toHaveBeenCalled();
+
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    events.record.mockClear();
+    const shown = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(shown.body.json).toEqual({ secret: FAKE_VALUE });
+    expect(findSecret).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "whsec-1", userId: "user-1", spaceId: "space-1", kind: "webhook" },
+      }),
+    );
+    expect(events.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "credential.revealed",
+        metadata: expect.objectContaining({ kind: "webhook", botId: "bot-1" }),
+      }),
+    );
+    expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
+
+    // A rotation that commits while the key decrypts wins; the revoked key is never returned.
+    currentKey.mockResolvedValueOnce({ webhookSecretId: "whsec-2" });
+    const rotated = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(rotated.status).toBe(409);
+    expect(rotated.text).not.toContain(FAKE_VALUE);
+
+    // A space member who did not create the bot never reads its key, and is refused before
+    // being asked to confirm it's them.
+    prisma.bot.findFirst.mockResolvedValue({ ...bot, userId: "user-2" } as never);
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(false);
+    secrets.load.mockClear();
+    const forbidden = await call("bots/revealWebhookSecret", { botId: "bot-1" });
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.text).toContain("FORBIDDEN");
+    expect(forbidden.text).not.toContain("IDENTITY_CONFIRMATION_REQUIRED");
+    expect(forbidden.text).not.toContain(FAKE_VALUE);
+    expect(secrets.load).not.toHaveBeenCalled();
+  });
+
+  it("saves an older app's username and password as fields and reveals them", async () => {
+    const { auth, call } = botSecretDeps();
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    await call("vault/put", {
+      destination: { name: "site", origin: "https://login.example.test", auth: { type: "login" } },
+      value: JSON.stringify({ username: "person@example.test", password: FAKE_VALUE }),
+    });
+    expect((await call("vault/reveal", { name: "site" })).body.json).toEqual({
+      fields: [
+        { label: "Username", value: "person@example.test", hidden: false },
+        { label: "Password", value: FAKE_VALUE, hidden: true },
+      ],
+    });
+  });
+
+  it("reveals a website login's fields in order", async () => {
+    const { auth, call } = botSecretDeps();
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    const fields = [
+      { label: "Account number", value: "12345678", hidden: false },
+      { label: "Date of birth", value: FAKE_VALUE, hidden: true },
+    ];
+    await call("vault/put", {
+      destination: { name: "site", origin: "https://login.example.test", auth: { type: "login" } },
+      value: encodeLoginSecret({ fields }),
+    });
+    expect((await call("vault/reveal", { name: "site" })).body.json).toEqual({ fields });
+  });
+
+  it("refuses a save the Space stops customizing while it is being prepared", async () => {
+    const { prisma, secrets, rows, call } = botSecretDeps();
+    // Customized when the save is prepared, back on the account vault by the time it stores.
+    prisma.spaceSettingOverride.findUnique.mockResolvedValueOnce({ setting: "credentials" });
+    const refused = await call("vault/put", { scope: "space", destination, value: FAKE_VALUE });
+    expect(refused.status).toBe(400);
+    expect(refused.text).toContain("This Space uses the account vault");
+    expect(rows).toEqual([]);
+    expect(secrets.put).toHaveBeenCalledOnce();
+    const prepared = await secrets.put.mock.results[0]!.value;
+    expect(secrets.delete).toHaveBeenCalledWith(prepared.ciphertext, expect.anything());
+  });
+
+  it("keeps a saved login on its site when saved again for another one", async () => {
+    const login = {
+      name: "portal",
+      origin: "https://www.portal.example.test",
+      auth: { type: "login" },
+    };
+    const saved = {
+      id: "login-1",
+      userId: "user-1",
+      spaceId: null,
+      ...login,
+      ciphertext: "enc:login-1",
+    };
+    const { rows, call } = botSecretDeps([saved]);
+    const value = JSON.stringify({ username: "fake-user", password: FAKE_VALUE });
+    for (const path of ["vault/put", "put"]) {
+      const refused = await call(path, {
+        ...(path === "put" ? { botId: "bot-1" } : {}),
+        destination: { ...login, origin: "https://login.portal.example.test" },
+        value,
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.text).toContain(
+        "Remove the existing credential before changing its destination",
+      );
+      expect(refused.text).not.toContain(FAKE_VALUE);
+    }
+    expect(rows).toEqual([saved]);
+  });
+
+  it("refuses to save into a Space's own vault the Space no longer uses", async () => {
+    const { rows, call } = botSecretDeps();
+    const refused = await call("vault/put", { scope: "space", destination, value: FAKE_VALUE });
+    expect(refused.status).toBe(400);
+    expect(refused.text).toContain("This Space uses the account vault");
+    expect(refused.text).not.toContain(FAKE_VALUE);
+    expect(rows).toEqual([]);
   });
 });

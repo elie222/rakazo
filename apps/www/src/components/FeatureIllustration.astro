@@ -1,0 +1,133 @@
+---
+import type { HomeCopy } from "../i18n/home";
+
+interface Props {
+  kind: "model" | "schedule" | "approval";
+  labels: HomeCopy["selfHost"]["mock"];
+}
+
+const { kind, labels } = Astro.props;
+const avatar = (name: string) => `/brand/job-bots/${name}.webp`;
+---
+
+<div class:list={["feature-illustration", `feature-illustration--${kind}`]} aria-hidden="true">
+  <div class="fi-card">
+    {kind === "model" ? (
+      [["coding-agent", "Claude Sonnet 5.5"], ["account-manager", "GPT-6.1 Sol"]].map(([bot, model]) => (
+        <div class="fi-row">
+          <img class="fi-avatar" src={avatar(bot)} alt="" width="28" height="28" loading="lazy" />
+          <span class="fi-select">
+            <span class="fi-text">{model}</span>
+            <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
+          </span>
+        </div>
+      ))
+    ) : kind === "schedule" ? (
+      <>
+        <div class="fi-row">
+          <img class="fi-avatar" src={avatar("paid-media")} alt="" width="28" height="28" loading="lazy" />
+          <svg class="fi-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+          <span class="fi-text fi-when">{labels.weekdays}</span>
+          <span class="fi-switch fi-switch--on"><i /></span>
+        </div>
+        <div class="fi-row fi-row--next">
+          <span class="fi-avatar fi-avatar--blank" />
+          <i class="fi-bar" />
+          <span class="fi-switch"><i /></span>
+        </div>
+      </>
+    ) : (
+      <>
+        <div class="fi-row">
+          <img class="fi-avatar" src={avatar("expense-manager")} alt="" width="28" height="28" loading="lazy" />
+          <span class="fi-text fi-title">{labels.approval}</span>
+        </div>
+        <div class="fi-actions">
+          <span class="fi-button fi-button--primary">{labels.approve}</span>
+          <span class="fi-button">{labels.deny}</span>
+        </div>
+      </>
+    )}
+  </div>
+</div>
+
+<style>
+  /* One composition for all three: a real app card, inset a gutter from the
+     top and sides, running off the foot of the band. */
+  .feature-illustration {
+    --gutter: 28px;
+    position: relative;
+    container-type: inline-size;
+    height: 148px;
+    margin: -26px -26px 24px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+    background: radial-gradient(120% 100% at 50% 100%, var(--accent-soft), var(--surface-soft) 85%);
+    color: var(--ink);
+    user-select: none;
+    pointer-events: none;
+    font-size: 13.5px;
+    line-height: 1.4;
+  }
+  .feature-illustration--model { --accent-soft: var(--coral-soft); }
+  .feature-illustration--schedule { --accent-soft: var(--indigo-soft); }
+  .feature-illustration--approval { --accent-soft: var(--green-soft); }
+
+  .fi-card {
+    position: absolute;
+    top: var(--gutter);
+    left: var(--gutter);
+    right: var(--gutter);
+    bottom: calc(var(--gutter) * -1);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 14px 32px -16px rgb(0 0 0 / 0.16);
+  }
+
+  svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .fi-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .fi-avatar { flex: none; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 8px; object-fit: cover; }
+
+  .fi-select {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: 34px;
+    padding: 0 10px 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+  }
+  .fi-select svg, .fi-clock { color: var(--muted); }
+
+  .fi-row--next { padding-top: 12px; border-top: 1px solid var(--line); }
+  .fi-avatar--blank { background: var(--surface-soft); }
+  .fi-bar { display: block; width: 96px; min-width: 0; height: 7px; border-radius: 4px; background: var(--line-2); }
+  .fi-switch { display: flex; flex: none; width: 30px; margin-inline-start: auto; padding: 2px; border-radius: 999px; background: var(--line-2); }
+  .fi-switch i { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); }
+  .fi-switch--on { justify-content: flex-end; background: var(--ink); }
+
+  .fi-title { font-weight: 500; }
+  .fi-actions { display: flex; gap: 8px; }
+  .fi-button { display: flex; align-items: center; height: 32px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 8px; font-weight: 500; white-space: nowrap; }
+  .fi-button--primary { border-color: var(--ink); background: var(--ink); color: var(--surface); }
+
+  /* Three columns just above the stacking breakpoint leave about 240px. */
+  @container (max-width: 300px) {
+    .fi-card { --gutter: 16px; padding: 12px; font-size: 13px; }
+    .fi-row { gap: 8px; }
+    .fi-select { padding: 0 10px; }
+    .fi-select svg { display: none; }
+    .fi-clock { display: none; }
+    .fi-when { white-space: normal; }
+    .fi-button { min-width: 0; padding: 0 10px; font-size: 12.5px; }
+  }
+</style>

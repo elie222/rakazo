@@ -1,25 +1,34 @@
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import { isModelCredentialRejected } from "@rakazo/adapter-kit";
+import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  kickModelCredentialRefresh,
+  refreshExpiredModelCredential,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
+} from "./model-credential-refresh.js";
+import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
+import { PiRuntimeCredentialStore } from "./pi-credentials.js";
+import type { PiOAuthBegin } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
-  kickModelCredentialRefresh,
+  loadProviderOAuth,
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
+  OAUTH_RECONNECT_REQUIRED_ERROR,
   oauthCredentialAccountId,
-  type PiOAuthBegin,
+  oauthCredentialEmail,
   PiOAuthLogins,
-  parseModelSecret,
   RetiredModelCredentialError,
-  refreshExpiredModelCredential,
   resolveModelApiKey,
   resolveModelAuth,
-  secretValuesToRedact,
-  serializeModelSecret,
   terminalOAuthRefreshErrorMarker,
+  tryRetireModelCredential,
   XAI_OAUTH_PROVIDER,
 } from "./pi-oauth.js";
 
@@ -140,12 +149,22 @@ describe("model secrets", () => {
       serializeModelSecret({
         kind: "openai_compatible",
         baseUrl: "http://127.0.0.1:8000/v1",
+        enabledModelIds: ["local/default", "local/other"],
       }),
     );
     expect(parsed).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
+      enabledModelIds: ["local/default", "local/other"],
     });
+  });
+
+  it("leaves enabledModelIds undefined on an openai-compatible secret saved without it", () => {
+    const parsed = parseModelSecret(
+      JSON.stringify({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" }),
+    );
+    expect(parsed).toEqual({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" });
+    expect(parsed.kind === "openai_compatible" && parsed.enabledModelIds).toBeUndefined();
   });
 
   it("rejects credential JSON that declares a kind but misses its fields", () => {
@@ -399,7 +418,7 @@ describe("resolveModelAuth retirement", () => {
     toAuth: async (current: OAuthCredential) => ({ apiKey: current.access }),
   });
 
-  it("retires once with the classified marker, then rethrows the refresh error", async () => {
+  it("retires once with the classified marker, then reports reconnect without the provider body", async () => {
     const failure = new Error("OAuth refresh failed for openai-codex", {
       cause: new Error('OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}'),
     });
@@ -413,7 +432,12 @@ describe("resolveModelAuth retirement", () => {
         retire,
         oauth: failingRefresh(failure),
       }),
-    ).rejects.toBe(failure);
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof RetiredModelCredentialError &&
+        error.message === OAUTH_RECONNECT_REQUIRED_ERROR &&
+        !error.message.includes("invalid_grant"),
+    );
 
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith(
@@ -423,7 +447,22 @@ describe("resolveModelAuth retirement", () => {
       expect.objectContaining({ access: "old", refresh: "refresh-token", expires: 1 }),
     );
     expect(persist).not.toHaveBeenCalled();
-    expect(isRetiredModelCredentialError(failure)).toBe(true);
+    expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
+  });
+
+  it("refuses a reconnect marker without calling the provider", async () => {
+    const refresh = vi.fn(async () => oauthCred());
+    const plaintext = serializeModelSecret({ kind: "oauth", reconnectRequired: true });
+    expect(plaintext).not.toContain("access");
+    expect(plaintext).not.toContain("refresh");
+    await expect(
+      resolveModelAuth(plaintext, CHATGPT_OAUTH_PROVIDER, {
+        oauth: { refresh, toAuth: async () => ({ apiKey: "sent-to-model" }) },
+      }),
+    ).rejects.toThrow(OAUTH_RECONNECT_REQUIRED_ERROR);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(secretValuesToRedact(parseModelSecret(plaintext))).toEqual([]);
   });
 
   it("does not retire on transient refresh failures", async () => {
@@ -466,6 +505,7 @@ describe("resolveModelAuth retirement", () => {
       expect.objectContaining({ access: "old", refresh: "refresh-token", expires: 1 }),
     );
     expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
   });
 
   it("does not mark a refresh error retired when the delete was skipped", async () => {
@@ -479,6 +519,24 @@ describe("resolveModelAuth retirement", () => {
       }),
     ).rejects.toBe(failure);
     expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
+  });
+
+  it("counts a credential retired only when the retire hook confirms it", async () => {
+    const failed = oauthCred({ access: "old", expires: 1 });
+    const retired = (result: () => Promise<boolean | undefined>) =>
+      tryRetireModelCredential(vi.fn(result), "terminal-refresh-failure", "invalid_grant", failed);
+    expect(await retired(async () => true)).toBe(true);
+    expect(await retired(async () => false)).toBe(false);
+    expect(await retired(async () => undefined)).toBe(false);
+    expect(
+      await retired(async () => {
+        throw new Error("database gone");
+      }),
+    ).toBe(false);
+    expect(await tryRetireModelCredential(undefined, "account-changed", "detail", failed)).toBe(
+      false,
+    );
   });
 
   it("rethrows the refresh error when no retire hook is configured", async () => {
@@ -521,11 +579,7 @@ describe("resolveModelAuth account-change guard", () => {
     toAuth: async (current: OAuthCredential) => ({ apiKey: current.access }),
   });
 
-  // Wire the retire hook the way the executor does around
-  // retireModelCredential: the failed credential state becomes a
-  // matchesFailedOAuthSecret predicate over the secret row's current
-  // ciphertext, and the delete only runs while the row still matches. Without
-  // the failed state there is no fence and the delete proceeds.
+  // Wired the way the executor does around retireModelCredential.
   const fencingRetire =
     (row: () => string, deleteCredential: () => void) =>
     async (
@@ -798,6 +852,25 @@ describe("resolveModelAuth account-change guard", () => {
   });
 });
 
+describe("oauthCredentialEmail", () => {
+  it("reads the signed-in account's email from the access token", () => {
+    expect(
+      oauthCredentialEmail(
+        oauthCred({
+          access: fakeJwt({ "https://api.openai.com/profile": { email: "me@example.com" } }),
+        }),
+      ),
+    ).toBe("me@example.com");
+    expect(oauthCredentialEmail(oauthCred({ access: fakeJwt({ email: "top@example.com" }) }))).toBe(
+      "top@example.com",
+    );
+    expect(oauthCredentialEmail(oauthCred())).toBeUndefined();
+    expect(oauthCredentialEmail(oauthCred({ access: fakeJwt({ email: "not an email" }) }))).toBe(
+      undefined,
+    );
+  });
+});
+
 describe("oauthCredentialAccountId", () => {
   it("reads the namespaced chatgpt_account_id claim", () => {
     expect(
@@ -948,19 +1021,28 @@ describe("matchesFailedOAuthSecret", () => {
   });
 });
 
+function lockingSecretRow() {
+  const prisma = {
+    $executeRaw: vi.fn(async () => 0),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+    secret: {
+      findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
+      findUnique: vi.fn(async () => ({ ciphertext: "cipher" })),
+      update: vi.fn(async () => ({})),
+    },
+  };
+  return prisma as unknown as PrismaClient;
+}
+
 describe("refreshExpiredModelCredential", () => {
   const scope = { userId: "user-1", spaceId: "ws-1" };
 
   function secretRow(initial: string) {
     let current = initial;
-    const prisma = {
-      secret: {
-        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
-        update: vi.fn(async () => ({})),
-      },
-    } as unknown as PrismaClient;
+    const prisma = lockingSecretRow();
     const secretStore = {
       load: vi.fn(async () => current),
+      delete: vi.fn(async () => {}),
       put: vi.fn(async (next: string) => {
         current = next;
         return {
@@ -980,6 +1062,116 @@ describe("refreshExpiredModelCredential", () => {
   const stubOAuth = (refresh: (credential: OAuthCredential) => Promise<OAuthCredential>) => ({
     refresh: vi.fn(refresh),
     toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
+  });
+
+  it("ends a stalled running-run refresh at its backstop and keeps one that answers within pi's 15 s", async () => {
+    vi.useFakeTimers();
+    // Timer-driven AbortSignal.timeout, so fake time reaches it.
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("timed out")), ms);
+      return controller.signal;
+    });
+    try {
+      const expired = oauthCred({ access: "old", expires: 1 });
+      const { prisma, secretStore } = secretRow(
+        serializeModelSecret({ kind: "oauth", credential: expired }),
+      );
+      const runner = new PiRuntimeCredentialStore(
+        CHATGPT_OAUTH_PROVIDER,
+        expired,
+        undefined,
+        undefined,
+        refreshStoredModelCredential(
+          prisma,
+          secretStore,
+          scope,
+          { id: "cred-1", secretId: "secret-1" },
+          CHATGPT_OAUTH_PROVIDER,
+          { oauth: stubOAuth(async () => expired) },
+        ),
+      );
+      // A stalled runtime refresh outlives pi's 15 s, then the backstop ends it with no write.
+      let settled = false;
+      const stalled = runner.modify(CHATGPT_OAUTH_PROVIDER, () => new Promise(() => {}));
+      stalled.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(settled).toBe(false);
+      const ended = expect(stalled).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(5_000);
+      await ended;
+      expect(secretStore.put).not.toHaveBeenCalled();
+
+      // The lock is free again. pi-ai's own 15 s starts after ours, so it can answer as ours reaches 15 s.
+      const refreshed = runner.modify(CHATGPT_OAUTH_PROVIDER, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+        return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
+      });
+      await vi.advanceTimersByTimeAsync(15_001);
+
+      await expect(refreshed).resolves.toMatchObject({ access: "new" });
+      expect(secretStore.put).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not refresh a sign-in whose stored row was removed before the lock", async () => {
+    const plaintext = serializeModelSecret({
+      kind: "oauth",
+      credential: oauthCred({ access: "old", expires: 1 }),
+    });
+    const { prisma, secretStore } = secretRow(plaintext);
+    vi.mocked(prisma.secret.findUnique).mockResolvedValue(null);
+    const oauth = stubOAuth(async () =>
+      oauthCred({ access: "new", expires: Date.now() + 3_600_000 }),
+    );
+
+    await expect(
+      resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        { id: "cred-1", secretId: "secret-1" },
+        plaintext,
+        CHATGPT_OAUTH_PROVIDER,
+        { oauth },
+      ),
+    ).rejects.toThrow("Connect that model provider again.");
+    expect(oauth.refresh).not.toHaveBeenCalled();
+    expect(secretStore.put).not.toHaveBeenCalled();
+  });
+
+  it("decides whether a refresh is due from one clock reading", async () => {
+    const start = 1_000_000;
+    // The token turns due 5 ms after the first reading.
+    const held = oauthCred({ access: "old", expires: start + 5 * 60_000 + 5 });
+    const plaintext = serializeModelSecret({ kind: "oauth", credential: held });
+    const { prisma, secretStore } = secretRow(plaintext);
+    const oauth = stubOAuth(async () => oauthCred({ access: "new", expires: start + 3_600_000 }));
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(start)
+      .mockReturnValue(start + 10);
+    try {
+      const resolved = await resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        { secretId: "secret-1" },
+        plaintext,
+        CHATGPT_OAUTH_PROVIDER,
+        { oauth },
+      );
+      expect(resolved.apiKey).toBe("old");
+      expect(oauth.refresh).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("refreshes and persists an expired OAuth credential", async () => {
@@ -1092,6 +1284,121 @@ describe("refreshExpiredModelCredential", () => {
     expect(oauth.refresh).toHaveBeenCalledTimes(1);
     expect(secretStore.put).toHaveBeenCalledTimes(1);
   });
+
+  it("refreshes a rotating token once when the kick, a run start and a running run race across processes", async () => {
+    // Three API/worker processes: separate module state, one shared secret row and lock.
+    const processes = [];
+    for (let index = 0; index < 3; index += 1) {
+      vi.resetModules();
+      processes.push({
+        refresh: await import("./model-credential-refresh.js"),
+        credentials: await import("./pi-credentials.js"),
+      });
+    }
+    const [a, b, c] = processes as [
+      (typeof processes)[0],
+      (typeof processes)[0],
+      (typeof processes)[0],
+    ];
+    const held = oauthCred({ access: "acc-0", refresh: "rt-0", expires: 1 });
+    let stored = serializeModelSecret({ kind: "oauth", credential: held });
+    const secret = {
+      findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: stored })),
+      findUnique: vi.fn(async () => ({ ciphertext: stored })),
+      update: vi.fn(async ({ data }: { data: { ciphertext: string } }) => {
+        stored = data.ciphertext;
+        return {};
+      }),
+    };
+    let locked = Promise.resolve();
+    const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let release = () => {};
+        const tx = {
+          $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
+            if (!sql.join("").includes("pg_advisory_xact_lock")) return 0;
+            const previous = locked;
+            locked = new Promise<void>((resolve) => (release = resolve));
+            await previous;
+            return 0;
+          }),
+          secret,
+        };
+        try {
+          return await fn(tx);
+        } finally {
+          release();
+        }
+      }),
+      secret,
+    } as unknown as PrismaClient;
+    const secretStore = {
+      load: vi.fn(async (ciphertext: string) => ciphertext),
+      put: vi.fn(async (next: string) => ({ id: "secret-1", ref: next, ciphertext: next })),
+      delete: vi.fn(async () => {}),
+    };
+    // The provider rotates refresh tokens and rejects a spent one.
+    const sent: string[] = [];
+    const oauth = stubOAuth(async (credential) => {
+      sent.push(credential.refresh);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (credential.refresh !== "rt-0") throw new Error("invalid_grant: refresh token reused");
+      return oauthCred({ access: "acc-1", refresh: "rt-1", expires: Date.now() + 3_600_000 });
+    });
+    const credential = { id: "cred-1", secretId: "secret-1" };
+    // A running run's store, refreshing the way the runtime does: only a token that expires soon.
+    const runner = new c.credentials.PiRuntimeCredentialStore(
+      CHATGPT_OAUTH_PROVIDER,
+      held,
+      undefined,
+      undefined,
+      c.refresh.refreshStoredModelCredential(
+        prisma,
+        secretStore,
+        scope,
+        credential,
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+    );
+
+    const [, started, running] = await Promise.all([
+      a.refresh.refreshExpiredModelCredential(
+        prisma,
+        secretStore,
+        scope,
+        "secret-1",
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+      b.refresh.resolveStoredModelAuth(
+        prisma,
+        secretStore,
+        scope,
+        credential,
+        stored,
+        CHATGPT_OAUTH_PROVIDER,
+        {
+          oauth,
+        },
+      ),
+      runner.modify(CHATGPT_OAUTH_PROVIDER, async (current) =>
+        current?.type === "oauth" && current.expires - Date.now() < 300_000
+          ? oauth.refresh(current)
+          : undefined,
+      ),
+    ]);
+
+    expect(sent).toEqual(["rt-0"]);
+    expect(started.apiKey).toBe("acc-1");
+    expect(running).toMatchObject({ access: "acc-1", refresh: "rt-1" });
+    expect(runner.accessToken).toBe("acc-1");
+    expect(parseModelSecret(stored)).toMatchObject({ credential: { refresh: "rt-1" } });
+  });
 });
 
 describe("kickModelCredentialRefresh", () => {
@@ -1102,14 +1409,10 @@ describe("kickModelCredentialRefresh", () => {
       kind: "oauth",
       credential: oauthCred({ access: "old", expires: 1 }),
     });
-    const prisma = {
-      secret: {
-        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
-        update: vi.fn(async () => ({})),
-      },
-    } as unknown as PrismaClient;
+    const prisma = lockingSecretRow();
     const secretStore = {
       load: vi.fn(async () => current),
+      delete: vi.fn(async () => {}),
       put: vi.fn(async (next: string) => {
         current = next;
         return { id: "secret-1", ref: "next", ciphertext: "next" };
@@ -1166,11 +1469,16 @@ describe("kickModelCredentialRefresh", () => {
 });
 
 describe("PiOAuthLogins", () => {
-  it("rejects providers without a subscription sign-in flow", async () => {
+  it("keeps ChatGPT OAuth on Codex rather than plain OpenAI", () => {
+    expect(loadProviderOAuth("openai")).toBeUndefined();
+    expect(loadProviderOAuth(CHATGPT_OAUTH_PROVIDER)?.isSubscription).toBe(true);
+  });
+
+  it.each(["openrouter", "openai"])("rejects subscription sign-in for %s", async (provider) => {
     const logins = new PiOAuthLogins();
-    await expect(
-      logins.begin({ userId: "u", spaceId: "w", provider: "openrouter" }),
-    ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
+    await expect(logins.begin({ userId: "u", spaceId: "w", provider })).rejects.toThrow(
+      /ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/,
+    );
   });
 
   it("runs the anthropic auth-url flow via submitted code", async () => {
@@ -1196,24 +1504,42 @@ describe("PiOAuthLogins", () => {
     expect(started.verificationUri).toContain("claude.ai/oauth/authorize");
     expect("userCode" in started).toBe(false);
 
-    expect(() =>
+    await expect(
       logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "pasted-code#state"),
-    ).toThrow(/not found/);
-    expect(() => logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "   ")).toThrow(
-      /Paste an authorization code/,
-    );
+    ).rejects.toThrow(/not found/);
+    await expect(
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "   "),
+    ).rejects.toThrow(/Paste an authorization code/);
 
-    expect(
+    await expect(
       logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
-    ).toEqual({ ok: true });
-    expect(
+    ).resolves.toEqual({ ok: true });
+    await expect(
       logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
-    ).toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true });
 
     await flushMicrotasks();
     const done = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(done.status).toBe("connected");
     if (done.status === "connected") expect(done.credential.access).toBe("claude-access");
+  });
+
+  it("passes the client's code-page choice to the provider login", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction, options) => {
+      seen.push(options?.codePage);
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      await interaction.prompt({ type: "manual_code", message: "paste" });
+      return oauthCred();
+    });
+    const desktop = await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic" });
+    await logins.cancel(desktop.loginId, { userId: "u", spaceId: "w" });
+    await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic", codePage: true });
+    expect(seen).toEqual([undefined, true]);
   });
 
   it("rejects submit for a login that is not waiting for a code", async () => {
@@ -1236,9 +1562,9 @@ describe("PiOAuthLogins", () => {
       spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
-    expect(() => logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "x")).toThrow(
-      /not waiting for a pasted code/,
-    );
+    await expect(
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "x"),
+    ).rejects.toThrow(/not waiting for a pasted code/);
     await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
   });
 
@@ -1622,6 +1948,57 @@ describe("PiOAuthLogins", () => {
     ).toBe("connected");
   });
 
+  it("keeps a sign-in renewing one connection while another account signs in", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const renewing = await control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    const adding = await control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: null,
+    });
+    control.resolve(0);
+    control.resolve(1);
+    await flushMicrotasks();
+    expect(control.logins.complete(renewing.loginId, actor)).toMatchObject({
+      status: "connected",
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(adding.loginId, actor)).toMatchObject({
+      status: "connected",
+      credentialId: null,
+    });
+
+    // Disconnecting the renewed connection leaves the new account's sign-in running.
+    await control.logins.cancelProvider({
+      userId: actor.userId,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(renewing.loginId, actor).status).toBe("error");
+    expect(control.logins.complete(adding.loginId, actor).status).toBe("connected");
+    control.logins.abortAll();
+  });
+
+  it("retires a sign-in that named no connection when one connection is disconnected", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const legacy = await control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    control.resolve(0);
+    await flushMicrotasks();
+    await control.logins.cancelProvider({
+      userId: actor.userId,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(legacy.loginId, actor).status).toBe("error");
+    control.logins.abortAll();
+  });
+
   it("waits for successful finalization before starting a replacement", async () => {
     const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
@@ -1983,5 +2360,251 @@ describe("PiOAuthLogins", () => {
       control.logins.abortAll();
       expect(vi.getTimerCount()).toBe(armed - 1);
     });
+  });
+});
+
+it("redacts long custom header secrets without corrupting short routing values", () => {
+  const secrets = secretValuesToRedact({
+    kind: "openai_compatible",
+    baseUrl: "https://example.invalid/v1",
+    headers: { "x-region": "us", "x-session": "long-session-secret" },
+  });
+  expect(redactSecrets("Tell us: long-session-secret", secrets)).toBe("Tell us: [redacted]");
+  expect(containsSecret("Tell us", secrets)).toBe(false);
+  expect(secrets).toEqual(["long-session-secret"]);
+});
+
+describe("PiOAuthLogins hand-off between API processes", () => {
+  type Row = {
+    id: string;
+    spaceId: string;
+    userId: string;
+    provider: string;
+    scope: string;
+    ciphertext: string;
+    createdAt: Date;
+  };
+  type Where = Partial<Omit<Row, "createdAt">> & { createdAt?: { gte?: Date; lt?: Date } };
+  type HandoffStore = ConstructorParameters<typeof PiOAuthLogins>[1];
+
+  function handoffStore() {
+    const rows = new Map<string, Row>();
+    let clock = Date.now();
+    const matches = (row: Row, where: Where) =>
+      (where.id === undefined || row.id === where.id) &&
+      (where.scope === undefined || row.scope === where.scope) &&
+      (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+      (where.userId === undefined || row.userId === where.userId) &&
+      (where.provider === undefined || row.provider === where.provider) &&
+      (where.createdAt?.gte === undefined || row.createdAt >= where.createdAt.gte) &&
+      (where.createdAt?.lt === undefined || row.createdAt < where.createdAt.lt);
+    const prisma = {
+      modelOAuthSession: {
+        create: vi.fn(async ({ data }: { data: Omit<Row, "createdAt"> }) => {
+          clock += 1;
+          const row = { ...data, createdAt: new Date(clock) };
+          rows.set(row.id, row);
+          return row;
+        }),
+        findFirst: vi.fn(
+          async ({ where }: { where: Where }) =>
+            [...rows.values()].find((row) => matches(row, where)) ?? null,
+        ),
+        deleteMany: vi.fn(async ({ where }: { where: Where }) => {
+          let count = 0;
+          for (const row of [...rows.values()]) {
+            if (matches(row, where)) {
+              rows.delete(row.id);
+              count += 1;
+            }
+          }
+          return { count };
+        }),
+      },
+    };
+    // Reversible stand-in for the secret store's encryption.
+    const secrets = {
+      put: vi.fn(async (plaintext: string) => ({
+        id: "s",
+        ref: "s",
+        ciphertext: `sealed:${Buffer.from(plaintext).toString("base64")}`,
+      })),
+      load: vi.fn(async (ciphertext: string) =>
+        Buffer.from(ciphertext.slice("sealed:".length), "base64").toString(),
+      ),
+    };
+    return { rows, store: { prisma, secrets } as unknown as HandoffStore, secrets };
+  }
+
+  /** One API process: its own memory, the shared store. */
+  function apiProcess(store: HandoffStore) {
+    const seen: Array<{ verifier?: string; code: string }> = [];
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction, options) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      const code = await interaction.prompt({ type: "manual_code", message: "paste" });
+      seen.push({ verifier: options?.verifier, code });
+      return oauthCred({ access: `exchanged-${code}` });
+    }, store);
+    return { logins, seen };
+  }
+
+  const member = { userId: "u", spaceId: "w" };
+
+  it("finishes a sign-in on the API process that receives the code", async () => {
+    const { rows, store, secrets } = handoffStore();
+    const before = apiProcess(store);
+    const started = await before.logins.begin({
+      ...member,
+      provider: "anthropic",
+      modelId: "claude-model",
+      label: "Claude",
+      codePage: true,
+    });
+    const row = rows.get(started.loginId);
+    expect(row).toMatchObject({ ...member, provider: "anthropic" });
+    expect(secrets.put).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
+      recordId: started.loginId,
+      ephemeral: true,
+    });
+    // A deploy replaces the process that started the sign-in.
+    before.logins.abortAll();
+    expect(rows.has(started.loginId)).toBe(true);
+
+    const after = apiProcess(store);
+    await expect(after.logins.submit(started.loginId, member, "the-code")).resolves.toEqual({
+      ok: true,
+    });
+    await flushMicrotasks();
+    const stored = JSON.parse(await secrets.load(row?.ciphertext ?? "")) as { verifier: string };
+    expect(stored.verifier).toEqual(expect.any(String));
+    expect(after.seen).toEqual([{ verifier: stored.verifier, code: "the-code" }]);
+    const done = await after.logins.complete(started.loginId, member);
+    expect(done).toMatchObject({
+      status: "connected",
+      provider: "anthropic",
+      modelId: "claude-model",
+      label: "Claude",
+      credential: { access: "exchanged-the-code" },
+    });
+    expect(rows.size).toBe(0);
+    await expect(
+      apiProcess(store).logins.submit(started.loginId, member, "the-code"),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it("only hands a sign-in to the member who started it", async () => {
+    const { rows, store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const other = apiProcess(store);
+    await expect(
+      other.logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "the-code"),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      other.logins.submit(started.loginId, { userId: "u", spaceId: "other" }, "the-code"),
+    ).rejects.toThrow(/not found/);
+    expect(rows.has(started.loginId)).toBe(true);
+    expect(other.seen).toEqual([]);
+  });
+
+  it("queries the hand-off by owner columns when the caller passes its whole actor", async () => {
+    const { store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const actor = { ...member, email: "member@example.test", isDeploymentOwner: false };
+    await expect(
+      apiProcess(store).logins.submit(started.loginId, actor, "the-code"),
+    ).resolves.toEqual({ ok: true });
+    expect(store?.prisma.modelOAuthSession.findFirst).toHaveBeenCalledWith({
+      where: { id: started.loginId, ...member, createdAt: { gte: expect.any(Date) } },
+      select: { ciphertext: true },
+    });
+  });
+
+  it("does not resume an expired sign-in", async () => {
+    const { rows, store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const row = rows.get(started.loginId);
+    if (row) row.createdAt = new Date(Date.now() - 16 * 60_000);
+    const after = apiProcess(store);
+    await expect(after.logins.submit(started.loginId, member, "the-code")).rejects.toThrow(
+      /not found/,
+    );
+    expect(after.seen).toEqual([]);
+  });
+
+  it("drops the hand-off once the code is in, or the sign-in is cancelled or disconnected", async () => {
+    const { rows, store } = handoffStore();
+    const local = apiProcess(store);
+    const submitted = await local.logins.begin({ ...member, provider: "anthropic" });
+    await local.logins.submit(submitted.loginId, member, "the-code");
+    expect(rows.has(submitted.loginId)).toBe(false);
+
+    const cancelled = await local.logins.begin({ ...member, provider: "anthropic" });
+    await local.logins.cancel(cancelled.loginId, member);
+    await flushMicrotasks();
+    expect(rows.has(cancelled.loginId)).toBe(false);
+
+    const elsewhere = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    await local.logins.cancelProvider({ userId: "u", provider: "anthropic" });
+    expect(rows.has(elsewhere.loginId)).toBe(false);
+  });
+
+  it("cancels a sign-in another process started", async () => {
+    const { rows, store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const after = apiProcess(store);
+    await after.logins.cancel(started.loginId, member);
+    expect(rows.has(started.loginId)).toBe(false);
+    await expect(after.logins.submit(started.loginId, member, "the-code")).rejects.toThrow(
+      /not found/,
+    );
+  });
+
+  it("does not let an older sign-in's code replace a newer one", async () => {
+    const { rows, store } = handoffStore();
+    const older = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const after = apiProcess(store);
+    const newer = await after.logins.begin({ ...member, provider: "anthropic" });
+    expect(rows.has(older.loginId)).toBe(false);
+    await expect(after.logins.submit(older.loginId, member, "old-code")).rejects.toThrow(
+      /not found/,
+    );
+    await expect(after.logins.submit(newer.loginId, member, "new-code")).resolves.toEqual({
+      ok: true,
+    });
+  });
+
+  it("keeps a sign-in for another connection when a new one starts", async () => {
+    const { rows, store } = handoffStore();
+    const renewing = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      credentialId: "connection-a",
+    });
+    const adding = await apiProcess(store).logins.begin({
+      ...member,
+      provider: "anthropic",
+      credentialId: null,
+    });
+    expect(rows.has(renewing.loginId)).toBe(true);
+    expect(rows.has(adding.loginId)).toBe(true);
+  });
+
+  it("keeps device-code sign-ins in memory", async () => {
+    const { rows, store } = handoffStore();
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "CODE",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>(() => undefined);
+    }, store);
+    await logins.begin({ ...member, provider: CHATGPT_OAUTH_PROVIDER });
+    expect(rows.size).toBe(0);
+    logins.abortAll();
   });
 });

@@ -1,9 +1,14 @@
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, IsolationError, withTransactionRetry } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  availableInSpace,
+  IsolationError,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
 
-/** Dependencies for resolving pending MCP approval cards in a bot's threads. */
 export type McpApprovalDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -17,9 +22,11 @@ export type McpApprovalResolution = {
   threadId?: string;
 };
 
-/** Whether this decision may create the bot's assignment. */
 export type McpApprovalDecision = {
+  /** Whether this decision may create the bot's assignment. */
   assign: boolean;
+  /** Whether it closed an open card, rather than repeating a decision. */
+  resolved: boolean;
 };
 
 export type ThreadSeq = {
@@ -42,19 +49,25 @@ async function threadsForDecision(
   actor: Actor,
   input: McpApprovalResolution,
 ): Promise<ApprovalThread[]> {
+  // Threads are shared by the space, but a card is about one member's own server:
+  // only that member resolves it.
+  const server = await deps.prisma.mcpServer.findFirst({
+    where: { id: input.serverId, ...availableInSpace(actor) },
+    select: { id: true },
+  });
+  if (!server) return [];
   if (!input.threadId) return threadsForBot(deps.prisma, actor, input.botId);
   const member = await deps.prisma.thread.findMany({
     where: {
       id: input.threadId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [{ botId: input.botId }, { group: { members: { some: { botId: input.botId } } } }],
     },
     select: { id: true, botId: true },
   });
   if (member.length > 0) return member;
   // A bot removed from a group leaves its card behind. The bot still has to
-  // belong to this actor; the fallback never opens another bot's direct chat.
+  // belong to this space; the fallback never opens another bot's direct chat.
   try {
     await requireBotThread(deps, actor, input.botId);
   } catch (error) {
@@ -65,7 +78,6 @@ async function threadsForDecision(
     where: {
       id: input.threadId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       groupId: { not: null },
     },
     select: { id: true, botId: true },
@@ -82,7 +94,6 @@ async function threadsForBot(
   return db.thread.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [{ botId }, { groupId: { not: null }, messages: { some: { botId } } }],
     },
     select: { id: true, botId: true },
@@ -161,15 +172,14 @@ export async function resolveMcpApprovalCards<T>(
             ? (block: ApprovalBlock) => block.status !== "connected"
             : isOpen;
         const painted = await rewriteCards(tx, actor, threads, input, selectable);
-        // Only a card decision can lose to a dismissal that already committed.
-        // Settings and onboarding approve without a threadId and must still assign.
         const dismissalWon =
           input.threadId !== undefined &&
           painted.flipped === 0 &&
           !painted.connected &&
           painted.dismissed;
         const assign = !dismissalWon;
-        const value = effect ? await effect(tx, { assign }) : undefined;
+        const resolved = painted.flipped > 0;
+        const value = effect ? await effect(tx, { assign, resolved }) : undefined;
         return { seqs: painted.seqs, value };
       },
       { isolationLevel: "Serializable" },
@@ -210,7 +220,7 @@ async function closeServerCards(
 ): Promise<ThreadSeq[]> {
   const messages = await client.message.findMany({
     where: {
-      thread: { spaceId: actor.spaceId, userId: actor.userId },
+      thread: { spaceId: actor.spaceId },
       blocks: { array_contains: [{ kind: "mcp_approval", serverId }] },
     },
     select: {
@@ -263,4 +273,73 @@ export async function dismissMcpServerApprovals(
   );
   for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
   return seqs;
+}
+
+function mcpConnectedPrompt(name: string): string {
+  return `The user just connected the MCP server ${JSON.stringify(name)} from its approval card, so its tools are available now. Carry on with what they asked for. If nothing is left to do, confirm in one short sentence.`;
+}
+
+/** Approving a card in a chat is the user's turn: queue a hidden-prompt run (like
+    a call's hang-up) so the bot carries on with the server's tools instead of
+    waiting for another message. Skipped while the bot is busy in that chat, no
+    longer in it, or archived along with the chat. Returns the run to enqueue. */
+export async function queueMcpConnectedRun(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  input: { botId: string; serverId: string; threadId: string },
+): Promise<string | null> {
+  const thread = await tx.thread.findFirst({
+    where: {
+      id: input.threadId,
+      spaceId: actor.spaceId,
+      OR: [
+        { botId: input.botId },
+        { group: { archivedAt: null, members: { some: { botId: input.botId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!thread) return null;
+  const [bot, busy, server] = await Promise.all([
+    tx.bot.findFirst({
+      where: { id: input.botId, spaceId: actor.spaceId, archivedAt: null },
+      select: { id: true },
+    }),
+    tx.run.findFirst({
+      where: {
+        threadId: thread.id,
+        botId: input.botId,
+        status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+      },
+      select: { id: true },
+    }),
+    tx.mcpServer.findFirst({
+      where: { id: input.serverId, ...availableInSpace(actor) },
+      select: { name: true },
+    }),
+  ]);
+  if (!bot || busy || !server) return null;
+  const task = await tx.task.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId: input.botId,
+      threadId: thread.id,
+      userId: actor.userId,
+      prompt: mcpConnectedPrompt(server.name),
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId: input.botId,
+      threadId: thread.id,
+      taskId: task.id,
+      userId: actor.userId,
+      status: "queued",
+      trigger: "user",
+    },
+    select: { id: true },
+  });
+  return run.id;
 }

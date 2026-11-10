@@ -1,20 +1,35 @@
 // @vitest-environment jsdom
 
-import { AiConsentBlocked, resolveComposerSendPlan } from "@rakazo/core";
+import * as core from "@rakazo/core";
+import {
+  AiConsentBlocked,
+  MODEL_REQUIRED_SEND_ERROR,
+  reduceThreadSnapshot,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
+import { router } from "expo-router";
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { ComposerSnapshot, SendPayload } from "./thread-feedback";
+import type { rpc } from "./api";
+import { showIOSActionSheet } from "./ios-action-sheet";
+import type { MobileSnapshot } from "./mobile-types";
+import { filterPickedAttachments } from "./pick-attachments-filter";
+import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
   clearFailedSends,
   configureUnsentSends,
   confirmEchoes,
+  deliverSend,
+  hasUnsentSends,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
+  unsentSendsReadable,
   useThreadFeedback,
 } from "./thread-feedback";
 
@@ -50,18 +65,19 @@ vi.mock("react-native", () => ({
       children,
     ),
   Platform: { OS: "ios" },
-  ActionSheetIOS: { showActionSheetWithOptions: vi.fn() },
   Alert: { alert: vi.fn() },
 }));
+vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: vi.fn() }));
+vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
+vi.mock("expo-secure-store", () => ({}));
+vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text }),
-}));
 
 let feedback: ReturnType<typeof useThreadFeedback>;
 let nonces = 0;
+let needsModel: boolean | undefined;
 const retry = vi.fn();
 function Probe({ threadKey }: { threadKey: string }) {
   feedback = useThreadFeedback(threadKey, () => `nonce-${++nonces}`);
@@ -71,6 +87,7 @@ function Probe({ threadKey }: { threadKey: string }) {
       attempt={attempt}
       onRetry={retry}
       onDelete={() => feedback.discard(attempt)}
+      needsModel={needsModel}
     />
   ));
 }
@@ -133,10 +150,10 @@ describe("scoped mobile outbox", () => {
   };
   const request = vi.fn();
   const disk = {
-    admit: vi.fn(() => true),
-    hydrate: vi.fn(async () => undefined),
+    admit: vi.fn((_attempt: SendAttempt) => true),
+    hydrate: vi.fn(async (_attempt: SendAttempt) => undefined),
     forget: vi.fn(),
-    load: vi.fn(() => []),
+    load: vi.fn((): SendAttempt[] => []),
     save: vi.fn(),
     clear: vi.fn(),
   };
@@ -154,8 +171,9 @@ describe("scoped mobile outbox", () => {
       request,
       scope: () => scope,
       serverReachable: () => reachable,
+      passwordChanging: () => false,
       disk,
-      errorText: String,
+      errorText: (error) => (error instanceof Error ? error.message : String(error)),
       notDelivered,
     });
     restoreUnsentSends();
@@ -195,6 +213,499 @@ describe("scoped mobile outbox", () => {
     act(() => confirmEchoes("bot-1", [42]));
     expect(container.textContent).toBe("");
   });
+  it.each(["Outbox full", "OUTBOX_STORAGE_UNAVAILABLE"])(
+    "sends from memory when saving fails with %s",
+    async (message) => {
+      disk.save.mockImplementation(() => {
+        throw new Error(message);
+      });
+      const attempt = feedback.sendAttempt(payload());
+      expect(disk.forget).not.toHaveBeenCalled();
+      await act(async () => {
+        expect(await feedback.send(attempt)).toBe(true);
+      });
+      expect(request).toHaveBeenCalledWith("threads/send", expect.anything(), undefined, "space-a");
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+      disk.save.mockImplementation(() => undefined);
+      act(() => confirmEchoes("bot-1", [42]));
+      expect(disk.forget).toHaveBeenCalledWith(attempt);
+    },
+  );
+  it("lists a send in the next index when a write error only hit the save", async () => {
+    reachable = false;
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("queued");
+    expect(request).not.toHaveBeenCalled();
+    // The files were written; the next save lists the message without admitting it again.
+    expect(disk.admit).toHaveBeenCalledTimes(1);
+    expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+  });
+  it("admits a send again once the disk answers an admission failure", async () => {
+    reachable = false;
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("queued");
+    expect(request).not.toHaveBeenCalled();
+    expect(disk.admit).toHaveBeenCalledTimes(2);
+    expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+  });
+  /**
+   * Folders on a fake disk: admission writes one, points image previews at its files and clears
+   * the bytes, as the disk does. An admission for which `fails` returns true throws a storage
+   * error instead.
+   */
+  function diskFolders(fails?: (attempt: SendAttempt) => boolean) {
+    const folders = new Map<string, string[]>();
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      if (fails?.(attempt)) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      if (folders.has(attempt.clientNonce)) return false;
+      folders.set(
+        attempt.clientNonce,
+        attempt.payload.attachments.map((attachment) => attachment.contentBase64),
+      );
+      attempt.payload.attachments.forEach((attachment, index) => {
+        attachment.previewUri = attachment.mimeType.startsWith("image/")
+          ? `outbox/${attempt.clientNonce}/${index}`
+          : undefined;
+        attachment.contentBase64 = "";
+      });
+      return true;
+    });
+    disk.forget.mockImplementation((attempt: SendAttempt) => folders.delete(attempt.clientNonce));
+    disk.hydrate.mockImplementation(async (attempt: SendAttempt) => {
+      const files = folders.get(attempt.clientNonce);
+      if (!files) throw new Error("ATTACHMENT_UNAVAILABLE");
+      attempt.payload.attachments.forEach((attachment, index) => {
+        attachment.contentBase64 ||= files[index] ?? "";
+      });
+    });
+    return folders;
+  }
+  function resetDisk() {
+    disk.admit.mockImplementation(() => true);
+    disk.forget.mockImplementation(() => undefined);
+    disk.hydrate.mockImplementation(async () => undefined);
+  }
+  it.each(["admission", "index save"])(
+    "drops a queued send's bytes from memory once its %s recovers, and sends it from disk",
+    async (failing) => {
+      reachable = false;
+      const written = diskFolders();
+      const fail = () => {
+        throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      };
+      if (failing === "admission") disk.admit.mockImplementationOnce(fail);
+      else disk.save.mockImplementationOnce(fail);
+      const attempt = feedback.sendAttempt(payload());
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.state).toBe("queued");
+      expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+      // The index lists the message and its files hold the bytes; memory no longer does.
+      expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("");
+      reachable = true;
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(disk.hydrate).toHaveBeenCalledWith(attempt);
+      expect(request).toHaveBeenCalledWith(
+        "artifacts/create",
+        expect.objectContaining({ contentBase64: "fake" }),
+        expect.anything(),
+        "space-a",
+      );
+      expect(attempt.acceptedSeq).toBe(42);
+      resetDisk();
+    },
+  );
+  /** An image whose picker file may disappear while the app stays open. */
+  function pickedImage(text: string): SendPayload {
+    return {
+      ...payload(text),
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "photo.png",
+          mimeType: "image/png",
+          contentBase64: "fake",
+          previewUri: "picker/photo.png",
+        },
+      ],
+    };
+  }
+  it("shows a recovered image from its outbox file once its admission recovers", async () => {
+    reachable = false;
+    diskFolders();
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(pickedImage("Hello"));
+    expect(attempt.payload.attachments[0]?.previewUri).toBe("picker/photo.png");
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.payload.attachments[0]?.previewUri).toBe(`outbox/${attempt.clientNonce}/0`);
+    resetDisk();
+  });
+  it("shows an image from its outbox file when only the index save failed", () => {
+    diskFolders();
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(pickedImage("Hello"));
+    expect(attempt.payload.attachments[0]).toMatchObject({
+      contentBase64: "fake",
+      previewUri: `outbox/${attempt.clientNonce}/0`,
+    });
+    resetDisk();
+  });
+  it("keeps a send's bytes when a recovery admission's index save fails", async () => {
+    diskFolders();
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    // The recovery admission wrote the files, but the index save failed again: the message
+    // still uploads from memory, and the next save lists it instead of deleting its files.
+    expect(request).toHaveBeenCalledWith(
+      "artifacts/create",
+      expect.objectContaining({ contentBase64: "fake" }),
+      expect.anything(),
+      "space-a",
+    );
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(disk.forget).not.toHaveBeenCalledWith(attempt);
+    expect(disk.save).toHaveBeenLastCalledWith([]);
+    resetDisk();
+  });
+  it("keeps a delivering send's bytes through a recovery admission", async () => {
+    const admissions = new Map<string, number>();
+    // The sending attempt's own admission and the saves while it queues and turns pending
+    // all fail; the disk answers afterwards and clears the in-memory bytes, as it does.
+    diskFolders((attempt) => {
+      const seen = (admissions.get(attempt.clientNonce) ?? 0) + 1;
+      admissions.set(attempt.clientNonce, seen);
+      return seen <= 3;
+    });
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    let releaseUpload!: (value: { id: string }) => void;
+    const held = new Promise<{ id: string }>((resolve) => {
+      releaseUpload = resolve;
+    });
+    let heldOnce = false;
+    request.mockImplementation(async (proc: string) => {
+      if (proc === "artifacts/create") {
+        if (!heldOnce) {
+          heldOnce = true;
+          return held;
+        }
+        return { id: "artifact-b" };
+      }
+      return { seq: 42 };
+    });
+    const both = {
+      ...payload(),
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "photo.png",
+          mimeType: "image/png" as const,
+          contentBase64: "first-bytes",
+        },
+        {
+          id: "attachment-2",
+          name: "map.png",
+          mimeType: "image/png" as const,
+          contentBase64: "second-bytes",
+        },
+      ],
+    };
+    const attempt = feedback.sendAttempt(both);
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    await vi.waitFor(() => expect(request).toHaveBeenCalled());
+    // A second send saves the index mid-upload; the recovery admission must not touch the
+    // attachments the running delivery is uploading.
+    feedback.sendAttempt(payload("Second"));
+    await act(async () => {
+      releaseUpload({ id: "artifact-a" });
+      await sending;
+    });
+    const uploads = request.mock.calls
+      .filter(([proc]) => proc === "artifacts/create")
+      .map(([, body]) => (body as { contentBase64: string }).contentBase64);
+    expect(uploads).toEqual(["first-bytes", "second-bytes"]);
+    resetDisk();
+  });
+  it("persists a pending send once the disk answers during its delivery", async () => {
+    let admissions = 0;
+    // The sending attempt's own admission and the saves while it queues and turns pending
+    // fail; the disk answers afterwards, clearing the in-memory bytes, as it does.
+    const written = diskFolders(() => ++admissions <= 3);
+    let releaseUpload!: (value: { id: string }) => void;
+    const held = new Promise<{ id: string }>((resolve) => {
+      releaseUpload = resolve;
+    });
+    let heldOnce = false;
+    request.mockImplementation(async (proc: string) => {
+      if (proc === "artifacts/create") {
+        if (!heldOnce) {
+          heldOnce = true;
+          return held;
+        }
+        return { id: "artifact-b" };
+      }
+      return { seq: 42 };
+    });
+    const attempt = feedback.sendAttempt(payload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    await vi.waitFor(() => expect(request).toHaveBeenCalled());
+    // The disk answers while the upload runs: the next save writes the send's files and
+    // lists it in the index, so a process kill during the upload loses nothing.
+    const second = feedback.sendAttempt(payload("Second"));
+    expect(written.get(attempt.clientNonce)).toEqual(["fake"]);
+    expect(disk.save).toHaveBeenCalledWith([attempt, second]);
+    await act(async () => {
+      releaseUpload({ id: "artifact-a" });
+      await sending;
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+    resetDisk();
+  });
+  it("retries attachments from memory while admission keeps failing", async () => {
+    disk.admit.mockImplementation(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    request.mockRejectedValueOnce(new Error("Send interrupted"));
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
+    expect(disk.hydrate).not.toHaveBeenCalled();
+    expect(disk.save).toHaveBeenLastCalledWith([]);
+    disk.admit.mockImplementation(() => true);
+  });
+  it("deletes a delivered message's files only after the index without it is saved", async () => {
+    const failed = feedback.sendAttempt(payload("First"));
+    await act(async () => {
+      await feedback.send(failed);
+    });
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    act(() => confirmEchoes("bot-1", [42]));
+    expect(disk.forget).not.toHaveBeenCalled();
+    const saved = feedback.sendAttempt(payload("Second"));
+    await act(async () => {
+      await feedback.send(saved);
+    });
+    act(() => confirmEchoes("bot-1", [42]));
+    expect(disk.forget).toHaveBeenCalledWith(saved);
+    expect(disk.save.mock.lastCall).toEqual([[]]);
+    expect(disk.save.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      disk.forget.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+  it("deletes a discarded message's files once a later save drops it", () => {
+    const discarded = feedback.sendAttempt(payload("First"));
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    act(() => feedback.discard(discarded));
+    expect(disk.forget).not.toHaveBeenCalled();
+    // The leftover files fill the disk budget until they are deleted.
+    disk.admit.mockImplementationOnce(() => disk.forget.mock.calls.length > 0);
+    const saved = feedback.sendAttempt(payload("Second"));
+    expect(disk.forget).toHaveBeenCalledWith(discarded);
+    expect(disk.save).toHaveBeenLastCalledWith([saved]);
+  });
+  it("keeps a discarded message's files when it is sent again before they are deleted", async () => {
+    const discarded = feedback.sendAttempt(payload());
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    act(() => feedback.discard(discarded));
+    await act(async () => {
+      await feedback.send(discarded);
+    });
+    expect(disk.forget).not.toHaveBeenCalled();
+  });
+  it("counts a message the server accepted as sent while its echo is pending", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.acceptedSeq).toBeDefined();
+    expect(hasUnsentSends()).toBe(false);
+  });
+  it("saves other sends and deletes removed files while one recovery admission fails", async () => {
+    reachable = false;
+    let stuck: string | undefined;
+    disk.admit.mockImplementation((attempt: SendAttempt) => {
+      stuck ??= attempt.clientNonce;
+      if (attempt.clientNonce === stuck) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+      return true;
+    });
+    const first = feedback.sendAttempt(payload("First"));
+    await act(async () => {
+      await feedback.send(first);
+    });
+    const discarded = feedback.sendAttempt(payload("Old"));
+    act(() => feedback.discard(discarded));
+    expect(disk.forget).toHaveBeenCalledWith(discarded);
+    const next = feedback.sendAttempt(payload("Second"));
+    expect(disk.save).toHaveBeenLastCalledWith([next]);
+    expect(first.payload.attachments[0]?.contentBase64).toBe("fake");
+    resetDisk();
+  });
+  it("deletes a folder a failed admission left behind before admitting the send again", async () => {
+    reachable = false;
+    const folders = diskFolders();
+    const forget = disk.forget.getMockImplementation()!;
+    // The write fails partway, and deleting the folder fails until the disk recovers.
+    disk.admit.mockImplementationOnce((attempt: SendAttempt) => {
+      folders.set(attempt.clientNonce, []);
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    disk.forget.mockImplementation(() => undefined);
+    const first = feedback.sendAttempt(payload("First"));
+    await act(async () => {
+      await feedback.send(first);
+    });
+    disk.forget.mockImplementation(forget);
+    const second = feedback.sendAttempt(payload("Second"));
+    expect(disk.save).toHaveBeenLastCalledWith([first, second]);
+    expect(folders.get(first.clientNonce)).toEqual(["fake"]);
+    resetDisk();
+  });
+  it("keeps another send's files when a resent message with its nonce cannot be admitted", async () => {
+    reachable = false;
+    const folders = diskFolders();
+    const admit = disk.admit.getMockImplementation()!;
+    disk.admit.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const resent = feedback.sendAttempt(payload("First"));
+    act(() => feedback.discard(resent));
+    disk.admit.mockImplementation(admit);
+    nonces -= 1;
+    const owner = feedback.sendAttempt({
+      ...payload("Second"),
+      attachments: [
+        { id: "attachment-1", name: "photo.png", mimeType: "image/png", contentBase64: "owned" },
+      ],
+    });
+    expect(owner.clientNonce).toBe(resent.clientNonce);
+    await act(async () => {
+      await feedback.send(owner);
+      await feedback.send(resent);
+    });
+    expect(folders.get(owner.clientNonce)).toEqual(["owned"]);
+    reachable = true;
+    await act(async () => {
+      await sendWaitingMessages();
+    });
+    const uploads = request.mock.calls
+      .filter(([proc]) => proc === "artifacts/create")
+      .map(([, body]) => (body as { contentBase64: string }).contentBase64);
+    expect(uploads[0]).toBe("owned");
+    resetDisk();
+  });
+  it("writes a resent message's files again after a removal deleted them", async () => {
+    const folders = diskFolders();
+    disk.save.mockImplementationOnce(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    const attempt = feedback.sendAttempt(payload());
+    act(() => feedback.discard(attempt));
+    expect(folders.has(attempt.clientNonce)).toBe(false);
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
+    expect(request).toHaveBeenCalledWith(
+      "artifacts/create",
+      expect.objectContaining({ contentBase64: "fake" }),
+      expect.anything(),
+      "space-a",
+    );
+    resetDisk();
+  });
+  it.each(["Read failed", "OUTBOX_STORAGE_UNAVAILABLE"])(
+    "finishes a failed restore (%s) without overwriting recoverable messages",
+    async (message) => {
+      act(() => clearFailedSends());
+      vi.clearAllMocks();
+      disk.load.mockImplementationOnce(() => {
+        throw new Error(message);
+      });
+      act(() => restoreUnsentSends());
+      expect(unsentSendsReadable()).toBe(false);
+      const attempt = feedback.sendAttempt(payload());
+      await act(async () => {
+        expect(await feedback.send(attempt)).toBe(true);
+      });
+      expect(disk.save).not.toHaveBeenCalled();
+      expect(disk.clear).not.toHaveBeenCalled();
+      act(() => restoreUnsentSends());
+      expect(disk.load).toHaveBeenCalledOnce();
+    },
+  );
+  it("sends in a new session without loading discarded messages when clearing fails", async () => {
+    const old = feedback.sendAttempt(payload("Old"));
+    disk.load.mockReturnValueOnce([old]);
+    vi.clearAllMocks();
+    disk.clear.mockImplementation(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    act(() => clearFailedSends());
+    act(() => restoreUnsentSends());
+    const attempt = feedback.sendAttempt(payload("New"));
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
+    expect(disk.load).not.toHaveBeenCalled();
+    expect(disk.admit).not.toHaveBeenCalled();
+    expect(disk.save).not.toHaveBeenCalled();
+    expect(
+      request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
+    ).toEqual(["New"]);
+    disk.load.mockReset().mockReturnValue([]);
+    disk.clear.mockImplementation(() => undefined);
+    const saved = feedback.sendAttempt(payload());
+    expect(disk.save).toHaveBeenLastCalledWith([saved]);
+  });
   it("keeps sends ordered, persisted and scoped while offline, and retries on reconnect", async () => {
     reachable = false;
     const first = feedback.sendAttempt(payload("First"));
@@ -204,7 +715,7 @@ describe("scoped mobile outbox", () => {
       await feedback.send(second);
     });
     expect(request).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     expect(disk.save).toHaveBeenLastCalledWith([first, second]);
     reachable = true;
     await act(async () => {
@@ -213,6 +724,241 @@ describe("scoped mobile outbox", () => {
     expect(
       request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
     ).toEqual(["First", "Second"]);
+  });
+  const fileNote = "The bot can use the file but won't see the picture.";
+  it("uploads distinct files after removal and reuses their artifacts on retry", async () => {
+    const a = { name: "first.txt", mimeType: "text/plain", size: 4, contentBase64: "YWFhYQ==" };
+    const b = { name: "same.txt", mimeType: "text/plain", size: 4, contentBase64: "YmJiYg==" };
+    const c = { ...b, contentBase64: "Y2NjYw==" };
+    const ids = vi.spyOn(core, "newClientId");
+    ids.mockReturnValueOnce("a").mockReturnValueOnce("b").mockReturnValueOnce("c");
+    const remaining = filterPickedAttachments(0, [a, b]).attachments.slice(1);
+    const attachments = [
+      ...remaining,
+      ...filterPickedAttachments(remaining.length, [c]).attachments,
+    ];
+    ids.mockRestore();
+    const sendPayload = { ...payload(), attachments };
+    const attempt = feedback.sendAttempt(sendPayload);
+    let sendsAttempted = 0;
+    request.mockImplementation(async (proc, body) => {
+      if (proc === "artifacts/create") {
+        return { id: body.contentBase64 === b.contentBase64 ? "artifact-b" : "artifact-c" };
+      }
+      if (++sendsAttempted === 1) throw new Error("Send interrupted");
+      return { seq: 42 };
+    });
+
+    await expect(
+      deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).rejects.toThrow("Send interrupted");
+    await deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+
+    const uploads = request.mock.calls.filter(([proc]) => proc === "artifacts/create");
+    expect(uploads.map(([, body]) => body.contentBase64)).toEqual([
+      b.contentBase64,
+      c.contentBase64,
+    ]);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
+  it("starts mentioned routines only in the message's own replayable send", async () => {
+    const mentions = [
+      { kind: "routine" as const, id: "routine-1", name: "Digest" },
+      { kind: "routine" as const, id: "routine-2", name: "Weekly" },
+    ];
+    const text = "@Digest @Weekly Hello";
+    const sendPayload = {
+      ...payload(text),
+      plan: resolveComposerSendPlan({ text, mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    const deliver = () => deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+    request.mockRejectedValueOnce(new Error("Upload failed"));
+    await expect(deliver()).rejects.toThrow("Upload failed");
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual(["artifacts/create"]);
+
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Send interrupted"));
+    await expect(deliver()).rejects.toThrow("Send interrupted");
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1", "run-2"], send: { seq: 42 } });
+    expect(await deliver()).toBe(42);
+
+    expect(request.mock.calls.map(([proc]) => proc)).toEqual([
+      "artifacts/create",
+      "artifacts/create",
+      "threads/sendWithRoutines",
+      "threads/sendWithRoutines",
+    ]);
+    const [first, retried] = request.mock.calls.slice(2).map(([, body]) => body);
+    expect(first).toMatchObject({
+      botId: "bot-1",
+      clientNonce: attempt.clientNonce,
+      text: "Hello",
+      artifactIds: ["artifact-a"],
+      routineIds: ["routine-1", "routine-2"],
+    });
+    expect(retried).toEqual(first);
+  });
+  it("sends the message itself when its routines were already started for this nonce", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest Hello"),
+      plan: resolveComposerSendPlan({ text: "@Digest Hello", mentions, hasAttachments: true }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockResolvedValueOnce({ routineRunIds: ["run-earlier"] })
+      .mockResolvedValueOnce({ seq: 7, runId: "run-1", taskId: "task-1" });
+    expect(await deliverSend(sendPayload, attempt, request as unknown as typeof rpc)).toBe(7);
+    // The thread shows the accepted run as queued before its refresh returns.
+    expect(attempt.acceptedRun).toEqual({ runId: "run-1", taskId: "task-1" });
+    const [, combined, sent] = request.mock.calls;
+    expect(combined?.[0]).toBe("threads/sendWithRoutines");
+    expect(sent?.[0]).toBe("threads/send");
+    expect({ ...sent?.[1], routineIds: ["routine-1"] }).toEqual(combined?.[1]);
+  });
+  it("starts routine-only mentions through the same replayable send", async () => {
+    const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];
+    const sendPayload = {
+      ...payload("@Digest"),
+      attachments: [],
+      plan: resolveComposerSendPlan({ text: "@Digest", mentions, hasAttachments: false }),
+    };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request.mockResolvedValueOnce({ routineRunIds: ["run-1"] });
+    expect(
+      await deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).toBeUndefined();
+    expect(request.mock.calls).toEqual([
+      [
+        "threads/sendWithRoutines",
+        { botId: "bot-1", clientNonce: attempt.clientNonce, routineIds: ["routine-1"] },
+      ],
+    ]);
+  });
+  it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("This model cannot read images. Choose a model that supports images."),
+          { status: 409 },
+        ),
+      );
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(attempt.payload.attachments).toHaveLength(1);
+    expect(attempt.artifactIds.size).toBe(1);
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
+  it.each(["ios", "android"])(
+    "offers explicit file confirmation on %s and reuses the original upload",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request
+        .mockResolvedValueOnce({ id: "artifact-a" })
+        .mockRejectedValueOnce(
+          Object.assign(
+            new Error("This model cannot read images. Choose a model that supports images."),
+            { status: 409, data: { reason: "model_image_input_unsupported" } },
+          ),
+        );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.imageConfirmation).toBe(true);
+      expect(container.textContent).toContain("Not sent. Tap for options");
+      act(() =>
+        container
+          .querySelector("button")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      if (os === "ios") {
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
+        expect(options.message).toContain(fileNote);
+        await act(async () => {
+          choose(0);
+        });
+      } else {
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toContain(fileNote);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Delete", "Cancel"]);
+        await act(async () => {
+          buttons![0]!.onPress?.();
+        });
+      }
+      expect(attempt.imageHandling).toBe("file");
+      await act(async () => {
+        await feedback.send(attempt, true);
+      });
+      const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+      expect(sends.at(-1)?.[1]).toEqual({ ...sends[0]?.[1], imageHandling: "file" });
+      expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+      Platform.OS = "ios";
+    },
+  );
+
+  it.each(["ios", "android"])(
+    "opens discoverable file and retry choices on tap (%s)",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request.mockResolvedValueOnce({ id: "artifact-a" }).mockRejectedValueOnce(
+        Object.assign(new Error("Image input is not configured for this model."), {
+          status: 409,
+          data: { reason: "model_image_input_unsupported" },
+        }),
+      );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      act(() => container.querySelector("button")!.click());
+      if (os === "ios") {
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Try again", "Cancel"]);
+        expect(options.message).toBe(
+          `Image input is not configured for this model.\n\n${fileNote}`,
+        );
+        act(() => choose(1));
+      } else {
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toBe(`Image input is not configured for this model.\n\n${fileNote}`);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try again", "Cancel"]);
+        act(() => buttons![1]!.onPress?.());
+      }
+      expect(retry).toHaveBeenCalledOnce();
+      expect(attempt.imageHandling).toBeUndefined();
+      Platform.OS = "ios";
+    },
+  );
+  it("does not offer new confirmation for an older server's unstructured error", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error("Conflict"), { status: 409 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.imageConfirmation).toBe(false);
+    expect(attempt.state).toBe("failed");
   });
   it("drops late failures and further uploads after a session wipe", async () => {
     let finish!: (value: { id: string }) => void;
@@ -237,6 +983,167 @@ describe("scoped mobile outbox", () => {
     expect(notDelivered).not.toHaveBeenCalled();
     expect(container.textContent).toBe("");
     expect(disk.clear).toHaveBeenCalled();
+  });
+  it.each(["ios", "android"])(
+    "offers Add model instead of Try again for missing-model failures on %s",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request
+        .mockResolvedValueOnce({ id: "artifact-a" })
+        .mockRejectedValueOnce(
+          Object.assign(new Error(MODEL_REQUIRED_SEND_ERROR), { status: 400 }),
+        );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.state).toBe("failed");
+      expect(container.textContent).toContain("Not sent. No model");
+      expect(container.textContent).not.toContain("Tap to retry");
+      act(() =>
+        container
+          .querySelector("button")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      if (os === "ios") {
+        const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Add model", "Delete", "Cancel"]);
+        expect(options.message).toBeUndefined();
+        expect(options.cancelButtonIndex).toBe(2);
+        expect(options.destructiveButtonIndex).toBe(1);
+        act(() => choose(0));
+        expect(router.push).toHaveBeenCalledWith("/(settings)/models");
+      } else {
+        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+        expect(vi.mocked(Alert.alert).mock.calls.at(-1)![1]).toBeUndefined();
+        expect(buttons.map(({ text }) => text)).toEqual(["Add model", "Delete", "Cancel"]);
+        expect(buttons[2]!.style).toBe("cancel");
+        act(() => buttons[0]!.onPress?.());
+        expect(router.push).toHaveBeenCalledWith("/(settings)/models");
+      }
+      expect(retry).not.toHaveBeenCalled();
+      // Tapping the bubble is still the manual retry.
+      act(() => container.querySelector("button")!.click());
+      expect(retry).toHaveBeenCalledOnce();
+      const calls = request.mock.calls.length;
+      await act(async () => {
+        await sendWaitingMessages(true);
+      });
+      expect(request).toHaveBeenCalledTimes(calls);
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+      expect(sends).toHaveLength(2);
+      expect(sends[1]).toEqual(sends[0]);
+      Platform.OS = "ios";
+    },
+  );
+  it.each(["ios", "android"])("keeps Try again for other send failures on %s", async (os) => {
+    Platform.OS = os as typeof Platform.OS;
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Quota exceeded"));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    act(() =>
+      container
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+    );
+    if (os === "ios") {
+      const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
+      expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
+      expect(options.cancelButtonIndex).toBe(2);
+      expect(options.destructiveButtonIndex).toBe(1);
+      act(() => choose(0));
+    } else {
+      const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+      expect(buttons.map(({ text }) => text)).toEqual(["Try again", "Delete", "Cancel"]);
+      act(() => buttons[0]!.onPress?.());
+    }
+    expect(retry).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+    Platform.OS = "ios";
+  });
+  it("offers retry for a missing-model failure once a model is connected", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error(MODEL_REQUIRED_SEND_ERROR), { status: 400 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    needsModel = true;
+    act(() => root.render(<Probe threadKey="bot-1" />));
+    expect(container.textContent).toContain("Not sent. No model");
+    expect(container.textContent).not.toContain("Tap to retry");
+    needsModel = false;
+    act(() => root.render(<Probe threadKey="bot-1" />));
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    expect(container.textContent).not.toContain("No model");
+    act(() =>
+      container
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+    );
+    const [options, choose] = vi.mocked(showIOSActionSheet).mock.calls.at(-1)!;
+    expect(options.options).toEqual(["Try again", "Delete", "Cancel"]);
+    expect(options.message).toBeUndefined();
+    act(() => choose(0));
+    expect(retry).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+    needsModel = undefined;
+  });
+  it("restores old missing-model rejections as manually retryable", async () => {
+    const saved = feedback.sendAttempt(payload());
+    act(() => clearFailedSends());
+    const attempt = {
+      ...saved,
+      session: saved.session + 1,
+      state: "refused" as const,
+      error: MODEL_REQUIRED_SEND_ERROR,
+    };
+    disk.load.mockReturnValueOnce([attempt]);
+    act(() => restoreUnsentSends());
+    expect(attempt.state).toBe("failed");
+    await sendWaitingMessages(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("keeps unrelated client rejections refused and inert on tap", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request.mockRejectedValueOnce(Object.assign(new Error("Rejected"), { status: 400 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("refused");
+    expect(container.textContent).toContain("Not sent");
+    act(() => container.querySelector("button")!.click());
+    expect(router.push).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+  });
+  it.each([
+    [409, "Stop teaching first"],
+    [426, "Update required"],
+  ])("keeps a %i rejection retryable", async (status, message) => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error(message), { status }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    act(() => container.querySelector("button")!.click());
+    expect(retry).toHaveBeenCalledOnce();
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
   });
   it("reports real errors and reuses uploaded artifacts on manual retry", async () => {
     const attempt = feedback.sendAttempt(payload());
@@ -272,6 +1179,91 @@ describe("scoped mobile outbox", () => {
     expect(second.state).toBe("queued");
     expect(request).toHaveBeenCalledOnce();
     expect(notDelivered).not.toHaveBeenCalled();
+  });
+  describe("a send in flight while a password change replaces the session", () => {
+    let current: typeof scope | null;
+    let refuse: (() => void) | undefined;
+    let passwordChanging: boolean;
+    beforeEach(() => {
+      current = scope;
+      refuse = undefined;
+      passwordChanging = true;
+      configureUnsentSends({
+        request,
+        scope: () => current,
+        serverReachable: () => reachable,
+        passwordChanging: () => passwordChanging,
+        disk,
+        errorText: (error) => (error instanceof Error ? error.message : String(error)),
+        notDelivered,
+      });
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create"
+          ? { id: "artifact-a" }
+          : new Promise((_resolve, reject) => {
+              // The server already revoked the token the send used.
+              refuse = () => reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
+            }),
+      );
+    });
+    async function settleAfter(change: () => void) {
+      const attempt = feedback.sendAttempt(payload());
+      let sending!: Promise<boolean>;
+      act(() => {
+        sending = feedback.send(attempt);
+      });
+      await vi.waitFor(() => expect(refuse).toBeTypeOf("function"));
+      change();
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create" ? { id: "artifact-a" } : { seq: 42 },
+      );
+      const saves = disk.save.mock.calls.length;
+      await act(async () => {
+        refuse?.();
+        await sending;
+      });
+      return { attempt, saves };
+    }
+    it("returns it to the saved queue while the session is out of scope", async () => {
+      const { attempt, saves } = await settleAfter(() => {
+        current = null;
+      });
+      expect(attempt.state).toBe("queued");
+      expect(disk.save.mock.calls.length).toBeGreaterThan(saves);
+      expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+      expect(notDelivered).not.toHaveBeenCalled();
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("keeps it queued when the server revokes the token before the new session arrives", async () => {
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("queued");
+      expect(notDelivered).not.toHaveBeenCalled();
+      // The drain stops instead of resending with the revoked token.
+      expect(request.mock.calls.filter(([proc]) => proc !== "artifacts/create")).toHaveLength(1);
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("refuses it as before when no password change is in progress", async () => {
+      passwordChanging = false;
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("refused");
+      expect(notDelivered).toHaveBeenCalledWith(attempt);
+    });
+    it("retries it when the new session is ready before it settles", async () => {
+      const { attempt } = await settleAfter(() => {
+        current = { ...scope };
+      });
+      expect(attempt.state).not.toBe("refused");
+      expect(attempt.acceptedSeq).toBe(42);
+      expect(notDelivered).not.toHaveBeenCalled();
+    });
   });
   it("retries after a reconnect that arrived during an in-flight send", async () => {
     let rejectUpload!: (error: unknown) => void;
@@ -336,5 +1328,221 @@ describe("scoped mobile outbox", () => {
     const [send] = request.mock.calls.filter(([proc]) => proc === "threads/send");
     expect(send?.[3]).toBe("space-a");
     expect(attempt.acceptedSeq).toBe(42);
+  });
+});
+
+describe("a send and its echo", () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  let reachable = true;
+  let chat: MobileSnapshot;
+  /** What each render showed: the server's copies of the message and the unsent bubbles. */
+  let frames: Array<{ echoed: number; bubbles: number }> = [];
+  const request = vi.fn();
+  const scope = {
+    apiBase: "https://api.example.test",
+    userId: "user-a",
+    cacheSession: "ns-a",
+    spaceId: "space-a",
+  };
+  const disk = {
+    admit: () => true,
+    hydrate: async () => undefined,
+    forget: () => undefined,
+    load: () => [],
+    save: () => undefined,
+    clear: () => undefined,
+  };
+
+  // Mirrors the thread screen: the server's messages, then the unsent sends below them.
+  function Chat({ snapshot }: { snapshot: MobileSnapshot }) {
+    const seqs = useMemo(
+      () =>
+        new Set(
+          snapshot.messages.flatMap((message) =>
+            message.role === "user" && message.seq !== undefined ? [message.seq] : [],
+          ),
+        ),
+      [snapshot],
+    );
+    feedback = useThreadFeedback("bot-1", () => `nonce-${++nonces}`, seqs);
+    const echoed = snapshot.messages.filter((message) => message.role === "user");
+    frames.push({ echoed: echoed.length, bubbles: feedback.unsentSends.length });
+    return (
+      <>
+        {echoed.map((message) => (
+          <p key={message.id}>Hello</p>
+        ))}
+        {feedback.unsentSends.map((attempt) => (
+          <FailedSendBubble
+            key={attempt.clientNonce}
+            attempt={attempt}
+            onRetry={() => void feedback.send(attempt, true)}
+            onDelete={() => feedback.discard(attempt)}
+          />
+        ))}
+      </>
+    );
+  }
+  function show(next: MobileSnapshot) {
+    chat = next;
+    act(() => root.render(<Chat snapshot={chat} />));
+  }
+  /** The live (or replayed) event for the stored message; its own event seq differs. */
+  function echo(eventSeq = 9) {
+    show(
+      reduceThreadSnapshot(chat, {
+        type: "thread.message.created",
+        seq: eventSeq,
+        payload: {
+          messageId: "message-42",
+          seq: 42,
+          role: "user",
+          blocks: [{ kind: "text", text: "Hello" }],
+        },
+      } as never)!,
+    );
+  }
+  /** Holds the next threads/send open until the returned function accepts it. */
+  function heldSend(): (value: { seq: number }) => Promise<void> {
+    let accept: ((value: { seq: number }) => void) | undefined;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+    return async (value) => {
+      await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
+      accept!(value);
+    };
+  }
+  function textPayload(text = "Hello"): SendPayload {
+    return {
+      ...payload(text),
+      replyPreview: null,
+      plan: resolveComposerSendPlan({ text, mentions: [], hasAttachments: false }),
+      attachments: [],
+      replyTargetId: undefined,
+      replyQuote: null,
+    };
+  }
+  const copies = () => frames.at(-1)!.echoed + frames.at(-1)!.bubbles;
+
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    clearFailedSends();
+    reachable = true;
+    frames = [];
+    request.mockReset();
+    request.mockResolvedValue({ seq: 42 });
+    configureUnsentSends({
+      request,
+      scope: () => scope,
+      serverReachable: () => reachable,
+      passwordChanging: () => false,
+      disk,
+      errorText: String,
+      notDelivered: () => undefined,
+    });
+    restoreUnsentSends();
+    container = document.createElement("div");
+    root = createRoot(container);
+    show({
+      botId: "bot-1",
+      threadId: "thread-1",
+      cursor: 8,
+      messages: [],
+      olderCursor: null,
+      run: null,
+    });
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    clearFailedSends();
+    vi.unstubAllGlobals();
+  });
+
+  it("swaps the sending bubble for the live echo in one render", async () => {
+    const accept = heldSend();
+    const attempt = feedback.sendAttempt(textPayload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    expect(container.textContent).toContain("Sending…");
+    await act(async () => {
+      await accept({ seq: 42 });
+      await sending;
+    });
+    expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
+    frames = [];
+    echo();
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(frames.at(-1)).toEqual({ echoed: 1, bubbles: 0 });
+    expect(container.textContent).not.toContain("Sending…");
+  });
+
+  it("shows the message once when the echo arrives before threads/send resolves", async () => {
+    const accept = heldSend();
+    const attempt = feedback.sendAttempt(textPayload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    echo();
+    frames = [];
+    await act(async () => {
+      await accept({ seq: 42 });
+      await sending;
+    });
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(copies()).toBe(1);
+    expect(container.textContent).not.toContain("Sending…");
+  });
+
+  it("shows a send held offline once when the reconnect replays its echo", async () => {
+    reachable = false;
+    const attempt = feedback.sendAttempt(textPayload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    reachable = true;
+    await act(async () => {
+      await sendWaitingMessages();
+    });
+    frames = [];
+    // The resumed subscription replays the event, and a second reconnect replays it again.
+    echo();
+    echo();
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(copies()).toBe(1);
+  });
+
+  it("keeps one failed bubble with Retry while other messages arrive", async () => {
+    request.mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }));
+    const attempt = feedback.sendAttempt(textPayload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    show(
+      reduceThreadSnapshot(chat, {
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "message-41", seq: 41, role: "bot", blocks: [] },
+      } as never)!,
+    );
+    expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    await act(async () => {
+      container.querySelector("button")!.click();
+      await vi.waitFor(() => expect(attempt.acceptedSeq).toBe(42));
+    });
+    echo(10);
+    expect(copies()).toBe(1);
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 });

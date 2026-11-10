@@ -1,107 +1,13 @@
-export interface GrokColorDef {
-  id: string;
-  name: string;
-  light: string;
-  dark: string;
-  eyeColor: string;
-  hex: string;
-}
-
-export const GROK_COLOR_LIST: GrokColorDef[] = [
-  {
-    id: "white",
-    name: "Staff White",
-    light: "#FFFFFF",
-    dark: "#CBD5E1",
-    eyeColor: "#141414",
-    hex: "#FFFFFF",
-  },
-  {
-    id: "violet",
-    name: "Executive Violet",
-    light: "#A97EFE",
-    dark: "#7C3AED",
-    eyeColor: "#FFFFFF",
-    hex: "#8B5CF6",
-  },
-  {
-    id: "green",
-    name: "Emerald",
-    light: "#00C972",
-    dark: "#059669",
-    eyeColor: "#FFFFFF",
-    hex: "#10B981",
-  },
-  {
-    id: "orange",
-    name: "Forge Orange",
-    light: "#FF781C",
-    dark: "#EA580C",
-    eyeColor: "#FFFFFF",
-    hex: "#F97316",
-  },
-  {
-    id: "cyan",
-    name: "Cyber Cyan",
-    light: "#1CC3B0",
-    dark: "#0284C7",
-    eyeColor: "#FFFFFF",
-    hex: "#06B6D4",
-  },
-  {
-    id: "blue",
-    name: "Cobalt Blue",
-    light: "#2A92FE",
-    dark: "#1D4ED8",
-    eyeColor: "#FFFFFF",
-    hex: "#3B82F6",
-  },
-  {
-    id: "yellow",
-    name: "Amber Gold",
-    light: "#FFAF38",
-    dark: "#D97706",
-    eyeColor: "#141414",
-    hex: "#EAB308",
-  },
-  {
-    id: "brown",
-    name: "Caramel Bronze",
-    light: "#A27952",
-    dark: "#78350F",
-    eyeColor: "#FFFFFF",
-    hex: "#8D6E63",
-  },
-  {
-    id: "red",
-    name: "Crimson Red",
-    light: "#FF3E51",
-    dark: "#BE123C",
-    eyeColor: "#FFFFFF",
-    hex: "#EF4444",
-  },
-  {
-    id: "magenta",
-    name: "Neon Pink",
-    light: "#FF5EB1",
-    dark: "#BE185D",
-    eyeColor: "#FFFFFF",
-    hex: "#EC4899",
-  },
-  {
-    id: "gray",
-    name: "Slate Silver",
-    light: "#94A3B8",
-    dark: "#475569",
-    eyeColor: "#FFFFFF",
-    hex: "#64748B",
-  },
-];
-
-export const GROK_BOT_COLORS = GROK_COLOR_LIST.map((c) => c.hex);
+import type { BotColorDef } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, parseBotAvatarValue } from "@rakazo/contracts";
 
 /** Shared identity color for Avatar Studio reset/fallback (Executive Violet). */
-export const DEFAULT_GROK_BOT_COLOR = GROK_COLOR_LIST.find((color) => color.id === "violet")!.hex;
+export const DEFAULT_BOT_AVATAR_COLOR = BOT_COLOR_LIST.find((color) => color.id === "violet")!.hex;
+
+/** The bots the invite artwork draws, in order; white would vanish on a light page. */
+export const INVITE_AVATAR_COLORS: readonly string[] = (
+  ["violet", "green", "orange", "cyan", "blue"] as const
+).map((id) => BOT_COLOR_LIST.find((color) => color.id === id)!.hex);
 
 export function shippedHash(value: string): number {
   let hash = 2166136261;
@@ -124,29 +30,122 @@ export function shippedRandom(seed: number): () => number {
 export function resolvePersonaColorDef(
   identity: string,
   explicitColor?: string | null,
-): GrokColorDef {
+): BotColorDef {
   if (explicitColor) {
     const clean = explicitColor.toLowerCase();
-    const foundById = GROK_COLOR_LIST.find((c) => c.id === clean || c.name.toLowerCase() === clean);
+    const foundById = BOT_COLOR_LIST.find((c) => c.id === clean || c.name.toLowerCase() === clean);
     if (foundById) return foundById;
-    const foundByHex = GROK_COLOR_LIST.find((c) => c.hex.toLowerCase() === clean);
+    const foundByHex = BOT_COLOR_LIST.find(
+      (c) => c.hex.toLowerCase() === clean || c.previousHex?.toLowerCase() === clean,
+    );
     if (foundByHex) return foundByHex;
-    // If custom hex, synthesize gradient
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(explicitColor)) {
-      const isBright = isColorBright(explicitColor);
-      return {
-        id: "custom",
-        name: "Custom",
-        light: explicitColor,
-        dark: darkenHex(explicitColor, 20),
-        eyeColor: isBright ? "#141414" : "#FFFFFF",
-        hex: explicitColor,
-      };
+      return { id: "custom", name: "Custom", hex: explicitColor };
     }
   }
   const seed = (shippedHash(identity) ^ Math.imul(1, 2654435769)) >>> 0;
-  const index = Math.floor(shippedRandom((seed ^ 2654435769) >>> 0)() * GROK_COLOR_LIST.length);
-  return GROK_COLOR_LIST[index % GROK_COLOR_LIST.length] ?? GROK_COLOR_LIST[0]!;
+  const index = Math.floor(shippedRandom((seed ^ 2654435769) >>> 0)() * BOT_COLOR_LIST.length);
+  return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
+}
+
+/** WCAG AA contrast for body text. */
+const BUBBLE_TEXT_CONTRAST = 4.5;
+const LIGHT_TEXT = "#FFFFFF";
+
+/**
+ * Your messages in a bot's chat wear that bot's color under white text, deepened just enough for
+ * AA contrast. The color darkens in OKLCH so it keeps its hue and saturation instead of turning
+ * muddy. Photo and white avatars keep the neutral bubble.
+ */
+export function chatUserBubbleColors(
+  avatarValue: string,
+  identity: string,
+): { background: string; foreground: string } | undefined {
+  const parsed = parseBotAvatarValue(avatarValue);
+  if (parsed.kind === "image") return undefined;
+  const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
+  if (def.id === "white") return undefined;
+  let background = `#${expandHex(def.hex)}`.toUpperCase();
+  const [lightness, chroma, hue] = hexToOklch(background);
+  for (let l = lightness; contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST; ) {
+    l -= 0.01;
+    background = oklchToHex(l, chroma, hue);
+  }
+  return { background, foreground: LIGHT_TEXT };
+}
+
+function hexToOklch(hex: string): [number, number, number] {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return [lightness, Math.hypot(a, bb), Math.atan2(bb, a)];
+}
+
+function oklchToHex(lightness: number, chroma: number, hue: number): string {
+  const a = chroma * Math.cos(hue);
+  const b = chroma * Math.sin(hue);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+  return `#${linear
+    .map((value) => {
+      const v = Math.min(1, Math.max(0, value));
+      const srgb = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+      return Math.round(srgb * 255)
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")}`.toUpperCase();
+}
+
+/**
+ * Which ink a bot's eyes take. They are cut-outs in the page color (dark in dark mode, light in
+ * light mode), unless the body is pale or dark enough that the cut-out would fade in one theme;
+ * then they stay the ink that contrasts with the body. Amber, emerald and cyan are pale enough.
+ */
+export function botEyeTone(bodyHex: string): "page" | "dark" | "light" {
+  if (contrastRatio(bodyHex, "#FFFFFF") < 2.4) return "dark";
+  if (contrastRatio(bodyHex, "#000000") < 2) return "light";
+  return "page";
+}
+
+/** The eye ink {@link botEyeTone} picks, on a page with these two colors. */
+export function botEyeInk(bodyColor: string, page: { background: string; foreground: string }) {
+  const tone = botEyeTone(bodyColor);
+  if (tone === "page") return page.background;
+  const [darker, lighter] =
+    contrastRatio(page.background, "#FFFFFF") > contrastRatio(page.foreground, "#FFFFFF")
+      ? [page.background, page.foreground]
+      : [page.foreground, page.background];
+  return tone === "dark" ? darker : lighter;
+}
+
+/** WCAG contrast ratio between two hex colors. */
+export function contrastRatio(a: string, b: string): number {
+  const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+}
+
+function relativeLuminance(hex: string): number {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
 function expandHex(hex: string): string {
@@ -158,22 +157,4 @@ function expandHex(hex: string): string {
     return `${r}${r}${g}${g}${b}${b}`;
   }
   return c;
-}
-
-function isColorBright(hex: string): boolean {
-  const c = expandHex(hex);
-  const r = Number.parseInt(c.substring(0, 2), 16) || 0;
-  const g = Number.parseInt(c.substring(2, 4), 16) || 0;
-  const b = Number.parseInt(c.substring(4, 6), 16) || 0;
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness > 180;
-}
-
-function darkenHex(hex: string, percent: number): string {
-  const num = Number.parseInt(expandHex(hex), 16);
-  const factor = 1 - percent / 100;
-  const r = Math.max(0, Math.floor(((num >> 16) & 255) * factor));
-  const g = Math.max(0, Math.floor(((num >> 8) & 255) * factor));
-  const b = Math.max(0, Math.floor((num & 255) * factor));
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }

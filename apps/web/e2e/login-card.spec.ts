@@ -31,16 +31,28 @@ test("saves a website login from a username and password card without echoing ei
     await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
   }
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.getByText("https://login.example.test", { exact: true })).toBeVisible();
-  const usernameField = card.getByLabel("Username");
+  await expect(card.getByText("login.example.test", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "login-card-ask");
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  // The card's fields open in the vault's own form.
+  const form = page.getByTestId("vault-editor");
+  const usernameField = form.getByLabel("Username", { exact: true });
   // Exact: the password reveal button is labelled "Show password".
-  const passwordField = card.getByLabel("Password", { exact: true });
+  const passwordField = form.getByLabel("Password", { exact: true });
+  // The default card starts as logins always have: Username visible, Password hidden.
+  await expect(usernameField).toHaveAttribute("type", "text");
   await expect(passwordField).toHaveAttribute("type", "password");
-  const save = card.getByRole("button", { name: "Save", exact: true });
+  const hiddenToggle = (label: string) =>
+    form
+      .getByTestId("login-field")
+      .filter({ has: page.getByLabel(label, { exact: true }) })
+      .getByRole("button", { name: "Hidden" });
+  await expect(hiddenToggle("Username")).toHaveAttribute("aria-pressed", "false");
+  await expect(hiddenToggle("Password")).toHaveAttribute("aria-pressed", "true");
+  const save = form.getByRole("button", { name: "Save", exact: true });
 
   const username = `fake-user-${stamp}@example.test`;
   const password = `fake-password-${stamp}`;
-  // Both fields are required before the login can be saved.
   await passwordField.fill(password);
   await expect(save).toBeDisabled();
   await usernameField.fill(username);
@@ -61,7 +73,7 @@ test("saves a website login from a username and password card without echoing ei
     }),
   );
   await save.click();
-  await expect(card.getByText("Could not submit this answer", { exact: true })).toBeVisible();
+  await expect(form.getByText("Could not submit this answer", { exact: true })).toBeVisible();
   await expect(passwordField).toHaveValue("");
   await expect(usernameField).toHaveValue("");
   await page.unroute("**/rpc/threads/answer");
@@ -70,7 +82,7 @@ test("saves a website login from a username and password card without echoing ei
   await passwordField.fill(password);
   await save.click();
   await expect(card.getByText("Saved", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(card.locator("input")).toHaveCount(0);
+  await expect(form).toHaveCount(0);
 
   await expect
     .poll(

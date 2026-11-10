@@ -1,9 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
-test("command palette opens with keyboard, filters, and switches bots", async ({
-  page,
-}, testInfo) => {
+test("command palette switches bots and runs actions", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `cmdk-bots-${stamp}@rakazo.test`, "password12", "CmdK Bots");
   await completeOnboarding(page);
@@ -13,7 +11,6 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
   const chiefId = activeBotId(page);
   const researcher = await rpc<{ id: string }>(page, "bots/create", {
     name: "Researcher",
-    title: "research lead",
     description: "Finds sources and writes briefs.",
     instructions: "",
     notifyOnFinish: true,
@@ -30,10 +27,9 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
 
   await page.keyboard.press("ControlOrMeta+K");
   const palette = page.getByTestId("command-palette");
-  const dialog = page.getByRole("dialog", { name: "Switch bot" });
+  const dialog = page.getByRole("dialog", { name: "Command menu" });
   await expect(dialog).toBeVisible();
   await expect(palette).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.getByRole("option", { name: /Chief/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Researcher/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "command-palette-bots");
@@ -55,4 +51,20 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
   await page.getByTestId(`command-palette-bot-${chiefId}`).click();
   await page.waitForURL(new RegExp(`/app/${chiefId}$`));
   expect(activeBotId(page)).toBe(chiefId);
+
+  await page.keyboard.press("ControlOrMeta+K");
+  const lightTheme = page.getByTestId("command-palette-action-appearance-light");
+  await lightTheme.scrollIntoViewIfNeeded();
+  await expect(lightTheme).toBeVisible();
+  await captureScreenshot(page, testInfo, "command-palette-actions");
+  await lightTheme.click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  await page.keyboard.press("ControlOrMeta+K");
+  await search.fill("models");
+  await expect(page.getByRole("option", { name: "Settings: Models" })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Chief/ })).toHaveCount(0);
+  await page.getByRole("option", { name: "Settings: Models" }).click();
+  await page.waitForURL(/[?&]settings=models/);
 });

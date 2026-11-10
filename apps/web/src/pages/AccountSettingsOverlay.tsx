@@ -1,98 +1,157 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
-import { BotAvatar, Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
-import { ChevronDown } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router-dom";
-import { AccountAccess } from "../components/AccountAccess";
-import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
+import {
+  APP_LOCALE_LABELS,
+  accountDisplay,
+  displayName,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+} from "@rakazo/core";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  Label,
+  NativeSelect,
+  NativeSelectOption,
+  OptionSelect,
+  SectionHeading,
+  Switch,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@rakazo/ui-web";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@rakazo/ui-web/components/ui/table";
+import type { RefObject } from "react";
+import { useId, useRef, useState } from "react";
+import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
+import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
-import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
+import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
+import { ComputerProviderSettings } from "../components/ComputerProviderSettings";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
-import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
+import { PasskeySettings } from "../components/PasskeySettings";
+import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
-import {
-  getBotsSidebarDensity,
-  setBotsSidebarDensity,
-  subscribeBotsSidebarDensity,
-} from "../lib/bots-sidebar-density-pref";
-import {
-  getComposerEnterToSend,
-  setComposerEnterToSend,
-  subscribeComposerEnterToSend,
-} from "../lib/composer-enter-to-send-pref";
+import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
+import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
+import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import {
-  getRemoteImagesPreference,
-  setRemoteImagesPreference,
-} from "../lib/remote-images-preference";
-import {
-  getResponseStreamingPreference,
-  setResponseStreamingPreference,
-} from "../lib/response-streaming";
-import {
-  getToolActivityPreference,
-  setToolActivityPreference,
-} from "../lib/tool-activity-preference";
+import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
+import { usePasskeysSupported } from "../lib/passkeys";
+import { remoteImagesPreference } from "../lib/remote-images-preference";
+import { responseStreamingPreference } from "../lib/response-streaming";
+import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import type { UiLocale } from "../lib/ui-locale";
-import { UI_LOCALE_LABELS, UI_LOCALES } from "../lib/ui-locale";
+import { UI_LOCALES } from "../lib/ui-locale";
 import { authErrorText } from "../lib/user-error";
 
 export type SettingsGeneralProps = {
   email?: string | null;
   name: string;
-  avatarStyle: AvatarStyle;
-  onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
-  messagingEnabled?: boolean;
-  onOpenMessaging?: () => void;
-  isDeploymentOwner?: boolean;
+  onNameSaved?: () => Promise<void>;
+  /** The user's saved IANA timezone, or null before one is set. */
+  timezone?: string | null;
+  onTimezoneChange?: (timezone: string) => Promise<void>;
+  /** The icon set new and unpinned bots wear; absent from servers that predate it. */
+  botAvatarSet?: BotAvatarSet;
+  onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
+  onAccountImported?: () => Promise<void>;
+  onImportAgent?: () => void;
 };
 
 export function GeneralSettingsPanels({
   email,
   name,
-  avatarStyle,
-  onAvatarStyleChange,
-  messagingEnabled = false,
-  onOpenMessaging,
-  isDeploymentOwner = false,
+  onNameSaved,
+  timezone = null,
+  onTimezoneChange,
+  botAvatarSet,
+  onBotAvatarSetChange,
+  onAccountImported,
+  onImportAgent,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
+  const account = accountDisplay({ name, email }, t`You`);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameId = useId();
+
+  async function saveName() {
+    const nextName = nameDraft.trim();
+    if (namePending || !nextName || nextName.length > 80) return;
+    if (!displayName(nextName, "")) {
+      setNameError(t`Could not update name`);
+      return;
+    }
+    // Nothing to save, so close without a request that could only fail.
+    if (nextName === (account.label === email ? "" : displayName(name, ""))) {
+      setNameError(null);
+      setEditingName(false);
+      return;
+    }
+    setNamePending(true);
+    setNameError(null);
+    try {
+      const result = await authClient.updateUser({ name: nextName });
+      if (result.error) {
+        setNameError(authErrorText(result.error, t`Could not update name`));
+        return;
+      }
+      setEditingName(false);
+      void Promise.resolve()
+        .then(() => onNameSaved?.())
+        .catch(() => undefined);
+    } catch {
+      setNameError(t`Could not update name`);
+    } finally {
+      setNamePending(false);
+    }
+  }
+
   const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const localeRequestRef = useRef(0);
   const [appearance, setAppearance] = useState<AppearancePreference>(() =>
     getUiAppearancePreference(),
   );
-  const sidebarDensity = useSyncExternalStore(
-    subscribeBotsSidebarDensity,
-    getBotsSidebarDensity,
-    () => "comfortable",
-  );
+  const sidebarDensity = botsSidebarDensityPreference.use();
   const sidebarDensityLabelId = useId();
-  const [streamReplies, setStreamReplies] = useState(
-    () => getResponseStreamingPreference() === "on",
-  );
+  const botStyleLabelId = useId();
+  const [botStyleError, setBotStyleError] = useState<string | null>(null);
+  const streamReplies = responseStreamingPreference.use();
   const streamRepliesId = useId();
-  const [showToolActivity, setShowToolActivity] = useState(
-    () => getToolActivityPreference() === "on",
-  );
+  const showToolActivity = toolActivityPreference.use();
   const showToolActivityId = useId();
-  const enterToSend = useSyncExternalStore(
-    subscribeComposerEnterToSend,
-    getComposerEnterToSend,
-    () => false,
-  );
+  const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
-  const [loadRemoteImages, setLoadRemoteImages] = useState(
-    () => getRemoteImagesPreference() === "on",
-  );
+  const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const timezoneId = useId();
+  const showPassword = Boolean(
+    accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false,
+  );
+  const passkeysSupported = usePasskeysSupported();
+  const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
+  const [timezonePending, setTimezonePending] = useState(false);
+  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+  const deviceTimezone = localTimezone();
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -104,212 +163,325 @@ export function GeneralSettingsPanels({
     });
   }
 
-  async function chooseAvatarStyle(next: AvatarStyle) {
-    if (avatarPending || next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
+  async function chooseTimezone(next: string) {
+    if (!onTimezoneChange || timezonePending || next === timezone) return;
+    setTimezonePending(true);
+    setTimezoneError(null);
     try {
-      await onAvatarStyleChange(next);
+      await onTimezoneChange(next);
     } catch {
-      setAvatarError(t`Couldn't update avatars`);
+      setTimezoneError(t`Couldn't update your timezone`);
     } finally {
-      setAvatarPending(false);
+      setTimezonePending(false);
     }
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-xl border border-border px-4 py-4">
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Account</Trans>
-        </h3>
-        <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
-        {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
-        <AccountAccess onSecurity={setAccountSecurity} />
-      </section>
-
-      {accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false ? (
-        <ChangePasswordSection email={email} />
-      ) : null}
-
-      {messagingEnabled && onOpenMessaging ? (
-        <section className="rounded-xl border border-border px-4 py-4">
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Messaging</Trans>
-          </h3>
-          <p className="mt-3 text-[13px] text-muted-foreground/70">
-            <Trans>Chat apps, group channels, and agent connections.</Trans>
-          </p>
-          <Button variant="secondary" className="mt-3 rounded-full" onClick={onOpenMessaging}>
-            <Trans>Manage messaging settings</Trans>
-          </Button>
-        </section>
-      ) : null}
-
-      <section className="rounded-xl border border-border px-4 py-4">
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Appearance</Trans>
-        </h3>
-        <AppearancePicker
-          value={appearance}
-          onChange={(next) => {
-            setAppearance(next);
-            setUiAppearance(next);
-          }}
-        />
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <span id={sidebarDensityLabelId} className="text-[13px] text-foreground/75">
-            <Trans>Sidebar density</Trans>
-          </span>
-          <fieldset
-            aria-labelledby={sidebarDensityLabelId}
-            data-testid="bots-sidebar-density-select"
-            className="grid min-w-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+    <div className="space-y-8">
+      <SettingsGroup title={<Trans>Account</Trans>} data-testid="account-card">
+        {editingName ? (
+          <form
+            className="space-y-3 px-4 py-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveName();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (!namePending) setEditingName(false);
+              }
+            }}
           >
-            <Toggle
-              data-testid="bots-sidebar-density-comfortable"
-              pressed={sidebarDensity === "comfortable"}
-              onPressedChange={() => setBotsSidebarDensity("comfortable")}
-              className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
-            >
-              <Trans>Comfortable</Trans>
-            </Toggle>
-            <Toggle
-              data-testid="bots-sidebar-density-compact"
-              pressed={sidebarDensity === "compact"}
-              onPressedChange={() => setBotsSidebarDensity("compact")}
-              className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
-            >
-              <Trans>Compact</Trans>
-            </Toggle>
-          </fieldset>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-border px-4 py-4">
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Language</Trans>
-        </h3>
-        <UiLocalePicker value={locale} onChange={chooseLocale} />
-      </section>
-
-      <section
-        className="rounded-xl border border-border px-4 py-4"
-        data-testid="avatar-style-select"
-      >
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Avatars</Trans>
-        </h3>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["robot", "organic"] as const).map((style) => (
-            <Toggle
-              key={style}
-              variant="outline"
-              pressed={style === avatarStyle}
-              disabled={avatarPending}
-              onPressedChange={() => void chooseAvatarStyle(style)}
-              data-testid={`avatar-style-${style}`}
-              className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
-            >
-              <BotAvatar
-                color="#D9508A"
-                identity="avatar-style-preview"
-                size={32}
-                variant={style}
+            <Field>
+              <FieldLabel htmlFor={nameId}>
+                <Trans>Name</Trans>
+              </FieldLabel>
+              <Input
+                id={nameId}
+                autoComplete="name"
+                autoFocus
+                maxLength={80}
+                value={nameDraft}
+                disabled={namePending}
+                onChange={(event) => {
+                  setNameDraft(event.target.value);
+                  setNameError(null);
+                }}
               />
-              <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
-            </Toggle>
-          ))}
-        </div>
-        {avatarError ? (
-          <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-            {avatarError}
-          </p>
+            </Field>
+            {nameError ? (
+              <p role="alert" className="text-body-sm text-destructive">
+                {nameError}
+              </p>
+            ) : null}
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={namePending || !nameDraft.trim()}>
+                <Trans>Save</Trans>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={namePending}
+                onClick={() => setEditingName(false)}
+              >
+                <Trans>Cancel</Trans>
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <SettingsRow
+            label={
+              <>
+                <p className="break-words">{account.label}</p>
+                {email && account.label !== email ? (
+                  <p className="mt-0.5 break-words text-body-sm text-muted-foreground">{email}</p>
+                ) : null}
+              </>
+            }
+            control={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setNameDraft(account.label === email ? "" : displayName(name, ""));
+                  setNameError(null);
+                  setEditingName(true);
+                }}
+              >
+                <Trans>Edit</Trans>
+              </Button>
+            }
+          />
+        )}
+      </SettingsGroup>
+
+      <SettingsGroup title={<Trans>Preferences</Trans>}>
+        <SettingsRow
+          label={<Trans>Appearance</Trans>}
+          control={
+            <AppearancePicker
+              value={appearance}
+              onChange={(next) => {
+                setAppearance(next);
+                setUiAppearance(next);
+              }}
+            />
+          }
+        />
+        {botAvatarSet && onBotAvatarSetChange ? (
+          <SettingsRow
+            label={
+              <span id={botStyleLabelId}>
+                <Trans>Bot style</Trans>
+              </span>
+            }
+            control={
+              <div className="space-y-1">
+                <ToggleGroup
+                  aria-labelledby={botStyleLabelId}
+                  data-testid="bot-style-select"
+                  value={[botAvatarSet]}
+                  onValueChange={([next]) => {
+                    if (!next || next === botAvatarSet) return;
+                    setBotStyleError(null);
+                    onBotAvatarSetChange(next as BotAvatarSet).catch(() =>
+                      setBotStyleError(t`Couldn't update bot style`),
+                    );
+                  }}
+                  spacing={1}
+                  className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+                >
+                  <ToggleGroupItem
+                    value="organic"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                  >
+                    <Trans>Original</Trans>
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="rakazo"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                  >
+                    <Trans>Rakazo</Trans>
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                {botStyleError ? (
+                  <p role="alert" className="text-body-sm text-destructive">
+                    {botStyleError}
+                  </p>
+                ) : null}
+              </div>
+            }
+          />
         ) : null}
-      </section>
+        <SettingsRow
+          label={
+            <span id={sidebarDensityLabelId}>
+              <Trans>Sidebar density</Trans>
+            </span>
+          }
+          control={
+            <ToggleGroup
+              aria-labelledby={sidebarDensityLabelId}
+              data-testid="bots-sidebar-density-select"
+              value={[sidebarDensity]}
+              onValueChange={([next]) => {
+                if (next) botsSidebarDensityPreference.set(next as BotsSidebarDensity);
+              }}
+              spacing={1}
+              className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+            >
+              <ToggleGroupItem
+                value="comfortable"
+                data-testid="bots-sidebar-density-comfortable"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>Comfortable</Trans>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="compact"
+                data-testid="bots-sidebar-density-compact"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>Compact</Trans>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          }
+        />
+        <SettingsRow
+          label={<Trans>Language</Trans>}
+          control={<UiLocalePicker value={locale} onChange={chooseLocale} />}
+        />
+        {onTimezoneChange ? (
+          <div data-testid="timezone-settings">
+            <SettingsRow
+              label={
+                <span id={timezoneId}>
+                  <Trans>Timezone</Trans>
+                </span>
+              }
+              control={
+                <NativeSelect
+                  aria-labelledby={timezoneId}
+                  data-testid="timezone-select"
+                  value={timezone ?? deviceTimezone}
+                  disabled={timezonePending}
+                  onChange={(event) => void chooseTimezone(event.target.value)}
+                  className="w-56 max-w-full"
+                >
+                  {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
+                    <NativeSelectOption key={zone} value={zone}>
+                      {zone.replaceAll("_", " ")}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              }
+            >
+              {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+                    disabled={timezonePending}
+                    data-testid="timezone-use-device"
+                    onClick={() => void chooseTimezone(deviceTimezone)}
+                  >
+                    <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
+                      Use {deviceTimezone.replaceAll("_", " ")}
+                    </Trans>
+                  </Button>
+                </div>
+              ) : null}
+              {timezoneError ? (
+                <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
+                  {timezoneError}
+                </p>
+              ) : null}
+            </SettingsRow>
+          </div>
+        ) : null}
+      </SettingsGroup>
 
-      {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
-          <Trans>Server integrations</Trans>
-        </Button>
-      ) : null}
-
-      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-          <span className="block text-[15px] text-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
-        <div className="border-t border-border px-4 pb-5">
-          <div className="flex items-start gap-3 pt-5">
+      <SettingsGroup title={<Trans>Chat</Trans>}>
+        <SettingsRow
+          label={
+            <Label htmlFor={enterToSendId} className="text-body font-normal text-foreground">
+              <Trans>Send with Enter</Trans>
+            </Label>
+          }
+          control={
             <Switch
               id={enterToSendId}
               data-testid="composer-enter-to-send-toggle"
-              className="mt-0.5"
               checked={enterToSend}
-              onCheckedChange={(checked) => setComposerEnterToSend(checked)}
+              onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
             />
-            <Label htmlFor={enterToSendId} className="text-[14px] font-normal text-foreground/75">
-              <Trans>Send with Enter</Trans>
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={streamRepliesId} className="text-body font-normal text-foreground">
+              <Trans>Stream replies</Trans>
             </Label>
-          </div>
-          <div className="flex items-start gap-3 pt-5">
+          }
+          control={
             <Switch
               id={streamRepliesId}
               data-testid="response-streaming-toggle"
-              className="mt-0.5"
               checked={streamReplies}
-              onCheckedChange={(checked) => {
-                setStreamReplies(checked);
-                setResponseStreamingPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => responseStreamingPreference.set(checked)}
             />
-            <Label htmlFor={streamRepliesId} className="text-[14px] font-normal text-foreground/75">
-              <Trans>Stream replies</Trans>
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={showToolActivityId} className="text-body font-normal text-foreground">
+              <Trans>Show tool activity</Trans>
             </Label>
-          </div>
-          <div className="flex items-start gap-3 pt-4">
+          }
+          control={
             <Switch
               id={showToolActivityId}
               data-testid="tool-activity-toggle"
-              className="mt-0.5"
               checked={showToolActivity}
-              onCheckedChange={(checked) => {
-                setShowToolActivity(checked);
-                setToolActivityPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => toolActivityPreference.set(checked)}
             />
-            <Label
-              htmlFor={showToolActivityId}
-              className="text-[14px] font-normal text-foreground/75"
-            >
-              <Trans>Show tool activity</Trans>
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={loadRemoteImagesId} className="text-body font-normal text-foreground">
+              <Trans>Load web images automatically</Trans>
             </Label>
-          </div>
-          <div className="flex items-start gap-3 pt-4">
+          }
+          control={
             <Switch
               id={loadRemoteImagesId}
               data-testid="remote-images-toggle"
-              className="mt-0.5"
               checked={loadRemoteImages}
-              onCheckedChange={(checked) => {
-                setLoadRemoteImages(checked);
-                setRemoteImagesPreference(checked ? "on" : "off");
-              }}
+              onCheckedChange={(checked) => remoteImagesPreference.set(checked)}
             />
-            <Label
-              htmlFor={loadRemoteImagesId}
-              className="text-[14px] font-normal text-foreground/75"
-            >
-              <Trans>Load web images automatically</Trans>
-            </Label>
-          </div>
-          <ApprovalRulesSettings />
-        </div>
-      </details>
+          }
+        />
+      </SettingsGroup>
+
+      <TrustedLinkSitesSettings />
+      <ComputerDeviceSettings />
+
+      {showPassword || passkeysSupported || canLinkSso ? (
+        <SettingsGroup title={<Trans>Security</Trans>}>
+          {showPassword ? <ChangePasswordRow email={email} /> : null}
+          {canLinkSso ? <LinkSsoRow /> : null}
+          <PasskeySettings />
+        </SettingsGroup>
+      ) : null}
+
+      <SettingsGroup title={<Trans>Data</Trans>} data-testid="account-data">
+        <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
+        <AccountAccess onSecurity={setAccountSecurity} />
+      </SettingsGroup>
     </div>
   );
 }
@@ -318,34 +490,82 @@ export function UsageSettingsPanel({
   usage,
   panelRef,
 }: {
-  usage?: {
-    runs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens?: number | null;
-  } | null;
+  usage?: UsageSummary | null;
   panelRef?: RefObject<HTMLDivElement | null>;
 }) {
+  const { t, i18n } = useLingui();
+  const count = new Intl.NumberFormat(i18n.locale);
+  const usd = new Intl.NumberFormat(i18n.locale, {
+    style: "currency",
+    currency: "USD",
+  });
+  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
+  const cost = (value: number | null | undefined) =>
+    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  const models = usage?.models ?? [];
   return (
-    <div
-      ref={panelRef}
-      tabIndex={-1}
-      data-testid="usage-settings"
-      className="rounded-xl border border-border px-4 py-4 outline-none"
-    >
-      <h3 className="text-[15px] font-medium text-foreground">
-        <Trans>Usage</Trans>
-      </h3>
+    <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
       {usage ? (
-        <p className="mt-3 text-[14px] text-foreground/75">
-          <Trans>
-            {usage.runs} runs · {usage.totalTokens ?? "—"} tokens
-          </Trans>
-        </p>
+        <dl className="grid grid-cols-3 gap-3">
+          {[
+            { label: t`Runs`, value: number(usage.runs) },
+            { label: t`Tokens`, value: number(usage.totalTokens) },
+            { label: t`Cost`, value: cost(usage.costUsd) },
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
+              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
+              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
       ) : null}
-      <p className={`text-[12.5px] text-muted-foreground/80 ${usage ? "mt-2" : "mt-3"}`}>
-        <Trans>Model spend uses your provider keys.</Trans>
-      </p>
+      {models.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Model</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Calls</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Input</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Output</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {models.map((row) => (
+                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">{row.model}</div>
+                    <div className="text-label text-muted-foreground">{row.provider}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.modelCalls)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.inputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.outputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -354,44 +574,57 @@ export function ComputerSettingsPanel({
   sandboxProvider,
   onSandboxProviderChange,
   onRecoveryDismissed,
+  canConfigureComputers = false,
+  computerSettingsEnabled = false,
 }: {
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   onRecoveryDismissed?: () => void;
+  canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
 }) {
+  // Once shown, the hint stays mounted so a successful check can show its confirmation.
+  const unavailable = computersAreUnavailable(sandboxProvider);
+  const [hintShown, setHintShown] = useState(unavailable);
+  if (unavailable && !hintShown) setHintShown(true);
   return (
     <div
       data-testid="computers-setup-settings"
       className="rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-[15px] font-medium text-foreground">
+      <SectionHeading variant="heading">
         <Trans>Computers</Trans>
-      </h3>
-      <ComputersUnavailableHint
-        className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
-        sandboxProvider={sandboxProvider}
-        onRecovered={onSandboxProviderChange}
-        onRecoveryDismissed={onRecoveryDismissed}
-      />
+      </SectionHeading>
+      {hintShown ? (
+        <ComputersUnavailableHint
+          className="mt-3 text-body-sm leading-relaxed text-muted-foreground"
+          sandboxProvider={sandboxProvider}
+          onRecovered={onSandboxProviderChange}
+          onRecoveryDismissed={onRecoveryDismissed}
+        />
+      ) : null}
+      {/* The server decides what an account may change, including removing keys it saved. */}
+      {computerSettingsEnabled && (canConfigureComputers || sandboxProvider) ? (
+        <ComputerProviderSettings
+          scope={canConfigureComputers ? "deployment" : "account"}
+          onProviderChange={onSandboxProviderChange}
+        />
+      ) : null}
     </div>
   );
 }
 
-export function UpdatesSettingsPanel({
-  isDeploymentOwner = false,
-}: {
-  isDeploymentOwner?: boolean;
-}) {
+export function UpdatesSettingsPanel() {
   return (
     <div className="space-y-5">
       <DesktopUpdateSection />
-      <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
     </div>
   );
 }
 
-function ChangePasswordSection({ email }: { email?: string | null }) {
+function ChangePasswordRow({ email }: { email?: string | null }) {
   const { t } = useLingui();
+  const [open, setOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -421,6 +654,7 @@ function ChangePasswordSection({ email }: { email?: string | null }) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmation("");
+      setOpen(false);
       setSaved(true);
     } catch {
       setError(t`Could not reach the server`);
@@ -429,68 +663,109 @@ function ChangePasswordSection({ email }: { email?: string | null }) {
     }
   }
 
+  function close() {
+    setOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmation("");
+    setError(null);
+  }
+
   return (
-    <section className="rounded-xl border border-border px-4 py-4">
-      <h3 className="text-[15px] font-medium text-foreground">
-        <Trans>Password</Trans>
-      </h3>
-      <div className="mt-3 grid gap-3">
-        <input
-          type="text"
-          name="username"
-          autoComplete="username"
-          value={email ?? ""}
-          readOnly
-          tabIndex={-1}
-          aria-hidden="true"
-          className="sr-only"
-        />
-        <SettingsPasswordInput
-          label={t`Current password`}
-          autoComplete="current-password"
-          value={currentPassword}
-          onChange={setCurrentPassword}
-        />
-        <SettingsPasswordInput
-          label={t`New password`}
-          autoComplete="new-password"
-          value={newPassword}
-          onChange={setNewPassword}
-        />
-        <SettingsPasswordInput
-          label={t`Confirm password`}
-          autoComplete="new-password"
-          value={confirmation}
-          onChange={setConfirmation}
-        />
-      </div>
-      {error ? (
-        <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-          {error}
-        </p>
-      ) : null}
-      <div className="mt-4 flex items-center gap-3">
-        <Button
-          className="rounded-full"
-          disabled={pending || currentPassword.length < 8 || newPassword.length < 8}
-          onClick={() => void changePassword()}
+    <SettingsRow
+      label={<Trans>Password</Trans>}
+      control={
+        open ? null : (
+          <>
+            {saved ? <SuccessPop label={t`Password updated`} /> : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSaved(false);
+                setOpen(true);
+              }}
+            >
+              <Trans>Change password</Trans>
+            </Button>
+          </>
+        )
+      }
+    >
+      {open ? (
+        <form
+          className="mt-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void changePassword();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !pending) {
+              event.stopPropagation();
+              close();
+            }
+          }}
         >
-          {pending ? <Trans>Changing…</Trans> : <Trans>Change password</Trans>}
-        </Button>
-        {saved ? <SuccessPop label={t`Password updated`} /> : null}
-      </div>
-    </section>
+          <div className="grid gap-3">
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={email ?? ""}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              className="sr-only"
+            />
+            <SettingsPasswordInput
+              label={t`Current password`}
+              autoComplete="current-password"
+              autoFocus
+              value={currentPassword}
+              onChange={setCurrentPassword}
+            />
+            <SettingsPasswordInput
+              label={t`New password`}
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={setNewPassword}
+            />
+            <SettingsPasswordInput
+              label={t`Confirm password`}
+              autoComplete="new-password"
+              value={confirmation}
+              onChange={setConfirmation}
+            />
+          </div>
+          {error ? (
+            <p role="alert" className="mt-3 text-body-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          <div className="mt-4 flex items-center gap-3">
+            <Button type="submit" disabled={pending || !currentPassword || !newPassword}>
+              {pending ? <Trans>Changing…</Trans> : <Trans>Save</Trans>}
+            </Button>
+            <Button type="button" variant="ghost" disabled={pending} onClick={close}>
+              <Trans>Cancel</Trans>
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </SettingsRow>
   );
 }
 
 function SettingsPasswordInput({
   label,
   autoComplete,
+  autoFocus,
   value,
   onChange,
 }: {
   label: string;
   autoComplete: "current-password" | "new-password";
+  autoFocus?: boolean;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -502,7 +777,9 @@ function SettingsPasswordInput({
         id={id}
         type="password"
         autoComplete={autoComplete}
-        minLength={8}
+        autoFocus={autoFocus}
+        minLength={autoComplete === "new-password" ? MIN_PASSWORD_LENGTH : undefined}
+        maxLength={MAX_PASSWORD_LENGTH}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -525,23 +802,27 @@ function AppearancePicker({
   ];
 
   return (
-    <fieldset
+    <ToggleGroup
       aria-label={t`Appearance`}
       data-testid="ui-appearance-select"
-      className="mt-3 grid min-w-0 grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+      value={[value]}
+      onValueChange={([next]) => {
+        if (next) onChange(next as AppearancePreference);
+      }}
+      spacing={1}
+      className="grid min-w-0 grid-cols-3 rounded-lg bg-muted p-1"
     >
       {options.map((option) => (
-        <Toggle
+        <ToggleGroupItem
           key={option.value}
+          value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          pressed={option.value === value}
-          onPressedChange={() => onChange(option.value)}
-          className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
+          className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
         >
           {option.label}
-        </Toggle>
+        </ToggleGroupItem>
       ))}
-    </fieldset>
+    </ToggleGroup>
   );
 }
 
@@ -553,136 +834,17 @@ function UiLocalePicker({
   onChange: (locale: UiLocale) => void;
 }) {
   const { t } = useLingui();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const listboxId = useId();
-  const selectedIndex = Math.max(0, UI_LOCALES.indexOf(value));
-  const [open, setOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(selectedIndex);
-
-  useEffect(() => {
-    setHighlightedIndex(selectedIndex);
-    setOpen(false);
-  }, [selectedIndex, value]);
-
-  useEffect(() => {
-    if (!open) return;
-    optionRefs.current[highlightedIndex]?.focus();
-  }, [highlightedIndex, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [open]);
-
-  function choose(index: number) {
-    const next = UI_LOCALES[index];
-    if (!next) return;
-    onChange(next);
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
-
-  function moveHighlight(index: number) {
-    setHighlightedIndex((index + UI_LOCALES.length) % UI_LOCALES.length);
-  }
-
-  function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      setOpen(true);
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setOpen(true);
-      setHighlightedIndex(UI_LOCALES.length - 1);
-    }
-  }
-
-  function onOptionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      moveHighlight(index + 1);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      moveHighlight(index - 1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setHighlightedIndex(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setHighlightedIndex(UI_LOCALES.length - 1);
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      choose(index);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    }
-  }
-
   return (
-    <div ref={rootRef} className="relative mt-3">
-      <button
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        data-testid="ui-locale-select"
-        aria-label={t`Language`}
-        aria-controls={listboxId}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="flex h-9 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-start text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <span className="min-w-0 truncate">{UI_LOCALE_LABELS[value]}</span>
-        <span className="ml-3 shrink-0 text-muted-foreground" aria-hidden="true">
-          <ChevronDown size={16} strokeWidth={1.8} />
-        </span>
-      </button>
-      {open ? (
-        <div
-          id={listboxId}
-          role="listbox"
-          aria-label={t`Language`}
-          className="rk-scroll absolute left-0 right-0 top-full z-20 mt-1 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
-        >
-          {UI_LOCALES.map((code, index) => (
-            <button
-              key={code}
-              ref={(element) => {
-                optionRefs.current[index] = element;
-              }}
-              type="button"
-              role="option"
-              aria-selected={code === value}
-              tabIndex={index === highlightedIndex ? 0 : -1}
-              className={`w-full rounded-md px-2 py-1.5 text-start text-sm outline-none hover:bg-accent focus-visible:bg-accent ${
-                code === value ? "bg-accent" : ""
-              }`}
-              onClick={() => choose(index)}
-              onKeyDown={(event) => onOptionKeyDown(event, index)}
-            >
-              {UI_LOCALE_LABELS[code]}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <OptionSelect
+      className="w-56 max-w-full"
+      data-testid="ui-locale-select"
+      aria-label={t`Language`}
+      options={UI_LOCALES.map((code) => ({
+        value: code,
+        label: APP_LOCALE_LABELS[code],
+      }))}
+      value={value}
+      onValueChange={onChange}
+    />
   );
 }

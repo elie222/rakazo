@@ -1,15 +1,28 @@
+import type { MessageDescriptor } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
+import type { SnoozePreset } from "@rakazo/core";
+
 export type InboxChatKind = "bot" | "group";
-export type InboxRowAction = "read" | "unread" | "archive" | "pin" | "unpin";
+export type InboxRowAction = "read" | "unread" | "archive" | "pin" | "unpin" | "delete";
 
 export const INBOX_ROW_ACTIONS = {
-  read: { label: "Mark as Read", systemImage: "checkmark.message.fill" },
-  unread: { label: "Mark as Unread", systemImage: "message.badge.filled.fill" },
-  archive: { label: "Archive", systemImage: "eye.slash" },
-  pin: { label: "Pin", systemImage: "pin" },
-  unpin: { label: "Unpin", systemImage: "pin.slash" },
-} as const satisfies Record<InboxRowAction, { label: string; systemImage: string }>;
+  read: { label: msg`Mark as Read`, systemImage: "checkmark.message.fill" },
+  unread: { label: msg`Mark as Unread`, systemImage: "message.badge.filled.fill" },
+  archive: { label: msg`Archive`, systemImage: "eye.slash" },
+  pin: { label: msg`Pin`, systemImage: "pin" },
+  unpin: { label: msg`Unpin`, systemImage: "pin.slash" },
+  delete: { label: msg`Delete…`, systemImage: "trash" },
+} as const satisfies Record<InboxRowAction, { label: MessageDescriptor; systemImage: string }>;
 
-/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin. */
+/** The snooze choices in a chat's menu; translated where shown. */
+export const SNOOZE_LABELS = {
+  hour: msg`1 hour`,
+  threeHours: msg`3 hours`,
+  tomorrow: msg`Tomorrow`,
+  nextWeek: msg`Next week`,
+} as const satisfies Record<SnoozePreset, MessageDescriptor>;
+
+/** Swipe right toggles read state; swipe left offers Archive outermost, then Pin, and a full swipe archives. */
 export function inboxRowActions(chat: { unread?: boolean; pinned?: boolean }): {
   leading: InboxRowAction;
   trailing: InboxRowAction[];
@@ -32,6 +45,16 @@ export function chatTarget(kind: InboxChatKind, id: string) {
 
 export function unreadOverrideKey(kind: InboxChatKind, id: string) {
   return `${kind}:${id}`;
+}
+
+/** Leaves out chats being archived: the row goes at the tap, and a poll can't bring it back. */
+export function withoutArchiving<T extends { id: string }>(
+  kind: InboxChatKind,
+  chats: T[],
+  archiving: ReadonlySet<string>,
+): T[] {
+  if (archiving.size === 0) return chats;
+  return chats.filter((chat) => !archiving.has(unreadOverrideKey(kind, chat.id)));
 }
 
 /** Shows read state the user just changed until its request settles, so a poll can't undo it. */

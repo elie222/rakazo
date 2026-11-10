@@ -1,3 +1,8 @@
+import {
+  TICKET_COMMENT_MAX_LENGTH,
+  TICKET_DESCRIPTION_MAX_LENGTH,
+  TICKET_TITLE_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
   commentTicket,
@@ -187,10 +192,106 @@ function mutationDeps(ticketBoardEnabled = true) {
 }
 
 describe("ticket mutations", () => {
+  it.each([
+    ["create", "title", TICKET_TITLE_MAX_LENGTH],
+    ["create", "description", TICKET_DESCRIPTION_MAX_LENGTH],
+    ["update", "title", TICKET_TITLE_MAX_LENGTH],
+    ["update", "description", TICKET_DESCRIPTION_MAX_LENGTH],
+    ["comment", "body", TICKET_COMMENT_MAX_LENGTH],
+  ] as const)(
+    "explains an oversized %s %s before database access",
+    async (operation, field, limit) => {
+      const s = mutationDeps();
+      const value = "x".repeat(limit + 1);
+      const input = { spaceId: "ws", userId: "user-1", botId: "bot-1", id: "t1" };
+      const result =
+        operation === "create"
+          ? await createTicket(s.deps, { ...input, title: "Ship", [field]: value })
+          : operation === "update"
+            ? await updateTicket(s.deps, { ...input, [field]: value })
+            : await commentTicket(s.deps, { ...input, body: value });
+
+      expect(result).toHaveProperty("error", expect.stringContaining(field));
+      expect(result).toHaveProperty("error", expect.stringContaining(String(limit)));
+      expect(result).toHaveProperty("error", expect.not.stringContaining(value));
+      expect(s.prisma.board.findUnique).not.toHaveBeenCalled();
+      expect(s.prisma.bot.findFirst).not.toHaveBeenCalled();
+      expect(s.prisma.$transaction).not.toHaveBeenCalled();
+      expect(s.changes).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves complete values at the existing length limits", async () => {
+    const s = mutationDeps();
+    const title = "x".repeat(TICKET_TITLE_MAX_LENGTH);
+    const description = "x".repeat(TICKET_DESCRIPTION_MAX_LENGTH);
+    const body = "x".repeat(TICKET_COMMENT_MAX_LENGTH);
+    const input = { spaceId: "ws", userId: "user-1", botId: "bot-1", id: "t1" };
+
+    await expect(
+      createTicket(s.deps, { ...input, title: ` ${title} `, description }),
+    ).resolves.toHaveProperty("ticket.title", title);
+    expect(s.tx.ticket.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ title, description }) }),
+    );
+    await expect(
+      updateTicket(s.deps, { ...input, title: ` ${title} `, description }),
+    ).resolves.toHaveProperty("ticket.description", description);
+    expect(s.tx.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ title, description }) }),
+    );
+    await expect(commentTicket(s.deps, { ...input, body: ` ${body} ` })).resolves.toHaveProperty(
+      "comment.body",
+      body,
+    );
+    expect(s.tx.ticketComment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ body }) }),
+    );
+  });
+
+  it.each([
+    ["title", " "],
+    ["priority", "invalid-marker"],
+    ["status", "invalid-marker"],
+  ])("keeps invalid %s updates rejected with field-level feedback", async (field, value) => {
+    const s = mutationDeps();
+    const result = await updateTicket(s.deps, {
+      spaceId: "ws",
+      userId: "user-1",
+      id: "t1",
+      [field]: value,
+    });
+    expect(result).toHaveProperty("error", expect.stringContaining(field));
+    expect(result).toHaveProperty("error", expect.not.stringContaining("invalid-marker"));
+    expect(s.prisma.board.findUnique).not.toHaveBeenCalled();
+    expect(s.prisma.$transaction).not.toHaveBeenCalled();
+    expect(s.changes).not.toHaveBeenCalled();
+  });
+
+  it("uses public parameter names and keeps blank comments rejected", async () => {
+    const s = mutationDeps();
+    await expect(
+      createTicket(s.deps, { spaceId: "ws", userId: "user-1", title: "Ship" }),
+    ).resolves.toHaveProperty("error", expect.stringContaining("ownerBotId"));
+    const result = await commentTicket(s.deps, { spaceId: "ws", id: "", body: " " });
+    expect(result).toHaveProperty("error", expect.stringContaining("id:"));
+    expect(result).toHaveProperty("error", expect.stringContaining("body:"));
+    expect(result).toHaveProperty("error", expect.not.stringContaining("ticketId"));
+    expect(s.prisma.board.findUnique).not.toHaveBeenCalled();
+    expect(s.prisma.$transaction).not.toHaveBeenCalled();
+    expect(s.changes).not.toHaveBeenCalled();
+  });
+
   it("disables every tool without database access or wake-ups", async () => {
     const s = mutationDeps(false);
-    await createTicket(s.deps, { spaceId: "ws", botId: "bot-1", title: "Ship" });
-    await updateTicket(s.deps, { spaceId: "ws", botId: "bot-1", id: "t1", ownerBotId: "bot-2" });
+    await createTicket(s.deps, { spaceId: "ws", userId: "user-1", botId: "bot-1", title: "Ship" });
+    await updateTicket(s.deps, {
+      spaceId: "ws",
+      userId: "user-1",
+      botId: "bot-1",
+      id: "t1",
+      ownerBotId: "bot-2",
+    });
     await commentTicket(s.deps, { spaceId: "ws", botId: "bot-1", id: "t1", body: "Ready" });
     await listBoardTickets(s.deps, { spaceId: "ws" });
     await getTicket(s.deps, { spaceId: "ws", ref: "RAK-1" });
@@ -218,11 +319,23 @@ describe("ticket mutations", () => {
   });
   it("wakes on an actual reassignment once, and never on status edits or repeated assignment", async () => {
     const s = mutationDeps();
-    await updateTicket(s.deps, { spaceId: "ws", id: "t1", ownerBotId: "bot-2", status: "doing" });
+    await updateTicket(s.deps, {
+      spaceId: "ws",
+      userId: "user-1",
+      id: "t1",
+      ownerBotId: "bot-2",
+      status: "doing",
+    });
     expect(s.changes).toHaveBeenCalledWith(
       expect.objectContaining({ wakeAssignee: true, assigneeBotId: "bot-2" }),
     );
-    await updateTicket(s.deps, { spaceId: "ws", id: "t1", ownerBotId: "bot-2", status: "done" });
+    await updateTicket(s.deps, {
+      spaceId: "ws",
+      userId: "user-1",
+      id: "t1",
+      ownerBotId: "bot-2",
+      status: "done",
+    });
     expect(
       s.changes.mock.calls.map(([value]) => (value as { wakeAssignee: boolean }).wakeAssignee),
     ).toEqual([true, false]);
@@ -234,8 +347,14 @@ describe("ticket mutations", () => {
   });
   it("does not wake a bot creating or assigning a ticket to itself", async () => {
     const s = mutationDeps();
-    await createTicket(s.deps, { spaceId: "ws", botId: "bot-1", title: "Ship" });
-    await updateTicket(s.deps, { spaceId: "ws", id: "t1", ownerBotId: "bot-2", botId: "bot-2" });
+    await createTicket(s.deps, { spaceId: "ws", userId: "user-1", botId: "bot-1", title: "Ship" });
+    await updateTicket(s.deps, {
+      spaceId: "ws",
+      userId: "user-1",
+      id: "t1",
+      ownerBotId: "bot-2",
+      botId: "bot-2",
+    });
     expect(s.changes.mock.calls.map(([value]) => value.wakeAssignee)).toEqual([false, false]);
   });
   it("comments without waking the owner", async () => {
@@ -263,14 +382,44 @@ describe("ticket mutations", () => {
       where: { number: 1, spaceId: "ws", boardId: "board-1" },
     });
   });
+  it("only assigns the acting user's own bots", async () => {
+    const s = mutationDeps();
+    s.prisma.bot.findFirst.mockResolvedValue(null as never);
+    await expect(
+      createTicket(s.deps, {
+        spaceId: "ws",
+        botId: "bot-1",
+        userId: "user-1",
+        title: "Ship",
+        ownerBotId: "other-members-bot",
+      }),
+    ).resolves.toEqual({ error: "Unknown bot." });
+    await expect(
+      updateTicket(s.deps, {
+        spaceId: "ws",
+        userId: "user-1",
+        id: "t1",
+        ownerBotId: "other-members-bot",
+      }),
+    ).resolves.toEqual({ error: "Unknown bot." });
+    for (const [query] of s.prisma.bot.findFirst.mock.calls as unknown as [unknown][]) {
+      expect(query).toEqual({
+        where: { id: "other-members-bot", spaceId: "ws", userId: "user-1", archivedAt: null },
+        select: { id: true },
+      });
+    }
+    expect(s.prisma.bot.findFirst).toHaveBeenCalledTimes(2);
+    expect(s.prisma.$transaction).not.toHaveBeenCalled();
+    expect(s.changes).not.toHaveBeenCalled();
+  });
   it("rejects invalid input and foreign owners before a write", async () => {
     const s = mutationDeps();
     await expect(
-      createTicket(s.deps, { spaceId: "ws", botId: "bot-1", title: " " }),
+      createTicket(s.deps, { spaceId: "ws", userId: "user-1", botId: "bot-1", title: " " }),
     ).resolves.toHaveProperty("error");
     s.prisma.bot.findFirst.mockResolvedValueOnce(null as never);
     await expect(
-      updateTicket(s.deps, { spaceId: "ws", id: "t1", ownerBotId: "foreign" }),
+      updateTicket(s.deps, { spaceId: "ws", userId: "user-1", id: "t1", ownerBotId: "foreign" }),
     ).resolves.toHaveProperty("error");
     expect(s.prisma.$transaction).not.toHaveBeenCalled();
   });

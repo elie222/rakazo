@@ -1,4 +1,4 @@
-import type { Session, WebContents } from "electron";
+import type { MediaAccessPermissionRequest, Session, WebContents } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import { installSessionPermissions } from "./session-permissions.js";
 import { shouldOpenInAppPopup } from "./window-open.js";
@@ -142,14 +142,16 @@ describe("desktop session permissions", () => {
     expect(policy.check("media", { embeddingOrigin: url })).toBe(false);
   });
 
-  it.each([undefined, [], ["video"], ["audio", "video"], ["unknown"]])(
-    "rejects camera and ambiguous media requests: %j",
-    (mediaTypes) => {
-      expect(policyFixture().request("media", { mediaTypes })).toBe(false);
-    },
-  );
+  it.each<MediaAccessPermissionRequest["mediaTypes"]>([
+    undefined,
+    [],
+    ["video"],
+    ["audio", "video"],
+  ])("rejects camera and ambiguous media requests: %j", (mediaTypes) => {
+    expect(policyFixture().request("media", { mediaTypes })).toBe(false);
+  });
 
-  it.each([undefined, "video", "unknown"])("rejects media checks for %s", (mediaType) => {
+  it.each([undefined, "video", "unknown"] as const)("rejects media checks for %s", (mediaType) => {
     expect(policyFixture().check("media", { mediaType })).toBe(false);
   });
 
@@ -160,6 +162,20 @@ describe("desktop session permissions", () => {
     expect(policy.request("media", { isMainFrame: undefined })).toBe(false);
     expect(policy.check("media", { requestingUrl: undefined })).toBe(false);
     expect(policy.check("media", { isMainFrame: undefined })).toBe(false);
+  });
+
+  it.each([
+    // The screen frame serves the bot computer's own page, so it must never read the host clipboard.
+    ["the screen frame", new URL("/novnc/embed.html?path=x", appUrl).href, false],
+    ["the embedded screen", new URL("/computer-screen/screen.html", appUrl).href, false],
+    ["the main frame", appUrl, true],
+    ["another app path", new URL("/chat/frame", appUrl).href, false],
+    ["another origin", "https://provider.example.test/novnc/embed.html", false],
+    ["an insecure origin", "http://app.example.test/novnc/embed.html", false],
+  ])("denies clipboard reads from %s", (_name, requestingUrl, isMainFrame) => {
+    const policy = policyFixture();
+    expect(policy.request("clipboard-read", { requestingUrl, isMainFrame })).toBe(false);
+    expect(policy.check("clipboard-read", { requestingUrl, isMainFrame })).toBe(false);
   });
 
   it.each([

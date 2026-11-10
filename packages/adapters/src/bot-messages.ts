@@ -2,6 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
@@ -9,14 +10,18 @@ import {
   nextBotMessageHop,
   resolveBotAddress,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  type PrismaClient,
+  isUniqueViolation,
+  spaceTakesWork,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { runLeaseFor } from "./run-messages.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -63,7 +68,7 @@ export async function loadBotMessageContext(
 }
 
 export async function messageBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
     id: string;
     spaceId: string;
@@ -79,16 +84,15 @@ export async function messageBot(
     message: string;
     intent?: BotMessageIntent;
     deliveryKey?: string;
+    /** Attachments filed under the recipient's chat, shown there and copied to its computer. */
+    files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
   options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
-    return {
-      ok: false as const,
-      error: `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit`,
-    };
+    return { ok: false as const, error: BOT_MESSAGE_TOO_LONG };
   }
 
   const sourceContext = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
@@ -96,8 +100,8 @@ export async function messageBot(
   const hop = nextBotMessageHop(sourceContext?.hop);
 
   const candidates = await deps.prisma.bot.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-    select: { id: true, name: true, title: true, thread: { select: { id: true } } },
+    where: { spaceId: run.spaceId, archivedAt: null },
+    select: { id: true, name: true, thread: { select: { id: true } } },
   });
   const target = resolveBotAddress(candidates, {
     botId: input.bot_id,
@@ -145,6 +149,7 @@ export async function messageBot(
     text: message,
     intent,
   };
+  const files = input.files ?? [];
 
   let committed:
     | {
@@ -164,6 +169,8 @@ export async function messageBot(
   try {
     committed = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
+        if (!(await spaceTakesWork(tx, run.spaceId)))
+          return { ok: false as const, error: "this Space is being deleted" };
         for (const threadId of [run.threadId, targetThreadId].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
@@ -199,7 +206,6 @@ export async function messageBot(
           where: {
             id: target.id,
             spaceId: run.spaceId,
-            userId: run.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -217,6 +223,7 @@ export async function messageBot(
           runId: run.id,
           markUnread: options?.forceUnread === true,
           allowCancelledRun: options?.allowTerminalSource === true,
+          lease: runLeaseFor(deps, run.id),
         });
         const inboundBlock: MessageBlock = {
           kind: "bot_message_received",
@@ -230,7 +237,7 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [inboundBlock],
+          blocks: [inboundBlock, ...files],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -268,7 +275,7 @@ export async function messageBot(
           botId: target.id,
           type: "thread.message.created",
           runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
+          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -277,6 +284,7 @@ export async function messageBot(
           type: "thread.message.created",
           runId: run.id,
           allowCancelledRun: options?.allowTerminalSource === true,
+          lease: runLeaseFor(deps, run.id),
           payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
         return {
@@ -285,12 +293,12 @@ export async function messageBot(
           targetEventSeq: inboundEvent.seq,
           senderEventSeq: outboundEvent.seq,
         };
-      }),
+      }, THREAD_LOCK_TRANSACTION_OPTIONS),
     );
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true },
@@ -366,6 +374,16 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
+  // messageBot reaches only active bots of this space, so an archived or deleted
+  // requester can never take the outcome. Handled: nothing is left to deliver.
+  const requester = await deps.prisma.bot.findFirst({
+    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
+    select: { id: true },
+  });
+  if (!requester) {
+    await markBotOutcomeReturned(deps.prisma, run.id);
+    return true;
+  }
   const outcome = await messageBot(
     deps,
     run,
@@ -395,8 +413,4 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }

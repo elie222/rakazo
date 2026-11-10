@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">代理程式即時狀態</string>
+  <string name="rakazo_channel_messages">代理程式訊息</string>
+  <string name="rakazo_channel_scheduled">排程任務</string>
+  <string name="rakazo_channel_attention">需要處理</string>
+
+  <string name="rakazo_live_one">%1$s 正在處理</string>
+  <string name="rakazo_live_many">%1$s 和其他 %2$d 個正在處理</string>
+  <string name="rakazo_live_working">正在處理</string>
+
+  <string name="rakazo_scheduled_title">%1$s · 排程任務</string>
+  <string name="rakazo_replied_group">%1$s 已在 %2$s 中回覆</string>
+  <string name="rakazo_replied">%1$s 已回覆</string>
+
+  <string name="rakazo_attention_failed">%1$s 遇到問題</string>
+  <string name="rakazo_attention_takeover">%1$s 需要你查看螢幕</string>
+  <string name="rakazo_attention_input">%1$s 需要你的輸入</string>
+</resources>

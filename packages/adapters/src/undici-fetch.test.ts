@@ -153,6 +153,12 @@ async function postThroughPackageFetch(
   const chunks: Buffer[] = [];
   let contentType: string | undefined;
   const server = createServer((request, response) => {
+    // A local tool can probe any listening loopback port; only uploads are captured.
+    if (request.method !== "POST" || request.url !== "/upload") {
+      request.resume();
+      response.writeHead(404).end();
+      return;
+    }
     contentType = request.headers["content-type"];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {

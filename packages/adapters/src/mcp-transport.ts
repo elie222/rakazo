@@ -1,32 +1,36 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  StdioClientTransport,
-  type StdioServerParameters,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
+import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
+import { closeMcpResource } from "./mcp-close.js";
+import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
-  createSafeRemoteFetch,
-  type RemoteTransportDependencies,
-  type SafeRemoteFetch,
-} from "./remote-mcp.js";
+  isInstalledMcpBin,
+  isNpxCommand,
+  isPackageRunnerCommand,
+} from "./mcp-package-installer.js";
+import { limitMcpResponseBody } from "./mcp-response-limit.js";
+import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
+import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
 export interface McpUrlPolicy {
-  /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
   /** Permit plain HTTP only on the configured loopback resource's exact origin.
    * Requests only honour it together with `allowPrivateEndpoint`: loopback is private. */
   allowHttpLocalhost?: boolean;
   /** Permit configured credentials on an explicitly local HTTP endpoint. */
   allowLocalHttpCredentials?: boolean;
-  /** Permit RFC1918 / Docker-network hosts when the deployment owner enabled the escape. */
+  /** Permit RFC1918 / Docker-network hosts when the operator enabled the escape. */
   allowPrivateEndpoint?: boolean;
   /** Hosts allowed after redirects (redirects are rejected by default). */
   allowedHosts?: readonly string[];
@@ -47,8 +51,13 @@ export interface McpRemoteOptions {
   allowLegacySse?: boolean;
   /** Fall back to SSE only after a fresh Streamable HTTP client fails. */
   fallbackToSse?: boolean;
-  /** Let the official SDK own token refresh, re-authentication, and request retry. */
-  authProvider?: OAuthClientProvider;
+  /**
+   * Let the official SDK own re-authentication and request retry. `wrapFetch`
+   * lets the provider serve the SDK's token refresh itself.
+   */
+  authProvider?: OAuthClientProvider & {
+    wrapFetch?: (fetch: typeof globalThis.fetch) => typeof globalThis.fetch;
+  };
   network?: RemoteTransportDependencies;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -61,9 +70,44 @@ export interface McpStdioOptions {
   env?: Record<string, string>;
   /** Exact executable allowlist. Stdio is otherwise disabled. */
   allowedCommands: readonly string[];
+  /**
+   * Launch this managed package bin instead of `command`, with `args` as the bin's own
+   * arguments. The allowlist still applies to `command` (the configured launcher, such as
+   * `npx`); only bins issued by `ensureMcpPackage` are accepted here.
+   */
+  installedBin?: InstalledMcpBin;
   maxBufferSize?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
+}
+
+/** The process exited or never answered; the message carries the tail of its stderr. */
+export class McpStdioLaunchError extends Error {
+  constructor(
+    cause: unknown,
+    readonly stderr: string,
+  ) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(stderr ? `${message}\nstderr: ${stderr}` : message, { cause });
+    this.name = "McpStdioLaunchError";
+  }
+}
+
+const STDERR_TAIL_CHARS = 4_096;
+/** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+
+/** Keeps the last few KB a process wrote to stderr, without terminal escapes. */
+class StderrTail {
+  private text = "";
+
+  push(chunk: Buffer | string): void {
+    this.text = (this.text + chunk.toString()).slice(-STDERR_TAIL_CHARS * 2);
+  }
+
+  toString(): string {
+    return this.text.replace(ANSI_ESCAPE, "").trim().slice(-STDERR_TAIL_CHARS);
+  }
 }
 
 export interface McpClientOptions {
@@ -75,6 +119,16 @@ export interface McpClientOptions {
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
 const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
+/**
+ * An authorization URL is opened by the browser, not fetched by the server, and carries
+ * every scope the MCP server publishes (PostHog lists over 150, about 3,000 characters).
+ * Bound it separately from MCP endpoints, at a size browsers and common web servers accept.
+ */
+export const MAX_AUTHORIZATION_URL_LENGTH = 8_192;
+// A Request owns the abort link for its signal in affected Node versions. Keep
+// that owner alive while a fetch/body still retains the signal, without keeping
+// completed requests alive once the signal is no longer used.
+const requestSignalOwners = new WeakMap<AbortSignal, Request>();
 
 function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
   const url = new URL(raw.toString());
@@ -82,7 +136,7 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
   if (url.toString().length > max) throw new Error(`MCP URL exceeds ${max} characters`);
   if (url.username || url.password || url.hash)
     throw new Error("MCP URL must not contain credentials or a fragment");
-  const local = isLocalMcpHost(url.hostname);
+  const local = isLocalhostOrLoopbackIp(url.hostname);
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local) &&
@@ -108,7 +162,7 @@ export function secureFetch(
     urlPolicy.allowHttpLocalhost === true &&
     urlPolicy.allowPrivateEndpoint === true &&
     resourceUrl.protocol === "http:" &&
-    isLocalMcpHost(resourceUrl.hostname)
+    isLocalhostOrLoopbackIp(resourceUrl.hostname)
       ? resourceUrl.origin
       : undefined;
   const allowed = new Set(
@@ -136,6 +190,7 @@ export function secureFetch(
     allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
   });
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
+    if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
     // OAuth challenges and rediscovery can supply new URLs. Only the explicitly
     // configured local resource origin (including port) may bypass remote policy.
@@ -152,7 +207,7 @@ export function secureFetch(
       if (url.origin !== resourceUrl.origin && configuredCredentialValues.has(value)) continue;
       headers.set(name, value);
     }
-    const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
+    const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
     if (localHttp && urlPolicy.allowLocalHttpCredentials !== true) {
       for (const name of [...headers.keys()]) {
         if (localCredentialHeaders.has(name.toLowerCase())) headers.delete(name);
@@ -171,15 +226,23 @@ export function secureFetch(
       headers,
       body,
       redirect: "manual",
-      signal: source.signal,
+      // Request's derived signal can lose its abort link when the temporary
+      // Request is collected. Forward the caller's signal for the whole SSE body.
+      signal:
+        init?.signal !== undefined
+          ? init.signal
+          : input instanceof Request
+            ? input.signal
+            : undefined,
     } satisfies RequestInit;
     const response = localHttp
       ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
-    return response;
+    return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
   result.close = () => safeRemoteFetch.close();
@@ -227,11 +290,42 @@ export function withEndpointOriginFallback(
   };
 }
 
+/** Whether a configured stdio command is on the deployment's exact allowlist. */
+export function isAllowedStdioCommand(command: string, allowed: readonly string[]): boolean {
+  const trimmed = command.trim();
+  return trimmed.length > 0 && allowed.includes(trimmed);
+}
+
+/** The deployment's stdio settings, as MCP_STDIO_ENABLED and MCP_STDIO_ALLOWED_COMMANDS set them. */
+export type McpStdioPolicy = { stdioEnabled?: boolean; allowedCommands?: readonly string[] };
+
+export function mcpStdioAvailable(policy: McpStdioPolicy): boolean {
+  return policy.stdioEnabled === true && (policy.allowedCommands?.length ?? 0) > 0;
+}
+
+const PACKAGE_RUNNER_REFUSAL = "Only npx can launch packages here";
+
+/** Why this deployment can't run a stdio server with `command`, or undefined when it can. */
+export function mcpStdioRefusal(command: string, policy: McpStdioPolicy): string | undefined {
+  if (!mcpStdioAvailable(policy)) return "Stdio MCP servers aren't available here";
+  if (!isAllowedStdioCommand(command, policy.allowedCommands ?? []))
+    return "This stdio command isn't allowed here";
+  if (isPackageRunnerCommand(command)) return PACKAGE_RUNNER_REFUSAL;
+  return undefined;
+}
+
 function stdioParams(options: McpStdioOptions): StdioServerParameters {
-  const command = options.command.trim();
-  if (!command || !options.allowedCommands.includes(command)) {
+  if (!isAllowedStdioCommand(options.command, options.allowedCommands)) {
     throw new Error("MCP stdio command is not in the configured allowlist");
   }
+  if (isPackageRunnerCommand(options.command)) throw new Error(PACKAGE_RUNNER_REFUSAL);
+  if (options.installedBin !== undefined && !isInstalledMcpBin(options.installedBin)) {
+    throw new Error("MCP stdio bin was not installed by Rakazo");
+  }
+  if (options.installedBin === undefined && isNpxCommand(options.command)) {
+    throw new Error("npx only launches a package bin Rakazo installed");
+  }
+  const command = options.installedBin?.binPath ?? options.command.trim();
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(options.env ?? {})) {
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) env[key] = value;
@@ -263,7 +357,7 @@ export class McpSession {
   private newClient(): Client {
     return new Client(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
-      this.clientOptions.capabilities,
+      this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
     );
   }
 
@@ -280,7 +374,8 @@ export class McpSession {
       options.network,
     );
     this.remoteFetch = safeFetch;
-    const fetch = withEndpointOriginFallback(url.origin, safeFetch);
+    const originFetch = withEndpointOriginFallback(url.origin, safeFetch);
+    const fetch = options.authProvider?.wrapFetch?.(originFetch) ?? originFetch;
     const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
     let usedFallback = false;
     const connect = async (kind: McpRemoteTransport): Promise<void> => {
@@ -310,11 +405,14 @@ export class McpSession {
           (options.fallbackToSse ?? true) &&
           options.allowLegacySse &&
           (options.transport ?? "streamable-http") === "streamable-http";
-        await this.client.close().catch(() => undefined);
+        await closeMcpResource(() => this.client.close());
         this.connected = false;
         this.transport = undefined;
         if (!canFallback) {
-          await this.remoteFetch?.close().catch(() => undefined);
+          if (this.remoteFetch) {
+            const remoteFetch = this.remoteFetch;
+            await closeMcpResource(() => remoteFetch.close());
+          }
           this.remoteFetch = undefined;
           throw error;
         }
@@ -344,6 +442,10 @@ export class McpSession {
       throw new Error("MCP session is already connected or connecting");
     const transport = new StdioClientTransport(stdioParams(options));
     this.transport = transport;
+    // Always drain stderr: an unread pipe fills up and blocks a chatty server. The tail
+    // explains a launch that fails ("not found", a crash) instead of a bare timeout.
+    const stderr = new StderrTail();
+    transport.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
     this.connecting = this.client
       .connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 })
@@ -353,12 +455,18 @@ export class McpSession {
       .finally(() => {
         this.connecting = undefined;
       });
-    await this.connecting;
+    try {
+      await this.connecting;
+    } catch (error) {
+      // Let the last stderr chunks of an exited process reach the buffer.
+      await new Promise((done) => setImmediate(done));
+      throw new McpStdioLaunchError(error, stderr.toString());
+    }
   }
 
   async listTools(options?: { signal?: AbortSignal }): Promise<ListToolsResult> {
     this.assertConnected();
-    return this.client.listTools({}, { signal: options?.signal });
+    return { tools: await listMcpTools(this.client, { signal: options?.signal }) };
   }
 
   async callTool(
@@ -372,13 +480,31 @@ export class McpSession {
     })) as CallToolResult;
   }
 
-  async close(): Promise<void> {
+  async readResource(
+    uri: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ contents?: unknown }> {
+    this.assertConnected();
+    return this.client.readResource(
+      { uri },
+      { signal: options?.signal, timeout: MCP_APP_READ_TIMEOUT_MS },
+    );
+  }
+
+  /** `afterClose` follows actual SDK shutdown, even if this call stops waiting. */
+  async close(afterClose?: () => Promise<void>): Promise<void> {
     this.connecting = undefined;
     this.connected = false;
-    await this.client.close().catch(() => undefined);
-    await this.remoteFetch?.close().catch(() => undefined);
+    const client = this.client;
+    const remoteFetch = this.remoteFetch;
     this.remoteFetch = undefined;
     this.transport = undefined;
+    await closeMcpResource(() =>
+      Promise.resolve()
+        .then(() => client.close())
+        .finally(afterClose),
+    );
+    if (remoteFetch) await closeMcpResource(() => remoteFetch.close());
   }
 
   private assertConnected(): void {

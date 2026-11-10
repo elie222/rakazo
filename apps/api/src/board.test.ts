@@ -48,6 +48,45 @@ describe("disabled ticket board", () => {
   );
 });
 
+it("answers a signed-out caller with not found while the board is off", async () => {
+  const client = createRouterClient(
+    createRouter({ prisma: {}, env: { ticketBoardEnabled: false } } as unknown as RouterDeps),
+    { context: { actor: null } },
+  );
+  await expect(client.boards.get()).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
+it("rejects an out-of-range ticket reference before querying tickets", async () => {
+  const findFirst = vi.fn(async () => null);
+  const prisma = {
+    board: { findUnique: vi.fn(async () => ({ id: "board-1", ticketPrefix: "RAK" })) },
+    ticket: { findFirst },
+  };
+  const client = createRouterClient(
+    createRouter({ prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps),
+    { context: { actor } },
+  );
+
+  await expect(client.tickets.get({ ref: `RAK-${"9".repeat(115)}` })).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+    message: "Invalid ticket reference.",
+  });
+  expect(findFirst).not.toHaveBeenCalled();
+});
+
+it("refuses a signed-out caller before querying the board", async () => {
+  const findUnique = vi.fn();
+  const client = createRouterClient(
+    createRouter({
+      prisma: { board: { findUnique } },
+      env: { ticketBoardEnabled: true },
+    } as unknown as RouterDeps),
+    { context: { actor: null } },
+  );
+  await expect(client.boards.get()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  expect(findUnique).not.toHaveBeenCalled();
+});
+
 it.each([false, true])("includes the board capability in me (%s)", async (ticketBoardEnabled) => {
   const prisma = {
     user: {
@@ -55,15 +94,19 @@ it.each([false, true])("includes the board capability in me (%s)", async (ticket
         email: "user@rakazo.test",
         name: "Test",
         avatarStyle: "robot",
+        secrets: [],
       })),
     },
-    spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    userModelPreference: { findFirst: vi.fn(async () => null) },
+    spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    userModelRoleChoice: { findMany: vi.fn(async () => []) },
     deploymentSettings: { findUnique: vi.fn(async () => null) },
   };
   const deps = {
     prisma,
     env: {
       ticketBoardEnabled,
+      phoneCallsEnabled: ticketBoardEnabled,
       defaultProvider: "fake",
       defaultModel: "fake-model",
       sandboxProvider: "fake",
@@ -71,4 +114,5 @@ it.each([false, true])("includes the board capability in me (%s)", async (ticket
   } as unknown as RouterDeps;
   const client = createRouterClient(createRouter(deps), { context: { actor } });
   await expect(client.me()).resolves.toHaveProperty("ticketBoardEnabled", ticketBoardEnabled);
+  await expect(client.me()).resolves.toHaveProperty("phoneCallsEnabled", ticketBoardEnabled);
 });

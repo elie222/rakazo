@@ -2,22 +2,34 @@ import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type * as TimersPromises from "node:timers/promises";
 import { promisify } from "node:util";
 import type { ComputerRef, PortableFile, ProcessEvent } from "@rakazo/adapter-kit";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
 } from "@rakazo/core/node/desktop-runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CHROME_OWNS_DEBUG_PORT_SCRIPT,
   CREATEOS_SCREEN_MAP_SCRIPT,
   CREATEOS_SCREEN_MAP_SENTINEL,
+  CreateOSHttpError,
   CreateOSSandboxProvider,
   isAllowedCreateOSScreenUrl,
   MAX_CREATEOS_ERROR_RESPONSE_BYTES,
   MAX_CREATEOS_SUCCESS_RESPONSE_BYTES,
 } from "./createos-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
+
+// Status polls wait a second between reads; the fakes below settle on the next read.
+vi.mock("node:timers/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof TimersPromises>()),
+  setTimeout: async <T>(_ms?: number, value?: T, options?: { signal?: AbortSignal }) => {
+    options?.signal?.throwIfAborted();
+    return value as T;
+  },
+}));
 
 const execFileAsync = promisify(execFile);
 
@@ -38,12 +50,59 @@ const WORKSPACE_LISTING = JSON.stringify([
 interface ExecCall {
   path: string;
   command: string;
+  stdin?: string;
+}
+
+/**
+ * The JSend envelopes and sandbox statuses of the CreateOS control plane, as published in
+ * @nodeops-createos/sandbox 0.8.2 (types.d.ts). The SDK is not a dependency.
+ */
+type SandboxStatus =
+  | "creating"
+  | "running"
+  | "pausing"
+  | "paused"
+  | "resuming"
+  | "forking"
+  | "error"
+  | "destroying"
+  | "destroyed"
+  | "failed";
+interface SuccessEnvelope<T> {
+  status: "success";
+  data: T;
+}
+interface FailEnvelope {
+  status: "fail";
+  data: Record<string, unknown> | string;
+}
+interface ErrorEnvelope {
+  status: "error";
+  message: string;
+  code: number;
 }
 
 function jsonResponse(data: unknown): Response {
-  return new Response(JSON.stringify({ status: "success", data }), {
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ status: "success", data } satisfies SuccessEnvelope<unknown>),
+    {
+      headers: { "content-type": "application/json" },
+    },
+  );
+}
+
+function failResponse(status: number, code: string, error: string): Response {
+  return new Response(
+    JSON.stringify({ status: "fail", data: { code, error } } satisfies FailEnvelope),
+    { status, headers: { "content-type": "application/json" } },
+  );
+}
+
+function errorResponse(status: number, message: string): Response {
+  return new Response(
+    JSON.stringify({ status: "error", message, code: status } satisfies ErrorEnvelope),
+    { status, headers: { "content-type": "application/json" } },
+  );
 }
 
 function shellArgs(command: string): string[] {
@@ -82,6 +141,7 @@ function createosFixture(
 ) {
   const statuses = [...(options.statuses ?? ["running"])];
   const calls: string[] = [];
+  const bodies: Array<{ route: string; body: unknown }> = [];
   const execs: ExecCall[] = [];
   const events: string[] = [];
   const failConnects = new Set(options.failConnectScreenIds ?? []);
@@ -98,6 +158,7 @@ function createosFixture(
     const method = init?.method ?? "GET";
     const route = `${method} ${url.pathname}`;
     calls.push(route);
+    if (typeof init?.body === "string") bodies.push({ route, body: JSON.parse(init.body) });
 
     if (route === "POST /v1/sandboxes") {
       return jsonResponse({ id: "sbx-1", status: statuses[0] ?? "running" });
@@ -106,9 +167,9 @@ function createosFixture(
       return jsonResponse({ id: "sbx-1", status: statuses.shift() ?? "running" });
     }
     if (method === "POST" && url.pathname.endsWith("/exec")) {
-      const body = JSON.parse(String(init?.body)) as { args: string[] };
+      const body = JSON.parse(String(init?.body)) as { args: string[]; stdin?: string };
       const command = body.args[3] ?? "";
-      execs.push({ path: url.pathname, command });
+      execs.push({ path: url.pathname, command, stdin: body.stdin });
       // The tab probe also lists /proc, so match it before the workspace listing.
       if (command.includes("/json/new")) {
         return jsonResponse({ result: { stdout: "", exit_code: 1 } });
@@ -145,10 +206,7 @@ function createosFixture(
       events.push(`delete:${url.pathname.split("/").at(-1) ?? ""}`);
       if (screenDeleteFailures > 0) {
         screenDeleteFailures -= 1;
-        return new Response(JSON.stringify({ status: "error", message: "unavailable" }), {
-          status: 500,
-          headers: { "content-type": "application/json" },
-        });
+        return errorResponse(500, "unavailable");
       }
     }
     if (method === "GET" && url.pathname.endsWith("/connect")) {
@@ -163,11 +221,7 @@ function createosFixture(
         events.push(`resume:${screenId}`);
       }
       if (failConnects.has(screenId)) {
-        failConnects.delete(screenId);
-        return new Response(JSON.stringify({ status: "error", message: "not found" }), {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        });
+        return failResponse(404, "screen_not_found", "screen not found");
       }
       if (!options.connectionUrl) return jsonResponse({});
       if (!options.annotateScreen) return jsonResponse({ url: options.connectionUrl, token: "t" });
@@ -181,7 +235,7 @@ function createosFixture(
     return jsonResponse({});
   }) as typeof fetch;
 
-  return { calls, execs, events, fetchImpl };
+  return { calls, bodies, execs, events, fetchImpl };
 }
 
 function provider(fixture: ReturnType<typeof createosFixture>) {
@@ -205,7 +259,7 @@ function createosBotProfile(botId: string) {
 
 describe("CreateOSSandboxProvider", () => {
   it("creates a sandbox and waits until it runs", async () => {
-    const fixture = createosFixture({ statuses: ["provisioning", "running"] });
+    const fixture = createosFixture({ statuses: ["creating", "running"] });
     const ref = await provider(fixture).provision({ botId: "bot-a", homePath: "/unused" }, context);
 
     expect(ref).toMatchObject({ id: "sbx-1", providerRef: "sbx-1", kind: "createos", fresh: true });
@@ -237,7 +291,7 @@ describe("CreateOSSandboxProvider", () => {
   });
 
   it("waits for an existing sandbox that is neither running nor paused", async () => {
-    const fixture = createosFixture({ statuses: ["starting", "running"] });
+    const fixture = createosFixture({ statuses: ["creating", "running"] });
     await provider(fixture).provision(
       { botId: "bot-a", homePath: "/unused", providerRef: "sbx-1", providerKind: "createos" },
       context,
@@ -262,10 +316,38 @@ describe("CreateOSSandboxProvider", () => {
       { type: "stdout", data: "hello\n" },
       { type: "exit", code: 0 },
     ]);
-    const command = fixture.execs.at(-1)?.command ?? "";
-    expect(command).toContain("cd '/home/desktop/rakazo-home/notes'");
-    expect(command).toContain("TEST_VALUE='works'");
-    expect(command).toContain("'env' '-u' 'FAILED' '--'");
+    const exec = fixture.execs.at(-1);
+    expect(exec?.command).toBe(
+      `mkdir -p '/home/desktop/rakazo-home/notes' && cd '/home/desktop/rakazo-home/notes' && eval "$(cat)" && 'env' '-u' 'FAILED' '--' 'echo' 'hello'`,
+    );
+    expect(exec?.stdin).toBe("export TEST_VALUE='works'\n");
+  });
+
+  it("sends command secrets on stdin, never in command text", async () => {
+    const fixture = createosFixture();
+    const secret = "fake-secret-'value'";
+    for await (const _ of provider(fixture).execute(
+      computer,
+      { argv: ["printenv", "FAKE_TOKEN"], env: { FAKE_TOKEN: secret } },
+      context,
+    ));
+    for await (const _ of provider(fixture).execute(computer, { argv: ["true"] }, context));
+
+    expect(fixture.execs.some((exec) => exec.command.includes("fake-secret"))).toBe(false);
+    expect(fixture.execs.at(-2)?.stdin).toContain("fake-secret");
+    expect(fixture.execs.at(-1)).toMatchObject({ stdin: undefined });
+    expect(fixture.execs.at(-1)?.command).not.toContain("cat");
+
+    const invalid = async () => {
+      for await (const _ of provider(fixture).execute(
+        computer,
+        { argv: ["true"], env: { "BAD NAME": "fake-secret" } },
+        context,
+      ));
+    };
+    const execs = fixture.execs.length;
+    await expect(invalid()).rejects.toThrow("invalid environment variable name");
+    expect(fixture.execs.length).toBe(execs);
   });
 
   it("reports a timed-out command as exit code 124", async () => {
@@ -394,6 +476,60 @@ describe("CreateOSSandboxProvider", () => {
     expect(() => probe([profile, String(port), root])).toThrow();
   });
 
+  it("moves the pointer to a scroll's point before turning the wheel", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      {
+        actions: [{ kind: "scroll", direction: "down", amount: 4, x: 600, y: 420 }],
+        observe: false,
+      },
+      context,
+    );
+    const mouse = fixture.bodies.filter(({ route }) => route.includes("/computer/mouse/"));
+    expect(mouse).toEqual([
+      { route: expect.stringMatching(/\/mouse\/move$/), body: { x: 600, y: 420 } },
+      {
+        route: expect.stringMatching(/\/mouse\/scroll$/),
+        body: { direction: "down", amount: 4 },
+      },
+    ]);
+  });
+
+  it("caps a scroll at twenty notches and refuses sideways scrolling it can't do", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      { actions: [{ kind: "scroll", direction: "down", amount: 50 }], observe: false },
+      context,
+    );
+    expect(fixture.bodies.find(({ route }) => route.endsWith("/mouse/scroll"))?.body).toEqual({
+      direction: "down",
+      amount: 20,
+    });
+    await expect(
+      target.act(
+        computer,
+        { actions: [{ kind: "scroll", direction: "left", amount: 2 }], observe: false },
+        context,
+      ),
+    ).rejects.toThrow("CreateOS computers can only scroll up or down");
+  });
+
+  it("scrolls where the pointer is when a scroll has no point", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      { actions: [{ kind: "scroll", direction: "up" }], observe: false },
+      context,
+    );
+    expect(fixture.calls.some((route) => route.endsWith("/mouse/move"))).toBe(false);
+    expect(fixture.calls.some((route) => route.endsWith("/mouse/scroll"))).toBe(true);
+  });
+
   it("exports the workspace after a graphical action alone", async () => {
     const fixture = createosFixture();
     const target = provider(fixture);
@@ -449,10 +585,7 @@ describe("CreateOSSandboxProvider", () => {
   });
 
   it("treats teardown of a missing sandbox as done", async () => {
-    const gone = (async () =>
-      new Response(JSON.stringify({ status: "error", message: "not found" }), {
-        status: 404,
-      })) as typeof fetch;
+    const gone = (async () => failResponse(404, "not_found", "sandbox not found")) as typeof fetch;
     const target = new CreateOSSandboxProvider({ apiKey: "test-key", fetch: gone });
 
     await expect(target.stop(computer, context)).resolves.toBeUndefined();
@@ -736,6 +869,323 @@ describe("CreateOSSandboxProvider", () => {
     }
     expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
   });
+});
+
+/**
+ * Stateful CreateOS control plane. Statuses move the way the docs describe: a transitional
+ * status is reported once, then settles on the next read. Anything inside a sandbox that is
+ * not running answers 404 "sandbox not found or not running", as the exec endpoint does.
+ */
+function createosControlPlane(
+  options: { status?: SandboxStatus; resumeTo?: SandboxStatus; failExec?: () => Response } = {},
+) {
+  const sandboxes = new Map<string, SandboxStatus>();
+  if (options.status) sandboxes.set("sbx-1", options.status);
+  const settlesTo: Partial<Record<SandboxStatus, SandboxStatus>> = {
+    creating: "running",
+    pausing: "paused",
+    resuming: options.resumeTo ?? "running",
+    destroying: "destroyed",
+  };
+  const calls: string[] = [];
+  const bodies: Array<{ route: string; body: unknown }> = [];
+  let created = 0;
+  const view = (id: string, status: SandboxStatus) => jsonResponse({ id, status });
+  const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const route = `${method} ${url.pathname}`;
+    calls.push(route);
+    if (typeof init?.body === "string") bodies.push({ route, body: JSON.parse(init.body) });
+    if (route === "POST /v1/sandboxes") {
+      created += 1;
+      const id = `sbx-new-${created}`;
+      sandboxes.set(id, "creating");
+      return view(id, "creating");
+    }
+    const [, , , id = "", resource = ""] = url.pathname.split("/");
+    const status = sandboxes.get(id);
+    if (!status) return failResponse(404, "not_found", "sandbox not found or not running");
+    if (resource === "" && method === "GET") {
+      const next = settlesTo[status];
+      if (next) sandboxes.set(id, next);
+      return view(id, status);
+    }
+    if (resource === "" && method === "PATCH") return view(id, status);
+    if (resource === "" && method === "DELETE") {
+      sandboxes.set(id, "destroyed");
+      return view(id, "destroyed");
+    }
+    if (resource === "pause") {
+      if (status !== "running") return failResponse(409, "invalid_state", "sandbox is not running");
+      sandboxes.set(id, "pausing");
+      return view(id, "pausing");
+    }
+    if (resource === "resume") {
+      if (status !== "paused" && status !== "error") {
+        return failResponse(409, "invalid_state", "sandbox is not paused or in error");
+      }
+      sandboxes.set(id, "resuming");
+      return view(id, "resuming");
+    }
+    if (status !== "running") {
+      return failResponse(404, "not_found", "sandbox not found or not running");
+    }
+    if (resource === "exec") {
+      return options.failExec?.() ?? jsonResponse({ result: { stdout: "ok\n", exit_code: 0 } });
+    }
+    if (resource === "files") return failResponse(404, "file_not_found", "file not found");
+    return jsonResponse({});
+  }) as typeof fetch;
+  return {
+    calls,
+    bodies,
+    fetchImpl,
+    status: (id = "sbx-1") => sandboxes.get(id),
+    provider: () => new CreateOSSandboxProvider({ apiKey: "test-key", fetch: fetchImpl }),
+  };
+}
+
+async function runEcho(target: CreateOSSandboxProvider): Promise<ProcessEvent[]> {
+  const events: ProcessEvent[] = [];
+  for await (const event of target.execute(computer, { argv: ["echo", "ok"] }, context)) {
+    events.push(event);
+  }
+  return events;
+}
+
+async function rejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected a rejection");
+}
+
+const existing = {
+  botId: "bot-a",
+  homePath: "/unused",
+  providerRef: "sbx-1",
+  providerKind: "createos" as const,
+};
+
+describe("CreateOS sandbox lifecycle", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each<{
+    status?: SandboxStatus;
+    resumeTo?: SandboxStatus;
+    outcome: "ran" | "gone";
+    resumed: boolean;
+    deleted: boolean;
+  }>([
+    { status: "running", outcome: "ran", resumed: false, deleted: false },
+    { status: "creating", outcome: "ran", resumed: false, deleted: false },
+    { status: "resuming", outcome: "ran", resumed: false, deleted: false },
+    { status: "pausing", outcome: "ran", resumed: true, deleted: false },
+    { status: "paused", outcome: "ran", resumed: true, deleted: false },
+    { status: "error", outcome: "ran", resumed: true, deleted: false },
+    { status: "paused", resumeTo: "error", outcome: "gone", resumed: true, deleted: true },
+    { status: "error", resumeTo: "error", outcome: "gone", resumed: true, deleted: true },
+    { status: "failed", outcome: "gone", resumed: false, deleted: true },
+    { status: "destroying", outcome: "gone", resumed: false, deleted: false },
+    { status: "destroyed", outcome: "gone", resumed: false, deleted: false },
+    { status: undefined, outcome: "gone", resumed: false, deleted: false },
+  ])(
+    "runs a command on a $status sandbox (resume ends $resumeTo): $outcome",
+    async ({ status, resumeTo, outcome, resumed, deleted }) => {
+      const plane = createosControlPlane({ status, resumeTo });
+
+      if (outcome === "ran") {
+        expect((await runEcho(plane.provider())).at(-1)).toEqual({ type: "exit", code: 0 });
+        expect(plane.status()).toBe("running");
+      } else {
+        const error = await rejection(runEcho(plane.provider()));
+        expect(error).toMatchObject({ name: "SandboxNotFoundError" });
+        expect(isSandboxGoneError(error)).toBe(true);
+      }
+      expect(plane.calls.includes("POST /v1/sandboxes/sbx-1/resume")).toBe(resumed);
+      expect(plane.calls.includes("DELETE /v1/sandboxes/sbx-1")).toBe(deleted);
+    },
+  );
+
+  it.each<{
+    status?: SandboxStatus;
+    resumeTo?: SandboxStatus;
+    fresh: boolean;
+    resumed: boolean;
+    deleted: boolean;
+  }>([
+    { status: "running", fresh: false, resumed: false, deleted: false },
+    { status: "creating", fresh: false, resumed: false, deleted: false },
+    { status: "resuming", fresh: false, resumed: false, deleted: false },
+    { status: "pausing", fresh: false, resumed: true, deleted: false },
+    { status: "paused", fresh: false, resumed: true, deleted: false },
+    { status: "error", fresh: false, resumed: true, deleted: false },
+    { status: "paused", resumeTo: "error", fresh: true, resumed: true, deleted: true },
+    { status: "failed", fresh: true, resumed: false, deleted: true },
+    { status: "destroying", fresh: true, resumed: false, deleted: false },
+    { status: "destroyed", fresh: true, resumed: false, deleted: false },
+    { status: undefined, fresh: true, resumed: false, deleted: false },
+  ])(
+    "provisions over a $status sandbox (resume ends $resumeTo): fresh $fresh",
+    async ({ status, resumeTo, fresh, resumed, deleted }) => {
+      const plane = createosControlPlane({ status, resumeTo });
+      const ref = await plane.provider().provision(existing, context);
+
+      expect(ref.fresh).toBe(fresh);
+      expect(ref.providerRef).toBe(fresh ? "sbx-new-1" : "sbx-1");
+      expect(plane.status(ref.providerRef)).toBe("running");
+      expect(plane.calls.includes("POST /v1/sandboxes/sbx-1/resume")).toBe(resumed);
+      expect(plane.calls.includes("DELETE /v1/sandboxes/sbx-1")).toBe(deleted);
+      expect(plane.calls.includes("PATCH /v1/sandboxes/sbx-1")).toBe(!fresh);
+    },
+  );
+
+  it.each<{ status?: SandboxStatus; settled?: SandboxStatus }>([
+    { status: "running", settled: "pausing" },
+    { status: "pausing", settled: "paused" },
+    { status: "paused", settled: "paused" },
+    { status: "destroyed", settled: "destroyed" },
+    { status: undefined, settled: undefined },
+  ])("stops a $status sandbox", async ({ status, settled }) => {
+    const plane = createosControlPlane({ status });
+    await expect(plane.provider().stop(computer, context)).resolves.toBeUndefined();
+    expect(plane.status()).toBe(settled);
+  });
+
+  it("does not report an errored sandbox as stopped", async () => {
+    const plane = createosControlPlane({ status: "error" });
+    const error = await rejection(plane.provider().stop(computer, context));
+    expect(error).toBeInstanceOf(CreateOSHttpError);
+    expect(error).toMatchObject({ status: 409, code: "invalid_state" });
+  });
+
+  it.each([
+    { status: 401, response: () => failResponse(401, "unauthorized", "key not found") },
+    {
+      status: 402,
+      response: () => failResponse(402, "insufficient_credit", "insufficient credit"),
+    },
+    { status: 429, response: () => failResponse(429, "rate_limited", "too many requests") },
+    { status: 500, response: () => errorResponse(500, "internal error") },
+  ])("does not treat a $status from a running sandbox as gone", async ({ status, response }) => {
+    const plane = createosControlPlane({ status: "running", failExec: response });
+    const error = await rejection(runEcho(plane.provider()));
+
+    expect(error).toBeInstanceOf(CreateOSHttpError);
+    expect(error).toMatchObject({ name: "CreateOSHttpError", status });
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(plane.calls).not.toContain("GET /v1/sandboxes/sbx-1");
+  });
+
+  it("parses the fail envelope into a message and stable code", async () => {
+    const plane = createosControlPlane({
+      status: "running",
+      failExec: () => failResponse(401, "unauthorized", "key not found"),
+    });
+    const error = await rejection(runEcho(plane.provider()));
+    expect(error).toMatchObject({
+      code: "unauthorized",
+      message: "CreateOS request failed (401): code: unauthorized, error: key not found",
+    });
+  });
+
+  it("keeps a missing file inside a running sandbox separate from a gone sandbox", async () => {
+    const plane = createosControlPlane({ status: "running" });
+    const error = await rejection(plane.provider().readFile(computer, "missing.txt", context));
+
+    expect(error).toMatchObject({ name: "CreateOSHttpError", status: 404 });
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(plane.calls).not.toContain("POST /v1/sandboxes/sbx-1/resume");
+  });
+
+  it("does not resume a stopped sandbox to release its screen", async () => {
+    const plane = createosControlPlane({ status: "paused" });
+    await expect(plane.provider().releaseScreen(computer, context)).resolves.toBeUndefined();
+    expect(plane.status()).toBe("paused");
+    expect(plane.calls).not.toContain("POST /v1/sandboxes/sbx-1/resume");
+  });
+
+  it.each<{ status?: SandboxStatus; running: boolean }>([
+    { status: "running", running: true },
+    { status: "pausing", running: false },
+    { status: "paused", running: false },
+    { status: "error", running: false },
+    { status: undefined, running: false },
+  ])("reports a $status sandbox running: $running", async ({ status, running }) => {
+    const plane = createosControlPlane({ status });
+    await expect(plane.provider().isRunning(computer, context)).resolves.toBe(running);
+    await expect(plane.provider().isRunning({ ...computer, kind: "e2b" }, context)).resolves.toBe(
+      false,
+    );
+    expect(plane.calls.filter((call) => !call.startsWith("GET "))).toEqual([]);
+  });
+
+  it("does not guess whether a sandbox runs while the control plane is unavailable", async () => {
+    const provider = new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      fetch: (async () => errorResponse(503, "unavailable")) as typeof fetch,
+    });
+    const error = await rejection(provider.isRunning(computer, context));
+    expect(error).toMatchObject({ name: "CreateOSHttpError", status: 503 });
+    expect(isSandboxGoneError(error)).toBe(false);
+  });
+
+  it("reuses a running sandbox when the auto-pause update fails", async () => {
+    const plane = createosControlPlane({ status: "running" });
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? errorResponse(503, "unavailable")
+        : plane.fetchImpl(input, init)) as typeof fetch;
+    const ref = await new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      fetch: fetchImpl,
+    }).provision(existing, context);
+    expect(ref).toMatchObject({ providerRef: "sbx-1", fresh: false });
+  });
+
+  it.each<{ status?: SandboxStatus; outcome: "resumed" | "gone" }>([
+    { status: "paused", outcome: "resumed" },
+    { status: "destroyed", outcome: "gone" },
+    { status: undefined, outcome: "gone" },
+  ])("keeps a $status sandbox alive: $outcome", async ({ status, outcome }) => {
+    const plane = createosControlPlane({ status });
+    const keepAlive = plane.provider().keepAlive(computer);
+    if (outcome === "resumed") {
+      await expect(keepAlive).resolves.toBeUndefined();
+      expect(plane.status()).toBe("running");
+    } else {
+      expect(isSandboxGoneError(await rejection(keepAlive))).toBe(true);
+    }
+  });
+
+  it.each<{ idleMs?: string; create?: number; patch: Record<string, unknown> }>([
+    { idleMs: undefined, create: 1_200, patch: { auto_pause_after_seconds: 1_200 } },
+    { idleMs: "30000", create: 630, patch: { auto_pause_after_seconds: 630 } },
+    { idleMs: "3600000", create: 7_200, patch: { auto_pause_after_seconds: 7_200 } },
+    { idleMs: "43200000", create: 86_400, patch: { auto_pause_after_seconds: 86_400 } },
+    { idleMs: "86400000", create: undefined, patch: { disable_auto_pause: true } },
+    { idleMs: "0", create: undefined, patch: { disable_auto_pause: true } },
+  ])(
+    "sets CreateOS auto-pause behind a $idleMs ms sleep window",
+    async ({ idleMs, create, patch }) => {
+      if (idleMs !== undefined) vi.stubEnv("SANDBOX_IDLE_MS", idleMs);
+      const fresh = createosControlPlane();
+      await fresh.provider().provision({ botId: "bot-a", homePath: "/unused" }, context);
+      const reused = createosControlPlane({ status: "running" });
+      await reused.provider().provision(existing, context);
+
+      const createBody = fresh.bodies.find((entry) => entry.route === "POST /v1/sandboxes")?.body;
+      expect((createBody as { auto_pause_after_seconds?: number }).auto_pause_after_seconds).toBe(
+        create,
+      );
+      expect(reused.bodies.find((entry) => entry.route.startsWith("PATCH"))?.body).toEqual(patch);
+    },
+  );
 });
 
 describe("CreateOS screen URL hosts", () => {

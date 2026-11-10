@@ -27,10 +27,15 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       const desktop = (window as typeof window & { rakazoDesktop?: RakazoDesktop }).rakazoDesktop;
 
       return {
+        computerKeys: desktop?.computer ? Object.keys(desktop.computer).sort() : [],
+        deviceKeys: desktop?.device ? Object.keys(desktop.device).sort() : [],
         bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
         windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
         updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
+        badgeKeys: desktop?.badge ? Object.keys(desktop.badge) : [],
+        passkeyRpIds: await desktop?.passkeys?.rpIds(),
         platform: desktop?.platform,
+        nativeWindowFrame: desktop?.nativeWindowFrame,
         state: await desktop?.window.state(),
         update: await desktop?.update.state(),
         nodeGlobals: {
@@ -41,10 +46,36 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       };
     });
 
-    expect(renderer.bridgeKeys).toEqual(["localSettings", "oauth", "platform", "update", "window"]);
+    expect(renderer.bridgeKeys).toEqual([
+      "badge",
+      "computer",
+      "device",
+      "locale",
+      "menu",
+      "monitoring",
+      "nativeWindowFrame",
+      "oauth",
+      "passkeys",
+      "platform",
+      "server",
+      "settings",
+      "update",
+      "window",
+    ]);
+    // Unpackaged builds carry no passkey association.
+    expect(renderer.passkeyRpIds).toEqual([]);
+    expect(renderer.computerKeys).toEqual([
+      "managesHostChoice",
+      "onConfigure",
+      "requestAccess",
+      "revokeAccess",
+    ]);
+    expect(renderer.deviceKeys).toEqual(["setAllowed", "state"]);
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
+    expect(renderer.badgeKeys).toEqual(["set"]);
     expect(renderer.platform).toBe(process.platform);
+    expect(renderer.nativeWindowFrame).toBe(process.platform === "win32");
     expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
     // An unpackaged run has no update feed, and that is reported as a state rather than an error.
     expect(renderer.update).toMatchObject({ phase: "unsupported", availableVersion: null });
@@ -56,11 +87,23 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
 
     const preferences = await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
+      // The installed Electron types do not declare getLastWebPreferences; the runtime has it.
+      const lastPreferences = win
+        ? (
+            win.webContents as Electron.WebContents & {
+              getLastWebPreferences(): {
+                nodeIntegration: boolean;
+                contextIsolation: boolean;
+                sandbox: boolean;
+              };
+            }
+          ).getLastWebPreferences()
+        : undefined;
       return {
         count: BrowserWindow.getAllWindows().length,
-        nodeIntegration: win?.webContents.getLastWebPreferences().nodeIntegration,
-        contextIsolation: win?.webContents.getLastWebPreferences().contextIsolation,
-        sandbox: win?.webContents.getLastWebPreferences().sandbox,
+        nodeIntegration: lastPreferences?.nodeIntegration,
+        contextIsolation: lastPreferences?.contextIsolation,
+        sandbox: lastPreferences?.sandbox,
         state: {
           minimized: win?.isMinimized(),
           maximized: win?.isMaximized(),

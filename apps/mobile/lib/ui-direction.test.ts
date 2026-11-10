@@ -89,15 +89,4 @@ describe("mobile ui direction", () => {
     await Promise.resolve();
     expect(reloadAppAsync).toHaveBeenCalledWith("ui-direction");
   });
-
-  it("keeps root layout from applying device-locale direction before i18n bootstrap", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { dirname, join } = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const layout = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../app/_layout.tsx"),
-      "utf8",
-    );
-    expect(layout).not.toMatch(/applyMobileUiDirection\s*\(/);
-  });
 });

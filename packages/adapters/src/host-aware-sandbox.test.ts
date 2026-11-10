@@ -9,6 +9,7 @@ import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { createRunSandbox, HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
+import { HostComputerSandbox } from "./host-computer-sandbox.js";
 
 const ctx = {
   operationId: "1",
@@ -27,6 +28,37 @@ describe("host-aware sandbox", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it("never falls back to backend execution when the native connection is missing", async () => {
+    const provision = vi.spyOn(DesktopSandboxProvider.prototype, "provision");
+    const sandbox = await createRunSandbox("docker", {
+      prisma: {
+        deploymentSettings: { findUnique: vi.fn(async () => ({ computerHost: "this-mac" })) },
+      } as unknown as PrismaClient,
+    });
+    await expect(sandbox.provision({ botId: "host", homePath: "/unused" }, ctx)).rejects.toThrow(
+      "requires the desktop app",
+    );
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it("refuses an old host reference once the deployment switches back to Docker", async () => {
+    const host = new DesktopSandboxProvider();
+    const execute = vi.spyOn(host, "execute");
+    const sandbox = new HostAwareSandbox(new FakeSandboxProvider(), host, async () => false);
+    const computer: ComputerRef = {
+      id: "old-host",
+      botId: "host",
+      kind: "desktop",
+      providerRef: "old-host",
+    };
+    const attempt = async () => {
+      for await (const _event of sandbox.execute(computer, { argv: ["echo", "no"] }, ctx)) {
+      }
+    };
+    await expect(attempt()).rejects.toThrow("disabled");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("exposes and routes page commands through the production Docker wrapper", async () => {
     const result = {
       ok: true,
@@ -38,7 +70,7 @@ describe("host-aware sandbox", () => {
     const pageBrowser = vi
       .spyOn(DockerSandboxProvider.prototype, "pageBrowser")
       .mockResolvedValue(result);
-    const sandbox = createRunSandbox("docker", {
+    const sandbox = await createRunSandbox("docker", {
       prisma: { deploymentSettings: { findUnique: vi.fn() } } as unknown as PrismaClient,
     });
     const browser = new ComputerBrowserProvider({ sandbox });
@@ -59,6 +91,25 @@ describe("host-aware sandbox", () => {
     const hostResult = await browser.snapshot({ ...computer, kind: "desktop" }, {}, ctx);
     expect(hostResult.fallback).toBe("computer_act");
     expect(pageBrowser).not.toHaveBeenCalled();
+  });
+
+  it("routes billing capability by computer kind rather than the current host setting", () => {
+    const isolated: SandboxProvider = new FakeSandboxProvider();
+    isolated.billsWhileRunning = vi.fn(() => true);
+    const sandbox = new HostAwareSandbox(isolated, new DesktopSandboxProvider(), async () => true);
+    const computer: ComputerRef = {
+      id: "computer",
+      providerRef: "computer",
+      botId: "home",
+      kind: "fake",
+    };
+    expect(sandbox.billsWhileRunning(computer)).toBe(true);
+    expect(isolated.billsWhileRunning).toHaveBeenCalledWith(computer);
+    expect(sandbox.billsWhileRunning({ ...computer, kind: "desktop" })).toBe(false);
+    expect(isolated.billsWhileRunning).toHaveBeenCalledOnce();
+    expect(new DockerSandboxProvider("http://supervisor.test", "test-token")).not.toHaveProperty(
+      "billsWhileRunning",
+    );
   });
 
   it("does not expose page commands when neither provider supports them", () => {
@@ -112,6 +163,24 @@ describe("host-aware sandbox", () => {
     await sandbox.destroy(computer, ctx);
   });
 
+  it.each([
+    [true, "desktop"],
+    [false, "fake"],
+  ])(
+    "reports the kind it would provision without starting one (this-mac: %s)",
+    async (hostEnabled, kind) => {
+      const isolated = new FakeSandboxProvider();
+      const provision = vi.spyOn(isolated, "provision");
+      const sandbox = new HostAwareSandbox(
+        isolated,
+        new DesktopSandboxProvider(),
+        async () => hostEnabled,
+      );
+      await expect(sandbox.provisionKind()).resolves.toBe(kind);
+      expect(provision).not.toHaveBeenCalled();
+    },
+  );
+
   it("provisions on the isolated provider when this-mac is off", async () => {
     const isolated = new FakeSandboxProvider();
     const host = new DesktopSandboxProvider();
@@ -134,6 +203,25 @@ describe("host-aware sandbox", () => {
     }
     expect(code).toBe(0);
     await desktop.destroy(computer, ctx);
+  });
+
+  it("never runs bot commands on a production backend host", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      await expect(createRunSandbox("desktop", {})).rejects.toThrow(
+        "SANDBOX_PROVIDER=desktop runs bot commands directly on this host",
+      );
+      // The desktop app's backend reaches this computer only through the authenticated bridge.
+      const bridged = new HostAwareSandbox(
+        new FakeSandboxProvider(),
+        new HostComputerSandbox("", ""),
+        async () => true,
+      );
+      expect(bridged.describe().id).toBe("fake");
+      expect(new HostComputerSandbox("", "").describe().id).toBe("desktop");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("only switches docker deployments onto this Mac", () => {
@@ -165,4 +253,24 @@ describe("host-aware sandbox", () => {
     ]);
     await sandbox.destroy(computer, ctx);
   });
+});
+
+it("starts even when the saved computer settings cannot be read", async () => {
+  const sandbox = await createRunSandbox("docker", {
+    prisma: {
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          computerProvider: "wuying",
+          computerProviderCipher: "c",
+        })),
+      },
+    } as unknown as PrismaClient,
+    secrets: {
+      load: async () => {
+        throw new Error("secret store unavailable");
+      },
+      onChange: () => () => {},
+    },
+  });
+  expect(sandbox.describe().id).toBe("docker");
 });

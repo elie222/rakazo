@@ -136,7 +136,7 @@ export async function prepareGraphqlInstall(input: {
   credential?: string;
   signal?: AbortSignal;
   remote?: RemoteTransportDependencies;
-  /** Loopback / LAN endpoint escape: deployment owner or instance flag. */
+  /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
   const auth = AuthSchema.parse(input.config.auth);
@@ -453,8 +453,21 @@ function graphqlTypeToJsonSchema(
 ): Record<string, unknown> {
   if (!type) return {};
   if (type.kind === "NON_NULL") {
-    return graphqlTypeToJsonSchema(type.ofType ?? undefined, typeMap, depth);
+    return graphqlNonNullTypeToJsonSchema(type.ofType ?? undefined, typeMap, depth);
   }
+  // GraphQL distinguishes an omitted input from an explicit null. Preserve that
+  // distinction for arguments, input fields and list items through tool validation.
+  return {
+    anyOf: [graphqlNonNullTypeToJsonSchema(type, typeMap, depth), { type: "null" }],
+  };
+}
+
+function graphqlNonNullTypeToJsonSchema(
+  type: GqlTypeRef | undefined,
+  typeMap: Map<string, GqlType>,
+  depth: number,
+): Record<string, unknown> {
+  if (!type) return {};
   if (type.kind === "LIST") {
     return {
       type: "array",

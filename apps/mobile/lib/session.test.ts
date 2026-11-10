@@ -1,7 +1,9 @@
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAppBadge, syncAppBadge } from "./app-badge";
 import { artifactCacheSession } from "./artifact-cache-session";
-import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
+import { stopLiveNotifications } from "./live-notifications.js";
 import { clearNetworkCache } from "./network-cache.js";
 import {
   clearSessionToken,
@@ -9,8 +11,10 @@ import {
   loadSessionToken,
   loadVerifiedIntegrationsScope,
   registerSessionDiskCache,
+  replaceSessionTokenIfCurrent,
   restoreSessionToken,
-  saveAvatarStyleIfCurrent,
+  rotateSessionTokenIfCurrent,
+  saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
@@ -18,6 +22,8 @@ import {
   tokenFromAuthResponse,
 } from "./session.js";
 import { clearFailedSends } from "./thread-feedback.js";
+
+vi.mock("expo-notifications", () => ({ setBadgeCountAsync: vi.fn(async () => true) }));
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -77,6 +83,26 @@ describe("mobile session storage", () => {
     expect(clear.mock.calls.length).toBeGreaterThan(2);
   });
 
+  it("clears the icon badge on sign-out and server-session restoration", async () => {
+    registerSessionDiskCache(() => void clearAppBadge());
+    await syncAppBadge(3);
+    vi.mocked(Notifications.setBadgeCountAsync).mockClear();
+    await clearSessionToken();
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+    await syncAppBadge(2);
+    await restoreSessionToken("fake-other-server");
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+  });
+
+  it("clears delivered notifications only when the session ends", async () => {
+    vi.mocked(stopLiveNotifications).mockClear();
+    await saveSessionToken("fake-a");
+    await restoreSessionToken("fake-b");
+    expect(stopLiveNotifications).not.toHaveBeenCalled();
+    await clearSessionToken();
+    expect(stopLiveNotifications).toHaveBeenCalledWith(true);
+  });
+
   it("still signs out and runs every other wipe when one disk cache throws", async () => {
     const after = vi.fn();
     registerSessionDiskCache(() => {
@@ -129,84 +155,6 @@ describe("mobile session storage", () => {
     expect(clearFailedSends).toHaveBeenCalledOnce();
   });
 
-  it("forgets the cached avatar style on sign-out", async () => {
-    await saveAvatarStyle("robot");
-    await clearSessionToken();
-
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
-    expect(getCachedAvatarStyle()).toBe("organic");
-  });
-
-  it("ignores an avatar style response from a session that was cleared", async () => {
-    const generation = currentSessionGeneration();
-    await clearSessionToken();
-    vi.mocked(SecureStore.setItemAsync).mockClear();
-
-    await expect(saveAvatarStyleIfCurrent(generation, "organic")).resolves.toBe(false);
-    expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
-    expect(getCachedAvatarStyle()).toBe("organic");
-  });
-
-  it("does not let an in-flight style write land after sign-out", async () => {
-    const disk = new Map<string, string>();
-    let releaseWrite: () => void = () => undefined;
-    const write = new Promise<void>((resolve) => {
-      releaseWrite = resolve;
-    });
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === AVATAR_STYLE_KEY) await write;
-      disk.set(key, value);
-    });
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      disk.delete(key);
-    });
-
-    try {
-      const generation = currentSessionGeneration();
-      const saving = saveAvatarStyleIfCurrent(generation, "organic");
-      await Promise.resolve();
-      const clearing = clearSessionToken();
-      releaseWrite();
-      await saving;
-      await clearing;
-
-      expect(disk.has(AVATAR_STYLE_KEY)).toBe(false);
-      expect(getCachedAvatarStyle()).toBe("organic");
-    } finally {
-      releaseWrite();
-      vi.mocked(SecureStore.setItemAsync).mockReset();
-      vi.mocked(SecureStore.deleteItemAsync).mockReset();
-    }
-  });
-
-  it("still clears the session when the avatar style cannot be wiped", async () => {
-    const disk = new Map<string, string>();
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      disk.set(key, value);
-    });
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      disk.delete(key);
-    });
-    await saveAvatarStyle("organic");
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
-      disk.delete(key);
-    });
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
-      disk.set(key, value);
-    });
-
-    try {
-      await expect(clearSessionToken()).resolves.toBe(true);
-      expect(disk.has("rakazo.session_token")).toBe(false);
-      expect(disk.get(AVATAR_STYLE_KEY)).toBe("organic");
-    } finally {
-      vi.mocked(SecureStore.setItemAsync).mockReset();
-      vi.mocked(SecureStore.deleteItemAsync).mockReset();
-    }
-  });
-
   it("overwrites the token when SecureStore delete fails", async () => {
     vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
       if (key === "rakazo.session_token") throw new Error("device locked");
@@ -255,15 +203,208 @@ describe("mobile session storage", () => {
   });
 });
 
-describe("auth response token parsing", () => {
-  it("prefers explicit JSON tokens, including nested session responses", () => {
-    const response = new Response(null, {
-      headers: { "set-cookie": "better-auth.session_token=cookie-token; Path=/" },
+describe("password change token rotation", () => {
+  const NAMESPACE_KEY = "rakazo.artifact-cache-session";
+  let disk: Map<string, string>;
+  let namespace: string;
+  beforeEach(async () => {
+    disk = new Map();
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => disk.get(key) ?? null);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      disk.delete(key);
+    });
+    await saveSessionToken("fake-old");
+    namespace = await artifactCacheSession("fake-old");
+    vi.mocked(clearFailedSends).mockClear();
+  });
+  const failNamespaceWrite = () =>
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async (key) => {
+      if (key === NAMESPACE_KEY) throw new Error("keychain unavailable");
+    });
+  const stored = () => JSON.parse(disk.get(NAMESPACE_KEY) ?? "null");
+
+  it("keeps unsent messages and their cache namespace for the same account", async () => {
+    await rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new");
+
+    expect(clearFailedSends).not.toHaveBeenCalled();
+    expect(await artifactCacheSession("fake-new")).toBe(namespace);
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(stored()).toEqual({ token: "fake-new", namespace, previous: "fake-old" });
+  });
+
+  it("still wipes unsent messages and the namespace for a sign-in, SSO or passkey session", async () => {
+    await replaceSessionTokenIfCurrent(currentSessionGeneration(), "fake-new");
+
+    expect(clearFailedSends).toHaveBeenCalledOnce();
+    expect(await artifactCacheSession("fake-new")).not.toBe(namespace);
+  });
+
+  it("saves the token only after its namespace, and reports a failed namespace save", async () => {
+    failNamespaceWrite();
+
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow("keychain unavailable");
+
+    // A restart still finds the previous token beside the namespace that names the queue.
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
+    expect(stored()).toEqual({ token: "fake-old", namespace });
+    await expect(loadSessionToken()).resolves.toBe("fake-new");
+    expect(clearFailedSends).not.toHaveBeenCalled();
+  });
+
+  it("saves a failed rotation's namespace only together with its token", async () => {
+    failNamespaceWrite();
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+
+    // A cache read in the meantime must not pair the new namespace with the revoked token.
+    expect(await artifactCacheSession("fake-new")).toBe(namespace);
+    expect(stored()).toEqual({ token: "fake-old", namespace });
+
+    await saveRotatedSessionToken();
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(stored()).toEqual({ token: "fake-new", namespace, previous: "fake-old" });
+  });
+
+  it("does not save a failed rotation after another session change", async () => {
+    failNamespaceWrite();
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+    await clearSessionToken();
+
+    await saveRotatedSessionToken();
+    expect(disk.has("rakazo.session_token")).toBe(false);
+    expect(disk.has(NAMESPACE_KEY)).toBe(false);
+  });
+
+  async function restart() {
+    vi.resetModules();
+    const session = await import("./session.js");
+    const artifacts = await import("./artifact-cache-session");
+    return { ...session, ...artifacts };
+  }
+
+  it("finishes after a restart a rotation that stopped between its two saves", async () => {
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      // The app stops after the namespace is saved, before the token is.
+      if (key === "rakazo.session_token") throw new Error("app stopped");
+      disk.set(key, value);
+    });
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
     });
 
-    expect(tokenFromAuthResponse(response, { token: "body-token" })).toBe("body-token");
-    expect(tokenFromAuthResponse(response, { session: { token: "nested-token" } })).toBe(
-      "nested-token",
+    const next = await restart();
+    await expect(next.loadSessionToken()).resolves.toBe("fake-new");
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(await next.artifactCacheSession("fake-new")).toBe(namespace);
+  });
+
+  it("retries an unfinished rotation after a failed read instead of using the revoked token", async () => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      async (key) => disk.get(key) ?? null,
+    );
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(async () => {
+      throw new Error("keychain unavailable");
+    });
+
+    const next = await restart();
+    await expect(next.snapshotSessionToken()).resolves.toEqual({ ok: false });
+    await expect(next.loadSessionToken()).resolves.toBe("fake-new");
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+  });
+
+  it.each([
+    ["sign-out", ""],
+    ["sign-in", "fake-other"],
+  ])("lets a %s during the recovery write win", async (change, expected) => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    let release: (() => void) | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (value === "fake-new") await new Promise<void>((resolve) => (release = resolve));
+      disk.set(key, value);
+    });
+
+    const next = await restart();
+    const recovering = next.loadSessionToken();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const changing =
+      change === "sign-out" ? next.clearSessionToken() : next.saveSessionToken(expected);
+    // The session change runs as far as it can before the delayed recovery write finishes.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release?.();
+    await Promise.all([recovering, changing]);
+
+    expect(disk.get("rakazo.session_token") ?? "").toBe(expected);
+    await expect(next.loadSessionToken()).resolves.toBe(expected);
+  });
+
+  it("finishes the recovery when a scope save makes the first token read", async () => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    const scope = {
+      apiBase: "https://api.example.test",
+      userId: "u",
+      spaceId: "s",
+      selectionId: null,
+    };
+
+    const next = await restart();
+    await next.saveVerifiedIntegrationsScope(0, scope);
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    await expect(next.loadVerifiedIntegrationsScope()).resolves.toEqual(scope);
+  });
+
+  it("does not adopt a rotation recorded for a different saved token", async () => {
+    disk.set(
+      NAMESPACE_KEY,
+      JSON.stringify({ token: "fake-new", namespace, previous: "fake-someone-else" }),
+    );
+
+    const next = await restart();
+    await expect(next.loadSessionToken()).resolves.toBe("fake-old");
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
+  });
+});
+
+describe("auth response token parsing", () => {
+  it("prefers the signed set-auth-token header over the cookie and an unsigned body token", () => {
+    const response = new Response(null, {
+      headers: {
+        "set-auth-token": "header-token.c2lnbmF0dXJl%2B%3D",
+        "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/",
+      },
+    });
+
+    expect(tokenFromAuthResponse(response, { token: "header-token" })).toBe(
+      "header-token.c2lnbmF0dXJl+=",
+    );
+  });
+
+  it("prefers the signed cookie over an unsigned body token", () => {
+    const response = new Response(null, {
+      headers: { "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/" },
+    });
+
+    expect(tokenFromAuthResponse(response, { token: "cookie-token" })).toBe("cookie-token.sig");
+  });
+
+  it("falls back to JSON tokens, including nested session responses", () => {
+    const response = new Response(null);
+
+    expect(tokenFromAuthResponse(response, { token: "body-token.sig" })).toBe("body-token.sig");
+    expect(tokenFromAuthResponse(response, { session: { token: "nested-token.sig" } })).toBe(
+      "nested-token.sig",
     );
   });
 

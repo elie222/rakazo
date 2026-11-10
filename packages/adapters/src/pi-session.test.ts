@@ -95,6 +95,22 @@ describe("Pi JSONL sessions", () => {
           }),
         }),
       );
+      expect(records[0]).toMatchObject({
+        v: 4,
+        kind: "header",
+        id: "run-1",
+        storageVersion: 1,
+      });
+      const entries = records.filter((record) => record.kind === "entry");
+      expect(entries.map((entry) => entry.type)).toEqual(["custom", "message", "message"]);
+      expect(entries.map((entry) => entry.parentId)).toEqual([null, entries[0].id, entries[1].id]);
+      expect(records.slice(1).map((record) => record.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(records.at(-1)).toMatchObject({
+        kind: "value",
+        namespace: "pi.branch.tip",
+        key: "main",
+        value: entries[2].id,
+      });
       expect(raw).toContain("Be concise.");
       expect(raw).toContain("prior");
       expect(raw).toContain("I should answer.");
@@ -103,6 +119,69 @@ describe("Pi JSONL sessions", () => {
       expect(
         await readFiles(piSessionBotRoot(path.join(root, "sessions"), "user-1", "bot-1")),
       ).toContain("run-1");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("never recreates a transcript deleted during a session", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "rakazo-pi-session-"));
+    try {
+      const session = await new PiJsonlSessionRecorder(root, root).start({
+        runId: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        provider: "openai-compatible",
+        model: "test-model",
+        thinkingLevel: "off",
+        systemPrompt: "Be concise.",
+        initialMessages: [],
+      });
+      const botRoot = piSessionBotRoot(root, "user-1", "bot-1");
+      const [file] = await readdir(botRoot);
+      expect(file).toBeDefined();
+      await rm(path.join(botRoot, file!));
+
+      await session.appendMessage({ role: "user", content: "later", timestamp: 1 });
+      await session.appendMessage({ role: "user", content: "again", timestamp: 2 });
+
+      expect(await readdir(botRoot)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("protects the session being started from the retention count limit", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "rakazo-pi-retention-"));
+    try {
+      const botRoot = piSessionBotRoot(root, "user-1", "bot-1");
+      await mkdir(botRoot, { recursive: true });
+      // Newer timestamps force the new session past the count limit without protection.
+      const future = new Date(Date.now() + 60_000);
+      await Promise.all(
+        Array.from({ length: PI_SESSION_MAX_FILES_PER_BOT }, async (_, index) => {
+          const file = path.join(botRoot, `existing-${index}.jsonl`);
+          await writeFile(file, "{}\n");
+          await utimes(file, future, future);
+        }),
+      );
+      await new PiJsonlSessionRecorder(root, root).start({
+        runId: "run-new",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        provider: "openai-compatible",
+        model: "test-model",
+        thinkingLevel: "off",
+        systemPrompt: "Be concise.",
+        initialMessages: [],
+      });
+
+      expect(await readdir(botRoot)).toHaveLength(PI_SESSION_MAX_FILES_PER_BOT);
+      const raw = await readFiles(botRoot);
+      expect(raw).toContain('"kind":"header","id":"run-new"');
+      expect(raw).toContain('"customType":"rakazo_context"');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -7,11 +7,16 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageCaption } from "../components/message-caption";
+import { OpenPageContext } from "./message-mentions";
 
 const linking = vi.hoisted(() => ({
   canOpenURL: vi.fn(async () => true),
   openURL: vi.fn(async () => undefined),
 }));
+
+// Only drawn for a sent mention, which these tests do not use.
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 
 vi.mock("react-native", () => {
   function View({ children }: { children?: ReactNode }) {
@@ -53,6 +58,7 @@ vi.mock("react-native", () => {
       ) => buttons.find((button) => button.text === "Open")?.onPress?.(),
     },
     I18nManager: { isRTL: false },
+    useColorScheme: () => "light",
   };
 });
 
@@ -94,7 +100,7 @@ describe("attachment captions", () => {
 
     // A bare address shows as host and path, joined to its site icon and isolated.
     expect(container.textContent).toBe("important \u2060\u2068example.test/docs\u2069");
-    expect(container.querySelector('[style*="font-weight: 700"]')?.textContent).toBe("important");
+    expect(container.querySelector('[style*="font-weight: 600"]')?.textContent).toBe("important");
     expect(container.textContent).not.toContain("**");
   });
 
@@ -102,12 +108,38 @@ describe("attachment captions", () => {
     render("user");
 
     expect(container.textContent).toBe("**important** \u2060\u2068example.test/docs\u2069");
-    expect(container.querySelector('[style*="font-weight: 700"]')).toBeNull();
+    expect(container.querySelector('[style*="font-weight: 600"]')).toBeNull();
     const link = container.querySelector<HTMLElement>('[role="link"]');
     expect(link?.textContent).toBe("\u2060\u2068example.test/docs\u2069");
 
     await act(async () => link?.click());
 
     expect(linking.openURL).toHaveBeenCalledWith("https://example.test/docs");
+  });
+
+  it("opens the page a sent page link names from the user's bubble", async () => {
+    const openPage = vi.fn();
+    const role = "user";
+    act(() => {
+      root.render(
+        <OpenPageContext.Provider value={openPage}>
+          <MessageCaption
+            role={role}
+            text={"[Plan](page:pg_1)\nnice"}
+            tokens={lightTokens}
+            colorScheme="light"
+            streaming={false}
+          />
+        </OpenPageContext.Provider>,
+      );
+    });
+
+    expect(container.textContent).not.toContain("page:pg_1");
+    const chip = container.querySelector<HTMLElement>('[role="link"]');
+    expect(chip?.textContent).toContain("Plan");
+
+    await act(async () => chip?.click());
+
+    expect(openPage).toHaveBeenCalledWith("pg_1");
   });
 });

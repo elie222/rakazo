@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SwitchField } from "./components/ui/field.js";
 import { Input, InputRevealLabelsProvider } from "./components/ui/input.js";
 
 const mounted: Array<() => void> = [];
@@ -95,5 +96,48 @@ describe("Input with a hidden value", () => {
 
     act(() => button.click());
     expect(input.type).toBe("password");
+  });
+});
+
+describe("SwitchField", () => {
+  it("names the switch from its label in server-rendered markup", () => {
+    const html = renderToString(
+      <SwitchField label="Stream replies" checked={false} onCheckedChange={() => {}} />,
+    );
+    const labelledBy = html.match(/role="switch"[^>]*aria-labelledby="([^"]+)"/)?.[1];
+
+    expect(labelledBy).toBeTruthy();
+    expect(html).toMatch(new RegExp(`id="${labelledBy}"[^>]*>Stream replies<`));
+  });
+
+  it("describes the switch with its note", () => {
+    const html = renderToString(
+      <SwitchField
+        label="Stream replies"
+        description="Show text as it arrives."
+        checked
+        onCheckedChange={() => {}}
+      />,
+    );
+    const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1];
+
+    expect(describedBy).toBeTruthy();
+    expect(html).toContain(`id="${describedBy}"`);
+  });
+
+  it("dims its label with the switch when disabled", () => {
+    const html = renderToString(
+      <SwitchField label="Stream replies" checked={false} disabled onCheckedChange={() => {}} />,
+    );
+
+    expect(html).toMatch(/data-slot="field"[^>]*data-disabled="true"/);
+  });
+
+  it("leaves the switch undescribed without a note", () => {
+    const html = renderToString(
+      <SwitchField label="Stream replies" checked={false} onCheckedChange={() => {}} />,
+    );
+
+    expect(html).not.toContain("aria-describedby");
   });
 });

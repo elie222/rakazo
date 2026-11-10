@@ -7,52 +7,26 @@ export function computersAreUnavailable(sandboxProvider: string | null | undefin
   return sandboxProvider === "none" || sandboxProvider === "";
 }
 
+/** Whether an account may run its computers on its own provider on this deployment. */
+export function canChooseOwnComputer(sandboxProvider: string | null | undefined): boolean {
+  // Those deployments run every computer on the server's own provider.
+  return (
+    !!sandboxProvider &&
+    !computersAreUnavailable(sandboxProvider) &&
+    sandboxProvider !== "desktop" &&
+    sandboxProvider !== "fake"
+  );
+}
+
 export type SandboxAvailabilityPhase = "idle" | "loading" | "recovered" | "unavailable" | "failure";
-
-/** Lines to paste into `.env` — placeholders only, never real secrets. */
-export function sandboxEnvGuidanceLines(): string[] {
-  return [
-    "# Pick one provider. Leave every other SANDBOX_PROVIDER line commented out.",
-    "",
-    "# Docker on your server or Compose stack",
-    "SANDBOX_PROVIDER=docker",
-    "SANDBOX_SUPERVISOR_TOKEN=<generate-a-secret>",
-    "",
-    "# Hosted sandbox: E2B",
-    "# SANDBOX_PROVIDER=e2b",
-    "# E2B_API_KEY=<your-key>",
-    "",
-    "# Hosted sandbox: Daytona",
-    "# SANDBOX_PROVIDER=daytona",
-    "# DAYTONA_API_KEY=<your-key>",
-    "",
-    "# Hosted sandbox: Box",
-    "# SANDBOX_PROVIDER=box",
-    "# BOX_API_KEY=<your-key>",
-    "",
-    "# Recreate the stack after changing .env",
-  ];
-}
-
-export function sandboxEnvGuidanceText(): string {
-  return sandboxEnvGuidanceLines().join("\n");
-}
-
-export type SandboxProviderKind = "none" | "docker" | "hosted" | "other";
-
-export function classifySandboxProvider(provider: string | null | undefined): SandboxProviderKind {
-  if (provider == null || provider === "" || computersAreUnavailable(provider)) return "none";
-  if (provider === "docker" || provider === "desktop") return "docker";
-  if (provider === "e2b" || provider === "daytona" || provider === "box") return "hosted";
-  return "other";
-}
 
 export function sandboxProviderLabel(provider: string): string {
   if (provider === "docker") return "Docker";
   if (provider === "desktop") return "Desktop";
   if (provider === "e2b") return "E2B";
+  if (provider === "novita") return "Novita";
   if (provider === "daytona") return "Daytona";
-  if (provider === "box") return "Box";
+  if (provider === "boat") return "Boat";
   if (provider === "fake") return "Fake";
   return provider;
 }

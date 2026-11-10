@@ -3,7 +3,7 @@ import { expect } from "vitest";
 
 export async function provisionPrepared(
   provider: SandboxProvider,
-  request: { botId: string; homePath: string },
+  request: Parameters<SandboxProvider["provision"]>[0],
   context: AdapterContext,
 ) {
   const computer = await provider.provision(request, context);

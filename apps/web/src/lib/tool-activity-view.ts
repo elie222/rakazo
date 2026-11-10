@@ -1,24 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
-
-/**
- * Compact human duration for a tool-activity card summary.
- * Returns null when there is no usable duration (missing, non-finite or negative),
- * so the caller can omit the segment entirely.
- */
-export function formatToolActivityDuration(durationMs: number | null | undefined): string | null {
-  if (durationMs == null || !Number.isFinite(durationMs) || durationMs < 0) return null;
-  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
-  if (durationMs < 10_000) {
-    const seconds = Math.round(durationMs / 100) / 10;
-    return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
-  }
-  if (durationMs < 60_000) return `${Math.round(durationMs / 1000)}s`;
-  const totalSeconds = Math.round(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-}
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 
 /** Number of tool calls behind a steps block: the sum of each row's count. */
 export function toolStepCount(steps: readonly { count: number }[]): number {
@@ -33,14 +14,17 @@ export function shouldRenderToolCard(block: MessageBlock, showToolActivity: bool
   return showToolActivity && block.kind === "steps";
 }
 
-/** Blocks that survive into a message render: everything except hidden tool activity. */
+/** Blocks that survive into a message render. */
 export function renderableMessageBlocks(
   blocks: readonly MessageBlock[],
   showToolActivity: boolean,
 ): MessageBlock[] {
-  return blocks.filter(
-    (block) => !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity),
-  );
+  return blocks.filter((block) => isShown(block, showToolActivity));
+}
+
+function isShown(block: MessageBlock, showToolActivity: boolean): boolean {
+  if (isRetiredImportSetup(block)) return false;
+  return !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity);
 }
 
 /**
@@ -61,7 +45,5 @@ export function messageHasVisibleBlocks(
   blocks: readonly MessageBlock[],
   showToolActivity: boolean,
 ): boolean {
-  return blocks.some(
-    (block) => !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity),
-  );
+  return blocks.some((block) => isShown(block, showToolActivity));
 }

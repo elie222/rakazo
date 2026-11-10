@@ -9,7 +9,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { collectPages, filterCatalog } from "./composio-connector.js";
+import { resolveAccountToolCall, scopeConnectorTools } from "./connector-accounts.js";
+import { collectPages, filterCatalog } from "./connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -24,11 +25,8 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
-import {
-  callRemoteMcpTool,
-  listRemoteMcpTools,
-  type RemoteTransportDependencies,
-} from "./remote-mcp.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { callRemoteMcpTool, listRemoteMcpTools } from "./remote-mcp.js";
 import { isVitestRuntime } from "./test-runtime.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
@@ -74,6 +72,8 @@ type PipedreamApp = {
   name: string;
   img_src?: string;
 };
+
+type ApprovedAccount = { id: string; label: string; connectionId: string };
 
 type PipedreamAccount = {
   id: string;
@@ -171,22 +171,36 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
-          const tools = await listRemoteMcpTools({
-            endpoint: MCP_ENDPOINT,
-            headers: this.mcpHeaders(context, app, token),
-            signal: context.signal,
-            fetch: this.dependencies.fetch,
-            resolveHostname: this.dependencies.resolveHostname,
-          });
-          return tools.map((tool) => ({
-            ...tool,
-            route: {
-              connectorId: "pipedream",
-              resourceId: app,
-              toolName: tool.name,
-              catalogGroup: app,
-            },
-          }));
+          const accounts = approvedAccounts(context, app);
+          return (
+            await Promise.all(
+              accounts.map(async (account) => {
+                try {
+                  const tools = await listRemoteMcpTools({
+                    endpoint: MCP_ENDPOINT,
+                    headers: this.mcpHeaders(context, app, account.id, token),
+                    signal: context.signal,
+                    fetch: this.dependencies.fetch,
+                    resolveHostname: this.dependencies.resolveHostname,
+                  });
+                  return scopeConnectorTools(tools, {
+                    id: account.connectionId,
+                    connectorId: "pipedream",
+                    externalId: app,
+                    displayName: account.label,
+                    providerRef: account.id,
+                  });
+                } catch (error) {
+                  getLogger().error(
+                    "pipedream account discovery failed",
+                    sanitizeConnectorError(error),
+                    { "connector.app": app, "connection.id": account.connectionId },
+                  );
+                  return [];
+                }
+              }),
+            )
+          ).flat();
         } catch (error) {
           // A single unavailable app must not hide tools from other connections.
           getLogger().error(
@@ -215,6 +229,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     call: ConnectorCall,
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
+    if (!call.route) return resolveAccountToolCall(call, await this.allTools(context));
     // Wrappers have no resourceId; real tools always do.
     if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
     return resolveCatalogCall(call, catalogEntries(await this.allTools(context)));
@@ -240,11 +255,31 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
+      const accounts = approvedAccounts(context, app);
+      const selected = call.route?.connectionId ?? call.connectionId;
+      const account = selected
+        ? accounts.find(({ connectionId }) => connectionId === selected)
+        : accounts.length === 1
+          ? accounts[0]
+          : undefined;
+      if (
+        !account ||
+        (call.route?.resourceRevision !== undefined && call.route.resourceRevision !== account.id)
+      ) {
+        yield {
+          type: "error",
+          message:
+            accounts.length === 0
+              ? `No connected ${app} account can be identified. Reconnect ${app}.`
+              : "The selected connected account is unavailable. Reload the account's tools.",
+        };
+        return;
+      }
       token = await this.token();
       const result = await callRemoteMcpTool(
         {
           endpoint: MCP_ENDPOINT,
-          headers: this.mcpHeaders(context, app, token),
+          headers: this.mcpHeaders(context, app, account.id, token),
           signal: context.signal,
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
@@ -390,6 +425,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
       .update(`${context.spaceId}:${context.userId}`)
@@ -399,6 +435,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   private mcpHeaders(
     context: AdapterContext,
     app: string,
+    accountId: string,
     accessToken: string,
   ): Record<string, string> {
     return {
@@ -407,6 +444,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       "x-pd-environment": this.config.environment,
       "x-pd-external-user-id": this.externalUserId(context),
       "x-pd-app-slug": app,
+      "x-pd-account-id": accountId,
     };
   }
 
@@ -530,6 +568,24 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     };
     return body.access_token;
   }
+}
+
+/**
+ * The accounts this workspace approved for `app`, so Pipedream never picks one
+ * itself. A row holding only the app slug cannot name its account and is skipped:
+ * the run context omits revoked and pending rows, so it cannot tell which remote
+ * account such a row stands for.
+ */
+function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
+  const approved = new Map<string, ApprovedAccount>();
+  for (const connection of context.connectedConnections ?? []) {
+    if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
+    const ref = connection.providerRef?.trim();
+    if (ref && ref !== app && !approved.has(ref)) {
+      approved.set(ref, { id: ref, label: connection.displayName, connectionId: connection.id });
+    }
+  }
+  return [...approved.values()];
 }
 
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {

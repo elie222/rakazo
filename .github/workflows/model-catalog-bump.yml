@@ -34,11 +34,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
-          cache: pnpm
+          node-version: 24
       - run: pnpm install --frozen-lockfile
       - name: Record current catalog versions
         id: before
@@ -63,7 +62,10 @@ jobs:
           fi
       - name: Typecheck and test adapters
         if: steps.changed.outputs.changed == 'true'
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
         run: |
+          pnpm db:generate
           pnpm --filter @rakazo/adapters check
           pnpm --filter @rakazo/adapters test
       - name: Record bump patch
@@ -86,18 +88,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: model-catalog-bump
+          path: ${{ runner.temp }}/model-catalog-bump
       - name: Apply bump patch
-        run: git apply bump.patch
+        env:
+          BUMP_DIR: ${{ runner.temp }}/model-catalog-bump
+        run: |
+          set -euo pipefail
+          shopt -s dotglob nullglob
+          files=("$BUMP_DIR"/*)
+          [ "${#files[@]}" -eq 1 ]
+          [ "${files[0]}" = "$BUMP_DIR/bump.patch" ]
+          [ -f "$BUMP_DIR/bump.patch" ] && [ ! -L "$BUMP_DIR/bump.patch" ]
+          git apply --index --include=packages/adapters/package.json --include=pnpm-lock.yaml "$BUMP_DIR/bump.patch"
+          for file in packages/adapters/package.json pnpm-lock.yaml; do
+            [ "$(git ls-files --format='%(objectmode)' -- "$file")" = 100644 ]
+          done
       - name: Push branch and open PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The workflow token can neither open PRs nor start CI on what it pushes.
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
           OLD_AI: ${{ needs.update.outputs.old_ai_version }}
           NEW_AI: ${{ needs.update.outputs.ai_version }}
           OLD_CORE: ${{ needs.update.outputs.old_core_version }}
@@ -108,9 +125,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           branch="deps/pi-catalog-ai-${NEW_AI}-core-${NEW_CORE}"
           git checkout -B "$branch"
-          git add packages/adapters/package.json pnpm-lock.yaml
           git commit -m "Bump model catalog packages to pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE}"
-          if gh pr list --state open --head "$branch" --json number --jq '.[0].number' | grep -q .; then
+          if gh pr list --state open --head "$branch" --json number,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false) | .number' | grep -q .; then
             echo "PR already open for $branch; leaving it in place."
             exit 0
           fi
@@ -125,12 +142,13 @@ jobs:
               exit 1
             fi
           fi
+          gh auth setup-git
           git push --force-with-lease="refs/heads/$branch" -u origin "$branch"
           while read -r pr head; do
             [ "$head" = "$branch" ] && continue
             gh pr close "$pr" --comment "Superseded by the pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE} catalog bump." || true
-          done < <(gh pr list --state open --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("deps/pi-catalog-")) | "\(.number) \(.headRefName)"')
+          done < <(gh pr list --state open --limit 1000 --json number,headRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false and (.headRefName | startswith("deps/pi-catalog-"))) | "\(.number) \(.headRefName)"')
           gh pr create --title "Bump model catalog to pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE}" --body "$(cat <<EOF
           ## Why
 
@@ -144,8 +162,5 @@ jobs:
           \`pnpm --filter @rakazo/adapters check\` and \`pnpm --filter @rakazo/adapters test\`
           pass in the update job. Review the pi release notes for renamed or removed
           models before merging.
-
-          Note: this PR is opened by GITHUB_TOKEN, so its checks do not start on
-          their own. Close and reopen the PR (or push a commit) to trigger CI.
           EOF
           )"

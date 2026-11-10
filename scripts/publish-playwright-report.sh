@@ -104,7 +104,7 @@ if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
     if [[ -f "$history_path" ]]; then
       baseline_run_key="$(jq -r '
         [.[] | select(
-          .event == "push" and
+          .event != "pull_request" and
           .branch == "main" and
           .result == "success" and
           (.id | type == "string") and
@@ -134,7 +134,7 @@ if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
   fi
 fi
 
-if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" != "pull_request" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
   stable_baseline_missing="false"
   stable_baseline_downloaded="false"
   for attempt in 1 2 3; do
@@ -207,7 +207,7 @@ aws s3 cp \
   --endpoint-url "$S3_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "public,max-age=31536000,immutable"
-if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" != "pull_request" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
   if grep -qx true "$gallery_dir/publish-stable-baseline"; then
     aws s3 cp \
       "$gallery_dir/manifest.json" \

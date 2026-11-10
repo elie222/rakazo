@@ -1,9 +1,40 @@
 (() => {
   const bridge = window.rakazoSetup;
   document.documentElement.dataset.platform = bridge?.platform ?? "browser";
+  const messages = bridge?.locale?.messages ?? {};
+
+  /** Core's `translate`, which this plain page cannot import: English-keyed, `{name}` placeholders. */
+  function t(message, values) {
+    const template = Object.hasOwn(messages, message) ? messages[message] : message;
+    if (!values) return template;
+    return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key) =>
+      Object.hasOwn(values, key) ? String(values[key]) : match,
+    );
+  }
+
+  /** The page is written in English; it switches to the app's language before it first paints. */
+  function translatePage() {
+    document.documentElement.lang = bridge?.locale?.lang ?? "en";
+    document.documentElement.dir = bridge?.locale?.dir ?? "ltr";
+    document.title = t(document.title);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const text = node.nodeValue.trim();
+      if (text !== "") node.nodeValue = node.nodeValue.replace(text, () => t(text));
+    }
+    for (const element of document.querySelectorAll("[title], [aria-label], [placeholder]")) {
+      for (const name of ["title", "aria-label", "placeholder"]) {
+        const value = element.getAttribute(name);
+        if (value !== null) element.setAttribute(name, t(value));
+      }
+    }
+  }
+  translatePage();
 
   const form = document.getElementById("setup");
   const serverUrl = document.getElementById("server-url");
+  const serverHeaders = document.getElementById("server-headers");
+  const serverHeadersSection = document.getElementById("server-headers-section");
   const panelNew = document.getElementById("panel-new");
   const panelExisting = document.getElementById("panel-existing");
   const stackSection = document.getElementById("stack");
@@ -21,12 +52,12 @@
 
   const STACK_POLL_MS = 1000;
   const PHASE_LABELS = {
-    "checking-docker": "Getting ready…",
-    preparing: "Getting ready…",
-    pulling: "Downloading Rakazo…",
-    starting: "Starting Rakazo…",
-    "waiting-healthy": "Almost ready…",
-    ready: "Rakazo is ready.",
+    "checking-docker": t("Getting ready…"),
+    preparing: t("Getting ready…"),
+    pulling: t("Downloading Rakazo…"),
+    starting: t("Starting Rakazo…"),
+    "waiting-healthy": t("Almost ready…"),
+    ready: t("Rakazo is ready."),
   };
   const TERMINAL_PHASES = new Set([
     "idle",
@@ -48,6 +79,11 @@
   const PULL_SCALE_BYTES = 1.2e9;
 
   let defaultLocalUrl = "";
+  let cloudUrl = "";
+  /** Bumped on user edits, mode switches, and new async runs; a run left behind is stale. */
+  let requestGeneration = 0;
+  /** Generation of the check in flight; an edit or mode switch retires it and releases its lock. */
+  let activeCheck = 0;
   let stackPolling = false;
   let lastStack = null;
   let lastProgress = 0;
@@ -59,7 +95,7 @@
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
-    return checked === null ? "new" : checked.value;
+    return checked === null ? "cloud" : checked.value;
   }
 
   function setStatus(message, tone) {
@@ -74,16 +110,18 @@
   }
 
   /** A save in flight cannot be cancelled, so the choice it commits must not change under it. */
-  function lockMode(locked) {
+  function lockChoice(locked) {
     for (const input of form.querySelectorAll('input[name="mode"]')) input.disabled = locked;
+    serverUrl.disabled = locked;
+    serverHeaders.disabled = locked;
   }
 
   function syncPanels() {
     const mode = selectedMode();
     panelNew.hidden = mode !== "new";
-    panelExisting.hidden = mode === "new";
-    checkButton.hidden = mode === "new";
-    if (mode !== "new") continueButton.textContent = "Continue";
+    panelExisting.hidden = mode !== "existing";
+    checkButton.hidden = mode !== "existing";
+    if (mode !== "new") continueButton.textContent = t("Continue");
     setStatus("");
   }
 
@@ -128,7 +166,7 @@
 
   function renderDetails(stack) {
     const bytes = stack.phase === "pulling" ? downloadedBytes(stack) : 0;
-    stackDetail.textContent = bytes > 0 ? `${formatBytes(bytes)} downloaded` : "";
+    stackDetail.textContent = bytes > 0 ? t("{size} downloaded", { size: formatBytes(bytes) }) : "";
 
     // A new attempt clears the output, so drop an expansion the person did not ask for.
     if (stack.phase === "checking-docker" && detailsOpenedByFailure) {
@@ -155,7 +193,7 @@
     const { phase } = stack;
     stackSection.hidden = phase === "idle";
     if (phase === "idle") {
-      continueButton.textContent = "Continue";
+      continueButton.textContent = t("Continue");
       return;
     }
     const failed = isDockerPhase(phase) || phase === "failed";
@@ -168,24 +206,42 @@
     renderDetails(stack);
     stackDockerHelp.hidden = !isDockerPhase(phase);
 
-    if (isDockerPhase(phase)) continueButton.textContent = "Check again";
-    else if (phase === "failed") continueButton.textContent = "Retry";
-    else continueButton.textContent = "Continue";
+    if (isDockerPhase(phase)) continueButton.textContent = t("Check again");
+    else if (phase === "failed") continueButton.textContent = t("Retry");
+    else continueButton.textContent = t("Continue");
     setBusy(!TERMINAL_PHASES.has(phase));
   }
 
-  async function save(mode, url) {
+  /** One "Name: value" per line; null when a line has no name. The main process validates the rest. */
+  function readHeaders() {
+    const headers = {};
+    for (const line of serverHeaders.value.split("\n")) {
+      if (line.trim() === "") continue;
+      const colon = line.indexOf(":");
+      if (colon <= 0) return null;
+      headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+    }
+    return headers;
+  }
+
+  async function save(mode, url, headers) {
+    const generation = ++requestGeneration;
+    // Locking the address blurs it; a failed save hands focus back so Enter can retry.
+    const focused = document.activeElement;
     setBusy(true);
-    lockMode(true);
-    setStatus("Connecting…");
+    lockChoice(true);
+    setStatus(t("Connecting…"));
     try {
-      const saved = await bridge.save({ mode, serverUrl: url });
-      if (!saved.ok) setStatus(saved.error ?? "Could not save that address.", "error");
+      const saved = await bridge.save({ mode, serverUrl: url, ...(headers ? { headers } : {}) });
+      if (!saved.ok) setStatus(saved.error ?? t("Could not save that address."), "error");
     } catch {
-      setStatus("Could not save that address. Try again.", "error");
+      setStatus(t("Could not save that address. Try again."), "error");
     } finally {
-      lockMode(false);
-      setBusy(false);
+      lockChoice(false);
+      if (focused instanceof HTMLElement && document.activeElement === document.body)
+        focused.focus();
+      // A newer run may own the controls by now; only their owner unlocks them.
+      if (generation === requestGeneration) setBusy(false);
     }
   }
 
@@ -231,23 +287,31 @@
         await waitForStackChange();
       }
     } catch {
-      setStatus("Could not follow the local stack. Try again.", "error");
-      setBusy(false);
+      // Only report a follow the person still sees; leaving "new" already handed the form back.
+      if (selectedMode() === "new") {
+        setStatus(t("Could not follow the local stack. Try again."), "error");
+        setBusy(false);
+      }
     } finally {
       stackPolling = false;
     }
   }
 
   async function runStack() {
+    const generation = ++requestGeneration;
     setStatus("");
     setBusy(true);
     try {
       // A queued start still reads `idle`; leave the panel as it is and let the follow render it.
       const started = await bridge.stack.start();
+      // The person left "This computer" mid-start; the next pushed state re-attaches the follow.
+      if (generation !== requestGeneration) return;
       if (started !== null && started.phase !== "idle") renderStack(started);
     } catch {
-      setStatus("Could not start the local stack. Try again.", "error");
-      setBusy(false);
+      if (generation === requestGeneration) {
+        setStatus(t("Could not start the local stack. Try again."), "error");
+        setBusy(false);
+      }
       return;
     }
     await followStack();
@@ -256,36 +320,66 @@
   async function check() {
     const value = serverUrl.value;
     if (value.trim() === "") {
-      setStatus("Enter a server address first.", "error");
+      setStatus(t("Enter a server address first."), "error");
+      return null;
+    }
+    const headers = readHeaders();
+    if (headers === null) {
+      setStatus(t("Invalid custom headers"), "error");
       return null;
     }
 
+    const generation = ++requestGeneration;
+    activeCheck = generation;
     setBusy(true);
-    setStatus("Checking…");
+    setStatus(t("Checking…"));
     try {
-      const result = await bridge.test(value);
+      const result = await bridge.test(value, headers);
+      // The address or the mode changed under the test, so its result speaks for neither.
+      if (generation !== requestGeneration) return result;
       if (result.ok) {
         serverUrl.value = result.url;
-        setStatus(`Rakazo answered at ${result.url}.`, "ok");
+        setStatus(t("Rakazo answered at {url}.", { url: result.url }), "ok");
       } else {
-        setStatus(result.error ?? "Could not reach that address.", "error");
+        setStatus(result.error ?? t("Could not reach that address."), "error");
       }
       return result;
     } catch {
-      setStatus("Could not run the connection check. Try again.", "error");
+      if (generation === requestGeneration) {
+        setStatus(t("Could not run the connection check. Try again."), "error");
+      }
       return null;
     } finally {
-      setBusy(false);
+      if (activeCheck === generation) activeCheck = 0;
+      // Only the run that still owns the controls may unlock them.
+      if (generation === requestGeneration) setBusy(false);
     }
   }
 
   form.addEventListener("change", (event) => {
     if (event.target instanceof HTMLInputElement && event.target.name === "mode") {
+      requestGeneration++;
+      // The interrupted check completes stale and stays silent, so retire its lock here.
+      const interruptedCheck = activeCheck !== 0;
+      activeCheck = 0;
       syncPanels();
-      // Unlock Continue/Check immediately; followStack exits on its next poll.
-      if (selectedMode() !== "new") setBusy(false);
+      // Unlock immediately when nothing on this mode owns the controls; followStack exits on its
+      // next poll.
+      if (selectedMode() !== "new" || interruptedCheck) setBusy(false);
     }
   });
+
+  function retireCheck() {
+    // An edited address invalidates the pending check; retire it and hand the controls back so
+    // its late result changes nothing.
+    if (activeCheck === 0) return;
+    requestGeneration++;
+    activeCheck = 0;
+    setStatus("");
+    setBusy(false);
+  }
+  serverUrl.addEventListener("input", retireCheck);
+  serverHeaders.addEventListener("input", retireCheck);
 
   checkButton.addEventListener("click", () => {
     void check();
@@ -312,8 +406,15 @@
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (selectedMode() === "new") void runStack();
-    else void save("existing", serverUrl.value);
+    const mode = selectedMode();
+    if (mode === "new") void runStack();
+    // Cloud is an existing server at a fixed address.
+    else if (mode === "cloud") void save("existing", cloudUrl);
+    else {
+      const headers = readHeaders();
+      if (headers === null) setStatus(t("Invalid custom headers"), "error");
+      else void save("existing", serverUrl.value, headers);
+    }
   });
 
   /** Pushed state keeps progress moving even when the OS throttles this window's timers. */
@@ -331,20 +432,31 @@
 
   async function init() {
     if (bridge === undefined) {
-      setStatus("Setup bridge unavailable.", "error");
+      setStatus(t("Setup bridge unavailable."), "error");
       setBusy(true);
       return;
     }
 
     watchStack();
+    // Continue needs the Cloud address and any saved choice before it can submit.
+    setBusy(true);
     try {
       const state = await bridge.state();
       if (state === null) throw new Error("Setup is not active");
       defaultLocalUrl = state.defaultLocalUrl;
+      cloudUrl = state.cloudUrl;
       if (state.saved !== null) {
-        const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
+        const savedCloud = state.saved.mode === "existing" && state.saved.serverUrl === cloudUrl;
+        const mode = savedCloud ? "cloud" : state.saved.mode;
+        const modeInput = document.querySelector(`input[name="mode"][value="${mode}"]`);
         if (modeInput !== null) modeInput.checked = true;
-        if (state.saved.mode === "existing") serverUrl.value = state.saved.serverUrl;
+        if (mode === "existing") serverUrl.value = state.saved.serverUrl;
+        if (mode === "existing" && state.saved.headers) {
+          serverHeaders.value = Object.entries(state.saved.headers)
+            .map(([name, value]) => `${name}: ${value}`)
+            .join("\n");
+          serverHeadersSection.open = true;
+        }
       }
       // A relaunch with the stack down starts it before this window opens; show that
       // attempt instead of the saved mode, and follow it while it is still running.
@@ -352,6 +464,7 @@
       const attached = stack !== null && stack.phase !== "idle";
       if (attached) document.getElementById("mode-new").checked = true;
       syncPanels();
+      setBusy(false);
       if (state.error) setStatus(state.error, "error");
       if (attached) {
         renderStack(stack);
@@ -362,7 +475,7 @@
         continueButton.focus();
       }
     } catch {
-      setStatus("Setup could not start. Quit Rakazo and try again.", "error");
+      setStatus(t("Setup could not start. Quit Rakazo and try again."), "error");
       setBusy(true);
     }
   }

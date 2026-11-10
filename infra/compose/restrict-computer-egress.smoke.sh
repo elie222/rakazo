@@ -44,6 +44,12 @@ est_i="$(grep -nx 'iptables -I INPUT 1 -i rakazo-c+ -m conntrack --ctstate ESTAB
 [[ -n "$drop_i" && -n "$est_i" && "$drop_i" -lt "$est_i" ]] ||
   fail "--print must emit the INPUT drop before the established accept"
 
+# The supervisor's probe detects the INPUT drop, so the IPv4 run installs it only
+# after every IPv4 DOCKER-USER drop.
+last_user_i="$(grep -n '^iptables -I DOCKER-USER' <<<"$printed" | tail -1 | cut -d: -f1)"
+[[ -n "$last_user_i" && "$last_user_i" -lt "$drop_i" ]] ||
+  fail "the IPv4 INPUT rules must be inserted after the DOCKER-USER drops"
+
 # IPv6 drops ULA (includes AWS metadata fd00:ec2::254), link-local, multicast, loopback.
 for cidr in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
   grep -qxF "ip6tables -I DOCKER-USER 1 -i rakazo-c+ -d $cidr -j DROP" <<<"$printed" ||
@@ -300,12 +306,24 @@ RAKAZO_IPTABLES="$bin/missing-iptables" RAKAZO_IP6TABLES="$bin/missing-ip6tables
   bash "$script" --apply && fail "--apply succeeded with no iptables binary" || true
 
 # Docs and Compose keep the flag and script wired together.
-docs="$root/../../docs/self-host.md"
-grep -q 'restrict-computer-egress.sh' "$docs" || fail "self-host.md does not mention the script"
-grep -q 'SANDBOX_COMPUTER_EGRESS' "$docs" || fail "self-host.md does not document the flag"
-for compose in docker-compose.yml docker-compose.images.yml docker-compose.topology.yml; do
-  grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/$compose" ||
-    fail "$compose does not pass SANDBOX_COMPUTER_EGRESS"
+docs="$root/../../docs/self-host-docker-computers.md"
+grep -q 'restrict-computer-egress.sh' "$docs" || fail "self-host-docker-computers.md does not mention the script"
+grep -q 'SANDBOX_COMPUTER_EGRESS' "$docs" || fail "self-host-docker-computers.md does not document the flag"
+grep -q 'https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/restrict-computer-egress.sh' "$docs" ||
+  fail "self-host-docker-computers.md does not point VM hosts at the egress script"
+grep -q 'name: rakazo-computer-egress' "$docs" ||
+  fail "self-host-docker-computers.md does not keep the VM egress helper in its own Compose project"
+for compose in docker-compose.yml docker-compose.images.yml docker-compose.topology.yml \
+  docker-compose.prod.docker.yml; do
+  for flag in SANDBOX_COMPUTER_EGRESS SANDBOX_COMPUTER_DNS; do
+    grep -q "$flag" "$root/$compose" || fail "$compose does not pass $flag"
+  done
+done
+# Self-host stacks default to auto: restricted once the rules exist, so an install from before
+# them keeps working. An explicit restricted still refuses computers until the rules exist.
+for compose in docker-compose.yml docker-compose.images.yml docker-compose.prod.docker.yml; do
+  grep -qF 'SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}' "$root/$compose" ||
+    fail "$compose does not default to auto egress"
 done
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/../../.env.example" || fail ".env.example lacks the flag"
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/.env.images.example" ||

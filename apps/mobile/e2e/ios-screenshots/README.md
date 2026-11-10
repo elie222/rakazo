@@ -1,31 +1,53 @@
 # iOS screenshot catalog
 
-Local, agent-run capture of the Rakazo iOS app. It is not part of CI.
+Screenshots of every iOS screen in its main states, on demand. It is not part of CI.
 
-One command signs into disposable fixture accounts, runs the Maestro flows in
-`catalog.json`, and writes PNGs plus a static `index.html` gallery. Add a screen
-by dropping a flow under `flows/` and appending one entry to `catalog.json`.
+One command starts an isolated API, seeds disposable fixture accounts, runs the
+Maestro flows in `catalog.json`, and writes PNGs plus a static `index.html` gallery.
 
-The app under test must already be installed on the simulator in `SIM_UDID`.
-This command does not create or boot a simulator. Point the app at a running
-API (`RAKAZO_API_URL`) and Metro bundler before you start. `DATABASE_URL` must
-be that API's database so the fixture can insert thread messages.
+## Run
 
-```sh
-SIM_UDID=00000000-0000-0000-0000-000000000000 \
-RAKAZO_API_URL=http://127.0.0.1:3110 \
-DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/rakazo \
-RAKAZO_SCREENSHOT_EMAIL=ios-screenshots@example.test \
-RAKAZO_SCREENSHOT_EMPTY_EMAIL=ios-screenshots-empty@example.test \
-RAKAZO_SCREENSHOT_PASSWORD='replace-with-a-disposable-password' \
-pnpm ios:screenshots
-```
-
-Run one section:
+You need Maestro on `PATH`, a running Postgres server, and a booted simulator
+with a debug build of the app installed (`pnpm --filter @rakazo/mobile ios`
+builds and installs one).
 
 ```sh
-pnpm ios:screenshots -- --section settings
+DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/postgres pnpm ios:screenshots
 ```
 
-Output defaults to `test-report/ios-screenshots` (gitignored). Override it with
-`IOS_SCREENSHOT_OUT`. Open `index.html` in that folder. Maestro must be on `PATH`.
+- `DATABASE_URL` only names the server: each run drops and recreates its own
+  `rakazo_ios_screenshots` database there, so no other database is touched.
+- The API runs on port 3110 with scripted models, a fake computer, and offline billing,
+  wallet, board, plugin marketplace, and app catalog. Nothing calls a hosted provider.
+- Metro starts on port 8081, where debug builds load from, and stops after the run, so the
+  screenshots always show the code on disk. Stop any other Metro first.
+- With one simulator booted it is used automatically; otherwise set `SIM_UDID`.
+- Output goes to `test-report/ios-screenshots` (gitignored); override it with
+  `IOS_SCREENSHOT_OUT`. Open `index.html` there.
+
+Run some sections only:
+
+```sh
+pnpm ios:screenshots -- --section settings --section billing
+```
+
+Add `--publish` to a full run to upload the gallery page and its screenshots to the
+screenshot bucket and print its address. It reads the same settings as CI's publisher
+(`S3_BUCKET`, an HTTPS `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
+`PLAYWRIGHT_PUBLIC_BASE_URL`) and checks them before capturing. Logs are never uploaded.
+
+A failed section prints the Maestro step that failed and the path of the last
+screenshot it took.
+
+## Add a screen
+
+Write a flow under `flows/`, or add steps to an existing one, and list the route
+in that section's `screens` in `catalog.json`. A unit test fails when an app
+route is neither captured nor listed as uncovered in
+`packages/testkit/src/ios-screenshot-catalog.test.ts`, so new screens get added
+here too.
+
+Put `waitForAnimationToEnd` before each `takeScreenshot`, so captures never
+show a screen mid-transition.
+
+For iPhone Duo layouts, boot the iPhone Duo simulator, opened, and set `SIM_UDID`.

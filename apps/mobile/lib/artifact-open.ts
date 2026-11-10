@@ -1,4 +1,4 @@
-import type { Me } from "@rakazo/contracts";
+import { t } from "@lingui/core/macro";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Image } from "react-native";
@@ -6,20 +6,12 @@ import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { artifactCacheSession } from "./artifact-cache-session";
 import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
-import { t } from "./i18n";
+import { ARTIFACT_DOWNLOAD_TIMEOUT_MS } from "./artifacts";
 import type { ImageSize } from "./inline-image";
 import { createKeyedPromiseCache } from "./inline-image";
 import { currentSessionGeneration, loadSessionToken } from "./session";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
-
-/**
- * An artifact travels as base64 inside the RPC body: up to the attachment limit (10 MiB) plus
- * a third of encoding overhead. The default RPC timeout is sized for small JSON replies and
- * gives up on a multi-megabyte photo over a relayed cellular link, so downloads get a budget
- * of their own.
- */
-export const ARTIFACT_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 /** Writes an artifact's bytes to its cache file; no network call. */
 export function writeArtifactCacheFile(
@@ -29,7 +21,7 @@ export function writeArtifactCacheFile(
 ): File {
   const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
   file.create({ overwrite: true });
-  file.write(contentBase64, { encoding: "base64" });
+  file.writeSync(contentBase64, { encoding: "base64" });
   return file;
 }
 
@@ -70,7 +62,7 @@ function artifactScope(): Promise<ArtifactScope> {
       selectionId !== selectedSpaceId()
     )
       throw new Error("Artifact session changed");
-    const me = await rpc<Pick<Me, "userId">>("me", {}, { requestContext: context });
+    const me = await rpc("me", {}, { requestContext: context });
     if (generation !== currentSessionGeneration()) throw new Error("Artifact session changed");
     if (!me.userId) throw new Error("Missing artifact owner");
     const result = {
@@ -130,7 +122,7 @@ async function cacheMobileArtifact(
       // A corrupt sidecar is a cache miss.
     }
   }
-  const artifact = await rpc<{ contentBase64: string }>(
+  const artifact = await rpc(
     "artifacts/get",
     { ...target, artifactId },
     { timeoutMs: ARTIFACT_DOWNLOAD_TIMEOUT_MS, requestContext: scope.context },
@@ -139,19 +131,28 @@ async function cacheMobileArtifact(
   // Invalidate first so an interrupted overwrite cannot leave valid metadata for wrong bytes.
   if (metadata.exists) metadata.delete();
   file.create({ overwrite: true });
-  file.write(artifact.contentBase64, { encoding: "base64" });
+  file.writeSync(artifact.contentBase64, { encoding: "base64" });
   metadata.create({ overwrite: true });
-  metadata.write(JSON.stringify({ key }));
+  metadata.writeSync(JSON.stringify({ key }));
   return file;
 }
 
-export async function readMobileArtifactText(
+/** An artifact's text, read through the same authenticated, session-scoped cache. */
+export async function textMobileArtifact(
   target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
 ): Promise<string> {
-  const file = await cacheMobileArtifact(target, artifactId, mimeType);
-  return file.text();
+  return (await cacheMobileArtifact(target, artifactId, mimeType)).text();
+}
+
+/** Local playback URI using the same authenticated, session-scoped artifact cache. */
+export async function audioArtifactUri(
+  target: MobileArtifactTarget,
+  artifactId: string,
+  mimeType: string,
+): Promise<string> {
+  return (await cacheMobileArtifact(target, artifactId, mimeType)).uri;
 }
 
 export async function openMobileArtifact(
@@ -246,5 +247,5 @@ async function shareNamedFile(source: File, mimeType: string, name: string): Pro
     await Sharing.shareAsync(shared.uri, { mimeType });
     return;
   }
-  throw new Error(t("Saved {name} locally", { name }));
+  throw new Error(t`Saved ${name} locally`);
 }

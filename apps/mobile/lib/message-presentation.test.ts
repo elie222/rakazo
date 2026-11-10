@@ -1,5 +1,4 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   applyLocalChoiceDismissals,
@@ -7,10 +6,10 @@ import {
   DISMISSED_CHOICE_ANSWER_ID,
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
+  messageHasInlineControls,
   messagePresentationSegments,
   quotableMessageSegments,
   threadCardWidth,
-  truncateQuoteExcerpt,
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
@@ -182,6 +181,21 @@ describe("mobile message presentation", () => {
       { kind: "content", blocks: [{ kind: "text", text: "Hi." }] },
     ]);
   });
+
+  it("draws a setup checklist as its own card and hides a retired one", () => {
+    const checklist: MessageBlock = {
+      kind: "import_setup",
+      items: [{ kind: "routine", routineId: "routine-1", name: "morning" }],
+    };
+    expect(hasVisibleMessagePresentation([checklist])).toBe(true);
+    expect(messagePresentationSegments([checklist])).toEqual([]);
+    expect(messagePresentationSegments([{ kind: "text", text: "Imported." }, checklist])).toEqual([
+      { kind: "content", blocks: [{ kind: "text", text: "Imported." }] },
+    ]);
+    expect(messageHasInlineControls([checklist])).toBe(true);
+    expect(hasVisibleMessagePresentation([{ ...checklist, undone: true }])).toBe(false);
+    expect(hasVisibleMessagePresentation([{ kind: "import_setup", items: [] }])).toBe(false);
+  });
 });
 
 describe("quotableMessageSegments", () => {
@@ -236,21 +250,26 @@ describe("quotableMessageSegments", () => {
   });
 });
 
-describe("truncateQuoteExcerpt", () => {
-  it("leaves short excerpts untouched", () => {
-    expect(truncateQuoteExcerpt("short")).toBe("short");
+describe("messageHasInlineControls", () => {
+  it("leaves a plain message to the row gestures", () => {
+    expect(messageHasInlineControls([{ kind: "text", text: "hello" } as MessageBlock])).toBe(false);
   });
 
-  it("caps at the contract limit", () => {
-    expect(truncateQuoteExcerpt("x".repeat(REPLY_QUOTE_MAX_LENGTH + 50))).toHaveLength(
-      REPLY_QUOTE_MAX_LENGTH,
-    );
-  });
-
-  it("does not split a surrogate pair at the boundary", () => {
-    const excerpt = "x".repeat(REPLY_QUOTE_MAX_LENGTH - 1) + "😀";
-    const truncated = truncateQuoteExcerpt(excerpt + "tail");
-    expect(truncated).toHaveLength(REPLY_QUOTE_MAX_LENGTH - 1);
-    expect(truncated).toBe("x".repeat(REPLY_QUOTE_MAX_LENGTH - 1));
+  it("keeps the taps of cards that render their own controls", () => {
+    expect(
+      messageHasInlineControls([
+        { kind: "ask", question: "Which one?", actions: [] } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
+    expect(
+      messageHasInlineControls([
+        { kind: "mcp_approval", serverId: "s" } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
+    expect(
+      messageHasInlineControls([
+        { kind: "app_connect", provider: "github" } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
   });
 });

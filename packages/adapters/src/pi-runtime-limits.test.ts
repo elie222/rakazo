@@ -4,7 +4,15 @@ import {
   billedPromptTokens,
   clipToolResultContent,
   clipToolResultText,
+  effectiveOutputReserve,
+  MODEL_CONNECT_TIMEOUT_MS,
+  MODEL_STREAM_IDLE_TIMEOUT_MS,
+  MODEL_STREAM_TIMEOUT_MS,
+  modelConnectTimeoutMs,
+  modelStreamIdleTimeoutMs,
   modelStreamMaxRetries,
+  modelStreamTimeoutMs,
+  operatorMaxTokens,
   REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
   TOOL_RESULT_TEXT_LIMIT,
@@ -30,6 +38,63 @@ describe("modelStreamMaxRetries", () => {
       expect(modelStreamMaxRetries()).toBe(1);
     },
   );
+});
+
+describe.each([
+  ["MODEL_STREAM_TIMEOUT_MS", modelStreamTimeoutMs, MODEL_STREAM_TIMEOUT_MS, 1_000, 2_147_483_647],
+  ["MODEL_CONNECT_TIMEOUT_MS", modelConnectTimeoutMs, MODEL_CONNECT_TIMEOUT_MS, 1_000, 300_000],
+  [
+    "MODEL_STREAM_IDLE_TIMEOUT_MS",
+    modelStreamIdleTimeoutMs,
+    MODEL_STREAM_IDLE_TIMEOUT_MS,
+    0,
+    2_147_483_647,
+  ],
+] as const)("%s", (name, read, fallback, minimum, maximum) => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("accepts supported whole-millisecond values and retains defaults for invalid values", () => {
+    vi.stubEnv(name, undefined);
+    expect(read()).toBe(fallback);
+
+    for (const value of [minimum, 240_000, maximum]) {
+      vi.stubEnv(name, String(value));
+      expect(read()).toBe(value);
+    }
+
+    for (const value of [
+      "",
+      " ",
+      String(minimum - 1),
+      String(maximum + 1),
+      "-1000",
+      "1500.5",
+      "Infinity",
+      "10m",
+    ]) {
+      vi.stubEnv(name, value);
+      expect(read()).toBe(fallback);
+    }
+  });
+});
+
+describe("extended model inference timeouts", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("accepts a 230-minute model request timeout", () => {
+    vi.stubEnv("MODEL_STREAM_TIMEOUT_MS", "13800000");
+    expect(modelStreamTimeoutMs()).toBe(13_800_000);
+  });
+
+  it("allows disabling stream inactivity detection", () => {
+    vi.stubEnv("MODEL_STREAM_IDLE_TIMEOUT_MS", "0");
+    expect(modelStreamIdleTimeoutMs()).toBe(0);
+  });
+
+  it("does not extend connection timeout validation", () => {
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "13800000");
+    expect(modelConnectTimeoutMs()).toBe(MODEL_CONNECT_TIMEOUT_MS);
+  });
 });
 
 describe("billedPromptTokens", () => {
@@ -93,7 +158,54 @@ describe("billedPromptTokens", () => {
   });
 });
 
+describe("effectiveOutputReserve", () => {
+  it.each([
+    [262_144, 4096, 4096],
+    [32_768, 8192, 8192],
+    [32_768, 32_768, 8192],
+    [32_768, 65_536, 8192],
+    [101, 26, 25],
+    [3, 10, 1],
+    [1, 1, 1],
+    [100, 1, 1],
+  ])("limits output in a %i-token window from %i to %i", (window, configured, effective) => {
+    expect(effectiveOutputReserve(window, configured)).toBe(effective);
+  });
+
+  it("resolves an omitted maxTokens before applying the context limit", () => {
+    expect(resolveCompletionMaxTokens(undefined, undefined, undefined, false, 4096)).toBe(1024);
+    expect(resolveCompletionMaxTokens(undefined, undefined, undefined, false, 262_144)).toBe(4096);
+  });
+});
+
 describe("resolveCompletionMaxTokens", () => {
+  it("lets an operator limit replace the default, but not a configured field", () => {
+    expect(resolveCompletionMaxTokens(20_000, undefined, undefined, false, 120_000, 20_000)).toBe(
+      20_000,
+    );
+    expect(resolveCompletionMaxTokens(100, undefined, undefined, false, 120_000, 100)).toBe(100);
+    expect(resolveCompletionMaxTokens(20_000, 2_048, undefined, false, 120_000, 20_000)).toBe(
+      2_048,
+    );
+    // The window bound and an agent-supplied cap still apply.
+    expect(resolveCompletionMaxTokens(20_000, undefined, undefined, false, 32_000, 20_000)).toBe(
+      8_000,
+    );
+    expect(resolveCompletionMaxTokens(20_000, undefined, 1_000, false, undefined, 20_000)).toBe(
+      1_000,
+    );
+  });
+
+  it("takes an operator limit only from the local provider, and only when it is set", () => {
+    vi.stubEnv("RAKAZO_LOCAL_MAX_TOKENS", "");
+    expect(operatorMaxTokens({ provider: "local", maxTokens: 4_096 })).toBeUndefined();
+    vi.stubEnv("RAKAZO_LOCAL_MAX_TOKENS", "20000");
+    expect(operatorMaxTokens({ provider: "local", maxTokens: 20_000 })).toBe(20_000);
+    expect(operatorMaxTokens({ provider: "openai-compatible", maxTokens: 20_000 })).toBeUndefined();
+    expect(operatorMaxTokens({ provider: "openrouter", maxTokens: 20_000 })).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
+
   it("uses the shared default instead of a model-card ceiling", () => {
     expect(resolveCompletionMaxTokens(128_000)).toBe(DEFAULT_MODEL_MAX_TOKENS);
   });

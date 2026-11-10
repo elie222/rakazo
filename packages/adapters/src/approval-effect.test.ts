@@ -5,6 +5,7 @@ import {
   approvalReplayPathError,
   approvalReplayResourceError,
   approvedCatalogReplay,
+  approvedEffectOccurrence,
   approvedReplayArgs,
   boundDirectApprovalRequest,
   catalogApprovalConnectorId,
@@ -12,19 +13,70 @@ import {
   catalogApprovalMatchesLiveRoute,
   catalogApprovalRequest,
   catalogExecuteToolName,
+  catalogIdForRoute,
   catalogToolPrefix,
   claimApprovedEffect,
   claimIntendedEffect,
   completeExternalEffect,
   createApprovedEffectReplayQueue,
   isApprovalPausedResult,
+  isInternalTermination,
+  isTerminatingReplyResult,
   isToolPauseResult,
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
+  terminatingToolResult,
+  uncertainEffectResult,
 } from "./approval-effect.js";
 
 describe("approved effect replay", () => {
+  it("binds direct and catalog approvals to the selected account", () => {
+    const marker = "__rakazoCatalogTool";
+    const route = {
+      connectorId: "example",
+      resourceId: "mail",
+      toolName: "send",
+      connectionId: "work",
+    };
+    const args = { text: "approved" };
+    const direct = boundDirectApprovalRequest(route, args, marker);
+    const catalog = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: catalogIdForRoute(route), arguments: args },
+      marker,
+      route,
+    );
+    expect(catalogIdForRoute(route)).toBe("mail:work:send");
+    for (const approved of [direct, catalog]) {
+      expect(approvalReplayResourceError("send", false, approved, route, marker)).toBeUndefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: "home" },
+          marker,
+        ),
+      ).toBeDefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: undefined },
+          marker,
+        ),
+      ).toBeDefined();
+    }
+    const legacy = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: "mail:send", arguments: args },
+      marker,
+    );
+    expect(approvalReplayResourceError("send", false, legacy, route, marker)).toBeDefined();
+  });
+
   it("replays persisted arguments instead of a changed model reconstruction", () => {
     const approved = { title: "Approved title", body: "Approved body" };
     const queue = createApprovedEffectReplayQueue([
@@ -46,6 +98,17 @@ describe("approved effect replay", () => {
     expect(queue.assertDrained).toThrow();
     expect(queue.take("destination.write")).toEqual({ sequence: 2 });
     expect(queue.assertDrained).not.toThrow();
+  });
+
+  it("reads the occurrence an approved row's key encodes", () => {
+    const base = approvalEffectKey("run", "destination.write", { sequence: 1 });
+    expect(approvedEffectOccurrence(base, base)).toBe(0);
+    expect(approvedEffectOccurrence(`${base}:2`, base)).toBe(2);
+    expect(approvedEffectOccurrence(`${base}:0`, base)).toBeUndefined();
+    expect(approvedEffectOccurrence(`${base}:x`, base)).toBeUndefined();
+    expect(
+      approvedEffectOccurrence(approvalEffectKey("run", "destination.write", {}), base),
+    ).toBeUndefined();
   });
 
   it("does not consume a later tool before the next approved request", () => {
@@ -316,6 +379,28 @@ describe("resolveDuplicateEffectGate", () => {
   });
 });
 
+describe("uncertainEffectResult", () => {
+  const listFleetHint = "Call list_fleet to check whether it happened before retrying.";
+  it.each([
+    ["update_bot", { bot_id: "bot-child", name: "Ranger" }],
+    ["set_child_instructions", {}],
+  ])("points %s to list_fleet before a retry", (toolName, args) => {
+    expect(uncertainEffectResult(toolName, args).error).toContain(listFleetHint);
+  });
+
+  it.each(["set_child_bot_model", "create_child_routine"])(
+    "asks the owner to verify uncertain %s outcomes",
+    (tool) => {
+      expect(uncertainEffectResult(tool).error).toContain("Ask the owner to verify the outcome");
+      expect(uncertainEffectResult(tool).error).toContain("do not retry automatically");
+    },
+  );
+
+  it("keeps the destination hint for update_bot on the bot itself", () => {
+    expect(uncertainEffectResult("update_bot", { name: "Me" }).error).not.toContain("list_fleet");
+  });
+});
+
 describe("claimApprovedEffect", () => {
   it("claims approved effects exactly once", async () => {
     const store = {
@@ -535,4 +620,15 @@ describe("catalog wrapper names", () => {
       ),
     ).toBe(true);
   });
+});
+
+it("keeps termination provenance through internal copies but not connector JSON", () => {
+  const result = terminatingToolResult("Internal refusal", { refused: "owner-settings" });
+  expect(isTerminatingReplyResult(result)).toBe(true);
+  expect(isTerminatingReplyResult({ ...result })).toBe(true);
+  expect(isTerminatingReplyResult(JSON.parse(JSON.stringify(result)))).toBe(false);
+  const pause = approvalPausedToolResult();
+  expect(isInternalTermination({ ...pause })).toBe(true);
+  expect(isInternalTermination(JSON.parse(JSON.stringify(pause)))).toBe(false);
+  expect(isTerminatingReplyResult(pause)).toBe(false);
 });

@@ -3,6 +3,14 @@ export type GroupMemberRef = {
   name: string;
 };
 
+export function memberName(
+  members: readonly { botId: string; name: string }[] | undefined,
+  botId: string | undefined,
+): string | undefined {
+  if (!botId || !members) return undefined;
+  return members.find((member) => member.botId === botId)?.name;
+}
+
 const MENTION_PATTERN = /@([A-Za-z0-9][A-Za-z0-9_-]{0,39})/g;
 
 function escapeRegExp(value: string): string {
@@ -27,12 +35,15 @@ export function parseMentionNames(text: string): string[] {
   return [...names];
 }
 
-export function resolveGroupTargetBotIds(input: {
+type GroupTargetInput = {
   text: string;
   members: GroupMemberRef[];
   /** Bot ids from typed mention chips (non-members are ignored for wake). */
   explicitMentions?: string[];
-}): string[] {
+};
+
+/** Members a message names (chip, @Name or @everyone). Empty when it names nobody. */
+export function mentionedGroupBotIds(input: GroupTargetInput): string[] {
   const membersById = new Map(input.members.map((member) => [member.id, member]));
   const targetIds = new Set<string>();
 
@@ -41,19 +52,33 @@ export function resolveGroupTargetBotIds(input: {
     if (membersById.has(mentionId)) targetIds.add(mentionId);
   }
 
-  if (hasMentionToken(input.text, "everyone")) {
+  const names = ["everyone", ...input.members.map((member) => member.name.trim())]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  // Consume each mention once so a full name cannot also wake its prefix.
+  const alternatives = names.map(escapeRegExp).join("|");
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_-])@(${alternatives})(?![\\p{L}\\p{N}_-])`, "giu");
+  const mentions = [...input.text.matchAll(pattern)].map((match) => match[1]!);
+  const isMentioned = (name: string) => {
+    const exactName = new RegExp(`^${escapeRegExp(name.trim())}$`, "iu");
+    return mentions.some((mention) => exactName.test(mention));
+  };
+
+  if (isMentioned("everyone")) {
     for (const member of input.members) targetIds.add(member.id);
   } else {
     for (const member of input.members) {
-      if (hasMentionToken(input.text, member.name)) targetIds.add(member.id);
+      if (isMentioned(member.name)) targetIds.add(member.id);
     }
   }
 
-  if (targetIds.size === 0 && input.members[0]) {
-    targetIds.add(input.members[0].id);
-  }
-
   return [...targetIds];
+}
+
+/** Named members wake; a message that names nobody reaches every member. */
+export function resolveGroupTargetBotIds(input: GroupTargetInput): string[] {
+  const mentioned = mentionedGroupBotIds(input);
+  return mentioned.length > 0 ? mentioned : input.members.map((member) => member.id);
 }
 
 export function inferHandoffTargetName(prompt: string): string | undefined {

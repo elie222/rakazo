@@ -1,3 +1,4 @@
+import { registrableDomain } from "@rakazo/core/egress";
 import { JSDOM } from "jsdom";
 import type { ResolveHostname } from "./network-address.js";
 import { fetchSafeWebBytes } from "./web-ssrf.js";
@@ -53,8 +54,9 @@ export type FaviconResolverOptions = {
 
 /**
  * Resolves site icons on the server so clients never contact the linked site or a third-party
- * icon service. Only the origin is fetched (its root page, then /favicon.ico), never the path a
- * message linked to: that path can carry tokens or trigger one-time actions. Every hop goes
+ * icon service. Only the registrable domain's origin is fetched (its root page, then /favicon.ico),
+ * never the subdomain or path a message linked to: either can carry data a link was built to leak,
+ * and a path can trigger one-time actions. Every hop goes
  * through the SSRF-checked fetch, and results are cached per origin, misses included.
  */
 export function createFaviconResolver(options: FaviconResolverOptions = {}): FaviconResolver {
@@ -113,7 +115,11 @@ export function createFaviconResolver(options: FaviconResolverOptions = {}): Fav
   };
 }
 
-/** The canonical origin, or undefined for anything that is not a bare http(s) origin on its default port. */
+/**
+ * The origin whose icon is fetched, or undefined for anything that is not a bare http(s) origin on
+ * its default port. It is the site's registrable domain (`docs.example.com` asks `example.com`), so
+ * whatever a link puts in its subdomain never reaches DNS or the site from here.
+ */
 export function faviconOrigin(input: string): string | undefined {
   let url: URL;
   try {
@@ -123,7 +129,8 @@ export function faviconOrigin(input: string): string | undefined {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
   if (url.port || url.href !== `${url.origin}/`) return undefined;
-  return url.origin;
+  const site = registrableDomain(url.hostname);
+  return site ? `${url.protocol}//${site}` : undefined;
 }
 
 async function resolveFavicon(
@@ -234,6 +241,7 @@ function sniffImage(bytes: Uint8Array): ImageFormat | undefined {
 export async function faviconDataUrl(bytes: Uint8Array): Promise<string | null> {
   const format = sniffImage(bytes);
   if (!format) return null;
+  // sharp is a native addon; load it only when an image is processed.
   const { default: sharp } = await import("sharp");
   try {
     let image: ReturnType<typeof sharp>;

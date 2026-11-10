@@ -1,5 +1,8 @@
+import { displayIdentityResult, displayMessageBlock } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { MobileMe, MobileSnapshot, MobileSpaceNavigation } from "./api";
+import { resetI18nForTests } from "./i18n";
+import { identityLabels } from "./identity-display";
+import type { MobileMe, MobileSnapshot, MobileSpaceNavigation } from "./mobile-types";
 import type { SavedChatsScope } from "./saved-chats";
 import {
   clearSavedChats,
@@ -24,6 +27,9 @@ const state = vi.hoisted(() => ({
   namespace: "ns-1",
 }));
 vi.mock("./artifact-cache-session", () => ({ artifactCacheSession: async () => state.namespace }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://api.example.test",
   selectedSpaceId: () => state.selection,
@@ -86,7 +92,7 @@ vi.mock("expo-file-system", () => {
     textSync() {
       return state.files.get(this.uri);
     }
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
       state.written.set(this.uri, state.written.size + 1);
     }
@@ -111,12 +117,13 @@ const me = {
 const bot = {
   id: "bot-a",
   name: "Alpha",
-  title: "Research",
   notifyOnFinish: true,
   threadId: "thread-bot-a",
   updatedAt: "2026-10-10T12:30:00.000Z",
   sectionId: "section-a",
   parentBotId: "parent-a",
+  // Kept, so an offline inbox still leaves a snoozed chat out of the list.
+  snoozedUntil: "2026-10-11T09:00:00.000Z",
 };
 const group = {
   id: "group-a",
@@ -124,12 +131,20 @@ const group = {
   members: [],
   preview: "",
   updatedAt: "2026-10-10T12:30:00.000Z",
+  snoozedUntil: "2026-10-11T09:00:00.000Z",
 };
 const navigation = {
   current: {
     id: "space-a",
     name: "Personal",
-    bots: [{ ...bot, instructions: "Private bot instructions", teamChatRules: "Private rules" }],
+    bots: [
+      {
+        ...bot,
+        instructions: "Private bot instructions",
+        teamChatRules: "Private rules",
+        threadStatus: "running",
+      },
+    ],
     groups: [{ ...group, createdAt: "2026-10-01T09:00:00.000Z" }],
     externalConversations: [],
     botSections: [],
@@ -273,4 +288,87 @@ it("clears everything", () => {
   clearSavedChats();
   expect(state.files.size).toBe(0);
   expect(readSavedInbox(scope)).toBeNull();
+});
+
+it("guards legacy names restored while offline", () => {
+  const legacy = structuredClone(navigation);
+  legacy.current.bots[0]!.name = "__TestTok1__";
+  legacy.current.groups[0]!.name = "c123456789012345678901234";
+  writeSavedInbox(scope, legacy, me);
+  expect(readSavedInbox(scope)?.bots[0]?.name).toBe("Bot");
+  expect(readSavedInbox(scope)?.groups[0]?.name).toBe("Group");
+});
+
+it("uses translated labels for legacy offline message metadata", () => {
+  resetI18nForTests("ru");
+  try {
+    const snapshot = thread(1);
+    snapshot.messages[0]!.blocks = [
+      {
+        kind: "bot_message_received",
+        fromBotId: "bot",
+        fromBotName: "__TestTok1__",
+        text: "Keep __TestTok1__ literal",
+      },
+    ];
+    writeSavedThread(scope, "bot:bot-a", snapshot);
+    expect(readSavedThread(scope, "bot:bot-a")?.messages[0]?.blocks[0]).toMatchObject({
+      fromBotName: "Бот",
+      text: "Keep __TestTok1__ literal",
+    });
+  } finally {
+    resetI18nForTests();
+  }
+});
+
+it("stores source names and relocalizes inbox and thread fallbacks after an offline language switch", () => {
+  resetI18nForTests("ru");
+  try {
+    const legacy = structuredClone(navigation);
+    legacy.current.bots[0]!.name = "__TestTok1__";
+    legacy.current.groups[0]!.name = "__TestTok1__";
+    const projected = displayIdentityResult(
+      ["spaces", "list"],
+      legacy,
+      identityLabels(),
+    ) as MobileSpaceNavigation;
+    writeSavedInbox(scope, projected, me);
+    const snapshot = thread(1);
+    snapshot.messages[0]!.blocks = [
+      displayMessageBlock(
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot",
+          fromBotName: "__TestTok1__",
+          text: "Keep literal text",
+        },
+        identityLabels(),
+      ),
+    ];
+    snapshot.groupName = "__TestTok1__";
+    const shown = displayIdentityResult(
+      ["threads", "get"],
+      snapshot,
+      identityLabels(),
+    ) as MobileSnapshot;
+    // Live updates spread the snapshot and message metadata before the next cache save.
+    writeSavedThread(scope, "bot:bot-a", {
+      ...shown,
+      messages: shown.messages.map((message) => ({
+        ...message,
+        blocks: message.blocks.map((block) => ({ ...block })),
+      })),
+    });
+    expect([...state.files.values()].join("\n")).not.toContain("Бот");
+    expect([...state.files.values()].join("\n")).not.toContain("Группа");
+    resetI18nForTests("de");
+    expect(readSavedInbox(scope)?.groups[0]?.name).toBe("Gruppe");
+    expect(readSavedThread(scope, "bot:bot-a")?.groupName).toBe("Gruppe");
+    // A genuine name equal to a translated noun stays literal.
+    legacy.current.groups[0]!.name = "Группа";
+    writeSavedInbox(scope, legacy, me);
+    expect(readSavedInbox(scope)?.groups[0]?.name).toBe("Группа");
+  } finally {
+    resetI18nForTests();
+  }
 });

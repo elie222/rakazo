@@ -1,3 +1,4 @@
+import { displayName } from "@rakazo/core";
 export type VoiceCallStatus = { ready: boolean; transcribe: boolean };
 
 export type VoiceCallPlan =
@@ -69,7 +70,7 @@ export async function loadCallCallerName(
         timer = setTimeout(() => resolve(undefined), 500);
       }),
     ]);
-    return me?.name?.trim().split(/\s+/)[0] || undefined;
+    return displayName(me?.name, "").split(/\s+/)[0] || undefined;
   } catch {
     return undefined;
   } finally {

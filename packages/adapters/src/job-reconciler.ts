@@ -1,12 +1,18 @@
+import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { stuckWorkStatusMessages } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { reconcileComputerRuns } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { findRunRecoveryBlockers } from "./run-recovery.js";
+import { messageBlocksText } from "./run-replies.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
@@ -15,6 +21,11 @@ const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_BATCH_SIZE = 100;
 const ROUTINE_LOOKAHEAD_MS = 60_000;
 const CONTROL_LOOKAHEAD_MS = 60_000;
+/**
+ * A queued run's job lock older than a run lease is abandoned. A live worker
+ * finishing a failed attempt holds it for seconds before Graphile unlocks it.
+ */
+const ABANDONED_QUEUED_LOCK_MS = 5 * 60_000;
 // Two keys give Rakazo's lock a namespace without relying on a hash that might collide
 // with an application using the one-key advisory-lock API.
 const RECONCILIATION_LOCK_NAMESPACE = 1_380_019_075;
@@ -106,32 +117,73 @@ export function createJobReconciler(
     leadership?: ReconciliationLeadership;
     reconcileComputerUpdates?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
+    reconcilePurchases?: () => Promise<void>;
+    reconcileMediaVideos?: () => Promise<void>;
+    reconcileModelCredits?: () => Promise<void>;
     reconcileRoutineRetryNotices?: () => Promise<void>;
+    reconcileStrategicInitiatives?: () => Promise<void>;
+    reconcileSecurityEventRetention?: () => Promise<void>;
+    reconcileAuditLog?: () => Promise<void>;
+    reconcileHomeStorage?: () => Promise<void>;
+    reconcileIdleComputers?: () => Promise<void>;
+    reconcileDeadJobs?: () => Promise<void>;
   },
-  options: { intervalMs?: number; batchSize?: number } = {},
+  options: { intervalMs?: number; batchSize?: number; maxPagesPerPass?: number } = {},
 ) {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const maxPagesPerPass = options.maxPagesPerPass ?? 10;
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new Error("Invalid batch size");
+  if (!Number.isSafeInteger(maxPagesPerPass) || maxPagesPerPass < 1) {
+    throw new Error("Invalid page budget");
+  }
+  let stopping = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let reconciling: Promise<void> | undefined;
+  let lastCompletedAt = Date.now();
   let stuckCursor: Cursor | undefined;
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
   let controlScanDeadline: Date | undefined;
+  // Housekeeping that waits on storage or another service runs beside the scans, never before
+  // them, so a hung call cannot hold back recovery. Each skips a tick while its last pass runs.
+  const housekeeping = [
+    deps.reconcileCloudAgents,
+    deps.reconcilePurchases,
+    deps.reconcileMediaVideos,
+    deps.reconcileModelCredits,
+    deps.reconcileComputerUpdates,
+    deps.reconcileRoutineRetryNotices,
+    deps.reconcileStrategicInitiatives,
+    deps.reconcileSecurityEventRetention,
+    deps.reconcileAuditLog,
+    deps.reconcileHomeStorage,
+    deps.reconcileIdleComputers,
+    deps.reconcileDeadJobs,
+  ].filter((reconcile) => reconcile !== undefined);
+  const housekeepingRunning = new Map<() => Promise<void>, Promise<void>>();
+  const startHousekeeping = () => {
+    for (const reconcile of housekeeping) {
+      if (housekeepingRunning.has(reconcile)) continue;
+      const pass = (async () => reconcile())()
+        .catch((error) => getLogger().error("auxiliary reconciliation", error))
+        .finally(() => housekeepingRunning.delete(reconcile));
+      housekeepingRunning.set(reconcile, pass);
+    }
+  };
 
   const reconcileOnce = async () => {
     if (reconciling) return reconciling;
+    if (stopping) return;
     reconciling = (async () => {
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
-      const auxiliary = await Promise.allSettled(
-        [
-          deps.reconcileCloudAgents,
-          deps.reconcileComputerUpdates,
-          deps.reconcileRoutineRetryNotices,
-        ].map(async (reconcile) => reconcile?.()),
-      );
+      startHousekeeping();
+      const auxiliary = await Promise.allSettled([
+        reconcileCallRequests(deps),
+        reconcileComputerRuns(deps.prisma),
+      ]);
       for (const result of auxiliary) {
         if (result.status === "rejected")
           getLogger().error("auxiliary reconciliation", result.reason);
@@ -151,7 +203,6 @@ export function createJobReconciler(
       } catch (error) {
         getLogger().error("stuck work reconciliation", error);
       }
-      controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
       const runCursorFilter = runCursor
         ? {
             OR: [
@@ -160,29 +211,7 @@ export function createJobReconciler(
             ],
           }
         : undefined;
-      const routineCursorFilter = routineCursor
-        ? {
-            OR: [
-              { nextRunAt: { gt: routineCursor.at } },
-              { nextRunAt: routineCursor.at, id: { gt: routineCursor.id } },
-            ],
-          }
-        : undefined;
-      const controlCursorFilter = controlCursor
-        ? controlCursor.at
-          ? {
-              OR: [
-                { controlLeaseExpiresAt: { gt: controlCursor.at } },
-                {
-                  controlLeaseExpiresAt: controlCursor.at,
-                  id: { gt: controlCursor.id },
-                },
-                { controlLeaseExpiresAt: null },
-              ],
-            }
-          : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
-        : undefined;
-      const [runs, routines, controls, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
+      const [runs, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
         deps.prisma.run.findMany({
           where: {
             AND: [
@@ -200,46 +229,13 @@ export function createJobReconciler(
           },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: batchSize,
-          select: { id: true, updatedAt: true },
-        }),
-        deps.prisma.routine.findMany({
-          where: {
-            AND: [
-              {
-                active: true,
-                nextRunAt: { lte: new Date(now.getTime() + ROUTINE_LOOKAHEAD_MS) },
-              },
-              ...(routineCursorFilter ? [routineCursorFilter] : []),
-            ],
-          },
-          orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: { id: true, nextRunAt: true },
-        }),
-        deps.prisma.computer.findMany({
-          where: {
-            AND: [
-              { controlLeaseId: { not: null } },
-              {
-                OR: [
-                  { controlLeaseExpiresAt: null },
-                  {
-                    controlLeaseExpiresAt: {
-                      lte: controlScanDeadline,
-                    },
-                  },
-                ],
-              },
-              ...(controlCursorFilter ? [controlCursorFilter] : []),
-            ],
-          },
-          orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
-          take: batchSize,
           select: {
             id: true,
-            controlBotId: true,
-            controlLeaseId: true,
-            controlLeaseExpiresAt: true,
+            status: true,
+            updatedAt: true,
+            botId: true,
+            trigger: true,
+            bot: { select: { computerId: true } },
           },
         }),
         deps.prisma.messagingOutbound.findFirst({
@@ -327,30 +323,73 @@ export function createJobReconciler(
             }
           }),
         );
+        // A background helper whose result did not go back yet: a crash after it ended, or a
+        // stop. A stopped helper only settles its card; anything else answers in the chat.
+        const helpers = await deps.prisma.run.findMany({
+          where: {
+            trigger: BACKGROUND_HELPER_TRIGGER,
+            status: { in: ["completed", "failed", "cancelled"] },
+            botOutcomeReturnedAt: null,
+          },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: {
+            id: true,
+            spaceId: true,
+            botId: true,
+            userId: true,
+            sourceMessageId: true,
+            status: true,
+            error: true,
+          },
+        });
+        for (const run of helpers) {
+          const expired =
+            run.status === "cancelled" && stuckWorkStatusMessages().includes(run.error ?? "");
+          await (async () => {
+            const outcome =
+              run.status === "completed"
+                ? {
+                    status: "completed" as const,
+                    text: (await botRunOutcomeText(deps.prisma, run.id)).text,
+                  }
+                : run.status === "failed" || expired
+                  ? { status: "failed" as const, text: run.error ?? "unknown error" }
+                  : { status: "stopped" as const, text: "" };
+            await returnHelperOutcome(
+              { prisma: deps.prisma, jobs: deps.jobs, events },
+              run,
+              outcome,
+            );
+          })().catch(async (error) => {
+            getLogger().error("background helper outcome reconciliation", error);
+            // Like a bot message outcome: retry later without holding the head of the queue.
+            await deps.prisma.run.updateMany({
+              where: { id: run.id, botOutcomeReturnedAt: null },
+              data: { updatedAt: new Date() },
+            });
+          });
+        }
       }
 
       // A queued run already has a job while it waits out failure backoff.
       // Default replace would zero that job's attempts and run it now. keepExisting
       // leaves the job while attempts remain, and still replaces one that is exhausted.
-      await Promise.all([
-        ...runs.map((run) => deps.jobs.enqueue({ ...runContinueJob(run.id), keepExisting: true })),
-        ...routines.flatMap((routine) =>
-          routine.nextRunAt
-            ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
-            : [],
-        ),
-        ...controls.flatMap((computer) =>
-          computer.controlLeaseId
-            ? [
-                scheduleComputerControlExpiry(
-                  deps.jobs,
-                  computer.id,
-                  computer.controlLeaseId,
-                  computer.controlLeaseExpiresAt ?? now,
-                ),
-              ]
-            : [],
-        ),
+      // A locked job whose worker died is never unlocked, so it is replaced: any lock
+      // for a run whose lease expired, and for a queued run only a lock older than
+      // a lease, since a live worker finishing a failed attempt still holds it.
+      const blockers = await findRunRecoveryBlockers(deps.prisma, runs, now);
+      const abandonedQueuedLockAt = new Date(now.getTime() - ABANDONED_QUEUED_LOCK_MS);
+      await publishAll([
+        ...runs
+          .filter((run) => !blockers.has(run.id))
+          .map((run) =>
+            deps.jobs.enqueue({
+              ...runContinueJob(run.id),
+              keepExisting: true,
+              replaceLockedBefore: run.status === "queued" ? abandonedQueuedLockAt : now,
+            }),
+          ),
         ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
         ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
       ]);
@@ -360,20 +399,130 @@ export function createJobReconciler(
         runs.length === batchSize && lastRun
           ? { at: lastRun.updatedAt, id: lastRun.id }
           : undefined;
-      const lastRoutine = routines.at(-1);
-      routineCursor =
-        routines.length === batchSize && lastRoutine?.nextRunAt
-          ? { at: lastRoutine.nextRunAt, id: lastRoutine.id }
+
+      // Scheduled work drains several pages per tick, yielding between pages.
+      let routinesDone = false;
+      let controlsDone = false;
+      for (let page = 0; page < maxPagesPerPass; page += 1) {
+        if (page > 0) await setImmediate();
+        if (stopping) return;
+        if (page > 0 && deps.leadership && !(await deps.leadership.tryAcquire())) return;
+        controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
+        const routineCursorFilter = routineCursor
+          ? {
+              OR: [
+                { nextRunAt: { gt: routineCursor.at } },
+                { nextRunAt: routineCursor.at, id: { gt: routineCursor.id } },
+              ],
+            }
           : undefined;
-      const lastControl = controls.at(-1);
-      controlCursor =
-        controls.length === batchSize && lastControl
-          ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
+        const controlCursorFilter = controlCursor
+          ? controlCursor.at
+            ? {
+                OR: [
+                  { controlLeaseExpiresAt: { gt: controlCursor.at } },
+                  {
+                    controlLeaseExpiresAt: controlCursor.at,
+                    id: { gt: controlCursor.id },
+                  },
+                  { controlLeaseExpiresAt: null },
+                ],
+              }
+            : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
           : undefined;
-      if (!controlCursor) controlScanDeadline = undefined;
-    })().finally(() => {
-      reconciling = undefined;
-    });
+        // Annotated because the cursors carried across pages make inference circular.
+        const [routines, controls]: [
+          Array<{ id: string; nextRunAt: Date | null }>,
+          Array<{
+            id: string;
+            controlBotId: string | null;
+            controlLeaseId: string | null;
+            controlLeaseExpiresAt: Date | null;
+          }>,
+        ] = await Promise.all([
+          routinesDone
+            ? []
+            : deps.prisma.routine.findMany({
+                where: {
+                  AND: [
+                    {
+                      active: true,
+                      nextRunAt: { lte: new Date(now.getTime() + ROUTINE_LOOKAHEAD_MS) },
+                    },
+                    ...(routineCursorFilter ? [routineCursorFilter] : []),
+                  ],
+                },
+                orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: { id: true, nextRunAt: true },
+              }),
+          controlsDone
+            ? []
+            : deps.prisma.computer.findMany({
+                where: {
+                  AND: [
+                    { controlLeaseId: { not: null } },
+                    {
+                      OR: [
+                        { controlLeaseExpiresAt: null },
+                        { controlLeaseExpiresAt: { lte: controlScanDeadline } },
+                      ],
+                    },
+                    ...(controlCursorFilter ? [controlCursorFilter] : []),
+                  ],
+                },
+                orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: {
+                  id: true,
+                  controlBotId: true,
+                  controlLeaseId: true,
+                  controlLeaseExpiresAt: true,
+                },
+              }),
+        ]);
+        await publishAll([
+          ...routines.flatMap((routine) =>
+            routine.nextRunAt
+              ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
+              : [],
+          ),
+          ...controls.flatMap((computer) =>
+            computer.controlLeaseId
+              ? [
+                  scheduleComputerControlExpiry(
+                    deps.jobs,
+                    computer.id,
+                    computer.controlLeaseId,
+                    computer.controlLeaseExpiresAt ?? now,
+                  ),
+                ]
+              : [],
+          ),
+        ]);
+
+        const lastRoutine = routines.at(-1);
+        routineCursor =
+          routines.length === batchSize && lastRoutine?.nextRunAt
+            ? { at: lastRoutine.nextRunAt, id: lastRoutine.id }
+            : undefined;
+        const lastControl = controls.at(-1);
+        controlCursor =
+          controls.length === batchSize && lastControl
+            ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
+            : undefined;
+        if (!controlCursor) controlScanDeadline = undefined;
+        routinesDone ||= !routineCursor;
+        controlsDone ||= !controlCursor;
+        if (routinesDone && controlsDone) break;
+      }
+    })()
+      .then(() => {
+        lastCompletedAt = Date.now();
+      })
+      .finally(() => {
+        reconciling = undefined;
+      });
     return reconciling;
   };
   const reconcileSafely = () => {
@@ -384,19 +533,32 @@ export function createJobReconciler(
 
   return {
     reconcileOnce,
+    lastCompletedAt: () => lastCompletedAt,
     start() {
       if (timer) return;
+      stopping = false;
       reconcileSafely();
       timer = setInterval(reconcileSafely, intervalMs);
       timer.unref?.();
     },
     async stop() {
+      stopping = true;
       if (timer) clearInterval(timer);
       timer = undefined;
       await reconciling?.catch(() => undefined);
+      // Read only after the pass settles: one waiting on leadership starts housekeeping late.
+      await Promise.all(housekeepingRunning.values());
       await deps.leadership?.release();
     },
   };
+}
+
+/** Settles every publication before failing, so a retried page never overlaps one in flight. */
+async function publishAll(publications: Array<Promise<unknown>>) {
+  const failed = (await Promise.allSettled(publications)).find(
+    (result) => result.status === "rejected",
+  );
+  if (failed) throw failed.reason;
 }
 
 /** Prefer the full bot transcript for a run so interim progress is not mistaken for the sole result. */
@@ -436,9 +598,5 @@ async function botRunOutcomeText(
 
 function messageText(blocks: unknown): string {
   if (!Array.isArray(blocks)) return "";
-  return (blocks as MessageBlock[])
-    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
-    .map((block) => block.text)
-    .join("")
-    .trim();
+  return messageBlocksText(blocks as MessageBlock[]).trim();
 }

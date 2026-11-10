@@ -1,6 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
@@ -13,6 +12,17 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
   );
 }
 
+/** Cards with a text field, buttons or links own the taps that land inside them. */
+export function messageHasInlineControls(blocks: readonly MessageBlock[]): boolean {
+  return blocks.some(
+    (block) =>
+      block.kind === "ask" ||
+      block.kind === "app_connect" ||
+      block.kind === "mcp_approval" ||
+      block.kind === "import_setup",
+  );
+}
+
 export type MessagePresentationSegment = {
   kind: "content";
   blocks: MessageBlock[];
@@ -20,7 +30,12 @@ export type MessagePresentationSegment = {
 
 /** Blocks the thread draws as their own native card instead of inside the text bubble. */
 function isCardBlock(block: MessageBlock): boolean {
-  return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
+  return (
+    block.kind === "app_connect" ||
+    block.kind === "choice" ||
+    block.kind === "computer" ||
+    block.kind === "import_setup"
+  );
 }
 
 export function messagePresentationSegments(
@@ -31,7 +46,10 @@ export function messagePresentationSegments(
 }
 
 export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
-  return blocks.some((block) => !isToolActivityBlock(block) && !isDismissedChoice(block));
+  return blocks.some(
+    (block) =>
+      !isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block),
+  );
 }
 
 type ChoiceBlock = Extract<MessageBlock, { kind: "choice" }>;
@@ -70,13 +88,14 @@ export function choiceCardOptions(block: ChoiceBlock): ChoiceBlock["options"] {
     : block.options;
 }
 
-const THREAD_HORIZONTAL_PADDING = 20;
+/** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */
+export const THREAD_COLUMN_GUTTER = 20;
 const MESSAGE_COLUMN_RATIO = 0.9;
 const CARD_MAX_WIDTH = 340;
 
 /** Width of a card in a normal bot row: thread padding, then the 90% column cap. */
 export function threadCardWidth(windowWidth: number): number {
-  const contentWidth = Math.max(0, windowWidth - THREAD_HORIZONTAL_PADDING * 2);
+  const contentWidth = Math.max(0, windowWidth - THREAD_COLUMN_GUTTER * 2);
   return Math.min(CARD_MAX_WIDTH, Math.floor(contentWidth * MESSAGE_COLUMN_RATIO));
 }
 
@@ -115,11 +134,4 @@ export function quotableMessageSegments(
   }
   byRole.set(role, segments);
   return segments;
-}
-
-/** Cap a selection at the contract limit without splitting a surrogate pair. */
-export function truncateQuoteExcerpt(value: string): string {
-  const truncated = value.slice(0, REPLY_QUOTE_MAX_LENGTH);
-  const last = truncated.charCodeAt(truncated.length - 1);
-  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
 }

@@ -1,21 +1,25 @@
-import {
-  type Actor,
-  AutomatedSenderPoliciesSchema,
-  type ExternalConversation,
-  type ExternalConversationPolicy,
-} from "@rakazo/contracts";
+import type { Actor, ExternalConversation, ExternalConversationPolicy } from "@rakazo/contracts";
+import { AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
+import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { previewFromBlocks } from "./thread-listing.js";
+import { readStateFor, unreadFor } from "./thread-reads.js";
+
+interface ExternalBotSenderRow {
+  externalConversationId: string;
+  senderId: string;
+  senderName: string;
+}
 
 export function createExternalConversationRepos(prisma: PrismaClient) {
   return {
-    async listForSpaces(actor: Actor, spaceIds: string[]): Promise<ExternalConversation[]> {
+    async listForSpaces(spaceIds: string[], userId: string): Promise<ExternalConversation[]> {
       if (spaceIds.length === 0) return [];
-      const conversations = await prisma.externalConversation.findMany({
+      const rows = await prisma.externalConversation.findMany({
         where: {
           spaceId: { in: spaceIds },
-          userId: actor.userId,
           bot: { archivedAt: null },
           thread: { isNot: null },
         },
@@ -30,26 +34,41 @@ export function createExternalConversationRepos(prisma: PrismaClient) {
           teamChatRules: true,
           automatedSenderPolicies: true,
           updatedAt: true,
-          messages: {
-            where: { senderIsBot: true },
-            orderBy: { createdAt: "desc" },
-            take: 100,
-            select: { senderId: true, senderName: true },
-          },
-          thread: {
-            select: {
-              id: true,
-              unread: true,
-              messages: {
-                orderBy: { seq: "desc" },
-                take: 1,
-                select: { blocks: true },
-              },
-            },
-          },
+          thread: { select: { id: true, reads: readStateFor(userId) } },
         },
         orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
       });
+      const previewed = await withNewestThreadMessages(prisma, rows, 1);
+      const conversationIds = previewed.map((row) => row.id);
+      const senderRows =
+        conversationIds.length === 0
+          ? []
+          : await prisma.$queryRaw<ExternalBotSenderRow[]>(Prisma.sql`
+              SELECT e."externalConversationId", e."senderId", e."senderName"
+              FROM unnest(${conversationIds}::text[]) AS c(id)
+              CROSS JOIN LATERAL (
+                SELECT "externalConversationId", "senderId", "senderName", "createdAt"
+                FROM external_messages
+                WHERE "externalConversationId" = c.id AND "senderIsBot"
+                ORDER BY "createdAt" DESC
+                LIMIT 100
+              ) e
+              ORDER BY e."externalConversationId", e."createdAt" DESC
+            `);
+      const messagesByConversation = new Map<
+        string,
+        Array<{ senderId: string; senderName: string }>
+      >();
+      for (const row of senderRows) {
+        const sender = { senderId: row.senderId, senderName: row.senderName };
+        const list = messagesByConversation.get(row.externalConversationId);
+        if (list) list.push(sender);
+        else messagesByConversation.set(row.externalConversationId, [sender]);
+      }
+      const conversations = previewed.map((conversation) => ({
+        ...conversation,
+        messages: messagesByConversation.get(conversation.id) ?? [],
+      }));
       return conversations.map((conversation) => {
         if (!conversation.thread) {
           throw new IsolationError("External conversation is missing its thread");
@@ -76,7 +95,7 @@ export function createExternalConversationRepos(prisma: PrismaClient) {
           ],
           threadId: conversation.thread.id,
           preview: previewFromBlocks(conversation.thread.messages[0]?.blocks),
-          unread: conversation.thread.unread,
+          unread: unreadFor(conversation.thread),
           updatedAt: conversation.updatedAt.toISOString(),
         };
       });
@@ -87,6 +106,8 @@ export function createExternalConversationRepos(prisma: PrismaClient) {
       externalConversationId: string,
       policy: ExternalConversationPolicy,
     ): Promise<ExternalConversationPolicy> {
+      // Visible to the whole space, but the policy decides when the bot acts with the
+      // linking member's chat connection, so only that member changes it.
       const result = await prisma.externalConversation.updateMany({
         where: {
           id: externalConversationId,

@@ -17,8 +17,15 @@ vi.mock("react-native", async () => {
     return createElement("div", { "data-testid": props.testID }, props.children);
   }
 
-  function MockText(props: { children?: ReactNode; accessibilityRole?: string }) {
-    return createElement("span", { role: props.accessibilityRole }, props.children);
+  function MockText(props: { children?: ReactNode; accessibilityRole?: string; style?: unknown }) {
+    return createElement(
+      "span",
+      {
+        role: props.accessibilityRole,
+        "data-style": JSON.stringify(Object.assign({}, ...[props.style].flat())),
+      },
+      props.children,
+    );
   }
 
   function MockPressable(props: {
@@ -56,7 +63,15 @@ vi.mock("react-native", async () => {
   };
 });
 
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc }));
+
+vi.mock("../components/glass-icon-button", async () => {
+  const { Pressable } = await import("react-native");
+  return { GlassIconButton: Pressable };
+});
 
 vi.mock("./native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
@@ -122,6 +137,25 @@ describe("ChoiceCard", () => {
     });
     return container;
   }
+
+  it("sets the question as a card title and the subtitle as card text", () => {
+    const view = render({ ...choice, subtitle: "Pick one to start." });
+    const style = (selector: string) =>
+      JSON.parse(view.querySelector<HTMLElement>(selector)?.dataset.style ?? "{}");
+
+    expect(style('[role="header"]')).toMatchObject({
+      fontSize: 17,
+      lineHeight: 22,
+      fontWeight: "500",
+    });
+    const subtitle = [...view.querySelectorAll<HTMLElement>("span")].find(
+      (span) => span.textContent === "Pick one to start.",
+    );
+    expect(JSON.parse(subtitle?.dataset.style ?? "{}")).toMatchObject({
+      fontSize: 15,
+      lineHeight: 19,
+    });
+  });
 
   it("chooses through onboarding/choose and keeps only that option", async () => {
     rpc.mockResolvedValue({});

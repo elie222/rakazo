@@ -1,4 +1,7 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
+import { t } from "./i18n.js";
+import { SignatureUnreachableError } from "./linux-update-signature.js";
+import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
 export const LAUNCH_CHECK_DELAY_MS = 8_000;
@@ -13,10 +16,10 @@ export interface UpdaterEnvironment {
 
 export function updaterSupport(env: UpdaterEnvironment): { supported: boolean; reason: string } {
   if (env.disabled === true) {
-    return { supported: false, reason: "Automatic updates are turned off for this install." };
+    return { supported: false, reason: t("Automatic updates are turned off for this install.") };
   }
   if (!env.packaged) {
-    return { supported: false, reason: "Automatic updates only run in an installed build." };
+    return { supported: false, reason: t("Automatic updates only run in an installed build.") };
   }
   return { supported: true, reason: "" };
 }
@@ -36,6 +39,8 @@ export function initialUpdateState(env: UpdaterEnvironment): DesktopUpdateState 
 export type UpdaterFailure =
   | { kind: "no-releases"; message: string }
   | { kind: "offline"; message: null }
+  | { kind: "read-only"; message: string }
+  | { kind: "disk-full"; message: string }
   | { kind: "signature"; message: string }
   | { kind: "other"; message: string };
 
@@ -55,30 +60,48 @@ const OFFLINE = [
   "enetunreach",
   "net::err_",
   "getaddrinfo",
+  // GitHub's release CDN refusing a signed download link that lapsed in transit.
+  "jwt:expired",
 ];
+// Squirrel.Mac refuses to replace an app run from a disk image or a translocated download.
+const READ_ONLY = ["read-only volume"];
+// ShipIt's ditto prints the POSIX text; macOS localizes the same failure's description.
+const DISK_FULL = ["no space left on device", "enospc", "设备上无剩余空间"];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
 export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
+  // The Linux signature fetch keeps its download; a server it could not reach is transient,
+  // while an HTTP error answer stays a fault so a broken release URL is still reported.
+  if (error instanceof SignatureUnreachableError && error.status === undefined) {
+    return { kind: "offline", message: null };
+  }
   const text = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
       kind: "no-releases",
-      message: "No desktop releases are published for this build yet.",
+      message: t("No desktop releases are published for this build yet."),
     };
   }
   if (OFFLINE.some((needle) => text.includes(needle))) {
     return { kind: "offline", message: null };
   }
+  if (READ_ONLY.some((needle) => text.includes(needle))) {
+    return { kind: "read-only", message: t("Move Rakazo to Applications to install updates.") };
+  }
+  // Ahead of signatures: a full disk also leaves ditto unable to read the archive's signature.
+  if (DISK_FULL.some((needle) => text.includes(needle))) {
+    return { kind: "disk-full", message: t("Free up disk space to install updates.") };
+  }
   if (SIGNATURE.some((needle) => text.includes(needle))) {
     return {
       kind: "signature",
-      message: "This update could not be verified. Reinstall Rakazo from a trusted download.",
+      message: t("This update could not be verified. Reinstall Rakazo from a trusted download."),
     };
   }
   return {
     kind: "other",
-    message: "The update could not be completed. Try again later.",
+    message: t("The update could not be completed. Try again later."),
   };
 }
 
@@ -152,7 +175,17 @@ export function reduceUpdateState(
       if (state.phase === "ready" && event.installFailed === true) {
         return {
           ...state,
-          message: failure.message ?? "The update could not be completed. Try again later.",
+          message: failure.message ?? t("The update could not be completed. Try again later."),
+        };
+      }
+      if (failure.kind === "read-only") {
+        return {
+          ...state,
+          phase: "unsupported",
+          availableVersion: null,
+          percent: null,
+          message: failure.message,
+          checkedAt: now,
         };
       }
       if (failure.kind === "no-releases" && state.phase === "checking") {
@@ -170,7 +203,7 @@ export function reduceUpdateState(
           ...state,
           phase: "error",
           percent: null,
-          message: "The update could not be completed. Try again later.",
+          message: t("The update could not be completed. Try again later."),
           checkedAt: now,
         };
       }
@@ -179,7 +212,7 @@ export function reduceUpdateState(
           ...state,
           phase: "idle",
           percent: null,
-          message: event.userInitiated ? "Could not reach the update server." : null,
+          message: event.userInitiated ? t("Could not reach the update server.") : null,
           checkedAt: now,
         };
       }
@@ -217,8 +250,16 @@ export interface ElectronAutoUpdater {
   on: (event: string, listener: (payload: unknown) => void) => unknown;
   checkForUpdates: () => Promise<unknown>;
   downloadUpdate: () => Promise<unknown>;
-  quitAndInstall: () => void;
+  quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
 }
+
+export interface DownloadedUpdate {
+  version: string;
+  downloadedFile: string;
+}
+
+/** Rejects to keep a downloaded update from ever installing. */
+export type DownloadVerifier = (update: DownloadedUpdate) => Promise<void>;
 
 interface UpdateClock {
   now: () => number;
@@ -237,6 +278,15 @@ function versionFrom(payload: unknown): string | null {
     : null;
 }
 
+function downloadedFileFrom(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null || !("downloadedFile" in payload)) {
+    return null;
+  }
+  return typeof payload.downloadedFile === "string" && payload.downloadedFile !== ""
+    ? payload.downloadedFile
+    : null;
+}
+
 function percentFrom(payload: unknown): number | null {
   if (typeof payload !== "object" || payload === null || !("percent" in payload)) return null;
   return typeof payload.percent === "number" && Number.isFinite(payload.percent)
@@ -249,6 +299,10 @@ export class DesktopUpdateController {
   private current: DesktopUpdateState;
   private lastCheck = 0;
   private updaterPromise: Promise<ElectronAutoUpdater | null> | null = null;
+  private loadedUpdater: ElectronAutoUpdater | null = null;
+  private verification: Promise<void> | null = null;
+  /** Bumped by each download and updater error, so only the latest verification can finish. */
+  private verificationAttempt = 0;
   private checkPromise: Promise<DesktopUpdateState> | null = null;
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
@@ -259,6 +313,7 @@ export class DesktopUpdateController {
     private readonly loadUpdater: () => Promise<ElectronAutoUpdater>,
     private readonly clock: UpdateClock = systemClock,
     private readonly onInstallFailure?: () => void,
+    private readonly verifyDownload?: DownloadVerifier,
   ) {
     this.current = initialUpdateState(environment);
   }
@@ -268,6 +323,11 @@ export class DesktopUpdateController {
   }
 
   private push(event: UpdaterEvent) {
+    if (event.type === "failed") {
+      const failure = classifyUpdaterFailure(event.error);
+      if (failure.kind === "signature" || failure.kind === "other")
+        reportDesktopError(event.error, "desktop.update", { "update.failure": failure.kind });
+    }
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;
@@ -281,7 +341,8 @@ export class DesktopUpdateController {
     const loading = this.loadUpdater()
       .then((updater) => {
         updater.autoDownload = false;
-        updater.autoInstallOnAppQuit = true;
+        // The updater would install on quit before an async verifier could finish.
+        updater.autoInstallOnAppQuit = this.verifyDownload === undefined;
         updater.allowPrerelease = false;
         updater.allowDowngrade = false;
         updater.disableWebInstaller = true;
@@ -306,17 +367,26 @@ export class DesktopUpdateController {
         });
         updater.on("update-downloaded", (payload) => {
           const version = versionFrom(payload);
-          if (version !== null) {
-            this.push({ type: "downloaded", version });
-          } else {
+          if (version === null) {
             this.push({
               type: "failed",
               error: new Error("The downloaded update did not include a version."),
               userInitiated: this.checkWasRequested,
             });
+            return;
           }
+          if (this.verifyDownload === undefined) {
+            this.push({ type: "downloaded", version });
+            return;
+          }
+          this.verification = this.verified(
+            ++this.verificationAttempt,
+            version,
+            downloadedFileFrom(payload),
+          );
         });
         updater.on("error", (error) => this.fail(error));
+        this.loadedUpdater = updater;
         return updater;
       })
       .catch((error: unknown) => {
@@ -328,23 +398,37 @@ export class DesktopUpdateController {
     return loading;
   }
 
+  private async verified(attempt: number, version: string, downloadedFile: string | null) {
+    try {
+      if (downloadedFile === null) throw new Error("The downloaded update signature has no file.");
+      await this.verifyDownload?.({ version, downloadedFile });
+      if (attempt === this.verificationAttempt) this.push({ type: "downloaded", version });
+    } catch (error) {
+      if (attempt === this.verificationAttempt)
+        this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
+    }
+  }
+
   check(userInitiated: boolean) {
-    if (userInitiated) this.checkWasRequested = true;
-    if (this.checkPromise !== null) return this.checkPromise;
-    const checking = this.runCheck().finally(() => {
+    if (this.checkPromise !== null) {
+      if (userInitiated) this.checkWasRequested = true;
+      return this.checkPromise;
+    }
+    const checking = this.runCheck(userInitiated).finally(() => {
       if (this.checkPromise === checking) this.checkPromise = null;
     });
     this.checkPromise = checking;
     return checking;
   }
 
-  private async runCheck() {
+  private async runCheck(userInitiated: boolean) {
     const checkOptions = {
-      userInitiated: this.checkWasRequested,
+      userInitiated,
       environmentSupportsUpdates: updaterSupport(this.environment).supported,
     };
     let now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
+    this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
       this.current = {
@@ -388,6 +472,7 @@ export class DesktopUpdateController {
     this.push({ type: "download-start" });
     try {
       await updater.downloadUpdate();
+      await this.verification;
     } catch (error) {
       if (this.state().phase === "downloading") {
         this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
@@ -397,6 +482,7 @@ export class DesktopUpdateController {
   }
 
   private fail(error: unknown) {
+    this.verificationAttempt++;
     const installFailed = this.installStarted;
     if (installFailed) this.installStarted = false;
     this.push({
@@ -422,5 +508,20 @@ export class DesktopUpdateController {
       this.fail(error);
     }
     return this.current;
+  }
+
+  /** Stands in for the updater's own install-on-quit once a verifier has passed the download. */
+  installOnQuit() {
+    const updater = this.loadedUpdater;
+    if (this.verifyDownload === undefined || updater === null) return;
+    if (this.installStarted || this.current.phase !== "ready") return;
+    this.installStarted = true;
+    try {
+      // Silent and without relaunching: the user chose to quit.
+      updater.quitAndInstall(true, false);
+    } catch (error) {
+      // The verified download stays cached for the next launch.
+      reportDesktopError(error, "desktop.update", { "update.failure": "install-on-quit" });
+    }
   }
 }

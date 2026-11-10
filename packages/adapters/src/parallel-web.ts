@@ -12,7 +12,7 @@ import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 
 const ENDPOINT = "https://search.parallel.ai/mcp";
@@ -40,7 +40,6 @@ export class ParallelWebProvider implements WebProvider {
 
   constructor(private readonly options: ParallelWebOptions = {}) {}
 
-  /** Advertise the same optional web capabilities as other WebProvider adapters. */
   describe() {
     return {
       id: "parallel",
@@ -50,7 +49,6 @@ export class ParallelWebProvider implements WebProvider {
     };
   }
 
-  /** Return bounded search evidence through the existing builtin tool contract. */
   async search(request: WebSearchRequest, context: AdapterContext): Promise<WebSearchHit[]> {
     const query = request.query.trim();
     if (!query) throw new Error("query is required");
@@ -75,9 +73,9 @@ export class ParallelWebProvider implements WebProvider {
       }));
   }
 
-  /** Extract readable page text before the shared serialized-envelope limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -91,6 +89,7 @@ export class ParallelWebProvider implements WebProvider {
       signal,
       1,
       maxChars,
+      offset,
     );
     const page = response.results[0];
     if (!page)
@@ -100,16 +99,13 @@ export class ParallelWebProvider implements WebProvider {
     const pageUrl = publicPageUrl(page.url);
     if (!pageUrl) throw new Error("Parallel returned an invalid page URL");
     const text = page.full_content ?? page.excerpts.join("\n\n");
-    const truncated = text.length > maxChars;
     return {
       url: pageUrl,
       title: page.title?.trim() || pageUrl,
-      text: truncated ? `${text.slice(0, maxChars)}\n\n[Content truncated]` : text,
-      truncated,
+      ...pageWindow(text, maxChars, offset),
     };
   }
 
-  /** Combine caller cancellation with the provider deadline. */
   private signal(parent: AbortSignal, timeoutMs = 30_000) {
     parent.throwIfAborted();
     return combineSignals(parent, AbortSignal.timeout(timeoutMs));
@@ -123,6 +119,7 @@ export class ParallelWebProvider implements WebProvider {
     signal: AbortSignal,
     maxResults: number,
     maxChars?: number,
+    offset = 0,
   ) {
     signal.throwIfAborted();
     // Scope conversation accounting to this deployment without disclosing raw IDs.
@@ -162,12 +159,15 @@ export class ParallelWebProvider implements WebProvider {
                 excerpts: [
                   joinPrefix(
                     page.excerpts,
-                    maxChars === undefined ? MAX_SNIPPET_CHARS : maxChars + 1,
-                  ),
+                    maxChars === undefined ? MAX_SNIPPET_CHARS : offset + maxChars + 1,
+                  ).slice(offset),
                 ],
-                // Keep one extra character to preserve the fetch truncation flag.
+                // Drop the skipped prefix before the result size limit, and keep one extra
+                // character to preserve the fetch truncation flag.
                 full_content:
-                  maxChars === undefined ? undefined : page.full_content?.slice(0, maxChars + 1),
+                  maxChars === undefined
+                    ? undefined
+                    : page.full_content?.slice(offset, offset + maxChars + 1),
               })),
             errors: response.errors
               ?.slice(0, 1)

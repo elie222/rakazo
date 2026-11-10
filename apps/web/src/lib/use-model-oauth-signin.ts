@@ -1,15 +1,20 @@
-import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelOAuthBegin, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
 import { waitForModelOAuth } from "./model-auth";
-import { rpc } from "./rpc";
+import { useSpaceRpc } from "./space-rpc";
 import { errorText } from "./user-error";
 
 export type ModelOAuthSignInBegin = {
   provider: string;
+  /** The connection to sign in again; null adds another. */
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: ThinkingLevel | null;
+  makeDefault?: boolean;
+  /** Where makeDefault sets the main model. */
+  scope?: SettingsScope;
   label?: string;
 };
 
@@ -19,10 +24,12 @@ export type ModelOAuthSignInBegin = {
  * guards so cancel-and-retry cannot drop a newer callback.
  */
 export function useModelOAuthSignIn(options: {
-  onFinished: (controller: AbortController) => void | Promise<void>;
+  /** `credentialId` is the connection the sign-in saved. */
+  onFinished: (controller: AbortController, credentialId: string) => void | Promise<void>;
   onError: (message: string) => void;
   onClearError?: () => void;
 }) {
+  const rpc = useSpaceRpc();
   const { onFinished, onError, onClearError } = options;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
@@ -61,16 +68,16 @@ export function useModelOAuthSignIn(options: {
   }
 
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal);
+    await waitForModelOAuth(loginId, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
     // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
     // is not reported as a failed sign-in (finishOAuth already persisted).
     try {
-      await onFinishedRef.current(controller);
+      await onFinishedRef.current(controller, saved.id);
     } catch (err) {
       if (controller.signal.aborted) return;
       onErrorRef.current(errorText(err, "Connected, but could not refresh"));
@@ -132,9 +139,14 @@ export function useModelOAuthSignIn(options: {
       const started = await rpc.models.beginOAuth(
         {
           provider: begin.provider,
+          ...(begin.credentialId !== undefined ? { credentialId: begin.credentialId } : {}),
           modelId: begin.modelId,
           thinkingLevel: begin.thinkingLevel,
+          makeDefault: begin.makeDefault,
+          ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
+          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
+          codePage: !desktopBridge(),
         },
         { signal: controller.signal },
       );
@@ -165,9 +177,18 @@ export function useModelOAuthSignIn(options: {
         await browserAuth.open(started.verificationUri);
         if (controller.signal.aborted) return;
       } else {
-        // null means the browser blocked the popup — the card keeps showing the
-        // URL, and callers can flag that nothing opened.
-        if (!window.open(started.verificationUri, "rakazo-model-oauth", "noopener,noreferrer")) {
+        // noopener returns null even when the tab opens. Detach a blank tab
+        // before navigating so the handle can distinguish a blocked popup.
+        const popup = window.open("about:blank", "_blank");
+        if (popup) {
+          popup.opener = null;
+          // A noreferrer link suppresses the navigation request's Referer header.
+          const link = popup.document.createElement("a");
+          link.href = started.verificationUri;
+          link.rel = "noreferrer";
+          popup.document.body.append(link);
+          link.click();
+        } else {
           setPopupBlocked(true);
         }
       }

@@ -6,15 +6,48 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CallCard } from "../components/CallCard";
+import { rpc } from "./api";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
+import { hapticImpact } from "./haptics";
 
-const { activeTags, useKeepAwake } = vi.hoisted(() => ({
-  activeTags: new Set<string>(),
-  useKeepAwake: vi.fn(),
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
 }));
 
+const { activeTags, platform, sessionChange, startBackground, stopBackground, useKeepAwake } =
+  vi.hoisted(() => ({
+    activeTags: new Set<string>(),
+    platform: { OS: "android", Version: 35 },
+    sessionChange: {
+      generation: 0,
+      listeners: new Set<() => void>(),
+      /** Emulates a sign-in or sign-out: a new generation notifies every observer. */
+      fire() {
+        this.generation += 1;
+        for (const listener of this.listeners) listener();
+      },
+    },
+    startBackground: vi.fn(async () => false),
+    stopBackground: vi.fn(async () => undefined),
+    useKeepAwake: vi.fn(),
+  }));
+
+vi.mock("./call-background", () => ({
+  startCallBackground: startBackground,
+  stopCallBackground: stopBackground,
+}));
+vi.mock("expo-audio", () => ({
+  AudioModule: { getRecordingPermissionsAsync: async () => ({ granted: true }) },
+}));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async () => null),
+  setItemAsync: vi.fn(async () => undefined),
+  deleteItemAsync: vi.fn(async () => undefined),
+}));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => true }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -47,28 +80,52 @@ vi.mock("react-native", () => {
       timing: vi.fn(),
       delay: vi.fn(),
     },
-    Platform: { OS: "ios", Version: 18 },
+    Platform: platform,
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
-vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
+vi.mock("../components/glass-icon-button", () => ({
+  GlassIconButton: ({
+    accessibilityLabel,
+    onPress,
+  }: {
+    accessibilityLabel: string;
+    onPress: () => void;
+  }) =>
+    createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
+}));
+vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
   captureApiRequestContext: vi.fn(),
+}));
+vi.mock("./mobile-types", () => ({
+  blockText: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({ t: (text: string) => text }),
-  t: (text: string) => text,
-  getActiveUiLocale: () => "en",
+vi.mock("./session", () => ({
+  currentSessionGeneration: () => sessionChange.generation,
+  subscribeSessionGeneration: (listener: () => void) => {
+    sessionChange.listeners.add(listener);
+    return () => sessionChange.listeners.delete(listener);
+  },
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-file-system", () => ({ File: class {} }));
-vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./voice", () => ({
+  createSpeechOwner: () => Symbol("SpeechOwner"),
+  speakText: vi.fn(),
+  stopSpeaking: vi.fn(),
+  setVoiceBackgroundPlayback: vi.fn(),
+}));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
   playCallCue: vi.fn(),
@@ -78,7 +135,22 @@ vi.mock("./call-sounds", () => ({
   stopWaitSound: vi.fn(),
 }));
 
-describe("CallCard keep-awake lifetime", () => {
+const deps: CallDeps = {
+  dictate: async () => true,
+  record: vi.fn(),
+  transcribe: vi.fn(),
+  send: vi.fn(),
+  answer: vi.fn(),
+  followUp: vi.fn(),
+  endCall: async () => undefined,
+  speak: async () => undefined,
+  watch: () => vi.fn(),
+  stopSpeaking: vi.fn(),
+  cue: async () => undefined,
+  waitSound: vi.fn(),
+};
+
+describe("CallCard background lifetime", () => {
   let root: Root;
   let container: HTMLDivElement;
 
@@ -92,6 +164,12 @@ describe("CallCard keep-awake lifetime", () => {
         };
       }, [tag]);
     });
+    activeTags.clear();
+    platform.OS = "android";
+    sessionChange.generation = 0;
+    startBackground.mockReset();
+    startBackground.mockResolvedValue(false);
+    stopBackground.mockReset();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -104,38 +182,91 @@ describe("CallCard keep-awake lifetime", () => {
     });
     container.remove();
     activeTags.clear();
-    useKeepAwake.mockReset();
     vi.unstubAllGlobals();
   });
 
-  it("keeps the screen awake only while a call is active", async () => {
-    const deps: CallDeps = {
-      dictate: async () => true,
-      record: vi.fn(),
-      transcribe: vi.fn(),
-      send: vi.fn(),
-      endCall: async () => undefined,
-      speak: async () => undefined,
-      watch: () => vi.fn(),
-      stopSpeaking: vi.fn(),
-      cue: async () => undefined,
-      waitSound: vi.fn(),
-    };
-
+  it("uses explicit hang-up feedback only when the Hang up button is pressed", async () => {
     act(() => root.render(<CallCard />));
-    expect(container.childElementCount).toBe(0);
-    expect(useKeepAwake).not.toHaveBeenCalled();
-    expect(activeTags.has("rakazo-call")).toBe(false);
-
     await act(async () => {
       startCall({ botId: "bot-1", botName: "Ada" }, deps);
     });
-    expect(container.textContent).toContain("Ada");
-    expect(useKeepAwake).toHaveBeenCalledWith("rakazo-call");
+    vi.mocked(hapticImpact).mockClear();
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Hang up"]');
+    expect(button).not.toBeNull();
+    await act(async () => button?.click());
+    expect(hapticImpact).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label="Hang up"]')).toBeNull();
+    await act(async () => endCall());
+    expect(hapticImpact).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the screen awake while the native service has not started", async () => {
+    act(() => root.render(<CallCard />));
+    expect(activeTags.size).toBe(0);
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
+    });
+
+    expect(startBackground).toHaveBeenCalledWith("Ada");
     expect(activeTags.has("rakazo-call")).toBe(true);
+  });
+
+  it("releases the screen awake hold once the native service starts", async () => {
+    startBackground.mockResolvedValue(true);
+    act(() => root.render(<CallCard />));
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
+    });
+
+    expect(startBackground).toHaveBeenCalledWith("Ada");
+    expect(activeTags.has("rakazo-call")).toBe(false);
 
     await act(async () => endCall());
-    expect(container.childElementCount).toBe(0);
-    expect(activeTags.has("rakazo-call")).toBe(false);
+    expect(stopBackground).toHaveBeenCalled();
+  });
+
+  it("keeps the screen awake on iOS without the Android call service", async () => {
+    platform.OS = "ios";
+    act(() => root.render(<CallCard />));
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
+    });
+
+    expect(startBackground).not.toHaveBeenCalled();
+    expect(activeTags.has("rakazo-call")).toBe(true);
+  });
+
+  it("shows the signed-in account's initial after a session change", async () => {
+    const me = vi.mocked(rpc);
+    me.mockResolvedValueOnce({ name: "Alicja" } as never);
+    me.mockClear();
+    // The card stays mounted in the app layout; earlier tests left another session's initial.
+    act(() => root.render(<CallCard />));
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("A"));
+    expect(me).toHaveBeenCalledWith("me");
+    expect(me).toHaveBeenCalledTimes(1);
+
+    await act(async () => endCall());
+    // A different account signs in without an app restart; the card stays mounted.
+    me.mockResolvedValueOnce({ name: "Bartek" } as never);
+    act(() => sessionChange.fire());
+
+    await act(async () => {
+      startCall({ botId: "bot-2", botName: "Nova" }, deps);
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("B"));
+    expect(me).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("A");
   });
 });

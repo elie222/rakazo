@@ -1,9 +1,14 @@
+import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import type { ReactNode } from "react";
 import { useId } from "react";
 import { Checkbox } from "./components/ui/checkbox.js";
+import { Disclosure } from "./components/ui/disclosure.js";
+import { Field, FieldLabel } from "./components/ui/field.js";
 import { Input } from "./components/ui/input.js";
-import { NativeSelect, NativeSelectOption } from "./components/ui/native-select.js";
+import { OptionSelect } from "./components/ui/option-select.js";
 
 export function ModelThinkingOptions({
+  children,
   reasoning = false,
   onReasoningChange,
   supportsImages,
@@ -28,6 +33,7 @@ export function ModelThinkingOptions({
   imagesLabel,
   maxImagesLabel,
 }: {
+  children?: ReactNode;
   reasoning?: boolean;
   onReasoningChange?: (reasoning: boolean) => void;
   supportsImages?: boolean;
@@ -59,8 +65,7 @@ export function ModelThinkingOptions({
   const imagesId = useId();
   const maxImagesId = useId();
   return (
-    <details className="mt-4 text-sm text-muted-foreground">
-      <summary className="cursor-pointer">{advancedLabel}</summary>
+    <Disclosure className="mt-4 text-body text-muted-foreground" summary={advancedLabel}>
       {showThinking && onReasoningChange && thinkingLabel ? (
         <label htmlFor={id} className="mt-3 flex items-center gap-2">
           <Checkbox
@@ -75,62 +80,58 @@ export function ModelThinkingOptions({
       {showThinking &&
       reasoning &&
       onThinkingLevelChange &&
+      thinkingLevelLabel &&
+      thinkingLevelDefaultLabel &&
       thinkingLevelOptions &&
       thinkingLevelOptions.length > 0 ? (
-        <label htmlFor={thinkingLevelId} className="mt-3 flex items-center gap-2">
-          <span className="min-w-0 flex-1">{thinkingLevelLabel}</span>
-          <NativeSelect
+        <Field orientation="horizontal" className="mt-3">
+          <FieldLabel htmlFor={thinkingLevelId}>{thinkingLevelLabel}</FieldLabel>
+          <OptionSelect
             id={thinkingLevelId}
             value={thinkingLevel ?? ""}
-            onChange={(event) => onThinkingLevelChange(event.target.value || null)}
+            onValueChange={(next) => onThinkingLevelChange(next || null)}
             disabled={disabled}
             aria-label={thinkingLevelLabel}
-            className="h-8 w-32 text-foreground"
-          >
-            <NativeSelectOption value="">{thinkingLevelDefaultLabel}</NativeSelectOption>
-            {thinkingLevelOptions.map((option) => (
-              <NativeSelectOption key={option.value} value={option.value}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
+            className="w-32"
+            options={[{ value: "", label: thinkingLevelDefaultLabel }, ...thinkingLevelOptions]}
+          />
+        </Field>
       ) : null}
       {onMaxTokensChange && maxTokensLabel ? (
-        <label htmlFor={maxTokensId} className="mt-3 flex items-center gap-2">
-          <span className="min-w-0 flex-1">{maxTokensLabel}</span>
+        <Field orientation="horizontal" className="mt-3">
+          <FieldLabel htmlFor={maxTokensId}>{maxTokensLabel}</FieldLabel>
           <Input
             id={maxTokensId}
             type="number"
             inputMode="numeric"
             min={1}
-            max={131072}
+            max={MAX_MODEL_MAX_TOKENS}
             step={1}
             value={maxTokens ?? ""}
             onChange={(event) => onMaxTokensChange(event.target.value)}
             disabled={disabled}
             aria-label={maxTokensLabel}
-            className="h-8 w-24 text-center text-foreground"
+            className="w-24 text-center text-foreground"
           />
-        </label>
+        </Field>
       ) : null}
       {onContextWindowChange && contextWindowLabel ? (
-        <label htmlFor={contextWindowId} className="mt-3 flex items-center gap-2">
-          <span className="min-w-0 flex-1">{contextWindowLabel}</span>
+        <Field orientation="horizontal" className="mt-3">
+          <FieldLabel htmlFor={contextWindowId}>{contextWindowLabel}</FieldLabel>
           <Input
             id={contextWindowId}
             type="number"
             inputMode="numeric"
             min={1}
-            max={1048576}
+            max={MAX_MODEL_CONTEXT_WINDOW}
             step={1}
             value={contextWindow ?? ""}
             onChange={(event) => onContextWindowChange(event.target.value)}
             disabled={disabled}
             aria-label={contextWindowLabel}
-            className="h-8 w-24 text-center text-foreground"
+            className="w-24 text-center text-foreground"
           />
-        </label>
+        </Field>
       ) : null}
       {onSupportsImagesChange ? (
         <label htmlFor={imagesId} className="mt-3 flex items-center gap-2">
@@ -144,8 +145,8 @@ export function ModelThinkingOptions({
         </label>
       ) : null}
       {supportsImages && onMaxImagesPerPromptChange ? (
-        <label htmlFor={maxImagesId} className="mt-3 flex items-center gap-2">
-          <span className="min-w-0 flex-1">{maxImagesLabel}</span>
+        <Field orientation="horizontal" className="mt-3">
+          <FieldLabel htmlFor={maxImagesId}>{maxImagesLabel}</FieldLabel>
           <Input
             id={maxImagesId}
             type="number"
@@ -157,10 +158,11 @@ export function ModelThinkingOptions({
             onChange={(event) => onMaxImagesPerPromptChange(event.target.value)}
             disabled={disabled}
             aria-label={maxImagesLabel}
-            className="h-8 w-20 text-center text-foreground"
+            className="w-20 text-center text-foreground"
           />
-        </label>
+        </Field>
       ) : null}
-    </details>
+      {children}
+    </Disclosure>
   );
 }

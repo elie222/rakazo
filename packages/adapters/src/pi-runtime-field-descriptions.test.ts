@@ -1,7 +1,7 @@
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
-import { jsonField, parametersFor } from "./pi-runtime.js";
+import { jsonField, parametersFor } from "./pi-runtime-tool-parameters.js";
 
 /** What the model is shown for a tool: the Pi parameters, serialised. */
 function wire(tool: { name: string; description: string; inputSchema: Record<string, unknown> }) {

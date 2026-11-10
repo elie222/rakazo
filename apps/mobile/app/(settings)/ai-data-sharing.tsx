@@ -1,5 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { AiConsentStatus } from "@rakazo/contracts";
-import { AI_DATA_DISCLOSURES, AI_PRIVACY_URL } from "@rakazo/contracts";
+import { AI_PRIVACY_URL } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import {
@@ -9,19 +11,20 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
-import { promptAiConsent } from "../../lib/ai-consent";
+import { aiDataDisclosure, promptAiConsent } from "../../lib/ai-consent";
 import {
   aiDataSharingPlaceholder,
   aiPrivacyLinks,
   groupAiRecipients,
 } from "../../lib/ai-data-sharing";
 import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function AiDataSharing() {
-  const { t } = useI18n();
+  const sideInsets = useSideInsets();
+  const { t } = useLingui();
   const [status, setStatus] = useState<AiConsentStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -29,20 +32,20 @@ export default function AiDataSharing() {
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const error = (cause: unknown) =>
-    Alert.alert(t("AI data sharing"), errorText(cause, t("Could not load permissions.")));
+    Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`));
   useEffect(() => {
     reload();
   }, []);
 
   function reload() {
     setLoadFailed(false);
-    void rpc<AiConsentStatus>("aiConsent/status")
+    void rpc("aiConsent/status")
       .then(setStatus)
       .catch((cause: unknown) => {
         setLoadFailed(true);
-        Alert.alert(t("AI data sharing"), errorText(cause, t("Could not load permissions.")), [
-          { text: t("Cancel"), style: "cancel" },
-          { text: t("Retry"), onPress: reload },
+        Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`), [
+          { text: t`Cancel`, style: "cancel" },
+          { text: t`Retry`, onPress: reload },
         ]);
       });
   }
@@ -67,18 +70,16 @@ export default function AiDataSharing() {
 
   function requestWithdrawal() {
     Alert.alert(
-      t("Withdraw all permissions?"),
-      t(
-        "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.",
-      ),
+      t`Withdraw all permissions?`,
+      t`New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Withdraw"),
+          text: t`Withdraw`,
           style: "destructive",
           onPress: () => {
             setPending(true);
-            void rpc<AiConsentStatus>("aiConsent/revoke", { key: null })
+            void rpc("aiConsent/revoke", { key: null })
               .then(setStatus)
               .catch(error)
               .finally(() => setPending(false));
@@ -90,31 +91,29 @@ export default function AiDataSharing() {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, sideInsets]}
       contentContainerStyle={[styles.container, stacked && styles.compactContainer]}
       contentInsetAdjustmentBehavior="automatic"
     >
       {placeholder === "loading" && <ActivityIndicator />}
       {placeholder === "failed" && (
-        <SettingsFooter>{t("Could not load permissions.")}</SettingsFooter>
+        <SettingsFooter>{t`Could not load permissions.`}</SettingsFooter>
       )}
-      {placeholder === "empty" && (
-        <SettingsFooter>{t("No AI services configured.")}</SettingsFooter>
-      )}
+      {placeholder === "empty" && <SettingsFooter>{t`No AI services configured.`}</SettingsFooter>}
       {status && (
         <>
           {groupAiRecipients(status.recipients).map(({ use, recipients }) => (
             <SettingsGroup
               key={use}
-              label={use === "model" ? t("AI models") : use === "voice" ? t("Voice") : t("Memory")}
-              footer={t(AI_DATA_DISCLOSURES[use])}
+              label={use === "model" ? t`AI models` : use === "voice" ? t`Voice` : t`Memory`}
+              footer={aiDataDisclosure(use)}
             >
               {recipients.map((recipient) => (
                 <SettingsSwitch
                   key={recipient.key}
                   label={recipient.name}
                   detail={recipient.detail}
-                  accessibilityLabel={t("Allow {name} on mobile", { name: recipient.name })}
+                  accessibilityLabel={t`Allow ${ph({ name: recipient.name })} on mobile`}
                   disabled={pending}
                   onChange={(allowed) => setAllowed(recipient, allowed)}
                   value={recipient.allowed}
@@ -122,7 +121,7 @@ export default function AiDataSharing() {
               ))}
             </SettingsGroup>
           ))}
-          <SettingsGroup label={t("Privacy policies")}>
+          <SettingsGroup label={t`Privacy policies`}>
             {aiPrivacyLinks(status.recipients).map(({ name, url }) => (
               <SettingsRow
                 key={JSON.stringify([name, url])}
@@ -133,7 +132,7 @@ export default function AiDataSharing() {
               />
             ))}
             <SettingsRow
-              title={t("Rakazo")}
+              title={t`Rakazo`}
               accessibilityRole="link"
               chevron="right"
               onPress={() => void Linking.openURL(status.privacyUrl ?? AI_PRIVACY_URL)}
@@ -146,7 +145,7 @@ export default function AiDataSharing() {
               dimmed={pending}
               disabled={pending}
               onPress={requestWithdrawal}
-              title={t("Withdraw all permissions")}
+              title={t`Withdraw all permissions`}
             />
           </SettingsGroup>
         </>

@@ -1,216 +1,27 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ModelCatalogEntry, ModelCredential, Routine } from "@rakazo/contracts";
-import {
-  type CronFreq,
-  type CronPreset,
-  cronFromPreset,
-  defaultCronPreset,
-  formatCron,
-  isOneShotRoutineCrons,
-  presetFromCron,
-} from "@rakazo/core";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-  Input,
-  NativeSelect,
-  NativeSelectOption,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Textarea,
-} from "@rakazo/ui-web";
-import {
-  ChevronLeft,
-  Clock,
-  GitBranch,
-  Globe,
-  MessageSquare,
-  Pause,
-  Plus,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
-import { useEffect, useId, useState } from "react";
-import {
-  connectedModelOptions,
-  modelOptionKey,
-  parseModelOptionKey,
-  thinkingLevelLabel,
-} from "../lib/model-catalog";
-import { rpc } from "../lib/rpc";
+import type { Routine } from "@rakazo/contracts";
+import { cronFromPreset } from "@rakazo/core";
+import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronLeft, X } from "lucide-react";
+import { useId } from "react";
+import { useIdentityConfirmation } from "../components/ConfirmIdentityDialog";
+import { useSpaceQueries } from "../lib/query";
+import type { RoutineDraftState } from "../lib/routine-draft";
+import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
-
-function toDatetimeLocalValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function defaultArmRunAtLocal(): string {
-  return toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
-}
-
-export function routineNeedsOneShotArm(
-  routine: Pick<Routine, "nextRunAt" | "lastRunAt">,
-  crons: string[],
-) {
-  return isOneShotRoutineCrons(crons) && !routine.nextRunAt && !routine.lastRunAt;
-}
-
-const SCHEDULE_PRESETS: CronFreq[] = [
-  "Every hour",
-  "Every day",
-  "Weekdays",
-  "Every week",
-  "Every month",
-  "Interval",
-  "Advanced",
-];
-
-const COMING_SOON = [
-  { id: "teams", label: () => t`Teams message` },
-  { id: "linear", label: () => t`Linear issue` },
-  { id: "sentry", label: () => t`Sentry alert` },
-  { id: "pagerduty", label: () => t`PagerDuty incident` },
-] as const;
-
-export type RoutineDraftState = {
-  name: string;
-  prompt: string;
-  schedules: CronPreset[];
-  webhookEnabled: boolean;
-  githubEnabled: boolean;
-  messageProvider: string | null;
-  active: boolean;
-  runAtLocal: string;
-  /** Empty runs this routine on the bot's model. */
-  modelKey: string;
-  thinkingLevel: string;
-};
-
-export function emptyRoutineDraft(): RoutineDraftState {
-  return {
-    name: "",
-    prompt: "",
-    schedules: [],
-    webhookEnabled: false,
-    githubEnabled: false,
-    messageProvider: null,
-    active: true,
-    runAtLocal: "",
-    modelKey: "",
-    thinkingLevel: "",
-  };
-}
-
-export function draftFromRoutine(routine: Routine): RoutineDraftState {
-  return {
-    name: routine.name,
-    prompt: routine.prompt,
-    schedules: routine.crons.map(presetFromCron),
-    webhookEnabled: routine.webhookEnabled,
-    githubEnabled: routine.githubEnabled,
-    messageProvider: routine.messageProvider,
-    active: routine.active,
-    runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
-    modelKey:
-      routine.modelProvider && routine.modelId
-        ? modelOptionKey(routine.modelProvider, routine.modelId)
-        : "",
-    thinkingLevel: routine.thinkingLevel ?? "",
-  };
-}
-
-export function routineTriggerSummary(routine: Routine): string {
-  if (!routine.active) return t`Paused`;
-  const parts: string[] = [];
-  if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
-  if (routine.githubEnabled) parts.push(t`Git event`);
-  if (routine.messageProvider === "slack") parts.push(t`Slack message`);
-  else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
-  else if (routine.messageProvider) parts.push(t`Message event`);
-  for (const cron of routine.crons) parts.push(formatCron(cron));
-  return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
-}
-
-export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
-  const { t } = useLingui();
-  return (
-    <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-sm text-muted-foreground">
-        <Trans>Routines</Trans>
-      </div>
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        data-testid="routine-create-button"
-        aria-label={t`Create Routine`}
-        title={t`Create Routine`}
-        onClick={onCreate}
-      >
-        <Plus strokeWidth={1.9} />
-      </Button>
-    </div>
-  );
-}
-
-export function RoutineListRow({
-  routine,
-  running,
-  onOpen,
-  onStop,
-}: {
-  routine: Routine;
-  running: boolean;
-  onOpen: () => void;
-  onStop: () => void;
-}) {
-  return (
-    <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-start"
-      >
-        <span className="grid h-5 w-5 place-items-center">
-          {routine.active ? (
-            <Clock size={16} strokeWidth={1.6} className="text-success" aria-hidden />
-          ) : (
-            <Pause size={14} className="text-muted-foreground" />
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
-            {routine.name}
-          </span>
-          <span className="block truncate text-[12.5px] text-muted-foreground/80">
-            {routineTriggerSummary(routine)}
-            {routine.modelProvider && routine.modelId ? ` · ${routine.modelId}` : ""}
-          </span>
-        </span>
-      </button>
-      {running ? (
-        <Button
-          size="xs"
-          onClick={onStop}
-          className="shrink-0 rounded-full bg-warning/15 text-warning hover:bg-warning/25"
-        >
-          <Trans>Running · Stop</Trans>
-        </Button>
-      ) : null}
-    </div>
-  );
-}
+import { AddTriggerMenu } from "./routine-editor/add-trigger-menu";
+import { RoutineModelSettings } from "./routine-editor/model-settings";
+import {
+  EmailTriggerCard,
+  InboundTriggerCard,
+  MessageTriggerCard,
+  WatchTriggerCard,
+} from "./routine-editor/trigger-cards";
 
 export function RoutineEditor({
+  bot,
   draft,
   onChange,
   editing,
@@ -227,7 +38,10 @@ export function RoutineEditor({
   onTestRun,
   onDelete,
   onEnsureWebhook,
+  onRevealWebhook,
+  onHideWebhook,
 }: {
+  bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
@@ -244,71 +58,38 @@ export function RoutineEditor({
   onTestRun: () => void;
   onDelete: () => void;
   onEnsureWebhook: () => Promise<void>;
+  onRevealWebhook: () => Promise<void>;
+  onHideWebhook: () => void;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  useEffect(() => {
-    void Promise.all([rpc.models.credentials(), rpc.models.list()])
-      .then(([nextCredentials, nextCatalog]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-      })
-      .catch(() => undefined);
-  }, []);
-  const modelOptions = connectedModelOptions(credentials, catalog);
-  const selectedModel = draft.modelKey ? parseModelOptionKey(draft.modelKey) : null;
-  const selectedEntry = selectedModel
-    ? catalog.find(
-        (entry) => entry.provider === selectedModel.provider && entry.id === selectedModel.modelId,
-      )
-    : undefined;
-  const selectedCredential = credentials.find(
-    (entry) =>
-      entry.provider === selectedModel?.provider && entry.modelId === selectedModel?.modelId,
-  );
-  const thinkingOptions = (
-    selectedCredential?.thinkingLevels ??
-    selectedEntry?.thinkingLevels ??
-    []
-  ).filter((level) => level !== "off");
-  const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
-  const slackAvailable = messageProviders.includes("slack");
-  const slackDisabledReasonId = `${fieldId}-slack-disabled-reason`;
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  // Closing the confirmation is a choice, and other failures show as the editor's error.
+  const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
+  const queries = useSpaceQueries();
+  const scheduleStatus = useQuery({
+    ...queries.routines.list.queryOptions({ input: { botId: editing?.botId ?? "" } }),
+    enabled: editing !== null && draft.active,
+    refetchInterval: 15_000,
+    select: (routines) => routines.find((routine) => routine.id === editing?.id) ?? null,
+  });
+  // Null when this server receives no email or the bot is another member's, which hides the trigger.
+  const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
+  const scheduleDelayed =
+    !scheduleStatus.isError &&
+    (scheduleStatus.data === undefined
+      ? editing?.scheduleDelayed
+      : scheduleStatus.data?.scheduleDelayed);
   const hasTriggers =
     draft.schedules.length > 0 ||
     draft.webhookEnabled ||
     draft.githubEnabled ||
-    Boolean(draft.messageProvider);
+    Boolean(draft.messageProvider) ||
+    Boolean(draft.emailSenders) ||
+    Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
-
-  function addSchedule(freq: CronFreq) {
-    const base = defaultCronPreset();
-    const next: CronPreset =
-      freq === "Advanced" ? { ...base, freq, cron: cronFromPreset(base) } : { ...base, freq };
-    onChange({ ...draft, schedules: [...draft.schedules, next] });
-  }
-
-  async function addWebhook() {
-    onChange({ ...draft, webhookEnabled: true });
-    if (!webhook.configured) {
-      await onEnsureWebhook().catch(() => undefined);
-    }
-  }
-
-  async function addGithub() {
-    onChange({ ...draft, githubEnabled: true });
-    if (!webhook.configured) {
-      await onEnsureWebhook().catch(() => undefined);
-    }
-  }
-
-  function addMessageProvider(provider: string) {
-    onChange({ ...draft, messageProvider: provider });
-  }
 
   return (
     <div>
@@ -322,7 +103,7 @@ export function RoutineEditor({
         >
           <ChevronLeft />
         </Button>
-        <div className="text-[15.5px] font-medium text-foreground">
+        <div className="text-body-lg font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <Button
@@ -337,37 +118,37 @@ export function RoutineEditor({
       </div>
 
       <div className="mb-5 flex items-center justify-between gap-3">
-        <label className="flex items-center gap-2.5 text-sm text-foreground/75">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={draft.active}
-            onClick={() => onChange({ ...draft, active: !draft.active })}
-            className={`relative h-[22px] w-[40px] rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
-              draft.active ? "bg-primary" : "bg-input"
-            }`}
-          >
-            <span
-              className={`absolute top-[2px] left-0 h-[18px] w-[18px] rounded-full bg-background transition-transform ${
-                draft.active
-                  ? "translate-x-[20px] dark:bg-primary-foreground"
-                  : "translate-x-[2px] dark:bg-foreground"
-              }`}
-            />
-          </button>
+        <label
+          htmlFor={`${fieldId}-active`}
+          className="flex items-center gap-2.5 text-body text-foreground/75"
+        >
+          <Switch
+            id={`${fieldId}-active`}
+            checked={draft.active}
+            onCheckedChange={(active) => onChange({ ...draft, active })}
+          />
           <Trans>Active</Trans>
         </label>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
-            <Trans>Delete</Trans>
-          </Button>
+          {/* A draft is discarded by going back; only a saved routine can be deleted. */}
+          {editing ? (
+            <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
+              <Trans>Delete</Trans>
+            </Button>
+          ) : null}
           <Button variant="secondary" disabled={!canTest} onClick={onTestRun}>
-            {running ? t`Running…` : t`Test run`}
+            {running ? t`Running…` : t`Run now`}
           </Button>
         </div>
       </div>
 
-      <label htmlFor={`${fieldId}-name`} className="block text-sm text-muted-foreground">
+      {draft.active && scheduleDelayed ? (
+        <p role="status" className="mb-5 text-body text-warning">
+          <Trans>Schedule delayed</Trans>
+        </p>
+      ) : null}
+
+      <label htmlFor={`${fieldId}-name`} className="block text-body text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={`${fieldId}-name`}
@@ -378,7 +159,7 @@ export function RoutineEditor({
         />
       </label>
 
-      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-sm text-muted-foreground">
+      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-body text-muted-foreground">
         <Trans>Instruction</Trans>
         <Textarea
           id={`${fieldId}-prompt`}
@@ -390,110 +171,28 @@ export function RoutineEditor({
         />
       </label>
 
-      <div className="mt-5 text-sm text-muted-foreground">
-        <div className="flex items-baseline gap-2">
+      <div className="mt-5 text-body text-muted-foreground">
+        <div className="flex items-center gap-2">
           <Trans>When to run</Trans>
-          <span className="text-xs text-muted-foreground/70">{timezone}</span>
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="relative ml-auto text-muted-foreground"
-                  aria-label={t`Advanced`}
-                  title={t`Advanced`}
-                />
-              }
-            >
-              <SlidersHorizontal />
-              {draft.modelKey ? (
-                <span
-                  aria-hidden
-                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
-                />
-              ) : null}
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
-              <label htmlFor={`${fieldId}-model`} className="block text-sm text-muted-foreground">
-                <Trans>Model</Trans>
-                <NativeSelect
-                  id={`${fieldId}-model`}
-                  className="mt-2 w-full"
-                  value={draft.modelKey}
-                  onChange={(event) =>
-                    onChange({ ...draft, modelKey: event.target.value, thinkingLevel: "" })
-                  }
-                >
-                  <NativeSelectOption value="">{t`Bot's model`}</NativeSelectOption>
-                  {draft.modelKey &&
-                  !modelOptions.some((option) => option.key === draft.modelKey) ? (
-                    <NativeSelectOption value={draft.modelKey}>
-                      {selectedModel?.modelId ?? draft.modelKey}
-                    </NativeSelectOption>
-                  ) : null}
-                  {modelOptions.map((option) => (
-                    <NativeSelectOption key={option.key} value={option.key}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </label>
-
-              {thinkingOptions.length ? (
-                <label
-                  htmlFor={`${fieldId}-thinking`}
-                  className="mt-5 block text-sm text-muted-foreground"
-                >
-                  <Trans>Thinking</Trans>
-                  <NativeSelect
-                    id={`${fieldId}-thinking`}
-                    className="mt-2 w-full"
-                    value={draft.thinkingLevel}
-                    onChange={(event) => onChange({ ...draft, thinkingLevel: event.target.value })}
-                  >
-                    <NativeSelectOption value="">
-                      {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-                    </NativeSelectOption>
-                    {thinkingOptions.map((level) => (
-                      <NativeSelectOption key={level} value={level}>
-                        {thinkingLevelLabel(level)}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </label>
-              ) : null}
-            </PopoverContent>
-          </Popover>
+          <span className="text-label text-muted-foreground/70">{timezone}</span>
+          <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
         </div>
 
         <div className="mt-2 space-y-2">
           {draft.schedules.map((preset, index) => (
-            <div key={index} className="relative">
-              <RoutineSchedule
-                value={preset}
-                onChange={(next) =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
-                  })
-                }
-              />
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t`Remove schedule`}
-                onClick={() =>
-                  onChange({
-                    ...draft,
-                    schedules: draft.schedules.filter((_, i) => i !== index),
-                  })
-                }
-                className="absolute top-2 right-2 text-muted-foreground"
-              >
-                <X />
-              </Button>
-            </div>
+            <RoutineSchedule
+              key={index}
+              value={preset}
+              onChange={(next) =>
+                onChange({
+                  ...draft,
+                  schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
+                })
+              }
+              onRemove={() =>
+                onChange({ ...draft, schedules: draft.schedules.filter((_, i) => i !== index) })
+              }
+            />
           ))}
 
           {draft.webhookEnabled ? (
@@ -505,6 +204,8 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, webhookEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
             />
           ) : null}
 
@@ -517,6 +218,17 @@ export function RoutineEditor({
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, githubEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
+              onReveal={revealWebhook}
+              onHide={onHideWebhook}
+            />
+          ) : null}
+
+          {draft.watch ? (
+            <WatchTriggerCard
+              watch={draft.watch}
+              state={editing?.watch ? editing.watchState : null}
+              onChange={(watch) => onChange({ ...draft, watch })}
+              onRemove={() => onChange({ ...draft, watch: null })}
             />
           ) : null}
 
@@ -527,8 +239,21 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+          {draft.emailSenders ? (
+            <EmailTriggerCard
+              key={bot.id}
+              bot={bot}
+              domain={email?.domain ?? null}
+              address={email?.address ?? null}
+              senders={draft.emailSenders}
+              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+              onRemove={() => onChange({ ...draft, emailSenders: null })}
+            />
+          ) : null}
+
           {needsOneShotArm ? (
-            <label htmlFor={`${fieldId}-run-at`} className="block text-sm text-muted-foreground">
+            <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
               <Trans>Run at</Trans>
               <Input
                 id={`${fieldId}-run-at`}
@@ -542,78 +267,15 @@ export function RoutineEditor({
           ) : null}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="outline" className="mt-2 h-auto w-full rounded-xl py-3" />}
-          >
-            <Plus />
-            <Trans>Add trigger</Trans>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top">
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Clock />
-                <Trans>On a schedule</Trans>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="min-w-[170px]">
-                {SCHEDULE_PRESETS.map((freq) => (
-                  <DropdownMenuItem key={freq} onClick={() => addSchedule(freq)}>
-                    {schedulePresetLabel(freq)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-
-            <span className="block" title={slackAvailable ? undefined : t`Slack not enabled`}>
-              <DropdownMenuItem
-                disabled={draft.messageProvider === "slack" || !slackAvailable}
-                aria-describedby={slackAvailable ? undefined : slackDisabledReasonId}
-                onClick={() => addMessageProvider("slack")}
-              >
-                <MessageSquare />
-                <Trans>Slack message</Trans>
-              </DropdownMenuItem>
-              {!slackAvailable ? (
-                <span id={slackDisabledReasonId} className="sr-only">
-                  <Trans>Slack not enabled</Trans>
-                </span>
-              ) : null}
-            </span>
-
-            {COMING_SOON.map((item) => (
-              <span
-                key={item.id}
-                className="block"
-                title={item.id === "teams" ? t`Teams not enabled` : t`Coming soon`}
-              >
-                <DropdownMenuItem disabled>
-                  <span
-                    aria-hidden
-                    className="inline-block size-3.5 rounded-[4px]"
-                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
-                  />
-                  {item.label()}
-                </DropdownMenuItem>
-              </span>
-            ))}
-
-            <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
-              <GitBranch />
-              <Trans>Git event</Trans>
-            </DropdownMenuItem>
-
-            <DropdownMenuItem disabled={draft.webhookEnabled} onClick={() => void addWebhook()}>
-              <Globe />
-              <Trans>Webhook</Trans>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {!hasTriggers ? (
-          <p className="mt-2 text-xs text-muted-foreground/70">
-            <Trans>Add a schedule, webhook, GitHub, or message trigger to run this routine.</Trans>
-          </p>
-        ) : null}
+        <AddTriggerMenu
+          draft={draft}
+          onChange={onChange}
+          fieldId={fieldId}
+          messageProviders={messageProviders}
+          emailAvailable={Boolean(email)}
+          webhookConfigured={webhook.configured}
+          onEnsureWebhook={onEnsureWebhook}
+        />
       </div>
 
       <div className="mt-5">
@@ -622,166 +284,13 @@ export function RoutineEditor({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-[13px] text-destructive">
+        <p role="alert" className="mt-3 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
+      {identityDialog}
     </div>
   );
-}
-
-function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove: () => void }) {
-  const { t } = useLingui();
-  const label =
-    provider === "slack"
-      ? t`Slack message`
-      : provider === "teams"
-        ? t`Teams message`
-        : t`Message event`;
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="flex items-center gap-2.5 px-0.5">
-        <MessageSquare size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        <span className="flex-1 text-[14.5px] text-foreground">{label}</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t`Remove message trigger`}
-          onClick={onRemove}
-          className="text-muted-foreground"
-        >
-          <X />
-        </Button>
-      </div>
-      <p className="mt-2.5 text-[13.5px] text-muted-foreground/70">
-        <Trans>Runs when this bot receives a verified message from this provider.</Trans>
-      </p>
-    </div>
-  );
-}
-
-function InboundTriggerCard({
-  kind,
-  saved,
-  path,
-  secret,
-  configured,
-  onRemove,
-  onRotate,
-}: {
-  kind: "webhook" | "github";
-  saved: boolean;
-  path: string;
-  secret: string | null;
-  configured: boolean;
-  onRemove: () => void;
-  onRotate: () => void;
-}) {
-  const { t } = useLingui();
-  const pending = !saved;
-  const placeholder = t`Available after the routine is saved`;
-  // GitHub delivery URL and signature header are fixed by bot id / protocol, so show
-  // them before save. The shared secret still needs a saved routine to mint.
-  const postValue = kind === "github" || !pending ? path : placeholder;
-  const keyValue = pending
-    ? placeholder
-    : (secret ?? (configured ? t`Saved. Rotate to reveal.` : placeholder));
-  const headerValue =
-    kind === "github"
-      ? "X-Hub-Signature-256: sha256=…"
-      : pending
-        ? placeholder
-        : secret
-          ? `Authorization: Bearer ${secret}`
-          : configured
-            ? "Authorization: Bearer …"
-            : placeholder;
-  const cellClass =
-    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
-
-  return (
-    <div className="rounded-xl border border-border p-3">
-      <div className="flex items-center gap-2.5 px-0.5">
-        {kind === "github" ? (
-          <GitBranch size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        ) : (
-          <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
-        )}
-        <span className="flex-1 text-[14.5px] text-foreground">
-          {kind === "github" ? <Trans>Git event</Trans> : <Trans>When a webhook fires</Trans>}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={kind === "github" ? t`Remove Git event` : t`Remove webhook`}
-          onClick={onRemove}
-          className="text-muted-foreground"
-        >
-          <X />
-        </Button>
-      </div>
-      <div className="mt-2.5 space-y-2.5 text-[13.5px]">
-        <div className="block text-muted-foreground/70">
-          <Trans>POST to</Trans>
-          <div className={`mt-1 ${cellClass}`}>{postValue}</div>
-        </div>
-        <div className="flex items-center gap-2 text-muted-foreground/70">
-          <span className="shrink-0">
-            <Trans>key</Trans>
-          </span>
-          <div className={`min-w-0 flex-1 ${cellClass}`}>{keyValue}</div>
-        </div>
-        <div className="block text-muted-foreground/70">
-          <Trans>header</Trans>
-          <div className={`mt-1 ${cellClass}`}>{headerValue}</div>
-        </div>
-        {saved && configured && !secret ? (
-          <Button
-            variant="link"
-            size="xs"
-            onClick={onRotate}
-            className="px-0 text-muted-foreground"
-          >
-            <Trans>Rotate key</Trans>
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function schedulePresetLabel(freq: CronFreq): string {
-  switch (freq) {
-    case "Every hour":
-      return t`Every hour`;
-    case "Every day":
-      return t`Every day`;
-    case "Weekdays":
-      return t`Weekdays`;
-    case "Every week":
-      return t`Every week`;
-    case "Every month":
-      return t`Every month`;
-    case "Interval":
-      return t`Interval`;
-    case "Advanced":
-      return t`Advanced...`;
-    default:
-      return freq;
-  }
-}
-
-function comingSoonColor(id: string): string {
-  switch (id) {
-    case "teams":
-      return "#6264A7";
-    case "linear":
-      return "#5E6AD2";
-    case "sentry":
-      return "#A467FD";
-    default:
-      return "#06AC38";
-  }
 }

@@ -21,7 +21,7 @@ function fixture(activeIds: string[]) {
     archivedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
-    thread: { id: "thread-1", unread: false, messages: [] },
+    thread: { id: "thread-1", reads: [{ unread: false }], messages: [] },
     members: owned.map((bot) => ({ bot: { ...bot, runs: [] } })),
   };
   const lock = vi.fn().mockResolvedValue([{ id: "group-1" }]);
@@ -43,6 +43,7 @@ function fixture(activeIds: string[]) {
       findFirstOrThrow: vi.fn().mockResolvedValue(record),
     },
     chatGroupMember: { deleteMany: remove, createMany: create },
+    message: { findMany: vi.fn(async () => []) },
   };
   const prisma = {
     bot: { findMany: vi.fn().mockResolvedValue(owned) },

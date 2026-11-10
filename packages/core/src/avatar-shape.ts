@@ -11,9 +11,77 @@ export function avatarIdentitySeed(identity: string): number {
   return Math.abs(hash);
 }
 
+/** Two eyes of one size, placed by their centres in the avatar's own view box. */
+export interface AvatarEyes {
+  readonly width: number;
+  readonly height: number;
+  readonly leftCx: number;
+  readonly rightCx: number;
+  readonly cy: number;
+}
+
+/** The pair as fully rounded bars, the face every organic and shipped-shape avatar wears. */
+export function avatarEyeRects(eyes: AvatarEyes) {
+  return [eyes.leftCx, eyes.rightCx].map((cx) => ({
+    x: cx - eyes.width / 2,
+    y: eyes.cy - eyes.height / 2,
+    width: eyes.width,
+    height: eyes.height,
+    rx: eyes.width / 2,
+  }));
+}
+
+export const ORGANIC_AVATAR_VIEWBOX = "-60 -60 120 120";
+
+export const ORGANIC_AVATAR_EYES: AvatarEyes = {
+  width: 7,
+  height: 24,
+  leftCx: -10.5,
+  rightCx: 10.5,
+  cy: 0,
+};
+
+/** Degrees the organic face leans, so bots sharing a body still differ. */
+export function organicAvatarEyeTilt(seed: number): number {
+  return (seed % 9) - 4;
+}
+
+/** Organic bodies come in this many families; the seed picks one. */
+export const ORGANIC_AVATAR_FAMILY_COUNT = 10;
+
+/** The body with two upper lobes, a central notch and a pointed bottom. */
+export const ORGANIC_AVATAR_HEART_FAMILY = 6;
+
+/** The organic body family every client draws for this identity (a bot's id). */
+export function organicAvatarFamily(identity: string): number {
+  return avatarIdentitySeed(identity) % ORGANIC_AVATAR_FAMILY_COUNT;
+}
+
+/** Families 2 and 8 are both round blobs, so they count as one look when telling bots apart. */
+export function organicAvatarLook(family: number): number {
+  return family === 8 ? 2 : family;
+}
+
+/** The distinct organic bodies a new bot can get: every look except the heart. */
+export const ORGANIC_AVATAR_LOOKS: readonly number[] = [
+  ...new Set(
+    Array.from({ length: ORGANIC_AVATAR_FAMILY_COUNT }, (_, family) => family)
+      .filter((family) => family !== ORGANIC_AVATAR_HEART_FAMILY)
+      .map(organicAvatarLook),
+  ),
+];
+
+/** A stable identity whose organic body is the given family, for previews before a bot has an id. */
+export function organicAvatarSampleIdentity(family: number): string {
+  for (let index = 0; ; index++) {
+    const identity = `look-${family}-${index}`;
+    if (organicAvatarFamily(identity) === family) return identity;
+  }
+}
+
 export function organicAvatarPath(seed: number, phaseOffset = 0): string {
   const phase = ((seed % 360) * Math.PI) / 180 + phaseOffset;
-  const family = seed % 10;
+  const family = seed % ORGANIC_AVATAR_FAMILY_COUNT;
   if (!organicAvatarTemplates) {
     organicAvatarTemplates = [
       [

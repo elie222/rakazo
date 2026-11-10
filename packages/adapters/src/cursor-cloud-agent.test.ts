@@ -1,8 +1,8 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
+import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
-import { CursorCloudAgentEmulator } from "./testing/cursor-cloud-agent-emulator.js";
 
 const context: AdapterContext = {
   operationId: "test",
@@ -108,5 +108,104 @@ describe("Cursor HTTP boundary", () => {
     wire.requests.length = 0;
     await provider.reply(agent.id, { prompt: "Tests" }, context);
     expect(wire.requests.map((request) => request.method)).toEqual(["GET", "POST"]);
+  });
+  it("reads the newest run from the run list, not stale agent metadata", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "list", prompt: "Task" }, context);
+    wire.complete(agent.id);
+    const followup = await provider.reply(agent.id, { prompt: "Tests" }, context);
+    wire.staleLatestRunId = agent.latestRunId;
+    expect((await provider.get(agent.id, context)).latestRunId).toBe(followup.latestRunId);
+  });
+  it("reports a follow-up whose pre-send read failed as never sent", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "unsent", prompt: "Task" }, context);
+    wire.complete(agent.id);
+    wire.failNextRequest = 503;
+    const error = await provider.reply(agent.id, { prompt: "Tests" }, context).catch((e) => e);
+    expect(error).toMatchObject({ name: "CloudAgentRetryLater", reason: "unavailable" });
+    expect(wire.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  });
+  it("keeps a follow-up to a busy agent ambiguous instead of rejecting it", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "busy", prompt: "Task" }, context);
+    const error = await provider.reply(agent.id, { prompt: "Tests" }, context).catch((e) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(CloudAgentRequestRejected);
+  });
+  it.each([
+    ["CREATING", "running"],
+    ["RUNNING", "running"],
+    ["FINISHED", "finished"],
+    ["ERROR", "failed"],
+    ["CANCELLED", "cancelled"],
+    ["EXPIRED", "expired"],
+    ["SOME_FUTURE_STATUS", "running"],
+  ])("maps run status %s to %s", async (wireStatus, status) => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: wireStatus, prompt: "Task" }, context);
+    wire.setRunStatus(agent.id, wireStatus);
+    expect((await provider.get(agent.id, context)).status).toBe(status);
+  });
+  it("reports an archived agent as expired and refuses follow-ups as expired", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "archived", prompt: "Task" }, context);
+    wire.archive(agent.id);
+    expect((await provider.get(agent.id, context)).status).toBe("expired");
+    wire.setRunStatus(agent.id, "FINISHED");
+    expect((await provider.get(agent.id, context)).status).toBe("finished");
+    const error = await provider.reply(agent.id, { prompt: "More" }, context).catch((e) => e);
+    expect(error).toMatchObject({ name: "CloudAgentRequestRejected", reason: "expired" });
+    expect(wire.requests.at(-1)?.method).toBe("GET");
+  });
+  it.each([
+    [400, CloudAgentRequestRejected, { reason: "invalid" }],
+    [409, CloudAgentRequestRejected, { reason: "invalid" }],
+    [422, CloudAgentRequestRejected, { reason: "invalid" }],
+    [404, CloudAgentRequestRejected, { reason: "not_found" }],
+    [401, CloudAgentRetryLater, { reason: "credential" }],
+    [403, CloudAgentRetryLater, { reason: "credential" }],
+    [429, CloudAgentRetryLater, { reason: "rate_limited", retryAfterMs: 30_000 }],
+  ])("classifies a %s response", async (status, type, fields) => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "classify", prompt: "Task" }, context);
+    wire.failNextRequest = status;
+    const error = await provider.get(agent.id, context).catch((e) => e);
+    expect(error).toBeInstanceOf(type);
+    expect(error).toMatchObject(fields);
+  });
+  it("classifies a removed agent, a removed run, and a revoked key from the wire", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    const agent = await provider.launch({ idempotencyKey: "gone", prompt: "Task" }, context);
+    await expect(provider.get(agent.id, context, "missing-run")).rejects.toMatchObject({
+      reason: "not_found",
+    });
+    wire.apiKey = "rotated-key";
+    await expect(provider.get(agent.id, context)).rejects.toBeInstanceOf(CloudAgentRetryLater);
+    wire.apiKey = "fake-key";
+    wire.agents.delete(agent.id);
+    await expect(provider.cancel(agent.id, context)).rejects.toMatchObject({
+      reason: "not_found",
+    });
+  });
+  it("observes a run that ended before its cancel request arrived", async () => {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({
+      apiKey: "fake-key",
+      fetch: async (input, init) => {
+        if (String(input).endsWith("/cancel"))
+          wire.complete(wire.requests[0]!.body!.agentId as string);
+        return wire.fetch(input, init);
+      },
+    });
+    const agent = await provider.launch({ idempotencyKey: "race", prompt: "Task" }, context);
+    expect((await provider.cancel(agent.id, context)).status).toBe("finished");
   });
 });

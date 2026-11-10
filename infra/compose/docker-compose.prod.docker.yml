@@ -10,7 +10,7 @@
 # flips the default SANDBOX_PROVIDER to docker and adds the in-stack supervisor,
 # matching docker-compose.images.yml. When the `updater` profile is enabled too,
 # mirror the file list into RAKAZO_COMPOSE_FILE and add supervisor to
-# RAKAZO_UPDATE_SERVICES (see docs/self-host.md).
+# RAKAZO_UPDATE_SERVICES (see docs/self-host-upgrading.md).
 
 services:
   # One-shot stub whose build produces the image the supervisor launches bot
@@ -27,7 +27,26 @@ services:
 
   data-init:
     image: ${BUSYBOX_IMAGE:-busybox:1}
-    command: ["chown", "-R", "1000:1000", "/data"]
+    # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
+    # in the volume; -h changes a symlink itself, never its target.
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:
@@ -74,12 +93,18 @@ services:
       SANDBOX_MAX_COMPUTERS_PER_SPACE: ${SANDBOX_MAX_COMPUTERS_PER_SPACE:-0}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
+      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
+      SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
+      SANDBOX_COMPUTER_MOUNTS: ${SANDBOX_COMPUTER_MOUNTS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
       AXIOM_TOKEN: ${AXIOM_TOKEN:-}
       AXIOM_DATASET: ${AXIOM_DATASET:-}
       AXIOM_EDGE: ${AXIOM_EDGE:-}
       AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data
@@ -102,6 +127,10 @@ services:
 
   api:
     environment:
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SECRET_STORE: ${SECRET_STORE:-encrypted}
       INFISICAL_URL: ${INFISICAL_URL:-}
       INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
@@ -118,6 +147,8 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
+      COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:
       data-init:
         condition: service_completed_successfully
@@ -126,6 +157,9 @@ services:
 
   worker:
     environment:
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SECRET_STORE: ${SECRET_STORE:-encrypted}
       INFISICAL_URL: ${INFISICAL_URL:-}
       INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
@@ -139,6 +173,8 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
+      COMPUTER_MAX_ACTIVE_UNBILLED_MS: ${COMPUTER_MAX_ACTIVE_UNBILLED_MS:-0}
     depends_on:
       data-init:
         condition: service_completed_successfully

@@ -1,6 +1,7 @@
 import { Client, Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { PostgresRealtimeFanout, type RealtimeListenerClient } from "./realtime.js";
+import type { RealtimeListenerClient } from "./realtime.js";
+import { PostgresRealtimeFanout } from "./realtime.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -8,6 +9,10 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
   it("reconnects a real listener and signals durable catch-up for a missed notification", async () => {
     const pool = new Pool({ connectionString: databaseUrl! });
+    // The runtime login cannot create tables, so the owner adds the scratch table.
+    const owner = new Pool({
+      connectionString: process.env.DATABASE_MIGRATION_URL ?? databaseUrl!,
+    });
     const table = `realtime_contract_events_${process.pid}_${Date.now()}`;
     const listenerClients: Client[] = [];
     const signals: string[] = [];
@@ -16,7 +21,10 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
     let drainError: unknown;
     let draining = Promise.resolve();
 
-    await pool.query(`CREATE TABLE ${table} (id bigserial PRIMARY KEY, body text NOT NULL)`);
+    const { rows } = await pool.query<{ role: string }>("SELECT current_user AS role");
+    await owner.query(`CREATE TABLE ${table} (id bigserial PRIMARY KEY, body text NOT NULL)`);
+    await owner.query(`GRANT SELECT, INSERT ON ${table} TO "${rows[0]!.role}"`);
+    await owner.query(`GRANT USAGE ON SEQUENCE ${table}_id_seq TO "${rows[0]!.role}"`);
     const realtime = new PostgresRealtimeFanout({
       connectionString: databaseUrl!,
       publisher: {
@@ -61,14 +69,16 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
       await realtime.publish("thread:contract", "durable-event-available");
       await vi.waitFor(() => expect(seen).toEqual(["notified-event"]), { timeout: 5_000 });
 
+      // Commit without a notification before the drop, so only the reconnect's
+      // catch-up signal can surface the row, however fast the listener returns.
+      await pool.query(`INSERT INTO ${table} (body) VALUES ($1)`, ["missed-notification"]);
       await pool.query("SELECT pg_terminate_backend($1)", [listenerPid]);
-      await pool.query(`INSERT INTO ${table} (body) VALUES ($1)`, ["missed-while-disconnected"]);
 
       await vi.waitFor(
         () => {
           expect(listenerClients.length).toBeGreaterThanOrEqual(2);
           expect(signals.filter((signal) => signal === "")).toHaveLength(2);
-          expect(seen).toEqual(["notified-event", "missed-while-disconnected"]);
+          expect(seen).toEqual(["notified-event", "missed-notification"]);
         },
         { timeout: 10_000, interval: 25 },
       );
@@ -78,7 +88,8 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
       await unsubscribe();
     } finally {
       await realtime.close();
-      await pool.query(`DROP TABLE IF EXISTS ${table}`).catch(() => undefined);
+      await owner.query(`DROP TABLE IF EXISTS ${table}`).catch(() => undefined);
+      await owner.end();
       await pool.end();
     }
   });

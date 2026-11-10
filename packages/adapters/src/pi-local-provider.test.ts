@@ -12,6 +12,7 @@ const ENV_KEYS = [
   "RAKAZO_LOCAL_MODELS_URL",
   "RAKAZO_LOCAL_CONTEXT_WINDOW",
   "RAKAZO_LOCAL_MAX_TOKENS",
+  "RAKAZO_LOCAL_REASONING_MODELS",
 ] as const;
 
 const saved = new Map<string, string | undefined>();
@@ -103,6 +104,30 @@ describe("local model provider", () => {
 
     process.env.RAKAZO_LOCAL_MAX_TOKENS = "-1";
     expect(() => localProvider()).toThrow(/RAKAZO_LOCAL_MAX_TOKENS must be a positive integer/);
+  });
+
+  it("marks only the exact model ids the operator declares as reasoning", () => {
+    setModels("qwen3:4b, llama3.1:8b, qwen3");
+    process.env.RAKAZO_LOCAL_REASONING_MODELS = " qwen3:4b , ,unknown-model";
+    const [listed, plain, prefix] = localProvider()?.getModels() ?? [];
+    expect(listed).toMatchObject({
+      reasoning: true,
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        thinkingFormat: "openai",
+      },
+      thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" },
+    });
+    // Unlisted models keep the exact non-reasoning shape, so no effort field reaches their server.
+    for (const model of [plain, prefix]) {
+      expect(model?.reasoning).toBe(false);
+      expect(model?.compat).toEqual({
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      });
+      expect(model?.thinkingLevelMap).toBeUndefined();
+    }
   });
 
   it("registers onto a Models collection only when configured", () => {

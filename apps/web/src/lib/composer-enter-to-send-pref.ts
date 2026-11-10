@@ -1,19 +1,6 @@
-/** Whether plain Enter sends the composer message, with a device default and saved override. */
+import { createStoredPreference } from "./stored-preference";
 
 export const COMPOSER_ENTER_TO_SEND_STORAGE_KEY = "rakazo.composerEnterToSend";
-
-type EnterToSendStorage = Pick<Storage, "getItem" | "setItem">;
-
-const listeners = new Set<() => void>();
-let memoryPreference: boolean | null = null;
-
-function getLocalStorage(): EnterToSendStorage | null {
-  try {
-    return typeof localStorage === "undefined" ? null : localStorage;
-  } catch {
-    return null;
-  }
-}
 
 function detectCoarsePointer(): boolean {
   try {
@@ -43,51 +30,8 @@ export function normalizeComposerEnterToSend(
   return defaultComposerEnterToSend(coarsePointer);
 }
 
-function readStoredComposerEnterToSend(
-  storage: EnterToSendStorage | null,
-  coarsePointer?: boolean,
-): boolean {
-  if (!storage) return defaultComposerEnterToSend(coarsePointer);
-  let raw: string | null = null;
-  try {
-    raw = storage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY);
-  } catch {
-    raw = null;
-  }
-  return normalizeComposerEnterToSend(raw, coarsePointer);
-}
-
-export function getComposerEnterToSend(
-  storage: EnterToSendStorage | null = getLocalStorage(),
-  coarsePointer?: boolean,
-): boolean {
-  if (memoryPreference !== null) return memoryPreference;
-  memoryPreference = readStoredComposerEnterToSend(storage, coarsePointer);
-  return memoryPreference;
-}
-
-function persistComposerEnterToSend(preference: boolean, storage: EnterToSendStorage | null): void {
-  if (!storage) return;
-  try {
-    storage.setItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY, preference ? "1" : "0");
-  } catch {
-    // Private browsing etc: keep the in-memory value.
-  }
-}
-
-export function setComposerEnterToSend(
-  preference: boolean,
-  storage: EnterToSendStorage | null = getLocalStorage(),
-): boolean {
-  memoryPreference = preference;
-  persistComposerEnterToSend(preference, storage);
-  for (const listener of listeners) listener();
-  return preference;
-}
-
-export function subscribeComposerEnterToSend(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
+export const composerEnterToSendPreference = createStoredPreference({
+  key: COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
+  parse: (raw) => normalizeComposerEnterToSend(raw),
+  serialize: (enterToSend) => (enterToSend ? "1" : "0"),
+});

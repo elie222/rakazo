@@ -23,20 +23,19 @@ export function takeoverResumeFromRelease(reason: unknown): {
     return {
       checkpoint: "takeover-skipped",
       promptNote:
-        "The user skipped the login. Continue without treating the login as complete. Do not request takeover again unless you still cannot proceed.",
+        "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again for this same step unless you still cannot proceed.",
     };
   }
   return {
     checkpoint: "takeover",
     promptNote:
-      "The user finished the login. Continue from where you left off. Do not request takeover again.",
+      "The user handed the computer back. Continue using the current screen state. Do not request takeover again for this same step.",
   };
 }
 
 export type TakeoverContinuePlan = {
   resumeCheckpoint: TakeoverResumeCheckpoint | null;
   heldForTakeover: boolean;
-  resumeHeldLease: boolean;
   takeoverResume: ReturnType<typeof takeoverResumeFromRelease> | null;
 };
 
@@ -49,7 +48,6 @@ export function takeoverContinuePlan(run: {
   return {
     resumeCheckpoint,
     heldForTakeover,
-    resumeHeldLease: heldForTakeover || Boolean(resumeCheckpoint),
     takeoverResume: resumeCheckpoint
       ? takeoverResumeFromRelease(resumeCheckpoint === "takeover-skipped" ? "skipped" : "done")
       : null,

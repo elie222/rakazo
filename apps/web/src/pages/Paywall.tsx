@@ -3,28 +3,55 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { authClient } from "../lib/auth";
+import { AccountMenu } from "../components/AccountMenu";
+import { CreditChoice } from "../components/ModelCredits";
 import { formatBillingPrice } from "../lib/billing";
-import { clearSpaceSelection, rpc } from "../lib/rpc";
+import type { RpcClient } from "../lib/rpc";
+import { useSignOut } from "../lib/sign-out";
 import { AuthFrame, submitClass } from "./Auth";
 
-export function PaywallPage({ status }: { status: BillingStatus }) {
+export function PaywallPage({
+  status,
+  client,
+  dismissible = false,
+}: {
+  status: BillingStatus;
+  /** The space `status` was read for, so a choice bills the organization whose prices show. */
+  client: RpcClient;
+  /** Opened from the app rather than required, so it closes instead of logging out. */
+  dismissible?: boolean;
+}) {
+  return status.funding !== undefined ? (
+    <CreditChoice status={status} client={client} dismissible={dismissible} />
+  ) : (
+    <LegacyPaywallPage status={status} client={client} />
+  );
+}
+
+function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: RpcClient }) {
   const { t, i18n } = useLingui();
-  const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { signingOut, logOut } = useSignOut("/sign-in", setError);
+  // An unpaid or paused subscription resumes from the portal; a new checkout would bill twice.
+  const resumable = status.state === "unpaid" || status.state === "paused";
+  const showCheckout = status.canManage && !resumable;
   const showPortal =
     status.canManage &&
     status.hasCustomer &&
-    (status.state === "past_due" || status.state === "incomplete" || status.state === "canceled");
+    (resumable ||
+      status.state === "past_due" ||
+      status.state === "incomplete" ||
+      status.state === "canceled");
 
   async function open(target: "checkout" | "portal") {
-    if (pending) return;
+    if (pending || signingOut) return;
     setPending(true);
     setError(null);
     try {
-      const { url } = await (target === "checkout" ? rpc.billing.checkout() : rpc.billing.portal());
+      const { url } = await (target === "checkout"
+        ? client.billing.checkout()
+        : client.billing.portal());
       window.location.assign(url);
     } catch {
       setError(t`Could not open billing`);
@@ -51,17 +78,18 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
       title={title}
       onSubmit={(event) => {
         event.preventDefault();
-        if (status.canManage) void open("checkout");
+        if (showCheckout) void open("checkout");
+        else if (showPortal) void open("portal");
       }}
     >
       <div data-testid="billing-paywall" className="flex w-full flex-col items-center">
         {error ? (
-          <p role="alert" className="mb-3 w-full text-sm text-destructive">
+          <p role="alert" className="mb-3 w-full text-body text-destructive">
             {error}
           </p>
         ) : null}
         {status.canManage ? (
-          <ul className="mb-9 flex flex-col gap-3 text-base">
+          <ul className="mb-9 flex flex-col gap-3 text-body-lg">
             {included.map((item) => (
               <li key={item} className="flex items-center gap-3">
                 <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -70,8 +98,8 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
             ))}
           </ul>
         ) : null}
-        {status.canManage ? (
-          <Button type="submit" size="lg" disabled={pending} className={submitClass}>
+        {showCheckout ? (
+          <Button type="submit" size="lg" disabled={pending || signingOut} className={submitClass}>
             {status.trialAvailable ? (
               <Trans>Start {trialDays}-day free trial</Trans>
             ) : (
@@ -83,27 +111,15 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
           <Button
             type="button"
             size="lg"
-            variant="secondary"
-            disabled={pending}
+            variant={showCheckout ? "secondary" : "default"}
+            disabled={pending || signingOut}
             className={submitClass}
             onClick={() => void open("portal")}
           >
             <Trans>Manage billing</Trans>
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          className="mt-6 text-muted-foreground"
-          onClick={() =>
-            void authClient.signOut().then(() => {
-              clearSpaceSelection();
-              navigate("/");
-            })
-          }
-        >
-          <Trans>Log out</Trans>
-        </Button>
+        <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       </div>
     </AuthFrame>
   );

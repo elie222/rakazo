@@ -1,0 +1,125 @@
+name: release-mobile
+
+# Ships the app version in apps/mobile/app.json: iOS goes to App Store review and is released
+# when Apple approves it; Android goes to Google Play review and refreshes the rolling APK.
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: What's New on the App Store
+        required: true
+        type: string
+      ios_build_id:
+        description: Retry App Review for an already uploaded EAS iOS build; skips all builds and uploads
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-mobile
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  ios:
+    name: Build iOS and submit it for App Store review
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Require release secrets
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for name in EXPO_TOKEN ASC_APP_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} )); then
+            echo "Add these repository secrets (see docs/mobile-release.md): ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify mobile project
+        if: inputs.ios_build_id == ''
+        run: pnpm --filter @rakazo/mobile check
+
+      - name: Build iOS or reuse an uploaded build
+        id: build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXISTING_BUILD_ID: ${{ inputs.ios_build_id }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$EXISTING_BUILD_ID" ]]; then
+            pnpm exec eas build:view "$EXISTING_BUILD_ID" --json | jq '[.]' > "$RUNNER_TEMP/build.json"
+            jq -e \
+              --arg project "$(node -p 'require("./app.json").expo.extra.eas.projectId')" \
+              --arg identifier "$(node -p 'require("./app.json").expo.ios.bundleIdentifier')" \
+              '.[0] | .status == "FINISHED" and .platform == "IOS" and .buildProfile == "production" and .app.id == $project and .appIdentifier == $identifier' \
+              "$RUNNER_TEMP/build.json" > /dev/null
+          else
+            pnpm exec eas build --platform ios --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          fi
+          {
+            echo "id=$(jq -r '.[0].id' "$RUNNER_TEMP/build.json")"
+            echo "version=$(jq -r '.[0].appVersion' "$RUNNER_TEMP/build.json")"
+            echo "build_number=$(jq -r '.[0].appBuildVersion' "$RUNNER_TEMP/build.json")"
+          } >> "$GITHUB_OUTPUT"
+
+      # The App Store app ID stays out of the public eas.json; it is added only for this upload.
+      - name: Upload to App Store Connect
+        if: inputs.ios_build_id == ''
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+          BUILD_ID: ${{ steps.build.outputs.id }}
+        run: |
+          set -euo pipefail
+          jq --arg id "$ASC_APP_ID" '.submit.production.ios.ascAppId = $id' eas.json > "$RUNNER_TEMP/eas.json"
+          cp "$RUNNER_TEMP/eas.json" eas.json
+          pnpm exec eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait
+
+      - name: Submit for App Store review
+        env:
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          APP_VERSION: ${{ steps.build.outputs.version }}
+          BUILD_NUMBER: ${{ steps.build.outputs.build_number }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: node .github/scripts/app-store-review.mjs
+
+  android:
+    name: Android APK
+    if: inputs.ios_build_id == ''
+    uses: ./.github/workflows/release-android-apk.yml
+    permissions:
+      contents: write
+    secrets: inherit
+
+  google-play:
+    name: Google Play
+    if: inputs.ios_build_id == ''
+    uses: ./.github/workflows/release-google-play.yml
+    secrets: inherit

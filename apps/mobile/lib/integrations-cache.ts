@@ -1,8 +1,8 @@
+import { t } from "@lingui/core/macro";
 import type { Connection, ConnectionCatalogItem, Me } from "@rakazo/contracts";
 import { ConnectionCatalogItemSchema, ConnectionSchema } from "@rakazo/contracts";
 import { Directory, File, Paths } from "expo-file-system";
 import { currentApiBase, rpc, selectedSpaceId } from "./api";
-import { t } from "./i18n";
 import {
   currentSessionGeneration,
   loadVerifiedIntegrationsScope,
@@ -49,7 +49,7 @@ export async function integrationsCacheScope(): Promise<IntegrationsCacheScope> 
     identity.generation !== generation ||
     identity.selectionId !== spaceId
   ) {
-    const user = rpc<Pick<Me, "userId" | "spaceId">>("me");
+    const user = rpc("me");
     const entry = { apiBase, generation, selectionId: spaceId, user };
     identity = entry;
     void user.catch(() => {
@@ -62,8 +62,8 @@ export async function integrationsCacheScope(): Promise<IntegrationsCacheScope> 
     generation !== currentSessionGeneration() ||
     spaceId !== selectedSpaceId()
   )
-    throw new Error(t("Could not load integrations"));
-  if (!me.userId || !(spaceId || me.spaceId)) throw new Error(t("Could not load integrations"));
+    throw new Error(t`Could not load integrations`);
+  if (!me.userId || !(spaceId || me.spaceId)) throw new Error(t`Could not load integrations`);
   const scope = {
     apiBase,
     userId: me.userId,
@@ -126,7 +126,7 @@ export function writeIntegrationsCache(
   try {
     const file = cacheFile(scope);
     file.create({ overwrite: true });
-    file.write(JSON.stringify({ key: scopeKey(scope), ...snapshot }));
+    file.writeSync(JSON.stringify({ key: scopeKey(scope), ...snapshot }));
   } catch {
     // Disk cache is optional; storage failures must not block connection actions.
   }

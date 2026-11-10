@@ -2,14 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
-import { recordUsage } from "@rakazo/db";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import { recordUsage, runAsSystem } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { runAutoReviewJudge } from "../../adapters/src/auto-review.js";
 import { compactHistory } from "../../adapters/src/history-compaction.js";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 import { startModelEmulator } from "./model-emulator.js";
+import { asSystem } from "./system-db.js";
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const origin = "http://127.0.0.1:5173";
@@ -46,7 +47,9 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         },
         { expect: () => {}, response: { type: "text", text: "Fixture inspected." }, usage },
         { expect: () => {}, response: { type: "text", text: "Done." }, usage },
+        // The cut reply is continued once; the continuation is cut too, which fails the run.
         { expect: () => {}, response: { type: "disconnect", text: "Partial result." }, usage },
+        { expect: () => {}, response: { type: "disconnect", text: " More." }, usage },
         {
           expect: () => {},
           response: { type: "hold", text: "Still working.", onOpen: openedCancellation },
@@ -82,7 +85,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-usage-fixture-"));
     let stop: (() => Promise<void>) | undefined;
     try {
-      const { createApp } = await import("../../../apps/api/src/app.ts");
+      const { createApp } = await import("@rakazo/api/app");
       const handles = await createApp({
         databaseUrl: process.env.DATABASE_URL!,
         realtimeDatabaseUrl: process.env.DATABASE_URL!,
@@ -94,10 +97,11 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         contextStrategy: "current",
         wakeupDriver: "memory",
         signupsEnabled: "true",
-        composio: new ComposioEmulator(),
+        composio: new ComposioConnector({ client: new FakeComposioClient() }),
         encryptionKey: "usage-fixture-encryption-key",
       });
       stop = handles.stop;
+      const db = asSystem(handles.prisma);
       const signup = await handles.app.request("/api/auth/sign-up/email", {
         method: "POST",
         headers: { "content-type": "application/json", origin },
@@ -144,15 +148,17 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         modelProvider: model.model.provider,
         modelId: model.model.id,
       });
-      const connectedThread = await handles.prisma.thread.findFirstOrThrow({
+      const connectedThread = await db.thread.findFirstOrThrow({
         where: { botId: bot.id },
       });
       expect(
-        await handles.executor.resolveModel({
-          userId: connectedThread.userId,
-          spaceId: connectedThread.spaceId,
-          botId: bot.id,
-        }),
+        await runAsSystem("background job run.continue", () =>
+          handles.executor.resolveModel({
+            userId: connectedThread.userId,
+            spaceId: connectedThread.spaceId,
+            botId: bot.id,
+          }),
+        ),
       ).toMatchObject({
         cacheCapabilities: {
           scope: "connection",
@@ -166,21 +172,20 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         text: "Inspect the fixture using one helper.",
       });
       await expect
-        .poll(
-          async () => (await handles.prisma.run.findUnique({ where: { id: first.runId } }))?.status,
-          { timeout: 15000, interval: 100 },
-        )
+        .poll(async () => (await db.run.findUnique({ where: { id: first.runId } }))?.status, {
+          timeout: 15000,
+          interval: 100,
+        })
         .toBe("completed");
       const failed = await rpc<{ runId: string }>("threads/send", {
         botId: bot.id,
         text: "Inspect the failure fixture.",
       });
       await expect
-        .poll(
-          async () =>
-            (await handles.prisma.run.findUnique({ where: { id: failed.runId } }))?.status,
-          { timeout: 15000, interval: 100 },
-        )
+        .poll(async () => (await db.run.findUnique({ where: { id: failed.runId } }))?.status, {
+          timeout: 15000,
+          interval: 100,
+        })
         .toBe("failed");
       const cancelled = await rpc<{ runId: string }>("threads/send", {
         botId: bot.id,
@@ -192,19 +197,20 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
       // Abort explicitly here to deterministically exercise the producer-side accounting boundary.
       await handles.runtime.abort(cancelled.runId);
       await expect
-        .poll(
-          async () => handles.prisma.usageRecord.count({ where: { parentRunId: cancelled.runId } }),
-          { timeout: 15000, interval: 100 },
-        )
+        .poll(async () => db.usageRecord.count({ where: { parentRunId: cancelled.runId } }), {
+          timeout: 15000,
+          interval: 100,
+        })
         .toBe(1);
-      expect(
-        (await handles.prisma.run.findUnique({ where: { id: cancelled.runId } }))?.status,
-      ).toBe("cancelled");
-      const thread = await handles.prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+      expect((await db.run.findUnique({ where: { id: cancelled.runId } }))?.status).toBe(
+        "cancelled",
+      );
+      const thread = await db.thread.findFirstOrThrow({ where: { botId: bot.id } });
       const review = await runAutoReviewJudge({
         runtime: handles.runtime,
         checker: { provider: model.model.provider, model: model.model.id },
         baseUrl: model.baseUrl,
+        allowPrivateEndpoint: true,
         contextWindow: 32768,
         maxTokens: 4096,
         prompt: "Review the synthetic fixture.",
@@ -214,7 +220,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         botId: bot.id,
         threadId: thread.id,
         onUsage: (event) =>
-          recordUsage(handles.prisma, event, {
+          recordUsage(db, event, {
             spaceId: thread.spaceId,
             userId: thread.userId,
             botId: bot.id,
@@ -225,22 +231,24 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           }),
       });
       expect(review.decision).toBe("pass");
-      await compactHistory(
-        {
-          prisma: handles.prisma,
-          runtime: handles.runtime,
-          jobs: handles.jobs,
-          memoryProviders: { resolve: async () => null },
-          resolveModel: async (scope) => handles.executor.resolveModel(scope),
-        },
-        thread.id,
+      await runAsSystem("background job history.compact", () =>
+        compactHistory(
+          {
+            prisma: handles.prisma,
+            runtime: handles.runtime,
+            jobs: handles.jobs,
+            memoryProviders: { resolve: async () => null },
+            resolveModel: async (scope) => handles.executor.resolveModel(scope),
+          },
+          thread.id,
+        ),
       );
-      const rows = await handles.prisma.usageRecord.findMany({
+      const rows = await db.usageRecord.findMany({
         where: { botId: bot.id },
         orderBy: { createdAt: "asc" },
       });
-      expect(rows).toHaveLength(7);
-      expect(new Set(rows.map((row) => row.callId)).size).toBe(7);
+      expect(rows).toHaveLength(8);
+      expect(new Set(rows.map((row) => row.callId)).size).toBe(8);
       const delivered = rows[0]!;
       const replayEvent = {
         type: "usage" as const,
@@ -252,7 +260,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
       };
       await Promise.all(
         [1, 2].map(() =>
-          recordUsage(handles.prisma, replayEvent, {
+          recordUsage(db, replayEvent, {
             spaceId: delivered.spaceId,
             userId: delivered.userId,
             botId: bot.id,
@@ -261,11 +269,52 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           }),
         ),
       );
-      expect(await handles.prisma.usageRecord.count({ where: { botId: bot.id } })).toBe(7);
-      const summary = await rpc<{ totalTokens: number; modelCalls: number; runs: number }>(
-        "usage/summary",
-      );
-      expect(summary).toMatchObject({ totalTokens: 910, modelCalls: 7, runs: 3 });
+      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(8);
+      type Summary = {
+        totalTokens: number | null;
+        modelCalls: number;
+        runs: number;
+        costUsd: number | null;
+        models: {
+          model: string;
+          modelCalls: number;
+          totalTokens: number;
+          costUsd: number | null;
+        }[];
+      };
+      const summary = await rpc<Summary>("usage/summary");
+      expect(summary).toMatchObject({ totalTokens: 1040, modelCalls: 8, runs: 3 });
+      expect(summary.costUsd).toBeCloseTo(0.00096);
+      expect(summary.models).toHaveLength(1);
+      expect(summary.models[0]).toMatchObject({
+        model: delivered.model,
+        modelCalls: 8,
+        totalTokens: 1040,
+      });
+      expect(summary.models[0]?.costUsd).toBeCloseTo(0.00096);
+      // A call without a price makes its model's cost and the overall cost unknown, not zero.
+      const unpriced = await db.usageRecord.create({
+        data: {
+          spaceId: delivered.spaceId,
+          userId: delivered.userId,
+          provider: "unpriced-provider",
+          model: "unpriced-model",
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+        },
+      });
+      const mixed = await rpc<Summary>("usage/summary");
+      expect(mixed).toMatchObject({ totalTokens: 1042, modelCalls: 9, runs: 3, costUsd: null });
+      expect(
+        mixed.models.map(({ model, modelCalls, totalTokens }) => [model, modelCalls, totalTokens]),
+      ).toEqual([
+        [delivered.model, 8, 1040],
+        ["unpriced-model", 1, 2],
+      ]);
+      expect(mixed.models[0]?.costUsd).toBeCloseTo(0.00096);
+      expect(mixed.models[1]?.costUsd).toBeNull();
+      await db.usageRecord.delete({ where: { id: unpriced.id } });
       for (const row of rows)
         expect(row).toMatchObject({
           inputTokens: 60,
@@ -277,7 +326,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
           costUsd: 0.00012,
           costSource: "provider-reported",
         });
-      expect(rows.filter((row) => row.operationKind === "answer")).toHaveLength(4);
+      expect(rows.filter((row) => row.operationKind === "answer")).toHaveLength(5);
       expect(rows.find((row) => row.operationKind === "subagent")).toMatchObject({
         parentRunId: first.runId,
         runId: first.runId,
@@ -288,7 +337,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         parentRunId: null,
       });
       await rpc("threads/clear", { botId: bot.id });
-      expect(await handles.prisma.usageRecord.count({ where: { botId: bot.id } })).toBe(7);
+      expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(8);
       const deletedWhilePending = await rpc<{ runId: string }>("threads/send", {
         botId: bot.id,
         text: "Inspect the deletion fixture.",
@@ -298,23 +347,22 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
       await handles.runtime.abort(deletedWhilePending.runId);
       await expect
         .poll(
-          async () =>
-            handles.prisma.usageRecord.count({ where: { parentRunId: deletedWhilePending.runId } }),
+          async () => db.usageRecord.count({ where: { parentRunId: deletedWhilePending.runId } }),
           { timeout: 15000, interval: 100 },
         )
         .toBe(1);
       model.assertComplete();
-      const retained = await handles.prisma.usageRecord.findMany({ where: { botId: bot.id } });
-      expect(retained).toHaveLength(8);
+      const retained = await db.usageRecord.findMany({ where: { botId: bot.id } });
+      expect(retained).toHaveLength(9);
       expect(retained.find((row) => row.parentRunId === deletedWhilePending.runId)).toMatchObject({
         inputTokens: 60,
         cacheReadTokens: 40,
         outputTokens: 30,
         costUsd: 0.00012,
-        runId: null,
+        runId: deletedWhilePending.runId,
       });
       expect(retained.filter((row) => row.parentRunId === first.runId)).toHaveLength(4);
-      expect(retained.every((row) => row.runId === null)).toBe(true);
+      expect(retained.every((row) => row.runId === row.parentRunId)).toBe(true);
     } finally {
       await stop?.();
       await model.close();

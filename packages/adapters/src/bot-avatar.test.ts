@@ -4,7 +4,6 @@ import {
   encodeBotAvatarImage,
   resolveUpdateBotAvatar,
 } from "./bot-avatar.js";
-import { builtinAgentTools } from "./builtin-tools.js";
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
@@ -82,23 +81,5 @@ describe("bot avatar encoding", () => {
     ).resolves.toEqual({
       error: "Image is not in this space or is not an attached picture.",
     });
-  });
-});
-
-describe("update_bot tool schema", () => {
-  it("exposes avatar and notifyOnFinish fields the executor applies", () => {
-    const tool = builtinAgentTools.find((entry) => entry.name === "update_bot");
-    if (!tool) throw new Error("missing update_bot");
-    const properties =
-      (tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
-    expect(Object.keys(properties).sort()).toEqual([
-      "artifact_id",
-      "color",
-      "description",
-      "name",
-      "notifyOnFinish",
-      "title",
-      "use_attached_image",
-    ]);
   });
 });

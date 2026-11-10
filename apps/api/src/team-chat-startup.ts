@@ -16,10 +16,11 @@ export const TEAMCHAT_AGENT_OWNERSHIP_REASON = "message_teamchat_agent";
 export const MESSAGE_ROUTING_RESERVATION_MS = 30 * 60_000;
 
 export function prefersTeamChatSurface(
-  event: Pick<MessagingInboundMessage, "provider" | "workspaceId">,
+  event: Pick<MessagingInboundMessage, "provider" | "workspaceId" | "isDirect">,
   teamChatBotId: string | undefined | null,
 ): boolean {
   return (
+    !event.isDirect &&
     Boolean(teamChatBotId) &&
     (event.provider === "slack" ||
       event.provider === "teamchat-emulator" ||
@@ -79,4 +80,44 @@ export function settleWithTimeout(
   ]).finally(() => {
     if (timer) clearTimeout(timer);
   });
+}
+
+/** Retry restoration without depending on another incoming message. */
+export class TeamChatStartupRetries {
+  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly delays = new Map<string, number>();
+  private stopped = false;
+
+  constructor(private readonly onError: (error: unknown) => void) {}
+
+  schedule(id: string, start: () => Promise<void>): void {
+    if (this.stopped || this.timers.has(id)) return;
+    const delay = this.delays.get(id) ?? 2_000;
+    this.delays.set(id, Math.min(delay * 5, 30_000));
+    const timer = setTimeout(() => {
+      this.timers.delete(id);
+      void start()
+        .then(() => this.succeeded(id))
+        .catch((error) => {
+          this.onError(error);
+          this.schedule(id, start);
+        });
+    }, delay);
+    timer.unref?.();
+    this.timers.set(id, timer);
+  }
+
+  succeeded(id: string): void {
+    const timer = this.timers.get(id);
+    if (timer) clearTimeout(timer);
+    this.timers.delete(id);
+    this.delays.delete(id);
+  }
+
+  stop(): void {
+    this.stopped = true;
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    this.delays.clear();
+  }
 }

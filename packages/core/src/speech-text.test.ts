@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+import { describe, expect, it, vi } from "vitest";
 import {
   narrateTool,
   speakable,
@@ -111,8 +112,113 @@ describe("toUtterances", () => {
     const long = `I looked at ${Array.from({ length: 40 }, (_, i) => `item ${i}`).join(", ")} and finished.`;
     const out = toUtterances(long, { maxChars: 120 });
     expect(out.length).toBeGreaterThan(1);
-    for (const piece of out) expect(piece.length).toBeLessThanOrEqual(140);
+    for (const piece of out) expect(piece.length).toBeLessThanOrEqual(120);
     expect(out.join(" ")).toContain("item 39");
+  });
+
+  it.each([
+    ["Chinese", "中".repeat(2400)],
+    ["Japanese", "あ".repeat(2400)],
+    ["an unbroken word", "a".repeat(2400)],
+  ])("bounds %s without dropping or inserting characters", (_name, text) => {
+    const out = toUtterances(text);
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out) {
+      expect(piece.length).toBeGreaterThan(0);
+      expect(piece.length).toBeLessThanOrEqual(320);
+    }
+    expect(out.join("")).toBe(text);
+  });
+
+  it.each([
+    [320, [320]],
+    [321, [320, 1]],
+    [641, [320, 320, 1]],
+  ])("handles a %i-character boundary", (length, chunkLengths) => {
+    const text = "中".repeat(length);
+    const out = toUtterances(text);
+    expect(out.map((piece) => piece.length)).toEqual(chunkLengths);
+    expect(out.join("")).toBe(text);
+  });
+
+  it.each([
+    ["supplementary CJK", "𠮷"],
+    ["combining marks", "e\u0301"],
+    ["a joined Indic cluster", "क्\u200dष"],
+    ["a supplementary variation selector", "葛\u{e0100}"],
+  ])("keeps %s together at the limit", (_name, cluster) => {
+    const prefix = "中".repeat(319);
+    const text = prefix + cluster.repeat(600);
+    const out = toUtterances(text);
+    expect(out[0]).toBe(prefix);
+    for (const piece of out.slice(1)) {
+      expect(piece.length).toBeGreaterThan(0);
+      expect(piece.length).toBeLessThanOrEqual(320);
+      expect(piece.length % cluster.length).toBe(0);
+      expect(piece).not.toMatch(/[\ud800-\udfff]/u);
+    }
+    expect(out.join("")).toBe(text);
+  });
+
+  it("bounds a grapheme longer than the limit without splitting surrogate pairs", () => {
+    const text = `𠮷${"\u0301".repeat(700)}`;
+    const out = toUtterances(text, { maxChars: 319 });
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out) {
+      expect(piece.length).toBeGreaterThan(0);
+      expect(piece.length).toBeLessThanOrEqual(319);
+      expect(piece).not.toMatch(/[\ud800-\udfff]/u);
+    }
+    expect(out.join("")).toBe(text);
+  });
+
+  it("does not glue short sentences past the limit", () => {
+    const text = `${"a".repeat(319)}. Yes.`;
+    expect(toUtterances(text)).toEqual([`${"a".repeat(319)}.`, "Yes."]);
+  });
+
+  it("keeps surrogate pairs intact on runtimes without Segmenter", () => {
+    vi.stubGlobal("Intl", Object.create(Intl, { Segmenter: { value: undefined } }));
+    try {
+      const text = "𠮷".repeat(1200);
+      const out = toUtterances(text, { maxChars: 319 });
+      expect(out.length).toBeGreaterThan(1);
+      for (const piece of out) {
+        expect(piece.length).toBeGreaterThan(0);
+        expect(piece.length).toBeLessThanOrEqual(319);
+        expect(piece).not.toMatch(/[\ud800-\udfff]/u);
+      }
+      expect(out.join("")).toBe(text);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("preserves mixed Unicode text across different budgets", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom("中", "あ", "𠮷", "e\u0301", "क्\u200dष", "葛\u{e0100}", "。"), {
+          minLength: 1,
+          maxLength: 800,
+        }),
+        fc.integer({ min: 2, max: 400 }),
+        (characters, maxChars) => {
+          const text = `中${characters.join("")}`;
+          const out = toUtterances(text, { maxChars });
+          expect(out.join("")).toBe(text);
+          for (const piece of out) {
+            expect(piece.length).toBeGreaterThan(0);
+            expect(piece.length).toBeLessThanOrEqual(maxChars);
+            expect(piece).not.toMatch(/[\ud800-\udfff]/u);
+          }
+        },
+      ),
+      { seed: 42, numRuns: 100 },
+    );
+  });
+
+  it.each([1, 1.5])("rejects an unusable character budget of %s", (maxChars) => {
+    expect(() => toUtterances("中".repeat(2400), { maxChars })).toThrow(RangeError);
   });
 
   it("runs its input through the spoken register first", () => {
@@ -137,6 +243,10 @@ describe("narrateTool", () => {
     expect(narrateTool("browser_snapshot")).toBe("using the page");
     expect(narrateTool("write_file")).toBe("writing a file");
     expect(narrateTool("run_subagent")).toBe("starting a subagent");
+    expect(narrateTool("list_fleet")).toBe("checking your bots");
+    expect(narrateTool("create_group")).toBe("creating a group");
+    expect(narrateTool("update_group")).toBe("updating a group");
+    expect(narrateTool("set_child_instructions")).toBe("rewriting a bot's instructions");
   });
 
   it("sees through an MCP tool prefix", () => {
@@ -162,5 +272,31 @@ describe("spokenDecision", () => {
     expect(spokenDecision("No thanks")).toBe("no");
     expect(spokenDecision("I'm sure that's fine, go look at the logs")).toBeNull();
     expect(spokenDecision("")).toBeNull();
+  });
+
+  it.each([
+    ["Sí", "yes"],
+    ["¡Sí, hazlo!", "yes"],
+    ["Vale", "yes"],
+    ["De acuerdo, adelante", "yes"],
+    ["No, gracias", "no"],
+    ["mejor no", "no"],
+    ["Cancélalo", "no"],
+  ])("hears the Spanish %j as %j", (said, decision) => {
+    expect(spokenDecision(said)).toBe(decision);
+  });
+
+  it.each(["¿No?", "No?", "¿Sí", "si", "sí uno dos tres cuatro cinco seis"])(
+    "does not approve or reject %j",
+    (text) => expect(spokenDecision(text)).toBeNull(),
+  );
+
+  it("accepts accented sí", () => expect(spokenDecision("sí")).toBe("yes"));
+
+  it("does not hear a yes in a Spanish condition, question or instruction", () => {
+    expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
+    expect(spokenDecision("sino revisa el deploy")).toBeNull();
+    expect(spokenDecision("¿Sí? ¿Cuáles?")).toBeNull();
+    expect(spokenDecision("dale los permisos de admin")).toBeNull();
   });
 });

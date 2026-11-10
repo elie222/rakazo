@@ -1,9 +1,30 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import nodemailer, { type Transporter } from "nodemailer";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import type { NodemailerError, Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+
+/**
+ * Nodemailer waits up to 2 minutes to connect and 10 minutes on an idle socket,
+ * and sign-up awaits the verification email. `SMTP_URL` query parameters win.
+ */
+const SMTP_TIMEOUTS_MS = {
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 30_000,
+};
+/** Timeouts that can only fire before the message is handed to the server. */
+const SETUP_TIMEOUTS = new Set<NodemailerError["timeoutType"]>([
+  "CONNECT_TIMEOUT",
+  "GREETING_TIMEOUT",
+  "UPGRADE_TIMEOUT",
+]);
+/** Socket errors that only `connect()` raises, so no message was sent yet. */
+const CONNECT_ERRNOS = new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL"]);
 
 export interface SmtpEmailConfig {
   url: string;
   from: string;
+  replyTo?: string;
 }
 
 interface SmtpEmailDependencies {
@@ -23,6 +44,7 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
   private readonly inFlight = new Set<Promise<void>>();
   private readonly shutdown = new AbortController();
   private accepting = true;
+  private draining?: Promise<void>;
 
   constructor(
     private readonly config: SmtpEmailConfig,
@@ -62,20 +84,28 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
     return delivery;
   }
 
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     this.accepting = false;
-    const deadline = Date.now() + this.drainTimeoutMs;
-    while (this.inFlight.size > 0) {
-      const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
-      if (completed) continue;
-      this.shutdown.abort();
-      this.inFlight.clear();
+    this.draining ??= this.finishDrain();
+    return this.draining;
+  }
+
+  private async finishDrain(): Promise<void> {
+    try {
+      const deadline = Date.now() + this.drainTimeoutMs;
+      while (this.inFlight.size > 0) {
+        const completed = await settlesWithin(this.inFlight, Math.max(0, deadline - Date.now()));
+        if (completed) continue;
+        this.shutdown.abort();
+        this.inFlight.clear();
+        return;
+      }
+    } finally {
       try {
         this.transport.close();
       } catch {
         // Cleanup must continue even when the transport cannot close cleanly.
       }
-      return;
     }
   }
 
@@ -86,17 +116,24 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
       }
       try {
         await this.transport.sendMail({
-          from: this.config.from,
+          from: message.from ?? this.config.from,
           to: message.to,
+          ...(message.cc?.length ? { cc: message.cc } : {}),
           subject: message.subject,
           text: message.text,
           html: message.html,
+          replyTo: message.replyTo ?? this.config.replyTo,
+          headers: message.headers,
         });
         return;
       } catch (error) {
         if (this.shutdown.signal.aborted) throw error;
+        const refused = refusedRecipientCode(error);
+        if (refused) {
+          throw new EmailRecipientRejectedError(`SMTP server rejected the recipient (${refused})`);
+        }
         const retryDelay = this.retryDelaysMs[attempt];
-        if (retryDelay === undefined) throw error;
+        if (retryDelay === undefined || !retrySafe(error)) throw error;
         await this.sleep(retryDelay, this.shutdown.signal);
       }
     }
@@ -122,7 +159,34 @@ function secureSmtpUrl(value: string): string {
     throw new Error("SMTP_URL cannot disable TLS or certificate verification");
   }
   if (parsed.protocol === "smtp:") parsed.searchParams.set("requireTLS", "true");
+  for (const [key, timeoutMs] of Object.entries(SMTP_TIMEOUTS_MS)) {
+    if (!parsed.searchParams.has(key)) parsed.searchParams.set(key, String(timeoutMs));
+  }
   return parsed.href;
+}
+
+/**
+ * Retries a temporary 4xx rejection, or a connection that failed before the
+ * message could have been sent. A drop after DATA may already have delivered it,
+ * so it is not sent twice.
+ */
+function retrySafe(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { code, responseCode, timeoutType, originalCode } = error as NodemailerError;
+  if (responseCode) return responseCode >= 400 && responseCode < 500;
+  if (code === "ETIMEDOUT") return SETUP_TIMEOUTS.has(timeoutType);
+  if (code === "ECONNECTION" || code === "ESOCKET") {
+    return CONNECT_ERRNOS.has(originalCode ?? "");
+  }
+  return false;
+}
+
+/** The permanent reply code when the server refused a recipient address, before any data. */
+function refusedRecipientCode(error: unknown): number | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const { code, command, responseCode } = error as NodemailerError;
+  if (code !== "EENVELOPE" || command !== "RCPT TO") return undefined;
+  return responseCode && responseCode >= 500 ? responseCode : undefined;
 }
 
 function wait(delayMs: number, signal: AbortSignal): Promise<void> {

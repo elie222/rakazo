@@ -137,6 +137,22 @@
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       const url = `${protocol}://${window.location.host}${prefix}${path}`;
       const rfb = new RFB(document.getElementById("screen"), url);
+      // The web proxy's page shim reports these to the app, as it does for stock noVNC.
+      const root = document.documentElement;
+      root.classList.add("noVNC_connecting");
+      rfb.addEventListener("connect", () => {
+        root.classList.remove("noVNC_connecting");
+        root.classList.add("noVNC_connected");
+      });
+      rfb.addEventListener("securityfailure", (event) => {
+        root.setAttribute("data-rakazo-screen-error", event.detail?.reason ?? "");
+      });
+      rfb.addEventListener("disconnect", (event) => {
+        root.classList.remove("noVNC_connecting", "noVNC_connected");
+        if (!event.detail?.clean && !root.hasAttribute("data-rakazo-screen-error")) {
+          root.setAttribute("data-rakazo-screen-error", "");
+        }
+      });
       rfb.viewOnly = flag("view_only");
       rfb.scaleViewport = true;
       rfb.clipViewport = false;

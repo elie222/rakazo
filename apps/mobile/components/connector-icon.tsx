@@ -1,4 +1,5 @@
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { Component, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { SvgUri } from "react-native-svg";
 import { native, useThemedStyles } from "../lib/native";
@@ -14,8 +15,14 @@ export function ConnectorIcon({
   size?: number;
 }) {
   const styles = useThemedStyles(createStyles);
-  const [failedLogo, setFailedLogo] = useState<string | null>(null);
-  const uri = logo && logo !== failedLogo ? logo : null;
+  // Catalogs often serve SVG from extensionless URLs, which Image cannot decode,
+  // so a failed raster load retries as SVG before falling back to the initial.
+  const [failure, setFailure] = useState<{ logo: string; svgFailed: boolean } | null>(null);
+  const failed = logo && failure?.logo === logo ? failure : null;
+  const svg = Boolean(logo && (/\.svg(?:[?#]|$)/i.test(logo) || failed));
+  const uri = logo && !failed?.svgFailed ? logo : null;
+  const art = size - 8;
+  const initial = <Text style={styles.letter}>{(name.trim()[0] || "?").toUpperCase()}</Text>;
   return (
     <View
       accessibilityElementsHidden
@@ -23,21 +30,51 @@ export function ConnectorIcon({
       style={[styles.frame, { width: size, height: size }]}
     >
       {uri ? (
-        /\.svg(?:[?#]|$)/i.test(uri) ? (
-          <SvgUri uri={uri} width={size - 8} height={size - 8} onError={() => setFailedLogo(uri)} />
+        svg ? (
+          <ArtworkBoundary key={uri} onError={() => setFailure({ logo: uri, svgFailed: true })}>
+            <SvgUri
+              uri={uri}
+              width={art}
+              height={art}
+              onError={() => setFailure({ logo: uri, svgFailed: true })}
+              // SvgUri does not report XML parse errors, only renders this fallback.
+              fallback={initial}
+            />
+          </ArtworkBoundary>
         ) : (
           <Image
             source={{ uri }}
             resizeMode="contain"
-            onError={() => setFailedLogo(uri)}
-            style={{ width: size - 8, height: size - 8 }}
+            onError={() => setFailure({ logo: uri, svgFailed: false })}
+            style={{ width: art, height: art }}
           />
         )
       ) : (
-        <Text style={styles.letter}>{(name.trim()[0] || "?").toUpperCase()}</Text>
+        initial
       )}
     </View>
   );
+}
+
+/** Catalog SVGs are untrusted; one that react-native-svg cannot render, such as a
+ * root `transform` its parser rejects, throws during render instead of calling onError. */
+class ArtworkBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { failed: boolean }
+> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override componentDidCatch() {
+    this.props.onError();
+  }
+
+  override render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 function createStyles() {

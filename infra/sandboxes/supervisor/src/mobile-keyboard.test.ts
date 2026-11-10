@@ -7,6 +7,7 @@ import {
   isTouchBrowser,
   mobileInputChanges,
 } from "../../computer/mobile-keyboard.js";
+import { COMPUTER_IMAGE_CONTEXT_FILES } from "./computer-spec.js";
 
 type TouchLike = { identifier: number; clientX: number; clientY: number };
 type TouchEventLike = {
@@ -290,7 +291,6 @@ describe("mobile computer keyboard", () => {
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
     const embed = readFileSync(path.join(root, "embed.html"), "utf8");
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
-    const supervisor = readFileSync(path.join(import.meta.dirname, "index.ts"), "utf8");
     expect(dockerfile).toMatch(/mobile-keyboard\.js/);
     expect(embed).toMatch(/attachMobileKeyboard/);
     expect(embed).toMatch(/mobile-keyboard-input/);
@@ -308,7 +308,7 @@ describe("mobile computer keyboard", () => {
     expect(keyboard).toMatch(/rakazoComputerKeyboard/);
     expect(keyboard).toMatch(/__rakazoNativeKeys/);
     expect(start).toMatch(/mobile-keyboard\.js/);
-    expect(supervisor).toMatch(/"mobile-keyboard\.js"/);
+    expect(COMPUTER_IMAGE_CONTEXT_FILES).toContain("mobile-keyboard.js");
   });
 
   it("exposes the hidden keyboard field to screen readers only while it is open", () => {

@@ -1,6 +1,9 @@
 import { i18n } from "@lingui/core";
 import { applyUiDirection } from "./apply-ui-direction";
-import { persistUiLocale, resolveUiLocale, type UiLocale } from "./ui-locale";
+import { desktopBridge } from "./desktop";
+import { importChunk } from "./preload-recovery";
+import type { UiLocale } from "./ui-locale";
+import { persistUiLocale, resolveUiLocale } from "./ui-locale";
 
 export { i18n };
 
@@ -9,16 +12,21 @@ type CatalogModule = { messages: CatalogMessages };
 type CatalogLoader = () => Promise<CatalogModule>;
 
 const defaultCatalogLoaders: Record<UiLocale, CatalogLoader> = {
-  en: () => import("../locales/en/messages.po") as Promise<CatalogModule>,
-  de: () => import("../locales/de/messages.po") as Promise<CatalogModule>,
-  ko: () => import("../locales/ko/messages.po") as Promise<CatalogModule>,
-  tr: () => import("../locales/tr/messages.po") as Promise<CatalogModule>,
-  hi: () => import("../locales/hi/messages.po") as Promise<CatalogModule>,
-  "pt-BR": () => import("../locales/pt-BR/messages.po") as Promise<CatalogModule>,
-  "zh-CN": () => import("../locales/zh-CN/messages.po") as Promise<CatalogModule>,
-  es: () => import("../locales/es/messages.po") as Promise<CatalogModule>,
-  ru: () => import("../locales/ru/messages.po") as Promise<CatalogModule>,
-  fr: () => import("../locales/fr/messages.po") as Promise<CatalogModule>,
+  en: () => import("@rakazo/i18n/locales/en/messages.po") as Promise<CatalogModule>,
+  de: () => import("@rakazo/i18n/locales/de/messages.po") as Promise<CatalogModule>,
+  ko: () => import("@rakazo/i18n/locales/ko/messages.po") as Promise<CatalogModule>,
+  tr: () => import("@rakazo/i18n/locales/tr/messages.po") as Promise<CatalogModule>,
+  hi: () => import("@rakazo/i18n/locales/hi/messages.po") as Promise<CatalogModule>,
+  "pt-BR": () => import("@rakazo/i18n/locales/pt-BR/messages.po") as Promise<CatalogModule>,
+  "zh-TW": () => import("@rakazo/i18n/locales/zh-TW/messages.po") as Promise<CatalogModule>,
+  "zh-CN": () => import("@rakazo/i18n/locales/zh-CN/messages.po") as Promise<CatalogModule>,
+  es: () => import("@rakazo/i18n/locales/es/messages.po") as Promise<CatalogModule>,
+  ru: () => import("@rakazo/i18n/locales/ru/messages.po") as Promise<CatalogModule>,
+  fr: () => import("@rakazo/i18n/locales/fr/messages.po") as Promise<CatalogModule>,
+  he: () => import("@rakazo/i18n/locales/he/messages.po") as Promise<CatalogModule>,
+  nl: () => import("@rakazo/i18n/locales/nl/messages.po") as Promise<CatalogModule>,
+  ja: () => import("@rakazo/i18n/locales/ja/messages.po") as Promise<CatalogModule>,
+  pl: () => import("@rakazo/i18n/locales/pl/messages.po") as Promise<CatalogModule>,
 };
 
 let catalogLoaders: Record<UiLocale, CatalogLoader> = defaultCatalogLoaders;
@@ -37,7 +45,7 @@ export function getActiveUiLocale(): UiLocale {
 }
 
 async function loadCatalog(locale: UiLocale): Promise<CatalogMessages> {
-  const { messages } = await catalogLoaders[locale]();
+  const { messages } = await importChunk(catalogLoaders[locale]);
   return messages;
 }
 
@@ -46,6 +54,10 @@ function activateLoaded(locale: UiLocale, messages: CatalogMessages): UiLocale {
   i18n.activate(locale);
   activeLocale = locale;
   applyUiDirection(locale);
+  // The desktop app's own menus, dialogs and setup window follow the language chosen here.
+  void desktopBridge()
+    ?.locale?.set(locale)
+    .catch(() => undefined);
   return locale;
 }
 

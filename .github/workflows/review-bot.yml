@@ -1,0 +1,47 @@
+name: Review bot
+
+# Qodo reviews every PR on open and on each push (.pr_agent.toml). When Qodo
+# says it is blocked, the PR is labeled review:cr and CodeRabbit reviews it
+# (.coderabbit.yaml reviews only that label). When CodeRabbit is rate limited,
+# the label becomes review:greptile and Greptile reviews it from the next push
+# (greptile.json reviews only that label).
+#
+# issue_comment so fork PRs get a fallback; this workflow never checks out or
+# runs PR code.
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions: {}
+
+jobs:
+  handoff:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      ((startsWith(github.event.comment.user.login, 'qodo-') &&
+        endsWith(github.event.comment.user.login, '[bot]') &&
+        startsWith(github.event.comment.body, '<!-- qodo:') &&
+        !contains(github.event.issue.labels.*.name, 'review:cr') &&
+        !contains(github.event.issue.labels.*.name, 'review:greptile')) ||
+       (github.event.comment.user.login == 'coderabbitai[bot]' &&
+        contains(github.event.comment.body, 'rate limited by coderabbit.ai') &&
+        contains(github.event.issue.labels.*.name, 'review:cr')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          FROM_BOT: ${{ github.event.comment.user.login }}
+        run: |
+          if [[ "$FROM_BOT" == "coderabbitai[bot]" ]]; then
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:cr" --silent
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:greptile" --silent
+          else
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent
+          fi

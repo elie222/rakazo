@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  computerInputForDomKey,
-  computerScreenSize,
-  mapTeachPointer,
-  teachCaptureKey,
-} from "./teach-recording.js";
+import { computerInputForDomKey, mapTeachPointer, teachCaptureKey } from "./teach-recording.js";
 
 describe("teachCaptureKey", () => {
   it("records printable characters and editing keys", () => {
@@ -40,14 +35,6 @@ describe("computerInputForDomKey", () => {
 
   it("passes through names it does not know", () => {
     expect(computerInputForDomKey("F5")).toEqual({ kind: "key", key: "F5" });
-  });
-});
-
-describe("computerScreenSize", () => {
-  it("uses box geometry and the 1280x800 default for other sandboxes", () => {
-    expect(computerScreenSize("box")).toEqual({ width: 1920, height: 1080 });
-    expect(computerScreenSize("e2b")).toEqual({ width: 1280, height: 800 });
-    expect(computerScreenSize("daytona")).toEqual({ width: 1280, height: 800 });
   });
 });
 

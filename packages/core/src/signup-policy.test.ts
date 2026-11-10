@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  allowlistedSignupAdmission,
   emailAllowed,
-  firstAccountClaimDecision,
+  isMessagingEmail,
   parseAllowlist,
-  signupAllowlistBootUpdate,
   signupPolicyFromEnv,
   signupRequiresEmailVerification,
   signupsOpen,
@@ -32,12 +30,26 @@ describe("signup policy", () => {
     const list = parseAllowlist("You@Example.com,@company.com");
     expect(emailAllowed("you@example.com", list)).toBe(true);
     expect(emailAllowed("dev@company.com", list)).toBe(true);
+    expect(emailAllowed(" Dev@Company.com ", list)).toBe(true);
     expect(emailAllowed("other@x.com", list)).toBe(false);
+  });
+
+  it("does not match a look-alike domain or a longer address", () => {
+    const list = parseAllowlist("you@example.com,@company.com");
+    expect(emailAllowed("dev@evilcompany.com", list)).toBe(false);
+    expect(emailAllowed("dev@company.com.evil.test", list)).toBe(false);
+    expect(emailAllowed("eviyou@example.com", list)).toBe(false);
+  });
+
+  it("recognizes internal messaging addresses in any case", () => {
+    expect(isMessagingEmail(" MSG-1@Messaging.Invalid ")).toBe(true);
+    expect(isMessagingEmail("msg-1@messaging.invalid.example.com")).toBe(false);
   });
 
   it("honors SIGNUPS_ENABLED", () => {
     expect(signupsOpen(undefined)).toBe(true);
     expect(signupsOpen("false")).toBe(false);
+    expect(signupsOpen("0")).toBe(false);
   });
 
   it("builds a normalized policy from environment defaults", () => {
@@ -47,84 +59,5 @@ describe("signup policy", () => {
         signupAllowlist: " You@Example.com, @company.test ",
       }),
     ).toEqual({ enabled: false, allowlist: ["you@example.com", "@company.test"] });
-  });
-
-  it("reapplies a non-empty env allowlist and leaves a blank one stored", () => {
-    expect(signupAllowlistBootUpdate("old@example.test", " New@Example.test ", true)).toBe(
-      "new@example.test",
-    );
-    expect(
-      signupAllowlistBootUpdate(
-        "you@example.test,@company.test",
-        " you@example.test, @company.test ",
-        true,
-      ),
-    ).toBeNull();
-    expect(signupAllowlistBootUpdate("kept@example.test", "", true)).toBeNull();
-    expect(signupAllowlistBootUpdate("kept@example.test", "  ,  ", true)).toBeNull();
-    expect(signupAllowlistBootUpdate("kept@example.test", undefined, true)).toBeNull();
-    expect(signupAllowlistBootUpdate("", "owner@example.test", false)).toBeNull();
-  });
-
-  it("lets only the first allowlisted account skip delivery", () => {
-    expect(
-      allowlistedSignupAdmission({
-        allowlistSize: 0,
-        hasEmailDelivery: false,
-        existingHumanCount: 4,
-      }),
-    ).toBe("open");
-    expect(
-      allowlistedSignupAdmission({
-        allowlistSize: 1,
-        hasEmailDelivery: true,
-        existingHumanCount: 0,
-      }),
-    ).toBe("verify");
-    expect(
-      allowlistedSignupAdmission({
-        allowlistSize: 1,
-        hasEmailDelivery: false,
-        existingHumanCount: 0,
-      }),
-    ).toBe("open");
-    expect(
-      allowlistedSignupAdmission({
-        allowlistSize: 1,
-        hasEmailDelivery: false,
-        existingHumanCount: 1,
-      }),
-    ).toBe("needs-delivery");
-  });
-
-  it("gives the unverified first account one claim and refuses any other human", () => {
-    expect(
-      firstAccountClaimDecision({
-        userId: "user-1",
-        ownerUserId: null,
-        otherHuman: false,
-      }),
-    ).toBe("claim");
-    expect(
-      firstAccountClaimDecision({
-        userId: "user-1",
-        ownerUserId: "user-1",
-        otherHuman: false,
-      }),
-    ).toBe("renew");
-    expect(
-      firstAccountClaimDecision({
-        userId: "user-2",
-        ownerUserId: "user-1",
-        otherHuman: false,
-      }),
-    ).toBe("deny");
-    expect(
-      firstAccountClaimDecision({
-        userId: "user-2",
-        ownerUserId: null,
-        otherHuman: true,
-      }),
-    ).toBe("deny");
   });
 });

@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { ComputerUpdate } from "@rakazo/contracts";
-import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openBotPanelTab,
+  signup,
+} from "./helpers";
 
 test("computer maintenance shows durable background progress and failure recovery", async ({
   page,
@@ -37,16 +43,7 @@ test("computer maintenance shows durable background progress and failure recover
     updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
     return route.fulfill({ json: { json: updates[0] } });
   });
-  let releases = 0;
-  await page.route("**/rpc/computer/releaseInterrupted", (route) => {
-    expect(route.request().postDataJSON()).toMatchObject({
-      json: { id: updating.id, workersStopped: true },
-    });
-    releases++;
-    updates = [{ ...updating, status: "failed" }];
-    return route.fulfill({ json: { json: { ok: true } } });
-  });
-  await page.getByTitle("Agent computer").click();
+  await openBotPanelTab(page, "Computer");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
@@ -97,16 +94,11 @@ test("computer maintenance shows durable background progress and failure recover
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-update-interrupted");
+  // Older wire flags cannot expose a server lock-release control in the app.
   updates = [{ ...updating, status: "interrupted", canReleaseReservation: true }];
-  await dialog.getByRole("button", { name: "Release computer", exact: true }).click();
-  const confirmation = page.getByRole("alertdialog");
-  await captureScreenshot(page, testInfo, "computer-update-release-confirmation");
-  await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
-  expect(releases).toBe(0);
-  await dialog.getByRole("button", { name: "Release computer", exact: true }).click();
-  await confirmation.getByRole("button", { name: "Nothing is still running", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Release computer", exact: true })).toBeHidden();
+  updates = [{ ...updating, status: "failed" }];
   await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
-  expect(releases).toBe(1);
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");
   await dialog.getByRole("button", { name: "Recover computer" }).click();

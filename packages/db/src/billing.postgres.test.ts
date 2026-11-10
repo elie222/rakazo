@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   billingAccountForOrganization,
   createBillingAccount,
+  memberHasModelAccess,
   organizationForMember,
   organizationSeatCount,
   ownedBillingAccounts,
@@ -12,8 +13,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 const snapshot: BillingSubscriptionSnapshot = {
   subscriptionId: "sub_1",
@@ -22,6 +22,7 @@ const snapshot: BillingSubscriptionSnapshot = {
   status: "trialing",
   seats: 2,
   trialEndsAt: new Date("2026-10-14T00:00:00.000Z"),
+  currentPeriodStartsAt: new Date("2026-10-07T00:00:00.000Z"),
   currentPeriodEndsAt: new Date("2026-10-14T00:00:00.000Z"),
   cancelAtPeriodEnd: false,
   endedAt: null,
@@ -71,6 +72,11 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await close();
   });
 
+  it("reads model access from a whole run row, not just its key", async () => {
+    const run = { id: "run-1", spaceId, userId: memberId, botId: "bot-1" };
+    await expect(memberHasModelAccess(prisma, run)).resolves.toBe(false);
+  });
+
   it("detects the organization owner from comma-separated roles", async () => {
     await expect(organizationForMember(prisma, { spaceId, userId: ownerId })).resolves.toEqual({
       organizationId,
@@ -94,7 +100,7 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await expect(ownedBillingAccounts(prisma, memberId)).resolves.toEqual([]);
   });
 
-  it("overwrites the snapshot idempotently and records the first subscription once", async () => {
+  it("overwrites the snapshot idempotently and records the first subscription and payment once", async () => {
     await expect(syncBillingSnapshot(prisma, "cus_unknown", async () => snapshot)).resolves.toBe(
       false,
     );
@@ -103,11 +109,13 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     const first = await billingAccountForOrganization(prisma, organizationId);
     expect(first).toMatchObject({ status: "trialing", seats: 2, subscriptionItemId: "si_1" });
     expect(first?.subscribedAt).toBeInstanceOf(Date);
+    expect(first?.paidAt).toBeNull();
 
     await syncBillingSnapshot(prisma, customerId, async () => ({ ...snapshot, status: "active" }));
     const second = await billingAccountForOrganization(prisma, organizationId);
     expect(second?.status).toBe("active");
     expect(second?.subscribedAt).toEqual(first?.subscribedAt);
+    expect(second?.paidAt).toBeInstanceOf(Date);
 
     await syncBillingSnapshot(prisma, customerId, async () => null);
     const cleared = await billingAccountForOrganization(prisma, organizationId);
@@ -120,6 +128,7 @@ describePostgres("billing accounts (PostgreSQL)", () => {
       cancelAtPeriodEnd: false,
     });
     expect(cleared?.subscribedAt).toEqual(first?.subscribedAt);
+    expect(cleared?.paidAt).toEqual(second?.paidAt);
   });
 
   it("applies concurrent syncs in order so an older read cannot win", async () => {

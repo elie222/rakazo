@@ -1,7 +1,20 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { ReplyPreviewSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { replyAttachment, replyLabel, replyLineText, replyMetadata } from "./message-replies.js";
+import { messageReplyPreview } from "./message-quote.js";
+import {
+  channelMessageSender,
+  isPageOriginReply,
+  memberMessageAlerts,
+  messageUnreadFor,
+  otherAuthor,
+  payloadAuthor,
+  previewMessageText,
+  replyAttachment,
+  replyLabel,
+  replyLineText,
+  replyMetadata,
+} from "./message-replies.js";
 
 describe("shared reply presentation", () => {
   it("keeps selected quotes on one line and uses preview before local fallback", () => {
@@ -103,4 +116,137 @@ it("localizes legacy image-only quotes while retaining real selected caption tex
   expect(
     replyLabel("photo.png", "Caption photo.png", { ...image, name: "photo.png" }, labels),
   ).toBe("photo.png");
+});
+
+describe("message authors", () => {
+  const ana = { id: "user-a", name: "Ana" };
+
+  it("names only someone other than me", () => {
+    expect(otherAuthor(ana, "user-b")).toEqual(ana);
+    expect(otherAuthor(ana, "user-a")).toBeUndefined();
+    expect(otherAuthor(undefined, "user-b")).toBeUndefined();
+    // Before the session loads, nobody is named rather than everyone.
+    expect(otherAuthor(ana, undefined)).toBeUndefined();
+  });
+
+  it("counts a bot's message and another member's as unread, never my own", () => {
+    expect(messageUnreadFor({ role: "bot" }, "user-a")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-b")).toBe(true);
+    expect(messageUnreadFor({ role: "user", author: ana }, "user-a")).toBe(false);
+    // A message with no known author, such as a webhook's, leaves the chat as it was.
+    expect(messageUnreadFor({ role: "user" }, "user-b")).toBe(false);
+  });
+
+  it("alerts the space for typed text, not a spoken call turn, a reaction or a file alone", () => {
+    const typed = [{ kind: "text", text: "Saturday works" }];
+    expect(memberMessageAlerts({ blocks: typed })).toBe(true);
+    expect(memberMessageAlerts({ blocks: typed, callId: "call-1" })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "file", name: "plan.pdf" }] })).toBe(false);
+    expect(memberMessageAlerts({ blocks: [{ kind: "text", text: "  " }] })).toBe(false);
+    // A reaction is a one-emoji reply; a typed reply with words still alerts.
+    const reply = (text: string) => ({
+      blocks: [{ kind: "text", text }],
+      replyToMessageId: "message-1",
+    });
+    expect(memberMessageAlerts(reply("👍"))).toBe(false);
+    expect(memberMessageAlerts(reply("Yes, Saturday"))).toBe(true);
+  });
+
+  it("reads a live event's author and keeps the known one across updates", () => {
+    expect(payloadAuthor({ author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({}, { author: ana })).toEqual({ author: ana });
+    expect(payloadAuthor({ author: { id: "user-a" } })).toEqual({});
+    expect(payloadAuthor({})).toEqual({});
+  });
+});
+
+describe("channelMessageSender", () => {
+  const channel = {
+    kind: "channel_message" as const,
+    provider: "telegram",
+    channelId: "channel",
+    fromAddress: "ada",
+    fromLabel: "Ada",
+    text: "On my way",
+  };
+
+  it("names the outside sender of a relayed message", () => {
+    expect(channelMessageSender([channel])).toBe("Ada");
+  });
+
+  it("is undefined for the user's own messages and for a blank sender", () => {
+    expect(channelMessageSender([{ kind: "text", text: "hi" }])).toBeUndefined();
+    expect(channelMessageSender([{ ...channel, fromLabel: "  " }])).toBeUndefined();
+  });
+});
+
+describe("previewMessageText", () => {
+  const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
+
+  it("joins text, reading bot Markdown as plain text", () => {
+    expect(
+      previewMessageText(
+        {
+          role: "bot",
+          blocks: [
+            { kind: "text", text: "**Hello**" },
+            { kind: "text", text: "there" },
+          ],
+        },
+        labels,
+      ),
+    ).toBe("Hello there");
+    expect(
+      previewMessageText({ role: "user", blocks: [{ kind: "text", text: "**hi**" }] }, labels),
+    ).toBe("**hi**");
+  });
+
+  it("shows a channel message's text alone, like the server preview", () => {
+    expect(
+      previewMessageText(
+        {
+          role: "user",
+          blocks: [
+            {
+              kind: "channel_message",
+              provider: "telegram",
+              channelId: "channel",
+              fromAddress: "ada",
+              fromLabel: "Ada",
+              text: "On my way",
+            },
+          ],
+        },
+        labels,
+      ),
+    ).toBe("On my way");
+  });
+
+  it("falls back to attachment labels, then a generic label", () => {
+    const image = { kind: "image", artifactId: "a", mimeType: "image/png", name: "a.png" } as const;
+    const file = { kind: "file", artifactId: "f", mimeType: "application/pdf", size: 1 } as const;
+    expect(previewMessageText({ role: "user", blocks: [image] }, labels)).toBe("Photo");
+    expect(previewMessageText({ role: "user", blocks: [{ ...file, name: "a.pdf" }] }, labels)).toBe(
+      "a.pdf",
+    );
+    expect(previewMessageText({ role: "user", blocks: [{ ...file, name: "" }] }, labels)).toBe(
+      "Attachment",
+    );
+    expect(previewMessageText({ role: "bot", blocks: [] }, labels)).toBe("Message");
+  });
+});
+
+describe("page card replies", () => {
+  it("marks a page card parent so a reply sent from the open page shows no quote", () => {
+    const card = messageReplyPreview(
+      [{ kind: "page", pageId: "p1", version: 2, title: "Q3 plan" }],
+      "bot",
+    );
+    expect(ReplyPreviewSchema.parse(card)).toMatchObject({ page: true, text: "Q3 plan" });
+    expect(isPageOriginReply({ replyPreview: card })).toBe(true);
+    expect(isPageOriginReply({ replyPreview: card, replyQuote: "Q3 plan" })).toBe(false);
+    const text = messageReplyPreview([{ kind: "text", text: "hi" }], "bot");
+    expect(text.page).toBeUndefined();
+    expect(isPageOriginReply({ replyPreview: text })).toBe(false);
+  });
 });

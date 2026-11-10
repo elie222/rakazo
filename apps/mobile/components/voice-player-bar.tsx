@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import { useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import {
@@ -25,7 +25,7 @@ export function VoicePlayerBar({
 }: {
   style?: { marginTop?: number; marginBottom?: number; marginHorizontal?: number };
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
@@ -38,25 +38,25 @@ export function VoicePlayerBar({
     <GlassSurface style={[styles.bar, style]} fallbackStyle={styles.barFallback}>
       <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={speakerColor} />
       <Text numberOfLines={1} style={[styles.name, { color: speakerColor }]}>
-        {playback.speaker?.name || t("Bot")}
+        {playback.speaker?.name || t`Bot`}
       </Text>
       {paused ? (
         <VoiceControlButton
-          accessibilityLabel={t("Play")}
+          accessibilityLabel={t`Play`}
           onPress={resumeVoicePlayback}
           ios="play.fill"
           android="play"
         />
       ) : playback.canPause ? (
         <VoiceControlButton
-          accessibilityLabel={t("Pause")}
+          accessibilityLabel={t`Pause`}
           onPress={pauseVoicePlayback}
           ios="pause.fill"
           android="pause"
         />
       ) : null}
       <VoiceControlButton
-        accessibilityLabel={t("Stop")}
+        accessibilityLabel={t`Stop`}
         onPress={stopVoicePlayback}
         ios="stop.fill"
         android="stop"
@@ -108,8 +108,8 @@ function createStyles() {
       borderRadius: 18,
       paddingHorizontal: 10,
       borderWidth: 1,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      borderColor: tokens.glassStroke,
+      backgroundColor: tokens.glassFill,
     },
     name: { flexGrow: 1, flexShrink: 1, fontSize: 13, fontWeight: "600" },
     button: {

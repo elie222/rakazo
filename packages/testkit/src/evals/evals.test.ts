@@ -1,7 +1,7 @@
 import type { AdapterContext, ConnectorCall } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES } from "./cases.js";
+import { EMPTY_SETTINGS, EVAL_CASES, HISTORY_EVAL_CASES } from "./cases.js";
 import { emptyTrial, redact, summarize, validateControls } from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
@@ -35,8 +35,11 @@ function evidence(): Evidence {
     approvalPending: false,
     pendingApproval: null,
     priorMemory: "",
-    destinationWrites: 0,
     toolNames: [],
+    toolCalls: [],
+    finalStep: 1,
+    settings: EMPTY_SETTINGS,
+    settingsBefore: EMPTY_SETTINGS,
     messaging: { originThreadId: null, outbound: [] },
   };
 }
@@ -214,8 +217,6 @@ describe("independent outcome graders", () => {
       expect(passes(id, e)).toBe(true);
     e.files["results/totals.csv"] = "item,total\napples,7\npears,9";
     expect(passes("file-transform", e)).toBe(false);
-    e.destinationWrites = 1;
-    expect(passes("file-create", e)).toBe(false);
   });
   it("does not credit ungrounded inbox answers or irrelevant items", () => {
     const e = evidence();
@@ -508,6 +509,15 @@ describe("eval run controls and reporting", () => {
         ["synthetic-key"],
       ),
     ).toBe("[redacted] [url] [email] [local-path] [redacted] token=x");
+  });
+  it("keeps fixture links and addresses on the reserved .example domain", () => {
+    expect(
+      redact(
+        "https://files.example.com/d/1-v3 dana@juniperrow.example https://user:pw@db.example/x https://files.example.com/d/2?sig=private#frag",
+      ),
+    ).toBe(
+      "https://files.example.com/d/1-v3 dana@juniperrow.example [url] https://files.example.com/d/2",
+    );
   });
 });
 

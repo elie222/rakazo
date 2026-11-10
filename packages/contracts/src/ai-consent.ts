@@ -1,23 +1,18 @@
 import * as z from "zod";
+import { SettingsScopeSchema } from "./settings-scope.js";
 
 export const AI_DISCLOSURE_VERSION = "2026-09-14";
 export const AI_PRIVACY_URL = "https://rakazo.com/privacy/";
 export const AiDataUseSchema = z.enum(["model", "voice", "memory"]);
 export type AiDataUse = z.infer<typeof AiDataUseSchema>;
-export const AI_DATA_DISCLOSURES: Record<AiDataUse, string> = {
-  model:
-    "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.",
-  voice:
-    "Your recordings are sent for transcription, and text you play is sent to generate speech.",
-  memory:
-    "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.",
-};
 export const AiConsentQuerySchema = z
   .object({
     botId: z.string().optional(),
     groupId: z.string().optional(),
     routineId: z.string().optional(),
     uses: z.array(AiDataUseSchema).optional(),
+    /** Which copy of the member's settings names the recipients; omitted means the one that applies. */
+    settingsScope: SettingsScopeSchema.optional(),
   })
   .default({});
 export type AiConsentQuery = z.infer<typeof AiConsentQuerySchema>;

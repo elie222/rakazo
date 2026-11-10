@@ -6,24 +6,38 @@ import {
   takeoverResumeFromRelease,
 } from "./takeover-resume.js";
 
+const HANDED_BACK_NOTE =
+  "The user handed the computer back. Continue using the current screen state. Do not request takeover again for this same step.";
+const UNFINISHED_NOTE =
+  "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again for this same step unless you still cannot proceed.";
+
 describe("takeoverResumeFromRelease", () => {
-  it("tells the bot the login finished after I'm done or a plain release", () => {
-    for (const reason of ["done", "released", undefined]) {
-      const resume = takeoverResumeFromRelease(reason);
-      expect(resume.checkpoint).toBe("takeover");
-      expect(resume.promptNote).toMatch(/finished the login/i);
+  it("only rules out asking for the same step again, so a later code can still be asked for", () => {
+    for (const reason of ["done", "skipped"]) {
+      expect(takeoverResumeFromRelease(reason).promptNote).toContain("for this same step");
     }
   });
 
-  it("tells the bot the login was skipped", () => {
+  it("tells the bot the computer was handed back after I'm done or a plain release", () => {
+    for (const reason of ["done", "released", undefined]) {
+      const resume = takeoverResumeFromRelease(reason);
+      expect(resume.checkpoint).toBe("takeover");
+      expect(resume.promptNote).toBe(HANDED_BACK_NOTE);
+      expect(resume.promptNote).not.toMatch(/login/i);
+    }
+  });
+
+  it("tells the bot a skipped takeover was not completed", () => {
     const resume = takeoverResumeFromRelease("skipped");
     expect(resume.checkpoint).toBe("takeover-skipped");
-    expect(resume.promptNote).toMatch(/skipped the login/i);
-    expect(resume.promptNote).not.toMatch(/finished the login/i);
+    expect(resume.promptNote).toBe(UNFINISHED_NOTE);
+    expect(resume.promptNote).not.toMatch(/login/i);
   });
 
   it("treats an expired takeover like a skip", () => {
-    expect(takeoverResumeFromRelease("expired").checkpoint).toBe("takeover-skipped");
+    const expired = takeoverResumeFromRelease("expired");
+    expect(expired).toEqual(takeoverResumeFromRelease("skipped"));
+    expect(expired.promptNote).not.toMatch(/login/i);
   });
 });
 
@@ -31,7 +45,6 @@ describe("takeoverContinuePlan", () => {
   it("keeps a waiting takeover held without treating login as finished", () => {
     const plan = takeoverContinuePlan({ status: "waiting_takeover", checkpoint: null });
     expect(plan.heldForTakeover).toBe(true);
-    expect(plan.resumeHeldLease).toBe(true);
     expect(plan.resumeCheckpoint).toBeNull();
     expect(plan.takeoverResume).toBeNull();
   });
@@ -39,8 +52,9 @@ describe("takeoverContinuePlan", () => {
   it("resumes after a finished or skipped takeover from the release checkpoint", () => {
     const done = takeoverContinuePlan({ status: "queued", checkpoint: "takeover" });
     expect(done.heldForTakeover).toBe(false);
-    expect(done.resumeHeldLease).toBe(true);
     expect(done.takeoverResume?.checkpoint).toBe("takeover");
+    expect(done.takeoverResume?.promptNote).toBe(HANDED_BACK_NOTE);
+    expect(done.takeoverResume?.promptNote).not.toMatch(/login/i);
 
     const skipped = takeoverContinuePlan({
       status: "queued",
@@ -48,13 +62,14 @@ describe("takeoverContinuePlan", () => {
     });
     expect(skipped.heldForTakeover).toBe(false);
     expect(skipped.takeoverResume?.checkpoint).toBe("takeover-skipped");
+    expect(skipped.takeoverResume?.promptNote).toBe(UNFINISHED_NOTE);
+    expect(skipped.takeoverResume?.promptNote).not.toMatch(/login/i);
   });
 
   it("does not treat a normal continue as a takeover resume", () => {
     expect(takeoverContinuePlan({ status: "queued", checkpoint: null })).toEqual({
       resumeCheckpoint: null,
       heldForTakeover: false,
-      resumeHeldLease: false,
       takeoverResume: null,
     });
   });

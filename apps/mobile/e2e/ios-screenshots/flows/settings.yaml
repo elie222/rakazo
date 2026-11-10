@@ -9,8 +9,15 @@ name: Settings
 - extendedWaitUntil:
     visible: ".*Change password.*"
     timeout: 15000
+- assertNotVisible: "(?s).*__[A-Za-z0-9]+__.*"
+- assertNotVisible: "(?is).*[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}.*"
+- assertNotVisible: "(?s).*c[a-z0-9]{24}.*"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 01-account
 - tapOn: "Dark"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 02-account-dark
 - tapOn: "System"
 - scrollUntilVisible:
@@ -21,11 +28,15 @@ name: Settings
 - extendedWaitUntil:
     visible: "Stream replies"
     timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 03-account-advanced
 - openLink: "rakazo:///change-password"
 - extendedWaitUntil:
     visible: "Current password"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 04-change-password
 - tapOn: "Current password"
 - inputText: "wrong-current"
@@ -40,55 +51,103 @@ name: Settings
 - extendedWaitUntil:
     visible: "Passwords do not match"
     timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 05-password-mismatch
 - tapOn: "Back"
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Main model"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 06-models
 - openLink: "rakazo:///integrations"
 - extendedWaitUntil:
     visible: "Search apps"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 07-integrations
-- tapOn:
-    id: "integrations-advanced"
+- tapOn: "Add custom"
+- tapOn: "MCP server"
 - extendedWaitUntil:
-    visible: "Add MCP server"
+    visible: "Remote MCP server"
     timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 08-integrations-advanced
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
     visible: ".*This device.*"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 09-voice
 - openLink: "rakazo:///ai-data-sharing"
 - extendedWaitUntil:
     visible: "AI data sharing"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 10-ai-data-sharing
 - openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher&routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}"
 - extendedWaitUntil:
     visible: ".*Weekly fixture review.*"
     timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 11-routine
-- openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- openLink: "rakazo:///routine-runs?routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}&botName=Researcher"
 - extendedWaitUntil:
-    visible: "Advanced"
+    visible: ".*Run history.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 11b-routine-runs
+- openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- scrollUntilVisible:
+    element: "Advanced"
+    direction: DOWN
     timeout: 15000
 - tapOn: "Advanced"
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 12-bot-settings
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*Routines.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 13-bot-profile
+- tapOn: "Bot actions"
+- extendedWaitUntil:
+    visible: "Clear conversation"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 14-bot-profile-menu
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
     visible: ".*Delete group.*"
     timeout: 15000
-- takeScreenshot: 13-group-settings
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 15-group-settings
 - openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
     visible: ".*Take control.*|.*Open computer.*"
     timeout: 20000
-- takeScreenshot: 14-computer
+# The computer boots and its desktop loads after the page opens; Maestro cannot see inside the
+# screen, so give it a few seconds before the shot.
+- extendedWaitUntil:
+    visible: "Desktop never shows this text"
+    timeout: 8000
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: 16-computer
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
     element: ".*Delete account.*"
@@ -99,12 +158,12 @@ name: Settings
 - extendedWaitUntil:
     visible: ".*Delete your account.*"
     timeout: 10000
-- takeScreenshot: 15-delete-prompt
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 17-delete-prompt
 - tapOn: "Cancel"
+# Account reopens where it was scrolled, below Language.
 - openLink: "rakazo:///account"
-- extendedWaitUntil:
-    visible: ".*Language.*"
-    timeout: 15000
 - scrollUntilVisible:
     element: "Language"
     direction: UP
@@ -113,7 +172,45 @@ name: Settings
     centerElement: true
 - tapOn: "Language"
 - extendedWaitUntil:
-    visible: ".*English.*|.*Cancel.*"
+    visible: "Deutsch"
     timeout: 10000
-- takeScreenshot: 16-language
-- tapOn: "Cancel"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 18-language
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Artifacts"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "Artifacts"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 19-account-artifacts
+- tapOn: "Artifacts"
+# Only the Artifacts screen has the search field; the sheet must have closed.
+- extendedWaitUntil:
+    visible: "Search artifacts.*"
+    timeout: 15000
+- assertNotVisible: ".*Change password.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 20-artifacts
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Haptics"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 21-haptics
+- tapOn:
+    text: "Haptics"
+    index: 1
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 22-haptics-toggled
+- tapOn:
+    text: "Haptics"
+    index: 1

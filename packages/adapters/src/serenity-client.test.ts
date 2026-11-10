@@ -1,33 +1,38 @@
-import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { fileURLToPath } from "node:url";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
   classifySerenityEndpointTrust,
   createSerenityPrivateLanFetch,
+  forgetSerenity,
   MAX_SERENITY_FACT_BYTES,
   normalizeSerenityEndpoint,
   parseSerenityEndpoint,
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 const TOKEN = "serenity_test_token";
 
 describe("serenity endpoint helpers", () => {
-  it("requires an explicit endpoint and does not assume a hosted URL", () => {
+  it("requires an explicit endpoint and does not assume a hosted URL", async () => {
     expect(() => parseSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
     expect(() => parseSerenityEndpoint("   ")).toThrow("Serenity endpoint is required.");
     expect(() => normalizeSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
-    const source = readFileSync(
-      fileURLToPath(new URL("./serenity-client.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(source).not.toContain("serenity.sire.run");
-    expect(source).not.toContain("DEFAULT_ENDPOINT");
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    const resolveHostname = vi.fn(async () => [{ address: "93.184.216.34", family: 4 as const }]);
+    const result = await probeSerenity({ endpoint: "", token: TOKEN }, undefined, {
+      fetch: fetchMock,
+      resolveHostname,
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "Serenity is unreachable: Serenity endpoint is required.",
+    });
+    expect(resolveHostname).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("appends /mcp when missing", () => {
@@ -48,11 +53,11 @@ describe("serenity endpoint helpers", () => {
   });
 
   it("requires deployment-owner trust for loopback, private LAN, and private DNS", () => {
-    expect(serenityEndpointRequiresDeploymentOwner("http://127.0.0.1:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("http://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.internal/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.example.test/mcp")).toBe(
+    expect(serenityEndpointRequiresPrivateEndpoint("http://127.0.0.1:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("http://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.internal/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.example.test/mcp")).toBe(
       false,
     );
   });
@@ -121,6 +126,26 @@ describe("serenity SSRF fetch path", () => {
     expect(fetchMock).toHaveBeenCalled();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/plain-fetch-reached/);
+  });
+
+  it("releases the body of a refused loopback redirect", async () => {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() {
+        cancels += 1;
+      },
+    });
+    const fetchMock = vi.fn(
+      async () => new Response(body, { status: 302, headers: { location: "http://10.9.9.9/" } }),
+    );
+    const result = await probeSerenity(
+      { endpoint: "http://127.0.0.1:8787/mcp", token: TOKEN },
+      undefined,
+      { fetch: fetchMock },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/redirects are not permitted/);
+    expect(cancels).toBe(1);
   });
 
   it("rejects public-looking HTTPS when DNS is private unless prepare marked trust", async () => {
@@ -290,12 +315,17 @@ describe("serenity SSRF fetch path", () => {
   });
 
   it("drives the private-hostname dispatcher with a fetch from the same undici", async () => {
-    // A mismatched fetch throws invalid onRequestStart before the socket opens.
-    // A completed response on the pinned ephemeral port proves the package fetch
-    // accepted the Agent. Omit, builtin, and a captured builtin all pair.
+    // A mismatched fetch throws invalid onRequestStart before the socket opens, so a completed
+    // response proves the package fetch accepted the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
     let hits = 0;
-    const server = createServer((_request, response) => {
+    const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only Serenity calls are counted.
+      if (request.method !== "GET" || request.url !== "/mcp") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       hits += 1;
       response.writeHead(204);
       response.end();
@@ -330,7 +360,91 @@ describe("serenity SSRF fetch path", () => {
       });
     }
   });
+
+  it("releases a large private-hostname rate-limit response before closing its dispatcher", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(429, { "retry-after": "30" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address == null || typeof address === "string") {
+      throw new Error("Missing test server address");
+    }
+    const safeFetch = createSerenityPrivateLanFetch(undefined, async () => [
+      { address: "127.0.0.1", family: 4 as const },
+    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([
+        safeFetch(`http://serenity.example.test:${address.port}/mcp`).then(
+          (response) => response.status,
+        ),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve("still waiting"), 2_000);
+        }),
+      ]);
+      expect(outcome).toBe(429);
+    } finally {
+      clearTimeout(timer);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("refuses a private-hostname redirect without waiting on its body", async () => {
+    // Larger than undici buffers, so an unread body holds the per-request Agent open.
+    const server = createServer((_request, response) => {
+      response.writeHead(302, { location: "http://serenity.example.test/elsewhere" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address == null || typeof address === "string") {
+      throw new Error("Missing test server address");
+    }
+    const safeFetch = createSerenityPrivateLanFetch(undefined, async () => [
+      { address: "127.0.0.1", family: 4 as const },
+    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const outcome = await Promise.race([
+        safeFetch(`http://serenity.example.test:${address.port}/mcp`).then(
+          () => "returned",
+          (error: unknown) => String(error),
+        ),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve("still waiting"), 2_000);
+        }),
+      ]);
+      expect(outcome).toMatch(/redirects are not permitted/);
+    } finally {
+      clearTimeout(timer);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
 });
+
+/** One entry of `facts` in Serenity's recall response (internal/server/memory/recall.go). */
+type SerenityRecallFactRow = {
+  id: number;
+  fact_id: string;
+  fact: string;
+  kind: string;
+  entity_slug: string | null;
+  provenance: string;
+  valid_until: string | null;
+  visibility: string;
+};
 
 type JsonRpcRequest = { id?: number; method: string; params?: { arguments?: unknown } };
 
@@ -381,6 +495,34 @@ describe("serenity verbs", () => {
     expect(server.calls.at(-1)?.method).toBe("DELETE");
   });
 
+  it("asks recall for the most facts without the query, which only drives page search", async () => {
+    const facts: SerenityRecallFactRow[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index,
+      fact_id: `fact-${index}`,
+      fact: `Fact ${index}`,
+      kind: "preference",
+      entity_slug: "bot-1",
+      provenance: "rakazo",
+      valid_until: null,
+      visibility: "world",
+    }));
+    const server = fakeSerenityFetch(() => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ protocol_version: 1, facts, total: facts.length }),
+        },
+      ],
+    }));
+    const result = await recallSerenity(LOOPBACK, {
+      entity: "rakazo-bot/bot-1",
+      network: { fetch: server.fetch },
+    });
+    expect(result.ok && result.value).toHaveLength(100);
+    const call = server.calls.find((entry) => entry.rpc?.method === "tools/call");
+    expect(call?.rpc?.params?.arguments).toEqual({ limit: 100, entity: "rakazo-bot/bot-1" });
+  });
+
   it("rejects facts over the hosted byte limit before connecting", async () => {
     const server = fakeSerenityFetch(() => ({}));
     const result = await rememberSerenity(
@@ -411,10 +553,7 @@ describe("serenity verbs", () => {
         },
       ],
     }));
-    const result = await recallSerenity("units", LOOPBACK, {
-      limit: 5,
-      network: { fetch: server.fetch },
-    });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch: server.fetch } });
     expect(result).toEqual({
       ok: false,
       error:
@@ -422,11 +561,75 @@ describe("serenity verbs", () => {
     });
   });
 
+  it("never surfaces its own token from server errors or results", async () => {
+    const echoing = fakeSerenityFetch(() => ({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ message: `bad token ${TOKEN}; got Bearer ${TOKEN}` }),
+        },
+      ],
+    }));
+    const recalled = await recallSerenity(LOOPBACK, { network: { fetch: echoing.fetch } });
+    expect(recalled.ok).toBe(false);
+    expect(JSON.stringify(recalled)).not.toContain(TOKEN);
+
+    const rejecting = vi.fn(
+      async () => new Response(`unauthorized: Authorization: Bearer ${TOKEN}`, { status: 500 }),
+    );
+    const forgotten = await forgetSerenity("fact-1", LOOPBACK, { network: { fetch: rejecting } });
+    expect(forgotten.ok).toBe(false);
+    expect(JSON.stringify(forgotten)).not.toContain(TOKEN);
+
+    const statusEcho = fakeSerenityFetch(() => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ id: "fact-1", status: "inserted", status_text: `as ${TOKEN}` }),
+        },
+      ],
+    }));
+    const remembered = await rememberSerenity("Use metric units.", "rakazo", LOOPBACK, {
+      network: { fetch: statusEcho.fetch },
+    });
+    expect(remembered.ok).toBe(true);
+    expect(JSON.stringify(remembered)).not.toContain(TOKEN);
+  });
+
+  it.each([
+    ["loopback", "http://127.0.0.1:8787/mcp", undefined, "127.0.0.1"],
+    ["public DNS", "https://serenity.example.test/mcp", "public", "93.184.216.34"],
+    ["private DNS", "https://serenity.internal/mcp", "private", "10.1.2.3"],
+  ] as const)(
+    "cancels a rate-limited response on %s",
+    async (_name, endpoint, endpointTrust, address) => {
+      let cancels = 0;
+      const body = new ReadableStream({
+        cancel() {
+          cancels += 1;
+        },
+      });
+      const fetch = vi.fn(
+        async () => new Response(body, { status: 429, headers: { "retry-after": "30" } }),
+      );
+      const result = await probeSerenity({ endpoint, token: TOKEN, endpointTrust }, undefined, {
+        fetch,
+        resolveHostname: async () => [{ address, family: 4 as const }],
+      });
+      expect(result).toEqual({
+        ok: false,
+        error: "Serenity is unreachable: Serenity rate limit reached; retry after 30s.",
+      });
+      expect(cancels).toBe(1);
+    },
+  );
+
   it("reports gateway rate limits with the retry delay", async () => {
     const fetch = vi.fn(
       async () => new Response("slow down", { status: 429, headers: { "retry-after": "30" } }),
     );
-    const result = await recallSerenity("units", LOOPBACK, { limit: 5, network: { fetch } });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch } });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/rate limit reached; retry after 30s/);
   });
@@ -436,7 +639,7 @@ describe("serenity verbs", () => {
     const fetch = vi.fn(
       async () => new Response("slow down", { status: 429, headers: { "retry-after": date } }),
     );
-    const result = await recallSerenity("units", LOOPBACK, { limit: 5, network: { fetch } });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch } });
     if (!result.ok) expect(result.error).toContain(`retry after ${date}.`);
     expect(result.ok).toBe(false);
   });
@@ -450,10 +653,7 @@ describe("serenity verbs", () => {
       const stalling = vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
         init?.method === "DELETE" ? new Promise<Response>(() => {}) : server.fetch(input, init),
       );
-      const pending = recallSerenity("units", LOOPBACK, {
-        limit: 5,
-        network: { fetch: stalling },
-      });
+      const pending = recallSerenity(LOOPBACK, { network: { fetch: stalling } });
       await vi.advanceTimersByTimeAsync(2_000);
       await expect(pending).resolves.toEqual({ ok: true, value: [] });
     } finally {

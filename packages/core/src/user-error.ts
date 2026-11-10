@@ -1,3 +1,19 @@
+import { MCP_OAUTH_REDIRECT_MISMATCH } from "@rakazo/contracts";
+
+/** Only reviewed, public documentation links belong here; never use URLs from an error body. */
+const ERROR_GUIDES: Readonly<Record<string, string>> = {
+  [MCP_OAUTH_REDIRECT_MISMATCH]:
+    "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+};
+
+/** A stable error code opts into troubleshooting without depending on message wording. */
+export function errorHelpUrl(error: unknown): string | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string" && Object.hasOwn(ERROR_GUIDES, code)
+    ? ERROR_GUIDES[code]
+    : undefined;
+}
+
 /** Copy each client supplies in its own language. */
 export type UserErrorCopy = { fallback: string; offline: string };
 
@@ -26,6 +42,7 @@ const TECHNICAL_MESSAGE = [
   /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/, // bare internal codes
   /\d+ bytes\b/,
   /unexpected token|is not a function|cannot read propert|undefined is not|null is not an object|json parse error/i,
+  /^input validation failed\b/i, // oRPC's generic schema-rejection banner names no field
 ];
 
 /** True when a thrown value means the server could not be reached at all. */
@@ -38,6 +55,25 @@ export function isNetworkFailure(error: unknown): boolean {
     current = current.cause;
   }
   return false;
+}
+
+/** True when the client itself gave up on a request: a timeout or a cancellation. */
+export function isAbandonedRequest(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; typeof current === "object" && current !== null && depth < 4; depth += 1) {
+    const { name } = current as { name?: unknown };
+    if (name === "TimeoutError" || name === "AbortError") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * True when a request never got a response because of the connection (offline, DNS, a dropped
+ * connection) or because the client timed out or cancelled it: the user's network, not a bug.
+ */
+export function isConnectionFailure(error: unknown): boolean {
+  return isNetworkFailure(error) || isAbandonedRequest(error);
 }
 
 /** True for the gateway answers a proxy gives while the server is down or restarting. */
@@ -70,7 +106,7 @@ export function isTechnicalErrorMessage(message: string): boolean {
  * through; transport failures and implementation detail become the caller's copy.
  */
 export function userErrorMessage(error: unknown, copy: UserErrorCopy): string {
-  if (isNetworkFailure(error)) return copy.offline;
+  if (isServerUnreachable(error)) return copy.offline;
   const message = (
     error instanceof Error ? error.message : typeof error === "string" ? error : ""
   ).trim();

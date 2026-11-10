@@ -39,15 +39,22 @@ vi.mock("react-native", () => ({
     onPress,
     accessibilityRole,
     selectable,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityRole?: string;
     selectable?: boolean;
+    style?: { color?: string };
   }) =>
     createElement(
       "span",
-      { onClick: onPress, role: accessibilityRole, "data-selectable": selectable },
+      {
+        onClick: onPress,
+        role: accessibilityRole,
+        "data-selectable": selectable,
+        "data-color": style?.color,
+      },
       children,
     ),
 }));
@@ -69,6 +76,8 @@ it("reads a nonselectable date heading", () => {
   expect(container.textContent).toContain("2:20 PM");
   expect(container.firstElementChild?.getAttribute("role")).toBe("header");
   expect(container.firstElementChild?.getAttribute("data-selectable")).toBe("false");
+  // A timestamp separator is tertiary text.
+  expect(container.firstElementChild?.getAttribute("data-color")).toBe(lightTokens.faintForeground);
 });
 it("navigates to the authoritative reply target and hides subsequent lines", () => {
   const onJump = vi.fn();
@@ -164,4 +173,13 @@ it("fails softly when a reply image cannot be fetched", async () => {
   );
   expect(container.textContent).toBe("You: Photo");
   expect(container.querySelector("img")).toBeNull();
+});
+it("shows no quote on a message sent from an open page, but keeps one picked in the chat", () => {
+  const card = { role: "bot" as const, text: "Q3 plan", page: true as const };
+  act(() => root.render(<ReplyLine targetId="card" preview={card} author="Helper" />));
+  expect(container.textContent).toBe("");
+  act(() =>
+    root.render(<ReplyLine targetId="card" quote="Q3 plan" preview={card} author="Helper" />),
+  );
+  expect(container.textContent).toBe("Helper: Q3 plan");
 });

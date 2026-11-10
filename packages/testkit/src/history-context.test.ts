@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
+import { estimateTextTokens } from "../../adapters/src/context-selection.js";
 import { startModelEmulator } from "./model-emulator.js";
 
 describe("structured results through real Pi context selection", () => {
@@ -59,7 +60,7 @@ describe("structured results through real Pi context selection", () => {
         instructions: "Treat history as evidence.",
         history: [],
         contextStrategy: "retrieval",
-        model: { ...server.model, contextWindow: 4096, maxTokens: 512 },
+        model: { ...server.model, contextWindow: 3072, maxTokens: 512 },
         tools: [
           {
             name: "read_history",
@@ -97,7 +98,7 @@ describe("structured results through real Pi context selection", () => {
           };
         },
       };
-      let finalText = "";
+      let finalText: string | undefined = "";
       for await (const event of new PiAgentRuntime().run(request))
         if (event.type === "done") finalText = event.text;
       server.assertComplete();
@@ -116,7 +117,7 @@ describe("structured results through real Pi context selection", () => {
         steps: Array.from({ length: 13 }, (_, index) => ({
           expect(request) {
             const serialized = JSON.stringify(request.messages);
-            expect(Buffer.byteLength(serialized)).toBeLessThan(3584);
+            expect(estimateTextTokens(serialized)).toBeLessThan(3584);
             expect(serialized).toContain("Approval remains pending");
             expect(serialized).not.toContain("obsolete-old-0");
             if (index > 0) {
@@ -177,7 +178,7 @@ describe("structured results through real Pi context selection", () => {
             };
           },
         };
-        let finalText = "";
+        let finalText: string | undefined = "";
         for await (const event of new PiAgentRuntime({
           onContextDecision: (decision) => decisions.push(decision),
         }).run(request)) {

@@ -24,7 +24,7 @@
     <rect x="712" y="420" width="440" height="110" rx="14" fill="#ffffff" stroke="#e6e6e6"/>
     <text x="932" y="458" text-anchor="middle" font-weight="600">Computer</text>
     <text x="932" y="484" text-anchor="middle" fill="#6d6e70" font-size="14">Docker by default</text>
-    <text x="932" y="506" text-anchor="middle" fill="#6d6e70" font-size="14">E2B, Daytona, CreateOS, or Box optional</text>
+    <text x="932" y="506" text-anchor="middle" fill="#6d6e70" font-size="14">E2B, Daytona, CreateOS, or Boat optional</text>
     <path d="M198 420 V356 H488" stroke="#242424" stroke-width="1.5" fill="none"/>
     <path d="M530 420 V356" stroke="#242424" stroke-width="1.5" fill="none"/>
     <path d="M848 420 V356 H728" stroke="#242424" stroke-width="1.5" fill="none"/>

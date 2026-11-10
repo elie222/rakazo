@@ -9,12 +9,15 @@ import {
   sessionMiddleware,
 } from "better-auth/api";
 import { bearer } from "better-auth/plugins";
+import type { EmailLocaleOf } from "./email.js";
+import { accountDeletionEmail } from "./email.js";
 import { isCurrentOidcAccount } from "./oidc.js";
 
 export const oidcProofKey = (sessionId: string) => `oidc-reauth-${sessionId}`;
 
 export function accountSecurity(
   email: TransactionalEmailProvider | undefined,
+  emailLocaleOf: EmailLocaleOf,
   ssoName?: string,
   ssoIssuer?: string,
   passwordChangeEnabled = true,
@@ -41,7 +44,13 @@ export function accountSecurity(
                 proof.value === ctx.context.session.user.id &&
                 proof.expiresAt.getTime() > Date.now(),
             ),
-            ssoLinked: accounts.some((account) => isCurrentOidcAccount(account, ssoIssuer)),
+            ssoLinked: (
+              await Promise.all(
+                accounts.map((account) =>
+                  isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
+                ),
+              )
+            ).some(Boolean),
             hasPassword: Boolean(credential?.password),
             passwordChangeEnabled,
             emailDeletion: Boolean(email),
@@ -69,12 +78,8 @@ export function accountSecurity(
             value: user.id,
             expiresAt: new Date(Date.now() + 10 * 60_000),
           });
-          await email.send({
-            to: user.email,
-            subject: "Confirm Rakazo account deletion",
-            text: `Enter this code in Rakazo to delete your account:\n\n${token}\n\nThis code expires in ten minutes. If you did not request deletion, ignore this email.`,
-            html: `<p>Enter this code in Rakazo to delete your account:</p><p>${token}</p><p>This code expires in ten minutes. If you did not request deletion, ignore this email.</p>`,
-          });
+          const locale = await emailLocaleOf({ id: user.id }, ctx.headers);
+          await email.send(await accountDeletionEmail(user.email, token, locale));
           return ctx.json({ success: true });
         },
       ),
@@ -123,9 +128,15 @@ export function accountSecurity(
   };
 }
 
+/**
+ * Session rows hold the raw token, so a raw bearer could be replayed from a database
+ * copy. A bearer must carry the signature the session cookie has.
+ */
+export const signedBearer = bearer({ requireSignature: true });
+
 /** Hook results are applied after all before hooks, so native bearer conversion is explicit here. */
 export async function sessionForAuthHook(ctx: Parameters<typeof getSessionFromCtx>[0]) {
-  const converted = await bearer().hooks.before[0]!.handler({ ...ctx, returnHeaders: false });
+  const converted = await signedBearer.hooks.before[0]!.handler({ ...ctx, returnHeaders: false });
   return getSessionFromCtx(
     { ...ctx, headers: converted?.context.headers ?? ctx.headers },
     { disableCookieCache: true },

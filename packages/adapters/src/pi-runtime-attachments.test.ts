@@ -37,10 +37,6 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
-vi.mock("./pi-current-models.js", () => ({
-  supplementPiModels: (models: unknown) => models,
-}));
-
 vi.mock("./pi-local-provider.js", () => ({
   registerLocalProvider: (models: unknown) => models,
 }));
@@ -155,8 +151,13 @@ describe("Pi runtime attachments", () => {
         rakazoCreatedAt: undefined,
       },
       {
-        role: "user",
-        content: "Assistant: Got it.",
+        role: "assistant",
+        content: [{ type: "text", text: "Got it." }],
+        api: "rakazo-history",
+        provider: "rakazo-history",
+        model: "history",
+        usage: expect.objectContaining({ totalTokens: 0 }),
+        stopReason: "stop",
         timestamp: expect.any(Number),
         rakazoHistory: true,
         rakazoMessageId: "message-2",

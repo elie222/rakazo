@@ -38,6 +38,31 @@ describe("manual Anthropic OAuth", () => {
     });
   });
 
+  it("sends clients without a loopback listener to Anthropic's code page", async () => {
+    const requests: RequestInit[] = [];
+    let authorizeUrl = "";
+    const login = createManualAnthropicOAuthLogin({
+      fetch: (async (_input: string | URL | Request, init?: RequestInit) => {
+        requests.push(init ?? {});
+        return Response.json({ access_token: "a", refresh_token: "r", expires_in: 3600 });
+      }) as typeof fetch,
+      createVerifier: () => "verifier",
+      codePage: true,
+    });
+    const interaction = interactionFor("code#verifier");
+    const notify = interaction.notify;
+    interaction.notify = (event) => {
+      if (event.type === "auth_url") authorizeUrl = event.url;
+      notify(event);
+    };
+
+    await login(interaction);
+
+    const redirect = "https://platform.claude.com/oauth/code/callback";
+    expect(new URL(authorizeUrl).searchParams.get("redirect_uri")).toBe(redirect);
+    expect(JSON.parse(String(requests[0]?.body))).toMatchObject({ redirect_uri: redirect });
+  });
+
   it("rejects a pasted callback with the wrong OAuth state before exchange", async () => {
     let requested = false;
     const login = createManualAnthropicOAuthLogin({

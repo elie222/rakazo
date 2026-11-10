@@ -1,0 +1,176 @@
+---
+import { PLUGIN_SUBMISSIONS_URL } from "../site";
+
+/** A "url" field accepts a bare domain; the server adds https:// and checks it. */
+export type SubmissionField = {
+  name: string;
+  label: string;
+  placeholder?: string;
+  type: "email" | "text" | "url" | "textarea";
+  required?: boolean;
+  value?: string;
+};
+
+type Props = {
+  fields: readonly SubmissionField[];
+  /** Sent with the form but not shown, like the page a claim is for. */
+  hidden?: Record<string, string>;
+  /** A box the submitter must tick. */
+  confirm?: { name: string; label: string };
+  submitLabel: string;
+  doneMessage?: string;
+};
+
+const {
+  fields,
+  hidden = {},
+  confirm,
+  submitLabel,
+  doneMessage = "Thanks. We'll email you when it's reviewed.",
+} = Astro.props;
+---
+
+<form class="plugin-form" action={PLUGIN_SUBMISSIONS_URL} data-plugin-form novalidate>
+  {Object.entries(hidden).map(([name, value]) => <input type="hidden" name={name} value={value} />)}
+  {
+    fields.map((field) => (
+      <label>
+        <span>{field.label}</span>
+        {field.type === "textarea" ? (
+          <textarea
+            name={field.name}
+            rows="3"
+            placeholder={field.placeholder}
+            required={field.required}
+            set:text={field.value ?? ""}
+          />
+        ) : (
+          <input
+            name={field.name}
+            type={field.type === "url" ? "text" : field.type}
+            inputmode={field.type === "url" ? "url" : undefined}
+            placeholder={field.placeholder}
+            required={field.required}
+            value={field.value}
+          />
+        )}
+      </label>
+    ))
+  }
+  {
+    confirm && (
+      <label class="plugin-form__check">
+        <input name={confirm.name} type="checkbox" required />
+        <span>{confirm.label}</span>
+      </label>
+    )
+  }
+  <p class="plugin-form__error" role="alert" data-plugin-error hidden></p>
+  <button class="button button--primary" type="submit">{submitLabel}</button>
+</form>
+<p class="plugin-form__done" role="status" data-plugin-done hidden>{doneMessage}</p>
+
+<script>
+  type Issue = { field: string; message: string };
+
+  const form = document.querySelector<HTMLFormElement>("[data-plugin-form]");
+  const error = document.querySelector<HTMLElement>("[data-plugin-error]");
+  const done = document.querySelector<HTMLElement>("[data-plugin-done]");
+
+  const control = (name: string) =>
+    form?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`) ?? null;
+
+  function clearIssues() {
+    if (!form || !error) return;
+    for (const message of form.querySelectorAll("[data-field-error]")) message.remove();
+    for (const field of form.querySelectorAll("[aria-invalid]")) {
+      field.removeAttribute("aria-invalid");
+      field.removeAttribute("aria-describedby");
+    }
+    error.hidden = true;
+  }
+
+  // Each message sits under its field, so it stays readable after the page scrolls to it.
+  function showIssues(issues: Issue[]) {
+    if (!error) return;
+    const general: string[] = [];
+    let first: HTMLElement | null = null;
+    for (const issue of issues) {
+      const field = control(issue.field);
+      const label = field?.closest("label");
+      if (!field || !label) {
+        general.push(issue.message);
+        continue;
+      }
+      if (field.hasAttribute("aria-invalid")) continue;
+      const message = document.createElement("p");
+      message.id = `${issue.field}-error`;
+      message.className = "plugin-form__error plugin-form__error--field";
+      message.dataset.fieldError = "";
+      message.textContent = issue.message;
+      label.after(message);
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("aria-describedby", message.id);
+      first ??= field;
+    }
+    if (general.length) {
+      error.textContent = general.join(". ");
+      error.hidden = false;
+    }
+    first?.focus();
+  }
+
+  form?.addEventListener("input", (event) => {
+    const field = event.target as HTMLElement;
+    if (!field.hasAttribute("aria-invalid")) return;
+    document.getElementById(field.getAttribute("aria-describedby") ?? "")?.remove();
+    field.removeAttribute("aria-invalid");
+    field.removeAttribute("aria-describedby");
+  });
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!error || !done) return;
+    clearIssues();
+    const fields = [...form.elements].filter(
+      (field): field is HTMLInputElement | HTMLTextAreaElement =>
+        field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement,
+    );
+    const invalid = fields.filter((field) => !field.validity.valid);
+    if (invalid.length) {
+      showIssues(invalid.map((field) => ({ field: field.name, message: field.validationMessage })));
+      return;
+    }
+    // Blank optional fields are left out, and a ticked box is sent as true.
+    const body = Object.fromEntries(
+      fields
+        .filter((field) => (field.type === "checkbox" ? (field as HTMLInputElement).checked : field.value))
+        .map((field) => [field.name, field.type === "checkbox" ? true : field.value]),
+    );
+    const button = form.querySelector("button");
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        form.hidden = true;
+        done.hidden = false;
+        return;
+      }
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        issues?: Issue[];
+      };
+      showIssues(
+        result.issues ?? [{ field: "", message: result.error ?? "Could not submit. Try again." }],
+      );
+    } catch {
+      showIssues([{ field: "", message: "Could not submit. Try again." }]);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+</script>

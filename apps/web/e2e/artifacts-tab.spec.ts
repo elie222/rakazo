@@ -11,29 +11,62 @@ test("opens Artifacts from the account menu and lists created files", async ({
   await page.waitForURL(/\/app\/(?!artifacts(?:\/|$))[^/]+$/);
   const chiefId = activeBotId(page);
 
-  await expect(page.getByTestId("app-rail")).toHaveCount(0);
   const sidebar = page.getByTestId("bots-sidebar");
   await expect(sidebar).toBeVisible();
   expect((await sidebar.boundingBox())?.x).toBe(0);
-  await expect(sidebar.getByRole("link", { name: "Artifacts" })).toHaveCount(0);
-  await expect(sidebar.getByRole("button", { name: "Artifacts", exact: true })).toHaveCount(0);
-  await expect(sidebar.getByRole("button", { name: "Integrations" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Connect apps" })).toBeVisible();
   await page.getByTestId("user-menu-trigger").click();
   const artifactsItem = page.getByRole("button", { name: "Artifacts", exact: true });
   const settingsItem = page.getByRole("button", { name: "Settings", exact: true });
   await expect(artifactsItem).toBeVisible();
   await expect(settingsItem).toBeVisible();
-  expect((await artifactsItem.boundingBox())?.y).toBeLessThan(
-    (await settingsItem.boundingBox())?.y ?? 0,
+  expect((await settingsItem.boundingBox())?.y).toBeLessThan(
+    (await artifactsItem.boundingBox())?.y ?? 0,
   );
   await captureScreenshot(page, testInfo, "account-menu-artifacts");
 
   await artifactsItem.click();
   await expect(page).toHaveURL(/\/app\/artifacts$/);
   await expect(page.getByRole("heading", { name: "Artifacts", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
-  await expect(page.getByText("No artifacts found.")).toBeVisible();
+  await expect(page.getByText("No artifacts yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Search" })).toBeHidden();
   await captureScreenshot(page, testInfo, "artifacts-empty");
+
+  await rpc(page, "artifacts/create", {
+    botId: chiefId,
+    name: "notes/artifacts-tab.md",
+    mimeType: "text/markdown",
+    contentBase64: Buffer.from("# Artifacts tab").toString("base64"),
+  });
+  await page.goto(`/app/${chiefId}`);
+  await page
+    .getByPlaceholder(/Message/)
+    .fill("write path reports/weekly.md and attach it to the thread says # Weekly report");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Preview weekly.md" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.goto("/app/artifacts");
+  await expect(page.getByRole("heading", { name: "Artifacts", exact: true })).toBeVisible();
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
+  await expect(page.getByRole("link", { name: /weekly\.md/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "artifacts-list");
+
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("textbox", { name: "Search artifacts" }).fill("nothing-matches-this");
+  await expect(page.getByText("No matching artifacts")).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
+
+  const source = page.getByRole("combobox", { name: "Filter by who made it" });
+  await source.click();
+  await page.getByRole("option", { name: "Made by bots" }).click();
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeHidden();
+  await expect(page.getByRole("link", { name: /weekly\.md/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "artifacts-made-by-bots");
+  await source.click();
+  await page.getByRole("option", { name: "All files" }).click();
+  await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
 
   await page.setViewportSize({ width: 360, height: 700 });
   const narrowHeading = page.getByRole("heading", { name: "Artifacts", exact: true });
@@ -49,35 +82,19 @@ test("opens Artifacts from the account menu and lists created files", async ({
   expect((cardViewBox?.x ?? 0) + (cardViewBox?.width ?? 0)).toBeLessThanOrEqual(360);
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  await rpc(page, "artifacts/create", {
-    botId: chiefId,
-    name: "notes/artifacts-tab.md",
-    mimeType: "text/markdown",
-    contentBase64: Buffer.from("# Artifacts tab").toString("base64"),
-  });
-  await page.reload();
-  await expect(page.getByRole("heading", { name: "Artifacts", exact: true })).toBeVisible();
-  await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
-  await captureScreenshot(page, testInfo, "artifacts-list");
-
   await page.getByRole("link", { name: /notes\/artifacts-tab\.md/ }).click();
   await expect(page).toHaveURL(/\/app\/artifacts\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "notes/artifacts-tab.md" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Artifacts tab" })).toBeVisible();
   await captureScreenshot(page, testInfo, "artifacts-preview");
 
-  await page.getByRole("link", { name: "Bots" }).click();
+  await page.getByRole("link", { name: "Back" }).click();
   await expect(page).toHaveURL(/\/app\/(?!artifacts(?:\/|$))[^/]+$/);
   await expect(page.getByTestId("transcript")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("app-rail")).toHaveCount(0);
   await page.getByRole("button", { name: "Open navigation" }).click();
   const mobileSidebar = page.getByTestId("bots-sidebar");
-  await expect(mobileSidebar.getByRole("link", { name: "Artifacts" })).toHaveCount(0);
-  await expect(mobileSidebar.getByRole("button", { name: "Artifacts", exact: true })).toHaveCount(
-    0,
-  );
   await mobileSidebar.getByTestId("user-menu-trigger").click();
   const mobileArtifacts = page.getByRole("button", { name: "Artifacts", exact: true });
   await expect(mobileArtifacts).toBeVisible();

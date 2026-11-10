@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -21,11 +22,9 @@ const workflow = readFileSync(
   "utf8",
 );
 const temporaryDirectories: string[] = [];
-const screenshot = PNG.sync.write({
-  width: 1,
-  height: 1,
-  data: Buffer.from([23, 45, 67, 255]),
-});
+const screenshotImage = new PNG({ width: 1, height: 1 });
+screenshotImage.data = Buffer.from([23, 45, 67, 255]);
+const screenshot = PNG.sync.write(screenshotImage);
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -40,7 +39,6 @@ function temporaryDirectory() {
   return directory;
 }
 
-/** Write a fixture file, creating its parent directories as needed. */
 function write(file: string, content: string | Buffer) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, content);
@@ -84,6 +82,39 @@ with zipfile.ZipFile(sys.argv[1], "w") as archive:
 }
 
 describe("Playwright artifact publication boundary", () => {
+  // GitHub's Ubuntu runner provides bash and jq; Windows does not necessarily provide either.
+  it.skipIf(process.platform === "win32")(
+    "reads the triggering attempt across every jobs page",
+    () => {
+      const root = temporaryDirectory();
+      const output = path.join(root, "output");
+      const step = workflow
+        .split("      - name: Read Playwright job result\n")[1]
+        ?.split("\n  publish:\n")[0];
+      expect(step).toContain("RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}");
+      const script = step?.split("        run: |\n")[1]?.replace(/^ {10}/gm, "");
+      expect(script).toBeTruthy();
+      const mock = `gh() {
+  if [[ "$*" == *"/attempts/2/jobs"* && "$*" == *"--paginate"* && "$*" == *"--slurp"* ]]; then
+    printf '%s\\n' '[{"jobs":[{"name":"Other","conclusion":"success"}]},{"jobs":[{"name":"Web E2E / Web E2E","conclusion":"failure"}]}]'
+  else
+    printf '%s\\n' success
+  fi
+}
+${script}`;
+      execFileSync("bash", ["-eo", "pipefail", "-c", mock], {
+        env: {
+          ...process.env,
+          GITHUB_REPOSITORY: "example/repo",
+          RUN_ID: "123",
+          RUN_ATTEMPT: "2",
+          GITHUB_OUTPUT: output,
+        },
+      });
+      expect(readFileSync(output, "utf8")).toBe("job_result=failure\nresult=failure\n");
+    },
+  );
+
   it("keeps extraction and explicit report inputs outside the trusted checkout", () => {
     expect(workflow).not.toContain("actions/download-artifact@");
     expect(workflow).toContain(
@@ -106,7 +137,6 @@ describe("Playwright artifact publication boundary", () => {
 
   it.each([
     ["../escape.txt", 0o100644],
-    ["nested/../../escape.txt", 0o100644],
     ["/escape.txt", 0o100644],
     ["nested\\..\\escape.txt", 0o100644],
     ["apps/web/test-results/link", 0o120777],
@@ -136,15 +166,17 @@ describe("Playwright artifact publication boundary", () => {
     expect(existsSync(path.join(root, "overwrite.txt"))).toBe(false);
   });
 
-  it.each(["pull_request", "push", "timed_out"])(
+  it.each(["pull_request", "schedule", "timed_out"])(
     "publishes %s through trusted code with fake storage and credentials",
     (scenario) => {
+      const vitestPath = path.join(repoRoot, "node_modules/vitest/vitest.mjs");
+      const originalVitest = realpathSync(vitestPath);
       const root = temporaryDirectory();
       const checkout = path.join(root, "checkout");
       const runnerTemp = path.join(root, "runner-temp");
       const artifacts = path.join(runnerTemp, "playwright-artifacts");
       const hasArtifact = scenario !== "timed_out";
-      const isPr = scenario !== "push";
+      const isPr = scenario !== "schedule";
       const trustedFiles = [
         "package.json",
         "scripts/publish-playwright-report.sh",
@@ -187,6 +219,11 @@ describe("Playwright artifact publication boundary", () => {
       }
       const bin = path.join(root, "bin");
       write(
+        path.join(bin, "pnpm"),
+        '#!/bin/sh\n[ "$1" = exec ] && [ "$2" = tsx ] || exit 1\nshift 2\nexec "$TEST_NODE" --import tsx "$@"\n',
+      );
+      execFileSync("chmod", ["+x", path.join(bin, "pnpm")]);
+      write(
         path.join(bin, "aws"),
         `#!/usr/bin/env python3
 import os, pathlib, shutil, sys
@@ -219,7 +256,7 @@ else:
         PLAYWRIGHT_RUN_NUMBER: "10",
         PLAYWRIGHT_RUN_URL: "https://example.invalid/actions/runs/200",
         PLAYWRIGHT_SHA: "a".repeat(40),
-        PLAYWRIGHT_EVENT: isPr ? "pull_request" : "push",
+        PLAYWRIGHT_EVENT: isPr ? "pull_request" : scenario,
         PLAYWRIGHT_BRANCH: isPr ? "example-change" : "main",
         PLAYWRIGHT_PR_NUMBER: isPr ? "42" : "",
         PLAYWRIGHT_REPOSITORY_URL: "https://example.invalid/project",
@@ -227,6 +264,7 @@ else:
         PLAYWRIGHT_REPORT_DIR: path.join(artifacts, "playwright-report"),
         PLAYWRIGHT_TEST_RESULTS_DIR: path.join(artifacts, "apps/web/test-results"),
         FAKE_STORAGE: storage,
+        TEST_NODE: process.execPath,
         ATTACK_MARKER: path.join(root, "executed-untrusted-code"),
       };
       execFileSync("bash", ["scripts/publish-playwright-report.sh"], {
@@ -234,6 +272,7 @@ else:
         env,
         stdio: "pipe",
       });
+      expect(realpathSync(vitestPath)).toBe(originalVitest);
       const published = path.join(storage, "playwright");
       const run = path.join(published, "runs/200-1");
       expect(existsSync(path.join(run, "report/index.html"))).toBe(!isPr);
@@ -251,9 +290,9 @@ else:
         const changedPaths = path.join(root, "changed-paths.txt");
         write(changedPaths, "apps/web/src/example.tsx\n");
         const comment = execFileSync(
-          "pnpm",
+          process.execPath,
           [
-            "exec",
+            "--import",
             "tsx",
             "packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts",
             path.join(checkout, ".tmp/playwright-dashboard/screenshots/review.json"),

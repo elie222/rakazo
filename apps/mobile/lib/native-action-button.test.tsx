@@ -2,19 +2,28 @@
 
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
+import { act, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NativeActionButton as FallbackButton } from "../components/native-action-button";
 import { NativeActionButton as IosButton } from "../components/native-action-button.ios";
 
 const platform = vi.hoisted(() => ({ OS: "ios", Version: 26 }));
+const pressable = vi.hoisted(() => vi.fn());
 const swiftButton = vi.hoisted(() => vi.fn());
 const swiftLabel = vi.hoisted(() => vi.fn());
 const appearance = vi.hoisted(() => ({ value: "light" as "light" | "dark" }));
 const swiftHost = vi.hoisted(() => vi.fn());
 const swiftText = vi.hoisted(() => vi.fn());
+const nativeView = vi.hoisted(() => vi.fn());
+const hapticImpact = vi.hoisted(() => vi.fn());
+
+vi.mock("./haptics", () => ({ hapticImpact }));
 
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
+  StyleSheet: { flatten: (style: unknown) => style },
   Platform: platform,
   ActivityIndicator: () => null,
   Pressable: ({
@@ -22,35 +31,53 @@ vi.mock("react-native", () => ({
     style,
     accessibilityState,
     accessibilityLabel,
+    android_ripple,
+    onPress,
   }: {
     children: ReactNode;
+    android_ripple?: { color: string; foreground: boolean };
     accessibilityState?: { selected?: boolean; disabled?: boolean };
     accessibilityLabel?: string;
+    onPress?: () => void;
     style: (state: { pressed: boolean }) => CSSProperties[];
-  }) => (
-    <button
-      type="button"
-      aria-label={accessibilityLabel}
-      aria-pressed={accessibilityState?.selected}
-      disabled={accessibilityState?.disabled}
-      style={Object.assign({}, ...style({ pressed: false }))}
-    >
-      {children}
-    </button>
-  ),
+  }) => {
+    pressable({ android_ripple, onPress });
+    return (
+      <button
+        type="button"
+        aria-label={accessibilityLabel}
+        aria-pressed={accessibilityState?.selected}
+        disabled={accessibilityState?.disabled}
+        onClick={onPress}
+        style={Object.assign({}, ...style({ pressed: false }))}
+      >
+        {children}
+      </button>
+    );
+  },
   Text: ({ children, style }: { children: ReactNode; style: CSSProperties }) => (
     <span style={style}>{children}</span>
   ),
+  View: (props: { children: ReactNode }) => {
+    nativeView(props);
+    return <div>{props.children}</div>;
+  },
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => <i /> }));
 vi.mock("./native", () => ({
   useMobileTokens: () => tokensForAppearance(appearance.value),
   useResolvedAppearance: () => appearance.value,
-  native: { label: tokensForAppearance("light").foreground },
+  native: {
+    get label() {
+      return tokensForAppearance(appearance.value).foreground;
+    },
+  },
 }));
 vi.mock("@expo/ui/swift-ui", () => ({
-  Host: (props: { children: ReactNode }) => {
-    swiftHost(props);
+  Host: (props: { children: ReactNode; matchContents?: unknown }) => {
+    // Like the native host, these measurement axes are fixed for a mounted instance.
+    const [mountedMatchContents] = useState(() => props.matchContents);
+    swiftHost({ ...props, mountedMatchContents });
     return <div>{props.children}</div>;
   },
   Button: (props: { children?: ReactNode }) => {
@@ -69,33 +96,137 @@ vi.mock("@expo/ui/swift-ui", () => ({
 }));
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
-  return Object.fromEntries(
-    [
-      "accessibilityLabel",
-      "accessibilityAddTraits",
-      "accessibilityRemoveTraits",
-      "labelStyle",
-      "buttonStyle",
-      "controlSize",
-      "disabled",
-      "font",
-      "foregroundStyle",
-      "frame",
-      "progressViewStyle",
-      "tint",
-    ].map((name) => [name, modifier(name)]),
-  );
+  return {
+    ...Object.fromEntries(
+      [
+        "accessibilityLabel",
+        "accessibilityHidden",
+        "accessibilityAddTraits",
+        "accessibilityRemoveTraits",
+        "labelStyle",
+        "buttonStyle",
+        "controlSize",
+        "disabled",
+        "font",
+        "foregroundStyle",
+        "frame",
+        "padding",
+        "progressViewStyle",
+        "tint",
+        "background",
+        "fixedSize",
+        "strokeBorder",
+      ].map((name) => [name, modifier(name)]),
+    ),
+    shapes: { roundedRectangle: modifier("roundedRectangle") },
+  };
 });
 
 beforeEach(() => {
+  platform.OS = "ios";
   appearance.value = "light";
   swiftButton.mockClear();
   swiftLabel.mockClear();
   swiftHost.mockClear();
   swiftText.mockClear();
+  nativeView.mockClear();
+  pressable.mockClear();
+  hapticImpact.mockClear();
+});
+
+describe("action haptics", () => {
+  it.each([
+    ["fallback", FallbackButton, pressable],
+    ["iOS", IosButton, swiftButton],
+  ] as const)("emits one impact when an enabled %s action is pressed", (_name, Button, capture) => {
+    const onPress = vi.fn();
+    renderToStaticMarkup(<Button label="Create" onPress={onPress} />);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    capture.mock.lastCall?.[0].onPress();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["fallback", FallbackButton, pressable],
+    ["iOS", IosButton, swiftButton],
+  ] as const)("keeps disabled and busy %s actions silent", (_name, Button, capture) => {
+    const onPress = vi.fn();
+    for (const state of [{ disabled: true }, { busy: true }]) {
+      renderToStaticMarkup(<Button label="Create" onPress={onPress} {...state} />);
+      expect(capture.mock.lastCall?.[0].onPress).toBeUndefined();
+    }
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it("uses one impact for iOS accessibility activation and preserves custom menu actions", () => {
+    const onPress = vi.fn();
+    const onAccessibilityAction = vi.fn();
+    renderToStaticMarkup(
+      <IosButton
+        label="Approve"
+        onPress={onPress}
+        accessibilityActions={[{ name: "menu", label: "More" }]}
+        onAccessibilityAction={onAccessibilityAction}
+      />,
+    );
+    const props = nativeView.mock.lastCall?.[0];
+    expect(props.onAccessibilityAction).toBe(onAccessibilityAction);
+    expect(swiftButton.mock.lastCall?.[0].modifiers).toContainEqual({
+      name: "accessibilityHidden",
+      value: true,
+    });
+    props.onAccessibilityTap();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onAccessibilityAction).not.toHaveBeenCalled();
+  });
+
+  it("keeps disabled and busy iOS accessibility activation silent", () => {
+    const onPress = vi.fn();
+    for (const state of [{ disabled: true }, { busy: true }]) {
+      renderToStaticMarkup(
+        <IosButton
+          label="Approve"
+          onPress={onPress}
+          accessibilityActions={[{ name: "menu", label: "More" }]}
+          {...state}
+        />,
+      );
+      expect(nativeView.mock.lastCall?.[0].onAccessibilityTap).toBeUndefined();
+    }
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(onPress).not.toHaveBeenCalled();
+  });
 });
 
 describe("iOS action styling", () => {
+  it("updates native measurement axes when recovery buttons stack and return to a row", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const root = createRoot(document.createElement("div"));
+    try {
+      for (const fill of [false, true, false]) {
+        act(() =>
+          root.render(
+            <IosButton
+              label="Set your own key"
+              fill={fill}
+              style={fill ? { width: 280 } : undefined}
+              onPress={() => {}}
+            />,
+          ),
+        );
+        expect(swiftHost.mock.lastCall?.[0].mountedMatchContents).toEqual(
+          fill ? { vertical: true } : true,
+        );
+      }
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([18, 26])("keeps quiet actions small and muted on iOS %s", (version) => {
     platform.Version = version;
     renderToStaticMarkup(<IosButton label="Continue" prominence="quiet" onPress={() => {}} />);
@@ -150,6 +281,27 @@ describe("iOS action styling", () => {
       );
       expect(swiftButton.mock.lastCall?.[0].label).toBe("Done");
       expect(swiftText).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    "fills destructive actions with the solid red in dark mode (fill %s)",
+    (fill) => {
+      // The text red is pale in dark mode, so the white label lost contrast on it.
+      appearance.value = "dark";
+      renderToStaticMarkup(
+        <IosButton label="Delete group" prominence="destructive" fill={fill} onPress={() => {}} />,
+      );
+      const { modifiers, role } = swiftButton.mock.lastCall![0];
+      expect(role).toBe("destructive");
+      expect(modifiers).toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructiveFill,
+      });
+      expect(modifiers).not.toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructive,
+      });
     },
   );
 
@@ -312,5 +464,80 @@ describe("compact native actions", () => {
     expect(host.querySelector("button")?.getAttribute("aria-label")).toBe("Keyboard");
     expect(host.querySelector("button")?.style.backgroundColor).toBe("transparent");
     expect(host.querySelector("i")).not.toBeNull();
+  });
+});
+
+describe("Android action feedback", () => {
+  it.each(["light", "dark"] as const)(
+    "clips custom corners and uses label alpha in %s mode",
+    (scheme) => {
+      platform.OS = "android";
+      appearance.value = scheme;
+      for (const prominence of ["primary", "quiet", "plain"] as const) {
+        const host = document.createElement("div");
+        host.innerHTML = renderToStaticMarkup(
+          <FallbackButton
+            label="Create"
+            prominence={prominence}
+            style={{ borderRadius: 24, overflow: "visible" }}
+            onPress={() => {}}
+          />,
+        );
+        expect(host.querySelector("button")!.style.borderRadius).toBe("24px");
+        expect(host.querySelector("button")!.style.overflow).toBe("hidden");
+        const label = host.querySelector("span")!;
+        const channels = label.style.color.match(/\d+/g)!.slice(0, 3).join(", ");
+        expect(pressable.mock.lastCall?.[0].android_ripple).toEqual({
+          color: `rgba(${channels}, 0.2)`,
+          foreground: true,
+        });
+      }
+    },
+  );
+});
+
+describe("destructive text actions", () => {
+  it.each(["light", "dark"] as const)("uses red text and a 44pt target in %s mode", (scheme) => {
+    appearance.value = scheme;
+    renderToStaticMarkup(
+      <IosButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    expect(swiftButton.mock.lastCall?.[0]).toMatchObject({
+      role: "destructive",
+      modifiers: expect.arrayContaining([
+        { name: "buttonStyle", value: "plain" },
+        { name: "accessibilityLabel", value: "Disconnect" },
+      ]),
+    });
+    expect(swiftText.mock.lastCall?.[0].modifiers).toEqual(
+      expect.arrayContaining([
+        { name: "foregroundStyle", value: tokensForAppearance(scheme).destructive },
+        { name: "frame", value: { minHeight: 44 } },
+      ]),
+    );
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      <FallbackButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    const button = host.querySelector("button")!;
+    expect(button.getAttribute("aria-label")).toBe("Disconnect");
+    expect(button.style.minHeight).toBe("44px");
+    expect(button.style.backgroundColor).toBe("transparent");
+    expect(button.style.borderWidth).toBe("0px");
+    const expected = document.createElement("span");
+    expected.style.color = tokensForAppearance(scheme).destructive;
+    expect(host.querySelector("span")!.style.color).toBe(expected.style.color);
   });
 });

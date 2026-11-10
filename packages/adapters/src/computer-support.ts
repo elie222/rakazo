@@ -2,6 +2,17 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
+import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
+
+/** The boat image ships a 1080p screen; every other sandbox uses the core default. */
+const BOAT_COMPUTER_SCREEN = { width: 1920, height: 1080 } as const;
+
+export function computerScreenSize(kind: string | null | undefined): {
+  width: number;
+  height: number;
+} {
+  return kind === "boat" ? BOAT_COMPUTER_SCREEN : DEFAULT_COMPUTER_SCREEN;
+}
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -76,15 +87,43 @@ export function workspacePath(root: string, relative: string): string {
   return normalized ? path.posix.join(root, normalized) : root;
 }
 
+/** The workspace path bots see on every computer. */
+const VIRTUAL_HOME = "/home/rakazo";
+
+/**
+ * The directory a command runs in. Empty, ".", "/", the workspace root and any home alias
+ * mean the root; absolute paths under one of them keep their tail; anything else is taken
+ * relative to the root. "." and ".." segments throw, so a cwd cannot leave the workspace.
+ */
+export function workspaceCwd(
+  root: string,
+  cwd: string | undefined,
+  homes: readonly string[] = [],
+): string {
+  if (!cwd || cwd === "." || cwd === "/") return root;
+  for (const prefix of [root, VIRTUAL_HOME, ...homes]) {
+    if (cwd === prefix) return root;
+    if (cwd.startsWith(`${prefix}/`)) return workspacePath(root, cwd.slice(prefix.length + 1));
+  }
+  return workspacePath(root, cwd);
+}
+
 export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
+}
+
+export function teamWorkspaceInstruction(botId: string): string {
+  const home = teamBotWorkspaceDirectory(botId);
+  const sharedFromShell = `${path.posix.relative(home, "shared")}/`;
+  return `Your Team Computer home is ${home}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. File tools resolve shared/ and bots/ from the Team root, but shell commands do not: from your home, a shell command reaches shared work as ${sharedFromShell}, and a shell cwd of shared starts in it. Other bots' folders are visible under bots/; treat them as their working areas.`;
 }
 
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
-  requestedPath: string,
+  rawPath: string,
 ): string {
+  const requestedPath = expandHomePrefix(rawPath);
   if (scope !== "team") return requestedPath;
   const explicitRootPath = stripVirtualWorkspaceRoot(requestedPath);
   const normalized = normalizeWorkspacePath(explicitRootPath ?? requestedPath);
@@ -99,7 +138,8 @@ export function resolveBotWorkspaceCwd(
 ): string | undefined {
   if (scope !== "team") return requestedCwd;
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
-  if (requestedCwd.startsWith("/")) return requestedCwd;
+  if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
+    return requestedCwd;
   return resolveBotWorkspacePath(scope, botId, requestedCwd);
 }
 
@@ -140,7 +180,7 @@ export function displayBotWorkspacePath(
 }
 
 function isBotRelativeRequest(value: string): boolean {
-  if (stripVirtualWorkspaceRoot(value) !== null) return false;
+  if (stripVirtualWorkspaceRoot(expandHomePrefix(value)) !== null) return false;
   return !isTeamRootPath(normalizeWorkspacePath(value));
 }
 
@@ -150,6 +190,14 @@ function isTeamRootPath(value: string): boolean {
     value.startsWith("shared/") ||
     value === "bots" ||
     value.startsWith("bots/")
+  );
+}
+
+// A leading ~ or /home/rakazo means the workspace root, the same as a leading /.
+function expandHomePrefix(value: string): string {
+  return value.replace(
+    /^(?:~|[\\/]home[\\/]rakazo)([\\/]|$)/,
+    (_, separator: string) => separator || "/",
   );
 }
 

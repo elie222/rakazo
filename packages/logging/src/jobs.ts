@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getLogContext, runWithLogContext } from "./context.js";
 import { generateSpanId, generateTraceId } from "./ids.js";
 import { getLogger } from "./logger.js";
+import { wasReportedError } from "./reported-errors.js";
 import type { JobCorrelation, LogBindings } from "./types.js";
 import { JOB_CORRELATION_VERSION } from "./types.js";
 
@@ -107,6 +108,7 @@ export async function runCorrelatedJob<T>(options: {
       logger.error("job.completed", error, {
         "job.duration_ms": Math.round(performance.now() - started),
         "job.outcome": "error",
+        "error.report": !wasReportedError(error),
       });
       throw error;
     }

@@ -1,28 +1,38 @@
+import { useLingui } from "@lingui/react/macro";
+import type { ModelHeaderRow } from "@rakazo/contracts";
+import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HeaderRowsEditor } from "../components/header-rows-editor";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
+import { currentApiBase } from "../lib/api";
+import { resetApiBase, saveApiBase } from "../lib/api-server";
 import {
   apiBaseWarning,
-  currentApiBase,
   defaultApiBase,
   normalizeApiBase,
   probeApiBase,
-  resetApiBase,
-  saveApiBase,
   usesCustomApiBase,
-} from "../lib/api";
-import { useI18n } from "../lib/i18n";
+} from "../lib/endpoint";
 import { useMobileTokens } from "../lib/native";
+import { serverHeaders } from "../lib/server-headers";
+import { useSideInsets } from "../lib/side-insets";
+import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
+import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
-  const { t } = useI18n();
+  const sideInsets = useSideInsets();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const router = useRouter();
   const current = currentApiBase();
   const [draft, setDraft] = useState(current);
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[]>(() =>
+    Object.entries(serverHeaders(current)).map(([name, value]) => ({ name, value })),
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const active = useRef(true);
@@ -46,17 +56,29 @@ export default function ServerScreen() {
 
   async function save() {
     if (saving.current) return;
+    // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
-      const probed = await probeApiBase(draft);
+      setPending(true);
+      setError(null);
+      let headers: Record<string, string>;
+      try {
+        headers = serverHeadersFromRows(headerRows);
+      } catch (headerError) {
+        setError(errorText(headerError));
+        return;
+      }
+      const probed = await probeApiBase(draft, fetch, headers);
       if (!active.current) return;
       if (!probed.ok) {
         setError(probed.error);
         return;
       }
-      const saved = await saveApiBase(probed.url);
+      // Asked once the switch can happen. Only a different server clears the device; the same
+      // address saves without a switch.
+      if (probed.url !== current && !(await confirmUnsentSendLoss("server-switch"))) return;
+      if (!active.current) return;
+      const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
         setError(saved.error);
         return;
@@ -70,10 +92,12 @@ export default function ServerScreen() {
 
   async function restoreDefault() {
     if (saving.current) return;
+    // Held across the confirmation, like save, so the two cannot run a switch in parallel.
     saving.current = true;
-    setPending(true);
-    setError(null);
     try {
+      if (usesCustomApiBase(current) && !(await confirmUnsentSendLoss("server-switch"))) return;
+      setPending(true);
+      setError(null);
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {
@@ -91,13 +115,9 @@ export default function ServerScreen() {
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.background }}>
       <Stack.Screen
         options={{
-          title: t("Server"),
-          ...cancelHeaderOptions(t("Cancel"), close),
-          ...trailingHeaderOptions(
-            pending ? t("Checking…") : t("Save"),
-            () => void save(),
-            pending,
-          ),
+          title: t`Server`,
+          ...cancelHeaderOptions(t`Cancel`, close),
+          ...trailingHeaderOptions(pending ? t`Checking…` : t`Save`, () => void save(), pending),
         }}
       />
       <KeyboardAvoidingView
@@ -105,14 +125,14 @@ export default function ServerScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          style={sideInsets}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={{ color: tokens.mutedForeground, fontSize: 15, lineHeight: 22 }}>
-            {t("Enter your Rakazo server address.")}
-          </Text>
           <TextInput
+            testID="server-address"
+            accessibilityLabel={t`Server`}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
@@ -126,7 +146,6 @@ export default function ServerScreen() {
             placeholderTextColor={tokens.mutedForeground}
             returnKeyType="go"
             style={{
-              marginTop: 20,
               backgroundColor: tokens.muted,
               borderRadius: 13,
               padding: 16,
@@ -141,11 +160,19 @@ export default function ServerScreen() {
               {warning}
             </Text>
           ) : null}
+          <HeaderRowsEditor
+            rows={headerRows}
+            onChange={(rows) => {
+              setHeaderRows(rows);
+              setError(null);
+            }}
+            disabled={pending}
+          />
           {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}
-              label={t("Use default server")}
+              label={t`Use default server`}
               onPress={() => void restoreDefault()}
               prominence="plain"
               style={{ marginTop: 28, alignSelf: "center" }}

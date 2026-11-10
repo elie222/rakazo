@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   ComputerScreenUnavailableError,
   isComputerScreenUnavailable,
   SingleScreenClaimTracker,
   withComputerScreenAvailability,
 } from "./computer-screens.js";
-import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 
 const writer = {
@@ -44,9 +44,10 @@ describe("Team Computer parallel screens", () => {
 
     const writerView = await fake.connectScreen(computer, { view: "stream" }, writer);
     const researcherView = await fake.connectScreen(computer, { view: "stream" }, researcher);
-    expect(writerView.url).toBe("fake://screen/fake-team-home/writer");
-    expect(researcherView.url).toBe("fake://screen/fake-team-home/researcher");
+    expect(new URL(writerView.url ?? "").searchParams.get("screen")).toBe("writer");
+    expect(new URL(researcherView.url ?? "").searchParams.get("screen")).toBe("researcher");
     expect(writerView.url).not.toBe(researcherView.url);
+    fake.close();
 
     await fake.writeFile(
       computer,
@@ -114,21 +115,21 @@ describe("Team Computer parallel screens", () => {
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
   });
 
-  it("lets Team bots use independent emulator screens concurrently", async () => {
-    const emulator = new ManagedSandboxEmulator();
-    expect(emulator.describe().capabilities.multiScreen).toBe(true);
-    const computer = await emulator.provision({ botId: "team-home", homePath: "/tmp" }, writer);
-    await emulator.observe(computer, writer);
-    await emulator.connectScreen(computer, { view: "stream" }, researcher);
-    await expect(emulator.observe(computer, writer)).resolves.toMatchObject({
-      activeWindow: expect.anything(),
+  it("lets Team bots use independent Boat screens concurrently", async () => {
+    const boat = fakeBoatProvider();
+    expect(boat.describe().capabilities.multiScreen).toBe(true);
+    const computer = await boat.provision({ botId: "team-home", homePath: "/tmp" }, writer);
+    await boat.observe(computer, writer);
+    await boat.connectScreen(computer, { view: "stream" }, researcher);
+    await expect(boat.observe(computer, writer)).resolves.toMatchObject({
+      mimeType: "image/png",
     });
-    await expect(emulator.observe(computer, researcher)).resolves.toMatchObject({
-      activeWindow: expect.anything(),
+    await expect(boat.observe(computer, researcher)).resolves.toMatchObject({
+      mimeType: "image/png",
     });
-    await emulator.releaseScreen(computer, writer);
-    await expect(emulator.observe(computer, researcher)).resolves.toMatchObject({
-      activeWindow: expect.anything(),
+    await boat.releaseScreen(computer, writer);
+    await expect(boat.observe(computer, researcher)).resolves.toMatchObject({
+      mimeType: "image/png",
     });
   });
 

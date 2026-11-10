@@ -7,8 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
@@ -26,7 +27,7 @@ describeVoice("voice credentials and speech HTTP", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-voice-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -34,7 +35,7 @@ describeVoice("voice credentials and speech HTTP", () => {
       agentRuntime: "scripted",
     });
     app = handles.app;
-    prisma = handles.prisma;
+    prisma = asSystem(handles.prisma);
     stop = handles.stop;
     botIntroHarness = handles;
   });
@@ -175,6 +176,9 @@ describeVoice("voice credentials and speech HTTP", () => {
     ).resolves.toBeNull();
     await expect(
       prisma.spaceVoicePreference.count({ where: { credentialId: stored.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.userVoicePreference.count({ where: { credentialId: stored.id } }),
     ).resolves.toBe(0);
     await expect(prisma.secret.findUnique({ where: { id: stored.secretId } })).resolves.toBeNull();
 

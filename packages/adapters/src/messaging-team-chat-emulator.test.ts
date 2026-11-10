@@ -44,7 +44,7 @@ describe("MessagingTeamChatEmulator", () => {
     const platform = new MessagingTeamChatEmulator().createPlatform();
     expect(platform).toMatchObject({
       provider: "teamchat-emulator",
-      capabilities: { direct: true, groups: true, typing: false },
+      capabilities: { direct: true, groups: true, receipt: null },
     });
     expect(platform.directThreadId?.("U1")).toBe("teamchat-emulator:dm:U1");
   });
@@ -83,7 +83,7 @@ describe("MessagingTeamChatEmulator", () => {
     expect(emulator.platforms()).toEqual([
       {
         provider: "slack",
-        capabilities: { direct: true, groups: false, typing: false },
+        capabilities: { direct: true, groups: false, receipt: null },
       },
     ]);
     expect(sink).toHaveBeenCalledWith(inbound);
@@ -95,9 +95,8 @@ describe("MessagingTeamChatEmulator", () => {
       },
     ]);
     emulator.resetWitnesses();
-    expect(emulator.sent).toEqual([]);
     expect(emulator.handleWebhook("teams", new Request("https://example.test"))).toBeNull();
-    await expect(emulator.sendTyping("teams:dm:U-colleague", context)).resolves.toBeUndefined();
-    await expect(emulator.sendTyping(inbound.threadId, context)).resolves.toBeUndefined();
+    await emulator.acknowledge(inbound.threadId, inbound.handle, context);
+    expect(emulator.sent).toEqual([]);
   });
 });

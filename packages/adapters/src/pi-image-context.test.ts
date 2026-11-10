@@ -14,8 +14,42 @@ describe("Pi image context planning", () => {
     });
     const image = await pipeline[format]().toBuffer();
     expect(estimatePiImageTokens({ type: "image", data: image.toString("base64"), mimeType })).toBe(
-      4800,
+      1024,
     );
+  });
+
+  it.each([
+    [1, 1, 1024],
+    [32, 32, 1024],
+    [512, 512, 1024],
+    [1024, 1024, 1399],
+    [2048, 2048, 5593],
+    [2048, 513, 1445],
+    [513, 2048, 1445],
+    [4000, 3000, 4195],
+    [3000, 4000, 4195],
+    [8000, 6000, 4195],
+    [8000, 1000, 1024],
+  ])("bounds a %ix%i JPEG at %i tokens", async (width, height, expected) => {
+    const image = await sharp({
+      create: { width, height, channels: 3, background: "white" },
+    })
+      .jpeg()
+      .toBuffer();
+    const part = { type: "image", data: image.toString("base64"), mimeType: "image/jpeg" };
+    expect(estimatePiImageTokens(part)).toBe(expected);
+    const selected = selectContext([{ role: "user", content: [part] }], {
+      budget: {
+        contextWindow: 16_384,
+        outputReserve: 4096,
+        systemPrompt: "Describe the image",
+        tools: [],
+        imageTokens: estimatePiImageTokens,
+      },
+      strategy: "retrieval",
+    });
+    expect(selected.messages[0]!.content).toEqual([part]);
+    expect(selected.estimatedInputTokens).toBeLessThan(16_384 - 4096);
   });
 
   it("counts GIF frames over the full logical-screen canvas", async () => {
@@ -26,7 +60,7 @@ describe("Pi image context planning", () => {
       .toBuffer();
     expect(
       estimatePiImageTokens({ type: "image", data: gif.toString("base64"), mimeType: "image/gif" }),
-    ).toBe(4800);
+    ).toBe(1024);
     const globalPaletteEnd = 13 + 3 * 2 ** ((gif[10]! & 7) + 1);
     const frame = gif.subarray(globalPaletteEnd, -1);
     const animated = Buffer.concat([gif.subarray(0, -1), frame, gif.subarray(-1)]);
@@ -37,7 +71,7 @@ describe("Pi image context planning", () => {
         data: animated.toString("base64"),
         mimeType: "image/gif",
       }),
-    ).toBe(9600);
+    ).toBe(2048);
     expect(
       estimatePiImageTokens({
         type: "image",
@@ -58,7 +92,7 @@ describe("Pi image context planning", () => {
         data: smallFrame.toString("base64"),
         mimeType: "image/gif",
       }),
-    ).toBe(4800);
+    ).toBe(1024);
   });
 
   it("keeps malformed GIF headers and incomplete frame blocks byte-counted", async () => {
@@ -107,14 +141,14 @@ describe("Pi image context planning", () => {
     const animated = Buffer.concat([png.subarray(0, 33), acTL, png.subarray(33)]);
     expect(
       estimatePiImageTokens({ type: "image", data: png.toString("base64"), mimeType: "image/png" }),
-    ).toBe(4800);
+    ).toBe(1024);
     expect(
       estimatePiImageTokens({
         type: "image",
         data: animated.toString("base64"),
         mimeType: "image/png",
       }),
-    ).toBe(14_400);
+    ).toBe(3072);
     const fcTL = Buffer.alloc(38);
     fcTL.writeUInt32BE(26, 0);
     fcTL.write("fcTL", 4, "ascii");
@@ -125,7 +159,7 @@ describe("Pi image context planning", () => {
         data: firstFrameAnimated.toString("base64"),
         mimeType: "image/png",
       }),
-    ).toBe(9600);
+    ).toBe(2048);
     const malformed = Buffer.from(animated);
     malformed.writeUInt32BE(0, 41);
     expect(
@@ -153,7 +187,7 @@ describe("Pi image context planning", () => {
         data: bytes.toString("base64"),
         mimeType: "image/webp",
       });
-    expect(estimate(webp)).toBe(9600);
+    expect(estimate(webp)).toBe(2048);
     expect(estimate(webp.subarray(0, -1))).toBeUndefined();
     const frameOffset = webp.indexOf(Buffer.from("ANMF"));
     expect(frameOffset).toBeGreaterThan(0);
@@ -173,7 +207,9 @@ describe("Pi image context planning", () => {
       role: "assistant",
       content: [{ type: "toolCall", id: "call", name: "upload", arguments: malformed }],
     };
-    expect(estimateContextTokens(call, estimatePiImageTokens)).toBeGreaterThan(300_000);
+    // Tool arguments are text the model reads, never an image estimate.
+    expect(estimateContextTokens(call, estimatePiImageTokens)).toBe(estimateContextTokens(call));
+    expect(estimateContextTokens(call, estimatePiImageTokens)).toBeGreaterThan(90_000);
   });
 
   it("makes implausibly large declared dimensions exceed any configured context window", async () => {
@@ -219,7 +255,7 @@ describe("Pi image context planning", () => {
       budget: { ...budget, imageTokens: estimatePiImageTokens },
       strategy: "retrieval",
     });
-    expect(estimatePiImageTokens(part)).toBe(16_384);
+    expect(estimatePiImageTokens(part)).toBe(1399);
     expect(selected.messages.at(-1)!.content).toEqual([part]);
     expect(selected.estimatedInputTokens).toBeLessThan(128_000 - 4096);
   });

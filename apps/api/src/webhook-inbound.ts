@@ -2,8 +2,12 @@ import { createHash } from "node:crypto";
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { inboundRoutineModelPin } from "@rakazo/adapters";
+import type { MessageBlock } from "@rakazo/contracts";
+import { escapePromptData, inboundRoutineBlock, messageBlockForArtifact } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 export const WEBHOOK_SECRET_KIND = "webhook";
@@ -14,7 +18,7 @@ export type WebhookEvents = {
     threadId: string;
     botId: string;
     userId: string;
-    blocks: Array<{ kind: "text"; text: string }>;
+    blocks: MessageBlock[];
     prompt: string;
     trigger: "webhook";
     clientNonce?: string;
@@ -45,14 +49,12 @@ export type WebhookTarget = {
   expected: string;
 };
 
+type InboundSource = "webhook" | "github" | "messaging" | "email";
+
 export type InboundTarget = {
   bot: Pick<WebhookTarget["bot"], "id" | "spaceId" | "userId">;
   threadId: string;
 };
-
-function escapePromptData(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-}
 
 /** Fence inbound delivery JSON as untrusted data so agents do not treat it as instructions. */
 export function formatUntrustedDeliveryPayload(label: string, payload: unknown): string {
@@ -186,7 +188,6 @@ function loadWebhookSecret(
   return entry.plaintext;
 }
 
-/** Load the bot webhook secret target, or null when the bot/secret is missing or invalid. */
 export async function loadWebhookTarget(
   deps: Pick<WebhookDeps, "prisma" | "secrets">,
   cache: WebhookSecretCache,
@@ -203,7 +204,8 @@ export async function loadWebhookTarget(
     },
   });
 
-  if (!bot?.thread || !bot.webhookSecretId) {
+  // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.
+  if (!bot?.thread || !bot.webhookSecretId || (await accountDeactivated(deps.prisma, bot.userId))) {
     cache.delete(botId);
     return null;
   }
@@ -253,13 +255,29 @@ export function messagingWakeIdempotencyKey(provider: string, handle: string): s
   return `${provider}:${handle}`;
 }
 
-/** Client nonce for idempotent inbound deliveries (webhook / github / messaging). */
 export function inboundDeliveryClientNonce(
-  source: "webhook" | "github" | "messaging",
+  source: InboundSource,
   botId: string,
   idempotencyKey: string,
 ): string {
   return `${source}:${botId}:${createHash("sha256").update(idempotencyKey).digest("base64url")}`;
+}
+
+/**
+ * Answers an authenticated delivery. A Space being deleted takes none: the sender gets a 409, not
+ * a server error, so the request is not reported as a failure.
+ */
+export async function webhookDeliveryResponse(
+  c: Context,
+  delivery: ReturnType<typeof deliverWebhookEvent>,
+): Promise<Response> {
+  try {
+    return c.json(await delivery);
+  } catch (error) {
+    if (error instanceof SpaceDeletionInProgressError)
+      return c.json({ error: "Space deletion in progress" }, 409);
+    throw error;
+  }
 }
 
 export async function deliverWebhookEvent(
@@ -267,6 +285,7 @@ export async function deliverWebhookEvent(
   target: InboundTarget,
   input: {
     prompt: string;
+    artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
     routines: Array<{
       name: string;
       prompt: string;
@@ -274,7 +293,7 @@ export async function deliverWebhookEvent(
       modelId: string | null;
       thinkingLevel: string | null;
     }>;
-    source: "webhook" | "github" | "messaging";
+    source: InboundSource;
     idempotencyKey?: string;
     /** Messaging wakes share the live chat thread; keep a separate webhook run. */
     allowParallelRun?: boolean;
@@ -283,15 +302,15 @@ export async function deliverWebhookEvent(
   const promptText =
     input.routines.length > 0
       ? [
-          ...input.routines.map(
-            (routine) => `Run routine "${routine.name}":\n${routine.prompt.trim()}`,
-          ),
+          ...input.routines.map(inboundRoutineBlock),
           "",
           input.source === "github"
             ? "Inbound GitHub event metadata:"
             : input.source === "messaging"
               ? "Inbound messaging event:"
-              : "Inbound webhook payload:",
+              : input.source === "email"
+                ? "Inbound email:"
+                : "Inbound webhook payload:",
           input.prompt,
         ].join("\n")
       : input.prompt;
@@ -306,7 +325,10 @@ export async function deliverWebhookEvent(
     threadId: target.threadId,
     botId: target.bot.id,
     userId: target.bot.userId,
-    blocks: [{ kind: "text", text: promptText }],
+    blocks: [
+      { kind: "text", text: promptText },
+      ...(input.artifacts ?? []).map(messageBlockForArtifact),
+    ],
     prompt: promptText,
     trigger: "webhook",
     clientNonce,

@@ -1,13 +1,19 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { SpaceDeletionInProgressError } from "@rakazo/db";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
+import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
-  type MessagingDeliveryDeps,
+  mirrorMessagingOutbound,
+  mirrorMessagingProgress,
 } from "./messaging-delivery.js";
+import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
+import { userProgressClientNonce } from "./user-progress.js";
 
 const context: AdapterContext = {
   operationId: "op-1",
@@ -31,9 +37,60 @@ const identity = {
 const messagingRun = {
   id: "run-1",
   botId: "bot-1",
+  userId: "user-1",
   trigger: "messaging",
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
+
+type OutboundRowFilter = Record<string, unknown>;
+
+/** The drains' send order: createdAt, then id to break remaining ties. */
+function bySendOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const byTime = (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime();
+  return byTime || String(a.id).localeCompare(String(b.id));
+}
+
+function compareBound(cell: unknown, bound: unknown, after: boolean): boolean {
+  if (cell instanceof Date && bound instanceof Date) {
+    return after ? cell.getTime() > bound.getTime() : cell.getTime() < bound.getTime();
+  }
+  if (typeof cell === "string" && typeof bound === "string") {
+    return after ? cell > bound : cell < bound;
+  }
+  return false;
+}
+
+/** The where shapes the drain queries use: field equality, lt/gt bounds, OR/AND. */
+function matchesWhere(row: Record<string, unknown>, where: OutboundRowFilter): boolean {
+  return Object.entries(where).every(([key, value]) => {
+    if (key === "OR")
+      return (value as OutboundRowFilter[]).some((condition) => matchesWhere(row, condition));
+    if (key === "AND")
+      return (value as OutboundRowFilter[]).every((condition) => matchesWhere(row, condition));
+    if (value instanceof Date)
+      return row[key] instanceof Date && (row[key] as Date).getTime() === value.getTime();
+    // The mocks do not emulate @updatedAt: an unset one counts as "just now".
+    if (key === "updatedAt" && row[key] === undefined)
+      return compareBound(new Date(), (value as { gt: unknown }).gt, true);
+    if (value !== null && typeof value === "object") {
+      const bound = value as { lt?: unknown; gt?: unknown };
+      if (bound.lt !== undefined) return compareBound(row[key], bound.lt, false);
+      if (bound.gt !== undefined) return compareBound(row[key], bound.gt, true);
+      return false;
+    }
+    // Prisma's null means IS NULL; a mock row without the field counts too.
+    if (value === null) return row[key] == null;
+    return row[key] === value;
+  });
+}
+
+/** A lane's next pending row, or an earlier row still pending or in flight. */
+function findOutboundRow(rows: Array<Record<string, unknown>>, where: OutboundRowFilter) {
+  const ordered = rows.every((row) => row.createdAt instanceof Date)
+    ? [...rows].sort(bySendOrder)
+    : rows;
+  return ordered.find((row) => matchesWhere(row, where)) ?? null;
+}
 
 function createFakeSurface(sendError?: Error) {
   const sendToThread = vi.fn(async () => ({ handle: "handle-out-1" }));
@@ -49,15 +106,24 @@ function createFakeSurface(sendError?: Error) {
       capabilities: { providers: ["sendblue"] },
     }),
     platforms: () => [
-      { provider: "sendblue", capabilities: { direct: true, groups: true, typing: true } },
+      { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
+      {
+        provider: "telegram",
+        capabilities: { direct: true, groups: false, receipt: null, files: true },
+      },
     ],
     handleWebhook: () => null,
     onInbound: () => undefined,
     sendToThread,
     openDirectThread,
-    sendTyping: vi.fn(async () => undefined),
+    acknowledge: vi.fn(async () => undefined),
   };
   return { messaging, sendToThread, openDirectThread };
+}
+
+/** A message_user update or another interim message a running run posted. */
+function interim(id: string, text: string) {
+  return { id, clientNonce: userProgressClientNonce("run-1"), blocks: [{ kind: "text", text }] };
 }
 
 function createDeps(overrides: {
@@ -68,6 +134,8 @@ function createDeps(overrides: {
   existingOutbox?: unknown;
   sendError?: Error;
   connectionStatus?: string | null;
+  blockedBot?: string;
+  artifacts?: Array<Record<string, unknown>>;
 }) {
   const rows = [...(overrides.outboundRows ?? [])] as Array<Record<string, unknown>>;
   const { messaging, sendToThread, openDirectThread } = createFakeSurface(overrides.sendError);
@@ -75,11 +143,23 @@ function createDeps(overrides: {
   const identityRow =
     overrides.identity === null ? null : { ...identity, ...(overrides.identity ?? {}) };
   const prisma = {
+    user: {
+      findUnique: vi.fn(
+        async (_query: { where: { id: string } }): Promise<{ deactivatedAt: Date | null } | null> =>
+          null,
+      ),
+    },
+    bot: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        userId: `owner-of-${where.id}`,
+      })),
+    },
     run: {
       findUnique: vi.fn(async () => overrides.run ?? messagingRun),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       findMany: vi.fn(
         async () =>
           overrides.messages ?? [
@@ -96,6 +176,14 @@ function createDeps(overrides: {
         return identityRow;
       }),
     },
+    artifact: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; spaceId: string } }) =>
+          (overrides.artifacts ?? []).find(
+            (artifact) => artifact.id === where.id && artifact.spaceId === where.spaceId,
+          ) ?? null,
+      ),
+    },
     agentConnection: {
       findUnique: vi.fn(async () =>
         overrides.connectionStatus === null
@@ -105,10 +193,17 @@ function createDeps(overrides: {
             : { status: "pending" },
       ),
     },
-    $queryRaw: vi.fn(async () =>
-      overrides.connectionStatus === null
-        ? []
-        : [{ status: overrides.connectionStatus ?? "pending" }],
+    $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
+      query.join("").includes("FROM bots")
+        ? ["bot-1", "bot-2"].map((id) => ({
+            id,
+            spaceId: id,
+            crossSpaceCommunication: id !== overrides.blockedBot,
+            archivedAt: null,
+          }))
+        : overrides.connectionStatus === null
+          ? []
+          : [{ status: overrides.connectionStatus ?? "pending" }],
     ),
     messagingOutbound: {
       findUnique: vi.fn(async ({ where }: { where?: { id?: string } } = {}) => {
@@ -118,7 +213,7 @@ function createDeps(overrides: {
       }),
       findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
         const now = Date.now();
-        return rows.filter((row) => {
+        const found = rows.filter((row) => {
           if (where?.status && row.status !== where.status) return false;
           if (!where?.OR) return row.status === "pending";
           const next = row.nextAttemptAt;
@@ -126,7 +221,28 @@ function createDeps(overrides: {
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
+        // The drain reads in send order (createdAt, then id).
+        const ordered = found.every((row) => row.createdAt instanceof Date)
+          ? found.sort(bySendOrder)
+          : found;
+        return ordered;
       }),
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
+      ),
+      aggregate: vi.fn(
+        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
+          const times = rows
+            .filter((row) => matchesWhere(row, where ?? {}))
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
         for (const item of data) {
@@ -178,6 +294,7 @@ function createDeps(overrides: {
       notify: vi.fn(async () => undefined),
     } as unknown as MessagingDeliveryDeps["events"],
     jobs: { enqueue: vi.fn(async () => undefined) },
+    artifacts: { get: vi.fn(async (storageKey: string) => new TextEncoder().encode(storageKey)) },
     sendToThread,
     openDirectThread,
     rows,
@@ -210,6 +327,75 @@ describe("deliverMessagingOutbound", () => {
       where: { id: "run-1", trigger: "messaging" },
       data: { messagingMirroredAt: expect.any(Date) },
     });
+  });
+
+  it("sends a page the bot named as its title, never as an app-only page link", async () => {
+    const deps = createDeps({
+      messages: [
+        {
+          id: "m-1",
+          blocks: [
+            { kind: "text", text: "I made a [Test dashboard](page:cm123) for you." },
+            { kind: "page", pageId: "cm123", version: 1, title: "Test dashboard" },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:dm-1", body: "I made a Test dashboard for you." },
+      context,
+    );
+  });
+
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    (deps.sendToThread.mock.calls as unknown as [{ body: string }][]).map(([input]) => input.body);
+
+  it("sends a page card's title when the reply does not name the page, and only once when it does", async () => {
+    const card = {
+      id: "m-1",
+      blocks: [{ kind: "page", pageId: "cm123", version: 1, title: "Plan" }],
+    };
+    const silent = createDeps({
+      messages: [card, { id: "m-2", blocks: [{ kind: "text", text: "Done." }] }],
+    });
+    await deliverMessagingOutbound(silent, { runId: "run-1" }, context);
+    expect(sentBodies(silent)).toEqual(["Plan", "Done."]);
+
+    const named = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Here is [Plan](page:cm123)." }] },
+      ],
+    });
+    await deliverMessagingOutbound(named, { runId: "run-1" }, context);
+    expect(sentBodies(named)).toEqual(["Here is Plan."]);
+
+    // A link shown inside a code example names nothing, so the card's title still goes.
+    const example = createDeps({
+      messages: [
+        card,
+        { id: "m-2", blocks: [{ kind: "text", text: "Write `[Plan](page:cm123)` to link it." }] },
+      ],
+    });
+    await deliverMessagingOutbound(example, { runId: "run-1" }, context);
+    expect(sentBodies(example)).toEqual(["Plan", "Write `[Plan](page:cm123)` to link it."]);
+
+    // A real link still counts when the same text also shows it as a code example.
+    const both = createDeps({
+      messages: [
+        card,
+        {
+          id: "m-2",
+          blocks: [
+            { kind: "text", text: "Open [Plan](page:cm123), or write `[Plan](page:cm123)`." },
+          ],
+        },
+      ],
+    });
+    await deliverMessagingOutbound(both, { runId: "run-1" }, context);
+    expect(sentBodies(both)).toEqual(["Open Plan, or write `[Plan](page:cm123)`."]);
   });
 
   it("resolves the DM thread once and caches it when the identity has none", async () => {
@@ -250,6 +436,81 @@ describe("deliverMessagingOutbound", () => {
     expect(deps.sendToThread).not.toHaveBeenCalled();
   });
 
+  it("queues a running chat run's interim messages without marking the run mirrored", async () => {
+    const messages: unknown[] = [
+      interim("m-1", "Checking flights now."),
+      { id: "m-2", blocks: [{ kind: "steps", steps: [] }] },
+      interim("m-3", "Found two options."),
+    ];
+    const deps = createDeps({ messages });
+    await mirrorMessagingProgress(deps, "run-1");
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-3"]);
+    // Mirrored still means the reply is out.
+    expect(deps.prisma.run.updateMany).not.toHaveBeenCalled();
+
+    messages.push({ id: "m-4", blocks: [{ kind: "text", text: "Booked the cheaper one." }] });
+    await mirrorMessagingOutbound(deps, "run-1");
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-3", "msg:m-4"]);
+    expect(deps.prisma.run.updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("holds a card, a file and everything after them for the end of the run", async () => {
+    const messages: unknown[] = [
+      interim("m-1", "Planning the trip."),
+      { id: "m-2", blocks: [{ kind: "page", pageId: "p-1", title: "Trip plan" }] },
+      interim("m-3", "Sent you the plan, now the budget."),
+      { id: "m-4", blocks: [{ kind: "file", artifactId: "art-1", name: "budget.csv" }] },
+      interim("m-5", "Sent the budget too."),
+    ];
+    const deps = createDeps({ identity: { provider: "telegram" }, messages });
+    await mirrorMessagingProgress(deps, "run-1");
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1"]);
+
+    // The reply links the page, so its card never goes as a stray title.
+    messages.push({
+      id: "m-6",
+      blocks: [{ kind: "text", text: "Your [Trip plan](page:p-1) is ready." }],
+    });
+    await mirrorMessagingProgress(deps, "run-1");
+    await mirrorMessagingOutbound(deps, "run-1");
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "Planning the trip."],
+      ["msg:m-3", "Sent you the plan, now the budget."],
+      ["msg:m-4:file:art-1", ""],
+      ["msg:m-5", "Sent the budget too."],
+      ["msg:m-6", "Your Trip plan is ready."],
+    ]);
+  });
+
+  it("sends a long interim message's parts once when the run's reply follows", async () => {
+    const messages: unknown[] = [interim("m-1", `${"x".repeat(4_200)} TAIL-MARK`)];
+    const deps = createDeps({ identity: { provider: "telegram" }, messages });
+    await mirrorMessagingProgress(deps, "run-1");
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+
+    messages.push({ id: "m-2", blocks: [{ kind: "text", text: "Done." }] });
+    await mirrorMessagingProgress(deps, "run-1");
+    await mirrorMessagingOutbound(deps, "run-1");
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2", "msg:m-2"]);
+    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
+  });
+
+  it("leaves group and in-app runs to the end-of-run mirror", async () => {
+    const channel = createDeps({
+      run: {
+        ...messagingRun,
+        sourceMessage: { blocks: [{ kind: "channel_message", channelId: "c-1" }] },
+      },
+    });
+    await mirrorMessagingProgress(channel, "run-1");
+    expect(channel.rows).toEqual([]);
+    for (const trigger of ["user", "bot_message"]) {
+      const other = createDeps({ run: { ...messagingRun, trigger } });
+      await mirrorMessagingProgress(other, "run-1");
+      expect(other.rows).toEqual([]);
+    }
+  });
+
   it("ignores in-app runs and runs without a messaging identity", async () => {
     const notMessaging = createDeps({ run: { ...messagingRun, trigger: "user" } });
     await deliverMessagingOutbound(notMessaging, { runId: "run-1" }, context);
@@ -267,6 +528,15 @@ describe("deliverMessagingOutbound", () => {
       { threadId: "sendblue:dm-1", body: "Hello from your bot" },
       context,
     );
+  });
+
+  it("keeps another member's bot_message run out of the linked person's DM", async () => {
+    const deps = createDeps({
+      run: { ...messagingRun, trigger: "bot_message", userId: "user-2" },
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.rows).toHaveLength(0);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {
@@ -408,6 +678,55 @@ describe("deliverMessagingOutbound", () => {
     expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
   });
 
+  it("drops what was queued for a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-late",
+          idempotencyKey: "late:1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "a reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.openDirectThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("does not post a group reply queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-group",
+          idempotencyKey: "group:1",
+          kind: "group",
+          threadId: "group-thread",
+          sourceMessageId: "m-1",
+          body: "a group reply queued before deactivation",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    vi.mocked(deps.prisma.message.findUnique).mockResolvedValue({
+      thread: { userId: "user-1" },
+    } as never);
+    deps.prisma.user.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
   it("does not send a connect invite after the connection was revoked", async () => {
     const deps = createDeps({
       run: null,
@@ -486,6 +805,31 @@ describe("deliverMessagingOutbound", () => {
     });
   });
 
+  it("does not send a connect invite queued by a person who has since been deactivated", async () => {
+    const deps = createDeps({
+      run: null,
+      connectionStatus: "pending",
+      outboundRows: [
+        {
+          id: "out-connect",
+          idempotencyKey: "connect:bot-1:bot-9",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "wants to connect. Reply YES to allow, NO to decline.",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    deps.prisma.user.findUnique.mockImplementation(async ({ where }) => ({
+      deactivatedAt: where.id === "owner-of-bot-1" ? new Date() : null,
+    }));
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
   it("does not re-queue a connect invite when the provider send fails", async () => {
     const deps = createDeps({
       run: null,
@@ -528,9 +872,17 @@ describe("deliverMessagingOutbound", () => {
         },
       ],
     });
-    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(async () => {
-      throw new Error("Transaction API error: Transaction already closed");
-    });
+    let claimTransaction = true;
+    (deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        // The claim's transaction succeeds; the invite delivery times out.
+        if (claimTransaction) {
+          claimTransaction = false;
+          return fn(deps.prisma);
+        }
+        throw new Error("Transaction API error: Transaction already closed");
+      },
+    );
     await deliverMessagingOutbound(deps, {}, context);
 
     expect(deps.sendToThread).not.toHaveBeenCalled();
@@ -580,7 +932,12 @@ function createChannelDeps(
     sourceHop?: number;
     transport?: string;
     peerBotName?: string | null;
+    blockedBot?: string;
     messages?: unknown[];
+    posterProvider?: string;
+    runs?: Array<{ id: string; messages: unknown[] }>;
+    /** Accounts that are deactivated. */
+    deactivated?: string[];
   } = {},
 ) {
   const text = overrides.text ?? "found it";
@@ -605,7 +962,7 @@ function createChannelDeps(
   };
   const posterIdentity = {
     id: "mi-1",
-    provider: "sendblue",
+    provider: overrides.posterProvider ?? "sendblue",
     address: "+15551111111",
     dmThreadId: "sendblue:dm-1",
     userId: "user-1",
@@ -633,6 +990,7 @@ function createChannelDeps(
   const txMock = {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: 10 })) },
     message: {
+      findUnique: vi.fn(async (): Promise<{ thread: { userId: string } } | null> => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const message = { id: `ctx-${contextMessages.length + 1}`, seq: 4, ...data };
         contextMessages.push(message);
@@ -649,12 +1007,18 @@ function createChannelDeps(
   };
   const prisma = {
     run: {
-      findUnique: vi.fn(async () => channelRun),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        if (!overrides.runs) return channelRun;
+        const entry = overrides.runs.find((run) => run.id === where.id);
+        return entry ? { ...channelRun, id: entry.id } : null;
+      }),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
-      findMany: vi.fn(
-        async () => overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+      findMany: vi.fn(async ({ where }: { where?: { runId?: string } } = {}) =>
+        overrides.runs
+          ? (overrides.runs.find((run) => run.id === where?.runId)?.messages ?? [])
+          : (overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }]),
       ),
       findUnique: vi.fn(async () => null),
     },
@@ -689,7 +1053,7 @@ function createChannelDeps(
     messagingOutbound: {
       findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
         const now = Date.now();
-        return rows.filter((row) => {
+        const found = rows.filter((row) => {
           if (where?.status && row.status !== where.status) return false;
           if (!where?.OR) return row.status === "pending";
           const next = row.nextAttemptAt;
@@ -697,7 +1061,28 @@ function createChannelDeps(
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
+        // The drain reads in send order (createdAt, then id).
+        const ordered = found.every((row) => row.createdAt instanceof Date)
+          ? found.sort(bySendOrder)
+          : found;
+        return ordered;
       }),
+      findFirst: vi.fn(async ({ where }: { where: OutboundRowFilter }) =>
+        findOutboundRow(rows, where),
+      ),
+      aggregate: vi.fn(
+        async ({ where, _max }: { where?: OutboundRowFilter; _max?: { createdAt?: boolean } }) => {
+          const times = rows
+            .filter((row) => matchesWhere(row, where ?? {}))
+            .map((row) => (row.createdAt as Date | undefined)?.getTime())
+            .filter((time): time is number => time !== undefined);
+          return {
+            _max: {
+              createdAt: _max?.createdAt && times.length ? new Date(Math.max(...times)) : null,
+            },
+          };
+        },
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
           rows.push({ id: `out-${rows.length + 1}`, status: "pending", ...item });
@@ -721,7 +1106,21 @@ function createChannelDeps(
         },
       ),
     },
-    user: { findUnique: vi.fn(async () => ({ id: "user-1", name: "Alice Owner" })) },
+    user: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        name: "Alice Owner",
+        deactivatedAt: overrides.deactivated?.includes(where.id) ? new Date() : null,
+      })),
+    },
+    $queryRaw: vi.fn(async () =>
+      ["bot-1", "bot-2"].map((id) => ({
+        id,
+        spaceId: id,
+        crossSpaceCommunication: id !== overrides.blockedBot,
+        archivedAt: null,
+      })),
+    ),
     bot: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
         where.id === "bot-1"
@@ -732,13 +1131,16 @@ function createChannelDeps(
       ),
     },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ ...txMock, messagingOutbound: prisma.messagingOutbound, $queryRaw: prisma.$queryRaw }),
+    ),
   };
   return {
     prisma: prisma as unknown as PrismaClient & typeof prisma,
     messaging,
     events: { sendUserMessage, notify } as unknown as MessagingDeliveryDeps["events"],
     jobs: { enqueue },
+    artifacts: { get: vi.fn() },
     sendToThread,
     sendUserMessage,
     notify,
@@ -821,6 +1223,79 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
+  it("splits a long group reply into platform-sized parts that keep the tail", async () => {
+    const text = `${"x".repeat(4_200)} TAIL-MARK`;
+    const deps = createChannelDeps({
+      posterProvider: "telegram",
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => row.idempotencyKey)).toEqual(["msg:m-1", "msg:m-1:2"]);
+    expect(deps.rows.every((row) => (row.body as string).length <= 4_096)).toBe(true);
+    expect((deps.rows[0]!.body as string).startsWith("Alice's agent: ")).toBe(true);
+    expect(deps.rows.map((row) => row.body).join("")).toContain("TAIL-MARK");
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
+      deps.rows.map((row) => ({ threadId: "sendblue:grp-1", body: row.body })),
+    );
+  });
+
+  it("gives group rows a strictly ordered createdAt across messages", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "m-1", blocks: [{ kind: "text", text: "checking" }] },
+        { id: "m-2", blocks: [{ kind: "text", text: "here is the answer" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body])).toEqual([
+      ["msg:m-1", "Alice's agent: checking"],
+      ["msg:m-2", "Alice's agent: here is the answer"],
+    ]);
+    expect((deps.rows[1]!.createdAt as Date).getTime()).toBeGreaterThan(
+      (deps.rows[0]!.createdAt as Date).getTime(),
+    );
+  });
+
+  it("keeps a later group reply's whole range after an earlier reply's", async () => {
+    // The same millisecond for both mirrors: wall-clock ties must not let
+    // one reply's parts sort into the middle of the other's.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      const reply = (marker: string) => `${marker}${marker.repeat(4_100)}`;
+      const deps = createChannelDeps({
+        posterProvider: "telegram",
+        runs: [
+          { id: "run-1", messages: [{ id: "m-1", blocks: [{ kind: "text", text: reply("1") }] }] },
+          { id: "run-2", messages: [{ id: "m-2", blocks: [{ kind: "text", text: reply("2") }] }] },
+        ],
+      });
+      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+      await deliverMessagingOutbound(deps, { runId: "run-2" }, context);
+
+      const timesOf = (messageId: string) =>
+        deps.rows
+          .filter((row) => (row.idempotencyKey as string).startsWith(`msg:${messageId}`))
+          .map((row) => (row.createdAt as Date).getTime());
+      expect(Math.min(...timesOf("m-2"))).toBeGreaterThan(Math.max(...timesOf("m-1")));
+
+      const bodies = deps.sendToThread.mock.calls.map(
+        (call) => ((call as unknown[])[0] as { body: string }).body,
+      );
+      const lastA = Math.max(
+        ...bodies.flatMap((body, index) => (body.includes("1") ? [index] : [])),
+      );
+      const firstB = Math.min(
+        ...bodies.flatMap((body, index) => (body.includes("2") ? [index] : [])),
+      );
+      expect(firstB).toBeGreaterThan(lastA);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("preserves source transport on peer fan-out blocks", async () => {
     const deps = createChannelDeps({ transport: "SMS" });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
@@ -868,6 +1343,7 @@ describe("deliverMessagingOutbound channel runs", () => {
         threadId: "thread-2",
         botId: "bot-2",
         trigger: "messaging",
+        crossSpaceSenderBotId: "bot-1",
         clientNonce: "messaging-peer:m-1:bot-2",
       }),
     );
@@ -877,6 +1353,17 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect(deps.contextMessages).toHaveLength(0);
   });
 
+  it("skips a mentioned peer whose Space is being deleted", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?" });
+    deps.sendUserMessage.mockRejectedValueOnce(new SpaceDeletionInProgressError());
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expect(deps.enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue" }),
+    );
+  });
+
   it("wakes an @-mentioned peer even when the casing differs", async () => {
     const deps = createChannelDeps({ text: "@helper ping" });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
@@ -884,6 +1371,26 @@ describe("deliverMessagingOutbound channel runs", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot-2", clientNonce: "messaging-peer:m-1:bot-2" }),
     );
+  });
+
+  it("keeps a reply by a since-deactivated person's bot out of the group and its peers", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-1"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("leaves a deactivated peer's bot out of the fan-out", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", deactivated: ["user-2"] });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledOnce();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("does not wake anyone when the hop budget is exhausted", async () => {
@@ -953,5 +1460,811 @@ describe("deliverMessagingOutbound retry enqueue failure", () => {
     expect(deps.rows).toEqual([
       expect.objectContaining({ kind: "dm", status: "sent", providerHandle: "handle-out-1" }),
     ]);
+  });
+});
+
+describe("deliverMessagingOutbound send failure classification", () => {
+  it("fails a permanently rejected row at once instead of retrying it", async () => {
+    const deps = createDeps({
+      sendError: new MessagingSendError(new Error("channel_not_found"), {
+        permanent: true,
+        retryAfterMs: null,
+      }),
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows).toEqual([expect.objectContaining({ status: "failed", attempts: 1 })]);
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("waits at least the provider's retry-after before the next attempt", async () => {
+    const deps = createDeps({
+      sendError: new MessagingSendError(new Error("rate limited"), {
+        permanent: false,
+        retryAfterMs: 30_000,
+      }),
+    });
+    const before = Date.now();
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    const retryAt = deps.rows[0]!.nextAttemptAt as Date;
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "pending", attempts: 1 }));
+    expect(retryAt.getTime()).toBeGreaterThanOrEqual(before + 30_000);
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "messaging.deliver", availableAt: retryAt }),
+    );
+  });
+});
+
+describe("deliverMessagingOutbound conversation order", () => {
+  const whatsapp = { provider: "whatsapp", address: "15551234567", dmThreadId: "whatsapp:p:1" };
+  const part = (letter: string) => letter.repeat(3000);
+  const longReply = [part("a"), part("b"), part("c")].join("\n\n");
+
+  it.each([
+    whatsapp,
+    { provider: "telegram", address: "123", dmThreadId: "telegram:123" },
+    { provider: "telegram-work", address: "123", dmThreadId: "telegram-work:123" },
+  ])("queues a long $provider reply as one row per message-sized part", async (identity) => {
+    const deps = createDeps({
+      identity,
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body, row.status])).toEqual([
+      ["msg:m-1", part("a"), "sent"],
+      ["msg:m-1:2", part("b"), "sent"],
+      ["msg:m-1:3", part("c"), "sent"],
+    ]);
+    expect(deps.rows.every((row) => row.sourceMessageId === "m-1")).toBe(true);
+  });
+
+  it("re-sends only the parts that failed, in order", async () => {
+    const deps = createDeps({
+      identity: whatsapp,
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
+    });
+    deps.sendToThread
+      .mockResolvedValueOnce({ handle: "wamid.1" })
+      .mockRejectedValueOnce(new Error("WhatsApp API error"));
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    // The third part waits behind the failed second one.
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
+    expect(deps.rows[2]!.attempts ?? 0).toBe(0);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
+      [part("a"), part("b"), part("b"), part("c")].map((body) => ({
+        threadId: "whatsapp:p:1",
+        body,
+      })),
+    );
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+  });
+
+  it.each([
+    ["in flight in another drain", "sent", new Date(), false],
+    ["abandoned mid-send long ago", "sent", new Date(Date.now() - 10 * 60_000), true],
+    ["permanently failed", "failed", new Date(), true],
+  ] as const)(
+    "a later part whose first part is %s is sent=%s",
+    async (_label, status, updatedAt, sent) => {
+      const part = (id: string, key: string, offset: number, extra: Record<string, unknown>) => ({
+        id,
+        idempotencyKey: key,
+        kind: "dm",
+        identityId: "mi-1",
+        body: id,
+        sourceMessageId: "m-1",
+        providerHandle: null,
+        attempts: 0,
+        nextAttemptAt: null,
+        createdAt: new Date(1_000 + offset),
+        ...extra,
+      });
+      const deps = createDeps({
+        run: null,
+        identity: whatsapp,
+        outboundRows: [
+          part("p-1", "msg:m-1", 0, { status, updatedAt }),
+          part("p-2", "msg:m-1:2", 1, { status: "pending" }),
+        ],
+      });
+      await deliverMessagingOutbound(deps, {}, context);
+
+      expect(deps.sendToThread).toHaveBeenCalledTimes(sent ? 1 : 0);
+      expect(deps.rows[1]!.status).toBe(sent ? "sent" : "pending");
+    },
+  );
+
+  it("holds later rows to a conversation while an earlier one waits out its backoff", async () => {
+    const pendingRow = (id: string, body: string, nextAttemptAt: Date | null) => ({
+      id,
+      idempotencyKey: `msg:${id}`,
+      kind: "dm",
+      identityId: "mi-1",
+      body,
+      status: "pending",
+      attempts: nextAttemptAt ? 1 : 0,
+      nextAttemptAt,
+      providerHandle: null,
+    });
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        pendingRow("out-1", "first", new Date(Date.now() + 60_000)),
+        pendingRow("out-2", "second", null),
+        {
+          ...pendingRow("out-3", "elsewhere", null),
+          identityId: null,
+          kind: "group",
+          threadId: "sendblue:grp",
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "sendblue:grp", body: "elsewhere" },
+      context,
+    );
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending", "sent"]);
+  });
+});
+
+describe("WhatsApp rendered outbound delivery", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const deliver = async (body: string, failSend?: number) => {
+    const sends: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init: RequestInit) => {
+        const payload = JSON.parse(String(init.body)) as { text: { body: string } };
+        sends.push(payload.text.body);
+        if (sends.length === failSend) {
+          return Response.json({ error: { message: "temporary error", code: 1 } }, { status: 500 });
+        }
+        return Response.json({ messages: [{ id: `wamid.${sends.length}` }] });
+      }),
+    );
+    const messaging = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        whatsappAccessToken: "test-token",
+        whatsappPhoneNumberId: "123",
+        whatsappAppSecret: "test-secret",
+        whatsappVerifyToken: "test-verify",
+      }),
+    );
+    const deps = createDeps({
+      identity: {
+        provider: "whatsapp",
+        address: "15551234567",
+        dmThreadId: "whatsapp:123:15551234567",
+      },
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: body }] }],
+    });
+    const run = () => deliverMessagingOutbound({ ...deps, messaging }, { runId: "run-1" }, context);
+    await run();
+    return { deps, sends, run };
+  };
+  const intact = (text: string) => text.length <= 4096 && !/\p{Cs}/u.test(text);
+
+  it("splits before Markdown rendering pushes an emoji across the limit", async () => {
+    // Rendering expands this auto-link so the emoji would begin at UTF-16 offset 4095.
+    const link = `www.${"a".repeat(2000)}.test`;
+    const body = `${link} ${"x".repeat(65)}😀zzz`;
+    expect(body.length).toBeLessThan(4096);
+
+    const { deps, sends, run } = await deliver(body, 2);
+
+    expect(deps.rows).toHaveLength(2);
+    expect(sends).toHaveLength(2);
+    expect(sends.every(intact)).toBe(true);
+    expect(sends.join(" ")).toContain("😀zzz");
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending"]);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await run();
+
+    expect(sends.slice(2)).toEqual([sends[1]]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("sends a table that renders past the limit as one request per queued part", async () => {
+    const rows = Array.from({ length: 200 }, (_, i) => `| ${i} | x | 😀 |`);
+    const body = [
+      "| n | text | mood |",
+      "| - | - | - |",
+      `| - | ${"w".repeat(40)} | - |`,
+      ...rows,
+    ].join("\n");
+    expect(body.length).toBeLessThan(4096);
+
+    const { deps, sends } = await deliver(body);
+
+    expect(deps.rows.length).toBeGreaterThan(1);
+    expect(sends).toHaveLength(deps.rows.length);
+    expect(sends.every(intact)).toBe(true);
+    expect(deps.rows.every((row) => row.status === "sent")).toBe(true);
+  });
+});
+
+describe("deliverMessagingOutbound attachments", () => {
+  const telegram = { provider: "telegram", address: "123", dmThreadId: "telegram:123" };
+  const artifacts = [
+    {
+      id: "art-1",
+      spaceId: "ws-1",
+      userId: "user-1",
+      name: "chart.png",
+      mimeType: "image/png",
+      storageKey: "key-1",
+    },
+    {
+      id: "art-2",
+      spaceId: "ws-1",
+      userId: "user-1",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      storageKey: "key-2",
+    },
+  ];
+  const reply = {
+    id: "m-1",
+    blocks: [
+      { kind: "text", text: "Here you go" },
+      { kind: "image", artifactId: "art-1", mimeType: "image/png", name: "chart.png" },
+      {
+        kind: "file",
+        artifactId: "art-2",
+        mimeType: "application/pdf",
+        name: "report.pdf",
+        size: 5,
+      },
+    ],
+  };
+  const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    deps.sendToThread.mock.calls.map((call) => {
+      const request = (call as unknown[])[0] as { body: string; attachment?: { name: string } };
+      return request.attachment ? `file:${request.attachment.name}` : request.body;
+    });
+
+  it("sends a reply's image and file after its text, one row each", async () => {
+    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "telegram:123", body: "Here you go" },
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "chart.png", mimeType: "image/png", data: bytes("key-1") },
+      },
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "report.pdf", mimeType: "application/pdf", data: bytes("key-2") },
+      },
+    ]);
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+      ["msg:m-1", "sent"],
+      ["msg:m-1:file:art-1", "sent"],
+      ["msg:m-1:file:art-2", "sent"],
+    ]);
+    // Bytes come from the artifact store, read in the artifact's own Space.
+    expect(deps.artifacts.get).toHaveBeenCalledWith(
+      "key-1",
+      expect.objectContaining({ spaceId: "ws-1", userId: "user-1" }),
+    );
+  });
+
+  it("sends a reply that is only a file", async () => {
+    const deps = createDeps({
+      identity: telegram,
+      messages: [{ id: "m-1", blocks: [reply.blocks[1]] }],
+      artifacts,
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual(["file:chart.png"]);
+  });
+
+  it("keeps text-only delivery on platforms that cannot send files", async () => {
+    const deps = createDeps({ messages: [reply], artifacts });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "sendblue:dm-1", body: "Here you go" },
+      context,
+    );
+    expect(deps.rows).toHaveLength(1);
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed file without sending the text again", async () => {
+    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
+    deps.sendToThread
+      .mockResolvedValueOnce({ handle: "text-1" })
+      .mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    // The second file waits behind the failed first one.
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual([
+      "Here you go",
+      "file:chart.png",
+      "file:chart.png",
+      "file:report.pdf",
+    ]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+  });
+
+  it("queues a short notice once a file's attempts run out, without repeating the text", async () => {
+    const fileRow = {
+      id: "out-2",
+      idempotencyKey: "msg:m-1:file:art-1",
+      kind: "dm",
+      identityId: "mi-1",
+      body: "",
+      sourceMessageId: "m-1",
+      status: "pending",
+      attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
+      nextAttemptAt: null,
+      providerHandle: null,
+      createdAt: new Date(1_001),
+    };
+    const deps = createDeps({
+      run: null,
+      identity: telegram,
+      artifacts,
+      outboundRows: [
+        {
+          ...fileRow,
+          id: "out-1",
+          idempotencyKey: "msg:m-1",
+          body: "Here you go",
+          status: "sent",
+          providerHandle: "text-1",
+          createdAt: new Date(1_000),
+        },
+        fileRow,
+      ],
+    });
+    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+      ["msg:m-1", "sent"],
+      ["msg:m-1:file:art-1", "failed"],
+      ["msg:m-1:file:art-1:notice", "pending"],
+    ]);
+    expect(deps.rows[2]).toEqual(
+      expect.objectContaining({ kind: "dm", identityId: "mi-1", sourceMessageId: "m-1" }),
+    );
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "messaging.deliver" }),
+    );
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(sentBodies(deps)).toEqual(["file:chart.png", 'Could not send "chart.png".']);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "sent"]);
+  });
+
+  it("sends the notice in the file's place, before a later reply already queued", async () => {
+    const deps = createDeps({
+      run: null,
+      identity: telegram,
+      artifacts,
+      outboundRows: [
+        {
+          id: "out-1",
+          idempotencyKey: "msg:m-1:file:art-1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "",
+          sourceMessageId: "m-1",
+          status: "pending",
+          attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
+          nextAttemptAt: null,
+          providerHandle: null,
+          createdAt: new Date(1_000),
+        },
+        {
+          id: "out-2",
+          idempotencyKey: "msg:m-2",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "Later reply",
+          sourceMessageId: "m-2",
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: null,
+          providerHandle: null,
+          createdAt: new Date(2_000),
+        },
+      ],
+    });
+    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, {}, context);
+    // One transaction claims the row for sending; the failure and its notice
+    // are then saved together in a second one.
+    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(2);
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(sentBodies(deps)).toEqual([
+      "file:chart.png",
+      'Could not send "chart.png".',
+      "Later reply",
+    ]);
+  });
+
+  it("drops a file whose artifact is gone or belongs to another Space", async () => {
+    const deps = createDeps({
+      identity: telegram,
+      messages: [reply],
+      artifacts: [{ ...artifacts[0]!, spaceId: "ws-2" }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual(["Here you go"]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "failed"]);
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
+  });
+});
+
+describe("cross-space group reply isolation", () => {
+  it.each(["bot-1", "bot-2"])(
+    "does not send history or wake a peer when %s is blocked",
+    async (blockedBot) => {
+      const deps = createChannelDeps({ blockedBot, text: "@Helper private reply" });
+      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+      expect(deps.contextMessages).toHaveLength(0);
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("drops a queued connection invite after opt-out", async () => {
+  const deps = createDeps({
+    run: null,
+    blockedBot: "bot-1",
+    connectionStatus: "pending",
+    outboundRows: [
+      {
+        id: "invite",
+        idempotencyKey: "connect:bot-1:bot-2",
+        kind: "dm",
+        identityId: "mi-1",
+        body: "Connection invite",
+        status: "pending",
+        providerHandle: null,
+      },
+    ],
+  });
+  await deliverMessagingOutbound(deps, {}, context);
+  expect(deps.sendToThread).not.toHaveBeenCalled();
+});
+
+describe("accepted outbound bookkeeping failures", () => {
+  const cases = [
+    ["group", "handle"],
+    ["intro", "handle"],
+    ["invite", "counter"],
+    ["text", "handle"],
+    ["text", "counter"],
+    ["attachment", "handle"],
+    ["attachment", "counter"],
+  ] as const;
+
+  function pending(kind: string) {
+    return createDeps({
+      identity: { provider: "telegram", dmThreadId: "telegram:123" },
+      outboundRows: [
+        {
+          id: "out-accepted",
+          idempotencyKey:
+            kind === "invite"
+              ? "connect:bot-1:bot-9"
+              : kind === "attachment"
+                ? "msg:m-1:file:art-1"
+                : "msg:m-1",
+          sourceMessageId: "m-1",
+          kind: kind === "group" || kind === "intro" ? kind : "dm",
+          identityId: kind === "group" || kind === "intro" ? null : "mi-1",
+          threadId: kind === "group" || kind === "intro" ? "telegram:group" : null,
+          body: kind === "attachment" ? "" : "Hello",
+          status: "pending",
+          attempts: 0,
+          providerHandle: null,
+          nextAttemptAt: null,
+          createdAt: new Date(1_000),
+        },
+      ],
+      artifacts: [
+        {
+          id: "art-1",
+          spaceId: "ws-1",
+          userId: "user-1",
+          name: "chart.png",
+          mimeType: "image/png",
+          storageKey: "chart",
+        },
+      ],
+    });
+  }
+
+  it.each(cases)("does not resend accepted %s after a %s save failure", async (kind, failure) => {
+    const deps = pending(kind);
+    const error = new Error("bookkeeping unavailable");
+    if (failure === "counter") {
+      deps.prisma.messagingIdentity.update.mockRejectedValueOnce(error);
+    } else if (kind === "group" || kind === "intro") {
+      deps.prisma.messagingOutbound.update.mockRejectedValueOnce(error);
+    } else {
+      const update = deps.prisma.messagingOutbound.updateMany.getMockImplementation()!;
+      deps.prisma.messagingOutbound.updateMany
+        .mockImplementationOnce(update)
+        .mockRejectedValueOnce(error);
+    }
+    await deliverMessagingOutbound(deps, {}, context);
+    // Past every send retry and abandoned-part deadline, the accepted row stays claimed.
+    deps.rows[0]!.nextAttemptAt = new Date(0);
+    deps.rows[0]!.updatedAt = new Date(0);
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[0]!.status).toBe("sent");
+    expect(deps.rows[0]!.attempts).toBe(0);
+    expect(deps.rows[0]!.providerHandle).toBe(failure === "counter" ? "handle-out-1" : null);
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(deps.rows).toHaveLength(1);
+  });
+
+  it.each(["group", "intro", "text", "attachment"])(
+    "still retries %s when the provider fails before acceptance",
+    async (kind) => {
+      const deps = pending(kind);
+      deps.sendToThread.mockRejectedValueOnce(new Error("provider unavailable"));
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.rows[0]!.status).toBe("pending");
+      expect(deps.rows[0]!.attempts).toBe(1);
+      expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          name: "messaging.deliver",
+          availableAt: deps.rows[0]!.nextAttemptAt,
+        }),
+      );
+      deps.rows[0]!.nextAttemptAt = new Date(0);
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.sendToThread).toHaveBeenCalledTimes(2);
+      expect(deps.rows[0]!.status).toBe("sent");
+    },
+  );
+});
+
+describe("drain lanes", () => {
+  const groupRow = (id: string, threadId: string, offset: number) => ({
+    id,
+    idempotencyKey: `msg:${id}`,
+    kind: "group",
+    identityId: null,
+    threadId,
+    body: id,
+    status: "pending",
+    sourceMessageId: `${id}-source`,
+    providerHandle: null,
+    attempts: 0,
+    nextAttemptAt: null,
+    createdAt: new Date(1_000 + offset),
+  });
+
+  it("sends separate conversations without waiting for a slow one", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("slow-1", "t-slow", 0), groupRow("fast-1", "t-fast", 1)],
+    });
+    let releaseSlow = () => {};
+    const slowSend = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await slowSend;
+      return { handle: "h-slow" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    // Both conversations are on the wire before the slow one answers.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(2));
+    releaseSlow();
+    await drained;
+
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("keeps one conversation in order while its first send is running", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[1]!.status).toBe("pending");
+
+    releaseFirst();
+    await drained;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("waits behind an equal-createdAt row that another drain is sending", async () => {
+    const createdAt = new Date(1_000);
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        { ...groupRow("z-2", "t-a", 0), createdAt },
+        { ...groupRow("a-1", "t-a", 0), createdAt },
+      ],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const firstDrain = deliverMessagingOutbound(deps, {}, context);
+    // The head is a-1: the tie-break on id orders rows of equal createdAt.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "sent"]);
+
+    releaseFirst();
+    await firstDrain;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "z-2" },
+    ]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("does not claim beside a row that committed between the check and the claim", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("r-1", "t-a", 10)] });
+    let releaseIntroSend = () => {};
+    const introSend = new Promise<void>((resolve) => {
+      releaseIntroSend = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await introSend;
+      return { handle: "h-intro" };
+    });
+
+    // Between the first drain's blocker check and its claim, an unlocked
+    // writer commits an earlier row and a second drain picks it up and goes
+    // in flight — the first drain must see it before claiming.
+    let drainB: Promise<void> | null = null;
+    let injected = false;
+    const inject = async () => {
+      if (injected) return;
+      injected = true;
+      deps.rows.push(groupRow("intro", "t-a", 0));
+      drainB = deliverMessagingOutbound(deps, {}, context);
+      await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    };
+    const prisma = deps.prisma as unknown as {
+      $transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+      messagingOutbound: {
+        updateMany: {
+          getMockImplementation: () => (args: never) => unknown;
+          mockImplementationOnce: (impl: (args: never) => unknown) => unknown;
+        };
+      };
+    };
+    const realTransaction = prisma.$transaction.bind(prisma);
+    prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
+      await inject();
+      return realTransaction(fn);
+    };
+    const realUpdateMany = prisma.messagingOutbound.updateMany.getMockImplementation()!;
+    prisma.messagingOutbound.updateMany.mockImplementationOnce(
+      async (args: Parameters<typeof realUpdateMany>[0]) => {
+        await inject();
+        return realUpdateMany(args);
+      },
+    );
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "pending"],
+      ["intro", "sent"],
+    ]);
+
+    releaseIntroSend();
+    await drainB;
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.rows.map((row) => [row.body, row.status])).toEqual([
+      ["r-1", "sent"],
+      ["intro", "sent"],
+    ]);
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "intro" },
+      { threadId: "t-a", body: "r-1" },
+    ]);
+  });
+
+  it("leaves a conversation alone when another drain claimed its oldest row", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    (
+      deps.prisma.messagingOutbound.updateMany as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({ count: 0 });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    // Overtaking would reorder the conversation, so the later row waits too.
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
+  });
+
+  it("sends a reply queued while its conversation's previous send was running", async () => {
+    const deps = createDeps({ run: null, outboundRows: [groupRow("a-1", "t-a", 0)] });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      // Another drain started for this reply, found a-1 in flight, and left it.
+      deps.rows.push(groupRow("a-2", "t-a", 1));
+      return { handle: "h-1" };
+    });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("does not let a long held conversation starve the others", async () => {
+    const held = Array.from({ length: 100 }, (_, index) => ({
+      ...groupRow(`w-${index}`, "t-held", index),
+      nextAttemptAt: new Date(Date.now() + 60_000),
+    }));
+    const deps = createDeps({
+      run: null,
+      outboundRows: [...held, groupRow("later", "t-other", 1_000)],
+    });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "t-other", body: "later" },
+      context,
+    );
   });
 });

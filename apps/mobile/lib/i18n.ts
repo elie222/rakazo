@@ -1,19 +1,46 @@
+import type { Messages } from "@lingui/core";
+import { i18n } from "@lingui/core";
+import { messages as de } from "@rakazo/i18n/locales/de/messages.po";
+import { messages as en } from "@rakazo/i18n/locales/en/messages.po";
+import { messages as es } from "@rakazo/i18n/locales/es/messages.po";
+import { messages as fr } from "@rakazo/i18n/locales/fr/messages.po";
+import { messages as he } from "@rakazo/i18n/locales/he/messages.po";
+import { messages as hi } from "@rakazo/i18n/locales/hi/messages.po";
+import { messages as ja } from "@rakazo/i18n/locales/ja/messages.po";
+import { messages as ko } from "@rakazo/i18n/locales/ko/messages.po";
+import { messages as nl } from "@rakazo/i18n/locales/nl/messages.po";
+import { messages as pl } from "@rakazo/i18n/locales/pl/messages.po";
+import { messages as ptBR } from "@rakazo/i18n/locales/pt-BR/messages.po";
+import { messages as ru } from "@rakazo/i18n/locales/ru/messages.po";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
+import { messages as zhCN } from "@rakazo/i18n/locales/zh-CN/messages.po";
+import { messages as zhTW } from "@rakazo/i18n/locales/zh-TW/messages.po";
 import { useSyncExternalStore } from "react";
-import { DE_MESSAGES } from "./locales/de";
-import { RU_MESSAGES } from "./locales/ru";
-import { ZH_MESSAGES } from "./locales/zh";
-import {
-  htmlLangForLocale,
-  resolveUiLocale,
-  UI_LOCALE_STORAGE_KEY,
-  type UiLocale,
-} from "./ui-locale";
+import { installPluralRules } from "./plural-rules";
+import type { UiLocale } from "./ui-locale";
+import { htmlLangForLocale, resolveUiLocale, UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
-const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
-  "zh-CN": ZH_MESSAGES,
-  ru: RU_MESSAGES,
-  de: DE_MESSAGES,
+const catalogs: Record<UiLocale, Messages> = {
+  en,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+  ru,
+  de,
+  nl,
+  ja,
+  es,
+  pl,
+  fr,
+  he,
+  hi,
+  ko,
+  "pt-BR": ptBR,
+  tr,
 };
+
+installPluralRules();
+i18n.load(catalogs);
+i18n.activate("en");
 
 let activeLocale: UiLocale = "en";
 const listeners = new Set<() => void>();
@@ -37,37 +64,21 @@ export function dateLocaleForUi(locale: UiLocale = activeLocale): string {
   return locale === "en" ? "en-US" : htmlLangForLocale(locale);
 }
 
-export function t(message: string, values?: Record<string, string | number>): string {
-  const template = catalogs[activeLocale]?.[message] ?? message;
-  if (!values) return template;
-  return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
-    Object.hasOwn(values, key) ? String(values[key]) : match,
-  );
-}
-
-export function useI18n(): { locale: UiLocale; t: typeof t } {
-  const locale = useSyncExternalStore(subscribeI18n, getActiveUiLocale, getActiveUiLocale);
-  return { locale, t };
-}
-
-function readDeviceLanguage(): string | null {
-  try {
-    const IntlRef = globalThis.Intl;
-    return IntlRef?.DateTimeFormat().resolvedOptions().locale || null;
-  } catch {
-    return null;
-  }
+/** The app language, re-rendering when it changes. Strings come from Lingui's `useLingui`. */
+export function useUiLocale(): UiLocale {
+  return useSyncExternalStore(subscribeI18n, getActiveUiLocale, getActiveUiLocale);
 }
 
 export function activateUiLocale(locale: UiLocale): UiLocale {
   activeLocale = locale;
+  i18n.activate(locale);
   emit();
   return locale;
 }
 
 async function applyDirection(locale: UiLocale): Promise<void> {
   try {
-    // Direction follows the active UI locale only (en / zh-CN / ru / de → LTR), never the
+    // Direction follows the active UI locale only (all supported locales are LTR), never the
     // device language. Applying device RTL here would fight this and reload-loop.
     const { applyMobileUiDirection } = await import("./ui-direction");
     applyMobileUiDirection(htmlLangForLocale(locale));
@@ -76,27 +87,38 @@ async function applyDirection(locale: UiLocale): Promise<void> {
   }
 }
 
+/** The device's preferred language (`es-CL`), from Expo where it loads, else from Intl. */
+export async function deviceLanguage(): Promise<string | null> {
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
+  try {
+    const localization = await import("expo-localization");
+    const tag = localization.getLocales()[0]?.languageTag;
+    if (typeof tag === "string" && tag) return tag;
+  } catch {
+    // Keep Intl fallback.
+  }
+  try {
+    const IntlRef = globalThis.Intl;
+    return IntlRef?.DateTimeFormat().resolvedOptions().locale || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function bootstrapI18n(): Promise<UiLocale> {
   let stored: string | null = null;
-  let deviceLanguage: string | null = readDeviceLanguage();
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
   try {
     const SecureStore = await import("expo-secure-store");
     stored = await SecureStore.getItemAsync(UI_LOCALE_STORAGE_KEY);
   } catch {
     stored = null;
   }
-  try {
-    const localization = await import("expo-localization");
-    const tag = localization.getLocales()[0]?.languageTag;
-    if (typeof tag === "string" && tag) deviceLanguage = tag;
-  } catch {
-    // Keep Intl fallback.
-  }
   const envDefault =
     typeof process !== "undefined" && typeof process.env.EXPO_PUBLIC_DEFAULT_UI_LOCALE === "string"
       ? process.env.EXPO_PUBLIC_DEFAULT_UI_LOCALE
       : null;
-  const locale = resolveUiLocale({ stored, envDefault, deviceLanguage });
+  const locale = resolveUiLocale({ stored, envDefault, deviceLanguage: await deviceLanguage() });
   activateUiLocale(locale);
   await applyDirection(locale);
   return locale;
@@ -131,6 +153,7 @@ export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
 /** Test-only: set the in-memory locale without I/O. */
 export function resetI18nForTests(locale: UiLocale = "en"): void {
   activeLocale = locale;
+  i18n.activate(locale);
   uiLocaleWriteChain = Promise.resolve();
   emit();
 }

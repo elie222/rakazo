@@ -74,7 +74,7 @@ export function homeStructuredData(input: HomeStructuredDataInput) {
         description: input.siteDescription,
         applicationCategory: "BusinessApplication",
         applicationSubCategory: "AI agent platform",
-        operatingSystem: "Web, macOS, Linux, iOS, Android",
+        operatingSystem: "Web, macOS, Windows, Linux, iOS, Android",
         isAccessibleForFree: true,
         codeRepository: GITHUB_URL,
         license: `${GITHUB_URL}/blob/main/LICENSE`,

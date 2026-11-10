@@ -28,9 +28,29 @@ else
   esac
 fi
 mkdir -p "$PROFILE"
-BIN="$(command -v chromium || command -v chromium-browser || true)"
+# Ubuntu's chromium is a confined snap that cannot use these flags, so a
+# snap is only the last resort. Google Chrome's .deb lives in /opt/google/chrome.
+is_snap_browser() {
+  case "$1" in /snap/*) return 0 ;; esac
+  case "$(readlink -f "$1" 2>/dev/null || true)" in /snap/*|*/bin/snap) return 0 ;; esac
+  # Ubuntu's /usr/bin/chromium-browser is a small script that runs the snap.
+  [ "$(head -c 2 "$1" 2>/dev/null)" = "#!" ] && grep -qs '/snap/' "$1"
+}
+BIN=""
+SNAP_BIN=""
+for candidate in chromium chromium-browser google-chrome google-chrome-stable /opt/google/chrome/chrome brave-browser /opt/brave.com/brave/brave; do
+  found="$(command -v "$candidate" || true)"
+  [ -n "$found" ] && [ -x "$found" ] || continue
+  if is_snap_browser "$found"; then
+    [ -n "$SNAP_BIN" ] || SNAP_BIN="$found"
+    continue
+  fi
+  BIN="$found"
+  break
+done
+BIN="${BIN:-$SNAP_BIN}"
 if [ -z "$BIN" ]; then
-  echo "chromium is not installed" >&2
+  echo "no browser found: install chromium, google-chrome or brave-browser" >&2
   exit 1
 fi
 USER_DATA_DIR_SET=0
@@ -98,7 +118,7 @@ is_wrapper_pid() {
   pid=$1
   exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
   case "${exe##*/}" in
-    chromium|chromium-browser|chrome|google-chrome|google-chrome-stable) return 1 ;;
+    chromium|chromium-browser|chrome|google-chrome|google-chrome-stable|brave|brave-browser) return 1 ;;
   esac
   cmdline_text "$pid" | grep -qE '^([^=]*/)?rakazo-browser$'
 }
@@ -158,7 +178,7 @@ profile_browser_pid() {
 # The profile scan above is capped at 0.4s. The spawn poll is those two bounds plus
 # a little shell, so a forward that fails after the scan is still reported.
 open_live_browser_url() {
-  timeout 1.6 python3 - "$@" <<'PY'
+  timeout 1.6 /usr/bin/python3 -I - "$@" <<'PY'
 import json
 import sys
 import time
@@ -393,10 +413,46 @@ if [ -d "$ACTUAL_PROFILE" ]; then
   fi
 fi
 
+# Chromium's singleton hand-off hangs with the image's NSS wrapper loaded.
+# Match the per-screen launcher: preserve other space- or colon-separated preload entries.
+if [ -n "${LD_PRELOAD:-}" ]; then
+  _kept=""
+  _rest="$LD_PRELOAD"
+  while [ -n "$_rest" ]; do
+    case "$_rest" in
+      *[:\ ]*) _entry="${_rest%%[: ]*}"; _rest="${_rest#*[: ]}" ;;
+      *) _entry="$_rest"; _rest="" ;;
+    esac
+    case "$_entry" in
+      *libnss_wrapper.so|"") ;;
+      *) _kept="${_kept:+$_kept:}$_entry" ;;
+    esac
+  done
+  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi
+  unset _kept _rest _entry
+fi
+
 # This container has no GPU. --disable-gpu keeps Chromium from probing one.
 # WebGL still needs SwiftShader: --disable-software-rasterizer blocks it, and
 # current Chromium allows that fallback only with --enable-unsafe-swiftshader.
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
+# The account's language arrives as LANGUAGE, which Chrome on Linux reads for its
+# own language (it ignores --lang). For the languages pages see, it reads LANGUAGE
+# only when it creates a profile and keeps that profile's list afterwards, so a
+# saved profile gets the account's language through --accept-lang on each start.
+LANGUAGE_FLAGS=""
+language="${LANGUAGE:-}"
+language="$(printf '%s' "${language%%:*}" | tr _ -)"
+case "$language" in
+  ''|-*|*[!A-Za-z0-9-]*) ;;
+  *)
+    base="${language%%-*}"
+    languages="$language"
+    [ "$base" = "$language" ] || languages="$languages,$base"
+    [ "$base" = en ] || languages="$languages,en-US,en"
+    LANGUAGE_FLAGS="--accept-lang=$languages"
+    ;;
+esac
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader $LANGUAGE_FLAGS --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

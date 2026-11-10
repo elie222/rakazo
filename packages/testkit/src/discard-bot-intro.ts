@@ -2,6 +2,7 @@ import { runJobKey } from "@rakazo/adapter-kit";
 import type { RunStatus } from "@rakazo/contracts";
 import { isActive } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
@@ -26,7 +27,8 @@ export async function discardBotIntroRun(
   botId: string,
   timeoutMs = 15_000,
 ): Promise<void> {
-  const bot = await harness.prisma.bot.findUnique({
+  const prisma = asSystem(harness.prisma);
+  const bot = await prisma.bot.findUnique({
     where: { id: botId },
     select: { spaceId: true },
   });
@@ -35,7 +37,7 @@ export async function discardBotIntroRun(
   while (Date.now() < deadline) {
     // Create can target a space other than the session default. Stop must use that space.
     await rpc(harness.app, cookie, "threads/stop", { botId }, bot?.spaceId);
-    const runs = await harness.prisma.run.findMany({
+    const runs = await prisma.run.findMany({
       where: { botId },
       select: { id: true, status: true },
     });
@@ -43,7 +45,7 @@ export async function discardBotIntroRun(
       await harness.jobs.cancel(runJobKey(run.id)).catch(() => undefined);
       await harness.runtime.abort(run.id);
     }
-    const runningAttempts = await harness.prisma.attempt.count({
+    const runningAttempts = await prisma.attempt.count({
       where: { run: { botId }, status: "running" },
     });
     const active = runs.some((run) => isActive(run.status as RunStatus));

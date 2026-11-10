@@ -1,18 +1,302 @@
+import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultCatalogModelId } from "./model-selection.js";
+import { modelAcceptsImageInput } from "./model-vision.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import {
   catalogModelLabel,
+  catalogModelServesAgents,
   catalogProviderProbeBaseUrl,
+  hiddenCatalogModel,
   listPiCatalog,
+  offeredCatalog,
   probeCatalogProviderModels,
   scriptedCatalogEntry,
+  verifyCatalogProviderApiKey,
 } from "./pi-models.js";
 import { probeOpenAiCompatibleModels } from "./pi-openai-compatible-provider.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
+
+describe("catalog provider authentication", () => {
+  it("refuses a key that cannot travel in a header without calling the provider", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "openrouter", apiKey: "sk-fixture-ключ" }, fetchImpl),
+    ).rejects.toThrow(MODEL_KEY_FORMAT_ERROR);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("checks authentication before listing a public OpenRouter catalog", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({ data: [{ id: "fixture-model" }] }),
+    );
+    await expect(
+      probeCatalogProviderModels({ provider: "openrouter", apiKey: " fixture-key " }, fetchImpl),
+    ).resolves.toEqual(["fixture-model"]);
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://openrouter.ai/api/v1/key",
+      "https://openrouter.ai/api/v1/models",
+    ]);
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer fixture-key" },
+      redirect: "error",
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it.each([401, 403])(
+    "refuses rejected credentials (%i) before reading the catalog",
+    async (status) => {
+      const fetchImpl = vi.fn<typeof fetch>(
+        async () => new Response("private upstream details", { status }),
+      );
+      await expect(
+        probeCatalogProviderModels({ provider: "openrouter", apiKey: "fixture-key" }, fetchImpl),
+      ).rejects.toThrow("API key was rejected by the provider.");
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([302, 429, 503])(
+    "lets an upstream failure (%i) through as inconclusive",
+    async (status) => {
+      await expect(
+        verifyCatalogProviderApiKey(
+          { provider: "openrouter", apiKey: "fixture-key" },
+          async () => new Response("private upstream details", { status }),
+        ),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["deepseek", "https://api.deepseek.com/models", { Authorization: "Bearer fixture-key" }],
+    [
+      "google",
+      "https://generativelanguage.googleapis.com/v1beta/models",
+      { "x-goog-api-key": "fixture-key" },
+    ],
+  ])(
+    "checks %s without calling a model or putting the key in the URL",
+    async (provider, url, headers) => {
+      const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({}));
+      await verifyCatalogProviderApiKey({ provider, apiKey: " fixture-key " }, fetchImpl);
+      expect(fetchImpl).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ headers, redirect: "error" }),
+      );
+    },
+  );
+
+  it.each(["google", "deepseek"])("rejects unauthorized %s keys", async (provider) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider, apiKey: "fixture-key" },
+        async () => new Response("private upstream details", { status: 401 }),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it("recognizes Google's structured invalid-key response without exposing the body", async () => {
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "google", apiKey: "fixture-key" }, async () =>
+        Response.json(
+          { error: { message: "private details", details: [{ reason: "API_KEY_INVALID" }] } },
+          { status: 400 },
+        ),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it.each([
+    "invalid JSON",
+    JSON.stringify({ error: { details: [{ reason: "OTHER_REASON" }] } }),
+    "x".repeat(4097),
+  ])("does not label an unknown Google error as an invalid key", async (body) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => new Response(body, { status: 400 }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
+    const controller = new AbortController();
+    let waitingForBody: (() => void) | undefined;
+    const bodyStarted = new Promise<void>((resolve) => {
+      waitingForBody = resolve;
+    });
+    const result = verifyCatalogProviderApiKey(
+      { provider: "google", apiKey: "fixture-key" },
+      async (_url, init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              body.enqueue(new TextEncoder().encode('{"error":'));
+              init?.signal?.addEventListener(
+                "abort",
+                () => body.error(new Error("private fixture-key details")),
+                { once: true },
+              );
+              waitingForBody?.();
+            },
+          }),
+          { status: 400 },
+        ),
+      controller.signal,
+    );
+    const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+    await bodyStarted;
+    controller.abort();
+    await assertion;
+  });
+
+  it("cancels an oversized Google error without waiting for the stream to finish", async () => {
+    const cancel = vi.fn();
+    const response = new Response(
+      new ReadableStream({
+        start(body) {
+          body.enqueue(new Uint8Array(4097));
+        },
+        cancel,
+      }),
+      { status: 400 },
+    );
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => response,
+      ),
+    ).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
+  it("bounds a stalled check and lets it through as inconclusive", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    // The app gives up on saving a connection after 60 seconds, so key checks ignore the setting.
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "90000");
+    try {
+      const result = verifyCatalogProviderApiKey(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("fixture-key")));
+          }),
+      );
+      const assertion = expect(result).resolves.toBeUndefined();
+      expect(timeout).toHaveBeenCalledWith(MODEL_CONNECT_TIMEOUT_MS);
+      deadline.abort();
+      await assertion;
+    } finally {
+      timeout.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("honors caller cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async (_url, init) => {
+          init?.signal?.throwIfAborted();
+          throw new Error("must already be aborted");
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+  });
+
+  it("adds no network requirement to other providers or local endpoints", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    for (const provider of ["openai-compatible", "local", "anthropic", "fixture-provider"]) {
+      await verifyCatalogProviderApiKey({ provider, apiKey: "fixture-key" }, fetchImpl);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
 
 describe("Pi model catalog", () => {
+  it("recommends one Luna or Haiku model per supported provider", () => {
+    expect(
+      listPiCatalog()
+        .filter((entry) => entry.recommended)
+        .map(({ provider, id }) => ({ provider, id })),
+    ).toEqual(
+      expect.arrayContaining([
+        { provider: "openai-codex", id: "gpt-6-luna" },
+        { provider: "openai", id: "gpt-6-luna" },
+        { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
+        { provider: "anthropic", id: "claude-haiku-5-5" },
+      ]),
+    );
+    for (const provider of ["openai-codex", "openai", "openrouter", "anthropic"]) {
+      expect(
+        listPiCatalog().filter((entry) => entry.provider === provider && entry.recommended),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("preserves provider names and sign-in options from before pi 1.3", () => {
+    const catalog = listPiCatalog();
+    const codex = catalog.filter((entry) => entry.provider === "openai-codex");
+    expect(codex.length).toBeGreaterThan(0);
+    for (const entry of codex) {
+      expect(entry).toMatchObject({
+        providerName: "OpenAI Codex",
+        auth: "oauth",
+        oauthLabel: "Sign in with ChatGPT",
+        subscription: true,
+        signIn: "device-code",
+      });
+    }
+    const openai = catalog.filter((entry) => entry.provider === "openai");
+    expect(openai.length).toBeGreaterThan(0);
+    for (const entry of openai) {
+      expect(entry).toMatchObject({
+        providerName: "OpenAI",
+        auth: "api-key",
+        subscription: false,
+        billing: "Uses your OpenAI API key. Rakazo does not pay for model usage.",
+      });
+      expect(entry.oauthLabel).toBeUndefined();
+      expect(entry.signIn).toBeUndefined();
+      expect(entry.authHint).toBeUndefined();
+    }
+    const azure = catalog.filter((entry) => entry.provider === "azure");
+    expect(azure.length).toBeGreaterThan(0);
+    for (const entry of azure) {
+      expect(entry).toMatchObject({
+        providerName: "Azure OpenAI",
+        auth: "api-key",
+        subscription: false,
+        billing: "Uses your Azure OpenAI API key. Rakazo does not pay for model usage.",
+      });
+    }
+  });
+
   it("keeps the custom catalog independent of server model IDs", () => {
     const custom = listPiCatalog().filter((entry) => entry.provider === "openai-compatible");
     expect(custom).toHaveLength(1);
     expect(custom[0]).toMatchObject({ id: "custom", placeholder: true, reasoning: false });
+  });
+
+  it("says which catalog models support images, the same way runs decide it", () => {
+    const catalog = listPiCatalog();
+    for (const entry of catalog) {
+      if (entry.provider === "openai-compatible") {
+        // The connection's own "Supports images" setting decides this one.
+        expect(entry.images).toBeUndefined();
+      } else {
+        expect(entry.images).toBe(modelAcceptsImageInput(entry.provider, entry.id));
+      }
+    }
+    expect(catalog.some((entry) => entry.images === true)).toBe(true);
+    expect(catalog.some((entry) => entry.images === false)).toBe(true);
   });
 
   afterEach(() => {
@@ -42,7 +326,7 @@ describe("Pi model catalog", () => {
     expect(claude).toMatchObject({
       signIn: "auth-url",
       authHint: "Claude Pro/Max / key",
-      oauthLabel: "Sign in with Claude Pro/Max",
+      oauthLabel: "Sign in with Claude",
       billing: "",
     });
     expect(scriptedCatalogEntry.provider).toBe("scripted");
@@ -76,7 +360,11 @@ describe("Pi model catalog", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
-    expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+    expect(openAiCompatible).toMatchObject({
+      id: "custom",
+      placeholder: true,
+      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS,
+    });
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 
@@ -97,8 +385,14 @@ describe("Pi model catalog", () => {
       listPiCatalog().find((entry) => entry.provider === "cloudflare-workers-ai")?.catalogProbe,
     ).toBeUndefined();
 
+    const routing = (provider: string) =>
+      listPiCatalog().find((entry) => entry.provider === provider)?.routingFields;
+    expect(routing("cloudflare-workers-ai")).toEqual(["accountId"]);
+    expect(routing("cloudflare-ai-gateway")).toEqual(["accountId", "gatewayId"]);
+    expect(routing("anthropic")).toBeUndefined();
+
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
-    delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
     try {
       await expect(
         probeOpenAiCompatibleModels(
@@ -107,7 +401,7 @@ describe("Pi model catalog", () => {
             throw new Error("user-supplied probe should be rejected before fetch");
           },
         ),
-      ).rejects.toThrow(/Public model endpoints are blocked/);
+      ).rejects.toThrow(/Public model endpoints are disabled/);
 
       for (const [provider, baseUrl] of Object.entries(expected)) {
         let requestedUrl = "";
@@ -153,7 +447,9 @@ describe("Pi model catalog", () => {
       ),
     ).resolves.toEqual(ids);
     await expect(
-      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl, undefined, {
+        allowPrivate: true,
+      }),
     ).rejects.toThrow(/too large/i);
   });
 
@@ -237,5 +533,68 @@ describe("catalogModelLabel", () => {
     ["latest", "latest", "latest"],
   ])("labels %s / %s as %s", (id, name, expected) => {
     expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
+  });
+});
+
+describe("models agents can run", () => {
+  const free = { input: 0, output: 0 };
+  const paid = { input: 1, output: 2 };
+
+  it.each([
+    // OpenRouter batch variants only exist on its batch endpoint.
+    [{ provider: "openrouter", id: "fixture/model:batch", cost: paid }, false],
+    [{ provider: "openrouter", id: "fixture/model", cost: paid }, true],
+    // OpenRouter's own free models still answer API calls.
+    [{ provider: "openrouter", id: "fixture/model:free", cost: free }, true],
+    // OpenCode's free tier only answers inside the OpenCode app.
+    [{ provider: "opencode", id: "fixture-free", cost: free }, false],
+    [{ provider: "opencode", id: "fixture", cost: paid }, true],
+    [{ provider: "opencode-go", id: "fixture-free", cost: free }, true],
+    // Retired or integration-refused ids.
+    [{ provider: "google", id: "gemini-2.5-flash", cost: paid }, false],
+    [{ provider: "google", id: "gemini-3.8-flash", cost: paid }, true],
+    [{ provider: "groq", id: "llama-3.1-8b-instant", cost: paid }, false],
+    [{ provider: "github-copilot", id: "grok-4.5", cost: paid }, false],
+  ])("judges %o as %s", (model, expected) => {
+    expect(catalogModelServesAgents(model)).toBe(expected);
+  });
+
+  it("hides bundled models agents cannot run from the offered catalog", () => {
+    const offered = offeredCatalog(listPiCatalog());
+    const has = (provider: string, id: string) =>
+      offered.some((entry) => entry.provider === provider && entry.id === id);
+    expect(offered.some((entry) => entry.id.endsWith(":batch"))).toBe(false);
+    expect(has("openrouter", "anthropic/claude-haiku-5.5")).toBe(true);
+    expect(has("google", "gemini-2.5-flash")).toBe(false);
+    expect(has("groq", "llama-3.1-8b-instant")).toBe(false);
+    expect(has("opencode", "big-pickle")).toBe(false);
+    expect(has("opencode", "claude-haiku-5-5")).toBe(true);
+    // A hidden model stays a known catalog id, so saved choices keep running.
+    expect(listPiCatalog().some((entry) => entry.id === "gemini-2.5-flash")).toBe(true);
+  });
+
+  it("keeps a hidden model the account already saved", () => {
+    const entries = [
+      { provider: "google", id: "gemini-2.5-flash" },
+      { provider: "openrouter", id: "fixture/model:batch" },
+    ];
+    expect(offeredCatalog(entries, new Set(["google:gemini-2.5-flash"]))).toEqual([entries[0]]);
+  });
+
+  it("judges live ids the catalog does not bundle by their id", () => {
+    expect(hiddenCatalogModel({ provider: "openrouter", id: "fixture/live:batch" })).toBe(true);
+    expect(hiddenCatalogModel({ provider: "openrouter", id: "fixture/live" })).toBe(false);
+  });
+
+  it.each([
+    ["google", "gemini-3.8-flash"],
+    ["groq", "openai/gpt-oss-120b"],
+    ["minimax", "MiniMax-M3"],
+  ])("connects %s to %s when no model is chosen", (provider, model) => {
+    expect(defaultCatalogModelId(provider, "fixture-api-key")).toBe(model);
+    expect(
+      listPiCatalog().find((entry) => entry.provider === provider && entry.id === model)
+        ?.recommended,
+    ).toBe(true);
   });
 });

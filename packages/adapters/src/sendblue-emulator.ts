@@ -1,8 +1,5 @@
-import type { Adapter } from "chat";
-import { SendblueAdapter } from "chat-adapter-sendblue";
-import SendblueAPI from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
-import { parseSendblueStatus } from "./messaging-platforms.js";
+import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
 interface SentMessage {
   kind: "dm" | "group";
@@ -20,6 +17,10 @@ export interface EmulatorInboundInput {
   participants?: string[];
   handle?: string;
   mediaUrl?: string;
+  /** The network the message arrived on; iMessage unless set. */
+  service?: "iMessage" | "SMS" | "RCS";
+  /** The send time to report; a strictly increasing one unless set. */
+  dateSent?: string;
 }
 
 /**
@@ -34,6 +35,7 @@ export class SendBlueEmulator {
   readonly typingIndicators: string[] = [];
   private handleCounter = 0;
   private failRemaining = 0;
+  private sentClock = 0;
 
   readonly fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
@@ -91,6 +93,16 @@ export class SendBlueEmulator {
     return `emulated-handle-${this.handleCounter}`;
   }
 
+  /**
+   * Every inbound message a real provider delivers carries its own, later send
+   * time — rosters are ordered by it, so a repeated time would collide two
+   * distinct events. Advance a deterministic clock by a millisecond per message.
+   */
+  private nextDateSent(): string {
+    this.sentClock += 1;
+    return new Date(Date.parse("2026-01-01T00:00:00.000Z") + this.sentClock).toISOString();
+  }
+
   /** Next N send-message / send-group-message calls fail with HTTP 500. */
   failNextSends(count: number): void {
     this.failRemaining = count;
@@ -108,7 +120,7 @@ export class SendBlueEmulator {
         content: input.content,
         is_outbound: false,
         status: "RECEIVED",
-        service: "iMessage",
+        service: input.service ?? "iMessage",
         message_handle: input.handle ?? this.nextHandle(),
         from_number: input.fromNumber,
         to_number: this.phoneNumber,
@@ -118,7 +130,7 @@ export class SendBlueEmulator {
         group_id: input.groupId ?? "",
         participants: input.participants ?? [input.fromNumber, this.phoneNumber],
         group_display_name: input.groupName ?? null,
-        date_sent: "2026-01-01T00:00:00.000Z",
+        date_sent: input.dateSent ?? this.nextDateSent(),
       }),
     });
   }
@@ -151,51 +163,20 @@ export class SendBlueEmulator {
 }
 
 /**
- * The production sendblue platform wired to the emulator: the real Chat SDK
- * adapter and official Sendblue SDK, with only the HTTP boundary swapped.
+ * The production sendblue platform wired to the emulator: the same
+ * messagingPlatformsFromEnv wiring, with only the HTTP boundary swapped.
  */
 export function createEmulatedSendbluePlatform(emulator: SendBlueEmulator): MessagingPlatform {
-  const adapter = new SendblueAdapter({
-    apiKey: "emulated-key",
-    apiSecret: "emulated-secret",
-    defaultFromNumber: emulator.phoneNumber,
-    webhookSecret: emulator.signingSecret,
-    allowedServices: ["iMessage", "SMS", "RCS"],
-  });
-  const sdk = new SendblueAPI({
-    apiKey: "emulated-key",
-    apiSecret: "emulated-secret",
-    baseURL: "https://api.sendblue.com",
-    fetch: emulator.fetch,
-  });
-  // The adapter builds its own SDK client without fetch injection; swap it
-  // for one that speaks to the emulator instead of the live vendor. Also
-  // supply the Adapter.isDM hook chat-adapter-sendblue@0.2.0 omits (chat@4.39
-  // derives thread.isDM solely from it), mirroring messagingPlatformsFromEnv.
-  Object.assign(adapter as unknown as Record<string, unknown>, { sdk });
-  Object.assign(adapter, {
-    isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-  } satisfies Pick<Adapter, "isDM">);
-  return {
-    provider: "sendblue",
-    capabilities: { direct: true, groups: true, typing: true },
-    adapter,
-    directThreadId: (address) =>
-      adapter.encodeThreadId({ fromNumber: emulator.phoneNumber, contactNumber: address }),
-    peekStatus: (payload) => parseSendblueStatus(payload),
-    participants: (raw) => {
-      const participants = (raw as { participants?: unknown }).participants;
-      return Array.isArray(participants)
-        ? participants.filter(
-            (entry): entry is string => typeof entry === "string" && entry !== emulator.phoneNumber,
-          )
-        : [];
+  const [platform] = messagingPlatformsFromEnv(
+    {
+      sendblueApiKeyId: "emulated-key",
+      sendblueApiSecret: "emulated-secret",
+      sendblueSigningSecret: emulator.signingSecret,
+      sendbluePhoneNumber: emulator.phoneNumber,
     },
-    channelName: (raw) => {
-      const name = (raw as { group_display_name?: unknown }).group_display_name;
-      return typeof name === "string" && name ? name : null;
-    },
-  };
+    { sendblueTransport: { baseURL: "https://api.sendblue.com", fetch: emulator.fetch } },
+  );
+  return platform!;
 }
 
 function parseBody(body: BodyInit | null | undefined): Record<string, unknown> {

@@ -121,10 +121,16 @@ describe("searchIntegrationCatalog", () => {
     ).rejects.toThrow("too large");
   });
 
-  it("rejects redirect responses instead of following them", async () => {
+  it("rejects redirect responses instead of following them and releases their body", async () => {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() {
+        cancels += 1;
+      },
+    });
     const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
       expect(init?.redirect).toBe("manual");
-      return new Response(null, {
+      return new Response(body, {
         status: 302,
         headers: { location: "http://169.254.169.254/latest/meta-data" },
       });
@@ -139,6 +145,7 @@ describe("searchIntegrationCatalog", () => {
       }),
     ).rejects.toThrow("redirects are not allowed");
     expect(fetch).toHaveBeenCalledOnce();
+    expect(cancels).toBe(1);
   });
 
   it("allows an admin-configured private catalog base", async () => {

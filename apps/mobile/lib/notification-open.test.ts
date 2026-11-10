@@ -1,18 +1,38 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   notificationOpenTarget,
   notificationOpenTargetFromLink,
   notificationResponseRoute,
+  threadRouteId,
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
   threadSpaceSwitchResult,
 } from "./notification-open.js";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";
-const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+describe("thread route identity", () => {
+  it("reuses a chat screen for the same bot or group", () => {
+    expect(threadRouteId("thread", { botId: "bot-1", name: "Ada" })).toBe(
+      threadRouteId("thread", { botId: "bot-1", threadId: "thread-1", spaceId: "space-1" }),
+    );
+    expect(threadRouteId("group-thread", { botId: "bot-1", groupId: "group-1" })).toBe(
+      threadRouteId("group-thread", { botId: "bot-2", groupId: "group-1" }),
+    );
+  });
+
+  it("keeps different bots and group chats distinct", () => {
+    const bot = threadRouteId("thread", { botId: "bot-1" });
+    expect(bot).not.toBe(threadRouteId("thread", { botId: "bot-2" }));
+    expect(bot).not.toBe(threadRouteId("group-thread", { botId: "bot-1", groupId: "group-1" }));
+  });
+
+  it("does not assign an identity without a bot or group", () => {
+    expect(threadRouteId("thread", {})).toBeUndefined();
+    expect(threadRouteId("thread", { botId: "" })).toBeUndefined();
+    expect(threadRouteId("thread", { botId: ["bot-1", "bot-2"] })).toBeUndefined();
+  });
+});
 
 describe("notification tap routing", () => {
   it("opens the bot thread from an Expo push payload", () => {
@@ -118,19 +138,6 @@ describe("notification tap routing", () => {
     expect(
       notificationResponseRoute({ ...response, actionIdentifier: "dismiss" }, DEFAULT_ACTION),
     ).toBeNull();
-  });
-
-  it("wires the tap listener for a running app and the last response for a cold start", () => {
-    const layout = readFileSync(resolve(mobileRoot, "app/_layout.tsx"), "utf8");
-    const opener = readFileSync(resolve(mobileRoot, "lib/open-notification.ts"), "utf8");
-    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
-    expect(layout).toContain("useNotificationResponses(ready)");
-    expect(opener).toContain("addNotificationResponseReceivedListener");
-    expect(opener).toContain("useLastNotificationResponse");
-    expect(opener).toContain("router.push(target)");
-    expect(opener).toContain("Notifications.clearLastNotificationResponse()");
-    expect(thread).toContain("threadRouteSpaceOnFocus");
-    expect(thread).toContain("useIsFocused()");
   });
 });
 

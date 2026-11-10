@@ -1,0 +1,358 @@
+import { useLingui } from "@lingui/react/macro";
+import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
+import type { SlashActionId } from "@rakazo/core";
+import {
+  applyThreadSendReceipt,
+  attachmentsForThread,
+  newClientId,
+  pageReply,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
+import { useNavigation, useRouter } from "expo-router";
+import type { RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert } from "react-native";
+import type { ThreadComposerHandle } from "../components/thread-composer";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
+import { findSwitchTarget } from "./bot-switch";
+import { chatSettingsRoute } from "./chat-settings-route";
+import { subscribeComposerOffer } from "./composer-offer";
+import { cancelFocusPrompt } from "./focus-prompt";
+import { hapticImpact, hapticSuccess } from "./haptics";
+import { resumeLiveNotifications } from "./live-notifications";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { takePageReply } from "./pages";
+import { currentSessionGeneration, loadSessionToken } from "./session";
+import { answerThreadMessage } from "./thread-answer";
+import type { useThreadAttachments } from "./thread-attachments";
+import type { SendAttempt, useThreadFeedback } from "./thread-feedback";
+import { subscribeDelivered } from "./thread-feedback";
+import type { ThreadHistory } from "./thread-history";
+import type { ThreadListScroll } from "./thread-list-scroll";
+import { previewMessageText } from "./thread-message-text";
+import { prepareUnsentSends } from "./unsent-sends";
+import { errorText } from "./user-error";
+import { startWorkActivity } from "./work-activity";
+
+/**
+ * What the chat sends: composer messages with their reply and attachments, retries, ask
+ * answers and reactions, and slash actions.
+ */
+export function useThreadSend({
+  botId,
+  groupId,
+  readOnly,
+  threadKey,
+  history,
+  scroll,
+  feedback,
+  attachments,
+  mentionBotsRef,
+  activeBotId,
+  activeGroupId,
+  isCurrentTarget,
+  refresh,
+  showLatest,
+  markCaughtUp,
+  openBotChat,
+}: {
+  botId?: string;
+  groupId?: string;
+  readOnly: boolean;
+  threadKey: string | undefined;
+  history: ThreadHistory;
+  scroll: ThreadListScroll;
+  feedback: ReturnType<typeof useThreadFeedback>;
+  attachments: ReturnType<typeof useThreadAttachments>;
+  mentionBotsRef: RefObject<MobileBot[]>;
+  activeBotId: RefObject<string | undefined>;
+  activeGroupId: RefObject<string | undefined>;
+  isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
+  refresh: () => Promise<MobileSnapshot | undefined>;
+  showLatest: () => void;
+  /** Clears the "New" divider: the user has caught up. */
+  markCaughtUp: () => void;
+  openBotChat: (target: MobileBot, ring: boolean) => void;
+}) {
+  const { t } = useLingui();
+  const router = useRouter();
+  const navigation = useNavigation();
+  const { pendingAttachments, setPendingAttachments, setAttachmentNotice, importingShare } =
+    attachments;
+  const { setError } = feedback;
+  const composerRef = useRef<ThreadComposerHandle>(null);
+  const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
+  const [replyQuote, setReplyQuote] = useState<string | null>(null);
+  const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
+  const replyPage = useRef<{ id: string; title: string } | null>(null);
+  const preparingSend = useRef(false);
+
+  useEffect(() => {
+    setPendingAttachments((current) => attachmentsForThread(current, threadKey));
+    setReplyTarget(null);
+    setReplyQuote(null);
+    setQuoteTarget(null);
+    replyPage.current = null;
+    setAttachmentNotice(null);
+    setError(null);
+  }, [threadKey]);
+
+  /** A reply tapped on one of this chat's pages lands in the composer unsent, about that page. */
+  const receivePageReply = useCallback(() => {
+    const handle = composerRef.current;
+    const reply = handle ? takePageReply(threadKey) : null;
+    if (!handle || !reply) return;
+    handle.addReply(reply.text);
+    // The page is what it answers now, not a message picked before the page opened.
+    setReplyTarget(null);
+    setReplyQuote(null);
+    replyPage.current = reply.page;
+  }, [threadKey]);
+  // An app card in this chat offers its text straight into the open composer.
+  useEffect(
+    () =>
+      threadKey
+        ? subscribeComposerOffer(threadKey, (text) => composerRef.current?.addReply(text))
+        : undefined,
+    [threadKey],
+  );
+  const composerEmptied = useCallback(() => {
+    replyPage.current = null;
+  }, []);
+
+  function runSlashAction(action: SlashActionId) {
+    if (action === "chat-settings") {
+      const settings = chatSettingsRoute({ groupId, botId });
+      if (settings) router.push(settings);
+      return;
+    }
+    router.push({
+      pathname: "/account",
+      params: action === "settings-usage" ? { focus: "usage" } : undefined,
+    });
+  }
+
+  function followOwnSend() {
+    // Writing in the chat means the user has caught up, so the "New" divider goes.
+    markCaughtUp();
+    if (history.pinnedAroundRef.current || history.jumpScrollTarget.current) showLatest();
+    scroll.follow(scroll.behavior.current.onOwnSend());
+  }
+
+  async function send() {
+    if (readOnly || importingShare.current) return;
+    const initialBotTarget = botId;
+    const initialGroupTarget = groupId;
+    if ((!initialBotTarget && !initialGroupTarget) || preparingSend.current) return;
+    const originThreadKey = initialGroupTarget ?? initialBotTarget;
+    const submitted = composerRef.current?.snapshot();
+    if (!submitted) return;
+    const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
+    const plan = resolveComposerSendPlan({
+      text: submitted.promptText,
+      mentions: submitted.mentions,
+      hasAttachments: attachments.length > 0,
+    });
+    if (plan.isNoOp) return;
+    const typedSwitch =
+      initialBotTarget && attachments.length === 0
+        ? findSwitchTarget(plan.trimmed, mentionBotsRef.current)
+        : undefined;
+    if (typedSwitch && typedSwitch.id !== initialBotTarget) {
+      openBotChat(typedSwitch, false);
+      return;
+    }
+    preparingSend.current = true;
+    hapticImpact();
+    try {
+      await prepareUnsentSends();
+    } catch (error) {
+      Alert.alert(t`Failed to send message`, errorText(error));
+      return;
+    } finally {
+      preparingSend.current = false;
+    }
+    if (
+      !isCurrentTarget(initialBotTarget, initialGroupTarget) ||
+      JSON.stringify(submitted) !== JSON.stringify(composerRef.current?.snapshot())
+    )
+      return;
+    const reroutedToGroup = Boolean(
+      plan.rerouteGroupId && plan.rerouteGroupId !== initialGroupTarget,
+    );
+    const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
+    const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+    // As on the web: a page's reply goes to its card here, or names the page when none is loaded.
+    const messages = history.snapRef.current?.messages ?? [];
+    const fromPage =
+      plan.shouldSend && !reroutedToGroup
+        ? pageReply(plan.trimmed, messages, replyPage.current, replyTarget?.id)
+        : { text: plan.trimmed };
+    const pageCard = messages.find((message) => message.id === fromPage.replyToMessageId);
+    let attempt: SendAttempt;
+    try {
+      attempt = feedback.sendAttempt({
+        originThreadKey: originThreadKey!,
+        displayText: fromPage.text === plan.trimmed ? submitted.promptText : fromPage.text,
+        replyPreview: pageCard
+          ? previewMessageText(pageCard)
+          : (replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null)),
+        initialBotTarget,
+        botTarget,
+        groupTarget,
+        reroutedToGroup,
+        plan: { ...plan, trimmed: fromPage.text },
+        attachments,
+        replyTargetId: pageCard?.id ?? replyTarget?.id,
+        replyQuote: pageCard ? null : replyQuote,
+        fromPage: pageCard ? true : undefined,
+      });
+    } catch (error) {
+      Alert.alert(t`Failed to send message`, errorText(error));
+      return;
+    }
+    composerRef.current?.reset();
+    setPendingAttachments((current) =>
+      current.filter((attachment) => !submitted.attachmentIds.includes(attachment.id)),
+    );
+    setReplyTarget(null);
+    setReplyQuote(null);
+    replyPage.current = null;
+    setAttachmentNotice(null);
+    followOwnSend();
+    await deliver(attempt);
+  }
+
+  async function deliver(attempt: SendAttempt, force = false) {
+    if (!readOnly) await feedback.send(attempt, force);
+  }
+
+  function retry(attempt: SendAttempt) {
+    followOwnSend();
+    void deliver(attempt, true);
+  }
+
+  function afterDelivered(attempt: SendAttempt) {
+    const { initialBotTarget, botTarget, groupTarget, reroutedToGroup, plan } = attempt.payload;
+    if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    const target = groupTarget ? { groupId: groupTarget } : botTarget ? { botId: botTarget } : null;
+    if (attempt.acceptedRun && target && attempt.spaceId) {
+      startWorkActivity({
+        title: mentionBotsRef.current?.find((bot) => bot.id === botTarget)?.name ?? "",
+        spaceId: attempt.spaceId,
+        target,
+      });
+    }
+    const generation = currentSessionGeneration();
+    const apiBase = currentApiBase();
+    const spaceId = selectedSpaceId();
+    void loadSessionToken()
+      .then((token) => {
+        if (
+          generation === currentSessionGeneration() &&
+          apiBase === currentApiBase() &&
+          spaceId === selectedSpaceId()
+        )
+          return resumeLiveNotifications(apiBase, token, spaceId ?? "");
+      })
+      .catch(() => undefined);
+    if (
+      attempt.payload.originThreadKey !== (activeGroupId.current ?? activeBotId.current) ||
+      !navigation.isFocused()
+    )
+      return;
+    hapticSuccess();
+    if (reroutedToGroup && groupTarget) {
+      router.push({
+        pathname: "/group-thread",
+        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t`Group` },
+      });
+      return;
+    }
+    if (isCurrentTarget(botTarget, groupTarget)) {
+      // Show the accepted run right away, but only where a refresh follows: if the run already
+      // finished and its terminal event was missed, that refresh drops the queued run shown here.
+      if (botTarget && attempt.acceptedRun) {
+        const shown = history.snapRef.current;
+        const receipt = { botId: botTarget, ...attempt.acceptedRun };
+        const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+        if (next !== shown) history.commitSnap(next);
+      }
+      if (history.pinnedAroundRef.current) showLatest();
+      void refresh().catch(() => undefined);
+    }
+  }
+
+  const afterDeliveredRef = useRef(afterDelivered);
+  afterDeliveredRef.current = afterDelivered;
+  useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
+
+  const answer = useCallback(
+    (
+      message: MobileMessage,
+      answer: string,
+      fields?: readonly LoginFieldInput[],
+      dismiss?: boolean,
+      remember?: false,
+    ) =>
+      answerThreadMessage(
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
+        message,
+        answer,
+        fields,
+        dismiss,
+        remember,
+      ),
+    [botId, groupId, readOnly, navigation],
+  );
+
+  async function react(message: MobileMessage, reaction: MessageReaction) {
+    if (readOnly) return false;
+    const targetBotId = botId;
+    const targetGroupId = groupId;
+    if (!targetBotId && !targetGroupId) return false;
+    try {
+      const result = await rpc("threads/react", {
+        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+        messageId: message.id,
+        reaction,
+        clientNonce: newClientId(),
+      });
+      if (result.runIds?.length && isCurrentTarget(targetBotId, targetGroupId)) {
+        // The reaction is saved; a failed refresh is caught up by live events.
+        await refresh().catch(() => {});
+      }
+      return true;
+    } catch (err) {
+      if (!isCurrentTarget(targetBotId, targetGroupId)) return false;
+      Alert.alert(t`Could not update reaction`, errorText(err, t`Try again.`));
+      return false;
+    }
+  }
+
+  return {
+    composerRef,
+    replyTarget,
+    setReplyTarget,
+    replyQuote,
+    setReplyQuote,
+    quoteTarget,
+    setQuoteTarget,
+    receivePageReply,
+    composerEmptied,
+    send,
+    retry,
+    answer,
+    react,
+    runSlashAction,
+  };
+}

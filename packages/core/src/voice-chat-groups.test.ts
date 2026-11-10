@@ -21,6 +21,103 @@ function message(fields: Partial<ThreadMessage> & { role: ThreadMessage["role"] 
 }
 
 describe("groupVoiceChats", () => {
+  it.each([0, 125])(
+    "keeps an initial hang-up marker's metadata (%s seconds)",
+    (durationSeconds) => {
+      const marker = message({
+        role: "bot",
+        callId: "call-1",
+        runId: "run-1",
+        blocks: [
+          {
+            kind: "voice_call",
+            callId: "call-1",
+            title: "Deploy check",
+            farewell: "Bye",
+            durationSeconds,
+          },
+        ],
+      });
+      const [group] = groupVoiceChats([marker]);
+
+      expect(group?.kind === "voiceChat" && group.marker).toBe(marker);
+      expect(group?.kind === "voiceChat" && voiceChatSummary(group)).toBe("Deploy check");
+      expect(group?.kind === "voiceChat" && voiceChatDuration(group)).toBe(durationSeconds);
+      expect(latestSpokenCallReply([marker], "call-1")).toBeUndefined();
+    },
+  );
+
+  it.each([false, true])(
+    "closes a segment that starts with a hang-up marker (typed break: %s)",
+    (typedBreak) => {
+      const opening = message({ role: "user", callId: "call-1", runId: "run-1" });
+      const typed = message({ role: "user" });
+      const marker = message({
+        role: "bot",
+        callId: "call-1",
+        runId: "run-1",
+        blocks: [
+          {
+            kind: "voice_call",
+            callId: "call-1",
+            title: "Deploy check",
+            farewell: "Bye",
+            durationSeconds: 125,
+          },
+        ],
+      });
+      const wrapUp = message({ role: "bot", runId: "run-1" });
+      const page = [...(typedBreak ? [opening, typed] : []), marker, wrapUp];
+      const items = groupVoiceChats(page);
+      const group = items.at(-2);
+
+      expect(items.map((item) => item.kind)).toEqual(
+        typedBreak ? ["voiceChat", "message", "voiceChat", "message"] : ["voiceChat", "message"],
+      );
+      expect(group?.kind === "voiceChat" && group.messages).toEqual([marker]);
+      expect(group?.kind === "voiceChat" && group.marker).toBe(marker);
+      expect(items.at(-1)).toEqual({ kind: "message", message: wrapUp });
+      expect(latestSpokenCallReply(page, "call-1")).toBeUndefined();
+
+      if (!typedBreak) {
+        const [expanded] = groupVoiceChats([opening, ...page]);
+        expect(expanded?.kind === "voiceChat" && expanded.key).toBe(
+          group?.kind === "voiceChat" && group.key,
+        );
+        expect(expanded?.kind === "voiceChat" && expanded.marker).toBe(marker);
+        expect(expanded?.kind === "voiceChat" && voiceChatSummary(expanded)).toBe("Deploy check");
+        expect(expanded?.kind === "voiceChat" && voiceChatDuration(expanded)).toBe(125);
+      }
+    },
+  );
+
+  it.each(["ringing", "missed", "answered"] as const)(
+    "keeps the calling run's chat reply outside a %s request",
+    (status) => {
+      const request = message({
+        role: "bot",
+        callId: "call-1",
+        runId: "request-run",
+        blocks: [
+          {
+            kind: "call_request",
+            callId: "call-1",
+            status,
+            reason: "Review",
+            opening: "Ready?",
+            expiresAt: "2026-10-15T00:00:45Z",
+          },
+        ],
+      });
+      const reply = message({ role: "bot", runId: "request-run" });
+      const spoken = message({ role: "user", callId: "call-1", runId: "voice-run" });
+      const spokenReply = message({ role: "bot", runId: "voice-run" });
+      expect(
+        groupVoiceChats([request, reply, spoken, spokenReply]).map((item) => item.kind),
+      ).toEqual(["voiceChat", "message", "voiceChat"]);
+    },
+  );
+
   it("keeps two calls in separate groups", () => {
     const items = groupVoiceChats([
       message({ role: "user", callId: "call-1" }),
@@ -185,5 +282,19 @@ describe("voiceChatDuration", () => {
     expect(group?.kind === "voiceChat" && voiceChatDuration(group)).toBe(
       Math.round((Date.parse(end.createdAt) - Date.parse(start.createdAt)) / 1000),
     );
+  });
+
+  it("prefers the connected time the caller recorded on the marker", () => {
+    const start = message({ role: "user", callId: "call-1", runId: "run-1" });
+    const end = message({
+      role: "bot",
+      runId: "run-1",
+      blocks: [
+        { kind: "voice_call", callId: "call-1", title: "", farewell: "", durationSeconds: 83 },
+      ],
+    });
+    const [group] = groupVoiceChats([start, end]);
+
+    expect(group?.kind === "voiceChat" && voiceChatDuration(group)).toBe(83);
   });
 });

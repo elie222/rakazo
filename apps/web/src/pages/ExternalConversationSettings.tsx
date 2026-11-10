@@ -6,21 +6,34 @@ import type {
   ExternalConversation,
   ExternalConversationPolicy,
 } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import type { ListenMode } from "@rakazo/core";
+import {
+  AUTOMATED_SENDER_MODES,
+  ambientValue,
+  listenMode,
+  roomAutomatedSenders,
+  senderPolicy,
+  withRollupHours,
+  withSenderMode,
+} from "@rakazo/core";
+import {
+  Button,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+  SectionHeading,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
 import { errorText } from "../lib/user-error";
-
-type ListenMode = "inherit" | "listen" | "mentions";
-
-function listenMode(value: boolean | null): ListenMode {
-  return value === null ? "inherit" : value ? "listen" : "mentions";
-}
-
-function ambientValue(mode: ListenMode): boolean | null {
-  return mode === "inherit" ? null : mode === "listen";
-}
 
 export function ExternalConversationSettings({
   conversation,
@@ -32,187 +45,179 @@ export function ExternalConversationSettings({
   onSave: (policy: ExternalConversationPolicy) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const fieldId = useId();
   const [mode, setMode] = useState<ListenMode>(() =>
     listenMode(conversation.teamChatAmbientEnabled),
   );
-  const [rules, setRules] = useState<string | null>(conversation.teamChatRules);
+  const [rules, setRules] = useState<string | null>(conversation.teamChatRules || null);
   const [policies, setPolicies] = useState<AutomatedSenderPolicies>(
     conversation.automatedSenderPolicies,
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The draft this render would save; an edit made while a save is in flight
+  // changes it, and that newer draft is still unsaved when the save lands.
+  const draftJson = JSON.stringify({
+    teamChatAmbientEnabled: ambientValue(mode),
+    teamChatRules: rules,
+    automatedSenderPolicies: policies,
+  });
+  const latestDraftJson = useRef(draftJson);
+  latestDraftJson.current = draftJson;
   const senders = useMemo(
-    () =>
-      [
-        ...new Map([
-          ...Object.entries(policies).map(
-            ([id, policy]) => [id, { id, name: policy.name }] as const,
-          ),
-          ...conversation.automatedSenders.map((sender) => [sender.id, sender] as const),
-        ]).values(),
-      ].sort((left, right) => left.name.localeCompare(right.name)),
+    () => roomAutomatedSenders(policies, conversation.automatedSenders),
     [conversation.automatedSenders, policies],
   );
-  const effectiveListening = ambientValue(mode) ?? bot.teamChatAmbientEnabled;
-  const senderModes: Array<{ value: AutomatedSenderPolicyMode; label: string }> = [
-    { value: "ignore", label: t`Ignore` },
-    { value: "rollup", label: t`Group updates` },
-    { value: "action", label: t`Always act` },
-    { value: "user", label: t`Treat like a person` },
+  const botName = bot.name;
+  const replyChoices: Array<{ value: ListenMode; label: string }> = [
+    { value: "inherit", label: t`Same as ${botName}` },
+    { value: "listen", label: t`Every message` },
+    { value: "mentions", label: t`Mentions only` },
   ];
+  const effectiveMode = (ambientValue(mode) ?? bot.teamChatAmbientEnabled) ? "listen" : "mentions";
+  const senderModeLabels: Record<AutomatedSenderPolicyMode, string> = {
+    ignore: t`Ignore`,
+    rollup: t`Group updates`,
+    action: t`Always act`,
+    user: t`Treat like a person`,
+  };
 
-  function setSenderMode(
-    senderId: string,
-    senderName: string,
-    nextMode: AutomatedSenderPolicyMode,
-  ) {
+  function updatePolicies(update: (current: AutomatedSenderPolicies) => AutomatedSenderPolicies) {
     setSaved(false);
-    setPolicies((current) => ({
-      ...current,
-      [senderId]: {
-        name: senderName,
-        mode: nextMode,
-        ...(nextMode === "rollup" ? { rollupHours: current[senderId]?.rollupHours ?? 6 } : {}),
-      },
-    }));
+    setPolicies(update);
   }
 
   return (
     <div data-testid="external-conversation-settings">
       <div className="mb-6">
-        <h2 className="truncate text-[17px] font-medium text-foreground" dir="auto">
+        <SectionHeading as="h2" variant="heading" className="truncate" dir="auto">
           {conversation.displayName || t`External conversation`}
-        </h2>
-        <p className="mt-1 truncate text-[12.5px] text-muted-foreground">
+        </SectionHeading>
+        <p className="mt-1 truncate text-body-sm text-muted-foreground">
           {conversation.participantNames.join(", ")}
         </p>
       </div>
 
-      <fieldset>
-        <legend className="text-[13.5px] text-muted-foreground">
-          <Trans>Listening</Trans>
-        </legend>
-        <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
-          {(
-            [
-              { value: "inherit" as const, label: t`${bot.name} default` },
-              { value: "listen" as const, label: t`Listen` },
-              { value: "mentions" as const, label: t`Mentions only` },
-            ] satisfies Array<{ value: ListenMode; label: string }>
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={mode === option.value}
-              onClick={() => {
-                setMode(option.value);
-                setSaved(false);
-              }}
-              className={`min-h-9 rounded-md px-2 text-[12px] leading-4 transition-colors ${
-                mode === option.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      <div className="flex items-center justify-between gap-3">
+        <span id={`${fieldId}-replies`} className="text-body text-foreground">
+          <Trans>Replies to</Trans>
+        </span>
+        <Select
+          value={mode}
+          onValueChange={(next) => {
+            if (!next) return;
+            setMode(next as ListenMode);
+            setSaved(false);
+          }}
+          items={replyChoices}
+        >
+          <SelectTrigger size="sm" aria-labelledby={`${fieldId}-replies`}>
+            <SelectValue>
+              {replyChoices.find((choice) => choice.value === effectiveMode)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false} align="end">
+            <SelectGroup>
+              {replyChoices.map((choice) => (
+                <SelectItem key={choice.value} value={choice.value}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label className="mt-6 block text-[13.5px] text-muted-foreground">
-        <span className="flex items-center justify-between gap-3">
-          <Trans>Room guidance</Trans>
+      <label htmlFor={`${fieldId}-rules`} className="mt-6 block text-body text-muted-foreground">
+        <span className="flex min-h-7 items-center justify-between gap-3">
+          <Trans>Instructions for this room</Trans>
           {rules !== null ? (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
-              title={t`Use default guidance`}
-              aria-label={t`Use default guidance`}
               onClick={() => {
                 setRules(null);
                 setSaved(false);
               }}
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              className="shrink-0 text-muted-foreground"
             >
               <RotateCcw size={14} strokeWidth={1.8} />
-            </button>
-          ) : (
-            <span className="text-[11.5px] text-muted-foreground/70">
-              <Trans>{bot.name} default</Trans>
-            </span>
-          )}
+              <Trans>Reset</Trans>
+            </Button>
+          ) : null}
         </span>
-        <textarea
-          value={rules ?? bot.teamChatRules}
+        <Textarea
+          id={`${fieldId}-rules`}
+          value={rules ?? ""}
           maxLength={4000}
           onChange={(event) => {
-            setRules(event.target.value);
+            // An emptied field follows the bot again, as its placeholder shows.
+            setRules(event.target.value || null);
             setSaved(false);
           }}
-          placeholder={t`Engage when... Ignore...`}
+          placeholder={bot.teamChatRules || undefined}
           rows={6}
-          className="mt-2 w-full resize-y rounded-lg border border-border bg-transparent px-3 py-2.5 text-[13.5px] leading-5 text-foreground outline-none focus:border-muted-foreground"
+          className="mt-2 min-h-36 resize-y"
         />
       </label>
 
-      <div className="mt-6 border-t border-border pt-5">
-        <h3 className="text-[13.5px] text-muted-foreground">
-          <Trans>Automated senders</Trans>
-        </h3>
-        {senders.length > 0 ? (
+      {senders.length > 0 ? (
+        <div className="mt-6 border-t border-border pt-5">
+          <h3 className="text-body text-muted-foreground">
+            <Trans>Automated senders</Trans>
+          </h3>
           <div className="mt-2 divide-y divide-border">
             {senders.map((sender) => {
-              const policy = policies[sender.id] ?? {
-                name: sender.name,
-                mode: "ignore" as const,
-              };
+              const policy = senderPolicy(policies, sender);
               return (
                 <div key={sender.id} className="py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate text-[13.5px] text-foreground">
+                    <span className="min-w-0 truncate text-body text-foreground">
                       {sender.name}
                     </span>
-                    <select
+                    <NativeSelect
+                      size="sm"
                       aria-label={t`${sender.name} handling`}
                       value={policy.mode}
                       onChange={(event) =>
-                        setSenderMode(
-                          sender.id,
-                          sender.name,
-                          event.target.value as AutomatedSenderPolicyMode,
+                        updatePolicies((current) =>
+                          withSenderMode(
+                            current,
+                            sender,
+                            event.target.value as AutomatedSenderPolicyMode,
+                          ),
                         )
                       }
-                      className="max-w-[165px] rounded-md border border-border bg-background px-2 py-1.5 text-[12.5px] text-foreground"
+                      className="max-w-[165px]"
                     >
-                      {senderModes.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                      {AUTOMATED_SENDER_MODES.map((value) => (
+                        <NativeSelectOption key={value} value={value}>
+                          {senderModeLabels[value]}
+                        </NativeSelectOption>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </div>
                   {policy.mode === "rollup" ? (
-                    <label className="mt-2 flex items-center justify-end gap-2 text-[12px] text-muted-foreground">
+                    <label
+                      htmlFor={`${fieldId}-${sender.id}-rollup`}
+                      className="mt-2 flex items-center justify-end gap-2 text-label text-muted-foreground"
+                    >
                       <Trans>Every</Trans>
-                      <input
+                      <Input
+                        id={`${fieldId}-${sender.id}-rollup`}
                         aria-label={t`${sender.name} rollup hours`}
                         type="number"
                         min={1}
                         max={720}
                         value={policy.rollupHours ?? 6}
-                        onChange={(event) => {
-                          const rollupHours = Math.max(
-                            1,
-                            Math.min(720, Number(event.target.value)),
-                          );
-                          setPolicies((current) => ({
-                            ...current,
-                            [sender.id]: { name: sender.name, mode: "rollup", rollupHours },
-                          }));
-                          setSaved(false);
-                        }}
-                        className="w-16 rounded-md border border-border bg-transparent px-2 py-1 text-end text-[12.5px] text-foreground"
+                        onChange={(event) =>
+                          updatePolicies((current) =>
+                            withRollupHours(current, sender, Number(event.target.value)),
+                          )
+                        }
+                        className="h-7 w-16 px-2 text-end"
                       />
                       <Trans>hours</Trans>
                     </label>
@@ -221,19 +226,9 @@ export function ExternalConversationSettings({
               );
             })}
           </div>
-        ) : (
-          <p className="mt-2 text-[12.5px] leading-5 text-muted-foreground/70">
-            <Trans>Automated senders will appear after they post here.</Trans>
-          </p>
-        )}
-      </div>
-
-      {!effectiveListening ? (
-        <p className="mt-5 text-[12.5px] leading-5 text-muted-foreground/70">
-          <Trans>{bot.name} will still respond to direct mentions.</Trans>
-        </p>
+        </div>
       ) : null}
-      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
+      {error ? <p className="mt-3 text-body-sm text-destructive">{error}</p> : null}
       <div className="mt-6 flex min-h-10 items-center gap-3">
         <Button
           disabled={saving}
@@ -241,12 +236,17 @@ export function ExternalConversationSettings({
             setSaving(true);
             setSaved(false);
             setError(null);
+            const savedJson = draftJson;
             void onSave({
               teamChatAmbientEnabled: ambientValue(mode),
               teamChatRules: rules,
               automatedSenderPolicies: policies,
             })
-              .then(() => setSaved(true))
+              .then(() => {
+                // Only the draft the save carried is confirmed; one edited
+                // meanwhile stays unsaved, without a false "Saved" marker.
+                if (latestDraftJson.current === savedJson) setSaved(true);
+              })
               .catch((cause) => setError(errorText(cause, t`Could not save`)))
               .finally(() => setSaving(false));
           }}

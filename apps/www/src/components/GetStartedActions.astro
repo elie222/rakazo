@@ -1,0 +1,60 @@
+---
+import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
+import type { HomeCopy } from "../i18n/home";
+import { DESKTOP_PLATFORMS, desktopDownloadHref } from "../github";
+import {
+  APP_URL,
+  GITHUB_URL,
+  IOS_APP_URL,
+} from "../site";
+
+type Props = {
+  class: string;
+  copy: HomeCopy["hero"];
+  /** Omitted where the GitHub link should stay on every platform. */
+  desktop?: boolean;
+  /** PostHog `data-attr` prefix that tells this placement apart from others. */
+  placement: string;
+  githubLabel?: string;
+};
+
+const { class: className, copy, desktop, placement, githubLabel = copy.viewOnGithub } =
+  Astro.props;
+
+// `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
+const desktopDownloads = (desktop ? DESKTOP_PLATFORMS : []).map((platform) => ({
+  platform,
+  label: copy.download[platform],
+  href: desktopDownloadHref(platform),
+}));
+const githubPlatforms = ["ios", "android", "web", "mac", "windows", "linux"]
+  .filter((platform) => !desktopDownloads.some((download) => download.platform === platform))
+  .join(" ");
+---
+
+<div class={className}>
+  <a class="button button--primary" href={APP_URL} data-show="mac windows linux web">
+    {copy.getStarted}
+  </a>
+  <a class="button button--primary" href={IOS_APP_URL} data-show="ios">{copy.download.ios}</a>
+  <a class="button button--primary" href={ANDROID_APP_STORE_URL} data-show="android">
+    {copy.download.android}
+  </a>
+  {
+    desktopDownloads.map((download) => (
+      <a class="button button--secondary" href={download.href} data-show={download.platform}>
+        {download.label}
+      </a>
+    ))
+  }
+  <a
+    class="button button--secondary"
+    href={GITHUB_URL}
+    target="_blank"
+    rel="noopener"
+    data-show={githubPlatforms}
+    data-attr={`${placement}-github`}
+  >
+    {githubLabel}
+  </a>
+</div>

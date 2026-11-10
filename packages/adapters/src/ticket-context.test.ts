@@ -83,3 +83,19 @@ it("skips ticket reference lookup completely when disabled", async () => {
   }
   expect(findUnique).not.toHaveBeenCalled();
 });
+
+it("does not query tickets for an out-of-range reference in a message", async () => {
+  const findMany = vi.fn(async () => []);
+  const prisma = {
+    board: { findUnique: vi.fn(async () => ({ id: "board-1", ticketPrefix: "RAK" })) },
+    ticket: { findMany },
+  } as never;
+
+  await expect(
+    loadAgentTicketContext(
+      { prisma, ticketBoardEnabled: true },
+      { spaceId: "space-1", text: `Check RAK-${"9".repeat(115)}` },
+    ),
+  ).resolves.toBeUndefined();
+  expect(findMany).not.toHaveBeenCalled();
+});

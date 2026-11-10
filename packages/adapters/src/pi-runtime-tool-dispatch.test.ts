@@ -1,19 +1,24 @@
 import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 
 const fakeAgentState = vi.hoisted(() => ({
   mode: "dispatch" as
     | "dispatch"
     | "empty"
+    | "answer-then-stop"
     | "two-boundaries"
     | "silent-continuation"
     | "subagent-limit"
+    | "two-subagents"
+    | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
     | "nested-ask-pause"
     | "tools-then-empty-failure"
-    | "tools-then-final-text",
+    | "tools-then-final-text"
+    | "terminating-tool",
   terminalMessage: undefined as
     | {
         role: "assistant";
@@ -32,6 +37,7 @@ const fakeAgentState = vi.hoisted(() => ({
   abortCount: 0,
   tools: [] as Array<{
     name: string;
+    executionMode?: string;
     prepareArguments?: (args: unknown) => Record<string, unknown>;
     execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
   }>,
@@ -46,6 +52,7 @@ const fakeAgentState = vi.hoisted(() => ({
   promptInputs: [] as string[],
   promptImages: [] as unknown[][],
   toolResult: undefined as unknown,
+  continueCalls: 0,
 }));
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
@@ -58,17 +65,20 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly listeners: Array<(event: Record<string, unknown>) => void> = [];
     private readonly prepareNextTurnWithContext?: (input: {
       context: { messages: unknown[] };
-    }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+    }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
+    private readonly finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     private aborted = false;
 
     constructor(options: {
       initialState: { tools: typeof fakeAgentState.tools; messages: unknown[] };
       prepareNextTurnWithContext?: (input: {
         context: { messages: unknown[] };
-      }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+      }) => Promise<{ context?: { messages: unknown[] }; messages?: unknown[] } | undefined>;
+      finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     }) {
       this.tools = options.initialState.tools;
       this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
+      this.finishTurn = options.finishTurn;
       fakeAgentState.tools = this.tools;
       fakeAgentState.initialMessages = options.initialState.messages;
     }
@@ -77,16 +87,33 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       this.listeners.push(listener);
     }
 
+    // Messages the hook returns are appended before the next request, like steered ones.
+    private async prepareNextTurn() {
+      const update = await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+      fakeAgentState.steeredMessages.push(...(update?.messages ?? []));
+    }
+
     async prompt(prompt: string, images?: unknown[]) {
       fakeAgentState.promptInputs.push(prompt);
       fakeAgentState.promptImages.push(images ?? []);
+      if (fakeAgentState.mode === "answer-then-stop") {
+        // The model answers the steered message in text and stops.
+        await this.prepareNextTurn();
+        await this.finishTurn?.({
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "Yes" }],
+          },
+          toolResults: [],
+          context: { messages: [] },
+          newMessages: [],
+        });
+        return;
+      }
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
-        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
-        if (fakeAgentState.mode === "two-boundaries") {
-          await this.prepareNextTurnWithContext?.({
-            context: { messages: [] },
-          });
-        }
+        await this.prepareNextTurn();
+        if (fakeAgentState.mode === "two-boundaries") await this.prepareNextTurn();
         fakeAgentState.preparedMessages = [...fakeAgentState.steeredMessages];
         return;
       }
@@ -103,6 +130,54 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           args,
         });
         fakeAgentState.toolResult = await target.execute("call-1", args);
+        return;
+      }
+
+      if (fakeAgentState.mode === "terminating-tool") {
+        // A tool result with terminate: true ends the turn; the agent stops after it.
+        const target =
+          this.tools.find((tool) => tool.name === fakeAgentState.invoke.name) ?? this.tools[0];
+        if (!target) throw new Error("expected tool was not exposed");
+        const rawArgs = fakeAgentState.invoke.args;
+        const args = target.prepareArguments?.(rawArgs) ?? rawArgs;
+        this.emit({
+          type: "message_start",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call-1", name: target.name, arguments: args }],
+          },
+        });
+        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        const result = await target.execute("call-1", args);
+        fakeAgentState.toolResult = result;
+        this.emit({
+          type: "tool_execution_end",
+          toolCallId: "call-1",
+          toolName: target.name,
+          result,
+          isError: false,
+        });
+        // Like pi-agent-core, the terminating tool result lands in the transcript:
+        // it stays the last message, because the turn ends at it.
+        const toolResultMessage = {
+          role: "toolResult",
+          toolCallId: "call-1",
+          toolName: target.name,
+          content: (result as { content: unknown[] }).content,
+          isError: false,
+          timestamp: Date.now(),
+        };
+        this.emit({ type: "message_start", message: toolResultMessage });
+        this.emit({ type: "message_end", message: toolResultMessage });
+        this.state.messages.push(toolResultMessage);
+        this.emit({
+          type: "turn_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call-1", name: target.name, arguments: args }],
+          },
+          toolResults: [{ toolCallId: "call-1", result }],
+        });
         return;
       }
 
@@ -309,6 +384,23 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "background-subagent") {
+        const args = { name: "scout", task: "compare the venues", background: true };
+        this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+        // Pi prepares the model's arguments before it runs the tool.
+        await delegation.execute("delegate-bg", delegation.prepareArguments?.(args) ?? args);
+        return;
+      }
+      if (delegation && fakeAgentState.mode === "two-subagents") {
+        await Promise.all(
+          ["a", "b"].map((name) => {
+            const args = { name, task: "keep calling shell" };
+            this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+            return delegation.execute(`delegate-${name}`, args);
+          }),
+        );
+        return;
+      }
       if (delegation) {
         const args = { name: "loop", task: "keep calling shell" };
         this.emit({
@@ -331,6 +423,23 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     }
 
     async waitForIdle() {}
+
+    async continue() {
+      fakeAgentState.continueCalls += 1;
+      const message = {
+        role: "assistant",
+        content: [{ type: "text", text: "Trying again anyway." }],
+        stopReason: "stop",
+      };
+      this.emit({ type: "message_start", message });
+      this.emit({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "Trying again anyway." },
+      });
+      this.state.messages.push(message);
+      this.emit({ type: "message_end", message });
+      this.emit({ type: "turn_end", message, toolResults: [] });
+    }
 
     steer(message: unknown) {
       fakeAgentState.steeredMessages.push(message);
@@ -364,10 +473,6 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
-vi.mock("./pi-current-models.js", () => ({
-  supplementPiModels: (models: unknown) => models,
-}));
-
 vi.mock("./pi-local-provider.js", () => ({
   registerLocalProvider: (models: unknown) => models,
 }));
@@ -378,14 +483,18 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { toolCompletionAuditPayload } from "./executor.js";
 import {
-  MISSING_TOOL_FINAL_RESPONSE_ERROR,
-  maxToolCallsPerTurn,
-  PiAgentRuntime,
-  providerFailureText,
-} from "./pi-runtime.js";
+  approvalPausedToolResult,
+  OWNER_SETTINGS_REFUSAL_REPLY,
+  terminatingToolResult,
+} from "./approval-effect.js";
+import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
+import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
+import { serializeTurnCheckpoint } from "./turn-checkpoint.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -419,6 +528,49 @@ const shellTool = {
   inputSchema: { type: "object", properties: { command: { type: "string" } } },
 };
 
+const updateBotTool: ConnectorTool = {
+  name: "update_bot",
+  description: "Update this bot's settings",
+  inputSchema: {
+    type: "object",
+    properties: { notifyOnFinish: { type: "boolean" } },
+  },
+};
+
+const listFilesTool: ConnectorTool = {
+  name: "list_files",
+  description: "List files in this bot's home",
+  inputSchema: { type: "object", properties: { path: { type: "string" } } },
+};
+
+const scheduleCreateTool: ConnectorTool = {
+  name: "schedule_create",
+  description: "Create a reminder or recurring job for this bot.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      prompt: { type: "string" },
+      delayMinutes: { type: "number" },
+    },
+  },
+};
+
+const scheduleListTool: ConnectorTool = {
+  name: "schedule_list",
+  description: "List this bot's active and inactive schedules (routines).",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const scheduleCancelTool: ConnectorTool = {
+  name: "schedule_cancel",
+  description: "Cancel a schedule by routineId or exact name.",
+  inputSchema: {
+    type: "object",
+    properties: { routineId: { type: "string" }, name: { type: "string" } },
+  },
+};
+
 const previousMaxToolCalls = process.env.MAX_TOOL_CALLS_PER_TURN;
 
 describe("Pi connector tool dispatch", () => {
@@ -439,6 +591,7 @@ describe("Pi connector tool dispatch", () => {
     fakeAgentState.promptInputs = [];
     fakeAgentState.promptImages = [];
     fakeAgentState.toolResult = undefined;
+    fakeAgentState.continueCalls = 0;
     fakeAgentState.invoke = {
       name: "destination_write",
       args: { collection: "notes", title: "Result", body: "Done" },
@@ -458,16 +611,113 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-1",
               messageId: "message-1",
               text: "Use the newer customer totals.",
+              origin: "user" as const,
             },
             {
               id: "steering-2",
               messageId: "message-2",
               text: "Keep the original date range.",
+              origin: "webhook" as const,
             },
           ];
     });
     const runtime = new PiAgentRuntime();
+    const events: Array<{ type: string; fromRunUser?: boolean }> = [];
 
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "prepare the report",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        claimSteering,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      events.push(event);
+    }
+
+    expect(claimSteering).toHaveBeenNthCalledWith(1, []);
+    expect(claimSteering).toHaveBeenNthCalledWith(2, []);
+    // The run's person is asked for a reply; anything else is passed on with its source and
+    // no call to reply. The run sees one boundary, marked as from its person.
+    expect(fakeAgentState.preparedMessages).toEqual([
+      expect.objectContaining({
+        role: "user",
+        content: midTaskMessagePrompt("Use the newer customer totals.", false),
+      }),
+      expect.objectContaining({
+        role: "user",
+        content: midTaskMessageFromPrompt("Keep the original date range.", "webhook"),
+      }),
+    ]);
+    expect(fakeAgentState.preparedMessages[1]).toMatchObject({
+      content: expect.not.stringContaining("reply"),
+    });
+    expect(events.filter((event) => event.type === "steered")).toEqual([
+      { type: "steered", fromRunUser: true },
+    ]);
+  });
+
+  it("asks the run's person for an answer through message_user when the bot has it", async () => {
+    fakeAgentState.mode = "empty";
+    let claimCount = 0;
+    const claimSteering = vi.fn(async () => {
+      claimCount += 1;
+      return claimCount === 1
+        ? []
+        : [
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "Still working?",
+              origin: "user" as const,
+            },
+          ];
+    });
+    const runtime = new PiAgentRuntime();
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "prepare the report",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [builtinAgentTools.find((tool) => tool.name === "message_user")!],
+        model: { provider: "test", id: "dispatch-test-model" },
+        claimSteering,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime event stream.
+    }
+    expect(fakeAgentState.preparedMessages).toEqual([
+      expect.objectContaining({ content: midTaskMessagePrompt("Still working?", true) }),
+    ]);
+  });
+
+  it("ends the run when the model answers the person in text and stops", async () => {
+    fakeAgentState.mode = "answer-then-stop";
+    let claimCount = 0;
+    const claimSteering = vi.fn(async () => {
+      claimCount += 1;
+      return claimCount === 1
+        ? []
+        : [
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "Still working?",
+              origin: "user" as const,
+            },
+          ];
+    });
+    const runtime = new PiAgentRuntime();
     for await (const _event of runtime.run(
       {
         botId: "b",
@@ -484,19 +734,7 @@ describe("Pi connector tool dispatch", () => {
     )) {
       // Exhaust the runtime event stream.
     }
-
-    expect(claimSteering).toHaveBeenNthCalledWith(1, []);
-    expect(claimSteering).toHaveBeenNthCalledWith(2, []);
-    expect(fakeAgentState.preparedMessages).toEqual([
-      expect.objectContaining({
-        role: "user",
-        content: "Use the newer customer totals.",
-      }),
-      expect.objectContaining({
-        role: "user",
-        content: "Keep the original date range.",
-      }),
-    ]);
+    expect(fakeAgentState.followUpMessages).toEqual([]);
   });
 
   it("defers steering arriving during a continuation to the following boundary", async () => {
@@ -511,6 +749,7 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-1",
               messageId: "message-1",
               text: "First boundary context.",
+              origin: "user" as const,
             },
           ]
         : [
@@ -518,6 +757,7 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-2",
               messageId: "message-2",
               text: "Next boundary context.",
+              origin: "user" as const,
             },
           ];
     });
@@ -544,8 +784,8 @@ describe("Pi connector tool dispatch", () => {
     expect(claimSteering).toHaveBeenNthCalledWith(2, []);
     expect(claimSteering).toHaveBeenNthCalledWith(3, ["steering-1"]);
     expect(fakeAgentState.preparedMessages).toEqual([
-      expect.objectContaining({ content: "First boundary context." }),
-      expect.objectContaining({ content: "Next boundary context." }),
+      expect.objectContaining({ content: midTaskMessagePrompt("First boundary context.", false) }),
+      expect.objectContaining({ content: midTaskMessagePrompt("Next boundary context.", false) }),
     ]);
   });
 
@@ -629,6 +869,7 @@ describe("Pi connector tool dispatch", () => {
           id: "boundary-image",
           messageId: "boundary-image-message",
           text: "Compare the second image.",
+          origin: "user" as const,
           images: [
             {
               name: "second.png",
@@ -664,7 +905,7 @@ describe("Pi connector tool dispatch", () => {
     expect(fakeAgentState.steeredMessages).toContainEqual({
       role: "user",
       content: [
-        { type: "text", text: "Compare the second image." },
+        { type: "text", text: midTaskMessagePrompt("Compare the second image.", false) },
         { type: "image", data: "BAUG", mimeType: "image/png" },
       ],
       timestamp: expect.any(Number),
@@ -749,6 +990,232 @@ describe("Pi connector tool dispatch", () => {
       { connectorId: "destination", toolName: "destination.write" },
       { onShellStillRunning: expect.any(Function) },
     );
+  });
+
+  it("preserves a connected delete_bot schema and arguments through the runtime", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const tool: ConnectorTool = {
+      name: "delete_bot",
+      description: "Delete a remote object",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      route: { connectorId: "remote", toolName: "delete_bot" },
+    };
+    fakeAgentState.invoke = { name: "delete_bot", args: { id: "remote-object" } };
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "delete the remote object",
+        instructions: "",
+        history: [],
+        tools: [tool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime so its tool call finishes.
+    }
+    expect(executeTool).toHaveBeenCalledWith(
+      "delete_bot",
+      { id: "remote-object" },
+      expect.any(String),
+      tool.route,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("passes spawn_bot's public description and private instructions to the executor", async () => {
+    const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
+    if (!spawnBotTool) throw new Error("missing spawn_bot");
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: {
+        name: "spawn_bot",
+        arguments: {
+          name: "Scout",
+          description: "Finds venues.",
+          instructions: "Ask before booking anything.",
+          computer_mode: "team",
+        },
+      },
+    };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "create a bot named Scout",
+        instructions: "",
+        history: [],
+        tools: [spawnBotTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "spawn_bot",
+      expect.objectContaining({
+        name: "Scout",
+        description: "Finds venues.",
+        instructions: "Ask before booking anything.",
+      }),
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("creates a bot when the model leaves out the optional computer_mode", async () => {
+    const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
+    if (!spawnBotTool) throw new Error("missing spawn_bot");
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "spawn_bot", arguments: { name: "Scout" } },
+    };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "create a bot named Scout",
+        instructions: "",
+        history: [],
+        tools: [spawnBotTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "spawn_bot",
+      { name: "Scout", description: "", instructions: "", prompt: "" },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("passes update_bot's read offset through the use_tool wrapper", async () => {
+    const updateBotTool = builtinAgentTools.find((tool) => tool.name === "update_bot");
+    if (!updateBotTool) throw new Error("missing update_bot");
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "update_bot", arguments: { instructions_offset: 8_000 } },
+    };
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "read the next page of my instructions",
+        instructions: "",
+        history: [],
+        // A deferred tool exposes use_tool, through which the model names update_bot.
+        tools: [updateBotTool, scheduleCancelTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    expect(executeTool).toHaveBeenCalledWith(
+      "update_bot",
+      { instructions_offset: 8_000 },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("runs schedule tools, remember and request_secret sequentially", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "remind me in ten minutes",
+        instructions: "Use schedule_create then schedule_list.",
+        history: [],
+        tools: [
+          scheduleCreateTool,
+          scheduleListTool,
+          scheduleCancelTool,
+          destinationTool,
+          builtinAgentTools.find((tool) => tool.name === "remember")!,
+          builtinAgentTools.find((tool) => tool.name === "request_secret")!,
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool dispatch completes.
+    }
+
+    const modes = new Map(
+      fakeAgentState.tools.map((tool) => [tool.name, tool.executionMode ?? "default"]),
+    );
+    // A concurrent batch can read the routine list before schedule_create writes
+    // the row, so the bot reports "no schedules" for a reminder it just made.
+    expect(modes.get("schedule_create")).toBe("sequential");
+    expect(modes.get("schedule_list")).toBe("sequential");
+    // schedule_cancel is deferred, so the use_tool that runs it is sequential.
+    expect(modes.get("use_tool")).toBe("sequential");
+    expect(modes.get("remember")).toBe("sequential");
+    // Two code requests in one batch would each wait on a card that one answer approves.
+    expect(modes.get("request_secret")).toBe("sequential");
+    expect(modes.get("destination_write")).toBe("default");
   });
 
   it("does not claim a tool-only turn finished work the model never described", async () => {
@@ -1593,6 +2060,165 @@ describe("Pi connector tool dispatch", () => {
     });
   });
 
+  it("ends the run with the reply a terminating tool result carries", async () => {
+    fakeAgentState.mode = "terminating-tool";
+    const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+    const executeTool = vi.fn(async () =>
+      terminatingToolResult(terminatingReply, { refused: "owner-settings" }),
+    );
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "terminated",
+        prompt: "change your model",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "2c",
+        traceId: "2c",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(fakeAgentState.toolResult).toMatchObject({ terminate: true });
+    expect(events).toContainEqual({ type: "text", text: terminatingReply });
+    expect(events.at(-1)).toEqual({ type: "done", text: terminatingReply });
+  });
+
+  it.each([true, false])(
+    "requires internal provenance to end a restored turn (trusted: %s)",
+    async (trusted) => {
+      const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+      const executed: string[] = [];
+      const executeTool = vi.fn(async (name: string) => {
+        executed.push(name);
+        if (name !== "update_bot") return { ok: true };
+        const result = terminatingToolResult(terminatingReply, { refused: "owner-settings" });
+        return trusted ? result : JSON.parse(JSON.stringify(result));
+      });
+      const checkpoint = serializeTurnCheckpoint({
+        version: 1,
+        provider: "test",
+        model: "dispatch-test-model",
+        systemPrompt: "You are a test bot.",
+        pendingToolCallId: "call-1",
+        executionMode: "sequential",
+        messages: [
+          { role: "user", content: "change your model", timestamp: new Date(0) },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call-1",
+                name: "update_bot",
+                arguments: { notifyOnFinish: false },
+              },
+              { type: "toolCall", id: "call-2", name: "list_files", arguments: { path: "" } },
+            ],
+            stopReason: "toolUse",
+          },
+        ] as never,
+      });
+      const runtime = new PiAgentRuntime();
+      const events: unknown[] = [];
+
+      for await (const event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "replay-terminated",
+          prompt: "resume the turn",
+          instructions: "Use update_bot.",
+          history: [],
+          tools: [updateBotTool, listFilesTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          turnCheckpoint: checkpoint,
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        events.push(event);
+      }
+
+      expect(executed).toEqual(trusted ? ["update_bot"] : ["update_bot", "list_files"]);
+      expect(fakeAgentState.continueCalls).toBe(trusted ? 0 : 1);
+      expect(events.at(-1)).toEqual({
+        type: "done",
+        text: trusted ? terminatingReply : "Trying again anyway.",
+      });
+    },
+  );
+
+  it("keeps a restored turn paused, without a final reply, when a replayed call pauses", async () => {
+    const executed: string[] = [];
+    const executeTool = vi.fn(async (name: string) => {
+      executed.push(name);
+      return name === "update_bot" ? approvalPausedToolResult() : { ok: true };
+    });
+    const checkpoint = serializeTurnCheckpoint({
+      version: 1,
+      provider: "test",
+      model: "dispatch-test-model",
+      systemPrompt: "You are a test bot.",
+      pendingToolCallId: "call-1",
+      executionMode: "sequential",
+      messages: [
+        { role: "user", content: "change your model", timestamp: new Date(0) },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "update_bot",
+              arguments: { notifyOnFinish: false },
+            },
+            { type: "toolCall", id: "call-2", name: "list_files", arguments: { path: "" } },
+          ],
+          stopReason: "toolUse",
+        },
+      ] as never,
+    });
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "replay-paused",
+        prompt: "resume the turn",
+        instructions: "Use update_bot.",
+        history: [],
+        tools: [updateBotTool, listFilesTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        turnCheckpoint: checkpoint,
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      events.push(event);
+    }
+
+    expect(executed).toEqual(["update_bot"]);
+    expect(fakeAgentState.continueCalls).toBe(0);
+    expect(events).not.toContainEqual({ type: "text", text: "Waiting for approval." });
+    expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
   it("shares an optional tool-call fuse with subagents and still emits a final message", async () => {
     process.env.MAX_TOOL_CALLS_PER_TURN = "80";
     fakeAgentState.mode = "subagent-limit";
@@ -1660,6 +2286,96 @@ describe("Pi connector tool dispatch", () => {
           "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
       }),
     );
+  });
+
+  it("hands a background helper to the executor instead of running it inside the turn", async () => {
+    fakeAgentState.mode = "background-subagent";
+    const executeTool = vi.fn(async () => ({ ok: true, name: "scout" }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "background-helper",
+        prompt: "look into the venues in the background",
+        instructions: "",
+        history: [],
+        tools: [
+          {
+            name: "run_subagent",
+            description: "Delegate work",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "bg",
+        traceId: "bg",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    ))
+      events.push(event);
+    const calls = executeTool.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 2)).toEqual([
+      "run_subagent",
+      expect.objectContaining({ name: "scout", task: "compare the venues", background: true }),
+    ]);
+    // No helper ran inside this turn.
+    expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
+  });
+
+  it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "50";
+    fakeAgentState.mode = "two-subagents";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const request = {
+      botId: "b",
+      threadId: "t",
+      runId: "tree-limited",
+      prompt: "delegate twice",
+      instructions: "Use run_subagent.",
+      history: [],
+      tools: [
+        {
+          name: "run_subagent",
+          description: "Delegate work",
+          inputSchema: { type: "object", properties: {} },
+        },
+        shellTool,
+      ],
+      model: { provider: "test", id: "dispatch-test-model" },
+      executeTool,
+    };
+    const context = {
+      operationId: "2j",
+      traceId: "2j",
+      spaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    };
+    const stopText =
+      "I stopped after reaching the limit of 50 tool calls in this turn. Send another message to continue.";
+
+    const first: unknown[] = [];
+    for await (const event of runtime.run(request, context)) first.push(event);
+    // 2 run_subagent calls + shell calls from both children never exceed the cap in total.
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(first.at(-1)).toEqual({ type: "done", text: stopText });
+    expect(first.filter((e) => (e as { status?: string }).status === "failed")).toHaveLength(0);
+
+    // The budget was released: the same run id starts at zero again.
+    executeTool.mockClear();
+    const second: unknown[] = [];
+    for await (const event of runtime.run(request, context)) second.push(event);
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(second.at(-1)).toEqual({ type: "done", text: stopText });
   });
 
   it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {
@@ -2021,6 +2737,54 @@ describe("Pi connector tool dispatch", () => {
     expect(JSON.parse(result.content[0]!.text)).toEqual(skill);
   });
 
+  it("delivers full child instructions and their version past the tool result bound", async () => {
+    const listing = {
+      bot: { id: "child", instructionsVersion: "v2", instructions: "x".repeat(20_000) },
+      bots: [],
+      groups: [],
+      sections: [],
+      truncated: false,
+    };
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "list_fleet", arguments: { bot_id: "child" } },
+    };
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "large-child",
+        prompt: "edit the child",
+        instructions: "Read the child before updating it.",
+        history: [],
+        tools: [
+          {
+            name: "list_fleet",
+            description: "Read a child by id",
+            inputSchema: { type: "object", properties: { bot_id: { type: "string" } } },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => listing),
+      },
+      {
+        operationId: "large-child",
+        traceId: "large-child",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust so the fake agent executes the tool.
+    }
+
+    const result = fakeAgentState.toolResult as { content: Array<{ type: string; text: string }> };
+    expect(result.content[0]!.text.length).toBeGreaterThan(TOOL_RESULT_TEXT_LIMIT);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(listing);
+  });
+
   it("serialises object content instead of writing [object Object] for write_file", async () => {
     fakeAgentState.invoke = {
       name: "write_file",
@@ -2058,6 +2822,51 @@ describe("Pi connector tool dispatch", () => {
         path: "shared/state.json",
         content: '{\n  "last_run": 1787648953\n}',
       },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+  });
+
+  it("keeps read_file's positive-integer offset and limit and drops invalid ones", async () => {
+    const readFileTool = builtinAgentTools.find((tool) => tool.name === "read_file");
+    if (!readFileTool) throw new Error("missing read_file");
+    const executeTool = vi.fn(async () => ({ path: "docs/reference.txt", content: "line" }));
+    const runtime = new PiAgentRuntime();
+    const dispatch = async (args: Record<string, unknown>) => {
+      fakeAgentState.invoke = { name: "read_file", args };
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "read-file-range",
+          prompt: "read the reference file",
+          instructions: "Use read_file.",
+          history: [],
+          tools: [readFileTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool dispatch completes.
+      }
+    };
+
+    await dispatch({ path: "docs/reference.txt", offset: 40, limit: 60 });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt", offset: 40, limit: 60 },
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
+
+    executeTool.mockClear();
+    await dispatch({ path: "docs/reference.txt", offset: 0, limit: "60" });
+    expect(executeTool).toHaveBeenCalledWith(
+      "read_file",
+      { path: "docs/reference.txt" },
       JSON.stringify(["pi-tool", "main", "call-1"]),
       undefined,
       { onShellStillRunning: expect.any(Function) },

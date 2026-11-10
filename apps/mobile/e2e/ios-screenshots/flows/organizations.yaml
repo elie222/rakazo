@@ -1,0 +1,78 @@
+appId: com.rakazo.app
+name: Organizations
+---
+# Last in the catalog: it leaves a second organization in the populated account.
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Organization.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Organization.*"
+- extendedWaitUntil:
+    visible: "Create organization"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-account-organization
+- tapOn: "Create organization"
+- extendedWaitUntil:
+    visible: "Name"
+    timeout: 15000
+# The name field opens focused.
+- inputText: "Work"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-new-organization
+- tapOn: "Create"
+# Billing belongs to each organization, so the new one starts on the paywall.
+- extendedWaitUntil:
+    visible: ".*Put your bots to work.*"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-organization-paywall
+- tapOn: "Account"
+- extendedWaitUntil:
+    visible: "Personal"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-organization-paywall-menu
+- tapOn: "Personal"
+- extendedWaitUntil:
+    visible:
+      id: "organization-menu"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-organization-inbox
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Organization.*"
+    timeout: 15000
+- tapOn: "Organization.*"
+- extendedWaitUntil:
+    visible: ".*Delete organization.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-organization
+- tapOn: "Delete organization"
+# The confirmation field opens focused. Delete stays untapped: this is the fixture's main organization.
+- inputText: "Personal"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 07-organization-delete-confirm
+- openLink: "rakazo:///"
+- tapOn:
+    id: "organization-menu"
+- extendedWaitUntil:
+    visible: "Work"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-organization-menu

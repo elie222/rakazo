@@ -1,4 +1,12 @@
-export const messageMenuSymbols = ["reply", "copy", "react", "quote", "speak", "select"] as const;
+export const messageMenuSymbols = [
+  "reply",
+  "copy",
+  "react",
+  "quote",
+  "speak",
+  "select",
+  "unread",
+] as const;
 
 export type MessageMenuSymbol = (typeof messageMenuSymbols)[number];
 
@@ -27,7 +35,14 @@ export function buildMessageContextMenu({
 }: {
   labels: Record<MessageMenuSymbol, string>;
   reactions: readonly string[];
-  include: { reply?: boolean; quote: boolean; react: boolean; speak: boolean; select: boolean };
+  include: {
+    reply?: boolean;
+    quote: boolean;
+    react: boolean;
+    speak: boolean;
+    select: boolean;
+    unread?: boolean;
+  };
 }): MessageMenuEntry[] {
   const secondary: MessageMenuEntry[] = [
     ...(include.quote ? [entry("quote", labels.quote)] : []),
@@ -36,6 +51,7 @@ export function buildMessageContextMenu({
   ];
   return [
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
+    ...(include.unread ? [entry("unread", labels.unread)] : []),
     entry("copy", labels.copy),
     ...(include.react
       ? [

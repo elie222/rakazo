@@ -1,5 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
+import { ROUTINE_HISTORY_PAGE_SIZE } from "@rakazo/contracts";
+import { runFailureError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 
@@ -8,12 +10,12 @@ export async function listRoutineRuns(
   actor: Actor,
   routineId: string,
   before?: RoutineRunCursor,
+  limit = ROUTINE_HISTORY_PAGE_SIZE,
 ): Promise<RoutineHistory> {
   const routine = await prisma.routine.findFirst({
     where: {
       id: routineId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       bot: { archivedAt: null },
     },
     select: { botId: true },
@@ -25,7 +27,6 @@ export async function listRoutineRuns(
       routineId,
       botId: routine.botId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       ...(before
         ? {
             OR: [
@@ -41,18 +42,20 @@ export async function listRoutineRuns(
       threadId: true,
       thread: { select: { groupId: true } },
       status: true,
+      error: true,
+      lateSince: true,
       createdAt: true,
       startedAt: true,
       completedAt: true,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 21,
+    take: limit + 1,
   });
-  const runs = rows.slice(0, 20);
+  const runs = rows.slice(0, limit);
   const last = runs.at(-1);
   const nextCursor =
-    rows.length > 20 && last ? { id: last.id, createdAt: last.createdAt.toISOString() } : null;
-  // Routine runs can finish silently. A chat link is offered only when a message exists.
+    rows.length > limit && last ? { id: last.id, createdAt: last.createdAt.toISOString() } : null;
+  // Routine runs can finish silently. A chat link opens the first message a run posted.
   const messages = runs.length
     ? await prisma.$queryRaw<Array<{ id: string; runId: string; threadId: string }>>(Prisma.sql`
         SELECT DISTINCT ON (m."runId") m.id, m."runId", m."threadId"
@@ -60,10 +63,10 @@ export async function listRoutineRuns(
         INNER JOIN runs r ON r.id = m."runId" AND r."threadId" = m."threadId"
         INNER JOIN threads t ON t.id = m."threadId"
         WHERE r.id IN (${Prisma.join(runs.map((run) => run.id))})
-          AND r."spaceId" = ${actor.spaceId} AND r."userId" = ${actor.userId}
-          AND t."spaceId" = ${actor.spaceId} AND t."userId" = ${actor.userId}
+          AND r."spaceId" = ${actor.spaceId}
+          AND t."spaceId" = ${actor.spaceId}
           AND m.role = 'bot'
-        ORDER BY m."runId", m."createdAt" DESC, m.id DESC
+        ORDER BY m."runId", m.seq
       `)
     : [];
   const replyByRun = new Map(messages.map((message) => [message.runId, message.id]));
@@ -74,8 +77,10 @@ export async function listRoutineRuns(
       botId: run.botId,
       groupId: run.thread.groupId,
       status: run.status as RoutineRun["status"],
+      error: runFailureError({ type: `run.${run.status}`, payload: { error: run.error } }),
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
+      lateSince: run.lateSince?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,
       messageId: replyByRun.get(run.id) ?? null,
     })),

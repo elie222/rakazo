@@ -16,13 +16,14 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
-  voiceHttpError,
+  voiceLanguageHint,
+  voiceRequestError,
 } from "./voice-http.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
 const FORMAT = "mp3_44100_64";
-const TRANSCRIBE_MODEL = "scribe_v1";
+const TRANSCRIBE_MODEL = "scribe_v2";
 
 export class ElevenLabsVoiceProvider implements VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities> {
@@ -49,7 +50,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       signal: voiceDeadline(context.signal, 20_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "listing voices", body));
+    if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "listing voices", body);
     const voices = (body as { voices?: Array<Record<string, unknown>> } | null)?.voices ?? [];
     return voices
       .map((voice) => ({
@@ -74,7 +75,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           "content-type": "application/json",
           accept: "audio/mpeg",
         },
-        body: JSON.stringify({ text: request.text, model_id: MODEL }),
+        body: JSON.stringify({ text: request.text, model_id: request.model?.trim() || MODEL }),
         signal,
       },
     );
@@ -88,6 +89,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   ): Promise<{ text: string }> {
     const form = new FormData();
     form.set("model_id", TRANSCRIBE_MODEL);
+    // Without a hint Scribe guesses the language, and a short clip in one language can
+    // come back as lookalike words in another.
+    const language = voiceLanguageHint(request.language);
+    if (language) form.set("language_code", language);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
@@ -100,7 +105,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "transcribing", body));
+    if (!res.ok) throw voiceRequestError(res.status, "ElevenLabs", "transcribing", body);
     const text = String((body as { text?: unknown } | null)?.text ?? "").trim();
     return { text };
   }

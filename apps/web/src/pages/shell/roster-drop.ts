@@ -22,8 +22,8 @@ export type RosterDropAction =
 export function resolveRosterDrop(input: {
   dragged: DraggedBot;
   target: RosterDropTarget;
-  /** True when the target row renders under the same parent as the dragged row. */
-  sameParent: boolean;
+  /** True when the target and dragged rows belong to the same visible list. */
+  sameList: boolean;
 }): RosterDropAction | null {
   const { dragged, target } = input;
   switch (target.kind) {
@@ -31,7 +31,7 @@ export function resolveRosterDrop(input: {
       if (target.chat.id === dragged.id) return null;
       if (dragged.pinned !== target.chat.pinned) return null;
       if (dragged.pinned || target.chat.sectionId === dragged.sectionId) {
-        return input.sameParent ? { action: "reorder", targetBotId: target.chat.id } : null;
+        return input.sameList ? { action: "reorder", targetBotId: target.chat.id } : null;
       }
       return { action: "move", sectionId: target.chat.sectionId };
     }

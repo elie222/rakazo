@@ -25,6 +25,7 @@ describe("canTakeScreenLease", () => {
     expect(canTakeScreenLease("run-2:2", "run-1:1")).toBe(false);
     expect(canTakeScreenLease("run-1:8", "run-1:1")).toBe(false);
     expect(canTakeScreenLease("run-2:2", undefined)).toBe(false);
+    expect(canTakeScreenLease("run-1:2", "run-2:2")).toBe(false);
   });
 });
 
@@ -36,5 +37,6 @@ describe("canReleaseScreenLease", () => {
 
   it("rejects a stale finalizer after a newer run reclaimed the screen", () => {
     expect(canReleaseScreenLease("run-2:2", "run-1:1")).toBe(false);
+    expect(canReleaseScreenLease("run-1:1", "run-2:5")).toBe(false);
   });
 });

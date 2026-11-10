@@ -46,5 +46,6 @@ describe("sandbox command environment", () => {
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     expect(result.stdout.length + result.stderr.length).toBe(0);
+    expect(sandboxCommandArgv({ argv: ["ls"], unsetEnv: [] })).toEqual(["ls"]);
   });
 });

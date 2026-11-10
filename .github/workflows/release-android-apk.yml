@@ -2,13 +2,16 @@ name: release-android-apk
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-android-apk
+  # APK and AAB builds increment the same remote Android version counter.
+  group: release-android
   cancel-in-progress: false
+  queue: max
 
 jobs:
   release:
@@ -34,29 +37,38 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
-      - name: Set up Expo
-        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
-        with:
-          eas-version: latest
-          packager: pnpm
-          token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify mobile project
         run: pnpm --filter @rakazo/mobile check
+
+      # Without Firebase config the APK never registers for push, and an OTA update can't add it.
+      - name: Require Firebase config
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          vars="$(pnpm exec eas env:list production --format short)"
+          if ! grep -q '^GOOGLE_SERVICES_JSON=' <<< "$vars"; then
+            echo "Set the GOOGLE_SERVICES_JSON file variable in the EAS production environment (see docs/mobile-release.md)." >&2
+            exit 1
+          fi
 
       # EAS signs with the project's managed Android keystore and bakes in the production update
       # channel, so installed APKs receive the same OTA updates as store builds.
       - name: Build APK on EAS
         id: build
         working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          eas build --platform android --profile android-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          pnpm exec eas build --platform android --profile android-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
           url="$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
           version="$(jq -r '.[0].appVersion' "$RUNNER_TEMP/build.json")"
           version_code="$(jq -r '.[0].appBuildVersion' "$RUNNER_TEMP/build.json")"

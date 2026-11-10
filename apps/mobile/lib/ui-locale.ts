@@ -1,49 +1,41 @@
-export const UI_LOCALES = ["en", "zh-CN", "ru", "de"] as const;
+import { AppLocaleSchema } from "@rakazo/contracts";
+import { matchUiLocale } from "@rakazo/core";
 
-export type UiLocale = (typeof UI_LOCALES)[number];
+/** The app languages mobile ships catalogs for. */
+const SHIPPED_LOCALES = [
+  "en",
+  "zh-CN",
+  "zh-TW",
+  "ru",
+  "de",
+  "nl",
+  "ja",
+  "es",
+  "pl",
+  "fr",
+  "he",
+  "hi",
+  "ko",
+  "pt-BR",
+  "tr",
+] as const satisfies readonly (typeof AppLocaleSchema.options)[number][];
 
-/** Locales offered on the mobile Account language picker. */
-export const ACCOUNT_UI_LOCALES = ["en", "zh-CN"] as const satisfies readonly UiLocale[];
+export type UiLocale = (typeof SHIPPED_LOCALES)[number];
 
-export type AccountUiLocale = (typeof ACCOUNT_UI_LOCALES)[number];
+/** Mobile's languages, in the order every app lists them. */
+export const UI_LOCALES = AppLocaleSchema.options.filter((locale): locale is UiLocale =>
+  (SHIPPED_LOCALES as readonly string[]).includes(locale),
+);
 
 export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
 
-export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
-  en: "English",
-  "zh-CN": "简体中文",
-  ru: "Русский",
-  de: "Deutsch",
-};
-
-/** Convert an internal locale identifier to the document language tag. */
 export function htmlLangForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : locale;
 }
 
-/** Return whether a value is one of the supported mobile UI locales. */
-export function isUiLocale(value: string | null | undefined): value is UiLocale {
-  return value === "en" || value === "zh-CN" || value === "ru" || value === "de";
-}
-
 /** Normalize BCP-47 tags to a mobile UI locale, else `en`. */
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
-  if (!raw) return "en";
-  const normalized = raw.trim().toLowerCase().replace(/_/g, "-");
-  // Simplified Chinese only. Do not fold zh-TW / zh-HK / zh-Hant into zh-CN.
-  if (
-    normalized === "zh" ||
-    normalized === "zh-cn" ||
-    normalized === "zh-hans" ||
-    normalized === "zh-sg" ||
-    normalized.startsWith("zh-hans-") ||
-    normalized.startsWith("zh-cn-")
-  ) {
-    return "zh-CN";
-  }
-  if (normalized === "ru" || normalized.startsWith("ru-")) return "ru";
-  const primary = normalized.split("-")[0] ?? "";
-  return isUiLocale(primary) ? primary : "en";
+  return matchUiLocale(raw, UI_LOCALES);
 }
 
 export type ResolveUiLocaleOptions = {

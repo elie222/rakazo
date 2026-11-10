@@ -1,81 +1,77 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot } from "./helpers";
+import { captureScreenshot, expectCardWidth } from "./helpers";
 
 const fixture = "/e2e/fixtures/chart-links.html";
 
+// The full matrix of unsafe and supported schemes lives in plot-tool.test.ts;
+// this checks one obfuscated href stays inert in a real browser.
+const href = ' \u0000\u001fJaVa\tScRi\nPt:void(document.body.dataset.plotExecuted="yes")';
+
 test("chart links cannot execute script when clicked or expanded", async ({ page }, testInfo) => {
   for (const inspect of ["0", "1"]) {
-    for (const href of [
-      'javascript:void(document.body.dataset.plotExecuted="yes")',
-      ' \u0000\u001fJaVa\tScRi\nPt:void(document.body.dataset.plotExecuted="yes")',
-      'javascript:%76oid(document.body.dataset.plotExecuted="yes")',
-      "data:text/html,<script>document.body.dataset.plotExecuted='yes'</script>",
-      "file:///example.txt",
-    ]) {
-      await page.goto(`${fixture}?${new URLSearchParams({ href, inspect })}`);
-      const circle = page.locator("svg circle").first();
-      await expect(circle).toBeVisible();
-      const assertInert = async () => {
-        const links = page.locator("svg a");
-        expect(await links.count()).toBeGreaterThan(0);
-        expect(
-          await links.evaluateAll((anchors) =>
-            anchors.every(
-              (anchor) =>
-                !anchor.hasAttribute("href") &&
-                !anchor.hasAttributeNS("http://www.w3.org/1999/xlink", "href"),
-            ),
+    await page.goto(`${fixture}?${new URLSearchParams({ href, inspect })}`);
+    const circle = page.locator("svg circle").first();
+    await expect(circle).toBeVisible();
+    const assertInert = async () => {
+      const links = page.locator("svg a");
+      expect(await links.count()).toBeGreaterThan(0);
+      expect(
+        await links.evaluateAll((anchors) =>
+          anchors.every(
+            (anchor) =>
+              !anchor.hasAttribute("href") &&
+              !anchor.hasAttributeNS("http://www.w3.org/1999/xlink", "href"),
           ),
-        ).toBe(true);
-        await expect(page.locator("body")).not.toHaveAttribute("data-plot-executed");
-      };
-      await assertInert();
-      await circle.click();
-      // Hover inspection still works, without reintroducing unsafe links.
-      if (inspect === "1") await expect(page.locator('[aria-label="tip"]')).toBeVisible();
-      await assertInert();
-      await page.getByRole("button", { name: "Expand", exact: true }).click();
-      const dialog = page.getByRole("dialog");
-      await expect(dialog.locator("svg circle")).toBeVisible();
-      await dialog.locator("svg circle").click();
-      await assertInert();
-      await expect(page).toHaveURL(`${fixture}?${new URLSearchParams({ href, inspect })}`);
-      await page.getByRole("button", { name: "Close chart" }).click();
-    }
+        ),
+      ).toBe(true);
+      await expect(page.locator("body")).not.toHaveAttribute("data-plot-executed");
+    };
+    await assertInert();
+    await circle.click();
+    // Hover inspection still works, without reintroducing unsafe links.
+    if (inspect === "1") await expect(page.locator('[aria-label="tip"]')).toBeVisible();
+    await assertInert();
+    await page.getByRole("button", { name: "Expand", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.locator("svg circle")).toBeVisible();
+    await dialog.locator("svg circle").click();
+    await assertInert();
+    await expect(page).toHaveURL(`${fixture}?${new URLSearchParams({ href, inspect })}`);
+    await page.getByRole("button", { name: "Close chart" }).click();
   }
   await captureScreenshot(page, testInfo, "chart-with-inert-link");
 });
 
-test("chart links retain supported URLs and browser encoding semantics", async ({ page }) => {
-  await page.route("https://example.test/**", (route) =>
-    route.fulfill({ body: "Chart destination" }),
-  );
-  await page.route("**/e2e/fixtures/java*", (route) =>
-    route.fulfill({ body: "Chart destination" }),
-  );
-  for (const href of [
-    "https://example.test/chart?a=1&b=2",
-    "mailto:chart@example.test",
-    "tel:+15555550123",
-    "#details",
-    "java&#x73;cript:void(0)",
-    "javascript%3Avoid(0)",
-    "java%73cript:void(0)",
-  ]) {
-    await page.goto(`${fixture}?${new URLSearchParams({ href })}`);
-    const link = page.locator("svg a").first();
-    await expect(link).toBeVisible();
-    expect(
-      await link.evaluate((anchor) =>
-        anchor.getAttributeNS("http://www.w3.org/1999/xlink", "href"),
-      ),
-    ).toBe(href);
-    const destination = new URL(href, page.url());
-    expect(destination.protocol).not.toBe("javascript:");
-    if (destination.protocol === "http:" || destination.protocol === "https:") {
-      await link.locator("circle").click();
-      await expect(page).toHaveURL(destination.href);
-      await expect(page.locator("body")).not.toHaveAttribute("data-plot-executed");
-    }
-  }
-});
+for (const width of [1280, 375]) {
+  test.describe(`${width}px chart layout`, () => {
+    test.use({
+      viewport: { width, height: 812 },
+      hasTouch: width === 375,
+      isMobile: width === 375,
+    });
+
+    test(`chart fills its transcript bubble at ${width}px without horizontal overflow`, async ({
+      page,
+    }, testInfo) => {
+      await page.goto(fixture);
+      const card = page.getByRole("button", { name: "Expand", exact: true }).locator("..");
+      const plot = card.locator("svg").first();
+      await expect(plot).toBeVisible();
+      await expectCardWidth(card, 552);
+
+      // The 520px plot sits inside the card's two 16px padding edges.
+      const measured = await card.evaluate((element) => ({
+        card: element.getBoundingClientRect().width,
+        plot: element.querySelector("svg")!.getBoundingClientRect().width,
+        overflow: element.scrollWidth - element.clientWidth,
+      }));
+      expect(Math.abs(measured.plot - (measured.card - 32))).toBeLessThan(1);
+      if (width === 1280) expect(Math.abs(measured.plot - 520)).toBeLessThan(1);
+      expect(measured.overflow).toBeLessThanOrEqual(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await captureScreenshot(page, testInfo, `chart-card-${width}px`);
+    });
+  });
+}

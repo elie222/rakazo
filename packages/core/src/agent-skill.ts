@@ -11,7 +11,6 @@ export type SkillSource = "user" | "builtin" | "plugin";
 export type ParsedSkillMd = {
   name: string;
   description: string;
-  /** Markdown body after the frontmatter fence. */
   body: string;
   /**
    * All frontmatter keys as parsed scalars/structures. Unknown keys are preserved
@@ -49,18 +48,20 @@ const ROUTINE_SKILL_STOP = new Set([
   "a",
   "an",
 ]);
+// Detection, expansion, and import renames must agree on mention boundaries.
+const ROUTINE_SKILL_LEAD = "[\\s(,，。、；：！？（【「『《]";
+const ROUTINE_SKILL_END = "(?=[\\s,.)，。、；：！？）】」』》]|$)";
 /** Fallback when no catalog is available: @Token with optional Title-case words. */
-const ROUTINE_SKILL_MENTION =
-  /(?:^|[\s(,])@([A-Za-z][\w-]*(?:[ ]+[A-Za-z][\w-]*){0,5})(?=[\s,.)]|$)/g;
+const ROUTINE_SKILL_MENTION = new RegExp(
+  `(?:^|${ROUTINE_SKILL_LEAD})@([A-Za-z][\\w-]*(?:[ ]+[A-Za-z][\\w-]*){0,5})${ROUTINE_SKILL_END}`,
+  "g",
+);
 
 export function isSkillReadOnly(source: SkillSource): boolean {
   return source === "builtin" || source === "plugin";
 }
 
-/**
- * Parse a SKILL.md document. Requires YAML frontmatter with `name` and `description`.
- * Extra frontmatter keys are kept in `frontmatter`.
- */
+/** Requires YAML frontmatter with `name` and `description`; extra keys are kept in `frontmatter`. */
 export function parseSkillMd(content: string): ParsedSkillMd | { error: string } {
   const trimmed = content.replace(/^\uFEFF/, "");
   const match = FRONTMATTER_FENCE.exec(trimmed);
@@ -165,13 +166,24 @@ export function extractRoutineSkillMentions(prompt: string, knownNames?: string[
       .map((name) => name.trim())
       .filter(Boolean)
       .sort((a, b) => b.length - a.length);
+    if (sorted.length === 0) return [];
+    // Match each mention once so a longer name does not also select its prefix.
+    // Each capture identifies its catalog name without changing regex case matching.
+    const alternatives = sorted.map((name) => `(${escapeRegExp(name)})`).join("|");
+    const re = new RegExp(
+      `(?:^|${ROUTINE_SKILL_LEAD})@(?:${alternatives})${ROUTINE_SKILL_END}`,
+      "gi",
+    );
+    const mentionedIndices = new Set(
+      [...prompt.matchAll(re)].map((match) =>
+        match.slice(1).findIndex((capture) => capture !== undefined),
+      ),
+    );
     const found: string[] = [];
     const seen = new Set<string>();
-    for (const name of sorted) {
-      const re = new RegExp(`(?:^|[\\s(,])@${escapeRegExp(name)}(?=[\\s,.)]|$)`, "gi");
-      if (!re.test(prompt)) continue;
+    for (const [index, name] of sorted.entries()) {
       const key = name.toLowerCase();
-      if (seen.has(key)) continue;
+      if (!mentionedIndices.has(index) || seen.has(key)) continue;
       seen.add(key);
       found.push(name);
     }
@@ -267,13 +279,36 @@ export function expandSkillReferencesInPrompt(
     blocks.push(formatForcedSkillPrompt(skill.name, skill.content));
     // Strip the @mention token so the agent is not confused by a dangling pointer.
     remaining = remaining.replace(
-      new RegExp(`(^|[\\s(,])@${escapeRegExp(mention)}(?=[\\s,.)]|$)`, "gi"),
+      new RegExp(`(^|${ROUTINE_SKILL_LEAD})@${escapeRegExp(mention)}${ROUTINE_SKILL_END}`, "gi"),
       "$1",
     );
   }
   if (blocks.length === 0) return prompt;
   const rest = remaining.replace(/[ \t]{2,}/g, " ").trim();
   return [...blocks, rest].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Points `@old` skill mentions in a routine prompt at their new names, in one pass. Names
+ * mapped to themselves are still matched, so a longer name wins over a renamed prefix.
+ */
+export function renameRoutineSkillMentions(
+  prompt: string,
+  renames: ReadonlyMap<string, string>,
+): string {
+  const names = [...renames.keys()].sort((a, b) => b.length - a.length);
+  if (names.length === 0) return prompt;
+  const next = new Map([...renames].map(([from, to]) => [from.toLowerCase(), to]));
+  return prompt.replace(
+    new RegExp(
+      `(^|${ROUTINE_SKILL_LEAD})@(${names.map(escapeRegExp).join("|")})${ROUTINE_SKILL_END}`,
+      "gi",
+    ),
+    (match, lead: string, name: string) => {
+      const to = next.get(name.toLowerCase());
+      return to ? `${lead}@${to}` : match;
+    },
+  );
 }
 
 function escapeRegExp(value: string): string {
@@ -294,7 +329,7 @@ type YamlBlockScalarHeader = {
 };
 
 function parseYamlBlockScalarHeader(raw: string): YamlBlockScalarHeader | null {
-  const match = /^([>|])(?:([1-9]\d*)([+-]?)|([+-])([1-9]\d*)?)?$/.exec(raw);
+  const match = /^([>|])(?:([1-9]\d*)([+-]?)|([+-])([1-9]\d*)?)?(?:[ \t]+(?:#.*)?)?$/.exec(raw);
   if (!match) return null;
   const style = match[1] as "|" | ">";
   const indentToken = match[2] ?? match[5] ?? "";
@@ -442,9 +477,7 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
       continue;
     }
     if (raw.startsWith("[") && raw.endsWith("]")) {
-      result[key] = raw
-        .slice(1, -1)
-        .split(",")
+      result[key] = splitYamlInlineArray(raw.slice(1, -1))
         .map((part) => parseYamlScalar(part.trim()))
         .filter((part) => part !== "");
       i += 1;
@@ -456,13 +489,46 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
   return result;
 }
 
+function splitYamlInlineArray(raw: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (quote === '"' && char === "\\") {
+      i += 1;
+    } else if (quote === "'" && char === "'" && raw[i + 1] === "'") {
+      i += 1;
+    } else if (quote && char === quote) {
+      quote = null;
+    } else if (!quote && (char === '"' || char === "'") && raw.slice(start, i).trim() === "") {
+      quote = char;
+    } else if (!quote && char === ",") {
+      parts.push(raw.slice(start, i));
+      start = i + 1;
+    }
+  }
+  // Keep the prior behavior for malformed, unclosed quoted entries.
+  if (quote) return raw.split(",");
+  parts.push(raw.slice(start));
+  return parts;
+}
+
 function parseYamlScalar(raw: string): string | number | boolean {
   const value = raw.trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    // Saves write double-quoted values with JSON.stringify. Decode them so the next save
+    // does not add another escape layer. Non-JSON escapes such as "C:\path" keep the slice.
+    try {
+      const decoded: unknown = JSON.parse(value);
+      if (typeof decoded === "string") return decoded;
+    } catch {
+      // Fall through to the slice below.
+    }
     return value.slice(1, -1);
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replaceAll("''", "'");
   }
   if (value === "true") return true;
   if (value === "false") return false;
@@ -486,7 +552,7 @@ function formatYamlBlockScalar(key: string, value: string): string {
     indicator = "|+";
     const core = value.slice(0, -trailing);
     // keep decoder yields 1 + trailingBlanks newlines; emit trailingBlanks blank lines.
-    lines = [core, ...Array.from({ length: trailing - 1 }, () => "")];
+    lines = [...core.split("\n"), ...Array.from({ length: trailing - 1 }, () => "")];
   }
   const indented = lines.map((line) => `  ${line}`).join("\n");
   return `${key}: ${indicator}\n${indented}`;
@@ -498,7 +564,14 @@ function formatYamlLine(key: string, value: unknown): string {
     if (value.includes("\n") || value.includes(": ")) {
       return formatYamlBlockScalar(key, value);
     }
-    if (value === "" || /[#{}[\],&*?|>!%@`]/.test(value) || value !== value.trim()) {
+    if (
+      value === "" ||
+      /[#{}[\],&*?|>!%@`]/.test(value) ||
+      value !== value.trim() ||
+      value.startsWith('"') ||
+      value.startsWith("'") ||
+      typeof parseYamlScalar(value) !== "string"
+    ) {
       return `${key}: ${JSON.stringify(value)}`;
     }
     return `${key}: ${value}`;

@@ -1,0 +1,38 @@
+name: Publish checked image
+description: Tag and attest checked registry digests using the caller's registry login.
+inputs:
+  image:
+    description: Repository-qualified GHCR image name.
+    required: true
+  digests-directory:
+    description: Directory containing one multi-platform digest or two architecture digests.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+    - id: meta
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+      with:
+        images: ${{ inputs.image }}
+        tags: |
+          type=semver,pattern=v{{version}}
+          type=semver,pattern=v{{major}}.{{minor}}
+          type=sha,prefix=sha-
+          type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+    - name: Assemble and verify the multi-arch manifest
+      id: manifest
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        IMAGE: ${{ inputs.image }}
+        DIGESTS_DIRECTORY: ${{ inputs.digests-directory }}
+        TAGS: ${{ steps.meta.outputs.tags }}
+      run: bash "$ACTION_PATH/publish.sh"
+    - name: Attest the published image
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ steps.manifest.outputs.digest }}
+        push-to-registry: true

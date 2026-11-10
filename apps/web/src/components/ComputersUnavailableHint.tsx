@@ -1,13 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button } from "@rakazo/ui-web";
+import { Button, buttonVariants, Spinner } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAvailabilityPhase } from "../lib/computer-sandbox";
 import {
-  classifySandboxProvider,
   computersAreUnavailable,
   refreshSandboxFromServer,
   sandboxCheckFailureMessage,
-  sandboxEnvGuidanceText,
 } from "../lib/computer-sandbox";
 import { SuccessPop } from "./ai/primitives";
 
@@ -38,7 +36,6 @@ export function ComputersUnavailableHint({
   const [provider, setProvider] = useState(initialProvider);
   const [phase, setPhase] = useState<SandboxAvailabilityPhase>("idle");
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const onRecoveredRef = useRef(onRecovered);
   onRecoveredRef.current = onRecovered;
   const onRecoveryDismissedRef = useRef(onRecoveryDismissed);
@@ -58,7 +55,6 @@ export function ComputersUnavailableHint({
   }, [phase]);
 
   const unavailable = computersAreUnavailable(provider);
-  const kind = classifySandboxProvider(provider);
 
   async function handleCheckAgain() {
     if (phase === "loading") return;
@@ -81,18 +77,9 @@ export function ComputersUnavailableHint({
     }
   }
 
-  async function handleCopyGuidance() {
-    const text = sandboxEnvGuidanceText();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  const showUnavailableCopy = phase === "idle" || phase === "unavailable" || phase === "failure";
+  const showUnavailableCopy =
+    phase === "failure" || (unavailable && (phase === "idle" || phase === "unavailable"));
+  if (!showUnavailableCopy && phase !== "loading" && phase !== "recovered") return null;
 
   return (
     <div
@@ -101,16 +88,25 @@ export function ComputersUnavailableHint({
       role={phase === "failure" ? "alert" : undefined}
     >
       {phase === "loading" ? (
-        <p className="text-[13px] text-muted-foreground" role="status">
-          <Trans>Checking computer setup…</Trans>
-        </p>
+        <Spinner className="text-muted-foreground" aria-label={t`Checking computer setup…`} />
       ) : null}
 
       {phase === "recovered" ? (
         <SuccessPop label={t`Computers are available. Reload or open a bot to continue.`} />
       ) : null}
 
-      {showUnavailableCopy ? <UnavailableCopy kind={kind} failureMessage={failureMessage} /> : null}
+      {showUnavailableCopy ? (
+        <p className="text-body-sm leading-relaxed text-muted-foreground">
+          {failureMessage ? (
+            <Trans>
+              Could not verify computer setup ({failureMessage}). Fix the connection, then check
+              again.
+            </Trans>
+          ) : (
+            <Trans>Computers are off on this server.</Trans>
+          )}
+        </p>
+      ) : null}
 
       {showRetry && (unavailable || phase === "failure") ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -118,73 +114,26 @@ export function ComputersUnavailableHint({
             type="button"
             variant="secondary"
             size="sm"
-            className="rounded-full"
             disabled={phase === "loading"}
             onClick={() => void handleCheckAgain()}
           >
             {phase === "loading" ? <Trans>Checking…</Trans> : <Trans>Check again</Trans>}
           </Button>
           {onOpenComputerSettings ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              onClick={onOpenComputerSettings}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={onOpenComputerSettings}>
               <Trans>Open computer settings</Trans>
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="rounded-full"
-            onClick={() => void handleCopyGuidance()}
+          <a
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+            href="https://github.com/elie222/rakazo/blob/main/docs/self-host-sandbox-providers.md"
+            target="_blank"
+            rel="noreferrer"
           >
-            {copied ? <Trans>Copied</Trans> : <Trans>Copy .env example</Trans>}
-          </Button>
+            <Trans>Setup help</Trans>
+          </a>
         </div>
       ) : null}
     </div>
-  );
-}
-
-function UnavailableCopy({
-  kind,
-  failureMessage,
-}: {
-  kind: ReturnType<typeof classifySandboxProvider>;
-  failureMessage: string | null;
-}) {
-  if (failureMessage) {
-    return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
-        <Trans>
-          Could not verify computer setup ({failureMessage}). Fix the connection, then check again.
-        </Trans>
-      </p>
-    );
-  }
-
-  if (kind === "docker") {
-    return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
-        <Trans>
-          Docker is configured but computers are not responding. Confirm the sandbox supervisor is
-          running, then recreate the stack after changing .env.
-        </Trans>
-      </p>
-    );
-  }
-
-  return (
-    <p className="text-[13px] leading-relaxed text-muted-foreground">
-      <Trans>
-        Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set
-        SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing
-        .env.
-      </Trans>
-    </p>
   );
 }

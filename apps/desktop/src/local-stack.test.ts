@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
+import type { LocalStackDeps } from "./local-stack.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
   ensureStackEnv,
   ensureStackToken,
   initialStackState,
   LocalStackController,
-  type LocalStackDeps,
   readStackToken,
   reduceStackState,
   renderStackEnv,
@@ -62,12 +62,13 @@ describe("resolveImageTag", () => {
 });
 
 describe("renderStackEnv", () => {
-  it("fills the five secrets and drops the image tag lines of the shipped template", async () => {
+  it("fills the generated secrets and drops the image tag lines of the shipped template", async () => {
     const template = await readFile(path.join(COMPOSE_DIR, STACK_ENV_TEMPLATE), "utf8");
     const rendered = renderStackEnv(template, fakeHex);
     const lines = rendered.split("\n");
 
     expect(lines).toContain(`POSTGRES_PASSWORD=${"ab".repeat(16)}`);
+    expect(lines).toContain(`POSTGRES_APP_PASSWORD=${"ab".repeat(16)}`);
     for (const name of [
       "BETTER_AUTH_SECRET",
       "ENCRYPTION_KEY",
@@ -108,10 +109,58 @@ describe("ensureStackEnv", () => {
     if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
-  it("never touches an existing .env", async () => {
-    await writeFile(path.join(dir, STACK_ENV_FILE), "sentinel\n", "utf8");
+  it("keeps an existing .env, appending only secrets added since it was created", async () => {
+    await writeFile(path.join(dir, STACK_ENV_FILE), "sentinel", "utf8");
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
-    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe("sentinel\n");
+    const updated = `sentinel\nPOSTGRES_APP_PASSWORD=${"ab".repeat(16)}\n`;
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
+
+    await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=",
+    'POSTGRES_APP_PASSWORD=""',
+    "POSTGRES_APP_PASSWORD=''",
+    ' POSTGRES_APP_PASSWORD = "" # empty',
+    "POSTGRES_APP_PASSWORD=''# empty\r",
+    'POSTGRES_APP_PASSWORD=keep\nPOSTGRES_APP_PASSWORD=""',
+    "OTHER='first line\nPOSTGRES_APP_PASSWORD=phantom\nlast line'\nPOSTGRES_APP_PASSWORD=\"\"",
+  ])("fills an empty added secret in %j once", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `# preserve this file\n${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", fakeHex);
+    const updated = `${original}POSTGRES_APP_PASSWORD=${fakeHex(16)}\n`;
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must reuse the generated secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=keep",
+    ' POSTGRES_APP_PASSWORD = "keep" # note',
+    "POSTGRES_APP_PASSWORD='keep # literal'",
+    'POSTGRES_APP_PASSWORD=" "',
+    "POSTGRES_APP_PASSWORD= # literal comment",
+    "POSTGRES_APP_PASSWORD=#literal",
+    "export POSTGRES_APP_PASSWORD='keep'",
+    `POSTGRES_APP_PASSWORD=\${SYNTHETIC_PASSWORD}`,
+    'POSTGRES_APP_PASSWORD=""\nPOSTGRES_APP_PASSWORD=keep',
+    "POSTGRES_APP_PASSWORD='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+    "POSTGRES_APP_PASSWORD=\"first line\nPOSTGRES_APP_PASSWORD=''\nlast line\"",
+    "POSTGRES_APP_PASSWORD=keep\nOTHER='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+  ])("preserves a nonempty added secret in %j", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must preserve the configured secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(original);
   });
 
   it.runIf(process.platform !== "win32")(
@@ -223,6 +272,18 @@ describe("reduceStackState", () => {
     }
     expect(state.output).toHaveLength(STACK_OUTPUT_LINES);
     expect(state.output[0]).toBe("line 5");
+  });
+
+  it("bounds diagnostics attached to a failed Docker check and clears them on retry", () => {
+    const checking = reduceStackState(start, { type: "check-start" });
+    const failed = reduceStackState(checking, {
+      type: "failed",
+      message: "Check failed",
+      output: Array.from({ length: STACK_OUTPUT_LINES + 5 }, (_, index) => `line ${index}`),
+    });
+    expect(failed.output).toHaveLength(STACK_OUTPUT_LINES);
+    expect(failed.output[0]).toBe("line 5");
+    expect(reduceStackState(failed, { type: "check-start" }).output).toEqual([]);
   });
 
   it("holds terminal phases until the next check-start clears them", () => {
@@ -345,6 +406,29 @@ describe("LocalStackController", () => {
     return stack;
   }
 
+  it("passes the native connection only to Compose and reconciles a changed bridge", async () => {
+    const hostComputer = { url: "http://host.docker.internal:45175", token: "ab".repeat(32) };
+    const stack = controller({ hostComputer });
+    expect(await stack.matchesDesiredStack()).toBe(false);
+    expect((await stack.start()).phase).toBe("ready");
+    expect(await stack.matchesDesiredStack()).toBe(true);
+    const compose = calls.filter((call) => call.args[0] === "compose");
+    expect(compose.length).toBeGreaterThan(0);
+    for (const call of compose) {
+      expect(call.env.SANDBOX_HOST_URL).toBe(hostComputer.url);
+      expect(call.env.SANDBOX_HOST_TOKEN).toBe(hostComputer.token);
+      expect(call.env.SANDBOX_COMPUTER_EGRESS).toBe("open");
+      // The laptop's disk encryption covers content; a lost key must not lose it.
+      expect(call.env.CONTENT_ENCRYPTION).toBe("off");
+      expect(call.env.MCP_ALLOW_PRIVATE_ENDPOINT).toBe("true");
+    }
+    expect(
+      await controller({
+        hostComputer: { ...hostComputer, token: "cd".repeat(32) },
+      }).matchesDesiredStack(),
+    ).toBe(false);
+  });
+
   it("pushes every state change so the setup window is never left waiting on a poll", async () => {
     const pushed: string[] = [];
     const stack = controller({ onState: (state) => pushed.push(state.phase) });
@@ -377,6 +461,7 @@ describe("LocalStackController", () => {
     expect(phases).toEqual([
       "checking-docker",
       "checking-docker",
+      "preparing",
       "pulling",
       "starting",
       "waiting-healthy",
@@ -395,6 +480,7 @@ describe("LocalStackController", () => {
     expect(calls.map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
+      [...compose, "config", "--images"],
       [...compose, "pull"],
       [...compose, "up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)],
     ]);
@@ -437,6 +523,7 @@ describe("LocalStackController", () => {
       (call) => call.args[0] === "compose" && call.args[1] !== "version",
     );
     expect(commands.map((call) => call.args[7])).toEqual([
+      "config",
       "pull",
       "up",
       "up",
@@ -449,6 +536,58 @@ describe("LocalStackController", () => {
       expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
     }
   });
+
+  it("starts a pinned release offline when all resolved images are cached", async () => {
+    const images = ["registry.example.test/app:v1.2.3", "registry.example.test/computer:v1.2.3"];
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: `${images.join("\n")}\n` };
+      if (args[0] === "image" && args[1] === "inspect") return { stdout: "sha256:cached\n" };
+      if (args[7] === "pull") return { code: 1, stderr: "registry unavailable" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(false);
+    expect(calls.find((call) => call.args[0] === "image")?.args).toEqual([
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}}",
+      ...images,
+    ]);
+  });
+
+  it("pulls a pinned release when an image is missing", async () => {
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: "registry.example.test/app:v1.2.3\n" };
+      if (args[0] === "image") return { code: 1, stderr: "No such image" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[0] === "image")).toBe(true);
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+  });
+
+  it.each([
+    { code: 1, stdout: "", stderr: "Could not resolve images" },
+    { code: 0, stdout: "\n", stderr: "" },
+  ])("falls back to pulling when image resolution is inconclusive: %j", async (config) => {
+    const stack = controller({}, (args) => (args[7] === "config" ? config : ok(args)));
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+    expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+  });
+
+  it.each(["edge", "latest", "custom-tag", "v1.2.3-preview.1"])(
+    "refreshes the moving tag %s even when local images exist",
+    async (imageTag) => {
+      const stack = controller({ imageTag, probe: async () => imageTag });
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+      expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+    },
+  );
 
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
@@ -513,6 +652,63 @@ describe("LocalStackController", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it.each(["5.6.1\r\n", "Docker Compose version v5.6.1\r\n"])(
+    "starts on Windows with Compose output %j and an absolute Docker override",
+    async (stdout) => {
+      const binary = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+      const stack = controller(
+        {
+          platform: "win32",
+          env: {
+            ProgramFiles: "C:\\Program Files",
+            PATH: "C:\\Windows\\System32;C:\\custom-helpers",
+            USERPROFILE: "C:\\Users\\example",
+            RAKAZO_DOCKER_BINARY: binary,
+          },
+          exists: (file) => file === binary,
+        },
+        (args) => (args[1] === "version" ? { stdout } : ok(args)),
+      );
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls[0]?.args).toEqual(["compose", "version", "--short"]);
+      for (const call of calls) {
+        expect(call.binary).toBe(binary);
+        expect(call.env.ProgramFiles).toBe("C:\\Program Files");
+        expect(call.env.USERPROFILE).toBe("C:\\Users\\example");
+        expect(call.env.PATH).toBe(
+          "C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Windows\\System32;C:\\custom-helpers",
+        );
+      }
+      expect(calls.at(-1)?.args.slice(7)).toEqual([
+        "up",
+        "-d",
+        "--wait",
+        "--wait-timeout",
+        String(COMPOSE_WAIT_TIMEOUT_S),
+      ]);
+      expect(await stat(path.join(root, "stack", STACK_COMPOSE_FILE))).toBeDefined();
+    },
+  );
+
+  it.each([
+    { code: 1, stdout: "", stderr: "spawn docker.exe ENOENT" },
+    { code: 7, stdout: "plugin diagnostic\r\n", stderr: "Access is denied.\r\n" },
+    { code: 124, stdout: "", stderr: "" },
+  ])("keeps an unsuccessful Compose check distinct from a missing plugin: %j", async (reply) => {
+    const stack = controller({}, () => reply);
+    const state = await stack.start();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "Could not check Docker Compose. Check the output below, then retry.",
+      output: [
+        ...`${reply.stdout}\n${reply.stderr}`.split(/\r?\n/).filter(Boolean),
+        `docker compose version --short exited with code ${reply.code}.`,
+      ],
+    });
+    expect(calls).toHaveLength(1);
+    await expect(stat(path.join(root, "stack", STACK_COMPOSE_FILE))).rejects.toThrow();
+  });
+
   it("waits for the daemon when docker info fails", async () => {
     const stack = controller({}, (args) =>
       args[0] === "info"
@@ -554,7 +750,12 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
+    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual([
+      "compose",
+      "info",
+      "config",
+      "pull",
+    ]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {

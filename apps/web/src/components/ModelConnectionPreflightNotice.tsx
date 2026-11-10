@@ -19,7 +19,7 @@ export function ModelPreflightFeedback({
   }
   if (!failure) return null;
   return (
-    <div className="mt-2 space-y-1 text-[13px]" role="alert">
+    <div className="mt-2 space-y-1 text-body-sm" role="alert">
       <p className="text-destructive">{failure.message}</p>
       <p className="text-muted-foreground">{failure.nextAction}</p>
     </div>
@@ -31,5 +31,5 @@ export function modelPreflightTestingLabel(
   kind: "api-key" | "sign-in",
 ): ReactNode {
   if (testing) return <Trans>Testing…</Trans>;
-  return kind === "api-key" ? <Trans>Test API key</Trans> : <Trans>Test sign-in</Trans>;
+  return kind === "api-key" ? <Trans>Test API key</Trans> : <Trans>Test connection</Trans>;
 }

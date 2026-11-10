@@ -179,3 +179,7 @@ describe("loadCallCallerName", () => {
     await expect(loadCallCallerName(async () => ({ name: " " }))).resolves.toBeUndefined();
   });
 });
+
+it("does not speak an opaque profile name in a call greeting", async () => {
+  await expect(loadCallCallerName(async () => ({ name: "__TestTok1__" }))).resolves.toBeUndefined();
+});

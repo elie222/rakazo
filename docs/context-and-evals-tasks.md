@@ -29,83 +29,83 @@ The final report is `test-report/evals/archive/history-default-final-qualificati
 Completed delivery steps:
 
 - [x] Audit the current working tree and the evidence below. Recheck recently
-      changed code before treating older broad test results as final verification.
-      Current-source focused and broad checks passed; both new reports share a
-      source fingerprint, reconcile their totals, and have zero reservations.
+  changed code before treating older broad test results as final verification.
+  Current-source focused and broad checks passed; both new reports share a
+  source fingerprint, reconcile their totals, and have zero reservations.
 - [x] Resolve the failing group-history product fixtures. Their intended large
-      paging model now declares a 160,000-token window and 4,096-token output
-      reserve. All 66 serialized checks pass, including small-window safeguards.
+  paging model now declares a 160,000-token window and 4,096-token output
+  reserve. All 66 serialized checks pass, including small-window safeguards.
 - [x] Verify the corrected history guidance on actual outgoing requests: begin
-      with one project or topic keyword and follow the broader query's cursor
-      when narrower queries are empty. System and tool instructions must agree.
+  with one project or topic keyword and follow the broader query's cursor
+  when narrower queries are empty. System and tool instructions must agree.
 - [x] Verify the adaptive short-history policy: keep original loaded history
-      when its wire-equivalent conservative estimate fits the smaller of 16,384
-      tokens and one quarter of the available model input budget. Otherwise use
-      the bounded recent history and navigation catalog. The overall model budget,
-      output reserve, required current input, and valid tool pairs still apply.
-      Small chats must not acquire unnecessary search calls or paid preparation.
+  when its wire-equivalent conservative estimate fits the smaller of 16,384
+  tokens and one quarter of the available model input budget. Otherwise use
+  the bounded recent history and navigation catalog. The overall model budget,
+  output reserve, required current input, and valid tool pairs still apply.
+  Small chats must not acquire unnecessary search calls or paid preparation.
 - [x] Run an identified targeted distant-recall diagnostic after the offline
-      fixes. All twelve samples passed: four exact/paraphrase cases with three
-      trials each. Known charge was USD 0.01285668 across 46 model calls; teardown
-      completed with no outstanding reservations. This does not replace full
-      final-source qualification.
+  fixes. All twelve samples passed: four exact/paraphrase cases with three
+  trials each. Known charge was USD 0.01285668 across 46 model calls; teardown
+  completed with no outstanding reservations. This does not replace full
+  final-source qualification.
 - [x] Obtain explicit authorization for any increase to the cumulative live cap
-      before spending beyond it. The user authorized a cumulative USD 5 cap.
-      Carry all earlier spend forward. After the full adaptive qualification the
-      guard has charged USD 1.235245615, leaving USD 3.764754385 after initial final
-      verification. PR integration reuses this remaining allowance for one full
-      qualification against the updated SDK; it does not reset the cumulative cap.
-      An uncertain earlier call is conservatively
-      included. These are guard estimates, not billing guarantees.
+  before spending beyond it. The user authorized a cumulative USD 5 cap.
+  Carry all earlier spend forward. After the full adaptive qualification the
+  guard has charged USD 1.235245615, leaving USD 3.764754385 after initial final
+  verification. PR integration reuses this remaining allowance for one full
+  qualification against the updated SDK; it does not reset the cumulative cap.
+  An uncertain earlier call is conservatively
+  included. These are guard estimates, not billing guarantees.
 - [x] Run the full 54-workflow qualification against the corrected candidate source
-      once funding permits. Older passing samples plus a new targeted subset do
-      not substitute for a full final-source run. Pass every distant exact and
-      paraphrase sample and all continuity, absence, clarification, and rich-loop
-      gates. Preserve unchanged graders and earlier failures.
-      The 53/54 run remains preserved. The corrected-guide snapshots run passed
-      all 54, including all 27 repeated answers. The same-source retrieval run also
-      passed all 54 and all 27 repeated answers. Final default wiring and its
-      final-source verification remain separate delivery gates.
+  once funding permits. Older passing samples plus a new targeted subset do
+  not substitute for a full final-source run. Pass every distant exact and
+  paraphrase sample and all continuity, absence, clarification, and rich-loop
+  gates. Preserve unchanged graders and earlier failures.
+  The 53/54 run remains preserved. The corrected-guide snapshots run passed
+  all 54, including all 27 repeated answers. The same-source retrieval run also
+  passed all 54 and all 27 repeated answers. Final default wiring and its
+  final-source verification remain separate delivery gates.
 - [x] Fix the audited token-total and applicable-tier pricing gaps. Omitted cache
-      buckets must not become a trustworthy SDK-synthesized total that releases
-      reservations; observed one-hour writes require pricing in the applicable
-      context tier. Verify both through deterministic protocol and budget tests.
-      The pinned Anthropic endpoint and pricing regressions pass, alongside 60
-      focused accounting/cache/transport/budget checks and package type checks.
+  buckets must not become a trustworthy SDK-synthesized total that releases
+  reservations; observed one-hour writes require pricing in the applicable
+  context tier. Verify both through deterministic protocol and budget tests.
+  The pinned Anthropic endpoint and pricing regressions pass, alongside 60
+  focused accounting/cache/transport/budget checks and package type checks.
 - [x] Measure first question, each follow-up, preparation, and complete workflow
-      costs for the final adaptive policy. Reconcile these with the durable ledger.
-      Do not claim that free assembly makes the entire workflow cheaper without
-      measuring the extra retrieval and answer calls it causes.
-      All three adaptive 100-message workflows passed every turn with three model
-      calls and zero tools or compaction. The mean complete charge was
-      USD 0.000918375. Full final-source quality qualification remains outstanding.
+  costs for the final adaptive policy. Reconcile these with the durable ledger.
+  Do not claim that free assembly makes the entire workflow cheaper without
+  measuring the extra retrieval and answer calls it causes.
+  All three adaptive 100-message workflows passed every turn with three model
+  calls and zero tools or compaction. The mean complete charge was
+  USD 0.000918375. Full final-source quality qualification remains outstanding.
 - [x] Choose and wire one shared production default only after qualification.
-      Keep explicit baseline selection available for evals. Direct runtime users
-      without history tools need a bounded fallback that does not discard old
-      facts while implying that retrieval remains available. Verify actual default
-      provider requests and background compaction behavior.
-      Retrieval is shared by executor, main Pi, and child Pi. Undefined and explicit
-      retrieval emit identical provider messages and tools with a history backend.
-      Standalone fallback preserves 40 fitting originals and enforces a small
-      model budget. Actual default product tests verify scoped reads, all twelve
-      loop steps, repeated source-verified answers, and no new or queued compaction.
+  Keep explicit baseline selection available for evals. Direct runtime users
+  without history tools need a bounded fallback that does not discard old
+  facts while implying that retrieval remains available. Verify actual default
+  provider requests and background compaction behavior.
+  Retrieval is shared by executor, main Pi, and child Pi. Undefined and explicit
+  retrieval emit identical provider messages and tools with a history backend.
+  Standalone fallback preserves 40 fitting originals and enforces a small
+  model budget. Actual default product tests verify scoped reads, all twelve
+  loop steps, repeated source-verified answers, and no new or queued compaction.
 - [x] Run final unit, type, lint, protocol, and PostgreSQL integration checks after
-      the last implementation change. Preserve unrelated changes and avoid local
-      Electron E2E. Validate and sanitize the final reports.
-      Final checks pass: 372 unit suites / 3,821 tests, 19 package type checks,
-      mobile TypeScript, lint (21 existing warnings), 140 focused checks including
-      24 PostgreSQL checks, and 14 actual Pi checks. No local Electron E2E ran.
+  the last implementation change. Preserve unrelated changes and avoid local
+  Electron E2E. Validate and sanitize the final reports.
+  Final checks pass: 372 unit suites / 3,821 tests, 19 package type checks,
+  mobile TypeScript, lint (21 existing warnings), 140 focused checks including
+  24 PostgreSQL checks, and 14 actual Pi checks. No local Electron E2E ran.
 - [x] Qualify the selected policy on the final default/fallback source: all 54
-      unchanged workflows with three trials per case and no failed or skipped gate.
-      This final paid run carries cumulative spend forward rather than starting
-      a new USD 5 allowance.
-      All 54 passed on the final source, with reconciled step/background costs,
-      calls and known tokens; zero cleanup/background failures or reservations.
+  unchanged workflows with three trials per case and no failed or skipped gate.
+  This final paid run carries cumulative spend forward rather than starting
+  a new USD 5 allowance.
+  All 54 passed on the final source, with reconciled step/background costs,
+  calls and known tokens; zero cleanup/background failures or reservations.
 - [x] Publish findings, defaults, reproducible commands, cost and latency tradeoffs,
-      sample uncertainty, and limitations. Update this checklist with final proof.
-      Reports and findings are sanitized and reproducible. Synthetic databases
-      were removed and unrelated changes preserved. This initial record preceded
-      the subsequently authorized PR and merge work.
+  sample uncertainty, and limitations. Update this checklist with final proof.
+  Reports and findings are sanitized and reproducible. Synthetic databases
+  were removed and unrelated changes preserved. This initial record preceded
+  the subsequently authorized PR and merge work.
 
 ## PR integration verification
 
@@ -258,16 +258,16 @@ Relevant implementation locations:
 ### 0 Audit the starting point
 
 - [x] Inventory the existing changes and separate this work from unrelated edits.
-      Do not reset, overwrite, or commit unrelated work.
+  Do not reset, overwrite, or commit unrelated work.
 - [x] Review existing accounting, retrieval, context helpers, eval fixtures, and
-      reports against this checklist. Reuse verified work and record missing wiring.
+  reports against this checklist. Reuse verified work and record missing wiring.
 - [x] Confirm that context enforcement actually runs before every main and subagent
-      provider call. A tested helper alone does not complete runtime integration.
+  provider call. A tested helper alone does not complete runtime integration.
 - [x] Identify which baseline reports remain valid, including fixture preparation,
-      compaction coverage, code revision, and failures caused by the harness. Never
-      silently compare results from different fixture semantics.
+  compaction coverage, code revision, and failures caused by the harness. Never
+  silently compare results from different fixture semantics.
 - [x] Run the focused offline checks needed to establish a trustworthy starting
-      point. Do not start paid comparisons until usage accounting and budget guards pass.
+  point. Do not start paid comparisons until usage accounting and budget guards pass.
 
 Acceptance: the goal begins with an explicit verified inventory, remaining work,
 and reproducible baseline rather than repeating or assuming earlier progress.
@@ -275,20 +275,20 @@ and reproducible baseline rather than repeating or assuming earlier progress.
 ### 1 Preserve complete usage accounting
 
 - [x] Define provider-neutral usage fields with documented semantics and optional
-      or nullable measurements for uncached input, cache reads, cache writes, output,
-      reasoning, total tokens, and cost provenance.
+  or nullable measurements for uncached input, cache reads, cache writes, output,
+  reasoning, total tokens, and cost provenance.
 - [x] Audit the installed Pi provider mappings. Pi input excludes cache buckets;
-      reasoning is a subset of output. Normalize without counting either twice.
-      Distinguish omitted upstream usage from genuine reported zero usage.
+  reasoning is a subset of output. Normalize without counting either twice.
+  Distinguish omitted upstream usage from genuine reported zero usage.
 - [x] Forward usage from normal model calls and subagents. Retain reported usage
-      from failures, retries, interrupted runs, and background summarization.
+  from failures, retries, interrupted runs, and background summarization.
 - [x] Persist call attribution and operation kind so compaction and subagent
-      costs can be separated while remaining part of the total workflow cost.
-      Do not fabricate a foreground run relation for a background job.
+  costs can be separated while remaining part of the total workflow cost.
+  Do not fabricate a foreground run relation for a background job.
 - [x] Add the necessary migration and update shared contracts and consumers.
-      Preserve compatibility for runtimes that cannot supply these measurements.
+  Preserve compatibility for runtimes that cannot supply these measurements.
 - [x] Ensure idempotent accounting does not duplicate the same reported usage
-      event. Usage already incurred must survive clearing or deleting chat content.
+  event. Usage already incurred must survive clearing or deleting chat content.
 - [x] Verify through deterministic model endpoint fixtures and persisted records.
 
 Acceptance: fixtures with known cache and reasoning breakdowns produce exact
@@ -298,26 +298,26 @@ unknown. No real inference is required for these checks.
 ### 2 Make eval measurement trustworthy
 
 - [x] Extend trial and aggregate reports with the complete usage breakdown,
-      model calls, time to first response, total latency, and estimated dollar cost.
-      Define whether first response means first streamed text or first visible output.
+  model calls, time to first response, total latency, and estimated dollar cost.
+  Define whether first response means first streamed text or first visible output.
 - [x] Record model, connection type, strategy, fixture version, code revision,
-      pricing source, and pricing version without exposing account identifiers or credentials.
+  pricing source, and pricing version without exposing account identifiers or credentials.
 - [x] Treat Pi catalog costs as estimates. Do not interpret compatible models'
-      zero price placeholders as free inference. Support explicit pricing metadata
-      through generic configuration; leave unavailable prices unknown.
+  zero price placeholders as free inference. Support explicit pricing metadata
+  through generic configuration; leave unavailable prices unknown.
 - [x] Report answer, setup, retrieval, subagent, and compaction costs separately
-      and together. Avoid measuring only the final answer while hiding preparation costs.
+  and together. Avoid measuring only the final answer while hiding preparation costs.
 - [x] Capture background work deterministically and await relevant jobs before
-      finalizing trial accounting. Preserve totals across history clearing and failures.
+  finalizing trial accounting. Preserve totals across history clearing and failures.
 - [x] Define cache hit rate using cache-eligible input and documented token buckets;
-      keep unknown or inapplicable rates null.
+  keep unknown or inapplicable rates null.
 - [x] Add a spend cap for live runs, defaulting to USD 5 unless explicitly overridden.
-      Estimate the next call conservatively, reserve for concurrent work, and stop
-      scheduling when the remaining budget is insufficient. Record that this is a
-      guard rather than a provider billing guarantee. Unknown pricing blocks live
-      spending until pricing is supplied; listing and offline tests still work.
+  Estimate the next call conservatively, reserve for concurrent work, and stop
+  scheduling when the remaining budget is insufficient. Record that this is a
+  guard rather than a provider billing guarantee. Unknown pricing blocks live
+  spending until pricing is supplied; listing and offline tests still work.
 - [x] Validate report arithmetic, attribution, unknown values, budget handling,
-      and cleanup with offline tests. Update `docs/agent-verification.md`.
+  and cleanup with offline tests. Update `docs/agent-verification.md`.
 
 Acceptance: known fixtures produce exact accounting and missing credentials or
 prices produce an explicit not-run result. Trial cleanup leaves no continuing
@@ -326,17 +326,17 @@ jobs that can spend after the report is finalized.
 ### 3 Establish long conversation baselines
 
 - [x] Build compact, seeded generators for 100, 1,000, and 10,000-message chats.
-      Seed history directly rather than paying a model to generate filler exchanges.
+  Seed history directly rather than paying a model to generate filler exchanges.
 - [x] Cover exact facts, paraphrased topics, date references, changed decisions,
-      unresolved background work, ambiguous matches, absent facts, and distant constraints.
+  unresolved background work, ambiguous matches, absent facts, and distant constraints.
 - [x] Include oversized messages, rich tool results, multiple compaction cycles,
-      compaction backlog, failed summaries, and long tool loops.
+  compaction backlog, failed summaries, and long tool loops.
 - [x] Grade answers against synthetic source facts and persisted effects. Test
-      that a rejected proposal or obsolete preference is not treated as current.
+  that a rejected proposal or obsolete preference is not treated as current.
 - [x] Add isolation and injection scenarios: inaccessible chats, private channel
-      history, cleared content, and historical text that attempts to issue instructions.
+  history, cleared content, and historical text that attempts to issue instructions.
 - [x] Run and retain the current strategy baseline before changing history selection.
-      The existing prompt-order change is part of this baseline; identify it explicitly.
+  The existing prompt-order change is part of this baseline; identify it explicitly.
 
 Acceptance: repeatable fixtures and deterministic criteria distinguish agent,
 product, provider, harness, and incomplete failures. Each baseline reports quality,
@@ -345,22 +345,22 @@ full workflow usage, cost, and latency.
 ### 4 Add original history retrieval
 
 - [x] Add shared `search_history` and `read_history` tool contracts and backend handlers.
-      Search defaults to the current chat, supports date filters and pagination, and
-      returns bounded excerpts, timestamps, and stable message references.
+  Search defaults to the current chat, supports date filters and pagination, and
+  returns bounded excerpts, timestamps, and stable message references.
 - [x] Start with local full-text search using existing primitives where suitable.
-      Verify indexing and query performance at 10,000 messages. Keep future semantic
-      search behind an optional provider interface.
+  Verify indexing and query performance at 10,000 messages. Keep future semantic
+  search behind an optional provider interface.
 - [x] Read bounded context before and after a message, with pagination rather than
-      unbounded transcript dumps. Expose enough linkage to inspect the request,
-      clarification, response, associated run, and authorized artifacts.
-      Oversized individual messages also need within-message pagination so omitted
-      details remain reachable instead of permanently truncating the original.
+  unbounded transcript dumps. Expose enough linkage to inspect the request,
+  clarification, response, associated run, and authorized artifacts.
+  Oversized individual messages also need within-message pagination so omitted
+  details remain reachable instead of permanently truncating the original.
 - [x] Validate access on every read and search. A model-supplied message or run ID
-      is not authorization. Preserve group and messaging channel visibility rules.
+  is not authorization. Preserve group and messaging channel visibility rules.
 - [x] Apply secret redaction and untrusted-data boundaries to excerpts and run detail.
-      Cleared or deleted history and derived search records must become inaccessible.
+  Cleared or deleted history and derived search records must become inaccessible.
 - [x] Provide concise guidance for searching old discussions and checking surrounding
-      messages before claiming an exact recollection.
+  messages before claiming an exact recollection.
 
 Acceptance: the bot finds relevant original exchanges in a 10,000-message chat,
 checks subsequent corrections, and does not invent facts or access forbidden history.
@@ -368,17 +368,17 @@ checks subsequent corrections, and does not invent facts or access forbidden his
 ### 5 Explore message snapshots and linked background work
 
 - [x] Define a snapshot as a navigation aid anchored to original message IDs and
-      covered sequence ranges, with timestamps, topic, outcome, and open-work references.
-      A multi-message exchange may need one snapshot rather than one per message.
+  covered sequence ranges, with timestamps, topic, outcome, and open-work references.
+  A multi-message exchange may need one snapshot rather than one per message.
 - [x] Reuse short originals and existing completion messages first. Derive links
-      and status from persisted product state without asking an LLM to restate them.
+  and status from persisted product state without asking an LLM to restate them.
 - [x] Generate additional summaries only for large exchanges or runs when justified.
-      Persist coverage and version information so results are reusable and stale
-      content can be invalidated after edits, clearing, or relevant updates.
-      It is acceptable to ship without generated snapshots if deterministic snapshots
-      satisfy the quality gates; explain that decision with evidence.
+  Persist coverage and version information so results are reusable and stale
+  content can be invalidated after edits, clearing, or relevant updates.
+  It is acceptable to ship without generated snapshots if deterministic snapshots
+  satisfy the quality gates; explain that decision with evidence.
 - [x] Avoid making snapshots the source of truth for approvals or exact facts.
-      Retrieve original evidence and current authoritative action state when necessary.
+  Retrieve original evidence and current authoritative action state when necessary.
 - [x] Index and page snapshots; never send the full snapshot catalog every turn.
 - [x] Add this as an eval strategy rather than assuming it improves on rolling summaries.
 
@@ -389,20 +389,20 @@ Eval reports include the creation and maintenance cost of generated snapshots.
 ### 6 Introduce bounded context selection
 
 - [x] Define one shared context policy and a model-aware budget covering instructions,
-      tools, current input, images, retrieved history, agent-loop results, and output reserve.
-      Use available token counts or conservative estimates; document uncertainty.
+  tools, current input, images, retrieved history, agent-loop results, and output reserve.
+  Use available token counts or conservative estimates; document uncertainty.
 - [x] Select current work, recent complete exchanges, durable constraints, and relevant
-      older context within that budget. Use age as one signal, not a deletion rule.
+  older context within that budget. Use age as one signal, not a deletion rule.
 - [x] Keep selection deterministic and free of inference. Assemble existing snapshots,
-      original messages, summaries, and authoritative task state without rewriting them.
+  original messages, summaries, and authoritative task state without rewriting them.
 - [x] Integrate budget enforcement before the first call and subsequent tool-loop calls
-      through Pi hooks, preserving valid tool-call/result pairs, steering, and cancellation.
+  through Pi hooks, preserving valid tool-call/result pairs, steering, and cancellation.
 - [x] Handle oversized individual messages and compaction backlog without stalling
-      a cursor or silently assuming unavailable history has been summarized.
+  a cursor or silently assuming unavailable history has been summarized.
 - [x] Trigger paid compaction only when needed to proceed within the budget or when
-      measured amortized savings justify it. Reuse stored results; account for each call.
+  measured amortized savings justify it. Reuse stored results; account for each call.
 - [x] Preserve existing clear-generation and compare-and-set safeguards. Retrieval
-      remains available for facts omitted from active context.
+  remains available for facts omitted from active context.
 
 Acceptance: small-context models and long tool loops remain within their budget,
 retain active constraints, and can retrieve omitted details. A pause or expired
@@ -411,27 +411,27 @@ cache causes zero automatic summarization calls by itself.
 ### 7 Make context selection aware of cache behavior
 
 - [x] Move changing memory, scratchpad, and chat context after stable system guidance.
-      Implemented and verified in outgoing provider requests. A separate four-call
-      fresh-prefix/immediate-replay probe observed cache reads and lower charges;
-      this does not establish production savings or a cache expiration deadline.
+  Implemented and verified in outgoing provider requests. A separate four-call
+  fresh-prefix/immediate-replay probe observed cache reads and lower charges;
+  this does not establish production savings or a cache expiration deadline.
 - [x] Verify stable tool ordering, instruction serialization, and prefix continuity
-      in actual outgoing provider requests, not just the assembled instruction string.
+  in actual outgoing provider requests, not just the assembled instruction string.
 - [x] Expose supported retention modes, minimum cacheable sizes, cache pricing,
-      and cache scope through shared capabilities supplied by adapters. Unknown
-      connections use conservative behavior without provider-specific environment variables.
+  and cache scope through shared capabilities supplied by adapters. Unknown
+  connections use conservative behavior without provider-specific environment variables.
 - [x] Track last relevant model request or confirmed cache reuse, connection/model
-      identity, and matching prefix coverage. A recent user message alone is insufficient;
-      background requests may refresh a cache and model or routing changes may invalidate it.
+  identity, and matching prefix coverage. A recent user message alone is insufficient;
+  background requests may refresh a cache and model or routing changes may invalidate it.
 - [x] Treat warmth as a prediction, not a guarantee. Compare predicted reuse against
-      reported cache reads. Do not infer an exact retention deadline for a provider that
-      only documents typical behavior.
+  reported cache reads. Do not infer an exact retention deadline for a provider that
+  only documents typical behavior.
 - [x] Evaluate preserving and appending useful context while likely warm versus
-      cheaply selecting smaller existing context while likely cold. A cold prediction
-      never initiates paid compaction. Context limits always take precedence.
+  cheaply selecting smaller existing context while likely cold. A cold prediction
+  never initiates paid compaction. Context limits always take precedence.
 - [x] Keep cache timing metadata outside the prompt. Do not send keepalive requests
-      merely to maintain warmth. Do not regenerate summaries after every message.
+  merely to maintain warmth. Do not regenerate summaries after every message.
 - [x] Test policy timing with a fake clock. Run explicit live warm/cold experiments
-      separately; reset or document cache state so strategy comparisons are not biased.
+  separately; reset or document cache state so strategy comparisons are not biased.
 
 Acceptance: policy decisions respect configured capabilities and report observed
 cache effectiveness. Tests cover short gaps, long gaps, changed prefixes, model
@@ -440,53 +440,53 @@ switches, and background activity without waiting on wall-clock timers offline.
 ### 8 Compare strategies and choose defaults
 
 - [x] Verify GPT-6 Luna availability, exact identifier, context limits, cache support,
-      and current pricing through the configured connection before paid execution.
-      Use the existing generic model connection rather than a model-specific integration.
+  and current pricing through the configured connection before paid execution.
+  Use the existing generic model connection rather than a model-specific integration.
 - [x] Compare the current baseline, recent context plus original-history retrieval,
-      recent context plus snapshots and linked-run retrieval, and cache-aware selection.
-      Use identical fixtures and repeated trials with recorded random seeds.
-      The initial four-policy matrix is preserved. Latest-source retrieval and
-      snapshots each passed the same 18 workflows three times. Retrieval cost
-      USD 0.06821946 versus USD 0.076096435, with median/p95 latency 9.273/38.978
-      seconds versus 9.633/36.840. The baseline failed distant recall; unknown
-      retention makes cache-aware selection equivalent to snapshots offline.
+  recent context plus snapshots and linked-run retrieval, and cache-aware selection.
+  Use identical fixtures and repeated trials with recorded random seeds.
+  The initial four-policy matrix is preserved. Latest-source retrieval and
+  snapshots each passed the same 18 workflows three times. Retrieval cost
+  USD 0.06821946 versus USD 0.076096435, with median/p95 latency 9.273/38.978
+  seconds versus 9.633/36.840. The baseline failed distant recall; unknown
+  retention makes cache-aware selection equivalent to snapshots offline.
 - [x] Measure snapshot and summary creation costs both once and across repeated
-      follow-up questions. Report when reuse pays back its preparation cost.
-      Snapshot assembly and original-history selection require no model calls.
-      Three measured short baseline workflows include actual paid compaction;
-      the findings reconcile preparation, first answers, and both follow-ups.
-      Larger prepared summaries use synthetic seed data, so their production
-      preparation cost and reuse break-even remain unknown. Paid preparation is
-      not selected without measured expected savings.
+  follow-up questions. Report when reuse pays back its preparation cost.
+  Snapshot assembly and original-history selection require no model calls.
+  Three measured short baseline workflows include actual paid compaction;
+  the findings reconcile preparation, first answers, and both follow-ups.
+  Larger prepared summaries use synthetic seed data, so their production
+  preparation cost and reuse break-even remain unknown. Paid preparation is
+  not selected without measured expected savings.
 - [x] Compare retaining already-short original history with replacing it by
-      snapshots. Use a bounded token allowance rather than a fixed message count;
-      include the additional retrieval calls in the cost comparison.
-      The findings table includes three measured three-question workflows per
-      policy, their preparation and retrieval overhead, and uncertainty limits.
+  snapshots. Use a bounded token allowance rather than a fixed message count;
+  include the additional retrieval calls in the cost comparison.
+  The findings table includes three measured three-question workflows per
+  policy, their preparation and retrieval overhead, and uncertainty limits.
 - [x] Set quality acceptance thresholds from the baseline before tuning defaults.
-      Report factual success, unsupported claims, obsolete decisions, isolation failures,
-      latency distributions, and full workflow cost. Security failures are not traded
-      for cheaper inference.
-      Require zero unauthorized reads or actions in deterministic security fixtures,
-      preservation of current requests and corrections, and no quality regression
-      against the repeated baseline. Record a tolerated latency/cost tradeoff before
-      choosing a default, with sample counts and uncertainty for small live suites.
+  Report factual success, unsupported claims, obsolete decisions, isolation failures,
+  latency distributions, and full workflow cost. Security failures are not traded
+  for cheaper inference.
+  Require zero unauthorized reads or actions in deterministic security fixtures,
+  preservation of current requests and corrections, and no quality regression
+  against the repeated baseline. Record a tolerated latency/cost tradeoff before
+  choosing a default, with sample counts and uncertainty for small live suites.
 - [x] Implement the simplest strategy supported by the results. Keep unsupported
-      capabilities on a safe fallback and avoid speculative configuration options.
+  capabilities on a safe fallback and avoid speculative configuration options.
 - [x] Resolve any contradictory search guidance exposed by live qualification.
-      Single-keyword full-text search and cursor continuation must agree between
-      system guidance and tool descriptions. Preserve failed runs and verify the
-      corrected guidance in a new identified comparison before default selection.
-      The targeted final-guidance diagnostic passed all twelve exact/paraphrase
-      samples. Full final-source qualification remains a separate default gate.
+  Single-keyword full-text search and cursor continuation must agree between
+  system guidance and tool descriptions. Preserve failed runs and verify the
+  corrected guidance in a new identified comparison before default selection.
+  The targeted final-guidance diagnostic passed all twelve exact/paraphrase
+  samples. Full final-source qualification remains a separate default gate.
 - [x] Recheck the latest runtime against the live rich-tool fixture before choosing
-      a default. Preserve all twelve cursor steps and complete tool pairs without
-      redundant reads. Offline success alone does not qualify a candidate.
+  a default. Preserve all twelve cursor steps and complete tool pairs without
+  redundant reads. Offline success alone does not qualify a candidate.
 - [x] Audit effective cache controls inherited from the SDK as well as explicit
-      connection settings. A one-hour cache-write request must have a known applicable
-      price before inference or reservation, including implicit SDK defaults.
+  connection settings. A one-hour cache-write request must have a known applicable
+  price before inference or reservation, including implicit SDK defaults.
 - [x] Publish sanitized reproducible reports and update the verification documentation
-      with commands, pricing assumptions, findings, limitations, and chosen defaults.
+  with commands, pricing assumptions, findings, limitations, and chosen defaults.
 
 Acceptance: the final recommendation demonstrates reliable retrieval and context
 continuity, accounts for preparation costs, and identifies where caching helps.
@@ -592,8 +592,18 @@ whole checklist is complete. The implementation goal resumed after this handoff.
   UTF-8 bytes and framing provide a conservative text estimate rather than an
   exact tokenizer count. Unknown images use their encoded bytes; this is not a
   universal upper bound for every provider's vision processing. Provider-specific
-  image estimates can improve this bound. Required content that cannot fit the
-  estimated budget fails explicitly instead of being silently discarded.
+  image estimates can improve this bound. Pi estimates known image dimensions per
+  composited frame by fitting within 2048×2048 without upscaling, then taking
+  `max(1024, 85 + 170 * ceil(width / 512) * ceil(height / 512), ceil(width * height / 750))`.
+  This conservatively bounds the [OpenAI standard tile policy](https://developers.openai.com/api/docs/guides/images-vision)
+  (which further reduces the shortest side to 768px) and the
+  [Anthropic standard area policy](https://platform.claude.com/docs/en/build-with-claude/vision)
+  (which caps the long edge at 1568px). A 4000×3000 image estimates at 4,195 tokens.
+  This changes planning only; original image bytes are still submitted, usage is
+  provider-reported, and model-specific high/original-resolution modes may cost more.
+  Malformed or unsupported images retain the encoded-byte fallback. Required
+  content that cannot fit the estimated budget fails explicitly instead of being
+  silently discarded.
 - A full offline run with four workers and a supported Node release passed 3,740
   tests across 363 files; 164 opt-in tests across 30 files were skipped. Subsequent
   security and accounting fixes require their focused integration checks and a
@@ -877,3 +887,20 @@ balance forward rather than resetting the cap for another command. A request to
 increase the cumulative cap was subsequently approved at USD 5, leaving
 USD 4.061721915 before the full qualification. See `docs/evals/history-findings.md` for the preserved
 comparison, per-question accounting, and failed diagnostics.
+
+Context retention update (#1863): a context rebuild retains tool results whole,
+newest first, within three quarters of the available model input budget after
+reserving output and fixed instructions/tool schemas. The last three individual
+results (including parallel calls) remain the minimum retention window. Only
+older eligible results outside that budget use the deterministic ~1 KB shortening
+rule. This applies equally to direct tools and lazy connector catalog wrappers;
+no connector-specific names or result payload fields control retention. If the
+candidate still exceeds the full input budget, the existing shortening and
+context-selection fallback applies. History, skill and fleet instruction
+exceptions remain unchanged; builtins are exposed separately from connector
+catalogs and cannot resolve through their wrappers. Once a shortened result is
+sent, later rebuilds in the same run reuse it even when more space is available.
+Speculative rebuilds do not advance this boundary. Between rebuilds, the sent
+transcript stays byte-identical for prompt caching. The unread tool group remains
+protected even when steering follows its results, and the runtime's 12,000-character
+result cap is unchanged.

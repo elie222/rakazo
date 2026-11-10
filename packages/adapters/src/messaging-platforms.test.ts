@@ -1,13 +1,22 @@
-import { Domain } from "chat-adapter-lark";
+import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import type { AdapterContext } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
+import { SendblueAdapter } from "chat-adapter-sendblue";
 import { describe, expect, it, vi } from "vitest";
+import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatus,
+  parseSendblueStatuses,
+  parseWhatsAppStatuses,
+  photonProjectsFromEnv,
+  splitOutboundBody,
+  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
 
 // Fake credentials: adapters are constructed offline, never called.
@@ -27,6 +36,8 @@ const fullEnv: MessagingEnvironmentValues = {
   larkAppId: "cli-fake",
   larkAppSecret: "lark-secret",
   larkVerificationToken: "lark-verify",
+  photonProjectId: "photon-project",
+  photonProjectSecret: "photon-secret",
 };
 
 function providers(env: MessagingEnvironmentValues): string[] {
@@ -36,7 +47,22 @@ function providers(env: MessagingEnvironmentValues): string[] {
 describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
-    expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+    expect(providers(fullEnv)).toEqual([
+      "sendblue",
+      "slack",
+      "whatsapp",
+      "telegram",
+      "lark",
+      "photon",
+    ]);
+  });
+
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
   });
 
   it("requires all four sendblue values", () => {
@@ -93,6 +119,195 @@ describe("messagingPlatformsFromEnv", () => {
     expect((telegram.adapter as unknown as { mode: string }).mode).toBe("webhook");
   });
 
+  it("mounts each named Telegram bot as its own telegram-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv({
+      telegramBotToken: "tg-token",
+      telegramWebhookSecret: "tg-webhook-secret",
+      telegramBots: [{ name: "work", botToken: "tg-work", webhookSecret: "tg-work-secret" }],
+    });
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["telegram", undefined],
+      ["telegram-work", "telegram"],
+    ]);
+    expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
+    expect(platforms[1]!.capabilities.files).toBe(true);
+    expect(platforms[1]!.capabilities.groups).toBe(true);
+  });
+
+  it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
+    expect(
+      telegramBotsFromEnv({
+        TELEGRAM_BOT_TOKEN: "default",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+        TELEGRAM_BOT_TOKEN_WORK: " tg-work ",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: " work-secret ",
+        TELEGRAM_BOT_TOKEN_HOME2: "tg-home",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_HOME2: "home-secret",
+        // Unsigned webhooks would be accepted, so a name without a secret stays off.
+        TELEGRAM_BOT_TOKEN_NOSECRET: "tg-nosecret",
+        TELEGRAM_BOT_TOKEN_BAD_NAME: "tg-bad",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "home2", botToken: "tg-home", webhookSecret: "home-secret" },
+      { name: "work", botToken: "tg-work", webhookSecret: "work-secret" },
+    ]);
+  });
+
+  it("skips a named Telegram bot that reuses the default or another bot's token", () => {
+    expect(
+      providers(
+        messagingEnvFromProcess({
+          TELEGRAM_BOT_TOKEN: "tg-shared",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+          TELEGRAM_BOT_TOKEN_COPY: " tg-shared ",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_COPY: "copy-secret",
+          TELEGRAM_BOT_TOKEN_ALPHA: "tg-other",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_ALPHA: "alpha-secret",
+          TELEGRAM_BOT_TOKEN_BETA: "tg-other",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_BETA: "beta-secret",
+        }),
+      ),
+    ).toEqual(["telegram", "telegram-alpha"]);
+  });
+
+  it("keeps the first named token when mounting credentials directly", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    try {
+      expect(
+        providers({
+          telegramBots: [
+            { name: "first", botToken: "tg-shared", webhookSecret: "first-secret" },
+            { name: "second", botToken: " tg-shared ", webhookSecret: "second-secret" },
+          ],
+        }),
+      ).toEqual(["telegram-first"]);
+      expect(warn).toHaveBeenCalledWith("skipping Telegram bot that reuses another bot's token", {
+        provider: "telegram-second",
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("tg-shared");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it.each([undefined, "", "   "])(
+    "does not reserve an incomplete default bot's token (%s)",
+    (secret) => {
+      expect(
+        providers(
+          messagingEnvFromProcess({
+            TELEGRAM_BOT_TOKEN: "tg-shared",
+            TELEGRAM_WEBHOOK_SECRET_TOKEN: secret,
+            TELEGRAM_BOT_TOKEN_WORK: "tg-shared",
+            TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: "work-secret",
+          }),
+        ),
+      ).toEqual(["telegram-work"]);
+    },
+  );
+
+  it("mounts each named Photon project as its own photon-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv(
+      {
+        photonProjectId: "photon-project",
+        photonProjectSecret: "photon-secret",
+        photonProjects: [
+          { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret" },
+          {
+            name: "am",
+            projectId: "photon-am",
+            projectSecret: "am-secret",
+            webhookSecret: "am-hook",
+          },
+        ],
+      },
+      { pollInboundMessages: true },
+    );
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["photon", "imessage"],
+      ["photon-pm", "imessage"],
+      ["photon-am", "imessage"],
+    ]);
+    const config = (index: number) =>
+      (platforms[index]!.adapter as unknown as { config: Record<string, unknown> }).config;
+    expect(config(1)).toMatchObject({ projectId: "photon-pm", pollInboundMessages: true });
+    expect(config(2)).toMatchObject({ projectId: "photon-am", webhookSecret: "am-hook" });
+  });
+
+  it("reads named Photon projects from PHOTON_PROJECT_ID_<NAME> pairs", () => {
+    expect(
+      photonProjectsFromEnv({
+        PHOTON_PROJECT_ID: "default",
+        PHOTON_PROJECT_SECRET: "default-secret",
+        PHOTON_PROJECT_ID_PM: " photon-pm ",
+        PHOTON_PROJECT_SECRET_PM: " pm-secret ",
+        PHOTON_PROJECT_ID_AM: "photon-am",
+        PHOTON_PROJECT_SECRET_AM: "am-secret",
+        PHOTON_WEBHOOK_SECRET_AM: " am-hook ",
+        PHOTON_PROJECT_ID_NOSECRET: "photon-nosecret",
+        PHOTON_PROJECT_ID_BAD_NAME: "photon-bad",
+        PHOTON_PROJECT_SECRET_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "am", projectId: "photon-am", projectSecret: "am-secret", webhookSecret: "am-hook" },
+      { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret", webhookSecret: undefined },
+    ]);
+  });
+
+  it("skips a named Photon project that reuses another provider's project", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    try {
+      expect(
+        providers(
+          messagingEnvFromProcess({
+            PHOTON_PROJECT_ID: "photon-shared",
+            PHOTON_PROJECT_SECRET: "default-secret",
+            PHOTON_PROJECT_ID_COPY: " photon-shared ",
+            PHOTON_PROJECT_SECRET_COPY: "copy-secret",
+            PHOTON_PROJECT_ID_PM: "photon-pm",
+            PHOTON_PROJECT_SECRET_PM: "pm-secret",
+          }),
+        ),
+      ).toEqual(["photon", "photon-pm"]);
+      expect(warn).toHaveBeenCalledWith(
+        "skipping Photon project that reuses another provider's project",
+        { provider: "photon-copy" },
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("photon-shared");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("requires both Photon credentials and maps PHOTON_* process env", () => {
+    expect(providers({ ...fullEnv, photonProjectSecret: undefined })).not.toContain("photon");
+    expect(providers({ ...fullEnv, photonProjectId: undefined })).not.toContain("photon");
+    expect(
+      messagingEnvFromProcess({
+        PHOTON_PROJECT_ID: " photon-project ",
+        PHOTON_PROJECT_SECRET: " photon-secret ",
+        PHOTON_WEBHOOK_SECRET: " ",
+      }),
+    ).toMatchObject({
+      photonProjectId: "photon-project",
+      photonProjectSecret: "photon-secret",
+      photonWebhookSecret: undefined,
+    });
+  });
+
+  it("streams Photon inbound only in the process that owns the inbound sink", () => {
+    const photon = (pollInboundMessages?: boolean) =>
+      (
+        messagingPlatformsFromEnv(
+          { photonProjectId: "photon-project", photonProjectSecret: "photon-secret" },
+          pollInboundMessages === undefined ? {} : { pollInboundMessages },
+        )[0]!.adapter as unknown as { config: { pollInboundMessages: boolean } }
+      ).config.pollInboundMessages;
+    expect(photon()).toBe(false);
+    expect(photon(true)).toBe(true);
+  });
+
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
     const lark = messagingPlatformsFromEnv({
       larkAppId: "cli-fake",
@@ -101,10 +316,9 @@ describe("messagingPlatformsFromEnv", () => {
     })[0]!;
     const incoming = lark.adapter as unknown as {
       incomingConfig: { events: string; callbacks: string };
-      shouldStartWsClient: () => boolean;
     };
     expect(incoming.incomingConfig).toEqual({ events: "webhook", callbacks: "webhook" });
-    expect(incoming.shouldStartWsClient()).toBe(false);
+    expect("shouldStartWsClient" in incoming).toBe(false);
   });
 
   it("maps LARK_* process env and accepts the international domain switch", () => {
@@ -156,16 +370,22 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group and typing support only for sendblue", () => {
+  it("declares group support, the receipt and file support for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
-    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, typing: true });
-    expect(capabilities.slack).toEqual({ direct: true, groups: true, typing: false });
-    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.telegram).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, typing: false });
+    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
+    expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
+    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.telegram).toEqual({
+      direct: true,
+      groups: true,
+      receipt: null,
+      files: true,
+    });
+    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });
 
@@ -189,6 +409,16 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("takes the roster's time from the message's send time", () => {
+    expect(sendblue.rosterAt!({ date_sent: "2026-11-04T10:01:00.000Z" })).toEqual(
+      new Date("2026-11-04T10:01:00.000Z"),
+    );
+    expect(sendblue.rosterAt!({ date_sent: "not-a-date" })).toBeNull();
+    expect(sendblue.rosterAt!({ date_sent: 42 })).toBeNull();
+    expect(sendblue.rosterAt!({})).toBeNull();
+    expect(sendblue.rosterAt!(null)).toBeNull();
+  });
+
   it("accepts only supported per-message transports", () => {
     for (const service of ["iMessage", "SMS", "RCS"]) {
       expect(sendblue.transport!({ service })).toBe(service);
@@ -202,9 +432,22 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.directThreadId!("+15551234567")).toMatch(/^sendblue:/);
     expect(sendblue.adapter.isDM?.(sendblue.directThreadId!("+15551234567"))).toBe(true);
   });
+
+  it("encodes thread ids exactly as the Sendblue adapter does before it loads", () => {
+    const sdk = SendblueAdapter.prototype;
+    const direct = { fromNumber: "+15550009999", contactNumber: "+15551234567" };
+    const group = { fromNumber: "+15550009999", groupId: "group-1" };
+    expect(sendblue.directThreadId!(direct.contactNumber)).toBe(sdk.encodeThreadId(direct));
+    for (const data of [direct, group]) {
+      const threadId = sdk.encodeThreadId(data);
+      expect(sendblue.adapter.encodeThreadId(data)).toBe(threadId);
+      expect(sendblue.adapter.decodeThreadId(threadId)).toEqual(sdk.decodeThreadId(threadId));
+    }
+    expect(sendblue.adapter.isDM?.(sdk.encodeThreadId(group))).toBe(false);
+  });
 });
 
-describe("parseSendblueStatus", () => {
+describe("parseSendblueStatuses", () => {
   const statusPayload = {
     content: "",
     is_outbound: true,
@@ -214,24 +457,214 @@ describe("parseSendblueStatus", () => {
   };
 
   it("normalizes outbound delivery webhooks", () => {
-    expect(parseSendblueStatus(statusPayload)).toEqual({
-      type: "status",
-      provider: "sendblue",
-      handle: "handle-1",
-      status: "DELIVERED",
-    });
-    expect(parseSendblueStatus({ ...statusPayload, status: 7 })).toEqual(
+    expect(parseSendblueStatuses(statusPayload)).toEqual([
+      { type: "status", provider: "sendblue", handle: "handle-1", status: "DELIVERED" },
+    ]);
+    expect(parseSendblueStatuses({ ...statusPayload, status: 7 })).toEqual([
       expect.objectContaining({ status: "" }),
-    );
+    ]);
   });
 
   it("ignores inbound and malformed payloads", () => {
-    expect(parseSendblueStatus({ ...statusPayload, is_outbound: false })).toBeNull();
-    expect(parseSendblueStatus({ ...statusPayload, message_handle: "" })).toBeNull();
+    expect(parseSendblueStatuses({ ...statusPayload, is_outbound: false })).toEqual([]);
+    expect(parseSendblueStatuses({ ...statusPayload, message_handle: "" })).toEqual([]);
     const { message_handle: _dropped, ...withoutHandle } = statusPayload;
-    expect(parseSendblueStatus(withoutHandle)).toBeNull();
-    expect(parseSendblueStatus(null)).toBeNull();
-    expect(parseSendblueStatus("nope")).toBeNull();
+    expect(parseSendblueStatuses(withoutHandle)).toEqual([]);
+    expect(parseSendblueStatuses(null)).toEqual([]);
+    expect(parseSendblueStatuses("nope")).toEqual([]);
+  });
+});
+
+describe("parseWhatsAppStatuses", () => {
+  // Shape of Meta's `statuses` webhook (Cloud API), including a 24-hour-window failure.
+  const webhook = {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "waba-1",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              messaging_product: "whatsapp",
+              metadata: { display_phone_number: "15550001111", phone_number_id: "wa-phone-id" },
+              statuses: [
+                { id: "wamid.sent", status: "delivered", timestamp: "1", recipient_id: "1555" },
+                {
+                  id: "wamid.late",
+                  status: "failed",
+                  timestamp: "2",
+                  recipient_id: "1555",
+                  errors: [{ code: 131047, title: "Re-engagement message" }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("maps every status in the batch onto the outbox status flow", () => {
+    expect(parseWhatsAppStatuses(webhook)).toEqual([
+      { type: "status", provider: "whatsapp", handle: "wamid.sent", status: "DELIVERED" },
+      { type: "status", provider: "whatsapp", handle: "wamid.late", status: "FAILED" },
+    ]);
+  });
+
+  it("ignores inbound messages and malformed payloads", () => {
+    const inbound = structuredClone(webhook);
+    const value = inbound.entry[0]!.changes[0]!.value as Record<string, unknown>;
+    delete value.statuses;
+    value.messages = [{ id: "wamid.in", from: "1555", type: "text", text: { body: "hi" } }];
+    expect(parseWhatsAppStatuses(inbound)).toEqual([]);
+    expect(
+      parseWhatsAppStatuses({ entry: [{ changes: [{ value: { statuses: [{}] } }] }] }),
+    ).toEqual([]);
+    expect(parseWhatsAppStatuses(null)).toEqual([]);
+    expect(parseWhatsAppStatuses({ entry: "nope" })).toEqual([]);
+  });
+});
+
+describe("splitOutboundBody", () => {
+  it.each(["telegram", "telegram-work"])(
+    "splits %s replies on paragraph boundaries",
+    (provider) => {
+      const paragraph = "a".repeat(3000);
+      expect(splitOutboundBody(provider, `${paragraph}\n\n${paragraph}`)).toEqual([
+        paragraph,
+        paragraph,
+      ]);
+      expect(splitOutboundBody(provider, "short")).toEqual(["short"]);
+      expect(splitOutboundBody(provider, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
+    },
+  );
+
+  it.each([
+    "a".repeat(4097),
+    `${"a".repeat(4095)}😀${"b".repeat(4096)}`,
+    "😀".repeat(4097),
+    "!".repeat(4096),
+  ])("preserves the full text without breaking UTF-16 pairs", (body) => {
+    const parts = splitOutboundBody("telegram", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it.each([
+    ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
+    ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+  ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
+    const parts = splitOutboundBody("whatsapp", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
+    const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
+    expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
+    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
+    expect(splitOutboundBody("sendblue", long)).toEqual([long]);
+  });
+});
+
+describe("permanent send errors", () => {
+  const platforms = Object.fromEntries(
+    messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform]),
+  );
+  const slackError = (error: string) =>
+    Object.assign(new Error(`An API error occurred: ${error}`), {
+      code: "slack_webapi_platform_error",
+      data: { ok: false, error },
+    });
+  const permissionError = Object.assign(new Error("telegram sendMessage"), {
+    name: "PermissionError",
+  });
+  const whatsappError = (code: number) =>
+    new WhatsAppApiError(
+      "WhatsApp API error",
+      400,
+      JSON.stringify({ error: { code, message: "failed", type: "OAuthException" } }),
+    );
+
+  it.each([
+    ["slack", slackError("channel_not_found"), true],
+    ["slack", slackError("not_in_channel"), true],
+    ["slack", slackError("invalid_auth"), true],
+    ["slack", slackError("internal_error"), false],
+    ["slack", new Error("socket hang up"), false],
+    ["telegram", permissionError, true],
+    ["telegram", new Error("Network error calling Telegram sendMessage"), false],
+    ["whatsapp", whatsappError(131047), true],
+    ["whatsapp", whatsappError(130429), false],
+  ] as const)("%s: %s is permanent=%s", (provider, error, permanent) => {
+    expect(platforms[provider]!.isPermanentSendError!(error)).toBe(permanent);
+  });
+
+  it("treats no Sendblue error as permanent", () => {
+    expect(platforms.sendblue!.isPermanentSendError).toBeUndefined();
+  });
+});
+
+describe("sendblue client", () => {
+  const context: AdapterContext = {
+    operationId: "op-1",
+    traceId: "trace-1",
+    spaceId: "ws-1",
+    userId: "user-1",
+    signal: new AbortController().signal,
+  };
+
+  function sendThrough(apiUrl: string | undefined, status: number) {
+    const requests: Array<Record<string, unknown>> = [];
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return status === 200
+        ? Response.json({ message_handle: "handle-1", status: "QUEUED" })
+        : Response.json({ status: "ERROR" }, { status });
+    };
+    const surface = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv(
+        {
+          apiUrl,
+          sendblueApiKeyId: fullEnv.sendblueApiKeyId,
+          sendblueApiSecret: fullEnv.sendblueApiSecret,
+          sendblueSigningSecret: fullEnv.sendblueSigningSecret,
+          sendbluePhoneNumber: fullEnv.sendbluePhoneNumber,
+        },
+        { sendblueTransport: { baseURL: "https://api.sendblue.com", fetch } },
+      ),
+    );
+    const sent = surface
+      .openDirectThread("sendblue", "+15551234567", context)
+      .then((threadId) => surface.sendToThread({ threadId, body: "hi" }, context));
+    return { requests, sent };
+  }
+
+  it("asks Sendblue to call the public status webhook", async () => {
+    const { requests, sent } = sendThrough("https://app.example.test", 200);
+    await expect(sent).resolves.toEqual({ handle: "handle-1" });
+    expect(requests).toEqual([
+      expect.objectContaining({
+        status_callback: "https://app.example.test/api/v1/messaging/webhook/sendblue",
+      }),
+    ]);
+  });
+
+  it("requests no status callback without a public HTTPS origin", async () => {
+    const { requests, sent } = sendThrough("http://127.0.0.1:3100", 200);
+    await sent;
+    expect(requests[0]).not.toHaveProperty("status_callback");
+  });
+
+  it.each([500, 429, 408])("leaves retries to the outbox on HTTP %s", async (status) => {
+    const { requests, sent } = sendThrough(undefined, status);
+    await expect(sent).rejects.toMatchObject({ name: "MessagingSendError", permanent: false });
+    expect(requests).toHaveLength(1);
   });
 });
 

@@ -1,4 +1,7 @@
-/** Lead-ins and tails that may wrap a closing phrase without changing what it means. */
+/**
+ * Lead-ins and tails that may wrap a closing phrase without changing what it means.
+ * Spanish is written without accents, which `isFarewell` strips before matching.
+ */
 const FILLER = [
   "thank you",
   "for today",
@@ -11,6 +14,15 @@ const FILLER = [
   "cool",
   "bye",
   "ok",
+  "muchas gracias",
+  "gracias",
+  "por hoy",
+  "por ahora",
+  "perfecto",
+  "genial",
+  "listo",
+  "bueno",
+  "dale",
 ];
 
 const CLOSING = [
@@ -34,6 +46,24 @@ const CLOSING = [
   "we're done",
   "nothing else",
   "bye",
+  "eso es todo",
+  "eso seria todo",
+  "eso era todo",
+  "es todo",
+  "nada mas",
+  "hasta luego",
+  "hasta pronto",
+  "hasta manana",
+  "nos vemos",
+  "hablamos luego",
+  "adios",
+  "chao",
+  "chau",
+  "termina la llamada",
+  "corta la llamada",
+  "cuelga",
+  "ya termine",
+  "ya terminamos",
 ];
 
 const filler = FILLER.join("|");
@@ -43,8 +73,12 @@ const MAX_WORDS = 8;
 
 /** True when the whole utterance is the caller saying goodbye, not a sentence mentioning one. */
 export function isFarewell(text: string): boolean {
+  // "¿Eso es todo?" asks whether the call is over.
+  if (/[?¿]/.test(text)) return false;
   const words = text
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .replace(/[‘’]/g, "'")
     .replace(/[^a-z0-9'\s]+/g, " ")
     .trim()

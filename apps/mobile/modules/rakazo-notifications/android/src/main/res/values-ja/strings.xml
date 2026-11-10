@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">エージェントのライブ状況</string>
+  <string name="rakazo_channel_messages">エージェントのメッセージ</string>
+  <string name="rakazo_channel_scheduled">スケジュール済みのタスク</string>
+  <string name="rakazo_channel_attention">要対応</string>
+
+  <string name="rakazo_live_one">%1$sが作業中</string>
+  <string name="rakazo_live_many">%1$sとほか%2$d件が作業中</string>
+  <string name="rakazo_live_working">作業中</string>
+
+  <string name="rakazo_scheduled_title">%1$s · スケジュール済みのタスク</string>
+  <string name="rakazo_replied_group">%1$sが%2$sで返信しました</string>
+  <string name="rakazo_replied">%1$sが返信しました</string>
+
+  <string name="rakazo_attention_failed">%1$sで問題が発生しました</string>
+  <string name="rakazo_attention_takeover">%1$sが画面での操作を求めています</string>
+  <string name="rakazo_attention_input">%1$sが入力を待っています</string>
+</resources>

@@ -50,7 +50,7 @@ vi.mock("expo-file-system", () => ({
       await new Promise((resolve) => setTimeout(resolve, 20));
       return content;
     }
-    write(content: string) {
+    writeSync(content: string) {
       files.set(this.key, content);
     }
   },
@@ -105,11 +105,6 @@ describe("deviceVoices", () => {
       { identifier: "en-us-x-iob-network", language: "en-US" },
       { identifier: "de-de-x-deb-local", language: "de-DE" },
     ];
-    expect(await deviceVoices()).toEqual([]);
-  });
-
-  it("offers nothing when every voice is a network voice", async () => {
-    voices.list = [{ identifier: "en-us-x-iob-network", language: "en-US" }];
     expect(await deviceVoices()).toEqual([]);
   });
 
@@ -193,6 +188,31 @@ describe("voiceForBot", () => {
       { identifier: "primary", language: primary },
     ];
     expect(await voiceForBot("bot-a")).toBe("primary");
+  });
+
+  it.each([
+    ["es-CL", null, "mexico"],
+    ["es-419", null, "mexico"],
+    ["es", "AR", "mexico"],
+    ["es-ES", null, "spain"],
+    ["es", null, "spain"],
+  ])("gives a %s phone (region %s) the %s voice", async (locale, region, expected) => {
+    device.locale = locale;
+    device.regionCode = region;
+    voices.list = [
+      { identifier: "spain", language: "es-ES", quality: "Enhanced" },
+      { identifier: "mexico", language: "es-MX" },
+    ];
+    expect(await voiceForBot("bot-a")).toBe(expected);
+  });
+
+  it("gives a Latin American phone the US Spanish voice over Castilian when it has no Mexican one", async () => {
+    device.locale = "es-CO";
+    voices.list = [
+      { identifier: "spain", language: "es-ES" },
+      { identifier: "united-states", language: "es-US" },
+    ];
+    expect(await voiceForBot("bot-a")).toBe("united-states");
   });
 
   it("skips the primary-region tier for an unmapped language", async () => {

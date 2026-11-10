@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ResponseBodyTooLargeError, readBoundedJsonResponse } from "./http-response.js";
+import {
+  isUnauthorizedError,
+  ResponseBodyTooLargeError,
+  readBoundedJsonResponse,
+} from "./http-response.js";
 
 describe("readBoundedJsonResponse", () => {
   it("parses a fragmented JSON response", async () => {
@@ -58,9 +62,26 @@ describe("readBoundedJsonResponse", () => {
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
   });
 
+  it("does not read a body once the request is already aborted", async () => {
+    const signal = AbortSignal.abort(new Error("request timed out"));
+
+    await expect(readBoundedJsonResponse(new Response('{"ok":true}'), 64, signal)).rejects.toThrow(
+      "request timed out",
+    );
+  });
+
   it("rejects malformed JSON after a complete bounded read", async () => {
     await expect(readBoundedJsonResponse(new Response("not-json"), 64)).rejects.toBeInstanceOf(
       SyntaxError,
     );
+  });
+});
+
+describe("isUnauthorizedError", () => {
+  it("recognizes only a 401 status", () => {
+    expect(isUnauthorizedError({ status: 401 })).toBe(true);
+    expect(isUnauthorizedError({ status: 403 })).toBe(false);
+    expect(isUnauthorizedError(new Error("401"))).toBe(false);
+    expect(isUnauthorizedError(null)).toBe(false);
   });
 });

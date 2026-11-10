@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
@@ -54,6 +55,20 @@ export function secretStoreOptionsFromEnv(
     environment: required("INFISICAL_ENVIRONMENT"),
     folder,
   };
+}
+
+const heldNotifications = new AsyncLocalStorage<Array<() => Promise<void>>>();
+
+/** Sends change notifications from writes inside `work` once it settles. A write
+ * inside a database transaction would otherwise wait on a second pooled
+ * connection to notify while its own transaction holds the first. */
+export async function holdSecretNotifications<T>(work: () => Promise<T>): Promise<T> {
+  const held: Array<() => Promise<void>> = [];
+  try {
+    return await heldNotifications.run(held, work);
+  } finally {
+    for (const notify of held) await notify();
+  }
 }
 
 /** Routing is private to the store; consumers only see opaque refs. */
@@ -113,7 +128,9 @@ export class ComposedSecretStore extends SecretChanges implements SecretStore {
       context,
       options,
     );
-    await this.publish(record.ref);
+    const held = heldNotifications.getStore();
+    if (held) held.push(() => this.publish(record.ref));
+    else await this.publish(record.ref);
     return record;
   }
   load(ref: string, context: SecretContext): Promise<string> {

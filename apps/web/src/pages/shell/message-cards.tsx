@@ -1,16 +1,21 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
+import { appConnectedInput, waitForConnection } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../components/ai/primitives";
+import { ErrorNotice } from "../../components/ErrorNotice";
+import { OptionRow } from "../../components/OptionRow";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
+import { importChunk } from "../../lib/preload-recovery";
 import { rpc } from "../../lib/rpc";
 import { useArtifactImage } from "../../lib/use-artifact-image";
-import { errorText } from "../../lib/user-error";
+import type { ErrorDetails } from "../../lib/user-error";
+import { errorDetails, errorText } from "../../lib/user-error";
 
 export function ChoiceCard({
   botId,
@@ -56,7 +61,7 @@ export function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="relative w-[420px] max-w-full rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
+      <BuiCard className="relative w-[420px] max-w-full px-[18px] py-[14px]">
         {!block.answerId ? (
           <Button
             variant="ghost"
@@ -69,50 +74,40 @@ export function ChoiceCard({
             <X size={16} strokeWidth={1.8} />
           </Button>
         ) : null}
-        <div className="pe-8 text-[15.5px] text-foreground/90">
+        <div className="pe-8 text-body-lg text-foreground/90">
           <OnboardingFocusQuestion question={block.question} />
         </div>
         {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
+          <div className="mt-0.5 text-body-sm text-foreground/75">{block.subtitle}</div>
         ) : null}
-        <div className="mt-3 space-y-2.5">
-          {block.options
-            .filter((option) => !block.answerId || option.id === block.answerId)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={Boolean(block.answerId) || pending}
-                onClick={() => void choose(option.id)}
-                className={`flex w-full items-start gap-3 rounded-xl px-3.5 py-3.5 text-start text-foreground disabled:opacity-60 ${block.answerId ? "bg-accent" : "bg-muted hover:bg-accent"}`}
-              >
-                <span className="mt-0.5 grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[7px] bg-background text-[12.5px] font-medium text-foreground/75">
-                  {option.letter}
-                </span>
-                <span
-                  className={`flex-1 text-[15px] leading-[1.35] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
-                >
-                  <OnboardingFocusOptionLabel
-                    id={option.id}
-                    label={option.label}
-                    question={block.question}
-                  />
-                </span>
-                {block.answerId === option.id ? (
-                  <span className="mt-0.5 text-foreground/75">✓</span>
-                ) : null}
-              </button>
-            ))}
+        <div className="mt-2.5 space-y-0.5">
+          {block.options.map((option) => (
+            <OptionRow
+              key={option.id}
+              letter={option.letter}
+              selected={block.answerId === option.id}
+              disabled={Boolean(block.answerId) || pending}
+              onClick={() => void choose(option.id)}
+            >
+              <OnboardingFocusOptionLabel
+                id={option.id}
+                label={option.label}
+                question={block.question}
+              />
+            </OptionRow>
+          ))}
         </div>
-        {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-      </div>
+        {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
+      </BuiCard>
     </div>
   );
 }
 
+const FOCUS_QUESTION = "What do you want me on first?";
+
 /** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
 function OnboardingFocusQuestion({ question }: { question: string }) {
-  if (question === "What do you want me on first?") {
+  if (question === FOCUS_QUESTION) {
     return <Trans>What do you want me on first?</Trans>;
   }
   return question;
@@ -127,7 +122,7 @@ function OnboardingFocusOptionLabel({
   label: string;
   question: string;
 }) {
-  if (question !== "What do you want me on first?") return label;
+  if (question !== FOCUS_QUESTION) return label;
   switch (id) {
     case "day":
       return <Trans>Day-to-day work</Trans>;
@@ -144,9 +139,13 @@ function OnboardingFocusOptionLabel({
 
 export function AppConnectCard({
   botId,
+  threadId,
+  messageId,
   block,
 }: {
   botId: string;
+  threadId: string;
+  messageId?: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
 }) {
   const { t } = useLingui();
@@ -172,22 +171,20 @@ export function AppConnectCard({
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
       }
-      for (let i = 0; i < 60; i += 1) {
-        if (controller.signal.aborted) return;
-        const row = await rpc.connections
-          .complete({ connectionId: started.connectionId })
+      const result = await waitForConnection(
+        started.connectionId,
+        (input) => rpc.connections.complete(input, { signal: controller.signal }),
+        { signal: controller.signal, attempts: 60 },
+      );
+      if (result.status === "aborted") return;
+      if (result.status === "connected") {
+        setLocalStatus("connected");
+        await rpc.onboarding
+          .appConnected(appConnectedInput(botId, threadId, block, messageId))
           .catch(() => undefined);
-        if (row?.status === "connected") {
-          if (controller.signal.aborted) return;
-          setLocalStatus("connected");
-          await rpc.onboarding
-            .appConnected({ botId, provider: block.provider, connectorId: block.connectorId })
-            .catch(() => undefined);
-          return;
-        }
-        await abortableDelay(2_000, controller.signal);
+        return;
       }
-      if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
+      setError(t`Authorization timed out. Please try again.`);
     } catch (error) {
       if (!controller.signal.aborted) {
         setError(errorText(error, t`Could not authorize this app`));
@@ -203,40 +200,35 @@ export function AppConnectCard({
     <BuiCard
       role="group"
       aria-label={t`${block.name} connection`}
-      className="w-[min(420px,80%)] px-4 py-3.5"
+      className="w-full max-w-[440px] px-4 py-3.5"
     >
       <div className="flex items-center gap-3.5">
         {block.logo ? (
           <img
             src={block.logo}
             alt=""
-            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
+            className="h-10 w-10 rounded-md bg-favicon-plate object-contain p-1"
           />
         ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-muted text-[15px] text-foreground">
+          <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
             {block.name.slice(0, 1).toUpperCase()}
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium text-foreground">{block.name}</span>
-          <span className="block truncate text-[13px] text-muted-foreground">
+          <span className="block text-body-lg font-medium text-foreground">{block.name}</span>
+          <span className="block truncate text-body-sm text-muted-foreground">
             {block.description}
           </span>
         </span>
         {status === "connected" ? (
           <SuccessPop label={t`Connected`} />
         ) : (
-          <Button
-            variant="secondary"
-            className="rounded-full hover:border-border hover:bg-accent hover:text-foreground"
-            disabled={busy}
-            onClick={() => void authorize()}
-          >
-            {busy ? t`Waiting…` : t`Authorize`}
+          <Button disabled={busy} onClick={() => void authorize()}>
+            {busy ? t`Waiting…` : t`Connect`}
           </Button>
         )}
       </div>
-      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
     </BuiCard>
   );
 }
@@ -254,6 +246,7 @@ function ChartCanvas({
 }) {
   const { t } = useLingui();
   const ref = useRef<HTMLDivElement>(null);
+  const linkDialog = useLinkPrompt(ref);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{
     title?: string;
@@ -264,7 +257,7 @@ function ChartCanvas({
     // Plot loads lazily so threads without charts never pay for the library.
     void (async () => {
       try {
-        const { buildPlotParts } = await import("@rakazo/core/plot");
+        const { buildPlotParts } = await importChunk(() => import("@rakazo/core/plot"));
         if (cancelled || !ref.current) return;
         // Hover inspection by default: give the first mark a tooltip unless
         // the spec already asks for one somewhere.
@@ -294,21 +287,21 @@ function ChartCanvas({
   }, [spec, data, width, height, t]);
   if (error)
     return (
-      <div className="text-[13px] text-destructive">
+      <div className="text-body-sm text-destructive">
         <Trans>Chart failed to render: {error}</Trans>
       </div>
     );
   return (
     <div className="text-foreground/75">
       {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-foreground">{meta.title}</div>
+        <div className="mb-1 text-body-lg font-semibold text-foreground">{meta.title}</div>
       ) : null}
       {meta.swatches.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
           {meta.swatches.map((swatch) => (
             <span
               key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
+              className="flex items-center gap-1.5 text-label text-muted-foreground"
             >
               {/* Series colours are data-driven and intentionally distinct. */}
               <span
@@ -320,7 +313,8 @@ function ChartCanvas({
           ))}
         </div>
       ) : null}
-      <div ref={ref} className="[&_svg]:max-w-full" />
+      <div ref={ref} className="overflow-hidden [contain:paint] [&_svg]:max-w-full" />
+      {linkDialog}
     </div>
   );
 }
@@ -343,7 +337,7 @@ export function McpApprovalCard({
   const { t } = useLingui();
   const { name, serverId, transport, endpoint, needsOAuth, status: savedStatus } = block;
   const [localStatus, setLocalStatus] = useState<McpApprovalState>("pending");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
   const [busy, setBusy] = useState(false);
   // A removal repaints the block to pending. Drop an in-session connected
   // override so the card does not keep the old decision.
@@ -359,7 +353,7 @@ export function McpApprovalCard({
 
   async function authorize() {
     if (!botId || busy) {
-      if (!botId) setError(t`This server cannot be assigned without a bot.`);
+      if (!botId) setError(errorDetails(t`This server cannot be assigned without a bot.`));
       return;
     }
     setBusy(true);
@@ -376,7 +370,7 @@ export function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId, threadId });
       setLocalStatus("connected");
     } catch (err) {
-      setError(errorText(err, t`Could not approve this server`));
+      setError(errorDetails(err, t`Could not approve this server`));
       setLocalStatus("pending");
     } finally {
       setBusy(false);
@@ -394,43 +388,42 @@ export function McpApprovalCard({
       setLocalStatus("dismissed");
     } catch (err) {
       setLocalStatus("pending");
-      setError(errorText(err, t`Could not dismiss this server`));
+      setError(errorDetails(err, t`Could not dismiss this server`));
     } finally {
       setBusy(false);
     }
   }
 
-  const summary = endpoint ?? `stdio · ${transport}`;
+  const summary = endpoint ?? `stdio (${transport})`;
   return (
-    <BuiCard data-testid="mcp-approval-card" className="max-w-[74%] p-4">
+    <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-xs text-foreground">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-label text-foreground">
           M
         </span>
-        <span className="text-[14.5px] font-medium text-foreground">
+        <span className="text-body-lg font-medium text-foreground">
           <Trans>Connect MCP server “{name}”</Trans>
         </span>
       </div>
-      <p className="mt-1.5 truncate text-[12px] text-muted-foreground">{summary}</p>
+      <p className="mt-1.5 truncate text-label text-muted-foreground">{summary}</p>
       {state === "pending" || state === "connecting" ? (
         <>
-          <p className="mt-2 text-[13px] leading-[1.5] text-foreground/75">
+          <p className="mt-2 text-body-sm leading-[1.5] text-foreground/75">
             {needsOAuth
               ? t`Authorize this server so agents can use its tools. A popup opens.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
-          {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-          <div className="mt-3 flex gap-2">
-            <Button
-              className="rounded-full"
-              disabled={state !== "pending" || busy}
-              onClick={() => void authorize()}
-            >
+          {error ? (
+            <div className="mt-2">
+              <ErrorNotice error={error} />
+            </div>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button disabled={state !== "pending" || busy} onClick={() => void authorize()}>
               {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
             </Button>
             <Button
               variant="secondary"
-              className="rounded-full"
               disabled={state !== "pending" || busy}
               onClick={() => void dismiss()}
             >
@@ -441,11 +434,11 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected`} />
         </div>
       ) : null}
       {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-muted-foreground">
+        <p className="mt-2 text-body-sm text-muted-foreground">
           <Trans>Dismissed. Reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
@@ -478,7 +471,7 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-muted p-4">
+      <div className="group relative w-[552px] max-w-full rounded-2xl bg-muted p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
@@ -495,7 +488,7 @@ export function ChartBlockView({
           className="max-h-[92vh] w-[min(1320px,94vw)] max-w-none overflow-auto p-8 sm:max-w-none"
         >
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-[13px] font-normal text-muted-foreground">
+            <DialogTitle className="text-body-sm font-normal text-muted-foreground">
               {name}
             </DialogTitle>
             <DialogClose
@@ -557,14 +550,12 @@ export function ArtifactImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-[20px]"
+          className="max-w-[240px] overflow-hidden rounded-2xl"
         >
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-border bg-muted px-4 py-3 text-[14px] text-muted-foreground">
-          {name}
-        </div>
+        <div className="rounded-2xl bg-muted px-4 py-3 text-body text-muted-foreground">{name}</div>
       )}
       {src ? (
         <Dialog open={open} onOpenChange={setOpen}>

@@ -1,9 +1,23 @@
+import { redactSensitiveText } from "./redaction.js";
+
 const WINDOW_MS = 30_000;
 let lastReportAt = 0;
 let suppressed = 0;
+let failures = 0;
+let lastFailureAt: number | null = null;
+
+export function logSinkHealth(now = Date.now()) {
+  return {
+    failures,
+    lastFailureAt,
+    degraded: lastFailureAt !== null && now - lastFailureAt < 300_000,
+  };
+}
 
 export function reportSinkError(error: unknown): void {
   const now = Date.now();
+  failures += 1;
+  lastFailureAt = now;
   if (now - lastReportAt < WINDOW_MS) {
     suppressed += 1;
     return;
@@ -12,7 +26,7 @@ export function reportSinkError(error: unknown): void {
   suppressed = 0;
   lastReportAt = now;
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`log sink failed${extra}`, message);
+  console.error(`log sink failed${extra}`, redactSensitiveText(message));
 }
 
 export function guardedWrite(write: () => void | Promise<void>): void {

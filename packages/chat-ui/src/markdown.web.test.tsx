@@ -1,16 +1,21 @@
 // @vitest-environment jsdom
 
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { closeUnterminatedFence } from "./markdown";
 import type { LinkFavicons } from "./markdown.web";
 import {
   ChatMarkdown,
+  defaultMarkdownCopy,
   LinkFaviconsContext,
   LinkifiedText,
+  MarkdownCopyProvider,
+  MarkdownLinkPromptProvider,
   RemoteImagesContext,
+  useLinkPrompt,
 } from "./markdown.web";
 
 describe("web markdown remote images", () => {
@@ -228,6 +233,17 @@ describe("web markdown website links", () => {
     expect(view.container.querySelector("a")?.getAttribute("href")).toBe(
       "https://www.icon-b.example.test/status/123?s=20",
     );
+    await view.cleanup();
+  });
+
+  it("keeps the destination when a bare URL is shortened at an emoji", async () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}%F0%9F%98%80tail`;
+    const view = await renderLinks(`<${href}>`, { load: async () => ({ icon: null }) });
+    expect(view.container.querySelector(".rk-chat-link-label")?.textContent).toBe(
+      `example.com/${prefix}…`,
+    );
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(href);
     await view.cleanup();
   });
 
@@ -465,6 +481,44 @@ async function render(node: ReactNode) {
 }
 
 describe("web external link confirmation", () => {
+  it("asks before following a link drawn inside an SVG", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    function Drawing() {
+      const ref = useRef<HTMLDivElement>(null);
+      const dialog = useLinkPrompt(ref);
+      return (
+        <div ref={ref}>
+          <svg>
+            <a href="https://example.test/point">
+              <circle r={4} />
+            </a>
+          </svg>
+          {dialog}
+        </div>
+      );
+    }
+    const view = await render(<Drawing />);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => {
+      view.container.querySelector("circle")?.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(true);
+    expect(document.querySelector("[role='alertdialog']")?.textContent).toContain(
+      "https://example.test/point",
+    );
+    expect(open).not.toHaveBeenCalled();
+    await act(async () => {
+      buttonNamed(document, "Open")?.click();
+    });
+    expect(open).toHaveBeenCalledWith(
+      "https://example.test/point",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+    await view.cleanup();
+  });
+
   it("asks before an external bot link and opens it only after confirmation", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const view = await render(
@@ -548,6 +602,82 @@ describe("web external link confirmation", () => {
     await view.cleanup();
   });
 
+  it("opens the link and trusts its site from the third button", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const trustSite = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const view = await render(
+      <MarkdownLinkPromptProvider trustedSites={[]} trustSite={trustSite}>
+        <ChatMarkdown>{"See [Docs](https://docs.example.test/a)"}</ChatMarkdown>
+      </MarkdownLinkPromptProvider>,
+    );
+    await act(async () => {
+      view.container.querySelector("a")?.click();
+    });
+    expect(open).not.toHaveBeenCalled();
+    await act(async () => {
+      buttonNamed(document, "Always open example.test")?.click();
+    });
+    // A failed save still opens the link.
+    expect(open).toHaveBeenCalledWith(
+      "https://docs.example.test/a",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(trustSite).toHaveBeenCalledWith("https://docs.example.test/a");
+    expect(document.querySelector("[role='alertdialog']")).toBeNull();
+    open.mockRestore();
+    await view.cleanup();
+  });
+
+  it("offers no third button without a way to trust a site", async () => {
+    const view = await render(<ChatMarkdown>{"[Docs](https://example.test/a)"}</ChatMarkdown>);
+    await act(async () => {
+      view.container.querySelector("a")?.click();
+    });
+    const dialog = document.querySelector("[role='alertdialog']");
+    expect([...(dialog?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+      "Cancel",
+      "Open",
+    ]);
+    await act(async () => {
+      buttonNamed(document, "Cancel")?.click();
+    });
+    await view.cleanup();
+  });
+
+  it("opens a link to a trusted site directly", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const view = await render(
+      <MarkdownLinkPromptProvider trustedSites={["example.test"]} trustSite={vi.fn()}>
+        <ChatMarkdown>
+          {"[Docs](https://docs.example.test/a) [Other](https://other.test/a)"}
+        </ChatMarkdown>
+      </MarkdownLinkPromptProvider>,
+    );
+    const [trusted, other] = [...view.container.querySelectorAll("a")];
+    let prevented: boolean | undefined;
+    const record = (event: MouseEvent) => {
+      prevented = event.defaultPrevented;
+      event.preventDefault();
+    };
+    document.addEventListener("click", record);
+    await act(async () => {
+      trusted?.click();
+    });
+    expect(prevented).toBe(false);
+    expect(document.querySelector("[role='alertdialog']")).toBeNull();
+    await act(async () => {
+      other?.click();
+    });
+    expect(prevented).toBe(true);
+    expect(document.querySelector("[role='alertdialog'] strong")?.textContent).toBe("other.test");
+    document.removeEventListener("click", record);
+    open.mockRestore();
+    await view.cleanup();
+  });
+
   it("asks before a link in plain user text", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const view = await render(<LinkifiedText>{"https://example.test/docs"}</LinkifiedText>);
@@ -558,5 +688,277 @@ describe("web external link confirmation", () => {
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
     await view.cleanup();
+  });
+});
+
+describe("web markdown code copy", () => {
+  it("copies a fence's code exactly as written, then reads Copied", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"```ts\nconst a = 1;\n\n  return a;\n```"}</ChatMarkdown>);
+    });
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-label")).toBe("Copy code");
+    await act(async () => {
+      button?.click();
+    });
+    expect(writeText).toHaveBeenCalledWith("const a = 1;\n\n  return a;");
+    expect(button?.getAttribute("aria-label")).toBe("Copied");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  it("gives an empty fence no copy button, as on mobile", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"```ts\n```\n\n```\n\n\n```\n\n    indented"}</ChatMarkdown>,
+    );
+    expect(html.match(/<pre/g)).toHaveLength(3);
+    expect(html.match(/aria-label="Copy code"/g)).toHaveLength(1);
+  });
+
+  it("renders provider copy in place of the English defaults", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => `| ${i + 1} | v${i + 1} |`).join("\n");
+    const markdown = ["```ts", "const a = 1;", "```", "", "| N | V |", "|---|---|", rows].join(
+      "\n",
+    );
+    const html = renderToStaticMarkup(
+      <MarkdownCopyProvider
+        copy={{
+          ...defaultMarkdownCopy,
+          copyCode: "Copiar código",
+          copyRows: "Copiar filas",
+          rowRange: (from, to, total) => `${from} a ${to} de ${total} filas`,
+        }}
+      >
+        <ChatMarkdown>{markdown}</ChatMarkdown>
+      </MarkdownCopyProvider>,
+    );
+    expect(html).toContain('aria-label="Copiar código"');
+    expect(html).toContain('aria-label="Copiar filas"');
+    expect(html).toContain("1 a 10 de 12 filas");
+  });
+});
+
+describe("web markdown prose fences", () => {
+  const draft =
+    "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
+
+  function renderMarkdown(markdown: string) {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    return holder;
+  }
+
+  it.each(["text", "txt", "plaintext", "Text"])("wraps a fence marked %j as prose", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\n${draft}\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("rk-chat-markdown-pre-prose");
+  });
+
+  it.each(["ts", ""])("keeps a fence marked %j as code", (language) => {
+    const html = renderMarkdown(`\`\`\`${language}\nconst a = 1;\n\`\`\``);
+    expect(html.querySelector("pre")?.className).toBe("");
+  });
+
+  it("copies a text fence's code exactly as written", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"```text\nDear team,\n\n  see you Monday.\n```"}</ChatMarkdown>);
+    });
+    const button = container.querySelector("button");
+    expect(button?.getAttribute("aria-label")).toBe("Copy code");
+    await act(async () => {
+      button?.click();
+    });
+    expect(writeText).toHaveBeenCalledWith("Dear team,\n\n  see you Monday.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+});
+
+describe("web markdown mentions", () => {
+  it("draws a mention the app renders and keeps an unknown one as its name", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        renderMention={(id, name) => (id === "bot-1" ? <b data-id={id}>{name}</b> : undefined)}
+      >
+        {"[Planner](rakazo-mention:bot-1) and [Other](rakazo-mention:bot-2)"}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('<b data-id="bot-1">Planner</b>');
+    expect(html).toContain("<span>Other</span>");
+    expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown streaming", () => {
+  it("draws every streamed prefix as the whole text would be drawn", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const reply = [
+      "1. one",
+      "",
+      "3. three",
+      "",
+      "| Step | Rows |",
+      "| --- | ---: |",
+      "| Import | 12 |",
+      "",
+      "```sql",
+      "SELECT 1;",
+      "",
+      "SELECT 2;",
+      "```",
+      "",
+      "- a",
+      "",
+      "  continued",
+      "Done",
+      "===",
+      "",
+      "[foo",
+      "bar]: https://example.com/",
+      "",
+      "See [foo bar].",
+      "",
+      "End.",
+      "",
+      "Really.",
+    ].join("\n");
+    const shape = (node: Node): string =>
+      [...node.childNodes]
+        .map((child) =>
+          child instanceof Element ? `<${child.tagName}>${shape(child)}</>` : child.textContent,
+        )
+        .join("");
+    const streamed = document.createElement("div");
+    const whole = document.createElement("div");
+    const streamedRoot = createRoot(streamed);
+    const wholeRoot = createRoot(whole);
+    for (let end = 1; end <= reply.length; end += 1) {
+      const text = reply.slice(0, end);
+      await act(async () => {
+        streamedRoot.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+        wholeRoot.render(<ChatMarkdown key={end}>{closeUnterminatedFence(text)}</ChatMarkdown>);
+      });
+      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(
+        `${shape(whole.firstChild!)}<SPAN></>`,
+      );
+    }
+    await act(async () => {
+      streamedRoot.render(<ChatMarkdown>{reply}</ChatMarkdown>);
+    });
+    expect(shape(streamed)).toBe(shape(whole));
+    await act(async () => {
+      streamedRoot.unmount();
+      wholeRoot.unmount();
+    });
+  });
+
+  it("keeps a streamed table's sort when text before it changes", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const table = "| Item | Qty |\n| --- | --- |\n| a | 2 |\n| b | 1 |";
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{table}</ChatMarkdown>);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Sort by Qty"]')!.click();
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{`Results updated.\n\n${table}`}</ChatMarkdown>);
+    });
+    expect(container.querySelector("th[aria-sort]")?.getAttribute("aria-sort")).toBe("ascending");
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});
+
+describe("web markdown streamed definitions", () => {
+  it("resolves a reference whose definition label spans lines and escapes a bracket", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown streaming>
+        {"[foo\nb\\]ar]: https://example.test/ref\n\nSee [foo b\\]ar]."}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('href="https://example.test/ref"');
+  });
+});
+
+describe("web markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [y](rakazo://settings) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const chips = container.querySelectorAll<HTMLButtonElement>("button.rk-chat-page-chip");
+    expect([...chips].map((chip) => chip.textContent)).toEqual(["Duplex voice"]);
+    expect(chips[0]!.querySelector("svg")).not.toBeNull();
+    await act(async () => {
+      chips[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    // Other schemes and a malformed page link keep today's plain-text rendering.
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("See Duplex voice and x and y and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"See [Duplex voice](page:page_1)"}</ChatMarkdown>,
+    );
+    expect(html).toContain("<span>Duplex voice</span>");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown parser failure", () => {
+  it("shows a message the parser cannot handle as plain text", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const nested = `${">".repeat(20_000)} deep`;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{nested}</ChatMarkdown>);
+    });
+    expect(container.querySelector(".rk-chat-markdown p")?.textContent).toBe(nested);
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{"**fine**"}</ChatMarkdown>);
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("fine");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
   });
 });

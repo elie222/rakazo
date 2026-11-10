@@ -112,3 +112,24 @@ it("keeps an invalidated namespace when both wipe attempts fail", async () => {
   await cache.invalidateArtifactCacheSession();
   expect(await cache.artifactCacheSession("fake-a")).not.toBe(namespace);
 });
+
+it("keeps a rotated namespace, even against a late read with the replaced token", async () => {
+  const cache = await load();
+  const namespace = await cache.artifactCacheSession("fake-a");
+  await cache.rotateArtifactCacheSession("fake-a", "fake-b");
+  await expect(cache.artifactCacheSession("fake-a")).rejects.toThrow("Artifact session changed");
+  expect(await cache.artifactCacheSession("fake-b")).toBe(namespace);
+  vi.resetModules();
+  expect(await (await load()).artifactCacheSession("fake-b")).toBe(namespace);
+});
+
+it("keeps the namespace of a finished rotation when a later metadata write fails", async () => {
+  const cache = await load();
+  const namespace = await cache.artifactCacheSession("fake-a");
+  await cache.rotateArtifactCacheSession("fake-a", "fake-b");
+  vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
+  expect(await cache.artifactCacheSession("fake-b")).toBe(namespace);
+  expect(await cache.artifactCacheSession("fake-b")).toBe(namespace);
+  vi.resetModules();
+  expect(await (await load()).artifactCacheSession("fake-b")).toBe(namespace);
+});

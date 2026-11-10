@@ -6,7 +6,8 @@ import {
   setCatalogLoadersForTests,
   setUiLocale,
 } from "./i18n";
-import { UI_LOCALE_STORAGE_KEY } from "./ui-locale";
+import type { UiLocale } from "./ui-locale";
+import { UI_LOCALE_STORAGE_KEY, UI_LOCALES } from "./ui-locale";
 
 vi.mock("./apply-ui-direction", () => ({
   applyUiDirection: vi.fn(),
@@ -50,9 +51,14 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
+      ja: async () => ({ messages: { Settings: "設定" } }),
+      pl: async () => ({ messages: { Settings: "Ustawienia" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -82,6 +88,9 @@ describe("activateUiLocale", () => {
       "pt-BR": async () => {
         throw new Error("pt-BR missing");
       },
+      "zh-TW": async () => {
+        throw new Error("zh-TW missing");
+      },
       "zh-CN": async () => {
         throw new Error("zh-CN missing");
       },
@@ -93,6 +102,18 @@ describe("activateUiLocale", () => {
       },
       fr: async () => {
         throw new Error("fr missing");
+      },
+      he: async () => {
+        throw new Error("he missing");
+      },
+      nl: async () => {
+        throw new Error("nl missing");
+      },
+      ja: async () => {
+        throw new Error("ja missing");
+      },
+      pl: async () => {
+        throw new Error("pl missing");
       },
     });
 
@@ -115,9 +136,14 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
+      ja: async () => ({ messages: { Settings: "設定" } }),
+      pl: async () => ({ messages: { Settings: "Ustawienia" } }),
     });
 
     const first = activateUiLocale("de");
@@ -144,9 +170,14 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
+      ja: async () => ({ messages: { Settings: "設定" } }),
+      pl: async () => ({ messages: { Settings: "Ustawienia" } }),
     });
 
     await activateUiLocale("en");
@@ -178,9 +209,14 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
+      ja: async () => ({ messages: { Settings: "設定" } }),
+      pl: async () => ({ messages: { Settings: "Ustawienia" } }),
     });
 
     await activateUiLocale("en");
@@ -193,5 +229,24 @@ describe("activateUiLocale", () => {
     await expect(pendingKo).resolves.toBe("ko");
     expect(getActiveUiLocale()).toBe("ko");
     expect(store.get(UI_LOCALE_STORAGE_KEY)).toBe("ko");
+  });
+
+  it("tells the desktop app the language it activated, even when the desktop refuses", async () => {
+    const loaders = Object.fromEntries(
+      UI_LOCALES.map((locale) => [locale, async () => ({ messages: {} })]),
+    ) as Record<UiLocale, () => Promise<{ messages: Record<string, string> }>>;
+    setCatalogLoadersForTests(loaders);
+    const set = vi.fn(async (_locale: string) => {
+      throw new Error("refused");
+    });
+    vi.stubGlobal("window", { rakazoDesktop: { locale: { set } } });
+
+    await expect(activateUiLocale("es")).resolves.toBe("es");
+    expect(set).toHaveBeenCalledWith("es");
+
+    // Older desktop releases have no locale bridge.
+    vi.stubGlobal("window", { rakazoDesktop: {} });
+    await expect(activateUiLocale("de")).resolves.toBe("de");
+    vi.unstubAllGlobals();
   });
 });

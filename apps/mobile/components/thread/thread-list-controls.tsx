@@ -1,0 +1,99 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { mobileTokens } from "../../lib/appearance";
+import type { ActivityMarkBot } from "../activity-mark";
+import { ActivityMark } from "../activity-mark";
+import { ScrollToBottomButton } from "../scroll-to-bottom-button";
+
+/** The bots still working on a reply, under the newest message. */
+export function ThreadWorkingFooter({
+  bots,
+  label,
+  atBottom,
+}: {
+  bots: ReadonlyArray<ActivityMarkBot & { name?: string }>;
+  label: string;
+  atBottom: boolean;
+}) {
+  const { t } = useLingui();
+  if (bots.length === 0) return null;
+  return (
+    <View
+      accessibilityLabel={
+        bots.length === 1
+          ? t`${ph({ name: bots[0]?.name ?? t`Agent` })} is working`
+          : t`${ph({ count: bots.length })} agents working`
+      }
+      accessibilityRole="text"
+      style={{ minHeight: 40, marginTop: 12, justifyContent: "center" }}
+    >
+      <ActivityMark bots={bots} atBottom={atBottom} label={label} />
+    </View>
+  );
+}
+
+export function LoadEarlierButton({ loading, onPress }: { loading: boolean; onPress: () => void }) {
+  const tokens = mobileTokens();
+  const { t } = useLingui();
+  return (
+    <Pressable
+      disabled={loading}
+      onPress={onPress}
+      style={{
+        alignSelf: "center",
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+      }}
+    >
+      {loading ? (
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
+      ) : null}
+      <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
+        {t`Load earlier messages`}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Floats over the column's trailing corner, with a dot while newer messages wait below. */
+export function JumpToLatestButton({
+  bottomInset,
+  insetEnd,
+  unread,
+  onPress,
+}: {
+  bottomInset: number;
+  /** Distance from the trailing screen edge to the chat column. */
+  insetEnd: number;
+  unread: boolean;
+  onPress: () => void;
+}) {
+  const tokens = mobileTokens();
+  const { t } = useLingui();
+  return (
+    <View style={{ position: "absolute", end: insetEnd, bottom: bottomInset + 12 }}>
+      <ScrollToBottomButton
+        accessibilityLabel={unread ? t`Jump to latest, new messages` : t`Jump to latest`}
+        onPress={onPress}
+      />
+      {unread ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 3,
+            end: 3,
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: tokens.primary,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}

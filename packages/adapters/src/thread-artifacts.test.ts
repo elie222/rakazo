@@ -10,8 +10,10 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
+  createEarlierFileQueue,
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -38,6 +40,31 @@ describe("current-turn thread files", () => {
       ),
     ).rejects.toThrow("attachment limit");
     expect(put).not.toHaveBeenCalled();
+  });
+  it("does not start the computer for a turn without attachments", async () => {
+    const computer = vi.fn(async () => ({}) as ComputerRef);
+    const files = await materializeCurrentTurnFiles(
+      {
+        prisma: {} as PrismaClient,
+        artifacts: {} as ArtifactStore,
+        sandbox: {} as SandboxProvider,
+      },
+      [{ kind: "text", text: "Sweep the inbox" }],
+      {
+        context: {
+          operationId: "run-1",
+          traceId: "run-1",
+          spaceId: "space-1",
+          userId: "user-1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        },
+        computer,
+        computerMode: "team",
+      },
+    );
+    expect(files).toEqual([]);
+    expect(computer).not.toHaveBeenCalled();
   });
   it("materializes uploads above 10 MiB when allowed by the server", async () => {
     const bytes = new Uint8Array(11 * 1024 * 1024);
@@ -78,7 +105,8 @@ describe("current-turn thread files", () => {
         botId: "bot-1",
         signal: new AbortController().signal,
       },
-      computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+      computer: async () =>
+        ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }) as ComputerRef,
       computerMode: "team" as const,
     };
     await expect(materializeCurrentTurnFiles(deps, blocks, input)).resolves.toHaveLength(1);
@@ -186,6 +214,10 @@ describe("current-turn thread files", () => {
 
   it.each([
     ["video/mp4", ".mp4"],
+    ["audio/mpeg", ".mp3"],
+    ["audio/wav", ".wav"],
+    ["audio/ogg", ".ogg"],
+    ["audio/mp4", ".m4a"],
     ["application/pdf", ".pdf"],
     ["application/zip", ".zip"],
   ])(
@@ -237,7 +269,7 @@ describe("current-turn thread files", () => {
           sandbox: { writeFile } as unknown as SandboxProvider,
         },
         blocks,
-        { context, computer, computerMode: "team", markWorkspaceDirty },
+        { context, computer: async () => computer, computerMode: "team", markWorkspaceDirty },
       );
 
       expect(get).toHaveBeenCalledWith("stored-1", context);
@@ -266,9 +298,7 @@ describe("current-turn thread files", () => {
   );
 
   it("also materializes image attachments, not just files", async () => {
-    // A photo attached in chat is only handed to the model as inline vision
-    // content otherwise (loadCurrentTurnImages) — a bot that needs the actual
-    // bytes (to forward, re-attach, or hand to a shell tool) needs this too.
+    // Inline vision alone would leave a bot unable to forward or hand the photo to a tool.
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "image-1",
@@ -305,12 +335,12 @@ describe("current-turn thread files", () => {
           botId: "bot-1",
           signal: new AbortController().signal,
         },
-        computer: {
+        computer: async () => ({
           id: "computer-1",
           botId: "bot-1",
           kind: "fake",
           providerRef: "fake-1",
-        },
+        }),
         computerMode: "team",
       },
     );
@@ -365,7 +395,8 @@ describe("recent thread files", () => {
             botId: "bot",
             signal: new AbortController().signal,
           },
-          computer: { id: "computer", kind: "fake", providerRef: "fake" } as ComputerRef,
+          computer: async () =>
+            ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
           computerMode,
           maxTurns: 3,
           markWorkspaceDirty,
@@ -436,7 +467,8 @@ describe("recent thread files", () => {
           botId: "bot",
           signal: new AbortController().signal,
         },
-        computer: { id: "computer", kind: "fake", providerRef: "fake" } as ComputerRef,
+        computer: async () =>
+          ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
         computerMode: "team",
         maxTurns,
         skipMessageId: "current",
@@ -513,7 +545,8 @@ describe("recent thread files", () => {
       ],
       {
         context,
-        computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+        computer: async () =>
+          ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }) as ComputerRef,
         computerMode: "team",
         maxTurns: 3,
       },
@@ -531,5 +564,95 @@ describe("recent thread files", () => {
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
+  });
+});
+
+describe("files listed by history tools", () => {
+  it("marks the workspace dirty for a new copy so the run checkpoint keeps it", async () => {
+    const block = {
+      kind: "file" as const,
+      artifactId: "lease",
+      name: "lease.md",
+      mimeType: "text/markdown",
+      size: 5,
+    };
+    const writeFile = vi.fn();
+    const markWorkspaceDirty = vi.fn();
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([{ ...block, id: "lease", storageKey: "stored" }]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(new Uint8Array(5)) } as unknown as ArtifactStore,
+      sandbox: {
+        readFile: vi.fn().mockRejectedValue(new Error("missing")),
+        writeFile,
+      } as unknown as SandboxProvider,
+    };
+    const input = {
+      context: {
+        operationId: "run",
+        traceId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        signal: new AbortController().signal,
+      },
+      computer: async () => ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+      computerMode: "dedicated" as const,
+      markWorkspaceDirty,
+    };
+    const files = await materializeEarlierFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual(["attachments/lease.md"]);
+    expect(writeFile).toHaveBeenCalledOnce();
+    expect(markWorkspaceDirty).toHaveBeenCalledOnce();
+    // Recent-turn files are copied again on every computer start, so they stay out of it.
+    markWorkspaceDirty.mockClear();
+    await materializeRecentThreadFiles(
+      deps,
+      [{ id: "m", role: "user" }],
+      [{ id: "m", blocks: [block] }],
+      {
+        ...input,
+        maxTurns: 3,
+      },
+    );
+    expect(markWorkspaceDirty).not.toHaveBeenCalled();
+  });
+});
+
+describe("earlier file queue", () => {
+  const file = (artifactId: string) => ({
+    kind: "file" as const,
+    artifactId,
+    name: `${artifactId}.md`,
+    mimeType: "text/markdown",
+    size: 1,
+  });
+
+  it("keeps the newest listings, once each, and queues a file again after it was taken", () => {
+    const queue = createEarlierFileQueue(2);
+    queue.add([file("a"), file("b"), file("a")]);
+    queue.add([file("c")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "c"]);
+    expect(queue.take()).toEqual([]);
+    // Listing it again retries a copy that failed.
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
+  });
+
+  it("skips files already copied to this computer until a new one starts", () => {
+    const queue = createEarlierFileQueue();
+    queue.add([file("a"), file("b")]);
+    const taken = queue.take();
+    queue.copiedTo(taken, [
+      { name: "a.md", mimeType: "text/markdown", size: 1, path: "attachments/a.md" },
+    ]);
+    queue.add([file("a"), file("b")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["b"]);
+    queue.computerStarted();
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
   });
 });

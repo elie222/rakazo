@@ -77,6 +77,17 @@ export function summarize(values: number[]): NumericSummary {
   };
 }
 
+export function roundedSummary(values: number[]): NumericSummary {
+  const summary = summarize(values);
+  return {
+    count: summary.count,
+    min: roundMetric(summary.min),
+    median: roundMetric(summary.median),
+    p95: roundMetric(summary.p95),
+    max: roundMetric(summary.max),
+  };
+}
+
 export function percentageDelta(before: number, after: number) {
   if (before === 0) return after === 0 ? 0 : null;
   return ((after - before) / before) * 100;

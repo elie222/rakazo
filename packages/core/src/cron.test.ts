@@ -1,21 +1,119 @@
-import { describe, expect, it } from "vitest";
-import type { CronPreset } from "./cron.js";
+import { describe, expect, it, vi } from "vitest";
+import type { CronPreset, CronUnit } from "./cron.js";
 import {
   CRON_INTERVAL_MAX,
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,
   describeCronPreset,
+  ENGLISH_CRON_LABELS,
   formatCron,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  localizedClock,
   nextCronDate,
   nextCronDateAcross,
   nextCronDateAcrossStrict,
+  nextRoutineRunDate,
+  nextRoutineRunDateAcross,
   ONCE_ROUTINE_CRON,
+  polishInterval,
+  polishPluralCategory,
   presetFromCron,
   resolveRoutineNextRunAt,
+  russianInterval,
+  zonedDateTime,
 } from "./cron.js";
+
+describe("polishPluralCategory", () => {
+  const counts = [0, 1, 2, 4, 5, 12, 14, 21, 22, 101, 102, 112, 0.5, 1.5, 2.2, 12.25];
+  const pluralRules = new Intl.PluralRules("pl");
+
+  it.each([...counts, ...counts.map((count) => -count)])(
+    "matches Polish Intl cardinal rules for %s",
+    (count) => {
+      expect(polishPluralCategory(count)).toBe(pluralRules.select(count));
+    },
+  );
+
+  it("works when the native runtime has no Intl.PluralRules", () => {
+    vi.stubGlobal("Intl", {});
+    try {
+      expect(polishPluralCategory(1)).toBe("one");
+      expect(polishPluralCategory(-22)).toBe("few");
+      expect(polishPluralCategory(112)).toBe("many");
+      expect(polishPluralCategory(-1.5)).toBe("other");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("zonedDateTime", () => {
+  it("reads a wall-clock time or date without an offset in the timezone", () => {
+    expect(zonedDateTime("2026-11-02T10:00", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T09:00:00.000Z",
+    );
+    expect(zonedDateTime("2026-11-02 10:00:30", "UTC")?.toISOString()).toBe(
+      "2026-11-02T10:00:30.000Z",
+    );
+    expect(zonedDateTime("2026-11-02T10:00:00.5", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T09:00:00.500Z",
+    );
+    expect(zonedDateTime("2026-11-02", "America/Los_Angeles")?.toISOString()).toBe(
+      "2026-11-02T08:00:00.000Z",
+    );
+  });
+
+  it("takes a time with an offset as written", () => {
+    expect(zonedDateTime("2026-11-02T10:00:00Z", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T10:00:00.000Z",
+    );
+    expect(zonedDateTime("2026-11-02T10:00+05:00", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T05:00:00.000Z",
+    );
+  });
+
+  it.each([
+    ["0099-03-01T10:00Z", "0099-03-01T10:00:00.000Z"],
+    ["2028-02-29T10:00Z", "2028-02-29T10:00:00.000Z"],
+    ["2030-03-01t10:00z", "2030-03-01T10:00:00.000Z"],
+    ["2030-03-01T00:30:15.125+05:30", "2030-02-28T19:00:15.125Z"],
+    ["2030-02-28T23:30-04:00", "2030-03-01T03:30:00.000Z"],
+    ["2030-03-01T00:30+0530", "2030-02-28T19:00:00.000Z"],
+    ["2030-03-01T00:30+05", "2030-02-28T19:30:00.000Z"],
+    ["2030-02-28T23:30:15-04", "2030-03-01T03:30:15.000Z"],
+  ])("preserves the valid offset datetime %s", (value, expected) => {
+    expect(zonedDateTime(value, "America/New_York")?.toISOString()).toBe(expected);
+  });
+
+  it.each([
+    "2030-02-30T10:00Z",
+    "2100-02-29T10:00Z",
+    "2030-04-31T10:00-04:00",
+    "2030-01-01T24:00Z",
+    "2030-01-01T10:00+24:00",
+    "2030-01-01T10:00+24",
+    "2030-01-01T10:00+05:60",
+  ])("rejects the impossible offset datetime %s", (value) => {
+    expect(zonedDateTime(value, "UTC")).toBeNull();
+  });
+
+  it("moves a time skipped by daylight saving forward and keeps the first of a repeated hour", () => {
+    expect(zonedDateTime("2026-03-29T02:30", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-03-29T01:30:00.000Z",
+    );
+    expect(zonedDateTime("2026-10-25T02:30", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-10-25T00:30:00.000Z",
+    );
+  });
+
+  it("rejects impossible dates and non-ISO text", () => {
+    for (const value of ["2026-02-30", "2026-11-02T24:00", "next monday", "", "2026-11-02T10"]) {
+      expect(zonedDateTime(value, "UTC")).toBeNull();
+    }
+  });
+});
 
 function preset(partial: Partial<CronPreset> & Pick<CronPreset, "freq">): CronPreset {
   return {
@@ -94,6 +192,9 @@ describe("presetFromCron", () => {
 
   it("falls back to advanced for expressions the picker cannot represent", () => {
     expect(presetFromCron("0 9 * * 0")).toMatchObject({ freq: "Advanced", cron: "0 9 * * 0" });
+    for (const cron of ["0 9 * 3 *", "0 * * * 1", "*/5 * * * 1", "0 9 * *"]) {
+      expect(presetFromCron(cron)).toMatchObject({ freq: "Advanced", cron });
+    }
     expect(presetFromCron("30 14 15 * *")).toMatchObject({
       freq: "Advanced",
       cron: "30 14 15 * *",
@@ -117,6 +218,24 @@ describe("resolveRoutineNextRunAt", () => {
   it("computes cron schedules for repeating routines", () => {
     const next = resolveRoutineNextRunAt("*/1 * * * *", new Date(), "UTC", null);
     expect(next?.getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("localizedClock", () => {
+  it.each(["invalid", "25:00", "9:60 PM", "0:30 AM", "13:00 PM", ""])(
+    "preserves invalid input %j",
+    (time) => {
+      expect(localizedClock(time, "es")).toBe(time);
+    },
+  );
+  it("preserves the clock for an invalid locale", () => {
+    expect(localizedClock("9:00 PM", "_")).toBe("9:00 PM");
+  });
+  it("writes a schedule time the way the language does", () => {
+    expect(localizedClock("9:00 PM", "es")).toBe("21:00");
+    expect(localizedClock("12:00 AM", "es")).toBe("0:00");
+    expect(localizedClock("6:30 AM", "de")).toBe("6:30");
+    expect(localizedClock("9:00 PM", "en")).toMatch(/^9:00\sPM$/);
   });
 });
 
@@ -163,7 +282,65 @@ describe("formatCron", () => {
       "Every Monday, Tuesday, Wednesday and Friday at 9:00 AM",
     );
     expect(formatCron("0 8 * * 1,2,3,4,5")).toBe("Weekdays at 8:00 AM");
+    expect(formatCron("0 8 * * 0-4")).toBe(
+      "Every Monday, Tuesday, Wednesday, Thursday and Sunday at 8:00 AM",
+    );
     expect(formatCron("0 8 * * 0-6")).toBe("Every day at 8:00 AM");
+  });
+
+  it("singularizes an interval of one instead of 'Every 1 minutes'", () => {
+    expect(formatCron("*/1 * * * *")).toBe("Every 1 minute");
+    expect(formatCron("0 */1 * * *")).toBe("Every 1 hour");
+    expect(formatCron("0 0 */1 * *")).toBe("Every 1 day");
+    expect(describeCronPreset(preset({ freq: "Interval", n: 1, unit: "minutes" }))).toEqual({
+      lead: "Every",
+      detail: "1 minute",
+    });
+  });
+
+  it("takes translated labels for lists and pickers", () => {
+    const labels = {
+      ...ENGLISH_CRON_LABELS,
+      everyDay: "毎日",
+      weekdays: "平日",
+      weekdayNames: ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"],
+      atTime: (time: string) => `${time}に`,
+      everyDays: (names: string[]) => `毎週${names.join("と")}`,
+      interval: (n: number, unit: CronUnit) => ({
+        lead: "",
+        detail: `${n}${unit === "minutes" ? "分" : unit === "hours" ? "時間" : "日"}ごと`,
+      }),
+    };
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 8:00 AMに");
+    expect(formatCron("*/15 * * * *", labels)).toBe("15分ごと");
+    expect(formatCron("0 9 * * 1,3,5", labels)).toBe("毎週月曜日と水曜日と金曜日 9:00 AMに");
+    expect(formatCron("0 6 * * *", labels)).toBe("毎日 6:00 AMに");
+  });
+
+  it("keeps Russian interval case forms for n=1 and plural amounts", () => {
+    expect(russianInterval(1, "minutes")).toEqual({ lead: "Каждую", detail: "минуту" });
+    expect(russianInterval(1, "hours")).toEqual({ lead: "Каждый", detail: "час" });
+    expect(russianInterval(5, "minutes")).toEqual({ lead: "Каждые", detail: "5 минут" });
+    expect(russianInterval(3, "days")).toEqual({ lead: "Каждые", detail: "3 дня" });
+  });
+
+  it.each([
+    [1, "minutes", "minutę"],
+    [2, "minutes", "2 minuty"],
+    [5, "minutes", "5 minut"],
+    [12, "minutes", "12 minut"],
+    [14, "minutes", "14 minut"],
+    [21, "minutes", "21 minut"],
+    [22, "minutes", "22 minuty"],
+    [1, "hours", "godzinę"],
+    [3, "hours", "3 godziny"],
+    [13, "hours", "13 godzin"],
+    [23, "hours", "23 godziny"],
+    [1, "days", "dzień"],
+    [2, "days", "2 dni"],
+    [5, "days", "5 dni"],
+  ] as const)("inflects Polish intervals of %i %s", (count, unit, detail) => {
+    expect(polishInterval(count, unit)).toEqual({ lead: "Co", detail });
   });
 
   it("describes any day of the month", () => {
@@ -180,6 +357,24 @@ describe("formatCron", () => {
     expect(formatCron("5 * * * *")).toBe("Every hour at :05");
   });
 
+  it("describes a fixed minute every few hours", () => {
+    expect(formatCron("43 */2 * * *")).toBe("Every 2 hours at :43");
+    expect(formatCron("5 */6 * * *")).toBe("Every 6 hours at :05");
+    expect(formatCron("0 */2 * * *")).toBe("Every 2 hours");
+    expect(formatCron("30 */12 * * *")).toBe("Every 12 hours at :30");
+  });
+
+  it("names a fixed minute every few hours only when the step divides the day", () => {
+    // */5 runs at 00, 05, 10, 15 and 20, then 00 again: not every five hours.
+    expect(formatCron("15 */5 * * *")).toBe("Cron 15 */5 * * *");
+    expect(formatCron("15 */7 * * *")).toBe("Cron 15 */7 * * *");
+  });
+
+  it("keeps the cron fallback for every few hours when the labels can't say it", () => {
+    const { hoursAtMinute: _, ...labels } = ENGLISH_CRON_LABELS;
+    expect(formatCron("43 */2 * * *", labels)).toBe("Cron 43 */2 * * *");
+  });
+
   it.each([
     "0 9 * * 1-5/2",
     "0 9 * * MON",
@@ -189,19 +384,20 @@ describe("formatCron", () => {
     "0 9 32 * *",
     "0 9 15 1 *",
     "60 * * * *",
+    "15 */1 * * *",
+    "15 */24 * * *",
+    "60 */2 * * *",
+    "15 */2 1 * *",
   ])("keeps the cron fallback for %s", (cron) => {
     expect(formatCron(cron)).toBe(`Cron ${cron}`);
   });
 
-  it.each(["* * 2", "* * 1", "* * 7", "* * *", "* * 1-5", "1 * *"])(
-    "falls back to cron for out-of-range clocks with %s",
-    (fields) => {
-      for (const clock of ["60 24", "60 9", "0 24"]) {
-        const cron = `${clock} ${fields}`;
-        expect(formatCron(cron)).toBe(`Cron ${cron}`);
-      }
-    },
-  );
+  it.each(["* * 1", "1 * *"])("falls back to cron for out-of-range clocks with %s", (fields) => {
+    for (const clock of ["60 24", "60 9", "0 24"]) {
+      const cron = `${clock} ${fields}`;
+      expect(formatCron(cron)).toBe(`Cron ${cron}`);
+    }
+  });
 
   it("formats the clock boundaries", () => {
     expect(formatCron("0 0 * * 2")).toBe("Every Tuesday at 12:00 AM");
@@ -380,4 +576,186 @@ describe("cronIntervalAmounts", () => {
       expect(cronIntervalAmounts(unit, n + 1)).not.toContain(n + 1);
     }
   });
+});
+
+describe("anchored routine intervals", () => {
+  it.each([
+    [
+      "*/45 * * * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-01-01T00:45:00Z", "2026-01-01T01:30:00Z", "2026-01-01T02:15:00Z"],
+    ],
+    [
+      "0 */15 * * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-01-01T15:00:00Z", "2026-01-02T06:00:00Z", "2026-01-02T21:00:00Z"],
+    ],
+    [
+      "0 0 */30 * *",
+      "2026-01-01T00:00:00Z",
+      [
+        "2026-01-31T00:00:00Z",
+        "2026-03-02T00:00:00Z",
+        "2026-04-01T00:00:00Z",
+        "2026-05-01T00:00:00Z",
+      ],
+    ],
+    [
+      "0 0 */31 * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-02-01T00:00:00Z", "2026-03-04T00:00:00Z", "2026-04-04T00:00:00Z"],
+    ],
+    ["0 0 */2 * *", "2026-01-31T00:00:00Z", ["2026-02-02T00:00:00Z", "2026-02-04T00:00:00Z"]],
+  ])("keeps consecutive %s fires at a fixed gap", (cron, start, expected) => {
+    let anchor = new Date(start);
+    for (const iso of expected) {
+      anchor = nextRoutineRunDate(cron, anchor, anchor, "UTC");
+      expect(anchor).toEqual(new Date(iso));
+    }
+  });
+
+  it("keeps day intervals at the same local time across spring and fall DST", () => {
+    for (const [start, expected] of [
+      ["2026-03-07T05:00:00Z", "2026-03-09T04:00:00Z"],
+      ["2026-10-31T04:00:00Z", "2026-11-02T05:00:00Z"],
+      ["2026-03-07T12:30:15.123Z", "2026-03-09T11:30:15.123Z"],
+    ] as const) {
+      const anchor = new Date(start);
+      expect(nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "America/New_York")).toEqual(
+        new Date(expected),
+      );
+    }
+  });
+
+  it.each([
+    ["*/45 * * * *", "2026-01-03T00:00:00Z", "2026-01-03T00:45:00Z"],
+    ["0 */15 * * *", "2026-01-03T00:00:00Z", "2026-01-03T12:00:00Z"],
+    ["0 0 */30 * *", "2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z"],
+  ])("skips missed %s fires without losing phase", (cron, now, expected) => {
+    expect(nextRoutineRunDate(cron, new Date("2026-01-01T00:00:00Z"), new Date(now))).toEqual(
+      new Date(expected),
+    );
+  });
+
+  it.each([
+    ["*/45 * * * *", "2026-03-08T06:45:00Z", "2026-03-08T07:30:00Z"],
+    ["0 */15 * * *", "2026-03-08T05:00:00Z", "2026-03-08T20:00:00Z"],
+    ["*/45 * * * *", "2026-11-01T05:45:00Z", "2026-11-01T06:30:00Z"],
+    ["0 */15 * * *", "2026-11-01T04:00:00Z", "2026-11-01T19:00:00Z"],
+  ])("measures %s as elapsed time across DST", (cron, start, expected) => {
+    const anchor = new Date(start);
+    expect(nextRoutineRunDate(cron, anchor, anchor, "America/New_York")).toEqual(
+      new Date(expected),
+    );
+  });
+
+  it.each([
+    [
+      "2026-03-08T05:00:00Z",
+      [
+        "2026-03-08T10:00:00Z",
+        "2026-03-08T16:00:00Z",
+        "2026-03-08T22:00:00Z",
+        "2026-03-09T04:00:00Z",
+      ],
+    ],
+    [
+      "2026-11-01T04:00:00Z",
+      [
+        "2026-11-01T11:00:00Z",
+        "2026-11-01T17:00:00Z",
+        "2026-11-01T23:00:00Z",
+        "2026-11-02T05:00:00Z",
+      ],
+    ],
+  ])("keeps six-hour cron fires at local 00/06/12/18 across DST from %s", (start, expected) => {
+    let anchor = new Date(start);
+    for (const iso of expected) {
+      anchor = nextRoutineRunDate("0 */6 * * *", anchor, anchor, "America/New_York");
+      expect(anchor).toEqual(new Date(iso));
+    }
+  });
+
+  it.each(["*/15 * * * *", "0 */6 * * *", "0 0 */1 * *"])(
+    "keeps already-even %s on cron positions with an off-slot anchor",
+    (cron) => {
+      const anchor = new Date("2026-03-08T05:07:13Z");
+      const now = new Date("2026-03-08T06:11:17Z");
+      expect(nextRoutineRunDate(cron, anchor, now, "America/New_York")).toEqual(
+        nextCronDate(cron, now, "America/New_York"),
+      );
+    },
+  );
+
+  it("leaves the first run on its existing cron match", () => {
+    const from = new Date("2026-01-01T00:00:00Z");
+    expect(nextCronDate("0 0 */30 * *", from)).toEqual(new Date("2026-01-31T00:00:00Z"));
+  });
+
+  it("rejects a step larger than its field instead of anchoring it", () => {
+    const anchor = new Date("2026-01-01T00:00:00Z");
+    expect(() => nextRoutineRunDate("*/90 * * * *", anchor, anchor)).toThrow();
+  });
+
+  it("falls back to UTC for day intervals with an unknown timezone", () => {
+    const anchor = new Date("2026-01-31T00:00:00Z");
+    expect(nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "Mars/Olympus")).toEqual(
+      new Date("2026-02-02T00:00:00Z"),
+    );
+  });
+
+  it("keeps calendar-day catch-up in phase across DST", () => {
+    expect(
+      nextRoutineRunDate(
+        "0 0 */2 * *",
+        new Date("2026-03-05T05:00:00Z"),
+        new Date("2026-03-10T12:00:00Z"),
+        "America/New_York",
+      ),
+    ).toEqual(new Date("2026-03-11T04:00:00Z"));
+  });
+
+  it.each(["0 9 * * 1-5", "0 9 * 3 *"])("preserves calendar scheduling for %s", (cron) => {
+    const anchor = nextCronDate(cron, new Date("2026-01-01T00:00:00Z"));
+    const now = new Date(anchor.getTime() + 120_000);
+    expect(nextRoutineRunDate(cron, anchor, now)).toEqual(nextCronDate(cron, now));
+  });
+
+  it("anchors the only recurring schedule while skipping one-shot and invalid entries", () => {
+    const anchor = new Date("2026-01-31T00:00:00Z");
+    expect(
+      nextRoutineRunDateAcross(
+        ["@once", "invalid", "*/0 * * * *", "*/99 * * * *", "0 0 */30 * *"],
+        anchor,
+        anchor,
+      ),
+    ).toEqual(new Date("2026-03-02T00:00:00Z"));
+    expect(nextRoutineRunDateAcross(["@once", "invalid"], anchor, anchor)).toBeNull();
+  });
+
+  it("keeps a 30-day cron firing on its own matches alongside a weekly schedule", () => {
+    const crons = ["0 0 */30 * *", "0 9 * * 1"];
+    let anchor = new Date("2026-01-26T09:00:00Z");
+    for (const iso of ["2026-01-31T00:00:00Z", "2026-02-01T00:00:00Z", "2026-02-02T09:00:00Z"]) {
+      const next = nextRoutineRunDateAcross(crons, anchor, anchor);
+      expect(next).toEqual(new Date(iso));
+      anchor = new Date(iso);
+    }
+  });
+
+  it.each([
+    ["2026-01-26T09:00:00Z", "2026-01-30T12:00:00Z"],
+    ["2026-01-30T12:00:00Z", "2026-01-26T09:00:00Z"],
+  ])(
+    "uses cron after the later of now and the shared anchor for multiple schedules (%s, %s)",
+    (start, now) => {
+      expect(
+        nextRoutineRunDateAcross(
+          ["@once", "invalid", "0 0 */30 * *", "0 9 * * 1"],
+          new Date(start),
+          new Date(now),
+        ),
+      ).toEqual(new Date("2026-01-31T00:00:00Z"));
+    },
+  );
 });

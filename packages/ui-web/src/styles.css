@@ -6,8 +6,48 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Web type: the system font and one type scale, so sizes stay consistent and a theme can change
+   them in one place. Tailwind's default sizes are switched off; use these. A size off the scale
+   needs an `off-scale:` comment saying why (see type-scale.test.ts). Mobile sets its own type. */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  --text-*: initial;
+  --text-caption: 11px;
+  --text-caption--line-height: 16px;
+  --text-caption--letter-spacing: 0.005em;
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 22px;
+  --text-heading3: 17px;
+  --text-heading3--line-height: 24px;
+  --text-heading3--letter-spacing: -0.008em;
+  --text-heading2: 22px;
+  --text-heading2--line-height: 28px;
+  --text-heading2--letter-spacing: -0.012em;
+  --text-heading1: 26px;
+  --text-heading1--line-height: 32px;
+  --text-heading1--letter-spacing: -0.015em;
+  --text-display: 32px;
+  --text-display--line-height: 40px;
+  --text-display--letter-spacing: -0.02em;
+}
+
+/* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
+:root[data-os="mac"] {
+  --font-weight-normal: 420;
+}
+
 @theme inline {
   --color-background: var(--background);
+  --color-dialog: var(--dialog);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -15,15 +55,19 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-disabled: var(--primary-disabled);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-chat-user: var(--chat-user);
   --color-chat-user-foreground: var(--chat-user-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-faint-foreground: var(--faint-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-fill: var(--destructive-fill);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -34,9 +78,11 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-link: var(--link);
+  --color-favicon-plate: var(--favicon-plate);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-status-working: var(--status-working);
+  --color-unread: var(--unread);
   --color-overlay: var(--overlay);
   --color-scrollbar: var(--scrollbar);
   --color-scrollbar-hover: var(--scrollbar-hover);
@@ -45,6 +91,19 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
+
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 @layer base {
@@ -53,6 +112,29 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Native <details> fold-outs slide open and closed instead of snapping. */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  details::details-content {
+    block-size: 0;
+    overflow: clip;
+    /* Keep focus rings of full-width controls visible. */
+    overflow-clip-margin: 4px;
+    transition:
+      block-size 150ms ease-out,
+      content-visibility 150ms allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
   }
 }
 
@@ -77,6 +159,11 @@
 
 .rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-ring {
   opacity: 1;
+}
+
+/* Hidden idle rings would otherwise keep the compositor drawing every frame. */
+.rakazo-bot-avatar[data-working="false"] .rakazo-bot-avatar-ring {
+  animation-play-state: paused;
 }
 
 @keyframes rakazo-avatar-breathe {
@@ -106,31 +193,9 @@
     0 0 10px color-mix(in srgb, var(--status-working) 60%, transparent);
 }
 
-.rakazo-bot-avatar-eyes {
-  animation: var(--rakazo-eye-animation-name) var(--rakazo-eye-animation-duration)
-    var(--rakazo-eye-animation-easing) var(--rakazo-eye-animation-delay) infinite;
-  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-bot-avatar-eyes-working {
-  opacity: 0;
-}
-
-.rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-eyes-idle {
-  opacity: 0;
-}
-
-.rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-eyes-working {
-  opacity: 1;
-}
-
 .rakazo-organic-avatar-body {
   transform-origin: center;
   transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rakazo-organic-avatar-body-idle {
-  animation: rakazo-organic-idle 5.6s ease-in-out infinite;
 }
 
 .rakazo-organic-avatar-body-working {
@@ -159,22 +224,6 @@
 
 .rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-working {
   opacity: 1;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="0"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-0 5.8s ease-in-out infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="1"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-1 6.4s ease-in-out -1.7s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="2"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-2 5.2s ease-in-out -3.1s infinite;
-}
-
-.rakazo-organic-avatar[data-eye-pattern="3"] .rakazo-organic-avatar-eyes-idle {
-  animation: rakazo-eyes-idle-3 6.8s ease-in-out -2.3s infinite;
 }
 
 .rakazo-organic-avatar[data-eye-pattern="0"] .rakazo-organic-avatar-eyes-working {
@@ -226,6 +275,14 @@
   animation: rakazo-organic-ring 1.35s ease-in-out infinite;
 }
 
+/* Idle, offscreen and hidden avatars hold still: SVG motion repaints on the main thread. */
+.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-body,
+.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-eyes,
+.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-body-working,
+.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-eyes-working {
+  animation-play-state: paused;
+}
+
 @keyframes rakazo-organic-float {
   0%,
   100% {
@@ -233,16 +290,6 @@
   }
   50% {
     transform: translateY(-3px) scaleX(0.98);
-  }
-}
-
-@keyframes rakazo-organic-idle {
-  0%,
-  100% {
-    transform: translateY(1.2px) scale(1.012, 0.988);
-  }
-  50% {
-    transform: translateY(-1.4px) scale(0.988, 1.012);
   }
 }
 
@@ -412,149 +459,14 @@
   }
 }
 
-@keyframes rakazo-eyes-idle-0 {
-  0%,
-  32%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  35% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  38% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  48%,
-  62% {
-    transform: translate(3px, -0.5px) scaleY(1);
-  }
-  70%,
-  84% {
-    transform: translate(-2.5px, 0.5px) scaleY(1);
-  }
-  89% {
-    transform: translate(0, 0) scaleY(0.12);
-  }
-  91% {
-    transform: translate(0, 0) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-1 {
-  0%,
-  25%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  32%,
-  48% {
-    transform: translate(-3px, -1px) scaleY(1);
-  }
-  54% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  56% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  59% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  61% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  68%,
-  82% {
-    transform: translate(2.5px, 0.5px) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-2 {
-  0%,
-  28%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  36%,
-  52% {
-    transform: translate(0.5px, -1.8px) scaleY(1.05);
-  }
-  58% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  60% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  68%,
-  85% {
-    transform: translate(3px, 0) scaleY(1);
-  }
-  92% {
-    transform: translate(0, 0) scaleY(0.1);
-  }
-  94% {
-    transform: translate(0, 0) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-idle-3 {
-  0%,
-  24%,
-  100% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  30%,
-  46% {
-    transform: translate(-2.5px, 1.2px) scaleY(0.95);
-  }
-  52% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  54% {
-    transform: translate(0, 0) scaleY(1);
-  }
-  62%,
-  78% {
-    transform: translate(2.8px, -1px) scaleY(1);
-  }
-  86% {
-    transform: translate(0, 0) scaleY(0.08);
-  }
-  88% {
-    transform: translate(0, 0) scaleY(1);
-  }
-}
-
-@keyframes rakazo-eyes-working {
-  0% {
-    transform: translate(-4px, 0) scale(0.92, 0.95);
-  }
-  25% {
-    transform: translate(0, -2px) scale(1.08, 1.08);
-  }
-  50% {
-    transform: translate(4px, 0) scale(0.92, 0.95);
-  }
-  75% {
-    transform: translate(0, 2px) scale(1, 0.9);
-  }
-  100% {
-    transform: translate(-4px, 0) scale(0.92, 0.95);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .rakazo-bot-avatar-ring,
-  .rakazo-bot-avatar-eyes,
   .rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-picture {
     animation: none;
     transition: none;
   }
 
   .rakazo-bot-avatar {
-    transition: none;
-  }
-
-  .rakazo-bot-avatar-visor {
     transition: none;
   }
 

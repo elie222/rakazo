@@ -1,13 +1,19 @@
 import dns from "node:dns";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_MCP_RESPONSE_BYTES } from "./mcp-response-limit.js";
 import {
   assertSafeRemoteUrl,
+  ConnectorRedirectError,
+  callRemoteMcpTool,
   createPrivateNetworkFetch,
   createSafeLookup,
   createSafeRemoteFetch,
   limitRemoteMcpPayload,
 } from "./remote-mcp.js";
+import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
@@ -28,14 +34,53 @@ describe("remote MCP URL policy", () => {
 
   it("blocks private hosts by default", async () => {
     await expect(assertSafeRemoteUrl("https://10.0.0.8/mcp", publicResolver)).rejects.toThrow(
-      /private host/i,
+      "Connector URL targets a private host. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
     );
     await expect(
       assertSafeRemoteUrl("http://192.168.1.20:3927/mcp", publicResolver),
-    ).rejects.toThrow(/HTTPS/i);
+    ).rejects.toThrow(
+      "Connector URL must use HTTPS. Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.",
+    );
     await expect(
       assertSafeRemoteUrl("https://host.docker.internal/mcp", publicResolver),
     ).rejects.toThrow(/private host/i);
+    await expect(assertSafeRemoteUrl("http://203.0.113.10/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL must use HTTPS$/,
+    );
+  });
+
+  it("offers the private-endpoint setting only where it decides the outcome before DNS", async () => {
+    const hint = "Set MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker to allow it.";
+    for (const raw of ["http://localhost:3927/mcp", "http://127.0.0.1:3927/mcp"]) {
+      await expect(assertSafeRemoteUrl(raw, publicResolver)).rejects.toThrow(hint);
+    }
+    // A private-looking name can still resolve to a public address, which the setting does not allow over HTTP.
+    await expect(assertSafeRemoteUrl("http://mcp.internal/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL must use HTTPS$/,
+    );
+    await expect(
+      assertSafeRemoteUrl("http://mcp.internal/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).rejects.toThrow("Connector URL must use HTTPS");
+    await expect(assertSafeRemoteUrl("https://mcp.internal/mcp", publicResolver)).rejects.toThrow(
+      /^Connector URL targets a private host$/,
+    );
+  });
+
+  it("does not offer the private-endpoint setting for link-local hosts it would not allow", async () => {
+    for (const raw of [
+      "https://169.254.10.20/mcp",
+      "https://[fe80::1]/mcp",
+      "http://169.254.10.20/mcp",
+    ]) {
+      await expect(assertSafeRemoteUrl(raw, publicResolver)).rejects.toThrow(
+        /^Connector URL (targets a private host|must use HTTPS)$/,
+      );
+      await expect(
+        assertSafeRemoteUrl(raw, publicResolver, { allowPrivateEndpoint: true }),
+      ).rejects.toThrow("Connector URL resolves to a private address");
+    }
   });
 
   it("allows private LAN hosts when the deployment-owner escape is enabled", async () => {
@@ -74,6 +119,27 @@ describe("remote MCP URL policy", () => {
       ).rejects.toThrow(/private host/i);
     },
   );
+
+  it.each([
+    "http://[::ffff:a9fe:aa02]/credentials",
+    "https://[::ffff:169.254.170.2]/credentials",
+    "http://[::ffff:a9fe:1234]/mcp",
+    "https://[fe80::1234]/mcp",
+  ])("blocks link-local literals with private endpoints enabled: %s", async (endpoint) => {
+    const resolve = vi.fn(publicResolver);
+    const fetch = vi.fn();
+    const safeFetch = createSafeRemoteFetch(fetch, resolve, { allowPrivateEndpoint: true });
+    try {
+      await expect(
+        assertSafeRemoteUrl(endpoint, resolve, { allowPrivateEndpoint: true }),
+      ).rejects.toThrow(/private/);
+      await expect(safeFetch(endpoint)).rejects.toThrow(/private/);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await safeFetch.close();
+    }
+  });
 
   it("rejects a private-suffix hostname that resolves to link-local metadata", async () => {
     await expect(
@@ -162,35 +228,42 @@ describe("remote MCP URL policy", () => {
     ).rejects.toThrow("private address");
   });
 
-  it("allows Tailscale MagicDNS hosts that resolve to CGNAT addresses", async () => {
+  it("rejects MagicDNS hosts for users without the private-endpoint escape", async () => {
     const magicDns = "https://box.tail12345.ts.net/openapi.json";
     await expect(
       assertSafeRemoteUrl(magicDns, async () => [{ address: "100.64.1.2", family: 4 as const }]),
-    ).resolves.toEqual(new URL(magicDns));
+    ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl(
+        magicDns,
+        async () => [{ address: "fd7a:115c:a1e0:ab12:4843:cd96:6265:6667", family: 6 as const }],
+        { allowPrivateEndpoint: false },
+      ),
+    ).rejects.toThrow("private address");
 
     const safeLookup = createSafeLookup(async () => [{ address: "100.119.57.55", family: 4 }]);
-    const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
-      safeLookup("box.tail12345.ts.net", { family: 0, all: false }, (error, address, family) => {
-        if (error) reject(error);
-        else resolve({ address: String(address), family });
+    const error = await new Promise<Error | null>((resolve) => {
+      safeLookup("box.tail12345.ts.net", { family: 0, all: false }, (lookupError) => {
+        resolve(lookupError);
       });
     });
-    expect(result).toEqual({ address: "100.119.57.55", family: 4 });
+    expect(error).toMatchObject({ message: "Connector URL resolves to a private address" });
   });
 
-  it("allows the IPv6 half of a MagicDNS answer", async () => {
+  it("allows both halves of a MagicDNS answer with the private-endpoint escape", async () => {
     // MagicDNS answers with the node's fd7a:115c:a1e0::/48 ULA alongside its
     // CGNAT address, so rejecting the ULA rejects every tailnet host.
     const magicDns = "https://box.tail12345.ts.net/mcp";
+    const policy = { allowPrivateEndpoint: true };
     const addresses = [
       { address: "fd7a:115c:a1e0:ab12:4843:cd96:6265:6667", family: 6 as const },
       { address: "100.64.1.2", family: 4 as const },
     ];
-    await expect(assertSafeRemoteUrl(magicDns, async () => addresses)).resolves.toEqual(
+    await expect(assertSafeRemoteUrl(magicDns, async () => addresses, policy)).resolves.toEqual(
       new URL(magicDns),
     );
 
-    const safeLookup = createSafeLookup(async () => addresses);
+    const safeLookup = createSafeLookup(async () => addresses, policy);
     const resolved = await new Promise<unknown>((resolve, reject) => {
       safeLookup("box.tail12345.ts.net", { family: 0, all: true }, (error, entries) => {
         if (error) reject(error);
@@ -352,11 +425,8 @@ describe("remote MCP URL policy", () => {
   });
 
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
-    // A fetch from a different undici than the Agent fails at dispatch with
-    // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent. Node's fetch
-    // is a different major, so omit, builtin, and a captured builtin must
-    // all use the package fetch that matches the Agent.
+    // A fetch from a different undici than the Agent fails at dispatch before the lookup runs,
+    // so failing inside the lookup proves the request reached the guarded Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
 
     const capturedNodeFetch = globalThis.fetch;
@@ -558,6 +628,203 @@ describe("remote MCP URL policy", () => {
   });
 });
 
+describe("remote MCP tool result", () => {
+  const initialize = (id: unknown) =>
+    Response.json({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2025-11-25",
+        capabilities: { tools: {} },
+        serverInfo: { name: "test", version: "1" },
+      },
+    });
+
+  /** Streamable HTTP peer answering one fixed tool result over an injected
+   * fetch. A raw body string (with `$ID` for the request id) can carry JSON
+   * number digits a JavaScript value cannot hold exactly. */
+  function toolResultFetch(result: Record<string, unknown> | string) {
+    return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const message = (await request.json()) as { id?: number; method?: string };
+      if (message.method === "initialize") return initialize(message.id);
+      if (message.method === "tools/call") {
+        if (typeof result === "string")
+          return new Response(result.replace("$ID", String(message.id)), {
+            headers: { "content-type": "application/json" },
+          });
+        return Response.json({ jsonrpc: "2.0", id: message.id, result });
+      }
+      return new Response(null, { status: 202 });
+    });
+  }
+
+  function callTool(fetch: ReturnType<typeof toolResultFetch>) {
+    return callRemoteMcpTool(
+      {
+        endpoint: "https://mcp.example.test/mcp",
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        resolveHostname: publicResolver,
+      },
+      "recall",
+      {},
+    );
+  }
+
+  it("fails a tool result body larger than the response limit before parsing it", async () => {
+    const fetch = toolResultFetch(
+      `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":"${"x".repeat(MAX_MCP_RESPONSE_BYTES)}"}]}}`,
+    );
+    await expect(callTool(fetch)).rejects.toThrow("MCP server response exceeds 16 MB");
+  });
+
+  const memory = { results: [{ text: "first memory" }, { text: "second memory" }] };
+
+  it("keeps one copy when a text block repeats structuredContent", async () => {
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(memory) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("drops a duplicate text block however the server formatted the JSON", async () => {
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(memory, null, 2) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps both copies when the text is different data", async () => {
+    const other = { results: [{ text: "different" }] };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(other) }],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: JSON.stringify(other) }],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps a text-only result unchanged", async () => {
+    const fetch = toolResultFetch({ content: [{ type: "text", text: "plain answer" }] });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: "plain answer" }],
+      isError: false,
+    });
+  });
+
+  it("keeps a structured-only result unchanged", async () => {
+    const fetch = toolResultFetch({ content: [], structuredContent: memory });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps images and other text blocks, dropping only the duplicate text", async () => {
+    const image = { type: "image", data: "aGk=", mimeType: "image/png" };
+    const fetch = toolResultFetch({
+      content: [
+        image,
+        { type: "text", text: JSON.stringify(memory) },
+        { type: "text", text: "a note beside the data" },
+      ],
+      structuredContent: memory,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [image, { type: "text", text: "a note beside the data" }],
+      structuredContent: memory,
+      isError: false,
+    });
+  });
+
+  it("keeps both copies when the shared JSON holds an integer beyond the safe range", async () => {
+    // Parsing rounds both copies of 9007199254740993 to 9007199254740992, so
+    // they would compare deep-equal; only the text still carries the exact id.
+    const exact = '{"id":9007199254740993}';
+    const fetch = toolResultFetch(
+      `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":${JSON.stringify(
+        exact,
+      )}}],"structuredContent":{"id":9007199254740993}}}`,
+    );
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [{ type: "text", text: exact }],
+      structuredContent: { id: 9007199254740992 },
+      isError: false,
+    });
+  });
+
+  it.each([
+    ["9.007199254740993e15", 9007199254740992],
+    ["1.0000000000000001", 1],
+  ])(
+    "keeps both copies when the decimal %s cannot survive a JavaScript number",
+    async (token, rounded) => {
+      const exact = `{"id":${token}}`;
+      const fetch = toolResultFetch(
+        `{"jsonrpc":"2.0","id":$ID,"result":{"content":[{"type":"text","text":${JSON.stringify(
+          exact,
+        )}}],"structuredContent":{"id":${token}}}}`,
+      );
+      await expect(callTool(fetch)).resolves.toEqual({
+        content: [{ type: "text", text: exact }],
+        structuredContent: { id: rounded },
+        isError: false,
+      });
+    },
+  );
+
+  it("still drops the duplicate when big digits appear only inside strings", async () => {
+    const data = { note: "id 9007199254740993 in prose", count: 3 };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: data,
+    });
+    await expect(callTool(fetch)).resolves.toEqual({
+      content: [],
+      structuredContent: data,
+      isError: false,
+    });
+  });
+
+  it("keeps an error result's text, so audits report the specific failure", async () => {
+    const failure = { error: { message: "Missing permission: updates" } };
+    const fetch = toolResultFetch({
+      content: [{ type: "text", text: JSON.stringify(failure) }],
+      structuredContent: failure,
+      isError: true,
+    });
+    const envelope = await callTool(fetch);
+    expect(envelope).toEqual({
+      content: [{ type: "text", text: JSON.stringify(failure) }],
+      structuredContent: failure,
+      isError: true,
+    });
+    const audit = toolCompletionAuditPayload({
+      name: "recall",
+      executionId: "exec-1",
+      durationMs: 3,
+      result: envelope,
+    });
+    expect(audit.outcome).toBe("error");
+    expect(audit.error).toContain("Missing permission: updates");
+  });
+});
+
 describe("remote MCP result limits", () => {
   it("applies the result budget in UTF-8 bytes instead of JavaScript characters", () => {
     const value = { content: "界".repeat(400_000) };
@@ -583,16 +850,17 @@ describe("createPrivateNetworkFetch", () => {
     expect(String(baseFetch.mock.calls[0]?.[0])).toBe("http://192.168.2.10:8080/v1/items");
   });
 
-  it("rejects an opted-in host that resolves to a mapped link-local address", async () => {
-    const baseFetch = mockFetch();
-    const fetch = createPrivateNetworkFetch(baseFetch, async () => [
-      { address: "::ffff:169.254.170.2", family: 6 as const },
-    ]);
-    await expect(fetch("http://nas.local:8080/v1/items", { method: "GET" })).rejects.toThrow(
-      "non-private address",
-    );
-    expect(baseFetch).not.toHaveBeenCalled();
-  });
+  it.each(["::ffff:169.254.170.2", "::ffff:a9fe:a9fe", "::ffff:a9fe:101"])(
+    "rejects an opted-in host that resolves to the mapped link-local address %s",
+    async (address) => {
+      const baseFetch = mockFetch();
+      const fetch = createPrivateNetworkFetch(baseFetch, async () => [{ address, family: 6 }]);
+      await expect(fetch("http://nas.local:8080/v1/items", { method: "GET" })).rejects.toThrow(
+        "non-private address",
+      );
+      expect(baseFetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects an opted-in host that resolves to a public address", async () => {
     const baseFetch = mockFetch();
@@ -630,5 +898,39 @@ describe("createPrivateNetworkFetch", () => {
     await expect(fetch("http://192.168.2.10:8080/v1/items", { method: "GET" })).rejects.toThrow(
       "redirects are not allowed",
     );
+  });
+
+  it("releases a refused redirect body in both connector fetches so close() does not wait on it", async () => {
+    // Larger than undici buffers, so an unread body holds the connection open.
+    const server = createServer((_request, response) => {
+      response.writeHead(302, { location: "http://localhost/elsewhere" });
+      response.end("x".repeat(1_000_000));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const loopbackResolver = async () => [{ address: "127.0.0.1", family: 4 as const }];
+    try {
+      for (const [fetch, refusal] of [
+        [
+          createSafeRemoteFetch(undefined, loopbackResolver, { allowPrivateEndpoint: true }),
+          ConnectorRedirectError,
+        ],
+        [createPrivateNetworkFetch(undefined, loopbackResolver), "redirects are not allowed"],
+      ] as const) {
+        await expect(fetch(`http://localhost:${port}/mcp`)).rejects.toThrow(refusal);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const closed = await Promise.race([
+          fetch.close().then(() => true),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), 2_000);
+          }),
+        ]);
+        clearTimeout(timer);
+        expect(closed).toBe(true);
+      }
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

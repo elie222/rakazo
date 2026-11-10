@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { PlaywrightRun, PlaywrightScreenshot } from "./playwright-report-dashboard.js";
 import {
   classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
   MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
   MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
-  type PlaywrightRun,
-  type PlaywrightScreenshot,
   renderMobileScreenshotGallery,
   renderPlaywrightDashboard,
   renderScreenshotGallery,

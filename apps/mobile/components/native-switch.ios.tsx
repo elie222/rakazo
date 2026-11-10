@@ -32,6 +32,7 @@ export function NativeSwitch({
           accessibilityLabelModifier(accessibilityLabel),
           ...(hint ? [accessibilityHint(hint)] : []),
           disable(Boolean(disabled)),
+          // SwiftUI defaults to systemGreen (adapts to dark mode and Increase Contrast), so no default tint is set.
           ...(tintColor ? [tint(tintColor)] : []),
         ]}
       />

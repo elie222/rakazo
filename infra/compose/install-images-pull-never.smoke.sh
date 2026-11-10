@@ -3,17 +3,6 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
 src="$root/install-images.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
-# BSD grep needs -e so patterns starting with -- are not flags.
-g() { grep -F -e "$1" "$src" >/dev/null || fail "missing $1"; }
-g '--pull-never)'
-g '--offline)'
-g 'RAKAZO_PULL_NEVER'
-g 'Skipping image pull'
-g '--pull never'
-g 'cannot enforce pull-never on this Compose version'
-g '${up_pull_args[@]+"${up_pull_args[@]}"}'
-g 'HTTP_PROXY/HTTPS_PROXY'
-g '[--prepare-only] [--local] [--pull-never] [--offline]'
 set +e
 out="$(bash "$src" --not-a-flag 2>&1)"
 code=$?
@@ -90,6 +79,7 @@ case "$verb" in
   config)
     cat <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret
@@ -144,10 +134,12 @@ setup_work() {
   : > "$work/cwd/.env.images.example"
   cat > "$work/cwd/.env" <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret
 SANDBOX_SUPERVISOR_TOKEN=test-supervisor-token
+SANDBOX_COMPUTER_EGRESS=open
 EOF
   : > "$work/docker.log"
   : > "$work/curl.log"
@@ -189,6 +181,28 @@ set -e
 [[ ! -s "$tmp/offline/curl.log" ]] || fail "--offline should not curl when files are local: $(cat "$tmp/offline/curl.log")"
 has_compose_pull "$tmp/offline" && fail "--offline should not run compose pull"
 has_up_pull_never "$tmp/offline" || fail "--offline should pass --pull never to compose up: $(cat "$tmp/offline/docker.log")"
+
+for missing_input in docker-compose.images.yml .env.images.example; do
+  work="$tmp/missing-${missing_input}"
+  setup_work "$work"
+  rm -- "$work/cwd/$missing_input"
+  set +e
+  missing_out="$(run_install "$work" --offline 2>&1)"
+  missing_code=$?
+  set -e
+  [[ "$missing_code" -ne 0 ]] || fail "--offline accepted missing $missing_input"
+  [[ "$missing_out" == *"$missing_input"* ]] || fail "--offline did not identify missing $missing_input"
+  [[ ! -s "$work/curl.log" ]] || fail "--offline attempted a network request for missing $missing_input"
+  has_compose_pull "$work" && fail "--offline pulled images with missing $missing_input"
+  [[ ! -s "$work/docker.log" ]] || fail "--offline invoked Compose with missing $missing_input"
+done
+
+setup_work "$tmp/local-missing"
+rm -- "$tmp/local-missing/cwd/docker-compose.images.yml"
+local_out="$(run_install "$tmp/local-missing" --local 2>&1)"
+[[ -s "$tmp/local-missing/curl.log" ]] || fail "--local should download missing files"
+has_compose_pull "$tmp/local-missing" || fail "--local should still pull images"
+grep -q 'VERB=up' "$tmp/local-missing/docker.log" || fail "--local should start services"
 
 # --pull-never is accepted and skips pull (may still download Compose files).
 setup_work "$tmp/pull-never"
@@ -235,5 +249,77 @@ set -e
 [[ "$default_out" != *"unbound variable"* ]] || fail "empty array expansion aborted: $default_out"
 has_compose_pull "$tmp/default" || fail "default install should run compose pull"
 grep -q 'VERB=up' "$tmp/default/docker.log" || fail "default install should run compose up"
+
+# A setting the Compose file does not name is reported instead of silently dropped.
+setup_work "$tmp/unpassed"
+printf '  TELEGRAM_BOT_TOKEN:\n  POSTGRES_PASSWORD: x\n' > "$tmp/unpassed/cwd/docker-compose.images.yml"
+printf 'TELEGRAM_BOT_TOKEN=1\nTELEGRAM_BOT_TOKEN_SUPPORT=2\nCOMPOSE_PROJECT_NAME=x\n' >> "$tmp/unpassed/cwd/.env"
+unpassed_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$unpassed_out" == *"no container receives these .env settings:"*"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "custom setting was not reported: $unpassed_out"
+[[ "$unpassed_out" != *" TELEGRAM_BOT_TOKEN "* && "$unpassed_out" != *" TELEGRAM_BOT_TOKEN." ]] ||
+  fail "a listed setting was reported: $unpassed_out"
+[[ "$unpassed_out" != *"COMPOSE_PROJECT_NAME"* ]] || fail "a Compose setting was reported"
+
+# An override file next to the base file is layered into every command and counts as listing.
+printf 'services:\n  api:\n    environment:\n      TELEGRAM_BOT_TOKEN_SUPPORT:\n' \
+  > "$tmp/unpassed/cwd/docker-compose.override.yml"
+: > "$tmp/unpassed/docker.log"
+override_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$override_out" != *"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "a setting listed in the override was reported: $override_out"
+grep -qF -e '-f docker-compose.override.yml up' "$tmp/unpassed/docker.log" ||
+  fail "compose up did not layer the override: $(cat "$tmp/unpassed/docker.log")"
+
+# The Compose files come from the pinned release, whichever way the tag was pinned.
+unset RAKAZO_IMAGE_TAG
+download_ref() {
+  local name="$1" image_tag="${2:-}"
+  shift 2
+  setup_work "$tmp/$name"
+  (
+    [[ -z "$image_tag" ]] || export RAKAZO_IMAGE_TAG="$image_tag"
+    run_install "$tmp/$name" "$@" >/dev/null 2>&1
+  ) || fail "$name install failed"
+  grep -F 'docker-compose.images.yml' "$tmp/$name/curl.log" | grep -oE 'rakazo/[^/]+/infra/compose' | sort -u
+}
+ref="$(download_ref untagged "")"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "no pin should use main, got: $ref"
+ref="$(download_ref shell-pin v0.8.0)"
+[[ "$ref" == "rakazo/v0.8.0/infra/compose" ]] || fail "shell pin should use its tag, got: $ref"
+ref="$(download_ref shell-edge edge)"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "edge should use main, got: $ref"
+ref="$(download_ref shell-custom v0.8.0-custom)"
+[[ "$ref" == "rakazo/main/infra/compose" ]] || fail "a tag that is not a release should use main, got: $ref"
+
+setup_work "$tmp/env-pin"
+printf 'RAKAZO_IMAGE_TAG=edge\nexport RAKAZO_IMAGE_TAG="v0.7.0" # pinned\r\n' >> "$tmp/env-pin/cwd/.env"
+run_install "$tmp/env-pin" >/dev/null 2>&1 || fail "env-pin install failed"
+grep -qF 'rakazo/v0.7.0/infra/compose/docker-compose.images.yml' "$tmp/env-pin/curl.log" ||
+  fail ".env pin should use its tag: $(cat "$tmp/env-pin/curl.log")"
+
+setup_work "$tmp/shell-wins"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/shell-wins/cwd/.env"
+(export RAKAZO_IMAGE_TAG=v0.8.0; run_install "$tmp/shell-wins" >/dev/null 2>&1) || fail "shell-wins install failed"
+grep -qF 'rakazo/v0.8.0/infra/compose/docker-compose.images.yml' "$tmp/shell-wins/curl.log" ||
+  fail "the shell should win over .env, as in Compose: $(cat "$tmp/shell-wins/curl.log")"
+
+setup_work "$tmp/env-spaces"
+printf "RAKAZO_IMAGE_TAG=v0.6.0\\nexport RAKAZO_IMAGE_TAG = 'v0.7.0'\\n" >> "$tmp/env-spaces/cwd/.env"
+run_install "$tmp/env-spaces" >/dev/null 2>&1 || fail "env-spaces install failed"
+grep -qF 'rakazo/v0.7.0/infra/compose/docker-compose.images.yml' "$tmp/env-spaces/curl.log" ||
+  fail ".env pin with spaces should use its tag: $(cat "$tmp/env-spaces/curl.log")"
+
+setup_work "$tmp/shell-empty"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/shell-empty/cwd/.env"
+(export RAKAZO_IMAGE_TAG=; run_install "$tmp/shell-empty" >/dev/null 2>&1) || fail "shell-empty install failed"
+grep -qF 'rakazo/main/infra/compose/docker-compose.images.yml' "$tmp/shell-empty/curl.log" ||
+  fail "an empty shell value should win over .env, as in Compose: $(cat "$tmp/shell-empty/curl.log")"
+
+setup_work "$tmp/mirror"
+printf 'RAKAZO_IMAGE_TAG=v0.7.0\n' >> "$tmp/mirror/cwd/.env"
+(export RAKAZO_DOWNLOAD_BASE=https://mirror.example/compose; run_install "$tmp/mirror" >/dev/null 2>&1) || fail "mirror install failed"
+grep -qF 'https://mirror.example/compose/docker-compose.images.yml' "$tmp/mirror/curl.log" ||
+  fail "RAKAZO_DOWNLOAD_BASE should win: $(cat "$tmp/mirror/curl.log")"
 
 echo "ok"

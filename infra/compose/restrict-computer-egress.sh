@@ -2,7 +2,11 @@
 # Restricted egress for Rakazo bot computers (SANDBOX_COMPUTER_EGRESS=restricted).
 #
 # Computers keep full public-internet egress (browsing, DNS, apt, git over SSH)
-# but can no longer reach:
+# but can no longer reach the destinations below. Docker before 28, and DNS
+# servers set for computers or the daemon, forward lookups from the computers'
+# own network, so a private resolver there (a VPC or LAN resolver) needs
+# SANDBOX_COMPUTER_DNS set to public resolvers (docs/self-host-docker-computers.md).
+# Blocked:
 #   - the Docker host itself (INPUT drop; replies to host-initiated connections
 #     stay open so supervisor control and published screen ports keep working),
 #   - RFC1918 / CGNAT / link-local destinations, including cloud metadata at
@@ -80,24 +84,28 @@ EOF
 # catch-all drop so host- and supervisor-initiated connections to the computer
 # (control endpoint, published screen port) keep working while the computer can
 # no longer open connections to the host.
+#
+# INPUT is listed first so it is inserted last (rules go in by a reverse pass).
+# The supervisor's start-up probe detects the INPUT drop, so its presence must
+# mean the DOCKER-USER destination drops of the same run are already in place.
 egress_rules_v4() {
   local cidr
+  printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
+  printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v4)
-  printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
-  printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
 }
 
 egress_rules_v6() {
   local cidr
+  printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
+  printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v6)
-  printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
-  printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
 }
 
 wait_for_docker_user() {

@@ -1,5 +1,6 @@
 import type { BillingProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { MOBILE_BILLING_CALLBACK_URL } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import type { BillingService } from "./billing.js";
@@ -36,6 +37,8 @@ export function mountBillingRoutes(
   });
 
   app.get(BILLING_RETURN_PATH, async (c) => {
+    // The in-app browser has no session; the app refreshes billing once it is back.
+    if (c.req.query("client") === "mobile") return c.redirect(MOBILE_BILLING_CALLBACK_URL, 303);
     const actor = await deps.authenticate(c.req.raw);
     if (!actor) return c.redirect(deps.webOrigin, 303);
     try {

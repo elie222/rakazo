@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 import { validatePngScreenshot } from "./png-validation.js";
 
 function validPng() {
-  return PNG.sync.write({
-    width: 1,
-    height: 1,
-    data: Buffer.from([23, 45, 67, 255]),
-  });
+  const png = new PNG({ width: 1, height: 1 });
+  png.data = Buffer.from([23, 45, 67, 255]);
+  return PNG.sync.write(png);
 }
 
 describe("validatePngScreenshot", () => {
@@ -27,7 +25,7 @@ describe("validatePngScreenshot", () => {
 
   it("rejects corrupt image data even when the PNG structure is present", () => {
     const corrupt = validPng();
-    corrupt[corrupt.length - 13] ^= 0xff;
+    corrupt[corrupt.length - 13]! ^= 0xff;
     expect(() => validatePngScreenshot(corrupt, "corrupt.png")).toThrow(/Invalid PNG/);
   });
 });

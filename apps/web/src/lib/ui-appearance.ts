@@ -1,10 +1,9 @@
+import type { AppearancePreference, ResolvedAppearance } from "@rakazo/ui-tokens";
 import {
-  type AppearancePreference,
   persistAppearancePreference,
-  type ResolvedAppearance,
   resolveAppearance,
   resolveAppearancePreference,
-  tokensForAppearance,
+  webTokensForAppearance,
 } from "@rakazo/ui-tokens";
 
 export type { AppearancePreference, ResolvedAppearance };
@@ -29,7 +28,9 @@ export function applyResolvedAppearance(
   if (typeof document === "undefined") return;
   const meta = document.querySelector(THEME_COLOR_META);
   if (meta) {
-    meta.setAttribute("content", tokensForAppearance(appearance).background);
+    // The applied background, so an instance theme's color reaches the browser chrome too.
+    const applied = getComputedStyle(root).getPropertyValue("--background").trim();
+    meta.setAttribute("content", applied || webTokensForAppearance(appearance).background);
   }
 }
 

@@ -1,6 +1,15 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InMemoryJobQueue } from "./wakeup.js";
+import { ABANDONED_SUSPEND_CLAIM_MS } from "./computer-idle.js";
+import {
+  createDeadJobPruner,
+  DEAD_JOB_RETENTION_DAYS,
+  InMemoryJobQueue,
+  JOB_DRAIN_TIMEOUT_MS,
+} from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
   return {
@@ -11,9 +20,15 @@ function handlers(): BackgroundJobHandlers {
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
+    "messaging.progress": vi.fn(async () => undefined),
+    "messaging.credential-cleanup": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "purchase.poll": vi.fn(async () => undefined),
+    "media.poll": vi.fn(async () => undefined),
+    "push.receipt": vi.fn(async () => undefined),
   };
 }
 
@@ -422,4 +437,64 @@ describe("InMemoryJobQueue", () => {
       payload: { runId: "run-rollback" },
     });
   });
+});
+
+describe("createDeadJobPruner", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  it("deletes old exhausted jobs in batches about once an hour and logs the count", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    let now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rowCount: 1_000 })
+      .mockResolvedValueOnce({ rowCount: 3 })
+      .mockResolvedValue({ rowCount: 0 });
+    const prune = createDeadJobPruner({ query } as never);
+
+    await prune();
+    await prune();
+
+    expect(query).toHaveBeenCalledTimes(2);
+    const [sql, params] = query.mock.calls[0]!;
+    expect(params).toEqual([DEAD_JOB_RETENTION_DAYS, 1_000]);
+    // Only exhausted, unlocked rows, rechecked by the delete itself, and never retry notices.
+    expect(sql).toContain("dead.attempts >= dead.max_attempts and dead.locked_at is null");
+    expect(sql).toContain("jobs.attempts >= jobs.max_attempts and jobs.locked_at is null");
+    expect(sql).toContain("tasks.identifier <> 'routine.retry'");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "jobs.dead_pruned", "jobs.removed": 1_003 }),
+    );
+
+    now += 60 * 60 * 1000;
+    await prune();
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
+  });
+});
+
+describe("JOB_DRAIN_TIMEOUT_MS", () => {
+  it("ends before the idle sweep would replace a sleep job that is still draining", () => {
+    expect(JOB_DRAIN_TIMEOUT_MS).toBeLessThan(ABANDONED_SUSPEND_CLAIM_MS);
+  });
+
+  // Docker kills the worker once its stop_grace_period runs out, which would leave its jobs locked.
+  it.each(["docker-compose.yml", "docker-compose.images.yml", "docker-compose.prod.yml"])(
+    "ends before %s kills a stopping worker",
+    (file) => {
+      const compose = readFileSync(
+        path.resolve(import.meta.dirname, "../../../infra/compose", file),
+        "utf8",
+      );
+      const worker = compose.slice(compose.indexOf("\n  worker:\n") + 1);
+      const block = worker.slice(0, worker.search(/\n {2}[a-z]/));
+      const minutes = Number(/\n {4}stop_grace_period: (\d+)m\n/.exec(block)?.[1]);
+      expect(minutes * 60_000).toBeGreaterThanOrEqual(JOB_DRAIN_TIMEOUT_MS + 5 * 60_000);
+    },
+  );
 });

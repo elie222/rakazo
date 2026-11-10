@@ -1,23 +1,16 @@
-import {
-  createProvider,
-  type Model,
-  type MutableModels,
-  type Provider,
-} from "@earendil-works/pi-ai";
+import type { Model, MutableModels, Provider } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
+import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
+
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
- *
- * Pi's built-in catalog only ships hosted providers, so a model running on the
- * operator's own machine has no catalog entry to select. This registers one
- * from environment configuration. The server is keyless: `resolve` returns a
- * placeholder because OpenAI-compatible local servers ignore the header, but
- * Models treats a provider with no resolvable auth as unconfigured and hides
- * its models.
+ * Without RAKAZO_LOCAL_MODELS_API_KEY the server is keyless, but `resolve` returns
+ * a placeholder because Models hides providers with no resolvable auth.
  */
-export const LOCAL_PROVIDER_ID = "local";
+export { LOCAL_PROVIDER_ID };
 
 /** Model ids the local server serves with vision, declared by the operator. */
 export const LOCAL_VISION_MODELS_ENV = "RAKAZO_LOCAL_VISION_MODELS";
@@ -25,6 +18,9 @@ export const LOCAL_VISION_MODELS_ENV = "RAKAZO_LOCAL_VISION_MODELS";
 export function localVisionModelIds(): ReadonlySet<string> {
   return declaredVisionModelIds(LOCAL_VISION_MODELS_ENV);
 }
+
+/** Model ids the local server serves with OpenAI-style `reasoning_effort`, declared by the operator. */
+export const LOCAL_REASONING_MODELS_ENV = "RAKAZO_LOCAL_REASONING_MODELS";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_CONTEXT_WINDOW = 32_768;
@@ -44,13 +40,7 @@ export function localBaseUrl(): string {
   return value;
 }
 
-/**
- * A token count from the environment, or the default when unset.
- *
- * Token limits are only meaningful as finite positive integers, so anything
- * else is a configuration mistake. Throwing beats `Number(x) || default`, which
- * would accept a negative window and silently swallow a typo as the default.
- */
+/** Throws instead of `Number(x) || default`, which would swallow a typo or accept a negative window. */
 function tokenLimit(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -61,23 +51,21 @@ function tokenLimit(name: string, fallback: number): number {
   return value;
 }
 
-/** Comma-separated model ids exactly as the local server names them. */
-function localModelIds(): string[] {
-  return (process.env.RAKAZO_LOCAL_MODELS ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-}
-
 function localModel(id: string): Model<"openai-completions"> {
+  // Same comma-separated id list as the vision opt-in.
+  const reasoning = declaredVisionModelIds(LOCAL_REASONING_MODELS_ENV).has(id);
   return {
     id,
     name: id,
     api: "openai-completions",
     provider: LOCAL_PROVIDER_ID,
     baseUrl: localBaseUrl(),
-    reasoning: false,
-    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
+    reasoning,
+    compat: reasoning
+      ? { supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: "openai" }
+      : { supportsDeveloperRole: false, supportsReasoningEffort: false },
+    // Mirrors openAiCompatibleModel's reasoning levels.
+    ...(reasoning ? { thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" } } : {}),
     input: inputModalities(localVisionModelIds().has(id)),
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -86,7 +74,6 @@ function localModel(id: string): Model<"openai-completions"> {
   };
 }
 
-/** The provider, or undefined when no local models are configured. */
 export function localProvider(): Provider | undefined {
   const ids = localModelIds();
   if (!ids.length) return undefined;
@@ -98,7 +85,7 @@ export function localProvider(): Provider | undefined {
       apiKey: {
         name: "Local model server",
         resolve: async () => ({
-          auth: { apiKey: "local", baseUrl: localBaseUrl() },
+          auth: { apiKey: localModelsApiKey() ?? "local", baseUrl: localBaseUrl() },
           source: "local model server",
         }),
       },
@@ -108,7 +95,6 @@ export function localProvider(): Provider | undefined {
   });
 }
 
-/** Register the local provider on a Models collection. No-op when unconfigured. */
 export function registerLocalProvider(models: MutableModels): MutableModels {
   const provider = localProvider();
   if (provider) models.setProvider(provider);

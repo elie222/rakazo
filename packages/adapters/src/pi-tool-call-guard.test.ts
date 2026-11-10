@@ -71,6 +71,17 @@ describe("withoutNamelessToolCalls", () => {
     expect(withoutNamelessToolCalls([toolResult("call_missing", "")])).toEqual([]);
   });
 
+  it("drops a named result whose call was removed from the transcript", () => {
+    const messages: Message[] = [
+      fauxAssistantMessage([fauxText("planning"), namelessCall]),
+      toolResult("call_nameless", "list_tasks"),
+    ];
+
+    expect(withoutNamelessToolCalls(messages).map((message) => message.role)).toEqual([
+      "assistant",
+    ]);
+  });
+
   it("handles legacy null assistant content while sanitizing a transcript", () => {
     const assistant = { ...fauxAssistantMessage(""), content: null } as unknown as AssistantMessage;
 

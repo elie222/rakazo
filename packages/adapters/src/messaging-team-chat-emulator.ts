@@ -9,7 +9,8 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-import { type MessagingPlatform, providerOfThreadId } from "./chat-sdk-surface.js";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { providerOfThreadId } from "./chat-sdk-surface.js";
 
 export interface TeamChatEmulatorInbound {
   handle?: string;
@@ -60,7 +61,7 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     this.capabilities = {
       direct: options.capabilities?.direct ?? true,
       groups: options.capabilities?.groups ?? true,
-      typing: options.capabilities?.typing ?? false,
+      receipt: options.capabilities?.receipt ?? null,
     };
   }
 
@@ -150,15 +151,12 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     return `${this.provider}:dm:${address}`;
   }
 
-  async sendTyping(threadId: string, _context: AdapterContext): Promise<void> {
-    if (!this.capabilities.typing || providerOfThreadId(threadId) !== this.provider) return;
-  }
+  async acknowledge(_threadId: string, _handle: string, _context: AdapterContext): Promise<void> {}
 
   resetWitnesses(): void {
     this.sent.length = 0;
   }
 
-  /** Platform descriptor for mounting beside other messaging platforms in tests. */
   createPlatform(): MessagingPlatform {
     return {
       provider: this.provider,
@@ -178,13 +176,11 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     };
   }
 
-  /** Public handle allocator for test helpers that record outbound sends. */
   allocateHandle(prefix: string): string {
     this.handleCounter += 1;
     return `${prefix}-${this.handleCounter}`;
   }
 
-  /** Shared outbound witness used by compatibility helpers and the full surface. */
   recordSend(threadId: string, body: string, prefix: string): string {
     const handle = this.allocateHandle(prefix);
     this.sent.push({ threadId, body, handle });

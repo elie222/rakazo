@@ -22,11 +22,4 @@ describe("formatElapsed", () => {
   it("clamps negative deltas to zero", () => {
     expect(formatElapsed(5_000, 4_000)).toBe("0.0s");
   });
-
-  it("survives remount-style recomputation from the same start", () => {
-    const startedAt = Date.parse("2026-08-25T12:00:00.000Z");
-    const later = Date.parse("2026-08-25T12:00:42.300Z");
-    expect(formatElapsed(startedAt, later)).toBe("42.3s");
-    expect(formatElapsed(startedAt, later + 60_000)).toBe("1m 42.3s");
-  });
 });

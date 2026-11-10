@@ -2,17 +2,18 @@ import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import {
   classifyMemoryProviderSettings,
-  MemoryProviderDeploymentOwnerRequiredError,
-  memoryProviderRequiresDeploymentOwner,
+  MemoryProviderPrivateEndpointRequiredError,
+  memoryProviderRequiresPrivateEndpoint,
   prepareMemoryProviderConnection,
   toStringRecord,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { findSpaceMemoryConfig, Prisma, type PrismaClient } from "@rakazo/db";
-import { withSerializableRetry } from "./serializable-retry.js";
+import type { PrismaClient } from "@rakazo/db";
+import { findSpaceMemoryConfig, Prisma, requireSpaceOwner, withTransactionRetry } from "@rakazo/db";
 
 export interface MemoryProviderConfigDeps {
   prisma: PrismaClient;
+  env?: { mcpAllowPrivateEndpoint?: boolean };
   secrets: Pick<SecretStore, "put">;
   /** Test seam: override DNS/trust classification without probing. */
   classifySettings?: (
@@ -23,15 +24,6 @@ export interface MemoryProviderConfigDeps {
   prepareConnection?: (
     input: Parameters<typeof prepareMemoryProviderConnection>[0],
   ) => ReturnType<typeof prepareMemoryProviderConnection>;
-}
-
-async function requireSpaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
-  const member = await prisma.spaceMember.findUnique({
-    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
-    select: { role: true },
-  });
-  const roles = member?.role.split(",").map((role) => role.trim());
-  if (!roles?.includes("owner")) throw new ORPCError("FORBIDDEN");
 }
 
 export async function persistMemoryProviderConfig(
@@ -47,38 +39,37 @@ export async function persistMemoryProviderConfig(
   await requireSpaceOwner(deps.prisma, actor);
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
-    // Fast-path known private endpoints before probing.
     if (
-      memoryProviderRequiresDeploymentOwner(input.provider, input.settings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
     const classify = deps.classifySettings ?? classifyMemoryProviderSettings;
     const prepare = deps.prepareConnection ?? prepareMemoryProviderConnection;
-    // Classify DNS/trust before any credentialed probe so LAN endpoints stay owner-gated.
+    // Classify DNS/trust before any credentialed probe so LAN endpoints stay operator-authorized.
     const classifiedSettings = await classify(input.provider, input.settings);
     if (
-      memoryProviderRequiresDeploymentOwner(input.provider, classifiedSettings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(input.provider, classifiedSettings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
     prepared = await prepare({
       ...input,
       settings: classifiedSettings,
-      allowPrivateEndpoint: actor.isDeploymentOwner,
+      allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint === true,
     });
     // Defense in depth if prepare reclassified further.
     if (
-      memoryProviderRequiresDeploymentOwner(prepared.provider, prepared.settings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(prepared.provider, prepared.settings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
   } catch (error) {
     if (error instanceof ORPCError) throw error;
-    if (error instanceof MemoryProviderDeploymentOwnerRequiredError) {
+    if (error instanceof MemoryProviderPrivateEndpointRequiredError) {
       throw new ORPCError("FORBIDDEN");
     }
     throw new ORPCError("BAD_REQUEST", {
@@ -92,7 +83,7 @@ export async function persistMemoryProviderConfig(
     userId: actor.userId,
     signal: new AbortController().signal,
   });
-  const config = await withSerializableRetry(() =>
+  const config = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await findSpaceMemoryConfig(tx, actor.spaceId);
@@ -165,7 +156,7 @@ export function serializeSpaceMemoryConfig(config: {
 
 export async function disconnectMemoryProvider(deps: MemoryProviderConfigDeps, actor: Actor) {
   await requireSpaceOwner(deps.prisma, actor);
-  await withSerializableRetry(() =>
+  await withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
         const existing = await findSpaceMemoryConfig(tx, actor.spaceId);

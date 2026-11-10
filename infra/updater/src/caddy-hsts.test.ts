@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { COMPUTER_SCREEN_RUNTIME_PATH } from "@rakazo/contracts/content-security-policy";
 import { describe, expect, it } from "vitest";
 
 const composeDir = path.resolve(import.meta.dirname, "../../compose");
@@ -20,15 +21,23 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
 
   it("stops other sites framing the app and sniffing responses", () => {
     expect(httpsSite).toContain("X-Content-Type-Options nosniff");
-    expect(httpsSite).toContain("X-Frame-Options SAMEORIGIN");
+    expect(httpsSite).toContain("header @framed X-Frame-Options SAMEORIGIN");
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
   });
 
-  it("replaces the client-supplied forwarding header on API requests", () => {
+  it("keeps shared page links out of search results and Referer headers", () => {
     expect(httpsSite).toContain(
-      filename.startsWith("Caddyfile.cloudflare")
-        ? "header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}"
-        : "header_up X-Forwarded-For {remote_host}",
+      '@sharedPage path /p/*\n\theader @sharedPage {\n\t\tX-Robots-Tag "noindex, nofollow"\n\t\tReferrer-Policy no-referrer\n\t}',
     );
+  });
+
+  it("lets the embedded screen frame its SDK runtime from an opaque origin", () => {
+    expect(httpsSite).toContain(`@framed not path ${COMPUTER_SCREEN_RUNTIME_PATH}`);
+    expect(httpsSite).not.toContain("not path /computer-screen/*");
+  });
+
+  it("replaces the client-supplied forwarding header on API and RPC requests", () => {
+    expect(httpsSite.match(/header_up X-Forwarded-For \{client_ip\}/g)).toHaveLength(2);
+    expect(httpsSite).not.toContain("{remote_host}");
   });
 });

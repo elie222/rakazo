@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { provisionMessagingIdentity } from "./messaging.js";
+import { provisionMessagingIdentity, redeemMessagingLinkCode } from "./messaging.js";
 
 describe("provisionMessagingIdentity", () => {
   it("returns the existing identity without creating anything when already provisioned", async () => {
@@ -267,4 +267,28 @@ describe("messaging identity isolation", () => {
     await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("database unavailable");
     expect(f.prisma.messagingIdentity.create).not.toHaveBeenCalled();
   });
+});
+
+it("cannot redeem another space's personal link code through a workspace installation", async () => {
+  const transaction = vi.fn();
+  const prisma = {
+    messagingLinkCode: {
+      findUnique: vi.fn(async () => ({
+        id: "code-a",
+        spaceId: "space-a",
+        expiresAt: new Date(Date.now() + 60_000),
+      })),
+    },
+    $transaction: transaction,
+  } as unknown as PrismaClient;
+  expect(
+    await redeemMessagingLinkCode(prisma, {
+      code: "ABCD2345",
+      provider: "slack",
+      address: "Tb:U1",
+      dmThreadId: "slack~b:D1",
+      spaceId: "space-b",
+    }),
+  ).toBeNull();
+  expect(transaction).not.toHaveBeenCalled();
 });

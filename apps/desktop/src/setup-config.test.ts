@@ -10,10 +10,12 @@ import {
   parseSetupInput,
   parseStoredSetup,
   probeFailureMessage,
+  RAKAZO_CLOUD_URL,
   readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
   serializeSetup,
+  serverHeadersFor,
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
@@ -45,12 +47,17 @@ describe("server address normalization", () => {
     expect(normalizeServerUrl("http://rakazo.example.com")).toBeNull();
     expect(normalizeServerUrl("http://10.0.0.8:3100")).toBe("http://10.0.0.8:3100");
     expect(normalizeServerUrl("http://[fd00::1]:3100")).toBe("http://[fd00::1]:3100");
+    expect(normalizeServerUrl("100.101.102.103:3100")).toBe("http://100.101.102.103:3100");
   });
 
   it("rejects cleartext link-local addresses used by cloud metadata endpoints", () => {
     expect(normalizeServerUrl("http://169.254.169.254")).toBeNull();
     expect(normalizeServerUrl("http://169.254.1.1:80")).toBeNull();
     expect(normalizeServerUrl("http://[fe80::1]:3100")).toBeNull();
+    expect(normalizeServerUrl("http://100.100.100.200")).toBeNull();
+    expect(normalizeServerUrl("http://[fd00:ec2::254]")).toBeNull();
+    // fd::1 is 00fd::1, not unique-local.
+    expect(normalizeServerUrl("http://[fd::1]:3100")).toBeNull();
     // HTTPS to link-local still normalizes; the health probe must match Rakazo.
     expect(normalizeServerUrl("https://169.254.169.254")).toBe("https://169.254.169.254");
   });
@@ -129,13 +136,63 @@ describe("saved setup", () => {
       serverUrl: "http://192.168.1.20:3100",
     });
   });
+
+  it("saves Rakazo Cloud as an existing server under the exact origin setup matches", () => {
+    // The setup window recognizes a saved Cloud choice by comparing against this constant.
+    expect(normalizeServerUrl(RAKAZO_CLOUD_URL)).toBe(RAKAZO_CLOUD_URL);
+    expect(parseSetupInput({ mode: "existing", serverUrl: RAKAZO_CLOUD_URL })).toEqual({
+      mode: "existing",
+      serverUrl: RAKAZO_CLOUD_URL,
+    });
+    expect(parseSetupInput({ mode: "new", serverUrl: RAKAZO_CLOUD_URL })).toBeNull();
+    expect(servesBundledRenderer(RAKAZO_CLOUD_URL, false)).toBe(false);
+  });
+});
+
+describe("server request headers", () => {
+  const access = { "CF-Access-Client-Id": "id.access", "CF-Access-Client-Secret": "secret" };
+  const setup = {
+    mode: "existing",
+    serverUrl: "https://rakazo.example.com",
+    headers: access,
+  } as const;
+
+  it("saves headers for an existing server and drops an empty set", () => {
+    expect(parseStoredSetup(serializeSetup(setup))).toEqual(setup);
+    expect(
+      parseSetupInput({ mode: "existing", serverUrl: "https://rakazo.example.com", headers: {} }),
+    ).toEqual({ mode: "existing", serverUrl: "https://rakazo.example.com" });
+  });
+
+  it("refuses headers Rakazo owns and headers for a new local instance", () => {
+    expect(parseSetupInput({ ...setup, headers: { Cookie: "a=b" } })).toBeNull();
+    expect(parseSetupInput({ ...setup, headers: "x: y" })).toBeNull();
+    expect(
+      parseSetupInput({ mode: "new", serverUrl: "http://127.0.0.1:5173", headers: access }),
+    ).toBeNull();
+  });
+
+  it("adds them only to the saved server, websockets included", () => {
+    expect(serverHeadersFor("https://rakazo.example.com/rpc/me", setup)).toEqual(access);
+    expect(serverHeadersFor("wss://rakazo.example.com/novnc/websockify", setup)).toEqual(access);
+    expect(serverHeadersFor("https://rakazo.example.com.evil/rpc", setup)).toEqual({});
+    expect(serverHeadersFor("http://rakazo.example.com/rpc", setup)).toEqual({});
+    expect(serverHeadersFor("https://accounts.example.com/", setup)).toEqual({});
+    expect(serverHeadersFor("not a url", setup)).toEqual({});
+    expect(serverHeadersFor("https://rakazo.example.com/", null)).toEqual({});
+  });
 });
 
 describe("startup target", () => {
   const saved = { mode: "existing", serverUrl: "https://rakazo.example.com" } as const;
 
-  it("runs setup on a first launch", () => {
-    expect(resolveStartupTarget({})).toEqual({ kind: "setup" });
+  it("opens Rakazo Cloud on a first launch", () => {
+    expect(resolveStartupTarget({})).toEqual({
+      kind: "app",
+      url: RAKAZO_CLOUD_URL,
+      source: "cloud",
+    });
+    expect(resolveStartupTarget({ saved: null })).toMatchObject({ source: "cloud" });
   });
 
   it("opens the saved instance on later launches", () => {

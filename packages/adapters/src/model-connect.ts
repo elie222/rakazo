@@ -1,20 +1,31 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import {
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
-  cloudflareGatewayRouting,
-  isCloudflareAiGatewayProvider,
+  canonicalPiProviderId,
+  MAX_ENABLED_MODEL_IDS,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
-import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
-import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
-  CHATGPT_OAUTH_PROVIDER,
-  parseModelSecret,
-  type StoredModelSecret,
-  serializeModelSecret,
-} from "./pi-oauth.js";
+  cloudflareModelConfigMessage,
+  cloudflareModelRouting,
+  isCloudflareModelProvider,
+} from "./cloudflare-ai-gateway.js";
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
+import {
+  compatibleModelSeesImages,
+  modelIdSupportsImages,
+  updateModelImageCapabilities,
+} from "./model-vision.js";
+import {
+  compatibleEndpointPreset,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "./openai-compatible-url.js";
+import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,
@@ -24,7 +35,37 @@ import {
 export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
+  /** Private and loopback endpoints require explicit operator configuration. */
+  allowPrivateEndpoint?: boolean;
 };
+
+/** Reuse saved probe headers only for the endpoint they were saved for. */
+export function storedOpenAiCompatibleProbeHeaders(
+  baseUrl: string,
+  storedPlaintext?: string,
+): Record<string, string> | undefined {
+  const previous = tryParseModelSecret(storedPlaintext);
+  return previous?.kind === "openai_compatible" &&
+    previous.baseUrl === normalizeOpenAiCompatibleBaseUrl(baseUrl)
+    ? previous.headers
+    : undefined;
+}
+
+/** Reuse a saved probe key only for the endpoint it was saved for. */
+export function storedOpenAiCompatibleProbeKey(
+  baseUrl: string,
+  storedPlaintext?: string,
+): string | undefined {
+  const previous = tryParseModelSecret(storedPlaintext);
+  if (
+    previous?.kind !== "openai_compatible" ||
+    !previous.apiKey?.trim() ||
+    previous.baseUrl !== normalizeOpenAiCompatibleBaseUrl(baseUrl)
+  ) {
+    return undefined;
+  }
+  return previous.apiKey;
+}
 
 export function buildModelConnectPlaintext(
   input: ModelConnectInput,
@@ -40,17 +81,21 @@ export function buildModelConnectPlaintext(
     ...(contextWindow !== undefined ? { contextWindow } : {}),
   };
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    const prepared = prepareOpenAiCompatibleConnect(input);
+    const policy = { allowPrivate: options?.allowPrivateEndpoint };
+    const prepared = prepareOpenAiCompatibleConnect(input, policy);
+    assertHeaderSafeApiKey(prepared.apiKey);
     const sameEndpoint =
       previous?.kind === "openai_compatible" && previous.baseUrl === prepared.baseUrl;
     const compatiblePrevious = sameEndpoint ? previous : undefined;
     if (input.apiKey === undefined && sameEndpoint) {
       // Revalidate the inherited key too: public endpoints must still use HTTPS.
-      prepared.apiKey = prepareOpenAiCompatibleConnect({
-        ...input,
-        apiKey: previous.apiKey,
-      }).apiKey;
+      prepared.apiKey = prepareOpenAiCompatibleConnect(
+        { ...input, apiKey: previous.apiKey },
+        policy,
+      ).apiKey;
     }
+    const headers = input.headers ?? compatiblePrevious?.headers;
+    prepareOpenAiCompatibleConnect({ ...input, apiKey: prepared.apiKey, headers }, policy);
     const previousVisionModelIds = sameEndpoint ? previous.visionModelIds : undefined;
     const maxImagesPerPrompt =
       input.maxImagesPerPrompt === null
@@ -83,11 +128,23 @@ export function buildModelConnectPlaintext(
     const includeVisionModelIds =
       !options?.omitVisionModelIds &&
       (input.supportsImages !== undefined || previousVisionModelIds !== undefined);
+    const enabledModelIds = enabledOpenAiCompatibleModelIds(
+      {
+        kind: "openai_compatible",
+        baseUrl: prepared.baseUrl,
+        enabledModelIds: input.enabledModelIds ?? compatiblePrevious?.enabledModelIds,
+      },
+      prepared.modelId,
+    );
     const compatibleCacheCapabilities =
       input.cacheCapabilities ?? compatiblePrevious?.cacheCapabilities;
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(input.apiProtocol !== undefined || compatiblePrevious?.apiProtocol !== undefined
+        ? { apiProtocol: input.apiProtocol ?? compatiblePrevious?.apiProtocol }
+        : {}),
+      ...(headers !== undefined ? { headers } : {}),
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
         : {}),
@@ -97,6 +154,13 @@ export function buildModelConnectPlaintext(
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(prepared.apiKey ? { apiKey: prepared.apiKey } : {}),
       ...(includeVisionModelIds ? { visionModelIds } : {}),
+      // The default is always implicit in the effective list. At the input limit,
+      // keep the explicit selections rather than growing storage by one on every
+      // save from a different space.
+      enabledModelIds:
+        enabledModelIds.length > MAX_ENABLED_MODEL_IDS
+          ? enabledModelIds.filter((id) => id !== prepared.modelId)
+          : enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
     };
     return serializeModelSecret(secret);
@@ -116,6 +180,7 @@ export function buildModelConnectPlaintext(
   const routing = cloudflareRoutingForConnect(input, previous);
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
+    assertHeaderSafeApiKey(apiKey);
     return serializeModelSecret({
       kind: "api_key",
       key: apiKey,
@@ -137,11 +202,12 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "oauth") {
-    return serializeModelSecret({
-      kind: "oauth",
-      credential: previous.credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
-    });
+    const limit = maxTokens !== undefined ? { maxTokens } : {};
+    return serializeModelSecret(
+      previous.reconnectRequired
+        ? { kind: "oauth", reconnectRequired: true, ...limit }
+        : { kind: "oauth", credential: previous.credential, ...limit },
+    );
   }
   if (input.provider === CHATGPT_OAUTH_PROVIDER) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
@@ -163,14 +229,14 @@ function tryParseModelSecret(plaintext?: string): StoredModelSecret | undefined 
 }
 
 /**
- * Cloudflare AI Gateway routing is part of the saved key. Omitted fields keep
+ * Cloudflare routing is part of the saved key. Omitted fields keep
  * the previous connection's ids; a blank or unsafe value is rejected.
  */
 function cloudflareRoutingForConnect(
   input: ModelConnectInput,
   previous: ReturnType<typeof tryParseModelSecret>,
-): { accountId: string; gatewayId: string } | undefined {
-  if (!isCloudflareAiGatewayProvider(input.provider)) return undefined;
+): { accountId: string; gatewayId?: string } | undefined {
+  if (!isCloudflareModelProvider(input.provider)) return undefined;
   const accountId =
     input.accountId !== undefined
       ? input.accountId
@@ -183,8 +249,8 @@ function cloudflareRoutingForConnect(
       : previous?.kind === "api_key"
         ? previous.gatewayId
         : undefined;
-  const routing = cloudflareGatewayRouting({ accountId, gatewayId });
-  if (!routing) throw new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE);
+  const routing = cloudflareModelRouting({ provider: input.provider, accountId, gatewayId });
+  if (!routing) throw new Error(cloudflareModelConfigMessage(input.provider));
   return routing;
 }
 
@@ -211,12 +277,18 @@ function connectMaxTokens(
   return previous;
 }
 
+function endpointName(baseUrl: string): { endpointName?: string } {
+  const preset = compatibleEndpointPreset(baseUrl);
+  return preset ? { endpointName: preset.name } : {};
+}
+
 export function modelCredentialDto(
   row: {
     id: string;
     provider: string;
     label: string;
-    isDefault: boolean;
+    /** Whether this connection runs the member's main model. */
+    isDefault?: boolean;
     defaultModel?: string | null;
     thinkingLevel?: string | null;
     supportsImages?: boolean;
@@ -225,10 +297,10 @@ export function modelCredentialDto(
 ): ModelCredential {
   const credential: ModelCredential = {
     id: row.id,
-    provider: row.provider,
+    provider: canonicalPiProviderId(row.provider),
     label: row.label,
     hasKey: storedModelSecretHasApiKey(plaintext),
-    isDefault: row.isDefault,
+    isDefault: row.isDefault ?? false,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
     // Space-scoped effort stored beside the preference's modelId; the
     // openai-compatible secret may still contribute below when unset.
@@ -240,6 +312,7 @@ export function modelCredentialDto(
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),
+      ...(parsed.kind === "oauth" && parsed.reconnectRequired ? { reconnectRequired: true } : {}),
       ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
       ...(parsed.kind !== "oauth"
         ? {
@@ -268,6 +341,9 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...endpointName(parsed.baseUrl),
+    ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
+    ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
     ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined
       ? { thinkingLevel: credential.thinkingLevel ?? parsed.thinkingLevel }
@@ -278,8 +354,22 @@ export function modelCredentialDto(
     ...(parsed.maxImagesPerPrompt !== undefined
       ? { maxImagesPerPrompt: parsed.maxImagesPerPrompt }
       : {}),
+    ...(parsed.enabledModelIds !== undefined
+      ? { enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel) }
+      : {}),
+    visionModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel).filter((id) =>
+      compatibleModelSeesImages(row, parsed, id),
+    ),
     thinkingLevels: getSupportedThinkingLevels(
-      openAiCompatibleModel(row.defaultModel ?? "custom", parsed.baseUrl, parsed.reasoning),
+      openAiCompatibleModel(
+        row.defaultModel ?? "custom",
+        parsed.baseUrl,
+        parsed.reasoning,
+        false,
+        undefined,
+        undefined,
+        parsed.apiProtocol,
+      ),
     ) as ThinkingLevel[],
     modelId: row.defaultModel ?? undefined,
   };

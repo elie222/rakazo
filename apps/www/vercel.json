@@ -1,4 +1,5 @@
 {
+  "installCommand": "corepack pnpm install",
   "redirects": [
     {
       "source": "/",
@@ -16,6 +17,46 @@
       "source": "/sitemap.xml",
       "destination": "/sitemap-index.xml",
       "statusCode": 301
+    },
+    {
+      "source": "/x",
+      "destination": "https://x.com/rakazobot",
+      "permanent": false
+    },
+    {
+      "source": "/twitter",
+      "destination": "https://x.com/rakazobot",
+      "permanent": false
+    },
+    {
+      "source": "/github",
+      "destination": "https://github.com/elie222/rakazo",
+      "permanent": false
+    },
+    {
+      "source": "/discord",
+      "destination": "https://discord.gg/RWwKa2Sn7h",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "headers": [
+        {
+          "key": "Link",
+          "value": "</llms.txt>; rel=\"describedby\"; type=\"text/plain\", </.well-known/ai-catalog.json>; rel=\"ai-catalog\"; type=\"application/ai-catalog+json\""
+        }
+      ]
+    },
+    {
+      "source": "/.well-known/ai-catalog.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/ai-catalog+json"
+        }
+      ]
     }
   ]
 }

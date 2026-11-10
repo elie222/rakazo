@@ -12,7 +12,7 @@ export function SegmentedPills<T extends string>({
 }: NativeSegmentedControlProps<T>) {
   const tokens = useMobileTokens();
   // The selected segment sits lighter than the track in both palettes.
-  const selectedFill = useResolvedAppearance() === "light" ? tokens.card : tokens.chatUser;
+  const selectedFill = useResolvedAppearance() === "light" ? tokens.popover : tokens.chatUser;
   return (
     <View
       accessibilityLabel={accessibilityLabel}

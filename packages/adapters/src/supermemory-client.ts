@@ -1,8 +1,5 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
-import { isLocalMcpHost } from "@rakazo/contracts";
-import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
-import { createPrivateNetworkFetch } from "./remote-mcp.js";
+import type { LocalServiceConnection } from "./local-service-endpoint.js";
+import { fetchLocalService, parseServiceBaseUrl } from "./local-service-endpoint.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
@@ -30,75 +27,22 @@ export type SupermemorySearchResponse =
 export type SupermemorySaveResponse = { ok: true } | { ok: false; error: string };
 export type SupermemoryProbeResponse = { ok: true } | { ok: false; error: string };
 
-export interface SupermemoryConnectionConfig {
-  baseUrl: string;
+export interface SupermemoryConnectionConfig extends LocalServiceConnection {
   apiKey: string;
-  /** Test seam. Production resolves Compose DNS and pins the private answers. */
-  resolveHostname?: ResolveHostname;
-  /**
-   * Private addresses already accepted for this host. The transport checks them
-   * again at request time and does not resolve the name.
-   */
-  pinnedAddresses?: ResolvedAddress[];
-  /** Test seam. Production uses the runtime fetch paired with the private-host dispatcher. */
-  fetch?: typeof globalThis.fetch;
-}
-
-/** Base URLs are route prefixes, never credentials or request query/fragment state. */
-export function parseSupermemoryBaseUrl(baseUrl: string): URL {
-  const url = new URL(baseUrl);
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.username ||
-    url.password ||
-    // search/hash are empty for a bare ?/#, but those delimiters still swallow appended routes.
-    url.href.includes("?") ||
-    url.href.includes("#")
-  ) {
-    throw new Error(
-      "Memory base URL must use HTTP(S) without credentials, a query, or a fragment.",
-    );
-  }
-  return url;
 }
 
 function requestUrl(baseUrl: string, path: string): string {
-  const url = parseSupermemoryBaseUrl(baseUrl);
+  const url = parseServiceBaseUrl(baseUrl);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
   return url.href;
 }
 
-const defaultResolveHostname: ResolveHostname = (hostname) =>
-  lookup(hostname, { all: true, verbatim: true });
-
-function resolverFor(config: SupermemoryConnectionConfig): ResolveHostname {
-  if (!config.pinnedAddresses) return config.resolveHostname ?? defaultResolveHostname;
-  const addresses = config.pinnedAddresses;
-  return async () => addresses;
-}
-
-function hostnameOf(url: URL): string {
-  return url.hostname
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "")
-    .toLowerCase();
-}
-
-/** Loopback and IP literals have no DNS to rebind. Compose names pin to private addresses. */
-function pinsPrivateDns(baseUrl: string): boolean {
-  let url: URL;
+function isSupermemoryCloud(baseUrl: string): boolean {
   try {
-    url = new URL(baseUrl);
+    return new URL(baseUrl).origin === new URL(SUPERMEMORY_CLOUD_BASE_URL).origin;
   } catch {
     return false;
   }
-  if (url.origin === new URL(SUPERMEMORY_CLOUD_BASE_URL).origin) return false;
-  const host = hostnameOf(url);
-  return !isLocalMcpHost(host) && isIP(host) === 0;
-}
-
-function transportFor(config: SupermemoryConnectionConfig): typeof globalThis.fetch {
-  return config.fetch ?? fetch;
 }
 
 async function fetchSupermemory(
@@ -106,60 +50,8 @@ async function fetchSupermemory(
   url: string,
   init: RequestInit,
 ): Promise<Response> {
-  const transport = transportFor(config);
-  if (!pinsPrivateDns(config.baseUrl)) return transport(url, init);
-  const safe = createPrivateNetworkFetch(transport, resolverFor(config));
-  try {
-    const response = await safe(url, init);
-    // Closing the pinned dispatcher waits until its response body settles.
-    // Hand the body to the caller first, and close when they read or cancel it.
-    return releaseTransportWithBody(response, () => safe.close());
-  } catch (error) {
-    await safe.close().catch(() => undefined);
-    throw error;
-  }
-}
-
-function releaseTransportWithBody(response: Response, close: () => Promise<void>): Response {
-  let closed = false;
-  const release = () => {
-    if (closed) return;
-    closed = true;
-    void close().catch(() => undefined);
-  };
-  if (!response.body) {
-    release();
-    return response;
-  }
-  const reader = response.body.getReader();
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          controller.close();
-          release();
-          return;
-        }
-        controller.enqueue(result.value);
-      } catch (error) {
-        release();
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        release();
-      }
-    },
-  });
-  return new Response(body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
+  if (isSupermemoryCloud(config.baseUrl)) return (config.fetch ?? fetch)(url, init);
+  return fetchLocalService(config, url, init);
 }
 
 async function releaseUnreadBody(response: Response): Promise<void> {
@@ -304,7 +196,13 @@ export async function searchSupermemoryContainers(
   };
 }
 
-/** Deletes every memory in a container, e.g. after the conversation they summarize is cleared. */
+export const SUPERMEMORY_DELETE_FORBIDDEN_ERROR =
+  "Supermemory needs an owner or admin API key to delete memory from cleared conversations.";
+
+/**
+ * Deletes every memory in a container, e.g. after the conversation they summarize is cleared.
+ * A missing container has nothing to delete.
+ */
 export async function deleteSupermemoryContainer(
   containerTag: string,
   config: SupermemoryConnectionConfig,
@@ -322,10 +220,9 @@ export async function deleteSupermemoryContainer(
       },
     );
     try {
-      if (!response.ok) {
-        return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
-      }
-      return { ok: true };
+      if (response.ok || response.status === 404) return { ok: true };
+      if (response.status === 403) return { ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR };
+      return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
     } finally {
       await releaseUnreadBody(response);
     }

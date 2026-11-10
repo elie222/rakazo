@@ -6,9 +6,10 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
-  NodeTracerProvider,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
+import { runWithLogContext } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
 import {
@@ -29,7 +30,9 @@ vi.mock("./pi-telemetry-otel.js", async (original) => ({
 const ids = { botId: "bot-fixture", runId: "run-fixture", routineId: "routine-fixture" };
 function setup(captureContent = false) {
   const output = new InMemorySpanExporter();
-  const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(output)] });
+  const provider = new TracerProvider({
+    spanProcessors: [new SimpleSpanProcessor({ exporter: output })],
+  });
   factory.mockReturnValue({
     context: otelPiContext(provider.getTracer("fixture"), captureContent),
     shutdown: () => provider.shutdown(),
@@ -46,6 +49,17 @@ afterEach(async () => {
 });
 
 describe("Pi OpenTelemetry", () => {
+  it("continues the request/job trace instead of starting an unrelated trace", async () => {
+    const { output, provider } = setup();
+    await runWithLogContext({ "trace.id": "a".repeat(32), "span.id": "b".repeat(16) }, () =>
+      withPiTelemetry(ids, async () => undefined),
+    );
+    await provider.forceFlush();
+    const [span] = output.getFinishedSpans();
+    expect(span?.spanContext().traceId).toBe("a".repeat(32));
+    expect(span?.parentSpanContext?.spanId).toBe("b".repeat(16));
+  });
+
   it.each([undefined, "", "  "])(
     "does not initialize or create spans with endpoint %j",
     async (endpoint) => {
@@ -234,6 +248,12 @@ describe("Pi OpenTelemetry", () => {
   it.each(["provider", "missing final answer"])("marks caught %s run failures", async (failure) => {
     const { output, provider } = setup();
     const server = createServer(async (request, response) => {
+      // A local tool can probe any listening loopback port; only model calls are counted.
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       for await (const _chunk of request) {
         /* Drain request body. */
       }
@@ -279,6 +299,7 @@ describe("Pi OpenTelemetry", () => {
             provider: "openai-compatible",
             id: "fixture",
             baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+            allowPrivateEndpoint: true,
             apiKey: "fake-fixture-key",
             maxTokens: 256,
             contextWindow: 4096,
@@ -323,6 +344,12 @@ describe("Pi OpenTelemetry", () => {
     vi.stubEnv("OTEL_CAPTURE_CONTENT", String(capture));
     let calls = 0;
     const server = createServer(async (request, response) => {
+      // A local tool can probe any listening loopback port; only model calls are counted.
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       for await (const _chunk of request) {
         /* Drain request body. */
       }
@@ -376,6 +403,7 @@ describe("Pi OpenTelemetry", () => {
           provider: "openai-compatible",
           id: "fixture",
           baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+          allowPrivateEndpoint: true,
           apiKey: "fake-fixture-key",
           maxTokens: 256,
           contextWindow: 4096,

@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "../../lib/rpc";
-import { ComposerReplyPreview, ReplyLine, TimeSeparator } from "./chat-context";
+import { ComposerReplyPreview, ReplyLine, TimeSeparator, UnreadDivider } from "./chat-context";
 
 vi.mock("../../lib/rpc", () => ({ rpc: { artifacts: { get: vi.fn() } } }));
 
@@ -45,6 +45,22 @@ it("renders an unselectable semantic separator", () => {
   );
   expect(container.querySelector("h3")?.textContent).toContain("4:05 PM");
   expect(container.querySelector("h3")?.className).toContain("select-none");
+});
+it("marks new messages with a visible New and a spoken New messages", () => {
+  act(() => root.render(<UnreadDivider />));
+  const divider = container.querySelector('[data-testid="unread-divider"]');
+  expect(divider?.querySelector('[aria-hidden="true"]:not(.h-px)')?.textContent).toBe("New");
+  expect(divider?.querySelector(".sr-only")?.textContent).toBe("New messages");
+  expect(divider?.className).toContain("select-none");
+  const label = divider?.querySelector(".sr-only")?.parentElement;
+  expect(label?.className).toContain("text-unread");
+  expect(label?.className).not.toContain("opacity-50");
+  for (const line of divider?.querySelectorAll(".h-px") ?? [])
+    expect(line.className).toContain("bg-unread");
+});
+it("avoids extra top spacing after a time separator", () => {
+  act(() => root.render(<UnreadDivider afterSeparator />));
+  expect(container.querySelector('[data-testid="unread-divider"]')?.className).toContain("pt-0");
 });
 it("shows a compact composer quote and dismisses it", () => {
   const onDismiss = vi.fn();
@@ -86,11 +102,17 @@ it("renders a deleted target as static unavailable text", () => {
   expect(container.querySelector("button")).toBeNull();
 });
 
-it("dismisses a composer reply with Escape", () => {
+it("dismisses a composer reply with Escape, but not the Escape that ends an IME composition", () => {
   const onDismiss = vi.fn();
   act(() =>
     root.render(<ComposerReplyPreview author="Helper" text="Quote" onDismiss={onDismiss} />),
   );
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, ...composition });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(onDismiss).not.toHaveBeenCalled();
   act(() =>
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true })),
   );
@@ -265,4 +287,19 @@ it("defers transcript thumbnails until near the viewport while the composer load
   );
   expect(rpc.artifacts.get).toHaveBeenCalledOnce();
   expect(observer).not.toHaveBeenCalled();
+});
+it("shows no quote on a message sent from an open page, even with its card not loaded", () => {
+  const card = { role: "bot" as const, botId: "bot", text: "Q3 plan", page: true as const };
+  act(() => root.render(<ReplyLine message={{ ...message, replyPreview: card }} author="Bot" />));
+  expect(container.textContent).toBe("");
+  // A reply picked on the card in the chat keeps its quote.
+  act(() =>
+    root.render(
+      <ReplyLine
+        message={{ ...message, replyPreview: card, replyQuote: "Q3 plan" }}
+        author="Bot"
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("Q3 plan");
 });

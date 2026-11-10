@@ -33,6 +33,18 @@ export function holdUnreachableGate(gate: SessionGate, holding: boolean): boolea
   return holding;
 }
 
+/**
+ * The same refetch runs whenever a signed-out tab regains focus. Showing the
+ * cold "loading" screen then would unmount the auth page and drop its form
+ * state, such as an emailed code waiting to be entered. Keep the signed-out
+ * routes rendered across that refetch until the gate resolves again.
+ */
+export function holdAnonymousGate(gate: SessionGate, holding: boolean): boolean {
+  if (gate === "anonymous") return true;
+  if (gate === "authenticated" || gate === "unreachable") return false;
+  return holding;
+}
+
 export function showSessionUnavailable(gate: SessionGate, holding: boolean): boolean {
   return gate === "unreachable" || (holding && gate === "loading");
 }

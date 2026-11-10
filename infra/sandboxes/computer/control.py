@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Token-auth desktop control for the Rakazo supervisor."""
 
 import base64
@@ -13,6 +13,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = os.environ.get("RAKAZO_COMPUTER_CONTROL_TOKEN", "")
+# Commands this server starts are found only in the image's folders, never in the user's
+# ~/.local/bin, and never get the control token.
+CHILD_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def child_env(display):
+    env = {key: value for key, value in os.environ.items() if key != "RAKAZO_COMPUTER_CONTROL_TOKEN"}
+    return {**env, "PATH": CHILD_PATH, "DISPLAY": display}
 MAX_BODY_BYTES = 256 * 1024
 MAX_ARGV = 32
 MAX_ARG_LEN = 16_384
@@ -70,6 +78,8 @@ class NativeCapture:
         library.rakazo_xcapture_damage.restype = ctypes.c_int
         library.rakazo_xinput_argv.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p)]
         library.rakazo_xinput_argv.restype = ctypes.c_int
+        library.rakazo_xcapture_close.argtypes = [ctypes.c_void_p]
+        library.rakazo_xcapture_close.restype = None
         context = library.rakazo_xcapture_open(display.encode("utf-8"))
         if not context:
             raise RuntimeError("MIT-SHM capture is unavailable")
@@ -97,11 +107,21 @@ class NativeCapture:
         )
 
     def act(self, argv):
+        if not self.context:
+            return -1
         encoded = (ctypes.c_char_p * len(argv))(*(value.encode("utf-8") for value in argv))
         return self.library.rakazo_xinput_argv(self.context, len(argv), encoded)
 
+    def close(self):
+        context = self.context
+        self.context = None
+        if context:
+            self.library.rakazo_xcapture_close(context)
 
-def native_capture(display):
+
+def native_capture(display, reset=False):
+    if reset:
+        drop_native_capture(display)
     existing = NATIVE_CAPTURES.get(display)
     if existing is not None:
         return existing
@@ -114,7 +134,9 @@ def native_capture(display):
 
 
 def drop_native_capture(display):
-    NATIVE_CAPTURES.pop(display, None)
+    stale = NATIVE_CAPTURES.pop(display, None)
+    if stale is not None:
+        stale.close()
 
 
 def _is_int_string(value):
@@ -133,6 +155,14 @@ def allowed_xdotool_argv(argv):
     if op == "mousemove":
         if len(argv) == 7 and argv[4] == "--" and _is_int_string(argv[5]) and _is_int_string(argv[6]):
             return True
+        if (
+            len(argv) == 11
+            and argv[4] == "--"
+            and ASCII_INT.fullmatch(argv[5])
+            and ASCII_INT.fullmatch(argv[6])
+            and _allowed_wheel(argv[7:])
+        ):
+            return True
         return (
             len(argv) == 9
             and argv[4] == "--"
@@ -146,14 +176,25 @@ def allowed_xdotool_argv(argv):
     if op == "type":
         return len(argv) == 7 and argv[4] == "--clearmodifiers" and argv[5] == "--"
     if op == "click":
-        return (
-            len(argv) == 7
-            and argv[4] == "--repeat"
-            and argv[5].isdigit()
-            and 1 <= int(argv[5]) <= 20
-            and argv[6] in ("4", "5")
-        )
+        return len(argv) == 7 and _allowed_wheel(argv[3:])
     return False
+
+
+# ASCII digits only: str.isdigit() also accepts characters such as "²" that int() rejects.
+ASCII_INT = re.compile(r"-?[0-9]+")
+ASCII_COUNT = re.compile(r"[0-9]+")
+
+
+def _allowed_wheel(argv):
+    """A wheel scroll: click --repeat N with the up (4), down (5), left (6) or right (7) button."""
+    return (
+        len(argv) == 4
+        and argv[0] == "click"
+        and argv[1] == "--repeat"
+        and ASCII_COUNT.fullmatch(argv[2]) is not None
+        and 1 <= int(argv[2]) <= 20
+        and argv[3] in ("4", "5", "6", "7")
+    )
 
 
 def control_command_index(argv):
@@ -225,7 +266,7 @@ def launch_spawn_poll_sec(argv):
 
 def run_control_argv(argv, display):
     """Run a fallback control command without holding the lock forever."""
-    env = {**os.environ, "DISPLAY": display}
+    env = child_env(display)
     if argv[control_command_index(argv)] == FOCUS_OR_LAUNCH:
         try:
             result = subprocess.run(argv, env=env, timeout=FOCUS_COMPLETION_SEC)
@@ -252,8 +293,23 @@ def run_control_argv(argv, display):
         raise RuntimeError("computer action failed")
 
 
+def run_computer_step(display, argv):
+    """Prefer the native connection; reopen it once if that X server is gone."""
+    with NATIVE_LOCK:
+        source = native_capture(display)
+        handled = source.act(argv) if source else 0
+        if handled < 0:
+            source = native_capture(display, reset=True)
+            handled = source.act(argv) if source else -1
+            if handled < 0:
+                drop_native_capture(display)
+                handled = 0
+    if not handled:
+        run_control_argv(argv, display)
+
+
 def capture(display):
-    env = {**os.environ, "DISPLAY": display}
+    env = child_env(display)
 
     def output(argv, fallback=""):
         return subprocess.run(argv, env=env, capture_output=True, text=True).stdout.strip() or fallback
@@ -271,7 +327,13 @@ def capture(display):
                 encoded, width, height, damage = source.copy()
                 image = subprocess.CompletedProcess([], 0, encoded, b"")
             except RuntimeError:
-                drop_native_capture(display)
+                source = native_capture(display, reset=True)
+                if source:
+                    try:
+                        encoded, width, height, damage = source.copy()
+                        image = subprocess.CompletedProcess([], 0, encoded, b"")
+                    except RuntimeError:
+                        drop_native_capture(display)
     if image is None:
         image = subprocess.run(
             ["import", "-define", "png:compression-level=3", "-window", "root", "png:-"],
@@ -319,14 +381,7 @@ class Handler(BaseHTTPRequestHandler):
                     argv = step.get("argv")
                     if not allowed_control_argv(argv, display):
                         raise RuntimeError("unsupported computer action")
-                    with NATIVE_LOCK:
-                        source = native_capture(display)
-                        handled = source.act(argv) if source else 0
-                        if handled < 0:
-                            drop_native_capture(display)
-                            handled = 0
-                    if not handled:
-                        run_control_argv(argv, display)
+                    run_computer_step(display, argv)
                 settle_ms = max(0, min(int(body.get("settleMs", 0)), 5000))
                 if settle_ms:
                     time.sleep(settle_ms / 1000)

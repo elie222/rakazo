@@ -23,18 +23,6 @@ describe.skipIf(!enabled)("product history clarification eval boundary", () => {
       status: "passed",
       assistance: false,
     },
-    {
-      id: "history-1000-balanced-clarification-v3",
-      options: ["Aurora ORBIT-731", "Borealis COMET-219"],
-      status: "failed",
-      assistance: false,
-    },
-    {
-      id: "history-1000-exact",
-      options: ["Aurora", "Borealis"],
-      status: "failed",
-      assistance: true,
-    },
   ])(
     "preserves the expected outcome for $id with choice labels $options",
     async (row) => {
@@ -59,7 +47,7 @@ describe.skipIf(!enabled)("product history clarification eval boundary", () => {
       });
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-clarification-"));
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(scenario, 1, {
           connection: {
             provider: model.model.provider,

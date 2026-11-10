@@ -23,7 +23,6 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       sha: ${{ steps.release.outputs.sha }}
       platforms: ${{ steps.platforms.outputs.include }}
-      windows: ${{ steps.platforms.outputs.windows }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -82,29 +81,32 @@ jobs:
             fi
           fi
 
+          if ! grep -qF "## [$version] - " CHANGELOG.md; then
+            echo "CHANGELOG.md has no [$version] section; prepare the release with the release skill first." >&2
+            exit 1
+          fi
+
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
       - name: Choose release platforms
         id: platforms
-        env:
-          # Windows builds only when an Authenticode certificate is configured; macOS and Linux always build.
-          WINDOWS_SIGNING: ${{ secrets.DESKTOP_WIN_CSC_LINK != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'
-          if [[ "$WINDOWS_SIGNING" == "true" ]]; then
-            include="$(jq -c '. + [{"os":"windows-2022","artifact":"windows"}]' <<<"$include")"
-          fi
+          include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'
           echo "include=$include" >> "$GITHUB_OUTPUT"
-          echo "windows=$WINDOWS_SIGNING" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build signed ${{ matrix.artifact }} artifacts
+    name: Build ${{ matrix.artifact }} artifacts
     needs: validate
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # Azure trusts GitHub OIDC tokens only from this environment, so Windows signing needs no stored secret.
+    environment: desktop-release
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -114,15 +116,20 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
       - run: pnpm install --frozen-lockfile
+      - name: Generate the database client for desktop compilation
+        run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Build renderer and Electron main process
         run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
+          RAKAZO_DESKTOP_RELEASE: "1"
 
       - name: Require macOS signing and notarization credentials
         if: runner.os == 'macOS'
@@ -144,17 +151,61 @@ jobs:
           umask 077
           printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
           chmod 600 "$APPLE_API_KEY"
+      - name: Prepare system passkey association
+        id: passkeys
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          # Optional: without it the release still ships and hides passkeys on macOS.
+          PROVISIONING_PROFILE: ${{ secrets.DESKTOP_MAC_PROVISIONING_PROFILE }}
+          PROFILE_PATH: ${{ runner.temp }}/rakazo.provisionprofile
+          ENTITLEMENTS_PATH: ${{ runner.temp }}/entitlements.passkeys.plist
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROVISIONING_PROFILE" ]]; then
+            echo "::notice::Building without system passkeys; DESKTOP_MAC_PROVISIONING_PROFILE is not set."
+            exit 0
+          fi
+          printf '%s' "$PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
+          profile="$(mktemp)"
+          security cms -D -i "$PROFILE_PATH" > "$profile"
+          if ! /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.associated-domains" "$profile" > /dev/null 2>&1; then
+            echo "::error::The provisioning profile's App ID lacks the Associated Domains capability."
+            exit 1
+          fi
+          APPLE_TEAM_ID="$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile")"
+          app_id="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" "$profile")"
+          bundle_id="$(node -p "require('./apps/desktop/package.json').build.appId")"
+          rm -f "$profile"
+          # macOS refuses to launch an app whose entitlements its profile does not authorize.
+          if [[ "$app_id" != "$APPLE_TEAM_ID.$bundle_id" ]]; then
+            echo "::error::The provisioning profile is not for $bundle_id."
+            exit 1
+          fi
+          APPLE_TEAM_ID="$APPLE_TEAM_ID" pnpm exec tsx apps/desktop/scripts/passkey-entitlements.ts > "$ENTITLEMENTS_PATH"
+          plutil -lint "$ENTITLEMENTS_PATH"
+          echo "profile=$PROFILE_PATH" >> "$GITHUB_OUTPUT"
+          echo "entitlements=$ENTITLEMENTS_PATH" >> "$GITHUB_OUTPUT"
       - name: Package signed and notarized universal macOS app
         if: runner.os == 'macOS'
+        shell: bash
         env:
           CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
-        run: >-
-          pnpm --filter @rakazo/desktop exec electron-builder
-          --mac --universal --publish never -c.forceCodeSigning=true
+          PASSKEY_PROFILE: ${{ steps.passkeys.outputs.profile }}
+          PASSKEY_ENTITLEMENTS: ${{ steps.passkeys.outputs.entitlements }}
+        run: |
+          set -eo pipefail
+          passkeys=()
+          if [[ -n "$PASSKEY_ENTITLEMENTS" ]]; then
+            # The main app alone gets the association; helpers keep entitlementsInherit.
+            passkeys=("-c.mac.entitlements=$PASSKEY_ENTITLEMENTS" "-c.mac.provisioningProfile=$PASSKEY_PROFILE")
+          fi
+          pnpm --filter @rakazo/desktop exec electron-builder \
+            --mac --universal --publish never -c.forceCodeSigning=true "${passkeys[@]}"
       - name: Remove the App Store Connect API key from the runner
         if: always() && runner.os == 'macOS'
         shell: bash
@@ -164,37 +215,121 @@ jobs:
       - name: Verify macOS signature, notarization ticket, and update feed
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          PASSKEY_ENTITLEMENTS: ${{ steps.passkeys.outputs.entitlements }}
         run: |
           set -euo pipefail
           app="apps/desktop/out/mac-universal/Rakazo.app"
           codesign --verify --deep --strict --verbose=2 "$app"
+          # Without this entitlement the hardened runtime silences the microphone.
+          # Check the app and every helper it signs, and require the value to be true.
+          entitlements="$(mktemp)"
+          while IFS= read -r -d '' bundle; do
+            codesign -d --entitlements :- "$bundle" > "$entitlements" 2>/dev/null
+            mic="$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements" 2>/dev/null || true)"
+            if [ "$mic" != "true" ]; then
+              echo "::error::$bundle is missing the microphone entitlement"
+              exit 1
+            fi
+          done < <(find "$app" -type d -name "*.app" -print0)
+          if [[ -n "$PASSKEY_ENTITLEMENTS" ]]; then
+            # The signed app must carry exactly the generated association and its profile.
+            codesign -d --entitlements :- "$app" > "$entitlements" 2>/dev/null
+            for key in com.apple.application-identifier com.apple.developer.associated-domains; do
+              expected="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PASSKEY_ENTITLEMENTS")"
+              actual="$(/usr/libexec/PlistBuddy -c "Print :$key" "$entitlements" 2>/dev/null || true)"
+              if [[ "$actual" != "$expected" ]]; then
+                echo "::error::$app is missing the $key passkey entitlement"
+                exit 1
+              fi
+            done
+            test -f "$app/Contents/embedded.provisionprofile"
+          fi
+          rm -f "$entitlements"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
 
+      - name: Verify packaged native dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="apps/desktop/out/mac-universal/Rakazo.app"
+          native="$app/Contents/Resources/app.asar.unpacked/node_modules"
+          lipo "$native/@koromix/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
+          lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
+          lipo "$native/@oxc-parser/binding-darwin-x64/parser.darwin-x64.node" -verify_arch x86_64
+          lipo "$native/@oxc-parser/binding-darwin-arm64/parser.darwin-arm64.node" -verify_arch arm64
+          # Dictation's system recognizer captures audio itself, so it needs the microphone entitlement too.
+          speech="$app/Contents/Resources/speech/rakazo-speech"
+          lipo "$speech" -verify_arch x86_64 arm64
+          entitlements="$(mktemp)"
+          codesign -d --entitlements :- "$speech" > "$entitlements" 2>/dev/null
+          test "$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements")" = true
+          rm -f "$entitlements"
+          "$speech" xx < /dev/null | grep -Fq '"language-not-supported"'
+          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
+            const { createRequire } = require("node:module");
+            const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);
+            const koffi = appRequire("koffi");
+            if (koffi.load(null).func("int getpid()")() !== process.pid) {
+              throw new Error("Packaged native bridge dependency failed");
+            }
+            const native = `${process.argv[1]}/Contents/Resources/app.asar.unpacked/node_modules`;
+            const parser = appRequire(`${native}/@oxc-parser/binding-darwin-${process.arch}/parser.darwin-${process.arch}.node`);
+            if (parser.parseSync("smoke.js", "const ready = true;").errors.length !== 0) {
+              throw new Error("Packaged monitoring parser dependency failed");
+            }
+          ' "$PWD/$app"
+
       - name: Require Windows signing credentials
         if: runner.os == 'Windows'
         shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
+          AZURE_CLIENT_ID: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
+          SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.DESKTOP_WIN_SIGNING_PROFILE }}
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           set -euo pipefail
-          test -n "$WIN_CSC_LINK"
-          test -n "$WIN_CSC_KEY_PASSWORD"
+          test -n "$AZURE_CLIENT_ID"
+          test -n "$AZURE_TENANT_ID"
+          test -n "$SIGNING_ENDPOINT"
+          test -n "$SIGNING_ACCOUNT"
+          test -n "$SIGNING_PROFILE"
+          test -n "$SIGNING_PUBLISHER"
+      - name: Log in to Azure for Windows signing
+        if: runner.os == 'Windows'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
       - name: Package signed x64 Windows app
         if: runner.os == 'Windows'
+        shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
-        run: >-
-          pnpm --filter @rakazo/desktop exec electron-builder
-          --win --x64 --publish never -c.forceCodeSigning=true
+          SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.DESKTOP_WIN_SIGNING_PROFILE }}
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @rakazo/desktop exec electron-builder \
+            --win --x64 --publish never -c.forceCodeSigning=true \
+            "-c.win.azureSignOptions.endpoint=$SIGNING_ENDPOINT" \
+            "-c.win.azureSignOptions.codeSigningAccountName=$SIGNING_ACCOUNT" \
+            "-c.win.azureSignOptions.certificateProfileName=$SIGNING_PROFILE" \
+            "-c.win.azureSignOptions.publisherName=$SIGNING_PUBLISHER"
       - name: Verify Windows Authenticode signature and publisher-bound update feed
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           $ErrorActionPreference = "Stop"
           $executables = @(
@@ -202,22 +337,26 @@ jobs:
             Get-ChildItem "apps/desktop/out/win-unpacked/*.exe"
           )
           if ($executables.Count -lt 2) { throw "Windows installer or application was not created." }
-          foreach ($executable in $executables) {
-            $signature = Get-AuthenticodeSignature $executable.FullName
-            if ($signature.Status -ne "Valid") {
-              throw "$($executable.Name) signature is $($signature.Status)."
-            }
-          }
           $config = "apps/desktop/out/win-unpacked/resources/app-update.yml"
-          if (-not (Select-String -Path $config -Pattern '^publisherName:' -Quiet)) {
-            throw "Windows update config is not bound to the signing publisher."
-          }
           $feed = Get-Content -Raw $config
           foreach ($expected in @("provider: github", "owner: elie222", "repo: rakazo")) {
             if ($feed -notmatch "(?m)^$([regex]::Escape($expected))\r?$") {
               throw "Windows update config missing '$expected'."
             }
           }
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($executable.Name) signature is $($signature.Status)."
+            }
+            # Artifact Signing certificates last days; only a timestamp keeps the signature valid after that.
+            if (-not $signature.TimeStamperCertificate) { throw "$($executable.Name) is not timestamped." }
+            if ($signature.SignerCertificate.GetNameInfo("SimpleName", $false) -ne $env:SIGNING_PUBLISHER) {
+              throw "$($executable.Name) is not signed by the configured publisher."
+            }
+          }
+          pnpm exec tsx apps/desktop/scripts/verify-update-publisher.ts $config $env:SIGNING_PUBLISHER
+          if ($LASTEXITCODE -ne 0) { throw "Windows update config is not bound to the signing publisher." }
 
       - name: Package x64 Linux AppImage
         if: runner.os == 'Linux'
@@ -242,6 +381,31 @@ jobs:
           grep -Fqx "repo: rakazo" "$config"
           test -f apps/desktop/out/latest-linux.yml
           grep -Fqx "version: $RELEASE_VERSION" apps/desktop/out/latest-linux.yml
+      - name: Sign Linux AppImage updates
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.DESKTOP_LINUX_UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::DESKTOP_LINUX_UPDATE_SIGNING_KEY is not set."
+            exit 1
+          fi
+          umask 077
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$SIGNING_KEY" > "$key"
+          shopt -s nullglob
+          images=(apps/desktop/out/*.AppImage)
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "::error::No AppImage was built."
+            exit 1
+          fi
+          # Signs each AppImage and checks the result against the public key the app embeds.
+          pnpm exec tsx apps/desktop/scripts/sign-linux-update.ts "$key" "$RELEASE_VERSION" "${images[@]}"
 
       - name: Retain installers and updater metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -249,6 +413,7 @@ jobs:
           name: desktop-${{ matrix.artifact }}-${{ needs.validate.outputs.sha }}
           path: |
             apps/desktop/out/*.AppImage
+            apps/desktop/out/*.AppImage.sig
             apps/desktop/out/*.blockmap
             apps/desktop/out/*.dmg
             apps/desktop/out/*.exe
@@ -284,7 +449,6 @@ jobs:
           RELEASE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-          WINDOWS_BUILT: ${{ needs.validate.outputs.windows }}
         shell: bash
         run: |
           set -euo pipefail
@@ -299,17 +463,28 @@ jobs:
           compgen -G 'release-artifacts/*.dmg' >/dev/null
           compgen -G 'release-artifacts/*.zip' >/dev/null
           compgen -G 'release-artifacts/*.AppImage' >/dev/null
+          for image in release-artifacts/*.AppImage; do
+            if [[ ! -s "$image.sig" ]]; then
+              echo "$image has no update signature." >&2
+              exit 1
+            fi
+          done
+          test -f release-artifacts/latest.yml
+          compgen -G 'release-artifacts/*.exe' >/dev/null
           feeds=(
             release-artifacts/latest-mac.yml
             release-artifacts/latest-linux.yml
+            release-artifacts/latest.yml
           )
-          if [[ "$WINDOWS_BUILT" == "true" ]]; then
-            test -f release-artifacts/latest.yml
-            compgen -G 'release-artifacts/*.exe' >/dev/null
-            feeds+=(release-artifacts/latest.yml)
-          fi
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
+            # GitHub renames assets with spaces, so every file a feed names must upload under that name.
+            sed -nE 's/^ *(- )?(url|path): +//p' "$feed" | while IFS= read -r file; do
+              if [[ "$file" == */* || ! -f "release-artifacts/$file" ]]; then
+                echo "$feed names $file, which is not a release asset." >&2
+                exit 1
+              fi
+            done
           done
 
           (
@@ -327,9 +502,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-        run: >-
-          gh release create "$RELEASE_TAG" release-artifacts/*
-          --draft --generate-notes --title "Rakazo $RELEASE_TAG" --verify-tag
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The curated changelog section leads; GitHub appends the merged pull requests.
+          awk -v heading="## [$RELEASE_VERSION] - " '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" release-artifacts/* \
+            --draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes \
+            --title "Rakazo $RELEASE_TAG" --verify-tag
       - name: Publish the completed release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

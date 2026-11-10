@@ -1,0 +1,67 @@
+---
+import SiteFrame from "../../../components/SiteFrame.astro";
+import type { SubmissionField } from "../../../components/SubmissionForm.astro";
+import SubmissionForm from "../../../components/SubmissionForm.astro";
+import type { Integration } from "../../../integrations";
+import { INTEGRATIONS, integrationPath, integrationUrlSlug } from "../../../integrations";
+
+interface Props {
+  integration: Integration;
+}
+
+export function getStaticPaths() {
+  return INTEGRATIONS.map((integration) => ({
+    params: { slug: integrationUrlSlug(integration.slug) },
+    props: { integration },
+  }));
+}
+
+const { integration } = Astro.props;
+const { name } = integration;
+
+const fields: SubmissionField[] = [
+  { name: "email", label: "Work email", placeholder: "you@acme.com", type: "email", required: true },
+  {
+    name: "website",
+    label: "Website URL",
+    placeholder: "acme.com",
+    type: "url",
+    required: true,
+  },
+];
+---
+
+<SiteFrame
+  title={`Claim the ${name} page on Rakazo`}
+  description={`Link the ${name} page on Rakazo to your site.`}
+  index={false}
+>
+  <h1>Claim {name}</h1>
+  <p>
+    Link the <a href={integrationPath(integration.slug)}>{name}</a> page to your site. We review
+    every claim.
+  </p>
+  <p class="plugin-form__done" role="status" data-claim-confirmed hidden>
+    Confirmed. We'll email you when it's reviewed.
+  </p>
+  <p class="plugin-form__error" role="alert" data-claim-expired hidden>
+    That link expired. Claim the page again.
+  </p>
+  <SubmissionForm
+    fields={fields}
+    hidden={{ claim: integrationUrlSlug(integration.slug), name }}
+    submitLabel="Claim page"
+    doneMessage="Check your email to confirm your claim."
+  />
+</SiteFrame>
+
+<script>
+  // The emailed link lands here once the claim is confirmed, or when it expired.
+  const params = new URLSearchParams(location.search);
+  if (params.has("confirmed")) {
+    document.querySelector<HTMLElement>("[data-claim-confirmed]")!.hidden = false;
+    document.querySelector<HTMLElement>("[data-plugin-form]")!.hidden = true;
+  } else if (params.has("expired")) {
+    document.querySelector<HTMLElement>("[data-claim-expired]")!.hidden = false;
+  }
+</script>

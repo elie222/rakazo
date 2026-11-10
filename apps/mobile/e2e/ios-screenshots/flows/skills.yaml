@@ -1,0 +1,51 @@
+appId: com.rakazo.app
+name: Skills
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///skills"
+- extendedWaitUntil:
+    visible: ".*Review Kit.*"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-skills
+- tapOn: "Rakazo"
+- extendedWaitUntil:
+    visible: ".*name: Rakazo.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-skill
+- tapOn: "Back"
+- tapOn: ".*New skill.*"
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-new-skill
+- openLink: "rakazo:///skills"
+- tapOn: ".*Review Kit.*"
+- extendedWaitUntil:
+    visible: ".*Install.*|.*Add.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-plugin
+- openLink: "rakazo:///bot-templates"
+- extendedWaitUntil:
+    visible: "Morning briefing"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 05-bot-templates
+- tapOn: "Morning briefing"
+- extendedWaitUntil:
+    visible: "Create bot"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 06-bot-template

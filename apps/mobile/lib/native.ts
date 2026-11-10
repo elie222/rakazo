@@ -9,6 +9,7 @@ import {
   resolveMobileAppearance,
   subscribeAppearance,
 } from "./appearance";
+import { translucentColor } from "./color";
 
 function systemColor(iosName: string, fallback: string): ColorValue {
   // PlatformColor follows the OS scheme, not an explicit app Light/Dark choice.
@@ -16,6 +17,11 @@ function systemColor(iosName: string, fallback: string): ColorValue {
     return PlatformColor(iosName);
   }
   return fallback;
+}
+
+/** Apple's systemGreen for the resolved app appearance. */
+export function systemGreen(scheme: ResolvedAppearance): string {
+  return scheme === "dark" ? "#30D158" : "#34C759";
 }
 
 /** Theme-aware native colors backed by shared tokens (+ iOS platform colors in System). */
@@ -26,31 +32,39 @@ export const native = {
   get fill() {
     return systemColor("tertiarySystemFill", mobileTokens().muted);
   },
+  /** The lightest fill, for small chips. */
+  get quietFill() {
+    return systemColor("quaternarySystemFill", mobileTokens().muted);
+  },
   get fillPressed() {
     return systemColor("secondarySystemFill", mobileTokens().accent);
   },
   get separator() {
-    // The page color reads as a gap between rows on a fill in either palette.
-    return systemColor("separator", mobileTokens().background);
+    // Rows are divided by the palette's divider in every mode, not the iOS separator.
+    return mobileTokens().border;
   },
   get label() {
     return systemColor("label", mobileTokens().foreground);
   },
   get secondaryLabel() {
+    if (resolveMobileAppearance() === "light") return mobileTokens().mutedForeground;
     return systemColor("secondaryLabel", mobileTokens().mutedForeground);
   },
   get tertiaryLabel() {
-    return systemColor("tertiaryLabel", mobileTokens().mutedForeground);
+    return mobileTokens().faintForeground;
   },
-  // Dark grouped colours always come from the tokens: iOS lifts the system ones inside sheets
-  // and with Increase Contrast until destructive text drops below 4.5:1.
+  /** iOS's own tertiary label, which follows Increase Contrast; else the label grey at 30%. */
+  get systemTertiaryLabel() {
+    return systemColor("tertiaryLabel", translucentColor(mobileTokens().mutedForeground, 0.3));
+  },
+  // Grouped colours always come from the tokens: settings sit on the page colour with
+  // grey cells in both themes, and in dark iOS lifts the system ones inside sheets and with
+  // Increase Contrast until destructive text drops below 4.5:1.
   get groupedPage() {
-    if (resolveMobileAppearance() === "dark") return mobileTokens().background;
-    return systemColor("systemGroupedBackground", mobileTokens().muted);
+    return mobileTokens().background;
   },
   get groupedCell() {
-    if (resolveMobileAppearance() === "dark") return mobileTokens().card;
-    return systemColor("secondarySystemGroupedBackground", mobileTokens().card);
+    return mobileTokens().card;
   },
 } as const;
 

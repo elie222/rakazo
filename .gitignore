@@ -41,8 +41,14 @@ verify-report
 design/
 PRODUCT_PLAN.md
 
-# Lingui compiled catalogs — Vite plugin compiles .po at build time
-apps/web/src/locales/**/*.mjs
-apps/web/src/locales/**/*.js
+# Lingui compiled catalogs — the Vite plugin and Metro compile .po at build time
+packages/i18n/locales/**/*.mjs
+packages/i18n/locales/**/*.js
+# Every string in the source, extracted before each production build
+packages/i18n/locales/messages.pot
 apps/web/scripts/msgids.json
 playwright-report-www
+
+# Downloaded embedded computer screen SDK files
+apps/web/public/computer-screen/*.js
+apps/web/public/computer-screen/sdk/

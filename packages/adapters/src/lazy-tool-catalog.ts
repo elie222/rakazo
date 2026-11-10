@@ -5,6 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { z } from "zod";
+import { catalogIdForRoute } from "./approval-effect.js";
 
 export const DIRECT_TOOL_LIMIT = 20;
 export const TOOL_SEARCH_LIMIT = 10;
@@ -20,7 +21,7 @@ export const CATALOG_SEARCH = "__catalog_search";
 export const CATALOG_LOAD = "__catalog_load";
 export const CATALOG_EXECUTE = "__catalog_execute";
 
-type CatalogEntry = { id: string; tool: ConnectorTool; group: string };
+export type CatalogEntry = { id: string; tool: ConnectorTool; group: string };
 
 export type CatalogSearchHit = {
   id: string;
@@ -31,6 +32,11 @@ export type CatalogSearchHit = {
 
 export type CatalogSearchResult =
   | { tools: CatalogSearchHit[] }
+  | {
+      tools: CatalogSearchHit[];
+      groups: Array<{ group: string; count: number }>;
+      hint: string;
+    }
   | { index: Array<{ group: string; names: string[] }> }
   | { groups: Array<{ group: string; count: number }>; hint: string }
   | { group: string; names: string[]; error?: string }
@@ -48,11 +54,11 @@ export function lazyCatalogTools(
   label: string,
   entries: CatalogEntry[] = [],
 ): ConnectorTool[] {
-  const indexText = formatNameIndexText(groupedNames(entries));
-  const embedIndex = indexText.length > 0 && fitsNameIndexBudget(groupedNames(entries));
-  const searchDescription = embedIndex
-    ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${indexText}`
-    : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.`;
+  const grouped = groupedNames(entries);
+  const searchDescription =
+    grouped.length > 0 && fitsNameIndexBudget(grouped)
+      ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${formatNameIndexText(grouped)}`
+      : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.${sourceSummaryText(grouped)}`;
   return [
     {
       name: `${prefix}_search_tools`,
@@ -149,14 +155,23 @@ export function searchCatalog(
   entries: CatalogEntry[],
   args: Record<string, unknown>,
 ): CatalogSearchResult {
-  const query = String(args.query ?? "")
+  // Source labels can differ only by case, so pick a source from the query as typed.
+  const typedQuery = String(args.query ?? "")
     .slice(0, MAX_QUERY_LENGTH)
-    .trim()
-    .toLowerCase();
-  const groupFilter = String(args.group ?? "")
+    .trim();
+  let query = typedQuery.toLowerCase();
+  let groupFilter = String(args.group ?? "")
     .slice(0, MAX_GROUP_LENGTH)
     .trim();
-  const scoped = groupFilter ? entries.filter((entry) => entry.group === groupFilter) : entries;
+  // A query that is only a source name asks for that source's tools, which word search
+  // would cap before the names that sort late.
+  if (!groupFilter && query && !entries.some((entry) => isExactName(entry, query))) {
+    if (entriesInGroup(entries, typedQuery).length > 0) {
+      groupFilter = typedQuery;
+      query = "";
+    }
+  }
+  const scoped = groupFilter ? entriesInGroup(entries, groupFilter) : entries;
 
   if (!query) {
     if (groupFilter) {
@@ -192,24 +207,59 @@ export function searchCatalog(
   const limit = Number.isFinite(requested)
     ? Math.max(1, Math.min(TOOL_SEARCH_LIMIT, Math.trunc(requested)))
     : TOOL_SEARCH_LIMIT;
+  const ranked = rankCatalogEntries(scoped, query, limit);
+  const hits = ranked.hits.map((entry) => ({
+    id: entry.id,
+    name: entry.tool.name,
+    description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
+    readOnly: entry.tool.readOnly === true,
+  }));
+  if (hits.length > 0 && ranked.complete) return { tools: hits };
   return {
-    tools: scoped
-      .map((entry) => ({ entry, score: catalogScore(entry, query) }))
-      .filter(({ score }) => score < 4)
-      .sort(
-        (left, right) =>
-          left.score - right.score ||
-          left.entry.tool.name.localeCompare(right.entry.tool.name) ||
-          left.entry.id.localeCompare(right.entry.id),
-      )
-      .slice(0, limit)
-      .map(({ entry }) => ({
-        id: entry.id,
-        name: entry.tool.name,
-        description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
-        readOnly: entry.tool.readOnly === true,
-      })),
+    tools: hits,
+    groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
+    hint: "No tool matches every word. Try other words or pass group. Built-in tools are not in this catalog.",
   };
+}
+
+/** The best `limit` entries for a query; `complete` when they match every query word. */
+export function rankCatalogEntries(
+  entries: CatalogEntry[],
+  query: string,
+  limit: number,
+): { hits: CatalogEntry[]; complete: boolean } {
+  const words = searchWords(query);
+  const score = (inside: boolean) =>
+    entries.map((entry) => ({ entry, ...catalogScore(entry, query, words, inside) }));
+  let scored = score(false);
+  // Rank on the words that matched before the cap, so a tool that matches every word is
+  // not pushed out by tools that match one word and sort earlier by name.
+  let bestMatched = Math.max(0, ...scored.map(({ matched }) => matched));
+  // Matches inside a word ("mail" in gmail) count only when nothing matches every word at a
+  // word start; otherwise "tool_0" would also find tool_10.
+  if (bestMatched < words.length) {
+    scored = score(true);
+    bestMatched = Math.max(0, ...scored.map(({ matched }) => matched));
+  }
+  const hits = scored
+    .filter(({ matched }) => matched > 0 && matched === bestMatched)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.entry.tool.name.localeCompare(right.entry.tool.name) ||
+        left.entry.id.localeCompare(right.entry.id),
+    )
+    .slice(0, limit)
+    .map(({ entry }) => entry);
+  return { hits, complete: bestMatched === words.length };
+}
+
+/** Exact label first; a model often capitalizes a source name ("Linear" for "linear"). */
+function entriesInGroup(entries: CatalogEntry[], group: string): CatalogEntry[] {
+  const exact = entries.filter((entry) => entry.group === group);
+  if (exact.length > 0) return exact;
+  const lower = group.toLowerCase();
+  return entries.filter((entry) => entry.group.toLowerCase() === lower);
 }
 
 export function loadCatalogEntry(
@@ -222,17 +272,54 @@ export function loadCatalogEntry(
     assertSchemaSize(byId);
     return byId;
   }
-  const byName = entries.filter((candidate) => candidate.tool.name === id);
-  if (byName.length === 1) {
-    assertSchemaSize(byName[0]!);
-    return byName[0]!;
+  // Models often name a tool by the source label they saw in search ("pc-files:read_file",
+  // "pc-files/read_file", "pc-files__read_file") instead of copying the opaque id. Accept a
+  // group-qualified name when it identifies exactly one authorized entry.
+  const candidates = entries.filter(
+    (candidate) =>
+      candidate.tool.name === id ||
+      catalogShortName(candidate) === id ||
+      matchesGroupQualifiedName(candidate, id),
+  );
+  if (candidates.length === 1) {
+    assertSchemaSize(candidates[0]!);
+    return candidates[0]!;
   }
-  const byShort = entries.filter((candidate) => catalogShortName(candidate) === id);
-  if (byShort.length === 1) {
-    assertSchemaSize(byShort[0]!);
-    return byShort[0]!;
+  if (candidates.length > 1) {
+    throw new Error(
+      `Tool name is ambiguous; use one of these ids: ${candidates
+        .slice(0, 5)
+        .map((candidate) => candidate.id)
+        .join(", ")}`,
+    );
   }
-  throw new Error("Tool is unknown or not authorized for this bot");
+  throw new Error(
+    "Tool is unknown or not authorized for this bot. Use the exact id returned by search.",
+  );
+}
+
+export const GROUP_SEPARATORS = [":", "/", "__", "."];
+
+function matchesGroupQualifiedName(entry: CatalogEntry, id: string): boolean {
+  const group = entry.group.toLowerCase();
+  const qualifiedName = id.trim();
+  const shortName = catalogShortName(entry);
+  for (const separator of GROUP_SEPARATORS) {
+    let separatorIndex = qualifiedName.indexOf(separator);
+    while (separatorIndex !== -1) {
+      if (qualifiedName.slice(0, separatorIndex).toLowerCase() === group) {
+        const rest = qualifiedName.slice(separatorIndex + separator.length);
+        if (rest === shortName || rest === entry.tool.name) return true;
+        try {
+          if (decodeURIComponent(rest) === shortName) return true;
+        } catch {
+          // Malformed escape: not a match.
+        }
+      }
+      separatorIndex = qualifiedName.indexOf(separator, separatorIndex + 1);
+    }
+  }
+  return false;
 }
 
 function assertSchemaSize(entry: CatalogEntry): void {
@@ -273,12 +360,90 @@ export function parseConnectorToolArgs(
       "Tool schema is unsupported: patternProperties with additionalProperties false",
     );
   }
-  const schema = z.fromJSONSchema(inputSchema as never);
+  const schema = z.fromJSONSchema(hoistPointerRefs(inputSchema) as never);
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     throw new Error(`Tool arguments are invalid: ${z.prettifyError(parsed.error)}`);
   }
   return parsed.data as Record<string, unknown>;
+}
+
+// Values under these keywords are data, so a `$ref` key inside them is not a reference.
+const LITERAL_KEYWORDS = new Set(["const", "enum", "default", "examples"]);
+// Keys of these maps are names, so a property called `default` is still a schema.
+const SCHEMA_MAP_KEYWORDS = new Set([
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+]);
+
+/** Zod resolves only `#` and `#/$defs/<name>` refs, but a valid schema may point anywhere in
+ * itself (`#/properties/values/anyOf/0`). Copy each such target into the definitions map and
+ * point the ref there; targets are registered before they are walked so cycles stay refs. */
+function hoistPointerRefs(root: Record<string, unknown>): Record<string, unknown> {
+  // Mirrors Zod's draft detection, which decides the prefix its resolver accepts.
+  const legacyDraft =
+    root.$schema === "http://json-schema.org/draft-07/schema#" ||
+    root.$schema === "http://json-schema.org/draft-04/schema#";
+  const defsKey = legacyDraft ? "definitions" : "$defs";
+  // Zod looks every name up in `$defs ?? definitions`, whichever prefix the ref used.
+  const container =
+    root.$defs != null ? "$defs" : root.definitions != null ? "definitions" : defsKey;
+  const existing = (root[container] ?? {}) as Record<string, unknown>;
+  const hoistedNames = new Map<unknown, string>();
+  const hoisted: Record<string, unknown> = {};
+
+  const resolve = (pointer: string): unknown => {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pointer.slice(2));
+    } catch {
+      return;
+    }
+    let node: unknown = root;
+    for (const raw of decoded.split("/")) {
+      const segment = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (node == null || typeof node !== "object" || !Object.hasOwn(node, segment)) return;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return node;
+  };
+
+  const mapEntries = (node: object, map: (key: string, value: unknown) => unknown) =>
+    Object.fromEntries(Object.entries(node).map(([key, value]) => [key, map(key, value)]));
+
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (node == null || typeof node !== "object") return node;
+    const result = mapEntries(node, (key, value) =>
+      LITERAL_KEYWORDS.has(key)
+        ? value
+        : SCHEMA_MAP_KEYWORDS.has(key) && value != null && typeof value === "object"
+          ? mapEntries(value, (_name, schema) => walk(schema))
+          : walk(value),
+    );
+    const ref = result.$ref;
+    if (typeof ref !== "string" || !ref.startsWith("#/")) return result;
+    const segments = ref.slice(2).split("/");
+    if (segments.length === 2 && segments[0] === defsKey) return result;
+    const target = resolve(ref);
+    if (target === undefined) return result;
+    let name = hoistedNames.get(target);
+    if (!name) {
+      name = `ref${hoistedNames.size}`;
+      while (Object.hasOwn(existing, name)) name = `_${name}`;
+      hoistedNames.set(target, name);
+      hoisted[name] = walk(target);
+    }
+    return { ...result, $ref: `#/${defsKey}/${name}` };
+  };
+
+  const walked = walk(root) as Record<string, unknown>;
+  if (hoistedNames.size === 0) return root;
+  return { ...walked, [container]: { ...(walked[container] as object), ...hoisted } };
 }
 
 export function assertConnectorToolArgs(
@@ -343,7 +508,7 @@ export function fitsNameIndexBudget(groups: Array<{ group: string; names: string
 function catalogEntryId(tool: ConnectorTool): string {
   const route = tool.route;
   if (!route?.resourceId) return tool.name;
-  return `${route.resourceId}:${encodeURIComponent(route.toolName)}`;
+  return catalogIdForRoute({ ...route, resourceId: route.resourceId });
 }
 
 function catalogGroupOf(tool: ConnectorTool): string {
@@ -358,7 +523,7 @@ function catalogShortName(entry: CatalogEntry): string {
   return entry.tool.name;
 }
 
-function groupedNames(entries: CatalogEntry[]): Array<{ group: string; names: string[] }> {
+export function groupedNames(entries: CatalogEntry[]): Array<{ group: string; names: string[] }> {
   const byGroup = new Map<string, string[]>();
   for (const entry of entries) {
     const names = byGroup.get(entry.group) ?? [];
@@ -379,15 +544,64 @@ function listNames(entries: CatalogEntry[]): string[] {
   );
 }
 
-function catalogScore(entry: CatalogEntry, query: string): number {
-  if (!query) return 0;
-  const name = entry.tool.name.toLowerCase();
-  const shortName = catalogShortName(entry).toLowerCase();
-  const description = entry.tool.description.toLowerCase();
-  const group = entry.group.toLowerCase();
-  if (name === query || shortName === query) return 0;
-  if (name.startsWith(query) || shortName.startsWith(query)) return 1;
-  if (name.includes(query) || shortName.includes(query) || group.includes(query)) return 2;
-  if (description.includes(query)) return 3;
-  return 4;
+/** Overflowing sources still appear by name and count, with names for those that fit. */
+function sourceSummaryText(groups: Array<{ group: string; names: string[] }>): string {
+  if (groups.length === 0) return "";
+  const sources = groups.map(({ group, names }) => `${group} (${names.length})`).join(", ");
+  const listed: Array<{ group: string; names: string[] }> = [];
+  for (const group of groups) {
+    if (fitsNameIndexBudget([...listed, group])) listed.push(group);
+  }
+  return listed.length > 0
+    ? `\nSources: ${sources}\n${formatNameIndexText(listed)}`
+    : `\nSources: ${sources}`;
+}
+
+function searchWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+function isExactName(entry: CatalogEntry, query: string): boolean {
+  return entry.tool.name.toLowerCase() === query || catalogShortName(entry).toLowerCase() === query;
+}
+
+/**
+ * Score each query word on its best field: a name word outranks the source, which outranks
+ * the description. A word matches the start of a word in that field, so "project" finds
+ * list_projects, or with inside set anywhere in one. An exact tool name ranks above everything.
+ */
+function catalogScore(
+  entry: CatalogEntry,
+  query: string,
+  words: string[],
+  inside: boolean,
+): { matched: number; score: number } {
+  if (isExactName(entry, query)) return { matched: words.length, score: Number.MAX_SAFE_INTEGER };
+  const fields = [
+    { words: searchWords(`${entry.tool.name} ${catalogShortName(entry)}`), weight: 3 },
+    { words: searchWords(entry.group), weight: 2 },
+    { words: searchWords(entry.tool.description), weight: 1 },
+  ];
+  let matched = 0;
+  let score = 0;
+  for (const word of words) {
+    const weight = Math.max(
+      0,
+      ...fields
+        .filter((field) =>
+          field.words.some((candidate) =>
+            inside ? candidate.includes(word) : candidate.startsWith(word),
+          ),
+        )
+        .map((field) => field.weight),
+    );
+    if (weight > 0) {
+      matched += 1;
+      score += weight;
+    }
+  }
+  return { matched, score };
 }

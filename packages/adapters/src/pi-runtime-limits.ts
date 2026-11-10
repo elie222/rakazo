@@ -1,11 +1,15 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { LOCAL_PROVIDER_ID } from "./pi-local-provider-id.js";
 
-/** Hung completions must fail before the typical 5-minute run lease. */
+/** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
+/** Bound connection establishment independently of response streaming. */
+export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * `timeoutMs` bounds only time-to-headers; the SSE body that follows is
- * unbounded. A Codex stream silent this long is a dead connection — reasoning
- * models emit thinking deltas continuously while generating.
+ * unbounded. Bound silence for every provider so a stalled stream can fail
+ * and advance the configured fallback chain.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 180_000;
 export const DEFAULT_MODEL_STREAM_MAX_RETRIES = 1;
@@ -15,6 +19,43 @@ export function modelStreamMaxRetries(): number {
   const value = process.env.MODEL_STREAM_MAX_RETRIES?.trim();
   const raw = Number(value || DEFAULT_MODEL_STREAM_MAX_RETRIES);
   return Number.isInteger(raw) && raw >= 0 && raw <= 5 ? raw : DEFAULT_MODEL_STREAM_MAX_RETRIES;
+}
+
+/**
+ * Parse a configurable timeout in whole milliseconds. Invalid or blank values
+ * retain the existing default. Node timers support delays up to 2^31 - 1 ms.
+ * Provider HTTP transports may impose additional independent limits.
+ */
+function timeoutMsFromEnv(
+  value: string | undefined,
+  fallback: number,
+  min: number = 1_000,
+  max: number = 300_000,
+): number {
+  const raw = Number(value?.trim() || fallback);
+  return Number.isInteger(raw) && raw >= min && raw <= max ? raw : fallback;
+}
+
+export function modelStreamTimeoutMs(): number {
+  return timeoutMsFromEnv(
+    process.env.MODEL_STREAM_TIMEOUT_MS,
+    MODEL_STREAM_TIMEOUT_MS,
+    1_000,
+    2_147_483_647,
+  );
+}
+
+export function modelConnectTimeoutMs(): number {
+  return timeoutMsFromEnv(process.env.MODEL_CONNECT_TIMEOUT_MS, MODEL_CONNECT_TIMEOUT_MS);
+}
+
+export function modelStreamIdleTimeoutMs(): number {
+  return timeoutMsFromEnv(
+    process.env.MODEL_STREAM_IDLE_TIMEOUT_MS,
+    MODEL_STREAM_IDLE_TIMEOUT_MS,
+    0,
+    2_147_483_647,
+  );
 }
 
 export const TOOL_RESULT_TEXT_LIMIT = 12_000;
@@ -89,32 +130,57 @@ export function billedPromptTokens(usage: {
  */
 export const REASONING_MODEL_MAX_TOKENS = 32_768;
 
+/** Leave at least three quarters of the window for input; token limits are positive integers. */
+export function effectiveOutputReserve(contextWindow: number, maxTokens: number): number {
+  return Math.min(maxTokens, Math.max(1, Math.floor(contextWindow / 4)));
+}
+
+/**
+ * The output cap the operator chose for a model that has no per-connection field: the local
+ * model server's own limit, when RAKAZO_LOCAL_MAX_TOKENS is set. Unset, and for other providers,
+ * the defaults apply.
+ */
+export function operatorMaxTokens(
+  model: Pick<Model<Api>, "provider" | "maxTokens">,
+): number | undefined {
+  return model.provider === LOCAL_PROVIDER_ID && process.env.RAKAZO_LOCAL_MAX_TOKENS?.trim()
+    ? model.maxTokens
+    : undefined;
+}
+
 /**
  * Completions default to a modest output cap so OpenRouter-style providers do not
- * hold credit for a model card's 128k ceiling. A configured maxTokens is the escape.
+ * hold credit for a model card's 128k ceiling. A configured maxTokens overrides this
+ * default, still bounded to a quarter of the context window when it is supplied.
  * Reasoning models get the wider default because their thinking is billed against
  * the same ceiling: at 4k a hard question can leave no room for the reply at all.
+ * An operator-set limit (operatorMaxTokens) replaces both defaults.
  */
 export function resolveCompletionMaxTokens(
   modelMaxTokens?: number,
   configuredMaxTokens?: number,
   optionsMaxTokens?: number,
   reasoning?: boolean,
+  contextWindow?: number,
+  operatorDefault?: number,
 ): number {
   const userCap =
     typeof configuredMaxTokens === "number" && configuredMaxTokens >= 1
       ? configuredMaxTokens
-      : reasoning
-        ? REASONING_MODEL_MAX_TOKENS
-        : DEFAULT_MODEL_MAX_TOKENS;
+      : operatorDefault !== undefined && operatorDefault >= 1
+        ? operatorDefault
+        : reasoning
+          ? REASONING_MODEL_MAX_TOKENS
+          : DEFAULT_MODEL_MAX_TOKENS;
   const optionCap =
     typeof optionsMaxTokens === "number" && optionsMaxTokens >= 1
       ? Math.min(optionsMaxTokens, userCap)
       : userCap;
-  if (typeof modelMaxTokens === "number" && modelMaxTokens >= 1) {
-    return Math.min(modelMaxTokens, optionCap);
-  }
-  return optionCap;
+  const maxTokens =
+    typeof modelMaxTokens === "number" && modelMaxTokens >= 1
+      ? Math.min(modelMaxTokens, optionCap)
+      : optionCap;
+  return contextWindow === undefined ? maxTokens : effectiveOutputReserve(contextWindow, maxTokens);
 }
 
 function nonNegativeCount(value: number | undefined): number {

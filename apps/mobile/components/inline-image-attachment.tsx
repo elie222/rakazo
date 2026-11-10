@@ -1,10 +1,18 @@
+import { useLingui } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactPreview } from "../lib/artifact-open";
-import { useI18n } from "../lib/i18n";
 import type { ImageSize } from "../lib/inline-image";
 import { fitImageSize } from "../lib/inline-image";
 
@@ -32,7 +40,7 @@ export function InlineImageAttachment({
   pressableProps?: Omit<PressableProps, "onPress" | "children" | "style">;
   labelColor: string;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = mobileTokens();
   const { width: windowWidth } = useWindowDimensions();
   const maxWidth = Math.min(Math.round(windowWidth * 0.68), 400);
@@ -65,7 +73,7 @@ export function InlineImageAttachment({
       <Pressable
         {...pressableProps}
         accessibilityRole="imagebutton"
-        accessibilityLabel={t("Open image {name}", { name })}
+        accessibilityLabel={t`Open image ${name}`}
         onPress={onOpen}
       >
         <Image
@@ -80,16 +88,21 @@ export function InlineImageAttachment({
     <Pressable {...pressableProps} onPress={state.status === "error" ? onOpen : undefined}>
       <View style={[styles.placeholder, { backgroundColor: tokens.muted }]}>
         <Text style={[styles.label, { color: labelColor }]}>🖼 {name}</Text>
-        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
-          {state.status === "loading" ? t("Loading image…") : t("Tap to open")}
-        </Text>
+        {state.status === "loading" ? (
+          <ActivityIndicator
+            color={tokens.mutedForeground}
+            accessibilityLabel={t`Loading image…`}
+          />
+        ) : (
+          <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{t`Tap to open`}</Text>
+        )}
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  image: { borderRadius: 12 },
+  image: { borderRadius: 12, overflow: "hidden" },
   placeholder: {
     minHeight: 44,
     justifyContent: "center",

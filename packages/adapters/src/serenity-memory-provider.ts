@@ -9,6 +9,8 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import { egressRefused } from "./network-address.js";
+import type { SerenityConnectionConfig, SerenityNetworkDependencies } from "./serenity-client.js";
 import {
   classifySerenityEndpointTrust,
   forgetSerenity,
@@ -17,19 +19,17 @@ import {
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  type SerenityConnectionConfig,
-  type SerenityNetworkDependencies,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 export const SERENITY_PROVIDER_ID = "serenity";
 
-/** Thrown when prepare would probe a private endpoint without deployment-owner authorization. */
-export class MemoryProviderDeploymentOwnerRequiredError extends Error {
-  readonly code = "DEPLOYMENT_OWNER_REQUIRED" as const;
-  constructor(message = "This memory provider endpoint requires deployment-owner authorization.") {
+/** Thrown when prepare would probe a private endpoint without operator authorization. */
+export class MemoryProviderPrivateEndpointRequiredError extends Error {
+  readonly code = "PRIVATE_ENDPOINT_REQUIRED" as const;
+  constructor(message = "This memory provider endpoint requires operator authorization.") {
     super(message);
-    this.name = "MemoryProviderDeploymentOwnerRequiredError";
+    this.name = "MemoryProviderPrivateEndpointRequiredError";
   }
 }
 
@@ -67,19 +67,19 @@ function parseSerenityConnection(
   };
 }
 
-export function serenityRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+export function serenityRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
   if (settings.endpointTrust === "private") return true;
   const endpoint = settings.endpoint?.trim();
   if (!endpoint) return false;
   try {
-    return serenityEndpointRequiresDeploymentOwner(normalizeSerenityEndpoint(endpoint));
+    return serenityEndpointRequiresPrivateEndpoint(normalizeSerenityEndpoint(endpoint));
   } catch {
     return false;
   }
 }
 
 /**
- * DNS/trust classification without probing. Callers must enforce deployment-owner
+ * DNS/trust classification without probing. Callers must enforce operator
  * authorization on the result before any credentialed Serenity request.
  */
 export async function classifySerenityConnectionSettings(
@@ -105,7 +105,10 @@ export async function prepareSerenityConnection(
   // Reclassification can flip public→private between the API owner check and this probe.
   // Non-owners must fail closed here before any credentialed MCP request.
   if (classifiedSettings.endpointTrust === "private" && options?.allowPrivateEndpoint === false) {
-    throw new MemoryProviderDeploymentOwnerRequiredError();
+    throw egressRefused(
+      URL.parse(classifiedSettings.endpoint ?? "")?.hostname ?? "",
+      new MemoryProviderPrivateEndpointRequiredError(),
+    );
   }
   const connection = parseSerenityConnection(classifiedSettings, credentials);
   const probe = await probeSerenity(
@@ -196,6 +199,43 @@ function rememberOperationKey(runScope: string, entity: string, fact: string): s
   return `rakazo:${digest}`;
 }
 
+const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
+
+function terms(text: string): Set<string> {
+  const words = new Set<string>();
+  for (const segment of wordSegmenter.segment(text.toLowerCase())) {
+    if (segment.isWordLike) words.add(segment.segment);
+  }
+  return words;
+}
+
+/**
+ * Serenity returns facts newest first without regard to the query, so rank them here.
+ * A fact scores the IDF-weighted share of its words that the query mentions (0 to 1), so
+ * words common to every candidate count for almost nothing. Ties keep the newest first.
+ */
+function rankByQuery(query: string, candidates: SemanticMemoryResult[]): SemanticMemoryResult[] {
+  const queryTerms = terms(query);
+  const factTerms = candidates.map((candidate) => terms(candidate.memory));
+  const documentFrequency = new Map<string, number>();
+  for (const words of factTerms) {
+    for (const word of words) documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
+  }
+  const weight = (word: string) =>
+    Math.log((candidates.length + 1) / (documentFrequency.get(word) ?? 1));
+  return candidates
+    .map((candidate, index) => {
+      let total = 0;
+      let matched = 0;
+      for (const word of factTerms[index] ?? []) {
+        total += weight(word);
+        if (queryTerms.has(word)) matched += weight(word);
+      }
+      return { ...candidate, score: total > 0 ? matched / total : 0 };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
 export class SerenityMemoryProvider implements SemanticMemoryProvider {
   constructor(
     private readonly connection: SerenityConnectionConfig & {
@@ -232,11 +272,7 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
     const results = await Promise.all(
       entities.map(async (entity) => ({
         entity,
-        result: await recallSerenity(request.query, this.connection, {
-          limit: request.limit,
-          entity,
-          signal: context.signal,
-        }),
+        result: await recallSerenity(this.connection, { entity, signal: context.signal }),
       })),
     );
     const errors = results.filter((entry) => !entry.result.ok);
@@ -247,22 +283,22 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
       };
     }
     const seen = new Set<string>();
-    const merged: SemanticMemoryResult[] = [];
+    const candidates: SemanticMemoryResult[] = [];
     for (const { entity, result } of results) {
       if (!result.ok) continue;
       for (const fact of result.value) {
         if (seen.has(fact.factId)) continue;
         seen.add(fact.factId);
-        merged.push({
+        candidates.push({
           memory: fact.fact,
-          score: 1,
+          score: 0,
           id: fact.factId,
           provenance: fact.provenance,
           entity,
         });
       }
     }
-    return { ok: true, value: merged.slice(0, request.limit) };
+    return { ok: true, value: rankByQuery(request.query, candidates).slice(0, request.limit) };
   }
 
   async save(
@@ -318,8 +354,42 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
           "Serenity writes are disabled for this Space. Enable writing in Memory settings to forget facts.",
       };
     }
-    // Serenity forget is id-scoped (opaque fact_id); entity namespaces do not apply.
-    const result = await forgetSerenity(request.id, this.connection, {
+    // Serenity forget deletes any fact id in the brain, so confirm the fact sits in one of
+    // this bot's recall namespaces first and fail closed when that cannot be shown.
+    const allowed = recallEntities(
+      request.scope,
+      request.botId,
+      context.spaceId,
+      this.connection.brainLabel,
+    );
+    if (request.entity && !allowed.includes(request.entity)) {
+      return { ok: false, error: "That memory belongs to another bot or Space." };
+    }
+    const factId = request.id.trim();
+    if (!factId) return { ok: false, error: "id is required" };
+    const entities = request.entity ? [request.entity] : allowed;
+    let owned = false;
+    const errors: string[] = [];
+    for (const entity of entities) {
+      const recalled = await recallSerenity(this.connection, { entity, signal: context.signal });
+      if (!recalled.ok) {
+        errors.push(recalled.error);
+        continue;
+      }
+      if (recalled.value.some((fact) => fact.factId === factId)) {
+        owned = true;
+        break;
+      }
+    }
+    if (!owned) {
+      return {
+        ok: false,
+        error: errors.length
+          ? `Could not confirm this memory belongs to this bot: ${errors.join("; ")}`
+          : "No memory with that id was found in this bot's recall results.",
+      };
+    }
+    const result = await forgetSerenity(factId, this.connection, {
       reason: request.reason,
       signal: context.signal,
     });

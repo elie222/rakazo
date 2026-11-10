@@ -1,3 +1,5 @@
+import type { SpeechLocale } from "@rakazo/core";
+import { speechLocaleTag } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
 import { getLocales } from "expo-localization";
 import type * as ExpoSpeech from "expo-speech";
@@ -25,7 +27,7 @@ async function loadAssignments(): Promise<Record<string, string>> {
 function saveAssignments(assignments: Record<string, string>): void {
   const file = assignmentsFile();
   if (!file.exists) file.create();
-  file.write(JSON.stringify(assignments));
+  file.writeSync(JSON.stringify(assignments));
 }
 
 // Serialize assignment updates so concurrent bots keep distinct voices.
@@ -87,15 +89,26 @@ function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
   return NOVELTY_VOICE_NAMES.has(noveltyKey(voice));
 }
 
-const PRIMARY_LOCALES: Readonly<Record<string, string>> = {
-  en: "en-us",
-  de: "de-de",
-  ru: "ru-ru",
-  zh: "zh-cn",
-  fr: "fr-fr",
-  es: "es-es",
-  ja: "ja-jp",
-};
+/** Languages whose main regional voice is a good fallback when the device's own has none. */
+const PRIMARY_VOICE_LOCALES = [
+  "en",
+  "de",
+  "ru",
+  "fr",
+  "es",
+  "ja",
+  "zh-CN",
+] as const satisfies readonly SpeechLocale[];
+
+/** Lowercase voice locales to fall back on, best first, when the device's own has no voice. */
+function primaryLocales(locale: string, region: string | undefined): string[] {
+  const [language = "", country = region] = locale.split("-");
+  // Outside Spain a Latin American voice sounds closer than Castilian. iOS ships Mexico's,
+  // Android the United States'.
+  if (language === "es" && country && country !== "es") return ["es-mx", "es-us", "es-es"];
+  const primary = PRIMARY_VOICE_LOCALES.find((code) => code.split("-")[0] === language);
+  return primary ? [speechLocaleTag(primary).toLowerCase()] : [];
+}
 
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await loadSpeech();
@@ -112,11 +125,11 @@ export async function deviceVoices(): Promise<Voice[]> {
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 }
 
-/** "en-us-x-iol-local" reads as "en-US · iol": the engine's names are ids, not labels. */
+/** "en-us-x-iol-local" reads as "iol (en-US)": the engine's names are ids, not labels. */
 export function voiceLabel(voice: Voice): string {
   const code = voice.identifier.match(/-x-([a-z0-9]+)-/i)?.[1];
   const name = code ?? (voice.name !== voice.identifier ? voice.name : voice.identifier);
-  return voice.language ? `${voice.language} · ${name}` : name;
+  return voice.language ? `${name} (${voice.language})` : name;
 }
 
 /** The voice a bot speaks with, handing it one no other bot has yet if it has none. */
@@ -140,10 +153,10 @@ export function voiceForBot(botId: string): Promise<string | undefined> {
       const tag = voice.language.toLowerCase();
       return tag === locale || (region && tag.split("-").slice(1).includes(region));
     });
-    const primaryLocale = PRIMARY_LOCALES[locale.split("-")[0] ?? ""];
-    const primaryRegion = available.filter(
-      (voice) => voice.language.toLowerCase() === primaryLocale,
-    );
+    const primaryRegion =
+      primaryLocales(locale, region)
+        .map((tag) => available.filter((voice) => voice.language.toLowerCase() === tag))
+        .find((voices) => voices.length) ?? [];
     const candidates = sameLocale.length
       ? sameLocale
       : primaryRegion.length

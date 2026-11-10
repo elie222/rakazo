@@ -4,17 +4,24 @@ import type { StuckWorkStatus } from "@rakazo/core";
 import {
   isStuckWorkStatus,
   STUCK_WORK_NOTICE,
-  STUCK_WORK_NOTIFY_AFTER_MS,
   STUCK_WORK_STATUSES,
   stuckWorkAction,
   stuckWorkAgeMs,
+  stuckWorkDueAfterMs,
   stuckWorkReminder,
   stuckWorkStoppedNotification,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, expireStuckRun, withTransactionRetry } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  expireStuckRun,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
+import { notificationIdentity } from "./notification-identity.js";
+import { publishChatAlert } from "./run-notifications.js";
 
 type StuckCursor = { at: Date; id: string };
 
@@ -27,7 +34,7 @@ type StuckCandidate = {
   botId: string;
   userId: string;
   taskId: string;
-  bot: { name: string; notifyOnFinish: boolean };
+  bot: { name: string; color: string; avatarSet: string; notifyOnFinish: boolean };
   thread: { groupId: string | null };
 };
 
@@ -39,13 +46,10 @@ type StuckCandidate = {
 export const STUCK_NOTICE_CLAIM_TTL_MS = 2 * 60 * 1000;
 
 /**
- * Remind, then cancel, queued runs and human waits that have been sitting still.
- * Lives on the job reconciler so a second scheduler is not required. The notice
- * stamp is a thread.meta event keyed to this episode's updatedAt, so answering
- * or reclaiming the run (which bumps updatedAt) can remind again later. A pending
- * claim reserves the send and is not a delivery. It becomes delivered only after
- * the push is accepted, and it is removed when the push fails or no token can
- * receive it, so a crash or a dropped token can still remind.
+ * Remind, then cancel, queued runs and human waits that have been sitting still. The notice
+ * stamp is keyed to this episode's updatedAt, so answering or reclaiming the run can remind
+ * again later. A pending claim becomes delivered only after the push is accepted and is removed
+ * when the push fails, so a crash or a dropped token can still remind.
  */
 export async function reconcileStuckWork(deps: {
   prisma: PrismaClient;
@@ -56,7 +60,6 @@ export async function reconcileStuckWork(deps: {
   batchSize: number;
   cursor?: StuckCursor;
 }): Promise<StuckCursor | undefined> {
-  const cutoff = new Date(deps.now.getTime() - STUCK_WORK_NOTIFY_AFTER_MS);
   const cursorFilter = deps.cursor
     ? {
         OR: [
@@ -67,8 +70,15 @@ export async function reconcileStuckWork(deps: {
     : undefined;
   const runs = await deps.prisma.run.findMany({
     where: {
-      status: { in: [...STUCK_WORK_STATUSES] },
-      AND: [{ updatedAt: { lte: cutoff } }, ...(cursorFilter ? [cursorFilter] : [])],
+      AND: [
+        {
+          OR: STUCK_WORK_STATUSES.map((status) => ({
+            status,
+            updatedAt: { lte: new Date(deps.now.getTime() - stuckWorkDueAfterMs(status)) },
+          })),
+        },
+        ...(cursorFilter ? [cursorFilter] : []),
+      ],
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: deps.batchSize,
@@ -81,7 +91,7 @@ export async function reconcileStuckWork(deps: {
       botId: true,
       userId: true,
       taskId: true,
-      bot: { select: { name: true, notifyOnFinish: true } },
+      bot: { select: { name: true, color: true, avatarSet: true, notifyOnFinish: true } },
       thread: { select: { groupId: true } },
     },
   });
@@ -106,6 +116,7 @@ export async function reconcileStuckWork(deps: {
       (notice) => notice.runId === run.id && noticeIsDelivered(notice.payload, run.updatedAt),
     );
     const action = stuckWorkAction({
+      status: run.status,
       ageMs: stuckWorkAgeMs(run.updatedAt, deps.now),
       alreadyNotified,
     });
@@ -128,7 +139,7 @@ function readyStuckRun(
 ): StuckCandidate | null {
   if (!run.status || !isStuckWorkStatus(run.status)) return null;
   if (!(run.updatedAt instanceof Date)) return null;
-  if (stuckWorkAgeMs(run.updatedAt, now) < STUCK_WORK_NOTIFY_AFTER_MS) return null;
+  if (stuckWorkAgeMs(run.updatedAt, now) < stuckWorkDueAfterMs(run.status)) return null;
   if (!run.spaceId || !run.threadId || !run.botId || !run.userId || !run.taskId) return null;
   if (!run.bot || !run.thread) return null;
   return {
@@ -192,6 +203,7 @@ function deliveredNotice(run: StuckCandidate): Prisma.InputJsonValue {
 async function remindStuckRun(
   deps: {
     prisma: PrismaClient;
+    events?: ThreadEvents;
     notifications?: NotificationProvider;
     now: Date;
   },
@@ -202,20 +214,29 @@ async function remindStuckRun(
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) => claimStuckReminder(tx, run, deps.now)),
+    deps.prisma.$transaction(
+      (tx) => claimStuckReminder(tx, run, deps.now),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   );
   if (!claimId) return;
   const reminder = stuckWorkReminder(run.status, run.bot.name);
-  const delivery = await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: reminder.kind,
     title: reminder.title,
     body: reminder.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  const delivery = await sendStuckNotice(deps.notifications, run, message);
   if (delivery === "delivered") {
+    // After the push, so a failed push that is retried does not alert open apps twice.
+    publishChatAlert(deps.events, run, message, run.thread.groupId);
     await withTransactionRetry(() =>
-      deps.prisma.$transaction((tx) => markStuckNoticeDelivered(tx, claimId, run)),
+      deps.prisma.$transaction(
+        (tx) => markStuckNoticeDelivered(tx, claimId, run),
+        THREAD_LOCK_TRANSACTION_OPTIONS,
+      ),
     );
     return;
   }
@@ -313,14 +334,16 @@ async function expireOne(
   run: StuckCandidate,
 ) {
   const expired = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) =>
-      expireStuckRun(tx, {
-        runId: run.id,
-        threadId: run.threadId,
-        status: run.status,
-        updatedAt: run.updatedAt,
-        now: deps.now,
-      }),
+    deps.prisma.$transaction(
+      (tx) =>
+        expireStuckRun(tx, {
+          runId: run.id,
+          threadId: run.threadId,
+          status: run.status,
+          updatedAt: run.updatedAt,
+          now: deps.now,
+        }),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     ),
   );
   if (!expired) return;
@@ -332,15 +355,17 @@ async function expireOne(
       getLogger().error("stuck work continuation", error);
     });
   }
-  if (!deps.notifications || !noticesEnabled(run)) return;
+  if (!noticesEnabled(run)) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
-  await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: stopped.kind,
     title: stopped.title,
     body: stopped.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  publishChatAlert(deps.events, run, message, run.thread.groupId);
+  if (deps.notifications) await sendStuckNotice(deps.notifications, run, message);
 }
 
 type StuckNoticeDelivery = "delivered" | "undeliverable" | "failed";
@@ -358,8 +383,12 @@ async function sendStuckNotice(
     botId: run.botId,
     signal: new AbortController().signal,
   };
-  const notice = run.thread.groupId ? { ...message, groupId: run.thread.groupId } : message;
   try {
+    const notice = {
+      ...message,
+      sender: await notificationIdentity({ id: run.botId, ...run.bot }),
+      ...(run.thread.groupId ? { groupId: run.thread.groupId } : {}),
+    };
     if (notifications instanceof ExpoPushProvider) {
       return await notifications.deliver(notice, context);
     }

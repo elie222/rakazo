@@ -1,10 +1,6 @@
 /**
- * Coerce a tool-call argument into text for file-writing tools.
- *
- * Models occasionally pass structured JSON where a string is expected
- * (e.g. write_file content). String() on an object yields "[object Object]",
- * which would silently corrupt the written file — serialise objects to
- * readable JSON instead.
+ * Models occasionally pass structured JSON where a string is expected; String() would write
+ * "[object Object]", so objects are serialized as readable JSON instead.
  */
 export function textContentArg(value: unknown, fallback: string): string {
   if (value === null || value === undefined) return fallback;

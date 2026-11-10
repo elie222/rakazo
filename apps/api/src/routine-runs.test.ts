@@ -1,5 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { RoutineHistorySchema } from "@rakazo/contracts";
+import { runFailureError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { listRoutineRuns } from "./routine-runs.js";
@@ -33,7 +34,6 @@ describe("routine history", () => {
       where: {
         id: "routine-1",
         spaceId: actor.spaceId,
-        userId: actor.userId,
         bot: { archivedAt: null },
       },
       select: { botId: true },
@@ -50,6 +50,7 @@ describe("routine history", () => {
         threadId: "thread-1",
         thread: { groupId: i === 1 ? "group-1" : null },
         status,
+        error: "504: request timed out",
         createdAt: at,
         startedAt: status === "queued" ? null : at,
         completedAt: status === "queued" ? null : new Date(at.getTime() + 82_000),
@@ -61,13 +62,16 @@ describe("routine history", () => {
     expect(history.runs.map((row) => row.messageId)).toEqual([null, "reply-new", null]);
     expect(history.runs.map((row) => row.groupId)).toEqual([null, "group-1", null]);
     expect(history.runs[2]?.startedAt).toBeNull();
+    expect(history.runs.map((row) => row.error)).toEqual([null, "504: request timed out", null]);
+    expect(runs).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ error: true }) }),
+    );
     expect(runs).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           routineId: "routine-1",
           botId: "bot-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         take: 21,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -76,15 +80,49 @@ describe("routine history", () => {
     const sql = messages.mock.calls[0]?.[0];
     expect(sql.sql).toContain('DISTINCT ON (m."runId")');
     expect(sql.sql).toContain('r."threadId" = m."threadId"');
-    expect(sql.values).toEqual([
-      "run-0",
-      "run-1",
-      "run-2",
-      actor.spaceId,
-      actor.userId,
-      actor.spaceId,
-      actor.userId,
+    expect(sql.values).toEqual(["run-0", "run-1", "run-2", actor.spaceId, actor.spaceId]);
+  });
+  it("returns a shorter page with a cursor when asked for fewer runs", async () => {
+    const { prisma, runs } = fixture();
+    runs.mockResolvedValue(
+      Array.from({ length: 3 }, (_, i) => ({
+        id: `run-${i}`,
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "completed",
+        error: null,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      })),
+    );
+    const history = await listRoutineRuns(prisma, actor, "routine-1", undefined, 2);
+    expect(runs).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }));
+    expect(history.runs.map((row) => row.id)).toEqual(["run-0", "run-1"]);
+    expect(history.nextCursor).toEqual({ id: "run-1", createdAt: at.toISOString() });
+  });
+  it("bounds stored errors like thread failures", async () => {
+    const { prisma, runs } = fixture();
+    const error = "x".repeat(400);
+    runs.mockResolvedValue([
+      {
+        id: "failed-run",
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "failed",
+        error,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      },
     ]);
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(history.runs[0]?.error).toBe(`${"x".repeat(300)}…`);
+    expect(history.runs[0]?.error).toBe(
+      runFailureError({ type: "run.failed", payload: { error } }),
+    );
   });
   it("does not confuse a database failure with an empty history", async () => {
     const { prisma, runs, messages } = fixture();
@@ -128,7 +166,6 @@ describe("routine history", () => {
           routineId: "routine-1",
           botId: "bot-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
           OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: "run-11" } }],
         },
       }),
@@ -156,5 +193,25 @@ describe("routine history", () => {
       groupId: "group-1",
       messageId: "group-reply",
     });
+  });
+  it("returns the due time recorded on a run that started late", async () => {
+    const { prisma, runs } = fixture();
+    runs.mockResolvedValue(
+      [new Date("2026-01-02T08:00:00Z"), null].map((lateSince, i) => ({
+        id: `run-${i}`,
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "completed",
+        error: null,
+        lateSince,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      })),
+    );
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(RoutineHistorySchema.parse(history)).toEqual(history);
+    expect(history.runs.map((run) => run.lateSince)).toEqual(["2026-01-02T08:00:00.000Z", null]);
   });
 });

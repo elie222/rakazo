@@ -109,4 +109,32 @@ describe("job correlation envelope", () => {
       level: "error",
     });
   });
+  it("keeps failed queue outcomes without reporting an already reported cause twice", async () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
+    installLogger(logger);
+    const error = new Error("setup failed");
+    await expect(
+      runCorrelatedJob({
+        name: "run.continue",
+        payload: {},
+        run: async () => {
+          logger.error("run setup failed", error);
+          throw new Error("retrying", { cause: error });
+        },
+      }),
+    ).rejects.toThrow("retrying");
+    expect(sink.events.at(-1)).toMatchObject({ "job.outcome": "error", "error.report": false });
+    await expect(
+      runCorrelatedJob({
+        name: "run.continue",
+        payload: {},
+        run: async () => {
+          logger.error("an earlier independent error", error);
+          throw new Error("different failure");
+        },
+      }),
+    ).rejects.toThrow("different failure");
+    expect(sink.events.at(-1)).toMatchObject({ "error.report": true });
+  });
 });

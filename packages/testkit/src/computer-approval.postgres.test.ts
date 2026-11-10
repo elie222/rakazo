@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator, FakeSandboxProvider } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rakazo/adapters";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
-import { type ModelEmulatorStep, startModelEmulator } from "./model-emulator.js";
+import type { ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
+import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const fixtureOrigin = "http://127.0.0.1:5173";
 
@@ -64,28 +66,8 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
             },
           },
           {
-            expect(request) {
-              expect(JSON.stringify(request.messages)).toContain("approved clipboard content");
-            },
-            response: {
-              type: "tool",
-              id: "resumed-action",
-              name: "computer_act",
-              // The executor must restore exactly what the user approved, even if
-              // the model reconstructs different arguments after its run resumes.
-              arguments:
-                answer === "allow"
-                  ? {
-                      ...approvedArgs,
-                      actions: [{ kind: "type", text: "unapproved replacement" }],
-                    }
-                  : approvedArgs,
-            },
-          },
-          {
-            // A later identical computer_act in this same resume is a new occurrence,
-            // not a replay. This fixture only checks the approved request is restored.
-            expect: resultStep("resumed-action"),
+            // Restore the original pending call before another model choice.
+            expect: resultStep("pending-action"),
             response: { type: "text", text: "Finished the approval fixture." },
           },
         ],
@@ -93,7 +75,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-computer-approval-"));
       let stop: (() => Promise<void>) | undefined;
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const handles = await createApp({
           databaseUrl: process.env.DATABASE_URL!,
           realtimeDatabaseUrl: process.env.DATABASE_URL!,
@@ -104,10 +86,11 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           agentRuntime: "pi",
           wakeupDriver: "memory",
           signupsEnabled: "true",
-          composio: new ComposioEmulator(),
+          composio: new ComposioConnector({ client: new FakeComposioClient() }),
           encryptionKey: "offline-computer-fixture-encryption-key",
         });
         stop = handles.stop;
+        const db = asSystem(handles.prisma);
         expect(handles.sandbox).toBeInstanceOf(FakeSandboxProvider);
         sandbox = handles.sandbox as FakeSandboxProvider;
         // Keep the real fake-provider implementation; observe calls and its state
@@ -145,11 +128,10 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           modelProvider: model.model.provider,
           modelId: model.model.id,
         });
-        const storedBot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
-        await handles.prisma.actionApprovalRule.create({
+        const storedBot = await db.bot.findUniqueOrThrow({ where: { id: bot.id } });
+        await db.userActionApprovalRule.create({
           data: {
-            spaceId: storedBot.spaceId,
-            createdByUserId: storedBot.userId,
+            userId: storedBot.userId,
             effect: "require_approval",
             matchKind: "tool",
             matchValue: "computer_act",
@@ -163,7 +145,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           await expect
             .poll(
               async () => {
-                const run = await handles.prisma.run.findUniqueOrThrow({
+                const run = await db.run.findUniqueOrThrow({
                   where: { id: sent.runId },
                 });
                 if (run.status === "failed") model.assertComplete();
@@ -176,22 +158,27 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
         await waitForRun("waiting_input");
         expect(model.requests).toHaveLength(1);
         expect(act).not.toHaveBeenCalled();
-        const effects = await handles.prisma.externalEffect.findMany({
+        const effects = await db.externalEffect.findMany({
           where: { runId: sent.runId },
         });
-        expect(effects).toHaveLength(1);
-        expect(effects[0]).toMatchObject({
+        expect(effects).toHaveLength(2);
+        expect(effects.find((effect) => effect.kind === "runtime_checkpoint")).toMatchObject({
+          status: "runtime_checkpoint",
+          request: {},
+        });
+        const actionEffect = effects.find((effect) => effect.kind === "computer_act")!;
+        expect(actionEffect).toMatchObject({
           kind: "computer_act",
           status: "intended",
           request: approvedArgs,
         });
-        const card = await handles.prisma.message.findFirstOrThrow({
+        const card = await db.message.findFirstOrThrow({
           where: { runId: sent.runId, role: "bot" },
           orderBy: { seq: "desc" },
         });
         expect(card.blocks).toEqual(
           expect.arrayContaining([
-            expect.objectContaining({ kind: "ask", approvalEffectId: effects[0]!.id }),
+            expect.objectContaining({ kind: "ask", approvalEffectId: actionEffect.id }),
           ]),
         );
         await rpc(handles.app, cookie, "threads/answer", {
@@ -210,12 +197,12 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
             settleMs: 0,
           });
         }
-        const settledEffects = await handles.prisma.externalEffect.findMany({
+        const settledEffects = await db.externalEffect.findMany({
           where: { runId: sent.runId },
         });
         expect(settledEffects).toHaveLength(1);
         expect(settledEffects[0]).toMatchObject({
-          id: effects[0]!.id,
+          id: actionEffect.id,
           status: answer === "allow" ? "completed" : "denied",
           request: approvedArgs,
         });

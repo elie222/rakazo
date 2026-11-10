@@ -3,6 +3,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   realpath,
   rename,
@@ -13,14 +14,16 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { LocalAgentHomeStore } from "./home.js";
+import type { AgentHomeStore } from "@rakazo/adapter-kit";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { LocalAgentHomeStore, removeAgentHome } from "./home.js";
 
 const hooks = vi.hoisted(() => ({
   afterRealpath: undefined as ((target: string) => Promise<void>) | undefined,
   beforeReaddir: undefined as ((target: string) => Promise<void>) | undefined,
   beforeOpen: undefined as ((target: string) => Promise<void>) | undefined,
   afterOpen: undefined as ((target: string) => Promise<void>) | undefined,
+  beforeMkdir: undefined as ((target: string) => Promise<void>) | undefined,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -35,6 +38,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     readdir: async (...args: Parameters<typeof fs.readdir>) => {
       await hooks.beforeReaddir?.(String(args[0]));
       return fs.readdir(...args);
+    },
+    mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      await hooks.beforeMkdir?.(String(args[0]));
+      return fs.mkdir(...args);
     },
     open: async (...args: Parameters<typeof fs.open>) => {
       await hooks.beforeOpen?.(String(args[0]));
@@ -59,6 +66,7 @@ afterEach(async () => {
   hooks.beforeReaddir = undefined;
   hooks.beforeOpen = undefined;
   hooks.afterOpen = undefined;
+  hooks.beforeMkdir = undefined;
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -80,6 +88,47 @@ async function exported(store: LocalAgentHomeStore, directory = "") {
 }
 
 describe("LocalAgentHomeStore path containment", () => {
+  it.each([false, true])(
+    "excludes caches from commits without descending into them (staged: %s)",
+    async (staged) => {
+      const { root, store } = await fixture();
+      const staging = staged ? await store.createStaging() : undefined;
+      const source = staging?.path ?? path.join(root, "source");
+      try {
+        for (const name of [
+          "project/node_modules/pkg/index.js",
+          ".cache/uv/data",
+          ".yarn/cache/pkg",
+          "packages/core/keep.txt",
+          ".yarn/patches/fix.patch",
+          "debug.log",
+        ]) {
+          await mkdir(path.dirname(path.join(source, name)), { recursive: true });
+          await writeFile(path.join(source, name), "ok");
+        }
+        hooks.beforeReaddir = async (directory) => {
+          if (directory.includes("node_modules") || directory.endsWith(".cache"))
+            throw new Error("must prune before descending");
+        };
+        await store.commit("bot-1", source, context);
+        expect(
+          await readFile(path.join(store.pathFor("bot-1"), "packages/core/keep.txt"), "utf8"),
+        ).toBe("ok");
+        expect(
+          await readFile(path.join(store.pathFor("bot-1"), ".yarn/patches/fix.patch"), "utf8"),
+        ).toBe("ok");
+        for (const name of ["project/node_modules", ".cache", ".yarn/cache", "debug.log"]) {
+          await expect(stat(path.join(store.pathFor("bot-1"), name))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }
+        if (!staged) expect(await readFile(path.join(source, ".cache/uv/data"), "utf8")).toBe("ok");
+      } finally {
+        await staging?.remove();
+      }
+    },
+  );
+
   it("keeps revision metadata external without reserving a workspace file name", async () => {
     const { root, store } = await fixture();
     const source = path.join(root, "checkpoint-source");
@@ -120,6 +169,33 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await store.readFile("bot-1", "link.txt", context)).toBe("before");
     await store.writeFile("bot-1", "link.txt", "after", context);
     expect(await readFile(path.join(home, "target.txt"), "utf8")).toBe("after");
+  });
+
+  it("rejects an opened file reached through a swapped parent even after the parent is restored", async () => {
+    const { root, store, home } = await fixture();
+    const directory = path.join(await realpath(home), "notes");
+    const parked = path.join(await realpath(home), "parked-notes");
+    const outside = path.join(await realpath(root), "outside");
+    const target = path.join(directory, "result.txt");
+    await mkdir(directory);
+    await mkdir(outside);
+    await writeFile(target, "inside");
+    await writeFile(path.join(outside, "result.txt"), "outside");
+    hooks.beforeOpen = async (file) => {
+      if (file !== target) return;
+      hooks.beforeOpen = undefined;
+      await rename(directory, parked);
+      await symlink(outside, directory, "junction");
+    };
+    hooks.afterOpen = async (file) => {
+      if (file !== target) return;
+      hooks.afterOpen = undefined;
+      await rm(directory);
+      await rename(parked, directory);
+    };
+
+    await expect(store.readFile("bot-1", "notes/result.txt", context)).rejects.toThrow(/escapes/i);
+    expect(await store.readFile("bot-1", "notes/result.txt", context)).toBe("inside");
   });
 
   it("allows directory symlinks that remain inside the bot home", async () => {
@@ -403,6 +479,28 @@ describe("LocalAgentHomeStore path containment", () => {
     await expect(exported(store)).rejects.toBe(error);
   });
 
+  it("lists a folder another request creates at the same moment", async () => {
+    const { store, home } = await fixture();
+    hooks.beforeMkdir = async (target) => {
+      if (target === path.join(await realpath(home), "shared")) {
+        hooks.beforeMkdir = undefined;
+        await mkdir(target);
+      }
+    };
+
+    expect(await store.list("bot-1", "shared", context)).toEqual([]);
+  });
+
+  it("still refuses a dangling link where a folder would be made", async () => {
+    const { root, store, home } = await fixture();
+    await symlink(path.join(root, "outside"), path.join(home, "shared"));
+
+    await expect(store.list("bot-1", "shared", context)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(path.join(root, "outside"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("skips hidden names before resolving their targets", async () => {
     const { store, home } = await fixture();
     await writeFile(path.join(home, "mine.txt"), "mine");
@@ -449,5 +547,108 @@ describe("LocalAgentHomeStore path containment", () => {
     }
     await store.commit("bot-2", dest, context);
     expect(await readFile(path.join(store.pathFor("bot-2"), "nested/run"))).toEqual(bytes);
+  });
+});
+
+describe("LocalAgentHomeStore with Go's read-only module cache", () => {
+  /** Go makes module directories 0555 and their files 0444, and the link must not be followed. */
+  async function seedModuleCache(dir: string, outside: string) {
+    const module = path.join(dir, "go/pkg/mod/example.com/m@v1.0.0");
+    await mkdir(module, { recursive: true });
+    await writeFile(path.join(module, "go.mod"), "module example.com/m\n");
+    await symlink(outside, path.join(module, "outside"));
+    await chmod(path.join(module, "go.mod"), 0o444);
+    await chmod(module, 0o555);
+    await chmod(path.dirname(module), 0o555);
+  }
+
+  it.each([
+    [
+      "deleting the computer",
+      ["bot-1", "bot-1.previous"],
+      (store: LocalAgentHomeStore) => store.remove("bot-1"),
+    ],
+    [
+      "deleting it through another store",
+      ["bot-1"],
+      (_store: LocalAgentHomeStore, root: string) =>
+        removeAgentHome({} as AgentHomeStore, "bot-1", root),
+    ],
+    [
+      "removing a Team bot's folder",
+      ["bot-1/bots/gone"],
+      (store: LocalAgentHomeStore) => store.removeFolders("bot-1", "bots", ["gone"]),
+    ],
+  ])("removes the cache when %s", async (_case, seeded, removeIt) => {
+    const { root, store } = await fixture();
+    const outside = path.join(root, "outside");
+    // Empty, so cleanup can still remove it.
+    await mkdir(outside, { mode: 0o555 });
+    for (const dir of seeded) await seedModuleCache(path.join(root, "homes", dir), outside);
+
+    await removeIt(store, root);
+
+    for (const dir of seeded) await expect(stat(path.join(root, "homes", dir))).rejects.toThrow();
+    expect((await stat(outside)).mode & 0o777).toBe(0o555);
+  });
+
+  // Root removes read-only directories without making them writable first.
+  it.skipIf(process.getuid?.() === 0)("only makes directories writable that are not", async () => {
+    const { root, store, home } = await fixture();
+    await seedModuleCache(home, root);
+    const probe = await open(home, "r");
+    const chmodHandle = vi.spyOn(Object.getPrototypeOf(probe), "chmod");
+    await probe.close();
+    onTestFinished(() => chmodHandle.mockRestore());
+
+    await store.remove("bot-1");
+
+    await expect(stat(home)).rejects.toThrow();
+    // Only example.com and the module, not the writable home, go, pkg and mod above them.
+    expect(chmodHandle).toHaveBeenCalledTimes(2);
+  });
+
+  // Root removes read-only directories without making them writable first.
+  it.skipIf(process.getuid?.() === 0)(
+    "stops at a directory swapped for a link while it makes the tree writable",
+    async () => {
+      const { root, store, home } = await fixture();
+      const module = path.join(home, "go/pkg/mod");
+      await mkdir(module, { recursive: true });
+      await writeFile(path.join(module, "go.mod"), "module example.com/m\n");
+      await chmod(module, 0o555);
+      const outside = path.join(root, "outside");
+      // Empty, so cleanup can still remove it.
+      await mkdir(outside);
+      await mkdir(path.join(outside, "pkg"), { mode: 0o555 });
+      hooks.beforeOpen = async (target) => {
+        if (target !== path.join(home, "go/pkg")) return;
+        hooks.beforeOpen = undefined;
+        await rename(path.join(home, "go"), path.join(home, "go-moved"));
+        await symlink(outside, path.join(home, "go"));
+      };
+
+      try {
+        await expect(store.remove("bot-1")).rejects.toThrow(/escapes/);
+        expect((await stat(path.join(outside, "pkg"))).mode & 0o777).toBe(0o555);
+      } finally {
+        await chmod(path.join(home, "go-moved/pkg/mod"), 0o755);
+      }
+    },
+  );
+
+  it("replaces a home that holds the module cache", async () => {
+    const { root, store, home } = await fixture();
+    // An interrupted save's previous copy, and the home the save moves aside.
+    await seedModuleCache(`${home}.previous`, root);
+    await seedModuleCache(home, root);
+    const source = path.join(root, "source");
+    await mkdir(source);
+    await writeFile(path.join(source, "new.txt"), "new");
+
+    await store.commit("bot-1", source, context);
+
+    await expect(readFile(path.join(home, "new.txt"), "utf8")).resolves.toBe("new");
+    await expect(stat(`${home}.previous`)).rejects.toThrow();
   });
 });

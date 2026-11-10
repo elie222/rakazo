@@ -14,6 +14,14 @@ import {
 } from "./computer-tools.js";
 
 describe("computer tool bridge", () => {
+  it("tells the model how to recover from an over-limit batch", () => {
+    const batch = Array.from({ length: 30 }, () => ({ kind: "click", x: 1, y: 1 }));
+    expect(() => parseComputerActions(batch)).toThrow(
+      "computer_act accepts at most 24 actions but got 30; none ran. Send the first 24 or fewer now, then the rest in a separate call.",
+    );
+    expect(() => parseComputerActions(batch.slice(0, 24))).not.toThrow();
+  });
+
   it("normalizes a bounded batch into provider-neutral actions", () => {
     expect(
       parseComputerActions([
@@ -28,6 +36,51 @@ describe("computer tool bridge", () => {
       { kind: "scroll", direction: "up", amount: 20 },
       { kind: "focus", application: "xterm" },
     ]);
+  });
+
+  it("aims a scroll at a point when it has one, in whole screen pixels", () => {
+    expect(
+      parseComputerActions([
+        { kind: "scroll", direction: "down", amount: 4, x: 600.4, y: 419.6 },
+        { kind: "scroll", direction: "up" },
+      ]),
+    ).toEqual([
+      { kind: "scroll", direction: "down", amount: 4, x: 600, y: 420 },
+      { kind: "scroll", direction: "up", amount: 3 },
+    ]);
+  });
+
+  it("scrolls in all four directions, in 1 to 20 notches, three by default", () => {
+    expect(
+      parseComputerActions([
+        { kind: "scroll", direction: "left", amount: 0 },
+        { kind: "scroll", direction: "right", amount: 25 },
+        { kind: "scroll", direction: "sideways", amount: 2.6 },
+      ]),
+    ).toEqual([
+      { kind: "scroll", direction: "left", amount: 3 },
+      { kind: "scroll", direction: "right", amount: 20 },
+      { kind: "scroll", direction: "down", amount: 3 },
+    ]);
+  });
+
+  it("rejects a scroll point that is partial or negative", () => {
+    expect(() => parseComputerActions([{ kind: "scroll", direction: "down", x: 600 }])).toThrow(
+      /y must be a non-negative coordinate/,
+    );
+    expect(() =>
+      parseComputerActions([{ kind: "scroll", direction: "down", x: -1, y: 420 }]),
+    ).toThrow(/x must be a non-negative coordinate/);
+  });
+
+  it("tells repeated scrolls at different points apart", () => {
+    const here = computerVisualActionKey(
+      parseComputerActions([{ kind: "scroll", direction: "down", x: 100, y: 200 }]),
+    );
+    const there = computerVisualActionKey(
+      parseComputerActions([{ kind: "scroll", direction: "down", x: 900, y: 200 }]),
+    );
+    expect(here).not.toBe(there);
   });
 
   it("keeps an optional URI on focus actions and rejects a missing application", () => {
@@ -73,7 +126,14 @@ describe("computer tool bridge", () => {
       parseComputerActions(
         Array.from({ length: 13 }, () => ({ kind: "click", x: 10, y: 10, double: true })),
       ),
-    ).toThrow(/more than 24/);
+    ).toThrow(
+      "computer_act accepts at most 24 actions but got 26 after expansion; none ran. Send fewer now, then the rest in a separate call. A double click counts as two actions.",
+    );
+    expect(
+      parseComputerActions(
+        Array.from({ length: 12 }, () => ({ kind: "click", x: 10, y: 10, double: true })),
+      ),
+    ).toHaveLength(24);
   });
 
   it("returns observations as model-visible image content", () => {

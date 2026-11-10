@@ -27,6 +27,7 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
       outgoingBytes: number;
       toolResults: number;
     }> = [];
+    let previousToolContent: string[] = [];
     const latest = (request: ModelEmulatorRequest) => {
       expect(JSON.stringify(request.messages)).toContain("Do not deploy.");
       const tools = request.messages.filter((row) => row.role === "tool");
@@ -49,9 +50,16 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
         expect(JSON.parse(call!.function.arguments).cursor).toBe(
           index === 0 ? "start" : parsed[index - 1]!.nextCursor,
         );
-        if (index < tools.length - 1)
-          expect(Buffer.byteLength(String(row.content))).toBeLessThanOrEqual(1024);
       }
+      // Earlier results go out as first sent until a rebuild compresses them all at once.
+      const toolContent = tools.map((row) => String(row.content));
+      const earlier = toolContent.slice(0, -1);
+      const compressed = (text: string) => Buffer.byteLength(text) <= 1024;
+      expect(
+        earlier.every((text, i) => text === previousToolContent[i]) ||
+          (!previousToolContent.every(compressed) && earlier.every(compressed)),
+      ).toBe(true);
+      previousToolContent = toolContent;
       const message = tools.at(-1);
       const content = String(message?.content);
       const result = JSON.parse(content) as {
@@ -139,7 +147,7 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
     });
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-product-loop-"));
     try {
-      const { createApp } = await import("../../../apps/api/src/app.ts");
+      const { createApp } = await import("@rakazo/api/app");
       const result = await runTrial(scenario, 1, {
         connection: {
           provider: model.model.provider,

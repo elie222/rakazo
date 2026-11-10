@@ -1,21 +1,39 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
-import { encodeLoginSecret } from "@rakazo/contracts";
+import { BOT_SECRET_ORIGIN_MISSING_MESSAGE, encodeLoginSecret } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
+  encodeRunCode,
+  encodeRunLogin,
+  forgetBotSecret,
+  listBotSecrets,
+  loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
+  loadRunLoginRedactions,
   normalizeSecretDestination,
+  oneTimeCodeArgument,
+  oneTimeCodeRedactions,
+  prepareBotSecret,
   requestWithBotSecret,
+  resolveCodeFill,
   resolveLoginFill,
   resolveRequestSecretDestination,
+  sameSecretDestination,
+  storeBotSecret,
 } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const scope = { userId: "user-1", spaceId: "space-1" };
+// These rows sit in the Space's own vault, so lookups match their spaceId.
+const ownVault = { findUnique: vi.fn(async () => ({ setting: "credentials" })) };
 const destination: BotSecretDestination = {
   name: "example_api",
   origin: "https://api.example.test",
@@ -42,7 +60,11 @@ async function fixture(auth = destination.auth) {
       ? row
       : null,
   );
-  const prisma = { botSecret: { findFirst } } as unknown as PrismaClient;
+  const prisma = {
+    spaceSettingOverride: ownVault,
+    vaultCredential: { findFirst },
+    secret: { findFirst: vi.fn(async () => null) },
+  } as unknown as PrismaClient;
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
   const registerRedactions = vi.fn();
   const input = {
@@ -112,7 +134,7 @@ describe("authenticated secret requests", () => {
     },
   );
 
-  it.each(["userId", "spaceId", "botId"] as const)(
+  it.each(["userId", "spaceId"] as const)(
     "denies a different %s before decrypting or sending",
     async (key) => {
       const { input, fetch } = await fixture();
@@ -218,7 +240,10 @@ describe("authenticated secret requests", () => {
     );
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://192.168.2.10:8080/v1/items" },
@@ -258,7 +283,10 @@ describe("authenticated secret requests", () => {
     const findFirst = vi.fn(async () => row);
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://nas.local:8080/v1/items" },
@@ -306,8 +334,7 @@ describe("resolveRequestSecretDestination", () => {
   });
 
   it("accepts a valid credential object supplied beside connectionId", () => {
-    // The flattened tool schema allows both fields, and the executor used to
-    // reject that pair before it ever checked that the credential was valid.
+    // The flattened tool schema allows both fields.
     const resolved = resolveRequestSecretDestination({
       ...documented,
       connectionId: "conn_1",
@@ -374,7 +401,8 @@ describe("resolveRequestSecretDestination", () => {
     expect(
       resolveRequestSecretDestination({ label: "Code", purpose: "otp", connectionId: "null" }),
     ).toEqual({
-      error: "Provide either a reusable credential destination or a connectionId.",
+      error:
+        "Provide either a reusable credential destination, a connectionId, or oneTimeCode for a code the page asked for.",
     });
   });
 
@@ -598,10 +626,7 @@ describe("credentialArgument", () => {
         origin: `https://user:${plantedSecret}@api.example.test/v1?token=${plantedSecret}#${plantedSecret}`,
       },
     });
-    expect(credential).toEqual({
-      ...destination,
-      origin: "https://api.example.test/path",
-    });
+    expect(credential).toEqual(destination);
     expect(JSON.stringify(credential)).not.toContain(plantedSecret);
 
     const secretName = "Planted.Secret";
@@ -621,13 +646,14 @@ describe("credentialArgument", () => {
         credential: { ...destination, name: secretName },
       }).error,
     ).toMatch(/Invalid credential destination — name:/);
-    expect(
-      resolveRequestSecretDestination({
-        label: "API key",
-        purpose: "api_key",
-        credential: { ...destination, origin: `https://api.example.test/${secretName}` },
-      }).error,
-    ).toMatch(/Invalid credential destination — origin:/);
+    // A page URL is saved under its site, and its path is never kept.
+    const fromPage = resolveRequestSecretDestination({
+      label: "API key",
+      purpose: "api_key",
+      credential: { ...destination, origin: `https://api.example.test/${secretName}` },
+    });
+    expect(fromPage).toEqual({ destination });
+    expect(JSON.stringify(fromPage)).not.toContain(secretName);
 
     expect(
       resolveRequestSecretDestination({
@@ -678,6 +704,12 @@ describe("normalizeSecretDestination", () => {
     ).toThrow();
   });
 
+  it("says a login's origin is missing when the model leaves it out", () => {
+    expect(() =>
+      normalizeSecretDestination({ name: "example-login", auth: { type: "login" } }),
+    ).toThrow(`origin: ${BOT_SECRET_ORIGIN_MISSING_MESSAGE}`);
+  });
+
   it("names the failing field instead of a generic instruction", () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     expect(() =>
@@ -687,6 +719,79 @@ describe("normalizeSecretDestination", () => {
         auth: { type: "bearer" as const },
       }),
     ).toThrow(/name/);
+  });
+
+  function requestedOrigin(origin: string, auth: object = { type: "login" }) {
+    const resolved = resolveRequestSecretDestination({
+      label: "Sign in",
+      purpose: "password",
+      credential: { name: "site_login", origin, auth },
+    });
+    return resolved.destination?.origin ?? resolved.error;
+  }
+
+  it("saves a credential requested with a page URL under that page's site", () => {
+    expect(requestedOrigin("https://www.example.test/some/login/page?x=1")).toBe(
+      "https://www.example.test",
+    );
+    expect(requestedOrigin("https://api.example.test/v1/users#top", { type: "bearer" })).toBe(
+      "https://api.example.test",
+    );
+    expect(requestedOrigin("https://WWW.Example.TEST:443/Login")).toBe("https://www.example.test");
+    expect(requestedOrigin("https://api.example.test:8443/v1")).toBe(
+      "https://api.example.test:8443",
+    );
+    // The host is kept as the browser reports it: punycode, and a trailing dot as its own site.
+    expect(requestedOrigin("https://bücher.example.test/login")).toBe(
+      "https://xn--bcher-kva.example.test",
+    );
+    expect(requestedOrigin("https://www.example.test./login")).toBe("https://www.example.test.");
+    // A long sign-in redirect URL is fine; only the site is kept.
+    expect(requestedOrigin(`https://www.example.test/sign-in?state=${"a".repeat(3000)}`)).toBe(
+      "https://www.example.test",
+    );
+  });
+
+  it("reuses a login saved by origin when it is asked for again by page URL", () => {
+    const saved: BotSecretDestination = {
+      name: "site_login",
+      origin: "https://www.example.test",
+      auth: { type: "login" },
+    };
+    const asked = (origin: string) =>
+      resolveRequestSecretDestination({
+        label: "Sign in",
+        purpose: "password",
+        credential: { ...saved, origin },
+      }).destination!;
+    expect(sameSecretDestination(saved, asked("https://www.example.test/account/login?x=1"))).toBe(
+      true,
+    );
+    expect(sameSecretDestination(saved, asked("https://example.test/account/login"))).toBe(false);
+  });
+
+  it("still turns down page URLs on sites a credential can't be saved for", () => {
+    for (const origin of [
+      "http://www.example.test/login",
+      "https://169.254.169.254/latest/meta-data",
+      "https://metadata.google.internal/x",
+      "blob:https://www.example.test/abc",
+      "data:text/html,https://www.example.test/",
+      "javascript:alert(1)",
+      "not a url",
+      `https://www.example.test/?state=${"a".repeat(8192)}`,
+    ]) {
+      const error = requestedOrigin(origin);
+      expect(error).toMatch(/^Invalid credential destination — origin: /);
+      expect(error).not.toContain("example.test/");
+    }
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(requestedOrigin("http://192.168.2.10:8080/api/v1", { type: "bearer" })).toBe(
+      "http://192.168.2.10:8080",
+    );
+    expect(requestedOrigin("http://192.168.2.10:8080/api/v1")).toMatch(
+      /Website logins require an HTTPS origin/,
+    );
   });
 
   it("reports login-over-plain-HTTP as an origin problem", () => {
@@ -701,14 +806,39 @@ describe("normalizeSecretDestination", () => {
   });
 });
 
+/** Prisma's where for these tests: plain fields, a JSON path filter on auth, OR, and take. */
+function matchingRows<T extends Record<string, unknown>>(
+  rows: T[],
+  { where, take }: { where: Record<string, unknown>; take?: number },
+) {
+  const matchesWhere = (row: T, clause: Record<string, unknown>): boolean =>
+    Object.entries(clause).every(([key, value]) => {
+      if (key === "OR")
+        return (value as Record<string, unknown>[]).some((branch) => matchesWhere(row, branch));
+      if (key === "auth" && value && typeof value === "object" && "path" in value) {
+        const filter = value as { path: string[]; equals: unknown };
+        return (row.auth as Record<string, unknown>)[filter.path[0]!] === filter.equals;
+      }
+      return row[key] === value;
+    });
+  const matches = rows.filter((row) => matchesWhere(row, where));
+  return take === undefined ? matches : matches.slice(0, take);
+}
+
 describe("saved website logins", () => {
   const login = {
     name: "site_login",
     origin: "https://login.example.test",
     auth: { type: "login" },
   };
-  async function loginFixture(username: string, auth: object = login.auth, origin = login.origin) {
-    const plaintext = encodeLoginSecret({ username, password: "fake-password-1" });
+  // Stored as logins were before fields, so these tests also cover that old logins fill as before.
+  async function loginFixture(
+    username: string,
+    auth: object = login.auth,
+    origin = login.origin,
+    password = "fake-password-1",
+    plaintext = JSON.stringify({ username, password }),
+  ) {
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -720,25 +850,207 @@ describe("saved website logins", () => {
         ? row
         : null,
     );
-    return { prisma: { botSecret: { findFirst } } as unknown as PrismaClient };
+    const findMany = vi.fn(async (query) => matchingRows([row], query));
+    return {
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst, findMany },
+        secret: { findFirst: vi.fn(async () => null) },
+      } as unknown as PrismaClient,
+    };
   }
+
+  it("hides every saved password when the bot has more than 100 credentials", async () => {
+    const context = { operationId: "test", traceId: "test", signal: new AbortController().signal };
+    const rows: Record<string, unknown>[] = [];
+    // Other credentials are never decrypted for this, so their ciphertext doesn't matter.
+    for (let index = 0; index < 120; index += 1)
+      rows.push({ ...scope, name: `api_${index}`, auth: { type: "bearer" }, ciphertext: "unused" });
+    const password = "fake-late-password-1";
+    const encrypted = await secretStore.put(
+      JSON.stringify({ username: "fake-user@example.test", password }),
+      { ...scope, ...context },
+      { recordId: "login-late" },
+    );
+    rows.push({ ...scope, ...login, ...encrypted });
+    const prisma = {
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+    } as unknown as PrismaClient;
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
+  });
+
+  it("hides a saved password in its plain, URL, form and base64 forms", async () => {
+    const username = "fake-user@example.test";
+    const password = "fake pass!word+1";
+    const { prisma } = await loginFixture(username, login.auth, login.origin, password);
+    const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+    const forms = [
+      password,
+      encodeURIComponent(password),
+      new URLSearchParams({ v: password }).toString().slice(2),
+      Buffer.from(password).toString("base64"),
+    ];
+    expect(forms).toContain("fake+pass%21word%2B1");
+    const redacted = redactSecrets([...forms, `Signed in as ${username}`].join("\n"), redactions);
+    for (const form of forms) expect(redacted).not.toContain(form);
+    // Only the run that fills a login hides its username.
+    expect(redacted).toContain(`Signed in as ${username}`);
+    expect(
+      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, userId: "user-2" }),
+    ).toEqual([]);
+  });
+
+  it("leaves a short password to the run that fills it", async () => {
+    const { prisma } = await loginFixture(
+      "fake-user@example.test",
+      login.auth,
+      login.origin,
+      "abc",
+    );
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+    const fill = await resolveLoginFill({
+      runId: "run-1",
+      prisma,
+      secretStore,
+      scope,
+      name: "site_login",
+      field: "password",
+    });
+    expect("redactions" in fill && fill.redactions).toContain("abc");
+  });
+
+  it("skips an unreadable login and logs only its id", async () => {
+    const row = { ...scope, ...login, id: "login-broken", ciphertext: "not-a-ciphertext" };
+    const prisma = {
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async () => [row]) },
+    } as unknown as PrismaClient;
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { loginId: "login-broken" });
+      // The logger's own scrubbing keeps the id readable.
+      expect(Logging.redactBindings(warn.mock.calls[0]![1])).toEqual({ loginId: "login-broken" });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  it("decrypts nothing for a bot without saved logins", async () => {
+    const { prisma } = await loginFixture("fake-user@example.test", { type: "bearer" });
+    const load = vi.spyOn(secretStore, "load");
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      load.mockRestore();
+    }
+  });
 
   it("resolves one field bound to the saved origin with its redactions", async () => {
     const { prisma } = await loginFixture("fake-user@example.test");
     const input = { prisma, secretStore, scope, name: "site_login" };
-    expect(await resolveLoginFill({ ...input, field: "password" })).toEqual({
+    expect(await resolveLoginFill({ runId: "run-1", ...input, field: "password" })).toEqual({
       text: "fake-password-1",
+      hidden: true,
       origin: "https://login.example.test",
       redactions: expect.arrayContaining(["fake-password-1", "fake-user@example.test"]),
     });
-    expect(await resolveLoginFill({ ...input, field: "username" })).toMatchObject({
+    expect(await resolveLoginFill({ runId: "run-1", ...input, field: "username" })).toMatchObject({
       text: "fake-user@example.test",
+      hidden: false,
+    });
+    expect(await resolveLoginFill({ runId: "run-1", ...input, field: "Password" })).toMatchObject({
+      text: "fake-password-1",
+      hidden: true,
+    });
+  });
+
+  describe("with named fields", () => {
+    const fields = [
+      { label: "ID number", value: "fake-id-1234", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+      { label: "PIN", value: "4321", hidden: true },
+      { label: "Branch", value: "nyc", hidden: false },
+    ];
+    const fieldsFixture = () =>
+      loginFixture("unused", login.auth, login.origin, "unused", encodeLoginSecret({ fields }));
+
+    it("fills a field by its label, whatever its case, with whether it is hidden", async () => {
+      const { prisma } = await fieldsFixture();
+      const input = { prisma, secretStore, scope, name: "site_login" };
+      expect(
+        await resolveLoginFill({ runId: "run-1", ...input, field: "phone NUMBER" }),
+      ).toMatchObject({
+        text: "+1 555 0100",
+        hidden: true,
+      });
+      expect(
+        await resolveLoginFill({ runId: "run-1", ...input, field: "ID number" }),
+      ).toMatchObject({
+        text: "fake-id-1234",
+        hidden: false,
+      });
+      // A bot that still says username and password gets the first visible and hidden fields.
+      expect(await resolveLoginFill({ runId: "run-1", ...input, field: "username" })).toMatchObject(
+        {
+          text: "fake-id-1234",
+        },
+      );
+      expect(await resolveLoginFill({ runId: "run-1", ...input, field: "password" })).toMatchObject(
+        {
+          text: "+1 555 0100",
+        },
+      );
+    });
+
+    it("names the login's fields, never their values, when the label isn't one of them", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        runId: "run-1",
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Email",
+      });
+      expect(result).toEqual({
+        error:
+          'This login has no field named "Email". Its fields: ID number, Phone number, PIN, Branch.',
+      });
+    });
+
+    it("hides every hidden field and the visible ones long enough in the filling run", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        runId: "run-1",
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Branch",
+      });
+      const redactions = "redactions" in result ? result.redactions : [];
+      for (const value of ["fake-id-1234", "+1 555 0100", "%2B1%20555%200100", "4321"]) {
+        expect(redactions).toContain(value);
+      }
+      expect(redactions).not.toContain("nyc");
+    });
+
+    it("hides only hidden fields long enough in every run", async () => {
+      const { prisma } = await fieldsFixture();
+      const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+      expect(redactions).toEqual(expect.arrayContaining(["+1 555 0100", "%2B1%20555%200100"]));
+      for (const value of ["fake-id-1234", "4321", "nyc"]) expect(redactions).not.toContain(value);
     });
   });
 
   it("does not redact a short username that would mangle unrelated text", async () => {
     const { prisma } = await loginFixture("ada");
     const resolved = await resolveLoginFill({
+      runId: "run-1",
       prisma,
       secretStore,
       scope,
@@ -774,6 +1086,7 @@ describe("saved website logins", () => {
     );
     expect(
       await resolveLoginFill({
+        runId: "run-1",
         prisma,
         secretStore,
         scope,
@@ -785,8 +1098,470 @@ describe("saved website logins", () => {
 
   it("refuses to fill a credential that is not a login", async () => {
     const { input } = await fixture();
-    expect(await resolveLoginFill({ ...input, name: destination.name, field: "password" })).toEqual(
-      { error: "This credential is not a website login." },
+    expect(
+      await resolveLoginFill({
+        runId: "run-1",
+        ...input,
+        name: destination.name,
+        field: "password",
+      }),
+    ).toEqual({ error: "This credential is not a website login." });
+  });
+});
+
+describe("logins kept for one run", () => {
+  const fields = [
+    { label: "Username", value: "run-user@example.test", hidden: false },
+    { label: "Password", value: "run pass!word+1", hidden: true },
+  ];
+
+  async function runLoginFixture(origin = "https://login.example.test") {
+    const encrypted = await secretStore.put(
+      encodeRunLogin(origin, encodeLoginSecret({ fields })),
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { ephemeral: true },
     );
+    const row = { ...scope, kind: "run-login:run-1:site_login", ...encrypted };
+    const matching = (where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "startsWith" in value
+          ? String(row[key as keyof typeof row]).startsWith(String(value.startsWith))
+          : row[key as keyof typeof row] === value,
+      );
+    const saved = await secretStore.put(
+      encodeLoginSecret({
+        fields: [{ label: "Password", value: "saved-password-1", hidden: true }],
+      }),
+      { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+      { recordId: "saved-login" },
+    );
+    return {
+      spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async ({ where }) => (matching(where) ? row : null)),
+        findMany: vi.fn(async ({ where }) => (matching(where) ? [row] : [])),
+      },
+      // A saved login under the same name, which this run's login comes before.
+      vaultCredential: {
+        findFirst: vi.fn(async () => ({
+          ...scope,
+          name: "site_login",
+          origin: "https://login.example.test",
+          auth: { type: "login" },
+          ...saved,
+        })),
+      },
+    } as unknown as PrismaClient;
+  }
+
+  it("fills this run's login before a saved one, only in this run", async () => {
+    const prisma = await runLoginFixture();
+    const input = { prisma, secretStore, scope, name: "site_login" };
+    expect(await resolveLoginFill({ ...input, runId: "run-1", field: "Password" })).toEqual({
+      text: "run pass!word+1",
+      hidden: true,
+      origin: "https://login.example.test",
+      redactions: expect.arrayContaining(["run pass!word+1", "run-user@example.test"]),
+    });
+    // Another run of the bot gets the saved login.
+    expect(await resolveLoginFill({ ...input, runId: "run-2", field: "Password" })).toMatchObject({
+      text: "saved-password-1",
+    });
+  });
+
+  it("refuses to fill it off HTTPS", async () => {
+    const prisma = await runLoginFixture("http://192.168.1.20");
+    expect(
+      await resolveLoginFill({
+        prisma,
+        secretStore,
+        scope,
+        runId: "run-1",
+        name: "site_login",
+        field: "Password",
+      }),
+    ).toEqual({
+      error: "Website logins can only be filled on an HTTPS origin.",
+    });
+  });
+
+  it("hides it from the start of its run in the forms a saved login is hidden in", async () => {
+    const prisma = await runLoginFixture();
+    const redactions = await loadRunLoginRedactions(prisma, secretStore, scope, "run-1");
+    const password = "run pass!word+1";
+    const forms = [
+      password,
+      encodeURIComponent(password),
+      new URLSearchParams({ v: password }).toString().slice(2),
+      Buffer.from(password).toString("base64"),
+      "run-user@example.test",
+    ];
+    const redacted = redactSecrets(forms.join("\n"), redactions);
+    for (const form of forms) expect(redacted).not.toContain(form);
+    expect(await loadRunLoginRedactions(prisma, secretStore, scope, "run-2")).toEqual([]);
+  });
+});
+
+describe("a one-time code request", () => {
+  it("takes only the HTTPS origin of the page that asked, without its path or query", () => {
+    const asked = oneTimeCodeArgument({ origin: "https://login.example.test/verify?code=123456" });
+    expect(asked).toEqual({ origin: "https://login.example.test" });
+    expect(resolveRequestSecretDestination({ oneTimeCode: asked })).toEqual({
+      oneTimeCodeOrigin: "https://login.example.test",
+    });
+    // Userinfo never reaches the card or the stored request.
+    expect(oneTimeCodeArgument({ origin: "https://user:fake-pass@example.test" })).toEqual({
+      origin: "https://example.test",
+    });
+  });
+
+  it("tells the bot why an HTTP page is refused, so it can tell the user", () => {
+    for (const origin of ["http://login.example.test", "http://192.168.1.20"]) {
+      expect(
+        resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument({ origin }) }),
+      ).toEqual({
+        error:
+          "Codes can only be typed on HTTPS pages, and this page isn't HTTPS. Ask the user to take over and tell them that is why.",
+      });
+    }
+  });
+
+  it.each([{ origin: "" }, {}, "https://login.example.test", { origin: "ftp://example.test" }])(
+    "refuses %j, which cannot be a page a code is typed into",
+    (value) => {
+      expect(resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument(value) })).toEqual({
+        error: "oneTimeCode needs the HTTPS origin of the page that asked for the code.",
+      });
+    },
+  );
+
+  it("refuses a private-LAN HTTP origin even when the owner allows it for credentials", () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(
+      resolveRequestSecretDestination({
+        oneTimeCode: oneTimeCodeArgument({ origin: "http://192.168.1.20" }),
+      }),
+    ).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("a code's redactions", () => {
+  const hidden = (text: string, code = "123456") =>
+    redactSecrets(text, oneTimeCodeRedactions(code));
+
+  it("hide a code a page draws one character at a time, with spaces or dashes, or in groups", () => {
+    // An innerText-style read of an input-otp widget: one slot per line.
+    for (const shown of [
+      "123456",
+      "1\n2\n3\n4\n5\n6",
+      "1\r\n2\r\n3\r\n4\r\n5\r\n6",
+      "1 2 3 4 5 6",
+      "1\t2\t3\t4\t5\t6",
+      "1-2-3-4-5-6",
+      "1 - 2 - 3 - 4 - 5 - 6",
+      "123 456",
+      "123-456",
+      "123 - 456",
+    ]) {
+      expect(hidden(`Enter code:\n${shown}\nResend`)).toBe("Enter code:\n[redacted]\nResend");
+    }
+  });
+
+  it("hide a code written with dashes both as sent and without them", () => {
+    expect(hidden("12-34-56", "12-34-56")).toBe("[redacted]");
+    expect(hidden("123456", "12-34-56")).toBe("[redacted]");
+    expect(hidden("1 2 3 4 5 6", "12-34-56")).toBe("[redacted]");
+  });
+
+  it("never include a form too short to be told from ordinary text", () => {
+    for (const code of ["1234", "123-456", "ab12-cd34"]) {
+      expect(oneTimeCodeRedactions(code).filter((form) => form.length < 4)).toEqual([]);
+    }
+  });
+
+  it("hide a code with letters that the page shows in another case", () => {
+    expect(hidden("Code AB12CD", "ab12cd")).toBe("Code [redacted]");
+    expect(hidden("a b 1 2 c d", "AB12CD")).toBe("[redacted]");
+  });
+
+  it("leave a short number alone when it stands bare, but hide it drawn per digit", () => {
+    expect(hidden("Paid 1000 in 2026", "2026")).toBe("Paid 1000 in 2026");
+    expect(hidden("2\n0\n2\n6", "2026")).toBe("[redacted]");
+    expect(hidden("Code ab12", "ab12")).toBe("Code [redacted]");
+  });
+
+  it("leave unrelated digits alone", () => {
+    expect(hidden("Order 98765 shipped on 12/34")).toBe("Order 98765 shipped on 12/34");
+  });
+});
+
+describe("resolveCodeFill", () => {
+  const codeScope = { userId: "user-1", spaceId: "space-1" };
+
+  async function codeFixture(origin = "https://login.example.test", runId = "run-1") {
+    const stored = await secretStore.put(
+      encodeRunCode(origin, "123456"),
+      { ...codeScope, operationId: runId, traceId: runId, signal: new AbortController().signal },
+      { ephemeral: true },
+    );
+    const rows: Array<Record<string, unknown>> = [
+      { ...codeScope, ...stored, kind: `run-code:${runId}` },
+    ];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
+    const prisma = {
+      secret: {
+        findFirst: vi.fn(async ({ where }) => rows.find((row) => matches(row, where)) ?? null),
+        findMany: vi.fn(async ({ where }) => rows.filter((row) => matches(row, where))),
+        updateMany: vi.fn(async ({ where, data }) => {
+          const found = rows.filter((row) => matches(row, where));
+          for (const row of found) Object.assign(row, data);
+          return { count: found.length };
+        }),
+      },
+    } as unknown as PrismaClient;
+    return { prisma, rows };
+  }
+
+  it("gives the code with its site and every form to hide, without taking it", async () => {
+    const { prisma, rows } = await codeFixture();
+    const fill = await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" });
+    if ("error" in fill) throw new Error(fill.error);
+    expect(fill).toMatchObject({ text: "123456", origin: "https://login.example.test" });
+    expect(fill.redactions).toEqual(expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]));
+    expect(rows[0]).toMatchObject({ kind: "run-code:run-1" });
+  });
+
+  it("lets one of two fills take the code, and keeps it as a spent row", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const [first, second] = await Promise.all([resolveCodeFill(input), resolveCodeFill(input)]);
+    if ("error" in first || "error" in second) throw new Error("both fills should resolve");
+    const claims = await Promise.all([first.claim(), second.claim()]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
+    expect(await resolveCodeFill(input)).toEqual({
+      error:
+        "No code is waiting. Use request_secret with oneTimeCode to ask the user for it first.",
+    });
+  });
+
+  it("gives a refused code back for another try", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    expect(await fill.claim()).toBe(true);
+    await fill.restore();
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+    expect(await resolveCodeFill(input)).toMatchObject({ text: "123456" });
+  });
+
+  it("keeps hiding a spent code, and a waiting one, from the start of a later attempt", async () => {
+    const { prisma } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toEqual(
+      expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]),
+    );
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    await fill.claim();
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toContain(
+      "123456",
+    );
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-2")).toEqual([]);
+  });
+
+  it("never gives another run's code", async () => {
+    const { prisma } = await codeFixture(undefined, "run-0");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toMatchObject({ error: expect.stringContaining("No code is waiting") });
+  });
+
+  it("refuses a code kept for a plain-HTTP site, with the reason", async () => {
+    const { prisma, rows } = await codeFixture("http://login.example.test");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toEqual({ error: expect.stringContaining("Ask the user to take over and tell them") });
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+  });
+
+  it("refuses a code it cannot read, logging only the error name", async () => {
+    const { prisma, rows } = await codeFixture();
+    rows[0]!.ciphertext = "not-a-ciphertext";
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(
+        await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+      ).toEqual({ error: "This code could not be loaded." });
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { errorName: expect.any(String) });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+});
+
+describe("replacing a saved login's site", () => {
+  const WWW = "https://www.example.test";
+  const LOGIN = "https://login.example.test";
+  const REFUSED = "Remove the existing credential before changing its destination";
+  const login = (origin: string): BotSecretDestination => ({
+    name: "site_login",
+    origin,
+    auth: { type: "login" },
+  });
+  const typed = (password: string) =>
+    encodeLoginSecret({
+      fields: [
+        { label: "Username", value: "fake-user", hidden: false },
+        { label: "Password", value: password, hidden: true },
+      ],
+    });
+
+  async function save(db: ReturnType<typeof fakeDatabase>, destination = login(WWW)) {
+    await storeBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed("fake-password-www") : "fake-token-1",
+    });
+    return { ...db.rows().find((row) => row.name === destination.name)! };
+  }
+
+  function prepare(
+    db: ReturnType<typeof fakeDatabase>,
+    destination: BotSecretDestination,
+    password: string,
+    options: { replaces?: string; createOnly?: boolean } = {},
+  ) {
+    return prepareBotSecret({
+      prisma: db.prisma,
+      secretStore,
+      scope,
+      destination,
+      plaintext: destination.auth.type === "login" ? typed(password) : password,
+      ...options,
+    });
+  }
+
+  const commit = (
+    db: ReturnType<typeof fakeDatabase>,
+    prepared: Awaited<ReturnType<typeof prepareBotSecret>>,
+  ) => db.prisma.$transaction((tx) => prepared.store(tx));
+
+  it("moves the one saved row to the new site with the value typed for it", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await commit(
+      db,
+      await prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id }),
+    );
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, name: "site_login", origin: LOGIN });
+    expect(row!.ciphertext).not.toBe(before.ciphertext);
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-login"));
+    expect(JSON.stringify(db.rows())).not.toContain(WWW);
+    // Origin and value are one write, so no state has one without the other.
+    expect(db.prisma.vaultCredential.update).toHaveBeenLastCalledWith({
+      where: { id: before.id },
+      data: { origin: LOGIN, ciphertext: row!.ciphertext },
+    });
+    // Every bot of the member lists it for the new site, and fills take their site from the row.
+    const otherBot = { ...scope, botId: "bot-2" };
+    expect(await listBotSecrets(db.prisma, secretStore, otherBot)).toEqual([
+      expect.objectContaining(login(LOGIN)),
+    ]);
+    expect(
+      await resolveLoginFill({
+        prisma: db.prisma,
+        secretStore,
+        scope: otherBot,
+        runId: "run-1",
+        name: "site_login",
+        field: "Password",
+      }),
+    ).toMatchObject({ text: "fake-password-login", origin: LOGIN });
+  });
+
+  it("keeps refusing another site to every save that isn't a card replacing that login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    await expect(
+      storeBotSecret({
+        prisma: db.prisma,
+        secretStore,
+        scope,
+        destination: login(LOGIN),
+        plaintext: typed("fake-password-login"),
+      }),
+    ).rejects.toThrow(REFUSED);
+    await expect(
+      prepare(db, login(LOGIN), "fake-password-login", { replaces: before.id, createOnly: true }),
+    ).rejects.toThrow("A credential with this name is already saved");
+    // A card that replaces another login, or none, including one given the old site.
+    for (const replaces of ["other-login", WWW, undefined]) {
+      await expect(prepare(db, login(LOGIN), "fake-password-login", { replaces })).rejects.toThrow(
+        REFUSED,
+      );
+    }
+    expect(db.rows()).toEqual([before]);
+  });
+
+  it("moves only a login, only to another HTTPS login", async () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    const db = fakeDatabase();
+    const token = await save(db, { name: "api", origin: WWW, auth: { type: "bearer" } });
+    const saved = await save(db);
+    const attempts: Array<[BotSecretDestination, string]> = [
+      [{ name: "api", origin: LOGIN, auth: { type: "bearer" } }, token.id],
+      [{ name: "api", origin: LOGIN, auth: { type: "login" } }, token.id],
+      [{ name: "api", origin: "http://192.168.1.20", auth: { type: "bearer" } }, token.id],
+      [{ name: "site_login", origin: LOGIN, auth: { type: "bearer" } }, saved.id],
+    ];
+    for (const [destination, replaces] of attempts) {
+      await expect(prepare(db, destination, "fake-value-2", { replaces })).rejects.toThrow(REFUSED);
+    }
+    expect(db.rows()).toEqual([token, saved]);
+  });
+
+  it("won't let a card replace a login saved after it was opened", async () => {
+    // Opened when nothing was saved under the name; a login for www is saved meanwhile.
+    const db = fakeDatabase();
+    const opened = await prepare(db, login(LOGIN), "fake-password-login");
+    const before = await save(db);
+    await expect(commit(db, opened)).rejects.toThrow(REFUSED);
+    // Opened to replace a login that was then removed and saved again, as another row.
+    const replacing = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    await forgetBotSecret(db.prisma, scope, "site_login");
+    const again = await save(db);
+    expect(again.id).not.toBe(before.id);
+    await expect(commit(db, replacing)).rejects.toThrow(REFUSED);
+    expect(db.rows()).toEqual([again]);
+  });
+
+  it("keeps the site and value of the last of two cards replacing the same login", async () => {
+    const db = fakeDatabase();
+    const before = await save(db);
+    const toLogin = await prepare(db, login(LOGIN), "fake-password-login", {
+      replaces: before.id,
+    });
+    const toOther = await prepare(db, login("https://other.example.test"), "fake-password-other", {
+      replaces: before.id,
+    });
+    await Promise.all([commit(db, toLogin), commit(db, toOther)]);
+    expect(db.rows()).toHaveLength(1);
+    const [row] = db.rows();
+    expect(row).toMatchObject({ id: before.id, origin: "https://other.example.test" });
+    expect(await secretStore.load(row!.ciphertext, row!.id)).toBe(typed("fake-password-other"));
   });
 });

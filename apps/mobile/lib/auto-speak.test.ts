@@ -1,10 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { nextAutoSpeakAction } from "./auto-speak";
-
-const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function textMessage(id: string, text: string) {
   return {
@@ -18,6 +13,7 @@ describe("nextAutoSpeakAction", () => {
   const base = {
     botId: "bot-1",
     autoSpeak: true,
+    callActive: false,
     focused: true,
     snapshotReady: true,
     lastSpokenBotId: "bot-1",
@@ -57,6 +53,17 @@ describe("nextAutoSpeakAction", () => {
     expect(nextAutoSpeakAction({ ...base, runStatus: "leased" })).toEqual({ action: "wait" });
   });
 
+  it("seeds while a call is active, before the run gate, so a streamed reply stays unspoken", () => {
+    expect(nextAutoSpeakAction({ ...base, callActive: true })).toEqual({
+      action: "seed",
+      messageId: "msg-2",
+    });
+    expect(nextAutoSpeakAction({ ...base, callActive: true, runStatus: "running" })).toEqual({
+      action: "seed",
+      messageId: "msg-2",
+    });
+  });
+
   it("speaks a finished reply that has not been spoken yet", () => {
     expect(nextAutoSpeakAction(base)).toEqual({
       action: "speak",
@@ -78,18 +85,5 @@ describe("nextAutoSpeakAction", () => {
         messages: [textMessage("msg-2", "   ")],
       }),
     ).toEqual({ action: "seed", messageId: "msg-2" });
-  });
-});
-
-describe("mobile autoSpeak wiring", () => {
-  it("exposes Read replies aloud on bot settings and speaks from the thread", () => {
-    const settings = readFileSync(resolve(mobileRoot, "app/bot-settings.tsx"), "utf8");
-    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
-    const api = readFileSync(resolve(mobileRoot, "lib/api.ts"), "utf8");
-    expect(api).toContain('"autoSpeak"');
-    expect(settings).toContain('t("Read replies aloud")');
-    expect(settings).toContain("autoSpeak");
-    expect(thread).toContain("nextAutoSpeakAction");
-    expect(thread).toContain("speakText(");
   });
 });

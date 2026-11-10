@@ -1,6 +1,30 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
+test("onboarding choices show borderless rows in both themes", async ({ page }, testInfo) => {
+  await signup(page, `onboarding-rows-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await completeOnboarding(page);
+  const question = page.getByText("What do you want me on first?", { exact: true });
+  await expect(question).toBeVisible();
+  const card = question.locator("xpath=ancestor::div[contains(@class,'bg-card')][1]");
+  const option = card.getByRole("button", { name: /Inbox & email/ });
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute("data-theme", value),
+      theme,
+    );
+    await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
+  }
+  await option.focus();
+  await expect(option).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(option).toBeDisabled();
+  await expect(option).toHaveAttribute("aria-pressed", "true");
+  await captureScreenshot(page, testInfo, "onboarding-choice-rows-answered");
+});
+
 test("renders tappable choice buttons and submits the offered action id", async ({
   page,
 }, testInfo) => {
@@ -42,7 +66,6 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await expect(toronto).toBeVisible();
   await expect(lisbon).toBeVisible();
 
-  // Options render as a vertical full-width list, not wrapping chips.
   const berlinBox = await berlin.boundingBox();
   const seoulBox = await seoul.boundingBox();
   const torontoBox = await toronto.boundingBox();
@@ -53,10 +76,10 @@ test("renders tappable choice buttons and submits the offered action id", async 
   expect(torontoBox!.y).toBeGreaterThan(seoulBox!.y + seoulBox!.height - 2);
   expect(Math.abs(berlinBox!.x - seoulBox!.x)).toBeLessThan(2);
   expect(Math.abs(berlinBox!.width - seoulBox!.width)).toBeLessThan(2);
-  const optionList = berlin.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
-  const listBox = await optionList.boundingBox();
+  // Rows bleed past the list so the hover fill frames the letter and label.
+  const listBox = await berlin.locator("xpath=..").boundingBox();
   expect(listBox).toBeTruthy();
-  expect(Math.abs(berlinBox!.width - listBox!.width)).toBeLessThan(2);
+  expect(berlinBox!.width).toBeGreaterThanOrEqual(listBox!.width);
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -73,10 +96,8 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await page.setViewportSize({ width: 1280, height: 720 });
   await seoul.click();
 
-  await expect(page.getByText("Answered: Seoul", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByRole("button", { name: "Seoul", exact: true })).toHaveCount(0);
+  await expect(seoul).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect(seoul).toBeDisabled();
 
   await expect
     .poll(
@@ -107,4 +128,39 @@ test("renders tappable choice buttons and submits the offered action id", async 
     .toBe("choice-2");
 
   await captureScreenshot(page, testInfo, "choice-card-answered");
+});
+
+test("shows the content being decided on above the choices", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ask-detail-${stamp}@rakazo.test`, "password12", "Ask Detail");
+  await completeOnboarding(page);
+
+  const botId = activeBotId(page);
+  await page.getByPlaceholder(/Message/).fill("send the draft on the card");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe("waiting_input");
+
+  const question = page.locator("p").filter({ hasText: /^Send this email to Ana\?$/ });
+  if ((await question.count()) === 0) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
+  }
+  const detail = page.getByTestId("ask-detail");
+  await expect(question).toBeVisible({ timeout: 15_000 });
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText("To: ana@example.test");
+  await expect(detail).toContainText("The draft body.");
+  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "ask-detail");
 });

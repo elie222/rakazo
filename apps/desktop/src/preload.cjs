@@ -1,11 +1,70 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+/** Listen for a main-process signal without handing the IPC event to the renderer. */
+function subscribe(channel) {
+  return (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  };
+}
+
 contextBridge.exposeInMainWorld("rakazoDesktop", {
   platform: process.platform,
-  localSettings: {
-    request: (pathname, body) =>
-      ipcRenderer.invoke("desktop.localSettings.request", pathname, body),
+  nativeWindowFrame: process.platform === "win32",
+  badge: {
+    set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },
+  computer: {
+    managesHostChoice: true,
+    requestAccess: () => ipcRenderer.invoke("desktop.computer.requestAccess"),
+    revokeAccess: () => ipcRenderer.invoke("desktop.computer.revokeAccess"),
+    onConfigure: subscribe("desktop.computer.configure"),
+  },
+  server: {
+    change: () => ipcRenderer.invoke("desktop.server.change"),
+  },
+  settings: {
+    onOpen: subscribe("desktop.settings.open"),
+  },
+  device: {
+    state: () => ipcRenderer.invoke("desktop.device.state"),
+    setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
+  },
+  locale: {
+    set: (locale) => ipcRenderer.invoke("desktop.locale.set", locale),
+  },
+  menu: {
+    onCommand: (listener) => {
+      // The IpcRendererEvent stays in the preload: the renderer only sees the command.
+      const handler = (_event, command) => listener(command);
+      ipcRenderer.on("desktop.menu.command", handler);
+      return () => ipcRenderer.off("desktop.menu.command", handler);
+    },
+  },
+  monitoring: {
+    enabled: () => ipcRenderer.invoke("desktop.monitoring.enabled"),
+  },
+  passkeys: {
+    rpIds: () => ipcRenderer.invoke("desktop.passkeys.rpIds"),
+  },
+  // Only macOS ships a system recognizer helper; elsewhere dictation keeps its provider path.
+  ...(process.platform === "darwin"
+    ? {
+        speech: {
+          start: (language, session) =>
+            ipcRenderer.invoke("desktop.speech.start", language, session),
+          stop: (session) => ipcRenderer.invoke("desktop.speech.stop", session),
+          abort: (session) => ipcRenderer.invoke("desktop.speech.abort", session),
+          onEvent: (listener) => {
+            // The IpcRendererEvent stays in the preload: the renderer only sees the payload.
+            const handler = (_event, payload) => listener(payload);
+            ipcRenderer.on("desktop.speech.event", handler);
+            return () => ipcRenderer.off("desktop.speech.event", handler);
+          },
+        },
+      }
+    : {}),
   window: {
     close: () => ipcRenderer.invoke("desktop.window.close"),
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),

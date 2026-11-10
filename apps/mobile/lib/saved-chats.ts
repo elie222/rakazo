@@ -1,4 +1,11 @@
+import { displayIdentityResult, identitySource } from "@rakazo/core";
 import { Directory, File, Paths } from "expo-file-system";
+import { currentApiBase, selectedSpaceId } from "./api";
+import { artifactCacheSession } from "./artifact-cache-session";
+import { onConversationCleared } from "./conversation-cleared";
+import { identityLabels } from "./identity-display";
+import type { IntegrationsCacheScope } from "./integrations-cache";
+import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
 import type {
   MobileBot,
   MobileBotSection,
@@ -7,11 +14,7 @@ import type {
   MobileSnapshot,
   MobileSpace,
   MobileSpaceNavigation,
-} from "./api";
-import { currentApiBase, selectedSpaceId } from "./api";
-import { artifactCacheSession } from "./artifact-cache-session";
-import type { IntegrationsCacheScope } from "./integrations-cache";
-import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
+} from "./mobile-types";
 import {
   currentSessionGeneration,
   loadSessionToken,
@@ -90,7 +93,7 @@ export function readSavedInbox(scope: SavedChatsScope): SavedInbox | null {
       typeof me.name !== "string"
     )
       return null;
-    return inbox;
+    return displayIdentityResult(["bootstrap"], inbox, identityLabels()) as SavedInbox;
   } catch {
     return null;
   }
@@ -102,15 +105,16 @@ export function writeSavedInbox(
   me: MobileMe,
 ): void {
   try {
+    navigation = identitySource(navigation);
     const inbox: SavedInbox = {
       bots: navigation.current.bots.slice(0, SAVED_INBOX_ROWS).map(
         ({
           id,
           name,
-          title,
           color,
           preview,
           unread,
+          snoozedUntil,
           pinned,
           spaceId,
           status,
@@ -123,10 +127,10 @@ export function writeSavedInbox(
           ({
             id,
             name,
-            title,
             color,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             status,
@@ -138,7 +142,18 @@ export function writeSavedInbox(
           }) as MobileBot,
       ),
       groups: navigation.current.groups.slice(0, SAVED_INBOX_ROWS).map(
-        ({ id, name, members, preview, unread, pinned, spaceId, sectionId, updatedAt }) =>
+        ({
+          id,
+          name,
+          members,
+          preview,
+          unread,
+          snoozedUntil,
+          pinned,
+          spaceId,
+          sectionId,
+          updatedAt,
+        }) =>
           ({
             id,
             name,
@@ -146,6 +161,7 @@ export function writeSavedInbox(
             sectionId,
             preview,
             unread,
+            snoozedUntil,
             pinned,
             spaceId,
             updatedAt,
@@ -219,6 +235,7 @@ export function saveInbox(
 }
 
 export function savedThreadSnapshot(snapshot: MobileSnapshot): MobileSnapshot {
+  snapshot = identitySource(snapshot);
   const { cursor: _cursor, activeRuns: _activeRuns, computer: _computer, ...rest } = snapshot;
   return {
     ...rest,
@@ -252,7 +269,11 @@ export function readSavedThread(scope: SavedChatsScope, target: string): MobileS
       )
     )
       return null;
-    return savedThreadSnapshot(snapshot);
+    return displayIdentityResult(
+      ["threads", "get"],
+      savedThreadSnapshot(snapshot),
+      identityLabels(),
+    ) as MobileSnapshot;
   } catch {
     return null;
   }
@@ -296,7 +317,7 @@ function writeSavedFile(
 
   while (total > SAVED_CHATS_MAX_BYTES) evict(threads);
   file.create({ overwrite: true });
-  file.write(text);
+  file.writeSync(text);
 }
 
 export function writeSavedThread(
@@ -310,6 +331,28 @@ export function writeSavedThread(
       key: scopeKey(scope, target),
       snapshot: savedThreadSnapshot(snapshot),
     });
+  } catch {}
+}
+
+// A cleared chat never reopens showing its old messages, even when it was not open.
+onConversationCleared((botId) => forgetSavedThread({ botId }));
+
+/**
+ * Drops one chat's saved copy in every Space and account: bot and group IDs are unique, and the
+ * Space selected when the clear finishes need not be the one it was cleared in.
+ */
+function forgetSavedThread(target: { botId?: string; groupId?: string }) {
+  const name = `${encodeURIComponent(savedChatTarget(target))}.json`;
+  const remove = (directory: Directory) => {
+    for (const entry of directory.list()) {
+      if (entry instanceof File) {
+        if (entry.name === name) entry.delete();
+      } else remove(entry);
+    }
+  };
+  try {
+    const root = new Directory(Paths.cache, ROOT);
+    if (root.exists) remove(root);
   } catch {}
 }
 

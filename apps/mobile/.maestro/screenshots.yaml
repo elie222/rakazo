@@ -11,7 +11,7 @@ tags:
 # A cold API 34 emulator can show a launcher ANR over the healthy app.
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"
@@ -22,13 +22,17 @@ tags:
     timeout: 30000
 - takeScreenshot: "02-sign-up"
 - tapOn: "Sign in"
-- assertVisible: "Sign in to Rakazo"
-- takeScreenshot: "01-sign-in"
-
-- tapOn: "Use a custom server"
+- runFlow:
+    when:
+      notVisible:
+        id: "server-address"
+    commands:
+      - assertVisible: "Sign in to Rakazo"
+      - takeScreenshot: "01-sign-in"
+      - tapOn: "Use a custom server"
 - assertVisible: "Server"
 - takeScreenshot: "03-server"
-- tapOn: "Cancel"
+- runFlow: helpers/server.yaml
 
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
@@ -46,26 +50,39 @@ tags:
 - takeScreenshot: "04-inbox"
 
 - tapOn: "Activity"
+# The fixture's bot replies arrive unread, so Activity always has its Unread section.
 - extendedWaitUntil:
-    visible: "Recent"
+    visible: "Unread"
     timeout: 10000
 - takeScreenshot: "05-activity"
 
-- tapOn: "Search"
+- tapOn:
+    id: "home-search-button"
+    optional: true
+- runFlow:
+    when:
+      notVisible:
+        id: "search-sheet-field"
+    commands:
+      - tapOn: "Search"
+- tapOn:
+    id: "search-sheet-field"
 - inputText: "fixture"
 - hideKeyboard
 - extendedWaitUntil:
     visible: "Weekly fixture review"
     timeout: 10000
 - takeScreenshot: "06-search-results"
-
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "07-new-bot"
+- tapOn:
+    id: "search-sheet-close"
 
 - openLink: "rakazo:///new-group"
-- assertVisible: "Name this group"
+- assertVisible: "Search bots"
 - takeScreenshot: "08-new-group"
+
+- openLink: "rakazo:///new-bot"
+- assertVisible: "Name your Bot"
+- takeScreenshot: "08b-new-bot"
 
 - openLink: "rakazo:///new-space"
 - assertVisible: "Customer support"
@@ -80,20 +97,17 @@ tags:
 - assertVisible: "Current password"
 - takeScreenshot: "10b-change-password"
 - back
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "10c-account-notifications"
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Main model"
     timeout: 10000
-- scrollUntilVisible:
-    element: "Show more"
-    direction: DOWN
+- assertVisible: "Approval model"
 - takeScreenshot: "11-models"
-- tapOn: "Show more"
-- scrollUntilVisible:
-    element: "Show less"
-    direction: DOWN
-- takeScreenshot: "11b-all-providers"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
@@ -106,9 +120,11 @@ tags:
     visible: "Search apps"
     timeout: 10000
 - takeScreenshot: "13-integrations"
-- tapOn:
-    id: "integrations-advanced"
-- assertVisible: "Add MCP server"
+- tapOn: "Add custom"
+- tapOn: "MCP server"
+- extendedWaitUntil:
+    visible: "Remote MCP server"
+    timeout: 10000
 - takeScreenshot: "14-integrations-advanced"
 
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
@@ -119,31 +135,59 @@ tags:
 - assertNotVisible: "React"
 - assertNotVisible: "More"
 - takeScreenshot: "15-thread"
+- assertVisible:
+    id: "peer-receipt-line"
+- assertNotVisible: "Update from Writer: The fixture launch note is drafted."
+- takeScreenshot: "15e-thread-peer-folded"
+- tapOn:
+    id: "peer-receipt-line"
+- assertVisible: "Draft the fixture launch note."
+- assertVisible: "Close"
+- takeScreenshot: "15f-thread-peer-chat"
+- tapOn: "Close"
 - tapOn: "Message Researcher"
 - inputText: "Keyboard visibility check"
 - assertVisible: "Keyboard visibility check"
 - assertVisible: "Send"
 - takeScreenshot: "15d-thread-keyboard"
-- eraseText
+- pressKey: Enter
+- inputText: "Second line"
+- assertVisible: 'Keyboard visibility check\nSecond line'
 - hideKeyboard
+- assertVisible: 'Keyboard visibility check\nSecond line'
+- tapOn: "Message Researcher"
+- assertVisible: 'Keyboard visibility check\nSecond line'
+- assertVisible: "Send"
+- takeScreenshot: "15g-thread-keyboard-reopened"
+- longPressOn: "Message Researcher"
+- tapOn: "Select all"
+- eraseText: 1
+- assertNotVisible: 'Keyboard visibility check\nSecond line'
+- hideKeyboard
+# Holding a message opens the reaction row and grouped actions next to it.
 - longPressOn: "The fixture workspace is ready."
 - assertVisible: "Reply"
-- assertVisible: "React"
-- assertVisible: "More"
-- takeScreenshot: "15b-message-actions"
-- tapOn: "More"
+- assertVisible: "👍"
 - assertVisible: "Speak message"
+- takeScreenshot: "15b-message-actions"
 - back
-# User messages omit Speak, so Android fits Reply/React/Copy on one page (no More).
+# Settle the keyboard inset before measuring the next message target.
+- hideKeyboard
+- waitForAnimationToEnd
+# User messages omit Speak.
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"
-- assertVisible: "React"
+- assertVisible: "👍"
 - assertVisible: "Copy"
-- assertNotVisible: "More"
 - assertNotVisible: "Speak message"
 - tapOn: "Reply"
-- assertVisible: "Replying to"
+- assertVisible: "Cancel reply"
 - tapOn: "Cancel reply"
+# Bot actions live in the bot's profile header.
+- openLink: "rakazo:///bot-profile?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Bot actions"
+    timeout: 10000
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "16-bot-actions"
@@ -183,8 +227,8 @@ tags:
 - hideKeyboard
 - longPressOn: "The fixture launch plan is ready."
 - assertVisible: "Reply"
-- assertVisible: "React"
-- assertVisible: "More"
+- assertVisible: "👍"
+- assertVisible: "Speak message"
 - back
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
@@ -206,14 +250,18 @@ tags:
     timeout: 10000
 - tapOn: "Dark"
 - takeScreenshot: "22-account-dark"
-
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "23-new-bot-dark"
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "22b-account-notifications-dark"
 
 - openLink: "rakazo:///new-group"
-- assertVisible: "Name this group"
+- assertVisible: "Search bots"
 - takeScreenshot: "24-new-group-dark"
+
+- openLink: "rakazo:///new-bot"
+- assertVisible: "Name your Bot"
+- takeScreenshot: "24b-new-bot-dark"
 
 - openLink: "rakazo:///new-space"
 - assertVisible: "Customer support"
@@ -244,7 +292,6 @@ tags:
 # Capture the reaction after theme comparisons. Reactions are append-only, so adding
 # 👍 earlier would leak into dark/light thread frames with no remove control.
 - longPressOn: "The fixture workspace is ready."
-- tapOn: "React"
 - tapOn: "👍"
 - extendedWaitUntil:
     visible: "👍"

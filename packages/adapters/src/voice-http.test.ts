@@ -1,10 +1,14 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VOICE_JSON_BYTES,
   readVoiceJson,
   speechUploadName,
   verifyVoiceHttpGet,
+  voiceAccountIssue,
   voiceDeadline,
+  voiceLanguageHint,
+  voiceRequestError,
 } from "./voice-http.js";
 
 describe("voiceDeadline", () => {
@@ -80,6 +84,7 @@ describe("verifyVoiceHttpGet", () => {
     ).resolves.toEqual({
       ok: false,
       message: "ElevenLabs rejected that key. Check the key and that it has speech permissions.",
+      code: "VOICE_KEY_REJECTED",
     });
   });
 
@@ -148,5 +153,120 @@ describe("readVoiceJson", () => {
     await expect(
       readVoiceJson(new Response("upstream down"), { rawOnInvalid: true }),
     ).resolves.toBe("upstream down");
+  });
+});
+
+describe("voiceAccountIssue", () => {
+  it.each([
+    ["Fish Audio or Cartesia spent credit", 402, { message: "Insufficient API credit." }],
+    [
+      "OpenAI insufficient quota",
+      429,
+      { error: { message: "You have no credits remaining.", code: "insufficient_quota" } },
+    ],
+    [
+      "OpenAI spent credit without the quota code",
+      429,
+      { error: { message: "You have no credits remaining. Add credits to continue." } },
+    ],
+    [
+      "OpenAI inactive billing",
+      429,
+      {
+        error: {
+          message: "Your account is not active, please check your billing details on our website.",
+          code: "billing_not_active",
+        },
+      },
+    ],
+    ["ElevenLabs spent quota", 401, { detail: { status: "quota_exceeded", message: "Over" } }],
+  ])("reads %s as out of credit", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBe("VOICE_OUT_OF_CREDIT");
+  });
+
+  it.each([
+    ["a bare 401", 401, null],
+    ["a 403", 403, { message: "Forbidden" }],
+    [
+      "an xAI permission refusal",
+      403,
+      { error: "The caller does not have permission to execute the specified operation" },
+    ],
+    ["ElevenLabs invalid key", 401, { detail: { status: "invalid_api_key", message: "Bad" } }],
+  ])("reads %s as a rejected key", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBe("VOICE_KEY_REJECTED");
+  });
+
+  it("keeps a generic forbidden billing message classified as a rejected key", () => {
+    expect(voiceAccountIssue(403, { error: "billing" })).toBe("VOICE_KEY_REJECTED");
+  });
+
+  it.each([
+    ["a rate limit", 429, { error: { message: "Slow down", code: "rate_limit_exceeded" } }],
+    [
+      "an OpenAI per-minute limit",
+      429,
+      {
+        error: {
+          message:
+            "Rate limit reached for tts-1 on requests per min (RPM). Please try again in 20s.",
+          code: "rate_limit_exceeded",
+        },
+      },
+    ],
+    [
+      "an ordinary validation error",
+      400,
+      { code: "Client specified an invalid argument", error: "voice_id is required" },
+    ],
+    ["a different provider invalid key response", 400, { error: "Incorrect API key" }],
+    ["an outage", 503, { message: "Service unavailable" }],
+    [
+      "a missing ElevenLabs permission",
+      401,
+      { detail: { status: "missing_permissions", message: "Needs text_to_speech" } },
+    ],
+  ])("leaves %s unclassified", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBeUndefined();
+  });
+
+  it("raises account issues as VoiceAccountError and keeps the provider message", () => {
+    const error = voiceRequestError(402, "Fish Audio", "speaking", null);
+    expect(error).toBeInstanceOf(VoiceAccountError);
+    expect(error).toMatchObject({
+      code: "VOICE_OUT_OF_CREDIT",
+      message: "Fish Audio says this account is out of credit.",
+    });
+    expect(voiceRequestError(503, "Fish Audio", "speaking", null)).not.toBeInstanceOf(
+      VoiceAccountError,
+    );
+  });
+
+  it("raises other refusals of the account without a code and keeps the provider message", () => {
+    const permission = "The API key you used is missing the permission text_to_speech.";
+    const error = voiceRequestError(401, "ElevenLabs", "speaking", {
+      detail: { status: "missing_permissions", message: permission },
+    });
+    expect(error).toBeInstanceOf(VoiceAccountError);
+    expect(error).toMatchObject({ code: undefined, message: permission });
+    expect(voiceRequestError(400, "ElevenLabs", "speaking", null)).not.toBeInstanceOf(
+      VoiceAccountError,
+    );
+  });
+});
+
+describe("voiceLanguageHint", () => {
+  it("keeps the lowercase primary subtag of a valid language tag", () => {
+    expect(voiceLanguageHint("pl")).toBe("pl");
+    expect(voiceLanguageHint("es-ES")).toBe("es");
+    expect(voiceLanguageHint(" PT-br ")).toBe("pt");
+    expect(voiceLanguageHint("zh-Hant-TW")).toBe("zh");
+  });
+
+  it("omits values that are not language tags", () => {
+    expect(voiceLanguageHint(undefined)).toBeUndefined();
+    expect(voiceLanguageHint("")).toBeUndefined();
+    expect(voiceLanguageHint("english")).toBeUndefined();
+    expect(voiceLanguageHint("es_ES")).toBeUndefined();
   });
 });

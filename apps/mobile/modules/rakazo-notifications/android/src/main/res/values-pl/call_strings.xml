@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">Trwająca rozmowa</string>
+  <string name="rakazo_call_title">Rozmowa w Rakazo</string>
+  <string name="rakazo_call_text">Mikrofon jest aktywny</string>
+  <string name="rakazo_call_answer">Odbierz</string>
+  <string name="rakazo_call_decline">Odrzuć</string>
+</resources>

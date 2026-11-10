@@ -1,6 +1,9 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import { OpenRouterUsageLookup } from "./openrouter-usage.js";
+import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
 
-export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-6-luna";
+export const DEFAULT_OPENROUTER_MODEL_ID = "anthropic/claude-haiku-5.5";
 
 /**
  * What Pi reports for a provider that authenticates from the host instead of a key: an AWS
@@ -24,23 +27,24 @@ export function hostCredentialSource(provider: string): string {
  * credential applies, and the key for that provider.
  *
  * Keyless host authentication requires explicit opt-in and a model id. Bedrock resolves
- * its credential chain (including instance roles) at request time; other providers must
- * report host credentials in the process environment. Host credentials never become `key`.
+ * its credential chain (including instance roles) at request time; local models must be
+ * declared by the operator; other providers must report host credentials in the process
+ * environment. Host credentials never become `key`.
  *
  * Vendor env names and model ids live here, in the adapter layer, not in core.
  */
 export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-  // A row per provider that ships a deployment key. A third one adds a row here, not a
-  // branch at each call site — and an unknown provider gets no key rather than another
-  // vendor's, which a ternary on one provider would not give.
+  // An unknown provider gets no key rather than another vendor's.
   const keys: Record<string, string | undefined> = {
     openrouter: env.OPENROUTER_API_KEY,
     anthropic: env.ANTHROPIC_API_KEY,
+    deepseek: env.DEEPSEEK_API_KEY,
   };
   const models: Record<string, string> = {
     openrouter: DEFAULT_OPENROUTER_MODEL_ID,
     anthropic: "claude-sonnet-5",
+    deepseek: "deepseek-flash",
   };
   const explicitModel = env.PI_DEFAULT_MODEL?.trim();
   const key = keys[provider];
@@ -49,7 +53,9 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     Boolean(explicitModel) &&
     env.PI_DEFAULT_CREDENTIALS?.trim() === "host" &&
     // Bedrock also resolves EC2 instance roles through IMDS at request time.
-    (provider === "amazon-bedrock" || getEnvApiKey(provider) === HOST_CREDENTIALS);
+    (provider === LOCAL_PROVIDER_ID
+      ? localModelIds(env).includes(explicitModel!)
+      : provider === "amazon-bedrock" || getEnvApiKey(provider) === HOST_CREDENTIALS);
   return {
     provider,
     model: explicitModel || models[provider] || models.openrouter!,
@@ -57,4 +63,11 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     configured: Boolean(key) || hostCredentials,
     hostCredentials,
   };
+}
+
+export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
+  const model = resolveDeploymentModel();
+  return model.provider === "openrouter" && model.key
+    ? new OpenRouterUsageLookup(model.key)
+    : undefined;
 }

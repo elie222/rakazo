@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer, type ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 
@@ -17,6 +18,10 @@ export interface ModelEmulatorRequest {
 
 export type ModelEmulatorResponse =
   | { type: "text"; text: string }
+  | {
+      type: "tools";
+      calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    }
   | {
       type: "tool";
       id: string;
@@ -62,6 +67,11 @@ export async function startModelEmulator(options: {
   const failures: Error[] = [];
   let stepIndex = 0;
   const server = createServer((request, response) => {
+    // Local tools can probe any listening loopback port; the runtime only calls under /v1.
+    if (!request.url?.startsWith("/v1/")) {
+      response.writeHead(404).end();
+      return;
+    }
     void (async () => {
       assert.equal(request.method, "POST", "Expected a model POST request");
       assert.equal(request.url, "/v1/chat/completions", "Unexpected model endpoint");
@@ -110,7 +120,17 @@ export async function startModelEmulator(options: {
           );
       };
       emit({ role: "assistant" });
-      if (reply.type === "tool") {
+      if (reply.type === "tools") {
+        emit({
+          tool_calls: reply.calls.map((call, index) => ({
+            index,
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          })),
+        });
+        emit({}, "tool_calls");
+      } else if (reply.type === "tool") {
         if (reply.assistantText) emit({ content: reply.assistantText });
         emit({
           tool_calls: [
@@ -162,6 +182,8 @@ export async function startModelEmulator(options: {
     provider: "openai-compatible",
     id: modelId,
     baseUrl,
+    // The emulator listens on loopback, as an owner-run local model server would.
+    allowPrivateEndpoint: true,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}),
   };
   return {

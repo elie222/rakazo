@@ -1,5 +1,6 @@
 import { next } from "@vercel/functions";
 import {
+  AGENT_DISCOVERY_LINKS,
   getMarkdownAlternate,
   getMarkdownDocument,
   markdownResponse,
@@ -62,11 +63,12 @@ export default function middleware(request: Request): Response {
   const markdownAlternate = getMarkdownAlternate(url.pathname);
   return next({
     headers: {
-      ...(markdownAlternate
-        ? {
-            Link: `<${markdownAlternate}>; rel="alternate"; type="text/markdown"`,
-          }
-        : {}),
+      Link: [
+        AGENT_DISCOVERY_LINKS,
+        ...(markdownAlternate
+          ? [`<${markdownAlternate}>; rel="alternate"; type="text/markdown"`]
+          : []),
+      ].join(", "),
       Vary: VARY_HEADER,
     },
   });

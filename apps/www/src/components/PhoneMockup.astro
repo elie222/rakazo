@@ -1,0 +1,58 @@
+---
+import { getDemoBots } from "../i18n/demo";
+import type { Locale } from "../i18n/locales";
+import { LandingBotAvatar } from "./LandingBotAvatar";
+
+type Props = { locale: Locale };
+
+const { locale } = Astro.props;
+const bot = getDemoBots(locale).find((demoBot) => demoBot.id === "inbox");
+if (!bot) throw new Error("Missing inbox demo bot");
+// The phone opens on the latest exchange: everything after the last timestamp.
+const lastTime = bot.thread.findLastIndex((message) => message.type === "time");
+const messages = bot.thread.slice(lastTime);
+---
+
+<div class="phone" aria-hidden="true">
+  <div class="phone__status">
+    <span>9:41</span>
+    <span class="phone__island"></span>
+  </div>
+  <div class="phone__header">
+    <span class="phone__back">‹</span>
+    <LandingBotAvatar color={bot.color} size={28} />
+    <span class="phone__name">{bot.name}</span>
+  </div>
+  <div class="phone__thread">
+    {
+      messages.map((message) => {
+        if (message.type === "time" || message.type === "meta") {
+          return <div class="phone__time">{message.text}</div>;
+        }
+        if (message.type === "card") {
+          return (
+            <div class="phone__bubble phone__bubble--bot phone__card">
+              {message.lines.map((line) => (
+                <div class="phone__card-line">
+                  <span class="phone__card-check">✓</span>
+                  <span>
+                    <strong>{line.k}</strong> {line.v}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+        if (message.type === "user" || message.type === "bot") {
+          return <div class={`phone__bubble phone__bubble--${message.type}`}>{message.text}</div>;
+        }
+        return null;
+      })
+    }
+  </div>
+  <div class="phone__composer">
+    <span>+</span>
+    <span class="phone__input"></span>
+    <span class="phone__send">↑</span>
+  </div>
+</div>
