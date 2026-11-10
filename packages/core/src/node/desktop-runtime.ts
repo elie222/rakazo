@@ -204,6 +204,42 @@ function portalStartLine(binary: string, display: string, log: string) {
   return `DISPLAY=${display} DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" nohup ${binary} 8>&- 9>&- </dev/null >${log} 2>&1 &`;
 }
 
+// dbus-daemon copies its own environment into the activation environment.
+// Publish the screen display before any backend starts, or an activated GTK
+// portal inherits the image display and the explicitly started one exits.
+function screenActivationLine(display: string) {
+  return `if command -v dbus-update-activation-environment >/dev/null 2>&1; then dbus-update-activation-environment DISPLAY=${display} || exit 1; fi`;
+}
+
+function screenClaimGtkLines(display: string, log: string) {
+  return [
+    "screen_claim_gtk() {",
+    `  ${portalStartLine(DESKTOP_PORTAL_GTK, display, log)}`,
+    "  screen_gtk_pid=$!",
+    "  screen_gtk_ready=0",
+    "  for i in $(seq 1 50); do",
+    '    screen_live "$screen_gtk_pid" xdg-desktop-portal-gtk || break',
+    "    if dbus-send --session --print-reply --dest=org.freedesktop.DBus \\",
+    "        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \\",
+    "        string:org.freedesktop.impl.portal.desktop.gtk 2>/dev/null | grep -q 'boolean true'; then",
+    "      screen_gtk_ready=1",
+    "      break",
+    "    fi",
+    "    sleep 0.1",
+    "  done",
+    '  if [ "$screen_gtk_ready" -ne 1 ]; then',
+    '    if screen_live "$screen_gtk_pid" xdg-desktop-portal-gtk; then',
+    '      kill "$screen_gtk_pid" 2>/dev/null || true',
+    '      kill -KILL "$screen_gtk_pid" 2>/dev/null || true',
+    "    fi",
+    "    echo 'screen file chooser did not claim the bus' >&2",
+    "    exit 1",
+    "  fi",
+    '  printf %s "$screen_gtk_pid" >"$screen_gtk_pid_file"',
+    "}",
+  ];
+}
+
 // Pid files outlive the container, and the kernel reuses the numbers.
 // Same shape as browser_matches: a live pid is ours only when its executable still is.
 function screenSessionMatchers() {
@@ -246,6 +282,7 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     `screen_portal_pid_file=${paths.portalPid}`,
     `screen_gtk_pid_file=${paths.gtkPid}`,
     ...screenSessionMatchers(),
+    ...screenClaimGtkLines(layout.display, paths.gtkLog),
     "screen_portals=0",
     `if [ -x ${DESKTOP_PORTAL} ] && [ -x ${DESKTOP_PORTAL_GTK} ]; then screen_portals=1; fi`,
     "screen_bus_alive=0",
@@ -256,29 +293,29 @@ function renderStartScreenSessionCommand(index: number | undefined, env: Desktop
     '  screen_stop_recorded "$screen_dbus_pid_file" dbus-daemon',
     '  rm -f "$screen_bus_file"',
     "    if command -v dbus-launch >/dev/null 2>&1; then",
-    '      eval "$(dbus-launch --sh-syntax)"',
+    `      eval "$(DISPLAY=${layout.display} dbus-launch --sh-syntax)"`,
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     '      if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] || [ -z "${DBUS_SESSION_BUS_PID:-}" ]; then echo \'screen session bus did not start\' >&2; exit 1; fi',
     '      printf \'export DBUS_SESSION_BUS_ADDRESS=%q\\nexport DBUS_SESSION_BUS_PID=%q\\n\' "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_SESSION_BUS_PID" >"$screen_bus_file"',
     '      printf %s "$DBUS_SESSION_BUS_PID" >"$screen_dbus_pid_file"',
+    `      ${screenActivationLine(layout.display)}`,
     '      if [ "$screen_portals" -eq 1 ]; then',
+    "        screen_claim_gtk",
     `        ${portalStartLine(DESKTOP_PORTAL, layout.display, paths.portalLog)}`,
     '        printf %s "$!" >"$screen_portal_pid_file"',
-    `        ${portalStartLine(DESKTOP_PORTAL_GTK, layout.display, paths.gtkLog)}`,
-    '        printf %s "$!" >"$screen_gtk_pid_file"',
     "      fi",
     "      unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID",
     "    fi",
     "  else",
     '    . "$screen_bus_file"',
+    `    ${screenActivationLine(layout.display)}`,
     '    if [ "$screen_portals" -eq 1 ]; then',
+    '      if ! screen_recorded "$screen_gtk_pid_file" xdg-desktop-portal-gtk; then',
+    "        screen_claim_gtk",
+    "      fi",
     '      if ! screen_recorded "$screen_portal_pid_file" xdg-desktop-portal; then',
     `        ${portalStartLine(DESKTOP_PORTAL, layout.display, paths.portalLog)}`,
     '        printf %s "$!" >"$screen_portal_pid_file"',
-    "      fi",
-    '      if ! screen_recorded "$screen_gtk_pid_file" xdg-desktop-portal-gtk; then',
-    `        ${portalStartLine(DESKTOP_PORTAL_GTK, layout.display, paths.gtkLog)}`,
-    '        printf %s "$!" >"$screen_gtk_pid_file"',
     "      fi",
     "    fi",
     "    unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID",

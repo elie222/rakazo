@@ -1067,6 +1067,8 @@ describe("shared Linux desktop lifecycle", () => {
     const browserLog = path.join(root, "browser-log");
     const portalLog = path.join(root, "portal-log");
     const dbusLog = path.join(root, "dbus-log");
+    const activationLog = path.join(root, "activation-log");
+    const dbusSendLog = path.join(root, "dbus-send-log");
     const pidLog = path.join(root, "pid-log");
     const recorderLog = path.join(root, "recorder-log");
     mkdirSync(runtime);
@@ -1144,6 +1146,23 @@ describe("shared Linux desktop lifecycle", () => {
         "printf 'export DBUS_SESSION_BUS_ADDRESS;\\n'",
         "printf 'DBUS_SESSION_BUS_PID=%s;\\n' \"$pid\"",
         "printf 'export DBUS_SESSION_BUS_PID;\\n'",
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "dbus-update-activation-environment"),
+      [
+        "#!/bin/bash",
+        'printf \'bus=%s args=%s\\n\' "$DBUS_SESSION_BUS_ADDRESS" "$*" >> "$ACTIVATION_LOG"',
+        "",
+      ].join("\n"),
+    );
+    writeExecutable(
+      path.join(bin, "dbus-send"),
+      [
+        "#!/bin/bash",
+        'if [ -n "$DBUS_SEND_LOG" ]; then printf \'%s\\n\' "$*" >> "$DBUS_SEND_LOG"; fi',
+        "printf 'boolean true\\n'",
         "",
       ].join("\n"),
     );
@@ -1257,6 +1276,9 @@ describe("shared Linux desktop lifecycle", () => {
       PID_LOG: pidLog,
       RUNTIME: runtime,
       PYTHONPATH: siteDir,
+      DISPLAY: ":1",
+      ACTIVATION_LOG: activationLog,
+      DBUS_SEND_LOG: dbusSendLog,
     };
     delete runEnv.DBUS_SESSION_BUS_ADDRESS;
     const relocate = (script: string) =>
@@ -1328,6 +1350,7 @@ describe("shared Linux desktop lifecycle", () => {
       browserLog,
       portalLog,
       dbusLog,
+      activationLog,
       recorderLog,
       screenEnv,
       run,
@@ -1619,4 +1642,56 @@ describe("shared Linux desktop lifecycle", () => {
     },
     60_000,
   );
+
+  it("screen bus activation uses that screen's display", async () => {
+    const script = ensureScreenCommand(1, "extra", "viewtok");
+    const launchAt = script.indexOf("DISPLAY=:2 dbus-launch --sh-syntax");
+    const activationAt = script.indexOf("dbus-update-activation-environment DISPLAY=:2");
+    const claimAt = script.indexOf("screen_claim_gtk", activationAt);
+    const portalAt = script.indexOf("nohup /usr/libexec/xdg-desktop-portal ", activationAt);
+    expect(launchAt).toBeGreaterThan(-1);
+    expect(activationAt).toBeGreaterThan(launchAt);
+    expect(claimAt).toBeGreaterThan(activationAt);
+    expect(portalAt).toBeGreaterThan(claimAt);
+    expect(script).toContain("org.freedesktop.DBus.NameHasOwner");
+    expect(script).toContain("string:org.freedesktop.impl.portal.desktop.gtk");
+    expect(ensureScreenCommand(0, "boot", "viewtok")).not.toContain(
+      "dbus-update-activation-environment",
+    );
+    const managed = managedDesktopCommand("bot", "run:1", DEFAULT_DESKTOP_ENV, "token");
+    expect(managed).toContain(`DISPLAY=:\${desktop_display} dbus-launch --sh-syntax`);
+    expect(managed).toContain(`dbus-update-activation-environment DISPLAY=:\${desktop_display}`);
+    if (process.platform !== "linux") return;
+
+    const {
+      runtime,
+      screenEnv,
+      run,
+      relocate,
+      alive,
+      extraDisplay,
+      busAddress,
+      activationLog,
+      cleanup,
+    } = await portalScreenFixture();
+    try {
+      const ensured = run(relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv)), true);
+      expect(ensured.status, ensured.stderr).toBe(0);
+      const address = busAddress(path.join(runtime, `dbus-session-${extraDisplay}`));
+      expect(readFileSync(activationLog, "utf8")).toBe(
+        `bus=${address} args=DISPLAY=:${extraDisplay}\n`,
+      );
+      const gtkPid = readFileSync(path.join(runtime, `portal-gtk-pid-${extraDisplay}`), "utf8");
+      expect(alive(gtkPid)).toBe(true);
+      const gtkEnviron = readFileSync(`/proc/${gtkPid}/environ`).toString("utf8").split("\0");
+      expect(gtkEnviron).toContain(`DISPLAY=:${extraDisplay}`);
+      expect(gtkEnviron).not.toContain("DISPLAY=:1");
+      const dbusPid = readFileSync(path.join(runtime, `dbus-pid-${extraDisplay}`), "utf8");
+      const daemonEnviron = readFileSync(`/proc/${dbusPid}/environ`).toString("utf8").split("\0");
+      expect(daemonEnviron).toContain(`DISPLAY=:${extraDisplay}`);
+      expect(daemonEnviron).not.toContain("DISPLAY=:1");
+    } finally {
+      cleanup();
+    }
+  });
 });
