@@ -67,26 +67,38 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function mockRunner(stop?: Runner["stop"]) {
+function mockRunner(stop?: () => Promise<void>) {
   const life = deferred();
   // Keep a rejection handler so Node does not treat the mock lifecycle as an
   // unexpected unhandledRejection before the host attaches supervise().
   life.promise.catch(() => undefined);
   const runner = {
     promise: life.promise,
-    stop:
-      stop ??
-      vi.fn(async () => {
-        life.resolve();
-      }),
+    // As in Graphile, the runner's promise settles once the shutdown stop() waits for is done.
+    stop: vi.fn(async () => {
+      await stop?.();
+      life.resolve();
+    }),
     kill: vi.fn(async () => undefined),
     addJob: vi.fn(),
     events: { on: vi.fn(), off: vi.fn(), once: vi.fn(), emit: vi.fn() },
   } as unknown as Runner;
   return {
     runner,
+    resolveLife: () => life.resolve(),
     rejectLife: (error: unknown) => life.reject(error),
   };
+}
+
+/**
+ * A runner whose pool Graphile already began shutting down by itself, as after a breaking
+ * migration notice or a fatal job write: stop() skips the pool, which is no longer active,
+ * and returns at once, while the runner's promise still waits for that shutdown.
+ */
+function selfStoppingRunner() {
+  const graphile = mockRunner();
+  vi.mocked(graphile.runner.stop).mockImplementation(async () => undefined);
+  return graphile;
 }
 
 /** A runner whose shutdown never completes, as against a database that stopped answering. */
@@ -1029,6 +1041,72 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       launched.resolve();
       await host.stop();
     }
+  });
+
+  it("drains a running job when Graphile began its own shutdown before the stop", async () => {
+    const graphile = selfStoppingRunner();
+    run.mockResolvedValueOnce(graphile.runner);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      concurrency: 1,
+      idleStopTimeoutMs: 25,
+      drainTimeoutMs: 60_000,
+    });
+    const release = deferred();
+    const target = handlers();
+    target["computer.sleep"] = async () => {
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      let outcome: "pending" | "resolved" | "rejected" = "pending";
+      const dispatched = run.mock.calls[0]![0].taskList["computer.sleep"](
+        { computerId: "saving" },
+        jobHelpers("job-saving"),
+      ).then(
+        () => {
+          outcome = "resolved";
+        },
+        () => {
+          outcome = "rejected";
+        },
+      );
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // runner.stop() returned at once, but the handler still runs: leaving now would
+      // let the worker close its dependencies under it and leave the job locked.
+      expect(outcome).toBe("pending");
+      expect(stopped).toBe(false);
+      release.resolve();
+      await dispatched;
+      expect(outcome).toBe("resolved");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Graphile's shutdown still flushes the job's completion write.
+      expect(stopped).toBe(false);
+      graphile.resolveLife();
+      const result = await Promise.race([
+        stopping.then(() => "stopped" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+      ]);
+      expect(result).toBe("stopped");
+    } finally {
+      release.resolve();
+      graphile.resolveLife();
+      await host.stop();
+    }
+  });
+
+  it("stops an idle host within the idle bound when Graphile's own shutdown stalls", async () => {
+    run.mockResolvedValueOnce(selfStoppingRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { idleStopTimeoutMs: 25 });
+    await host.start(handlers());
+    const outcome = await Promise.race([
+      host.stop().then(() => "stopped" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+    ]);
+    expect(outcome).toBe("stopped");
   });
 
   it("leaves a restarted host alone when a run abandoned by the previous stop finishes", async () => {

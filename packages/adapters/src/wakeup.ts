@@ -453,11 +453,14 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     };
     const abandoned = session.promise.catch(() => undefined);
     try {
-      // During a relaunch there is no runner yet: the supervise loop stops the new one once
-      // run() returns, and that shutdown waits for any job the new runner already claimed.
-      const runnerStop = this.runner
-        ? this.runner.stop()
-        : (this.superviseTask?.catch(() => undefined) ?? Promise.resolve());
+      // runner.stop() returns at once when Graphile already began its own shutdown (a
+      // breaking migration notice, a fatal job write), and during a relaunch there is no
+      // runner yet. The supervise loop settles only once the current runner's promise does,
+      // which waits for every job that runner claimed, so the stop waits for both.
+      const runnerStop = Promise.all([
+        this.runner?.stop(),
+        this.superviseTask?.catch(() => undefined),
+      ]);
       const drained = await Promise.race([
         runnerStop.then(() => true as const),
         abandoned.then(() => false as const),
