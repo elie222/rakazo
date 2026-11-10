@@ -52,6 +52,7 @@ import {
   createSpeechOwner,
   ensureVoiceConsent,
   setCallAudio,
+  setDictationAudio,
   speakText,
   stopSpeaking,
 } from "./voice";
@@ -889,7 +890,6 @@ async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Pr
   return true;
 }
 
-// A call holds recording on for its whole length; a dictated clip turns it on for itself.
 // A dictation that finishes late must not switch recording off under the next one's recorder.
 let recordingTurn: AbortSignal | undefined;
 
@@ -901,7 +901,7 @@ export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
 ): Promise<CallClip | null> {
-  const { AudioModule, RecordingPresets, setAudioModeAsync } = await import("expo-audio");
+  const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
   // The call can end while the microphone prompt is open.
@@ -918,7 +918,7 @@ export async function recordClip(
   try {
     if (until) {
       recordingTurn = signal;
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await setDictationAudio(true);
     }
     recorder = new AudioModule.AudioRecorder({
       ...RecordingPresets.HIGH_QUALITY,
@@ -972,7 +972,7 @@ export async function recordClip(
     recorder?.release();
     if (recordingTurn === signal) {
       recordingTurn = undefined;
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      await setDictationAudio(false);
     }
   }
 }

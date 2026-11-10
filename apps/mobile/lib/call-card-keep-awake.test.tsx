@@ -130,6 +130,7 @@ vi.mock("./voice", () => ({
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
   setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
 }));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({

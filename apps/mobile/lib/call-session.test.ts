@@ -38,7 +38,7 @@ import {
   saveSessionToken,
 } from "./session";
 import type { UiLocale } from "./ui-locale";
-import { ensureVoiceConsent } from "./voice";
+import { ensureVoiceConsent, setDictationAudio } from "./voice";
 
 const device = vi.hoisted(() => ({ languageTag: "en-US", os: "ios" }));
 
@@ -65,6 +65,7 @@ vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
   ensureVoiceConsent: vi.fn(async () => undefined),
   setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
@@ -2021,27 +2022,25 @@ describe("mobile call recording without metering", () => {
     files.base64 = async () => "";
   });
 
-  it("leaves a call's audio mode alone and switches recording on only for a dictated clip", async () => {
+  it("switches recording on only for a dictated clip, never for a call turn", async () => {
+    vi.mocked(setDictationAudio).mockClear();
     const { record: _record, ...deps } = fakes().deps;
     startCall({ botId: "bot-1", botName: "Ada" }, deps);
     await vi.advanceTimersByTimeAsync(0);
     expect(audio.record).toHaveBeenCalledOnce();
     endCall();
     await vi.advanceTimersByTimeAsync(1_000);
+    expect(setDictationAudio).not.toHaveBeenCalled();
     expect(audio.setAudioMode).not.toHaveBeenCalled();
 
     const stopped = new AbortController();
     const clip = recordClip(new AbortController().signal, stopped.signal);
     await vi.advanceTimersByTimeAsync(0);
-    expect(audio.setAudioMode).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: true }),
-    );
+    expect(setDictationAudio).toHaveBeenCalledExactlyOnceWith(true);
     stopped.abort();
     await vi.advanceTimersByTimeAsync(200);
     await clip;
-    expect(audio.setAudioMode).toHaveBeenLastCalledWith(
-      expect.objectContaining({ allowsRecording: false }),
-    );
+    expect(setDictationAudio).toHaveBeenLastCalledWith(false);
   });
 
   it("ends the clip before the cap and sends nothing for silence", async () => {

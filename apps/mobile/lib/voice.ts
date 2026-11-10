@@ -140,7 +140,10 @@ const CALL_AUDIO = {
   shouldPlayInBackground: true,
 } as const;
 
+const DICTATION_AUDIO = { playsInSilentMode: true, allowsRecording: true } as const;
+
 let onCall = false;
+let dictating = false;
 let audioModeChange: Promise<void> = Promise.resolve();
 
 function changeAudioMode(change: () => Promise<void>): Promise<void> {
@@ -157,10 +160,24 @@ export function setCallAudio(active: boolean): Promise<void> {
       await setAudioModeAsync(CALL_AUDIO);
       return;
     }
+    if (dictating) {
+      await setAudioModeAsync(DICTATION_AUDIO);
+      return;
+    }
     await setAudioModeAsync(READ_ALOUD_AUDIO);
     if (Platform.OS === "ios" && !onCall && playback.status === "idle") {
       await setIsAudioActiveAsync(false);
     }
+  });
+}
+
+export function setDictationAudio(active: boolean): Promise<void> {
+  dictating = active;
+  return changeAudioMode(async () => {
+    if (onCall || dictating !== active) return;
+    await setAudioModeAsync(
+      active ? DICTATION_AUDIO : { playsInSilentMode: true, allowsRecording: false },
+    );
   });
 }
 

@@ -13,6 +13,7 @@ import {
   playSpeechClip,
   resumeVoicePlayback,
   setCallAudio,
+  setDictationAudio,
   speakQueue,
   speakText,
   speakUtterance,
@@ -961,6 +962,32 @@ describe("call audio", () => {
       expect.objectContaining({ shouldPlayInBackground: false }),
     ]);
     vi.mocked(setAudioModeAsync).mockImplementation(async () => undefined);
+  });
+
+  it("leaves a call's recording on when a dictation elsewhere ends", async () => {
+    await setCallAudio(true);
+    vi.mocked(setAudioModeAsync).mockClear();
+    await setDictationAudio(true);
+    await setDictationAudio(false);
+    expect(setAudioModeAsync).not.toHaveBeenCalled();
+    await setCallAudio(false);
+  });
+
+  it("keeps a dictation recording when a call ends under it", async () => {
+    vi.mocked(setIsAudioActiveAsync).mockClear();
+    await setDictationAudio(true);
+    await setCallAudio(true);
+    vi.mocked(setAudioModeAsync).mockClear();
+    await setCallAudio(false);
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ allowsRecording: true }),
+    );
+    expect(setIsAudioActiveAsync).not.toHaveBeenCalled();
+    vi.mocked(setAudioModeAsync).mockClear();
+    await setDictationAudio(false);
+    expect(setAudioModeAsync).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ allowsRecording: false }),
+    );
   });
 });
 
