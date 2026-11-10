@@ -9,6 +9,7 @@ import {
   showSystemFloat,
   showSystemFloatWindow,
   systemFloatHasPermission,
+  systemFloatWindowIsShowing,
   systemFloatWindowSupported,
   updateSystemFloatWindowUrl,
 } from "./system-float";
@@ -114,11 +115,17 @@ describe("system float", () => {
 });
 
 function fakeWindow(
-  options: { permitted?: boolean; supported?: boolean; showResult?: boolean } = {},
+  options: {
+    permitted?: boolean;
+    supported?: boolean;
+    showResult?: boolean;
+    showing?: boolean;
+  } = {},
 ) {
   const show = vi.fn(async () => options.showResult ?? true);
   const updateUrl = vi.fn(async () => undefined);
   const hide = vi.fn(async () => undefined);
+  const isShowing = vi.fn(async () => options.showing ?? false);
   const windowModule: SystemFloatWindowModule = {
     isSupported: async () => options.supported ?? true,
     hasOverlayPermission: async () => options.permitted ?? true,
@@ -126,9 +133,9 @@ function fakeWindow(
     show,
     updateUrl,
     hide,
-    isShowing: async () => false,
+    isShowing,
   };
-  return { windowModule, show, updateUrl, hide };
+  return { windowModule, show, updateUrl, hide, isShowing };
 }
 
 describe("system float window", () => {
@@ -204,5 +211,31 @@ describe("system float window", () => {
     } finally {
       setSystemFloatWindowModule(null);
     }
+  });
+
+  it("reports the window as showing while it is up", async () => {
+    const { windowModule, isShowing } = fakeWindow({ showing: true });
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await expect(systemFloatWindowIsShowing()).resolves.toBe(true);
+      expect(isShowing).toHaveBeenCalled();
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("reports the window as gone once it is closed from outside", async () => {
+    const { windowModule } = fakeWindow({ showing: false });
+    setSystemFloatWindowModule(windowModule);
+    try {
+      await expect(systemFloatWindowIsShowing()).resolves.toBe(false);
+    } finally {
+      setSystemFloatWindowModule(null);
+    }
+  });
+
+  it("reports the window as gone when the module is missing", async () => {
+    setSystemFloatWindowModule(null);
+    await expect(systemFloatWindowIsShowing()).resolves.toBe(false);
   });
 });

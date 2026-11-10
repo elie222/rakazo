@@ -6,4 +6,7 @@
   <string name="rakazo_system_float_open_app">打开应用</string>
   <string name="rakazo_system_float_close">关闭</string>
   <string name="rakazo_system_float_resize">调整大小</string>
+  <string name="rakazo_system_float_maximize">放大</string>
+  <string name="rakazo_system_float_restore">还原</string>
+  <string name="rakazo_system_float_keyboard">键盘</string>
 </resources>

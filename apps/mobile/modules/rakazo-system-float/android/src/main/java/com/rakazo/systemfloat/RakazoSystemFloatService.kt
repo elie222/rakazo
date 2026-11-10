@@ -22,6 +22,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
@@ -79,6 +80,10 @@ class RakazoSystemFloatService : Service() {
   private var webView: WebView? = null
   private var currentUrl: String? = null
   private var currentLocale = ""
+  /** The window's size and position before it was maximized, for restoring. */
+  private var savedParams: WindowManager.LayoutParams? = null
+  private var isMaximized = false
+  private var maximizeButton: ImageButton? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -126,6 +131,9 @@ class RakazoSystemFloatService : Service() {
     overlay = null
     overlayParams = null
     titleView = null
+    maximizeButton = null
+    savedParams = null
+    isMaximized = false
     webView?.destroy()
     webView = null
     currentUrl = null
@@ -138,6 +146,45 @@ class RakazoSystemFloatService : Service() {
     if (url == currentUrl) return
     currentUrl = url
     webView?.loadUrl(url)
+  }
+
+  /** Brings up the soft keyboard for the screen, so the phone can type into the computer. */
+  private fun showKeyboard() {
+    val view = webView ?: return
+    view.requestFocus()
+    val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+    inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+  }
+
+  /** Toggles the window between its floating size and the full screen. */
+  private fun toggleMaximize() {
+    val manager = windowManager ?: return
+    val root = overlay ?: return
+    val params = overlayParams ?: return
+    val metrics = resources.displayMetrics
+    if (isMaximized) {
+      val saved = savedParams ?: return
+      params.width = saved.width
+      params.height = saved.height
+      params.x = saved.x
+      params.y = saved.y
+      savedParams = null
+      isMaximized = false
+      maximizeButton?.setImageResource(R.drawable.ic_rakazo_system_float_maximize)
+      maximizeButton?.contentDescription = getString(R.string.rakazo_system_float_maximize)
+    } else {
+      savedParams = WindowManager.LayoutParams().apply {
+        copyFrom(params)
+      }
+      params.width = metrics.widthPixels
+      params.height = metrics.heightPixels
+      params.x = 0
+      params.y = 0
+      isMaximized = true
+      maximizeButton?.setImageResource(R.drawable.ic_rakazo_system_float_restore)
+      maximizeButton?.contentDescription = getString(R.string.rakazo_system_float_restore)
+    }
+    manager.updateViewLayout(root, params)
   }
 
   private fun createOverlay(url: String, title: String, locale: String) {
@@ -181,6 +228,21 @@ class RakazoSystemFloatService : Service() {
       gravity = Gravity.CENTER_VERTICAL
     }
     titleView = titleText
+    val keyboardButton = ImageButton(this).apply {
+      layoutParams = LinearLayout.LayoutParams(barPx, barPx)
+      setImageResource(R.drawable.ic_rakazo_system_float_keyboard)
+      setBackgroundResource(0)
+      contentDescription = getString(R.string.rakazo_system_float_keyboard)
+      setOnClickListener { showKeyboard() }
+    }
+    val maximizeButton = ImageButton(this).apply {
+      layoutParams = LinearLayout.LayoutParams(barPx, barPx)
+      setImageResource(R.drawable.ic_rakazo_system_float_maximize)
+      setBackgroundResource(0)
+      contentDescription = getString(R.string.rakazo_system_float_maximize)
+      setOnClickListener { toggleMaximize() }
+    }
+    this.maximizeButton = maximizeButton
     val openButton = ImageButton(this).apply {
       layoutParams = LinearLayout.LayoutParams(barPx, barPx)
       setImageResource(R.drawable.ic_rakazo_system_float_open)
@@ -196,6 +258,8 @@ class RakazoSystemFloatService : Service() {
       setOnClickListener { stopSelf() }
     }
     bar.addView(titleText)
+    bar.addView(maximizeButton)
+    bar.addView(keyboardButton)
     bar.addView(openButton)
     bar.addView(closeButton)
 
@@ -207,6 +271,12 @@ class RakazoSystemFloatService : Service() {
       )
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
+      // Pinch to zoom the desktop: the built-in zoom controls are the
+      // pinch gesture, with the on-screen +/- buttons hidden.
+      settings.setSupportZoom(true)
+      settings.builtInZoomControls = true
+      settings.displayZoomControls = false
+      isFocusableInTouchMode = true
       webViewClient = WebViewClient()
     }
     webView = screen
@@ -240,8 +310,12 @@ class RakazoSystemFloatService : Service() {
     overlayParams = params
     overlay = root
 
-    bar.setOnTouchListener(DragTouchListener(root, manager, params, metrics.widthPixels, metrics.heightPixels))
-    grip.setOnTouchListener(ResizeTouchListener(root, manager, params, metrics.widthPixels, metrics.heightPixels, barPx))
+    bar.setOnTouchListener(
+      DragTouchListener(root, manager, params, metrics.widthPixels, metrics.heightPixels) { isMaximized },
+    )
+    grip.setOnTouchListener(
+      ResizeTouchListener(root, manager, params, metrics.widthPixels, metrics.heightPixels, barPx) { isMaximized },
+    )
 
     startForegroundNotification()
     manager.addView(root, params)
@@ -320,6 +394,7 @@ class RakazoSystemFloatService : Service() {
     private val params: WindowManager.LayoutParams,
     private val screenWidth: Int,
     private val screenHeight: Int,
+    private val isMaximized: () -> Boolean,
   ) : View.OnTouchListener {
     private var downRawX = 0f
     private var downRawY = 0f
@@ -328,6 +403,7 @@ class RakazoSystemFloatService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(view: View, event: MotionEvent): Boolean {
+      if (isMaximized()) return false
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
           downRawX = event.rawX
@@ -371,6 +447,7 @@ class RakazoSystemFloatService : Service() {
     private val screenWidth: Int,
     private val screenHeight: Int,
     private val barPx: Int,
+    private val isMaximized: () -> Boolean,
   ) : View.OnTouchListener {
     private var downRawX = 0f
     private var downRawY = 0f
@@ -378,6 +455,7 @@ class RakazoSystemFloatService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(view: View, event: MotionEvent): Boolean {
+      if (isMaximized()) return false
       val metrics = view.resources.displayMetrics
       fun dpPx(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), metrics).roundToInt()

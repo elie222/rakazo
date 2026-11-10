@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +32,7 @@ import {
   showSystemFloat,
   showSystemFloatWindow,
   systemFloatHasPermission,
+  systemFloatWindowIsShowing,
   updateSystemFloatWindowUrl,
 } from "../../lib/system-float";
 import { isComputerRunning } from "../../lib/use-computer-running";
@@ -174,11 +175,19 @@ export function ComputerFloatWindow({
   botId,
   open,
   onClose,
+  systemOnly = false,
 }: {
   botId: string | undefined;
   /** Closed renders nothing, so nothing polls or refreshes while it is hidden. */
   open: boolean;
   onClose: () => void;
+  /**
+   * Open the system popup instead of the in-app float: once the screen URL
+   * is ready the live screen pops out to the system floating window, and
+   * the in-app float is only the fallback when the system window cannot
+   * show (no overlay module, or the user declines its permission).
+   */
+  systemOnly?: boolean;
 }) {
   const { t, locale } = useI18n();
   const tokens = mobileTokens();
@@ -194,6 +203,16 @@ export function ComputerFloatWindow({
   // or — when the window module is not in the build — as a bubble.
   const [systemFloatOn, setSystemFloatOn] = useState(false);
   const systemFloatMode = useRef<"window" | "bubble" | null>(null);
+  // In system-only mode the system window could not be shown, so the
+  // in-app float is the fallback; it stays the fallback for this bot.
+  const [systemUnavailable, setSystemUnavailable] = useState(false);
+  const systemOnlyRef = useRef(systemOnly);
+  systemOnlyRef.current = systemOnly;
+  // The system popup operates the computer, so opening it takes control
+  // and closing it hands the lease straight back.
+  const tookControlRef = useRef(false);
+  const takeoverAttemptedRef = useRef(false);
+  const autoPopOutDoneRef = useRef(false);
   // The user was sent to system settings to grant the overlay permission.
   const pendingPermission = useRef(false);
   const heldScreenUrl = useRef<string | null>(null);
@@ -254,6 +273,10 @@ export function ComputerFloatWindow({
     setStatusError(false);
     setSize({ width: COMPUTER_FLOAT_WIDTH });
     setPosition(null);
+    setSystemUnavailable(false);
+    tookControlRef.current = false;
+    takeoverAttemptedRef.current = false;
+    autoPopOutDoneRef.current = false;
     wasRunningRef.current = false;
   }, [botId]);
   useEffect(() => {
@@ -270,9 +293,51 @@ export function ComputerFloatWindow({
     }
   }, [open, systemFloatOn]);
 
+  // The system popup operates the computer, so opening it takes control
+  // once the computer runs: the screen URL then comes back interactive
+  // and taps on the phone reach the desktop. A refused takeover leaves
+  // the popup view-only instead of blocking it.
+  useEffect(() => {
+    if (!systemOnly || !open || !botId) return;
+    if (computer?.state !== "running") return;
+    const hasControl =
+      computer.controlHolder === "user" &&
+      computer.controlBotId === botId &&
+      !computer.controlledByOther;
+    if (hasControl || takeoverAttemptedRef.current) return;
+    takeoverAttemptedRef.current = true;
+    const action = refreshController.beginAction();
+    void rpc("computer/takeover", { botId })
+      .then(async () => {
+        if (!refreshController.isActive()) {
+          // The popup closed while the takeover was in flight: hand the
+          // lease straight back instead of holding it for a dead session.
+          await rpc("computer/release", { botId }).catch(() => undefined);
+          return;
+        }
+        tookControlRef.current = true;
+        await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS }).catch(() => undefined);
+      })
+      .catch(() => undefined)
+      .finally(() => action.finish());
+  }, [systemOnly, open, botId, computer, refreshController]);
+
+  // Closing the popup hands back a lease this session took, so the bot
+  // can drive the computer again; a lease the user already held stays.
+  useEffect(() => {
+    if (open) return;
+    takeoverAttemptedRef.current = false;
+    autoPopOutDoneRef.current = false;
+    if (tookControlRef.current && botId) {
+      tookControlRef.current = false;
+      void rpc("computer/release", { botId }).catch(() => undefined);
+    }
+  }, [open, botId]);
+
   // After the user opens the system settings to grant the overlay permission,
   // the screen floats once they come back to the app: the system window
-  // first, the bubble when the window module is not in the build.
+  // first, the bubble when the window module is not in the build. In
+  // system-only mode the in-app float is the fallback instead of the bubble.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active" || !pendingPermission.current) return;
@@ -288,6 +353,10 @@ export function ComputerFloatWindow({
               return;
             }
             if (result === "no-permission") return;
+            if (systemOnlyRef.current) {
+              setSystemUnavailable(true);
+              return;
+            }
             void showSystemFloat().then((bubbleResult) => {
               if (bubbleResult === "shown") {
                 systemFloatMode.current = "bubble";
@@ -295,6 +364,10 @@ export function ComputerFloatWindow({
               }
             });
           });
+          return;
+        }
+        if (systemOnlyRef.current) {
+          setSystemUnavailable(true);
           return;
         }
         void showSystemFloat().then((result) => {
@@ -390,6 +463,22 @@ export function ComputerFloatWindow({
   ).current;
 
   /**
+   * Shows the live screen in the system window. "shown" when it is up;
+   * "no-permission" when the user has not allowed drawing over other apps
+   * yet; "unsupported" when this build has no window module.
+   */
+  const showSystemWindow = useCallback(async () => {
+    const url = floatScreenUrlRef.current;
+    if (!url) return "unsupported" as const;
+    const result = await showSystemFloatWindow(url, t("Computer screen"), locale);
+    if (result === "shown") {
+      systemFloatMode.current = "window";
+      setSystemFloatOn(true);
+    }
+    return result;
+  }, [locale, t]);
+
+  /**
    * Floats the computer screen outside the app: the system window carries
    * the live screen over other apps, and the bubble is the fallback when
    * the window module is not in the build. The in-app window stays open
@@ -404,27 +493,20 @@ export function ComputerFloatWindow({
       await hideSystemFloat();
       return;
     }
-    const url = floatScreenUrlRef.current;
-    if (url) {
-      const result = await showSystemFloatWindow(url, t("Computer screen"), locale);
-      if (result === "shown") {
-        systemFloatMode.current = "window";
-        setSystemFloatOn(true);
-        return;
-      }
-      if (result === "no-permission") {
-        askOverlayPermission();
-        return;
-      }
-      // "unsupported": this build has no window module, so try the bubble.
+    const result = await showSystemWindow();
+    if (result === "shown") return;
+    if (result === "no-permission") {
+      askOverlayPermission();
+      return;
     }
-    const result = await showSystemFloat();
-    if (result === "shown") {
+    // "unsupported": this build has no window module, so try the bubble.
+    const bubbleResult = await showSystemFloat();
+    if (bubbleResult === "shown") {
       systemFloatMode.current = "bubble";
       setSystemFloatOn(true);
       return;
     }
-    if (result === "no-permission") {
+    if (bubbleResult === "no-permission") {
       askOverlayPermission();
       return;
     }
@@ -436,14 +518,14 @@ export function ComputerFloatWindow({
     );
   }
 
-  function askOverlayPermission() {
+  function askOverlayPermission(onCancel?: () => void) {
     Alert.alert(
       t("Allow floating over other apps"),
       t(
         "Turn on “Display over other apps” for Rakazo in Settings. Then leave the app and the computer screen floats over other apps; tap the window or its notification to come back.",
       ),
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t("Cancel"), style: "cancel", onPress: onCancel },
         {
           text: t("Open Settings"),
           onPress: () => {
@@ -513,7 +595,52 @@ export function ComputerFloatWindow({
     void updateSystemFloatWindowUrl(loadedScreenUrl);
   }, [loadedScreenUrl]);
 
+  // System-only mode pops the screen out to the system window as soon as
+  // its URL is ready. A refused overlay permission asks once; declining
+  // it, or a build without the window module, falls back to the in-app
+  // float instead of leaving the user with nothing.
+  useEffect(() => {
+    if (!systemOnly || systemUnavailable || !open || !botId) return;
+    if (!loadedScreenUrl || systemFloatOn) return;
+    if (autoPopOutDoneRef.current) return;
+    autoPopOutDoneRef.current = true;
+    void showSystemWindow().then((result) => {
+      if (result === "no-permission") {
+        askOverlayPermission(() => setSystemUnavailable(true));
+      } else if (result === "unsupported") {
+        setSystemUnavailable(true);
+      }
+    });
+  }, [
+    systemOnly,
+    systemUnavailable,
+    open,
+    botId,
+    loadedScreenUrl,
+    systemFloatOn,
+    showSystemWindow,
+  ]);
+
+  // The system window has its own close button, so the app only learns it
+  // is gone by asking: while the system popup is up, a closed window ends
+  // the session, so the next header tap opens it again instead of nothing.
+  useEffect(() => {
+    if (!systemOnly || !systemFloatOn || !open) return;
+    const timer = setInterval(() => {
+      void systemFloatWindowIsShowing().then((showing) => {
+        if (showing) return;
+        systemFloatMode.current = null;
+        setSystemFloatOn(false);
+        onCloseRef.current();
+      });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [systemOnly, systemFloatOn, open]);
+
   if (!open || !botId) return null;
+  // Once the system popup is up it carries the screen, so the in-app float
+  // steps aside; it stays the fallback while the popup is still opening.
+  if (systemOnly && !systemUnavailable && systemFloatOn) return null;
 
   return (
     <View

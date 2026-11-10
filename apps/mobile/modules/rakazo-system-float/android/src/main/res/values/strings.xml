@@ -6,4 +6,7 @@
   <string name="rakazo_system_float_open_app">Open app</string>
   <string name="rakazo_system_float_close">Close</string>
   <string name="rakazo_system_float_resize">Resize</string>
+  <string name="rakazo_system_float_maximize">Expand</string>
+  <string name="rakazo_system_float_restore">Restore</string>
+  <string name="rakazo_system_float_keyboard">Keyboard</string>
 </resources>

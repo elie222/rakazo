@@ -429,8 +429,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
 
   // The computer screen float opens only from its header entry, never on its own. The
   // settings switch gates it per bot; off means no entry and no window, even mid-run.
+  // The header entry opens the system popup: the live screen pops out to the system
+  // floating window, which the phone can enlarge and operate; the in-app float is
+  // only the fallback when the system window cannot show.
   const computerFloatEnabled = useComputerFloatEnabled(botId);
   const [computerFloatOpen, setComputerFloatOpen] = useState(false);
+  const [computerFloatSystemOnly, setComputerFloatSystemOnly] = useState(false);
 
   useThreadHeader({
     botId,
@@ -450,7 +454,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     computerFloatEnabled,
     onOpenComputerFloat:
       !inGroup && !readOnly && botId && computerFloatEnabled
-        ? () => setComputerFloatOpen(true)
+        ? () => {
+            setComputerFloatSystemOnly(true);
+            setComputerFloatOpen(true);
+          }
         : undefined,
   });
 
@@ -1061,7 +1068,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       <ComputerFloatWindow
         botId={botId}
         open={computerFloatOpen && computerFloatEnabled}
-        onClose={() => setComputerFloatOpen(false)}
+        systemOnly={computerFloatSystemOnly}
+        onClose={() => {
+          setComputerFloatOpen(false);
+          setComputerFloatSystemOnly(false);
+        }}
       />
     </View>
   );

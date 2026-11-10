@@ -151,6 +151,16 @@ export async function hideSystemFloatWindow(): Promise<void> {
   }
 }
 
+/** True while the system floating window is up, for callers that close on its own close. */
+export async function systemFloatWindowIsShowing(): Promise<boolean> {
+  try {
+    const module = await loadWindow();
+    return (await module?.isShowing()) ?? false;
+  } catch {
+    return false;
+  }
+}
+
 /** True when this build can float the live computer screen over other apps. */
 export async function systemFloatWindowSupported(): Promise<boolean> {
   try {

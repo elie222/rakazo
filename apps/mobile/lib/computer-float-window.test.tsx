@@ -80,6 +80,7 @@ const bubbleBox = vi.hoisted(() => ({
 }));
 const windowBox = vi.hoisted(() => ({
   permitted: true,
+  showing: true,
   show: vi.fn(async (_url: string, _title: string, _locale: string) => true),
   updateUrl: vi.fn(async (_url: string) => undefined),
   hide: vi.fn(async () => undefined),
@@ -408,6 +409,7 @@ describe("computer float window", () => {
     bubbleBox.hide.mockClear();
     bubbleBox.requestOverlayPermission.mockClear();
     windowBox.permitted = true;
+    windowBox.showing = true;
     windowBox.show.mockClear();
     windowBox.updateUrl.mockClear();
     windowBox.hide.mockClear();
@@ -450,12 +452,18 @@ describe("computer float window", () => {
     return container;
   }
 
-  function renderFloat(props: { botId?: string; open: boolean; onClose?: () => void }) {
+  function renderFloat(props: {
+    botId?: string;
+    open: boolean;
+    onClose?: () => void;
+    systemOnly?: boolean;
+  }) {
     return render(
       <ComputerFloatWindow
         botId={props.botId ?? "bot-1"}
         open={props.open}
         onClose={props.onClose ?? (() => undefined)}
+        systemOnly={props.systemOnly}
       />,
     );
   }
@@ -468,7 +476,7 @@ describe("computer float window", () => {
       show: (url: string, title: string, locale: string) => windowBox.show(url, title, locale),
       updateUrl: (url: string) => windowBox.updateUrl(url),
       hide: () => windowBox.hide(),
-      isShowing: async () => false,
+      isShowing: async () => windowBox.showing,
     });
   }
 
@@ -842,6 +850,117 @@ describe("computer float window", () => {
     });
     await settle();
     expect(windowBox.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("pops the system window on its own in system-only mode, takes control, and steps aside", async () => {
+    injectWindowModule();
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true, systemOnly: true });
+    await settle();
+    // No header tap: opening the popup pops the screen out by itself.
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    expect(windowBox.show).toHaveBeenCalledWith(
+      "https://screen.example.test/embed",
+      "Computer screen",
+      "en",
+    );
+    expect(bubbleBox.show).not.toHaveBeenCalled();
+    // The popup operates the computer, so it takes control on open.
+    expect(calls("computer/takeover")).toHaveLength(1);
+    expect(calls("computer/takeover")[0]?.[1]).toEqual({ botId: "bot-1" });
+    // The system window carries the screen now, so the in-app float steps aside.
+    expect(opened.querySelector('iframe[title="screen"]')).toBeNull();
+    expect(opened.textContent).toBe("");
+  });
+
+  it("hands control back when the system popup closes", async () => {
+    injectWindowModule();
+    respond(runningStatus, "https://screen.example.test/embed");
+    renderFloat({ open: true, systemOnly: true });
+    await settle();
+    expect(calls("computer/takeover")).toHaveLength(1);
+    expect(calls("computer/release")).toHaveLength(0);
+    act(() => {
+      root?.render(
+        <ComputerFloatWindow botId="bot-1" open={false} onClose={() => undefined} systemOnly />,
+      );
+    });
+    await settle();
+    expect(calls("computer/release")).toHaveLength(1);
+    expect(calls("computer/release")[0]?.[1]).toEqual({ botId: "bot-1" });
+    expect(windowBox.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the in-app float in system-only mode when the window module is missing", async () => {
+    // No window module injected: the build cannot pop the system window out.
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true, systemOnly: true });
+    await settle();
+    expect(windowBox.show).not.toHaveBeenCalled();
+    expect(alertBox.alert).not.toHaveBeenCalled();
+    // The fallback float stays up, and it still takes control so the phone
+    // can operate the computer from inside the app.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    expect(calls("computer/takeover")).toHaveLength(1);
+  });
+
+  it("asks once in system-only mode and falls back when the user declines the permission", async () => {
+    injectWindowModule();
+    windowBox.permitted = false;
+    respond(runningStatus, "https://screen.example.test/embed");
+    const opened = renderFloat({ open: true, systemOnly: true });
+    await settle();
+    expect(windowBox.show).not.toHaveBeenCalled();
+    expect(alertBox.alert).toHaveBeenCalledWith(
+      "Allow floating over other apps",
+      expect.stringContaining("Display over other apps"),
+      expect.any(Array),
+    );
+    const buttons = alertBox.alert.mock.calls[0]![2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    act(() => {
+      buttons.find((button) => button.text === "Cancel")?.onPress?.();
+    });
+    await settle();
+    // Declining leaves the in-app float as the fallback instead of nothing.
+    expect(opened.querySelector('iframe[title="screen"]')).not.toBeNull();
+    expect(alertBox.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the session when the system window is closed from outside", async () => {
+    vi.useFakeTimers();
+    injectWindowModule();
+    windowBox.showing = false;
+    respond(runningStatus, "https://screen.example.test/embed");
+    const onClose = vi.fn();
+    renderFloat({ open: true, systemOnly: true, onClose });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the session while the system window is still showing", async () => {
+    vi.useFakeTimers();
+    injectWindowModule();
+    windowBox.showing = true;
+    respond(runningStatus, "https://screen.example.test/embed");
+    const onClose = vi.fn();
+    renderFloat({ open: true, systemOnly: true, onClose });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(windowBox.show).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("re-points the system window when the screen URL rotates", async () => {
