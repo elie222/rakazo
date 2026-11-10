@@ -162,7 +162,7 @@ export function NeedsYouRow({ count, onPress }: { count: number; onPress: () => 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${t`Needs you`}, ${count}`}
+      accessibilityLabel={t`Needs you, ${count} waiting`}
       onPress={onPress}
       style={({ pressed }) => [
         styles.sectionToggle,
