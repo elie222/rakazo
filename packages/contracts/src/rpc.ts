@@ -1552,7 +1552,10 @@ export const appContract = {
         z
           .object({
             provider: z.string(),
-            /** Optional for a self-hosted server and for providers without keys. */
+            /**
+             * Optional for a self-hosted server, for providers without keys, and for a provider
+             * the account's model connection authenticates (the catalog's `modelConnection`).
+             */
             apiKey: z.string().max(4096).default(""),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),

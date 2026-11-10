@@ -26,7 +26,7 @@ async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number
 }
 
 // Last known count, shown when the build cannot reach GitHub.
-const GITHUB_STARS_FALLBACK = 6_000;
+const GITHUB_STARS_FALLBACK = 8_000;
 let githubStars: Promise<number> | undefined;
 
 /** One lookup per build: anonymous requests share a 60/hour limit, and every page shows the count. */

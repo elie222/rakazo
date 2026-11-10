@@ -1146,6 +1146,28 @@ class AgentBrowserTest(unittest.TestCase):
         self.assertIn("private text", run.call_args.kwargs["input"])
         self.assertEqual(run.call_args.kwargs["cwd"], browser.home)
 
+    def test_replaces_its_settings_whole_while_another_call_reads_them(self):
+        # Every call on the computer, one per screen, writes the same settings file, and agent-browser
+        # refuses one it reads half written: the file another call has open must stay whole.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            config.write_text('{"before": true}', encoding="utf-8")
+            with config.open(encoding="utf-8") as reading:
+                helper.AgentBrowser(9223)
+                self.assertEqual(reading.read(), '{"before": true}')
+            self.assertEqual(config.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
+    def test_leaves_no_staged_settings_file_when_the_swap_fails(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            with patch.object(helper.os, "replace", side_effect=PermissionError("denied")):
+                with self.assertRaises(PermissionError):
+                    helper.AgentBrowser(9223)
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
     def test_refuses_a_browser_agent_browser_started_itself(self):
         launched = [{"success": True, "result": {"lifecycle": {"launched": True}}}]
         with patch.object(helper.subprocess, "run",

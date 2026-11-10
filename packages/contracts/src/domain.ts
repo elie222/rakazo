@@ -1297,6 +1297,11 @@ export const VoiceCatalogEntrySchema = z.object({
   keyless: z.boolean().optional(),
   /** The connection takes an optional speech model id that overrides the provider default. */
   speechModel: z.boolean().optional(),
+  /**
+   * The account's model connection to this provider can authenticate voice, so the key is
+   * optional. Set only for an account that has one.
+   */
+  modelConnection: z.boolean().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
 });
@@ -1312,6 +1317,7 @@ export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
 export const VoiceCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
+  /** False when the connection authenticates with the account's model connection instead. */
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   voiceId: z.string(),

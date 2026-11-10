@@ -1790,7 +1790,7 @@ describe("mobile call recognition recovery", () => {
       expect(getSnapshot()).toMatchObject({
         phase: "listening",
         caption:
-          "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.",
+          "Allow speech recognition in Settings, or connect a voice provider that transcribes.",
       });
       expect(fake.start).toHaveBeenCalledOnce();
       expect(fake.recordings).toHaveLength(0);
