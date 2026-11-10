@@ -116,7 +116,10 @@ async function dispatchTool(
       ctx.secrets,
       target === name ? undefined : target,
     );
-    if (logged) (ctx.state.toolRefusals ??= new Map()).set(executionId, logged);
+    if (logged) {
+      ctx.state.toolRefusals ??= new Map();
+      ctx.state.toolRefusals.set(executionId, logged);
+    }
     return refused;
   };
   if (!strategicInitiativeToolAllowed(name, ctx.run)) {
