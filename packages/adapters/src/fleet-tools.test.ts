@@ -1300,7 +1300,9 @@ describe("updateChildBot", () => {
     await expect(
       updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", notify_on_finish: false }),
     ).resolves.toEqual({ ok: true });
-    expect(tx.bot.update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
+    // A mute alone leaves the shared bot, its updatedAt and everyone's clients alone.
+    expect(tx.bot.update).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
     expect(tx.threadRead.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { threadId_userId: { threadId: "thread-bot-child", userId: run.userId } },

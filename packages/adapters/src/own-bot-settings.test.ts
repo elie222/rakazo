@@ -347,12 +347,13 @@ it("update_bot persists a daily check-in opt-out and returns the saved value", a
 
 it("update_bot turns notifications off for the person who asked, not the whole space", async () => {
   const update = vi.fn(async ({ data }) => ({ id: "bot-1", ...bot, ...data }));
+  const findUniqueOrThrow = vi.fn(async () => ({ id: "bot-1", ...bot }));
   let muted: boolean | null = null;
   const upsert = vi.fn(async ({ update: state }: { update: { muted: boolean } }) => {
     muted = state.muted;
   });
   const prisma = {
-    bot: { update },
+    bot: { update, findUniqueOrThrow },
     thread: {
       findUnique: vi.fn(async () => ({
         id: "thread-own",
@@ -378,7 +379,8 @@ it("update_bot turns notifications off for the person who asked, not the whole s
       update: { muted: true },
     }),
   );
-  expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: {} }));
+  // A mute alone leaves the shared bot and its updatedAt alone.
+  expect(update).not.toHaveBeenCalled();
   expect(result).toMatchObject({ ok: true, notifyOnFinish: false });
 
   // A refused profile write leaves notifications alone.
