@@ -190,8 +190,10 @@ describe("purchase detection for the page tools", () => {
     expect(await replay(approval)).toEqual(changed);
     now = null;
     expect(await replay(approval)).toEqual(changed);
-    // A card that named nothing, because the check failed, has nothing to compare.
-    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toBeUndefined();
+    // An old approval from a failed inspection cannot authorize an unchecked press.
+    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toEqual({
+      error: expect.stringContaining("The page could not be verified"),
+    });
   });
 
   it("shows no card only where this run typed an approved wallet card or token, and still approves the click", async () => {

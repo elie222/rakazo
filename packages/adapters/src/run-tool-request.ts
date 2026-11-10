@@ -440,8 +440,7 @@ export async function prepareToolRequest(
       request.fleetSummary = cardUseSummary(cardUse);
     }
     // A desktop press has no check on the page right before it, as a browser_act click does: one the user
-    // approved goes ahead only while the page still shows what the card did. A card that named nothing
-    // (the check failed) has nothing to compare.
+    // approved goes ahead only while the page still shows what the card did.
     if (
       name === "computer_act" &&
       approved &&
@@ -462,7 +461,7 @@ export async function prepareToolRequest(
     }
     const purchase = approved ?? (await detectPurchase(ctx, name, rest));
     // An unreadable page is an inspection failure, not evidence of a purchase.
-    if (purchase && !approved && !purchase.site && !purchase.label && !purchase.amount)
+    if (purchase && !purchase.site && !purchase.label && !purchase.amount)
       return {
         error:
           "The page could not be verified, so nothing was pressed. Inspect the current page, separate navigation from clicks, and retry only the intended action. If inspection remains unavailable, request takeover instead of payment approval.",

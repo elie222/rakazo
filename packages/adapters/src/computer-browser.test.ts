@@ -433,7 +433,7 @@ describe("page browser safety", () => {
     expect(result).not.toHaveProperty("fallback");
   });
 
-  it("checks for a purchase without acting, and answers none when the computer cannot tell", async () => {
+  it("checks for a purchase without acting, and blocks when the computer cannot tell", async () => {
     const commands: unknown[] = [];
     const answer = {
       ok: true,
@@ -485,24 +485,11 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toMatchObject({
       purchase: { steps: [1], site: "", label: "Pay $5" },
     });
-    // An older image: the helper does not know the command.
-    reply = { ok: false, error: "unknown command: purchase_check", fallback: "computer_act" };
-    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-      purchase: null,
-    });
-    // So is a computer without a page browser, or a supervisor from before the check.
+    // Failed inspections cannot authorize a press, including unsupported or detached browsers.
     for (const error of [
+      "unknown command: purchase_check",
       "Page browser is not attached to this computer's Chrome.",
       "page browser failed: 400",
-    ]) {
-      reply = { ok: false, error, fallback: "computer_act" };
-      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: null,
-      });
-    }
-    // Any other failure asks, naming no page and approving no click: a check that started and broke,
-    // or a 500, which only an unhandled error answers.
-    for (const error of [
       "unknown command: purchase_check, and then some",
       "page browser failed: 500",
       "Page browser timed out; the page may be busy or blocked by a dialog. Inspect the screen before continuing.",
@@ -519,7 +506,23 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
-    expect(commands).toHaveLength(13);
+    expect(commands).toHaveLength(14);
+  });
+
+  it.each([
+    "Page crashed",
+    "No unambiguous visible browser tab. Use desktop tools to select a tab.",
+    'A confirm dialog is open on the screen: "Delete this?"',
+  ])("returns an unknown inspection without acting when %s", async (error) => {
+    const liveDriver = vi.fn(async () => ({ ok: false, error, fallback: "computer_act" as const }));
+    const provider = new ComputerBrowserProvider({ liveDriver });
+    const actions = [{ kind: "click", ref: "e1" }];
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+    });
+    expect(liveDriver.mock.calls).toEqual([
+      [computer, { command: "purchase_check", actions }, baseContext],
+    ]);
   });
 
   it("retries a timed-out purchase inspection once without performing actions", async () => {
