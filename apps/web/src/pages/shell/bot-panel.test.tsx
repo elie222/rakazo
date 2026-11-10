@@ -514,6 +514,17 @@ describe("BotSettings model picker", () => {
     expect(model.value).toBe("fixture-cloud::large");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
+
+  it("puts a failed pick back to the pick saved before it, not the older bot", async () => {
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([served("small"), served("large")]);
+    await render();
+    const model = modelSelect();
+    await choose(model, "fixture-cloud::small");
+    // The bot with this pick has not arrived yet when the next pick fails.
+    onSave.mockRejectedValueOnce(new ORPCError("BAD_REQUEST", { message: "Not now" }));
+    await choose(model, "fixture-cloud::large");
+    expect(model.value).toBe("fixture-cloud::small");
+  });
 });
 
 describe("BotSettings thinking options", () => {

@@ -22,6 +22,7 @@ import {
   providerLiveCatalogsForSpace,
   savedCatalogSelections,
   scriptedCatalogEntry,
+  servedModelsOutsideCatalog,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type {
@@ -82,15 +83,11 @@ function servedEndpointEntries(
   catalog: readonly ModelCatalogEntry[],
   auth: { deploymentModels?: ReadonlySet<string> },
 ): ModelCatalogEntry[] {
-  const listed = new Set(catalog.map((entry) => `${entry.provider}:${entry.id}`));
-  return [...(auth.deploymentModels ?? [])]
-    .filter((key) => !listed.has(key))
-    .map((key) => {
-      const provider = key.slice(0, key.indexOf(":"));
-      const id = key.slice(provider.length + 1);
-      const providerName = catalog.find((entry) => entry.provider === provider)?.providerName;
-      return { provider, ...(providerName ? { providerName } : {}), id, label: id, billing: "" };
-    });
+  return servedModelsOutsideCatalog(catalog, auth.deploymentModels).map((model) => ({
+    ...model,
+    label: model.id,
+    billing: "",
+  }));
 }
 
 export function createRouterContext(deps: RouterDeps) {

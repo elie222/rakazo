@@ -31,6 +31,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { requireAdmin } from "./admins.js";
+import { forgetDeploymentSecret } from "./deployment-secrets.js";
 import type { RouterDeps } from "./router.js";
 
 type ModelEnv = Pick<
@@ -341,12 +342,12 @@ export async function connectDeploymentModel(
       ),
     );
   } catch (error) {
-    await deps.secrets.delete(stored.ciphertext, record).catch(() => undefined);
+    await forgetDeploymentSecret(deps.secrets, stored.ciphertext, record);
     throw error;
   }
   // A secret store keeps every saved value until it is deleted there too.
   if (replaced && replaced !== stored.ciphertext)
-    await deps.secrets.delete(replaced, record).catch(() => undefined);
+    await forgetDeploymentSecret(deps.secrets, replaced, record);
   return view(deps);
 }
 
@@ -375,7 +376,7 @@ export async function disconnectDeploymentModel(
     }),
   );
   if (removed)
-    await deps.secrets.delete(removed, deploymentConnectionRecord(provider)).catch(() => undefined);
+    await forgetDeploymentSecret(deps.secrets, removed, deploymentConnectionRecord(provider));
   return view(deps);
 }
 

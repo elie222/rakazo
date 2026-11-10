@@ -2162,7 +2162,8 @@ describe("own settings through update_bot", () => {
       name: "Assistant",
       instructions: "Draft only",
       readAloud: false,
-      models: [],
+      // The deployment's default runs here although the bundled catalog does not list it.
+      models: [{ provider: "OpenRouter", ids: ["openrouter/fixture-model"] }],
     });
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });

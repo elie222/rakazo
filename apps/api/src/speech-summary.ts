@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { secretValuesToRedact } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -56,8 +58,16 @@ export function createSpeechSummarizer(deps: {
     const record = async (event: UsageEvent) => {
       await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
     };
+    // The model can run on an instance's key, which a provider error may echo.
+    let secretsToRedact: string[] = [];
     try {
       const model = await deps.resolveModel(scope);
+      secretsToRedact = secretValuesToRedact({
+        kind: "openai_compatible",
+        baseUrl: model.baseUrl ?? "",
+        apiKey: model.apiKey,
+        headers: model.headers,
+      });
       // "scripted" means no model is configured; it would echo canned text.
       if (!deps.runtime.describe().capabilities.compaction || model.provider === "scripted") {
         return null;
@@ -101,7 +111,10 @@ export function createSpeechSummarizer(deps: {
       return summary ? summary.slice(0, SUMMARY_MAX_CHARS) : null;
     } catch (error) {
       getLogger().warn("speech summary failed", {
-        reason: error instanceof Error ? error.message : String(error),
+        reason: redactSecrets(
+          error instanceof Error ? error.message : String(error),
+          secretsToRedact,
+        ),
       });
       return null;
     }

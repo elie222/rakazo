@@ -314,6 +314,28 @@ export function applyDeploymentModelSettings(
 }
 
 /**
+ * Models the deployment serves that a catalog does not list, as an endpoint's are, named after the
+ * catalog's provider where it has one.
+ */
+export function servedModelsOutsideCatalog(
+  catalog: readonly { provider: string; providerName?: string; id: string }[],
+  served: Iterable<string> | undefined,
+): Array<{ provider: string; providerName?: string; id: string }> {
+  const listed = new Set(catalog.map((entry) => `${entry.provider}:${entry.id}`));
+  return [...(served ?? [])]
+    .filter((key) => !listed.has(key))
+    .map((key) => {
+      const provider = key.slice(0, key.indexOf(":"));
+      const providerName = catalog.find((entry) => entry.provider === provider)?.providerName;
+      return {
+        provider,
+        ...(providerName ? { providerName } : {}),
+        id: key.slice(provider.length + 1),
+      };
+    });
+}
+
+/**
  * The default that stands in for a member who chose nothing: one the deployment can run, or an
  * admin's saved choice, which the run then keys or refuses as it always has.
  */

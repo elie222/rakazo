@@ -17,6 +17,7 @@ import type {
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { requireAdmin } from "./admins.js";
+import { forgetDeploymentSecret } from "./deployment-secrets.js";
 import type { RouterDeps } from "./router.js";
 import { voiceContext } from "./voice.js";
 
@@ -96,8 +97,7 @@ export async function updateDeploymentVoiceSettings(
   await requireAdmin(deps, actor.userId);
   // A remote secret store keeps every saved value until it is deleted there too.
   const forget = async (ciphertext: string | null) => {
-    if (ciphertext)
-      await deps.secrets.delete(ciphertext, DEPLOYMENT_VOICE_RECORD).catch(() => undefined);
+    if (ciphertext) await forgetDeploymentSecret(deps.secrets, ciphertext, DEPLOYMENT_VOICE_RECORD);
   };
   if (input.provider === null) {
     // Clearing falls back to the environment's voice, if any.

@@ -161,6 +161,9 @@ export function BotSettings({
   const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
   // The newest model or effort pick; only it is undone when its save fails.
   const latestModelPick = useRef<{ key: string; thinkingLevel: string } | null>(null);
+  // The model and effort last saved, by a pick here or in a newer copy of the bot. A failed pick
+  // goes back to it, even before the bot copy with an earlier pick arrives.
+  const confirmedModel = useRef<readonly [string, string] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [disabledBuiltinTools, setDisabledBuiltinTools] = useState<string[]>(
     bot.disabledBuiltinTools ?? [],
@@ -245,6 +248,7 @@ export function BotSettings({
     };
     const saved = JSON.parse(savedAdvanced) as unknown[];
     const next = advancedValues(bot);
+    confirmedModel.current = [next[0], next[1]];
     if (modelKey === saved[0]) setModelKey(next[0]);
     if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
     if (computerMode === saved[2]) setComputerMode(next[2]);
@@ -350,6 +354,7 @@ export function BotSettings({
           modelId: model ? resolveSelectableModelId(catalog, model.provider, model.modelId) : null,
           thinkingLevel: (level || null) as ThinkingLevel | null,
         });
+        confirmedModel.current = [key, level];
         setSavedAdvanced((current) => {
           const saved = JSON.parse(current) as unknown[];
           return JSON.stringify([key, level, ...saved.slice(2)]);
@@ -467,7 +472,8 @@ export function BotSettings({
       if (patchOverrides?.model) {
         // A later pick made while this one was saving stays on screen.
         if (patchOverrides.model === latestModelPick.current) {
-          const [savedKey, savedLevel] = advancedValues(shownBotRef.current);
+          const [savedKey, savedLevel] =
+            confirmedModel.current ?? advancedValues(shownBotRef.current);
           setModelKey(savedKey);
           setThinkingLevel(savedLevel);
           setModelError(message);

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { applyDeploymentModelSettings, environmentDeploymentModels } from "./deployment-model.js";
 import type { ModelChoice } from "./model-choice.js";
 import { matchModelChoice, resolveModelChoice, words } from "./model-choice.js";
 
@@ -159,6 +160,24 @@ describe("resolveModelChoice", () => {
     expect(
       await resolveModelChoice(connected(["google"]), scope, { model: "google/gemini-live-x" }),
     ).toEqual({ ok: true, provider: "google", model: "gemini-live-x" });
+  });
+
+  it("finds a model an instance endpoint serves that the catalog does not list", async () => {
+    const deployment = applyDeploymentModelSettings(environmentDeploymentModels({}), {
+      allowedModels: "openai-compatible:*",
+      modelConnections: [
+        {
+          provider: "openai-compatible",
+          ciphertext: "fixture",
+          models: ["fixture/endpoint-model"],
+        },
+      ],
+    });
+    expect(
+      await resolveModelChoice({ ...connected([]), deployment }, scope, {
+        model: "fixture/endpoint-model",
+      }),
+    ).toEqual({ ok: true, provider: "openai-compatible", model: "fixture/endpoint-model" });
   });
 
   it("says when no model anywhere matches", async () => {

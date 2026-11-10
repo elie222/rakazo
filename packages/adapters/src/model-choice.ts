@@ -1,5 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { servedModelsOutsideCatalog } from "./deployment-model.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { modelCredentialAuthKindsForSpace } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
@@ -30,11 +31,16 @@ export async function connectedModelChoices(
     deps.hostedProvider,
     deps.deployment,
   );
-  return offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter((entry) => {
+  const catalog = listAvailablePiCatalog(auth.byProvider, auth.byModel);
+  const choices: ModelChoice[] = offeredCatalog(catalog).filter((entry) => {
     if (entry.placeholder) return false;
     const kind = auth.byModel[entry.provider]?.[entry.id] ?? auth.byProvider[entry.provider];
     return kind !== undefined && kind !== "disconnected";
   });
+  // An instance endpoint's models are not in the bundled catalog, and run all the same.
+  for (const model of servedModelsOutsideCatalog(catalog, auth.deploymentModels))
+    choices.push({ ...model, providerName: model.providerName ?? model.provider, label: model.id });
+  return choices;
 }
 
 /**
