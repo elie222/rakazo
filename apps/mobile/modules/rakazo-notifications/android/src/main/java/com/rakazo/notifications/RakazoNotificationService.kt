@@ -74,14 +74,14 @@ class RakazoNotificationService : Service() {
     createRakazoChannels(this)
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
-      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
-        // Only a seeded poll can hold pending replies, and a discard always changes the
-        // seen set, so the mute persists here instead of waiting for the next poll.
-        completions.muteBot(botId) {
-          val stored = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(SEEN_RUNS_SPACE_ID, null)
-          if (ownsStoredHistory(stored, historySpaceId)) persistCompleted(seeded = true)
-        }
+      // Only a seeded poll can hold pending replies, and a discard always changes the
+      // seen set, so the mute persists here instead of waiting for the next poll.
+      val persistDiscard: () -> Unit = {
+        val stored = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).getString(SEEN_RUNS_SPACE_ID, null)
+        if (ownsStoredHistory(stored, historySpaceId)) persistCompleted(seeded = true)
       }
+      intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { completions.muteBot(it, persistDiscard) }
+      intent?.getStringExtra(EXTRA_MUTED_GROUP_ID)?.let { completions.muteGroup(it, persistDiscard) }
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
@@ -401,6 +401,7 @@ class RakazoNotificationService : Service() {
     private const val RECENT_LIMIT = 20 // Keep in sync with apps/api/src/runs.ts.
     private const val EXTRA_RESET_TOKEN = "com.rakazo.notifications.RESET_TOKEN"
     private const val EXTRA_MUTED_BOT_ID = "com.rakazo.notifications.MUTED_BOT_ID"
+    private const val EXTRA_MUTED_GROUP_ID = "com.rakazo.notifications.MUTED_GROUP_ID"
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
@@ -413,11 +414,18 @@ class RakazoNotificationService : Service() {
     private var openBotId: String? = null
     private var openThreadId: String? = null
 
-    fun start(context: Context, resetToken: Boolean = true, action: String? = null, mutedBotId: String? = null) {
+    fun start(
+      context: Context,
+      resetToken: Boolean = true,
+      action: String? = null,
+      mutedBotId: String? = null,
+      mutedGroupId: String? = null,
+    ) {
       val intent = Intent(context, RakazoNotificationService::class.java)
         .putExtra(EXTRA_RESET_TOKEN, resetToken)
       if (action != null) intent.action = action
       if (mutedBotId != null) intent.putExtra(EXTRA_MUTED_BOT_ID, mutedBotId)
+      if (mutedGroupId != null) intent.putExtra(EXTRA_MUTED_GROUP_ID, mutedGroupId)
       runCatching { context.startService(intent) }
         .onFailure { error -> Log.w(TAG, "Could not start notification poller", error) }
     }

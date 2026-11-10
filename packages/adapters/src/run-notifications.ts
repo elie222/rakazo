@@ -73,9 +73,27 @@ export async function ownerHearsRun(
   run: { threadId: string; userId: string },
   mutedByDefault: boolean,
 ): Promise<boolean> {
+  const owner = await readOwnerHold(prisma, run, mutedByDefault);
+  await owner.reveal();
+  return owner.hears;
+}
+
+/**
+ * Whether the run's owner hears its chat, read now. `reveal` brings the chat back if it is
+ * hidden, so a caller can read before a change it can't undo and reveal after it.
+ */
+export async function readOwnerHold(
+  prisma: PrismaClient,
+  run: { threadId: string; userId: string },
+  mutedByDefault: boolean,
+) {
   const hold = (await chatHoldsFor(prisma, run.threadId, [run.userId])).get(run.userId);
-  if (hold?.hidden) await unhideChatFor(prisma, run.threadId, run.userId);
-  return ownerHearsChat(hold?.muted, mutedByDefault);
+  return {
+    hears: ownerHearsChat(hold?.muted, mutedByDefault),
+    reveal: async () => {
+      if (hold?.hidden) await unhideChatFor(prisma, run.threadId, run.userId);
+    },
+  };
 }
 
 export async function notifyRun(

@@ -467,6 +467,29 @@ describe("reconcileStuckWork", () => {
     expect(client.$transaction.mock.calls.map(([, options]) => options)).toEqual([budget]);
   });
 
+  it("leaves the run for the next sweep when it can't read who hears the chat", async () => {
+    const run = candidate("queued", 25);
+    const client = expireClient(run);
+    client.threadRead.findMany = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const { jobs } = publisher();
+    const { provider, send } = notifications();
+
+    await reconcileStuckWork({
+      prisma: client as unknown as PrismaClient,
+      jobs,
+      notifications: provider,
+      now,
+      batchSize: 100,
+    });
+
+    // Nothing expired, so the next sweep finds the run again and sends its notice then.
+    expect(client.$transaction).not.toHaveBeenCalled();
+    expect(client.message.create).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("alerts open apps when work is cancelled, even without a push provider", async () => {
     const run = { ...candidate("queued", 25), thread: { groupId: "group-1" } };
     const publishChatAlert = vi.fn(async () => undefined);

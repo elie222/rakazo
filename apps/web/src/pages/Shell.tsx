@@ -84,7 +84,7 @@ import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
-import { HiddenChats, SnoozedChats } from "./shell/shelved-chats";
+import { HiddenChats, SnoozedChats, shelvedChats } from "./shell/shelved-chats";
 import { ShellSidePanel } from "./shell/side-panel";
 import { BotsSidebarLayout } from "./shell/sidebar-layout";
 import type { RosterMenu } from "./shell/sidebar-roster";
@@ -663,12 +663,15 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
-  // With no bot in the list, every one hidden included, nothing opens and the shell is ready as is.
+  // An open chat is ready once it loads. With none open because every bot is hidden, or there
+  // is none, the shell is ready as is.
   const shellReady =
     initialBotsLoaded &&
     (inGroup
       ? Boolean(activeGroup && activeSnapshot)
-      : bots.every((bot) => bot.hidden) || Boolean(active && activeSnapshot));
+      : active
+        ? Boolean(activeSnapshot)
+        : bots.every((bot) => bot.hidden));
 
   useLayoutEffect(() => {
     if (initialBotsLoaded) {
@@ -1004,28 +1007,17 @@ function SpaceShell() {
         archived={
           <>
             <SnoozedChats
-              snoozed={sidebarSpaces.flatMap((space) => [
-                ...space.bots
-                  .filter((chat) => !chat.hidden && chatSnoozed(chat, snoozeNow))
-                  .map((chat) => ({ kind: "bot" as const, chat })),
-                ...space.groups
-                  .filter((chat) => !chat.hidden && chatSnoozed(chat, snoozeNow))
-                  .map((chat) => ({ kind: "group" as const, chat })),
-              ])}
+              snoozed={shelvedChats(
+                sidebarSpaces,
+                (chat) => !chat.hidden && chatSnoozed(chat, snoozeNow),
+              )}
               showSpaceSearch={search.showSpaceSearch}
               now={snoozeNow}
               snooze={snooze}
               openSpaceChat={openSpaceChat}
             />
             <HiddenChats
-              hidden={sidebarSpaces.flatMap((space) => [
-                ...space.bots
-                  .filter((chat) => chat.hidden)
-                  .map((chat) => ({ kind: "bot" as const, chat })),
-                ...space.groups
-                  .filter((chat) => chat.hidden)
-                  .map((chat) => ({ kind: "group" as const, chat })),
-              ])}
+              hidden={shelvedChats(sidebarSpaces, (chat) => Boolean(chat.hidden))}
               showSpaceSearch={search.showSpaceSearch}
               hide={hide}
               openSpaceChat={openSpaceChat}

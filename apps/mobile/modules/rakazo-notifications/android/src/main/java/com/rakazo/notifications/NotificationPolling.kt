@@ -21,13 +21,20 @@ internal class PollCompletions(private val seen: MutableSet<String>) {
 
   // The discard must reach storage before the poller can stop: a restart reloads
   // only what persisted, and would repost the muted reply once the bot is unmuted.
-  fun muteBot(botId: String, persistSeen: () -> Unit) {
-    val muted = pending.values.filter { it.botId == botId && it.groupId == null }
-    muted.forEach { run ->
+  fun muteBot(botId: String, persistSeen: () -> Unit) =
+    discard(persistSeen) { it.botId == botId && it.groupId == null }
+
+  // A group's held replies go the same way when the group is muted or hidden.
+  fun muteGroup(groupId: String, persistSeen: () -> Unit) =
+    discard(persistSeen) { it.groupId == groupId }
+
+  private fun discard(persistSeen: () -> Unit, muted: (RunRecord) -> Boolean) {
+    val dropped = pending.values.filter(muted)
+    dropped.forEach { run ->
       pending.remove(run.runId)
       seen.add(run.runId)
     }
-    if (muted.isNotEmpty()) persistSeen()
+    if (dropped.isNotEmpty()) persistSeen()
   }
 
   fun useSession(endpoint: String, spaceId: String, token: String, epoch: Long) {

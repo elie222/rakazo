@@ -22,7 +22,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
 import { notificationIdentity } from "./notification-identity.js";
-import { ownerHearsRun, publishChatAlert } from "./run-notifications.js";
+import { publishChatAlert, readOwnerHold } from "./run-notifications.js";
 
 type StuckCursor = { at: Date; id: string };
 
@@ -158,8 +158,8 @@ function readyStuckRun(
 }
 
 /** Reminders are for the person whose run it is, as its questions are. */
-function ownerHears(prisma: PrismaClient, run: StuckCandidate): Promise<boolean> {
-  return ownerHearsRun(prisma, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
+function readStuckOwner(prisma: PrismaClient, run: StuckCandidate) {
+  return readOwnerHold(prisma, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
 }
 
 type StuckNoticePayload = {
@@ -214,8 +214,9 @@ async function remindStuckRun(
   // Asked first, so a hidden chat comes back even where no push can be sent. A skipped push
   // (notices off, no provider, or no push token yet) stays unmarked so a later sweep can still
   // remind during this same wait.
-  const hears = await ownerHears(deps.prisma, run);
-  if (!deps.notifications || !hears) return;
+  const owner = await readStuckOwner(deps.prisma, run);
+  await owner.reveal();
+  if (!deps.notifications || !owner.hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
@@ -337,6 +338,9 @@ async function expireOne(
   },
   run: StuckCandidate,
 ) {
+  // Read before the run expires: a failed lookup then leaves the run for the next sweep, which
+  // retries the notice with it.
+  const owner = await readStuckOwner(deps.prisma, run);
   const expired = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) =>
@@ -359,7 +363,10 @@ async function expireOne(
       getLogger().error("stuck work continuation", error);
     });
   }
-  if (!(await ownerHears(deps.prisma, run))) return;
+  await owner.reveal().catch((error) => {
+    getLogger().error("stuck work unhide", error);
+  });
+  if (!owner.hears) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
   const message = {
     kind: stopped.kind,

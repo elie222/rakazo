@@ -46,6 +46,15 @@ type NativeNotifications = {
     headers: string,
     botId: string,
   ): Promise<void>;
+  /** Missing on native builds that predate group mutes. */
+  resumeAfterGroupMute?(
+    endpoint: string,
+    token: string,
+    spaceId: string,
+    locale: string,
+    headers: string,
+    groupId: string,
+  ): Promise<void>;
   stop(clearSession: boolean): Promise<void>;
   setOpenThread(botId: string | null, threadId: string | null): Promise<void>;
   openSettings(): Promise<void>;
@@ -139,23 +148,24 @@ export async function resumeLiveNotifications(
   endpoint: string,
   token: string,
   spaceId: string,
-  mutedBotId?: string,
+  muted?: { botId: string } | { groupId: string },
 ): Promise<boolean> {
   if (!nativeNotifications || !token) return false;
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return false;
-  const headers = nativeServerHeaders(parsed.url);
-  if (mutedBotId && nativeNotifications.resumeAfterMute) {
-    await nativeNotifications.resumeAfterMute(
-      parsed.url,
-      token,
-      spaceId,
-      getActiveUiLocale(),
-      headers,
-      mutedBotId,
-    );
+  const args = [
+    parsed.url,
+    token,
+    spaceId,
+    getActiveUiLocale(),
+    nativeServerHeaders(parsed.url),
+  ] as const;
+  if (muted && "botId" in muted && nativeNotifications.resumeAfterMute) {
+    await nativeNotifications.resumeAfterMute(...args, muted.botId);
+  } else if (muted && "groupId" in muted && nativeNotifications.resumeAfterGroupMute) {
+    await nativeNotifications.resumeAfterGroupMute(...args, muted.groupId);
   } else {
-    await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale(), headers);
+    await nativeNotifications.resume(...args);
   }
   return true;
 }
@@ -230,12 +240,16 @@ export async function afterChatNotifyChange(
     | { botId: string; threadId?: string; notify: boolean }
     | { groupId: string; notify: boolean },
 ): Promise<void> {
-  // Android also discards replies retained before this bot's own chat was muted.
+  // Android also discards replies retained before this chat was muted.
   await resumeLiveNotifications(
     endpoint,
     token,
     spaceId,
-    !change.notify && "botId" in change ? change.botId : undefined,
+    change.notify
+      ? undefined
+      : "botId" in change
+        ? { botId: change.botId }
+        : { groupId: change.groupId },
   ).catch(() => undefined);
   if (change.notify) return;
   const target =

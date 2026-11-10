@@ -10,6 +10,17 @@ export type ShelvedChat =
   | { kind: "bot"; chat: Space["bots"][number] }
   | { kind: "group"; chat: Space["groups"][number] };
 
+/** The bots, then the groups, across every space that `keep` puts on a shelf. */
+export function shelvedChats(
+  spaces: readonly Pick<Space, "bots" | "groups">[],
+  keep: (chat: ShelvedChat["chat"]) => boolean,
+): ShelvedChat[] {
+  return spaces.flatMap((space) => [
+    ...space.bots.filter(keep).map((chat) => ({ kind: "bot" as const, chat })),
+    ...space.groups.filter(keep).map((chat) => ({ kind: "group" as const, chat })),
+  ]);
+}
+
 /**
  * Chats set aside from every listed space, folded at the bottom of the sidebar. Each opens on
  * click and offers, on hover or focus, the one action that puts it back in the list.
