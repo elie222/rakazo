@@ -1,19 +1,24 @@
 import ActivityKit
 import Foundation
+import UIKit
 
 /// Starts the phone's live status card when the user sends, and hands its push token to the app,
-/// which gives it to the server. The server updates and ends the card. It runs on the main queue.
+/// which gives it to the server. The server updates and ends the card, and starts one by push when
+/// the user's bots get to work from another device. It runs on the main queue.
 @available(iOS 18.0, *)
 final class WorkActivities {
   static let shared = WorkActivities()
 
   /// Receives the card's push token, again whenever iOS changes it.
   var onToken: ((_ token: String) -> Void)?
+  /// Receives the phone's token for starting a card by push, again whenever iOS changes it.
+  var onStartToken: ((_ token: String) -> Void)?
 
   /// Tokens are watched per card, once, for as long as this launch of the app runs.
   private var watched = Set<String>()
   /// Cards being ended: a send meanwhile starts a new one instead of reusing them.
   private var ending = Set<String>()
+  private var observing = false
 
   func start(_ row: WorkActivityAttributes.ContentState.Row) {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -27,6 +32,43 @@ final class WorkActivities {
         attributes: WorkActivityAttributes(), content: content, pushType: .token)
     else { return }
     watch(activity)
+  }
+
+  /// Follows cards the server starts by push, and the token that lets it. Called at launch, which
+  /// may be iOS waking the app in the background for a card it just started.
+  func observe() {
+    guard !observing else { return }
+    observing = true
+    for activity in Activity<WorkActivityAttributes>.activities where activity.activityState == .active {
+      watch(activity)
+    }
+    Task { @MainActor [weak self] in
+      for await token in Activity<WorkActivityAttributes>.pushToStartTokenUpdates {
+        self?.deliverStart(hex(token))
+      }
+    }
+    Task { @MainActor [weak self] in
+      for await activity in Activity<WorkActivityAttributes>.activityUpdates {
+        guard let self else { return }
+        // One card for all of the user's work: one started by push as this phone started its own
+        // goes again, and the card the server already follows stays.
+        let others = Activity<WorkActivityAttributes>.activities.filter {
+          $0.id != activity.id && $0.activityState == .active && !self.ending.contains($0.id)
+        }
+        if !others.isEmpty {
+          self.ending.insert(activity.id)
+          await activity.end(nil, dismissalPolicy: .immediate)
+          self.ending.remove(activity.id)
+          continue
+        }
+        self.watch(activity)
+      }
+    }
+  }
+
+  /// Hands the phone's token for starting cards to the app again, such as for a new sign-in.
+  func refreshStartToken() {
+    if let token = Activity<WorkActivityAttributes>.pushToStartToken { onStartToken?(hex(token)) }
   }
 
   /// Hands the showing card's token to the app again, so the server confirms it still follows
@@ -45,7 +87,29 @@ final class WorkActivities {
   private func watch(_ activity: Activity<WorkActivityAttributes>) {
     guard watched.insert(activity.id).inserted else { return }
     Task { @MainActor [weak self] in
-      for await token in activity.pushTokenUpdates { self?.onToken?(hex(token)) }
+      for await token in activity.pushTokenUpdates { self?.deliver(hex(token)) }
+    }
+  }
+
+  /// Like a card's token, a new start token may arrive while the app runs in the background.
+  private func deliverStart(_ token: String) {
+    if UIApplication.shared.applicationState == .active, let onStartToken {
+      onStartToken(token)
+      return
+    }
+    IncomingCalls.shared.send("notifications/registerWorkActivityStarts", ["token": token])
+  }
+
+  /// A card the server starts wakes the app in the background, where its JavaScript may not run
+  /// in time, so the token goes to the server from here with the saved session.
+  private func deliver(_ token: String) {
+    if UIApplication.shared.applicationState == .active, let onToken {
+      onToken(token)
+      return
+    }
+    IncomingCalls.shared.send("notifications/followWorkActivity", ["token": token]) { [weak self] output in
+      // Nothing would update it: no bot is at work or this server cannot reach the phone.
+      if output?["following"] as? Bool == false { self?.end() }
     }
   }
 

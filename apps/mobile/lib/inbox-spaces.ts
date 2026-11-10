@@ -1,3 +1,4 @@
+import { ph, t } from "@lingui/core/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import {
   botAvatarActivity,
@@ -7,7 +8,6 @@ import {
 } from "@rakazo/core";
 import { rpc, selectedSpaceId } from "./api";
 import { adoptDeletedSpaceFallback, selectSpace } from "./api-server";
-import { t } from "./i18n";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
 import type { MobileBot, MobileGroup, MobileSpace } from "./mobile-types";
 import type { InboxSignal } from "./offscreen-unreads";
@@ -41,6 +41,13 @@ export type PinnedChat =
   | { kind: "group"; group: MobileGroup | SpaceGroup };
 export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
 
+/** A bot waiting on you: a question or an approval only you can answer. */
+export function botNeedsAttention(bot: MobileBot | SpaceBot): boolean {
+  const activity = mobileLogoAvatarActivity.getActivity(bot.id, bot.status);
+  // Every row asks, so read the avatar only for a bot that is waiting.
+  return logoAvatarNeedsAttention(activity) && botAvatarActivity(bot, activity) === activity;
+}
+
 /** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
 function chatSignal(chat: PinnedChat): InboxSignal {
   // A snoozed chat asks for nothing until it wakes, even shown under its open Snoozed heading.
@@ -50,14 +57,7 @@ function chatSignal(chat: PinnedChat): InboxSignal {
   return chat.kind === "bot"
     ? {
         unread: chat.bot.unread ? 1 : 0,
-        attention: logoAvatarNeedsAttention(
-          botAvatarActivity(
-            chat.bot,
-            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
-          ),
-        )
-          ? 1
-          : 0,
+        attention: botNeedsAttention(chat.bot) ? 1 : 0,
       }
     : { unread: chat.group.unread ? 1 : 0, attention: 0 };
 }
@@ -90,9 +90,9 @@ export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDe
 export function deleteSpaceTitle(space: Pick<InboxSpace, "name" | "botCount" | "bots">) {
   // Servers before botCount only listed the member's active bots.
   const bots = space.botCount ?? space.bots.length;
-  if (bots === 0) return t("Delete {name}?", { name: space.name });
-  if (bots === 1) return t("Delete {name} and its bot?", { name: space.name });
-  return t("Delete {name} and its {count} bots?", { name: space.name, count: bots });
+  if (bots === 0) return t`Delete ${ph({ name: space.name })}?`;
+  if (bots === 1) return t`Delete ${ph({ name: space.name })} and its bot?`;
+  return t`Delete ${ph({ name: space.name })} and its ${ph({ count: bots })} bots?`;
 }
 
 /** Only headings with no chats under them, counting chats in collapsed sections. */
@@ -147,7 +147,7 @@ export function spaceInboxItems(
     }
     for (const group of groupBotsForSidebar(chats, space.botSections, {
       includeEmptySections: true,
-      labels: { pinned: t("Pinned"), unassigned: t("Unassigned") },
+      labels: { pinned: t`Pinned`, unassigned: t`Unassigned` },
     })) {
       if (group.title) {
         const key = `${space.id}:${group.key}`;
@@ -177,7 +177,7 @@ export function spaceInboxItems(
       items.push({
         type: "heading",
         key,
-        title: t("Snoozed"),
+        title: t`Snoozed`,
         collapsed: folded,
         count: snoozed.length,
       });

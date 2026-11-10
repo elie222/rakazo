@@ -10,6 +10,8 @@ import type {
   ComputerObservation,
   ComputerRef,
   ControlLeaseRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
@@ -28,6 +30,7 @@ import {
 } from "./computer-support.js";
 import { PortableFileBatcher } from "./computer-workspace.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { installPageBrowserCommand } from "./page-browser-install.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents, timedOutCommandEvents } from "./sandbox-command-events.js";
 import { isSandboxGoneError, sandboxNotFoundError } from "./sandbox-errors.js";
@@ -64,7 +67,7 @@ export type DaytonaSandbox = Pick<
 > & {
   process: Pick<Sandbox["process"], "executeCommand">;
   fs: Pick<Sandbox["fs"], "listFiles" | "getFileDetails"> & {
-    uploadFile(file: Buffer, remotePath: string): Promise<void>;
+    uploadFile(file: Buffer, remotePath: string, timeout?: number): Promise<void>;
     downloadFile(remotePath: string): Promise<Buffer>;
   };
   computerUse: Pick<Sandbox["computerUse"], "stop">;
@@ -117,6 +120,60 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         boundedSandboxCommandTimeoutMs(undefined) / 1000,
       );
       return { code: result.exitCode, stdout: result.result, stderr: result.result };
+    },
+    runWithInput: async (computer, command, input, timeoutMs, context) => {
+      context.signal.throwIfAborted();
+      const sandbox = await this.box(computer);
+      const directory = `/tmp/rakazo-page-input-${randomUUID()}`;
+      const file = `${directory}/request`;
+      const timeout = Math.max(1, Math.ceil(timeoutMs / 1_000));
+      const created = await sandbox.process.executeCommand(
+        `mkdir -m 700 -- ${shellQuote(directory)}`,
+        undefined,
+        undefined,
+        timeout,
+      );
+      if (created.exitCode !== 0) throw new Error("Could not prepare browser input");
+      try {
+        context.signal.throwIfAborted();
+        try {
+          await sandbox.fs.uploadFile(Buffer.from(input), file, timeout);
+        } catch {
+          throw new Error("Could not transfer browser input");
+        }
+        context.signal.throwIfAborted();
+        try {
+          const result = await sandbox.process.executeCommand(
+            `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
+            undefined,
+            undefined,
+            timeout,
+          );
+          context.signal.throwIfAborted();
+          return { code: result.exitCode, stdout: result.result };
+        } catch (error) {
+          if (error instanceof (await daytonaSdk()).DaytonaProcessExecutionTimeoutError)
+            return { code: 124, stdout: "" };
+          context.signal.throwIfAborted();
+          throw new Error("Page browser unavailable or interrupted");
+        }
+      } finally {
+        let cleaned = false;
+        try {
+          const result = await sandbox.process.executeCommand(
+            `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,
+            undefined,
+            undefined,
+            10,
+          );
+          cleaned = result.exitCode === 0;
+        } catch {}
+        if (!cleaned)
+          getLogger().warn("sandbox.page_browser", {
+            provider: "daytona",
+            outcome: "input_cleanup_failed",
+          });
+      }
     },
     screenUrl: async (computer, port, context) => {
       const preview = await this.screenPreview(
@@ -294,6 +351,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     return this.desktops.act(computer, request, context);
+  }
+
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    return this.desktops.pageBrowser(computer, request, context);
   }
 
   async listFiles(
@@ -537,6 +602,19 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         300,
       );
       if (runtime.exitCode !== 0) throw new Error("could not prepare computer desktop tools");
+      const pageBrowser = await sandbox.process
+        .executeCommand(
+          `bash -c ${shellQuote(installPageBrowserCommand())}`,
+          undefined,
+          undefined,
+          120,
+        )
+        .catch(() => ({ exitCode: 1 }));
+      if (pageBrowser.exitCode !== 0)
+        getLogger().warn("sandbox.page_browser", {
+          provider: "daytona",
+          outcome: "install_failed",
+        });
       if (this.preparations.get(sandbox.id) !== preparation) {
         throw new Error("Daytona workspace preparation was invalidated during teardown");
       }

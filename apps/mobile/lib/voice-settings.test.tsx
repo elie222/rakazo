@@ -14,7 +14,6 @@ const state = vi.hoisted(() => ({
   params: {} as { spaceId?: string },
   held: null as Promise<void> | null,
 }));
-const t = (text: string) => text;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
@@ -48,7 +47,6 @@ vi.mock("./call-sounds", () => ({
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({ t: (text: string) => text, useI18n: () => ({ t }) }));
 vi.mock("../components/row-accessories", () => ({
   Checkmark: () => <span data-testid="checkmark" />,
 }));

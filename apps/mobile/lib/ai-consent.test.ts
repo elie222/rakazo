@@ -27,11 +27,20 @@ vi.mock("react-native", () => ({
   Linking: { openURL: native.openURL },
 }));
 
+import { i18n } from "@lingui/core";
+import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 import type { AiRecipient } from "@rakazo/contracts";
-import { AI_DATA_DISCLOSURES } from "@rakazo/contracts";
 import { Alert } from "react-native";
 import { FOREGROUND_FALLBACK_MS, promptAiConsent } from "./ai-consent";
-import { resetI18nForTests, t } from "./i18n";
+import { resetI18nForTests } from "./i18n";
+
+/** A catalog message in the active language, looked up as the compiled macro does. */
+function t(message: string, values?: Record<string, string>) {
+  return i18n._({ id: generateMessageId(message), message, values });
+}
+
+const MODEL_DISCLOSURE =
+  "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.";
 
 type AlertButton = { text?: string; onPress?: () => void };
 type AlertOptions = { onDismiss?: () => void };
@@ -76,7 +85,7 @@ describe("mobile AI consent prompt", () => {
         t("Share data with {name}?", { name: recipient.name }),
         [
           recipient.detail,
-          t(AI_DATA_DISCLOSURES.model),
+          t(MODEL_DISCLOSURE),
           t("You can turn this off in Account → AI data sharing."),
         ].join("\n\n"),
       ]);
@@ -85,6 +94,7 @@ describe("mobile AI consent prompt", () => {
         t("Privacy policy"),
         t("Allow"),
       ]);
+      if (locale !== "en") expect(t("Allow")).not.toBe("Allow");
       currentAlert().buttons[0]?.onPress?.();
       await expect(pending).resolves.toBe(false);
     },
@@ -93,7 +103,7 @@ describe("mobile AI consent prompt", () => {
   it("omits empty details from the consent message", async () => {
     const pending = promptAiConsent({ ...recipient, detail: "" });
     expect(native.alert.mock.calls[0]?.[1]).toBe(
-      `${AI_DATA_DISCLOSURES.model}\n\nYou can turn this off in Account → AI data sharing.`,
+      `${MODEL_DISCLOSURE}\n\nYou can turn this off in Account → AI data sharing.`,
     );
     currentAlert().buttons[0]?.onPress?.();
     await expect(pending).resolves.toBe(false);

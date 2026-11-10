@@ -139,7 +139,7 @@ export function ThreadMessageList({
             maintainVisibleContentPosition={liveMessageListPosition}
             scrollEventThrottle={16}
             {...scroll.liveListHandlers}
-            ListFooterComponent={loadEarlierControl}
+            ListFooterComponent={loadEarlierControl ?? undefined}
             ListHeaderComponent={
               <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
                 {errorNotice}

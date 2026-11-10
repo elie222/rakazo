@@ -148,6 +148,11 @@ export interface ContentEncryption {
    */
   openRows<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, rows: T[]): Promise<T[]>;
   /**
+   * Seals a row for a raw SQL insert, as `create` would. The row needs its final `id`
+   * and the columns that name its owner and space.
+   */
+  sealRow<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, row: T): Promise<T>;
+  /**
    * One token list per key version of the space; a match must contain every token
    * of one list. Empty when the space has no keys, so it has no encrypted rows.
    */
@@ -523,6 +528,10 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     async openRows(model, rows) {
       await openAll(rows, { model, strip: [], relations: new Map() });
       return rows;
+    },
+    async sealRow(model, row) {
+      if (!ring.encryptWrites) return row;
+      return (await sealCreate(ENCRYPTED_MODELS[model]!, row)) as typeof row;
     },
     async messageSearchTokens(spaceId, query, domain) {
       const keys = await ring.allFresh(spaceId);

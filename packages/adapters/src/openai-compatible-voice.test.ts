@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -55,14 +56,14 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
   it("refuses a private speech server unless private endpoints are allowed", async () => {
     expect(() =>
       serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
-    ).toThrow("Private model endpoints require operator authorization.");
+    ).toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
     const fetchMock = vi.fn();
     const denied = new OpenAiCompatibleVoiceProvider({
       fetch: fetchMock as unknown as typeof fetch,
     });
     await expect(
       denied.synthesize({ text: "hi", voiceId: "af_heart", apiKey: keyed }, ctx),
-    ).rejects.toThrow("Private model endpoints require operator authorization.");
+    ).rejects.toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -216,7 +217,9 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
         baseUrl: "http://192.168.1.20:8880",
         sttBaseUrl: "http://192.168.1.30:9000",
       }),
-    ).toThrow("Private model endpoints require operator authorization.");
+    ).toThrow(
+      "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.",
+    );
     expect(() =>
       serializeAsOwner({ baseUrl: "http://127.0.0.1:8810", sttBaseUrl: "http://169.254.169.254" }),
     ).toThrow(/blocked/);

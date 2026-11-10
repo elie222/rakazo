@@ -55,7 +55,6 @@ vi.mock("./call-session", () => ({
 vi.mock("./call-sounds", () => ({ loadCallGreetingEnabled: vi.fn(async () => true) }));
 vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./dictation", () => ({ available: async () => true }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./voice", () => ({
   speakQueue: vi.fn(async () => true),
   speakText: vi.fn(async () => true),
@@ -128,7 +127,7 @@ describe("useThreadVoiceCall hand-over", () => {
     await flush();
     expect(startCall).toHaveBeenCalledOnce();
     expect(startCall).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+      expect.objectContaining({ botId: "riley", greeting: "Hello, Riley here." }),
     );
   });
   it("starts an outgoing call pinned to the Space it starts in", async () => {
@@ -169,7 +168,7 @@ describe("useThreadVoiceCall hand-over", () => {
     render("riley");
     await flush();
     expect(startCall).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "riley", greeting: "Hello, {bot} here." }),
+      expect.objectContaining({ botId: "riley", greeting: "Hello, Riley here." }),
     );
   });
 

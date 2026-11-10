@@ -19,8 +19,7 @@ import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
 /** One owner and their first two organizations, each addressed through its own space. */
 async function ownerWithOrganizations(prisma: PrismaClient, stamp: string, name: string) {
